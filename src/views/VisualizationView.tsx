@@ -616,7 +616,9 @@ const VegaChartRenderer: FC<{
             retryCount: number,
           ) => {
             const embedRenderer =
-              chart.chartType === "QC Trend Line" && visTableRows.length > 30000
+              chart.chartType === "QC Trend Line"
+                ? "canvas"
+                : visTableRows.length > 30000
                 ? "canvas"
                 : "svg";
             embed(
@@ -1615,23 +1617,34 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   tableRef.current = table;
   tablesRef.current = tables;
 
-  // Data Live button is only shown for tables loaded via the QC_Data data loader.
-  // A table qualifies if:
-  //   1. QC_Data connector is configured (has at least a host param), AND
-  //   2. The table itself is virtual (loaded from a data loader), OR
-  //      it is agent-derived and at least one of its source tables is virtual.
+  // Data Live button is shown when the current table (or a source table for derived)
+  // contains all required QC columns: INDEX, VALUE, QCSTDPARAMNAME, TARGET,
+  // LL, UL, ARLL, ARUL, QCDATE, QCSHIFT.
+  const QC_REQUIRED_COLUMNS = [
+    "INDEX",
+    "VALUE",
+    "QCSTDPARAMNAME",
+    "TARGET",
+    "LL",
+    "UL",
+    "ARLL",
+    "ARUL",
+    "QCDATE",
+    "QCSHIFT",
+  ];
+  const hasAllQcColumns = (names: string[]) =>
+    QC_REQUIRED_COLUMNS.every((col) =>
+      names.some((n) => n.toUpperCase() === col),
+    );
+
   const isQcTable = useMemo(() => {
-    const qcParams = dataLoaderConnectParams["QC_Data"] ?? {};
-    const qcConfigured = Object.keys(qcParams).length > 0;
-    if (!qcConfigured) return false;
-    if (table.virtual) return true;
-    if (table.derive?.source?.length) {
-      return table.derive.source.some(
-        (srcId) => tables.find((t) => t.id === srcId)?.virtual != null,
-      );
-    }
-    return false;
-  }, [table, tables, dataLoaderConnectParams]);
+    if (hasAllQcColumns(table.names ?? [])) return true;
+    // Also check source tables of derived tables
+    return (table.derive?.source ?? []).some((srcId) => {
+      const srcTable = tables.find((t) => t.id === srcId);
+      return srcTable ? hasAllQcColumns(srcTable.names ?? []) : false;
+    });
+  }, [table, tables]);
 
   // base IDs from encodingMap
   const baseVisFieldIds: string[] = Object.keys(focusedChart.encodingMap)
@@ -2020,12 +2033,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             if (data.status == "success") {
               console.log("✅ Data Live response SUCCESS, updating UI...");
 
-              // Preprocess data before saving (filters to only vis fields)
+              // Keep the fetched row shape intact for QC charts.
+              // QC layers may require auxiliary columns (e.g. INDEX/QCDATE/QCSHIFT/UL/LL)
+              // that are not always part of visFields.
               const filteredRows = data.rows.map((row: any) =>
                 Object.fromEntries(
-                  visFields
-                    .filter((f) => table.names.includes(f.name))
-                    .map((f) => [f.name, row[f.name]]),
+                  uniqueSelectFields
+                    .filter((name) =>
+                      Object.prototype.hasOwnProperty.call(row, name),
+                    )
+                    .map((name) => [name, row[name]]),
                 ),
               );
               const preprocessedData = prepVisTable(
@@ -2125,14 +2142,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       const rowSample = currentTableRef.rows.slice(startIdx, endIdx);
       const clonedSample = structuredClone(rowSample);
 
-      // Preprocess data before saving
-      const filteredRows = clonedSample.map((row: any) =>
-        Object.fromEntries(
-          visFields
-            .filter((f) => currentTableRef.names.includes(f.name))
-            .map((f) => [f.name, row[f.name]]),
-        ),
-      );
+      // Preserve full row context for local tables as well.
+      // This keeps auxiliary QC fields available for custom chart layers.
+      const filteredRows = clonedSample.map((row: any) => ({ ...row }));
       const preprocessedData = prepVisTable(
         filteredRows,
         conceptShelfItems,
@@ -2256,41 +2268,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Check if fields exist in table and table has rows
     return !(dataFieldsAllAvailable && table.rows.length > 0);
   }, [focusedChart.chartType, dataFieldsAllAvailable, table.rows.length]);
-
-  // Fetch original table data for main chart view
-  // Call getOriginalTableFromVirtualData to get the full original data from virtual tables
-  useEffect(() => {
-    if (
-      !isDataStale &&
-      activeVisTableRows.length > 0 &&
-      !chartUnavailable &&
-      focusedChart.chartType !== "Auto" &&
-      focusedChart.chartType !== "Table"
-    ) {
-      (async () => {
-        // 🔧 Generate unique request ID to track this specific request
-        const currentRequestId = `main-${focusedChart.id}-${table.id}-${activeVisTableRows.length}`;
-        const effectiveOriginalTableName = focusedChart.qcLive
-          ? liveTableNameRef.current ?? `${table.id}_live`
-          : undefined;
-
-        // ✅ Check if this is still the latest request before updating state
-        if (originalTableRequestRef.current !== currentRequestId) {
-          console.warn(
-            `⚠️ Ignoring stale originalTable request for main chart (${currentRequestId} → ${originalTableRequestRef.current})`,
-          );
-          return;
-        }
-      })();
-    }
-  }, [
-    focusedChart.id,
-    table.id,
-    activeVisTableRows.length,
-    isDataStale,
-    chartUnavailable,
-    focusedChart.chartType,
-  ]);
 
   // Render fullscreen chart when dialog opens
   useEffect(() => {

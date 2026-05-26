@@ -62,8 +62,10 @@ def list_tables():
                     
                     # Check if this is a view or a table
                     try:
-                        # Get both view existence and source in one query
-                        view_info = db.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
+                        # Get both view existence and source in one query (parameterized)
+                        view_info = db.execute(
+                            "SELECT view_name, sql FROM duckdb_views() WHERE view_name = ?", [table_name]
+                        ).fetchone()
                         view_source = view_info[1] if view_info else None
                     except Exception as e:
                         # If the query fails, assume it's a regular table
@@ -166,8 +168,9 @@ def sample_table():
         total_row_count = 0
         # Validate field names against table columns to prevent SQL injection
         with db_manager.connection(session['session_id']) as db:
-            # Get valid column names
-            columns = [col[0] for col in db.execute(f"DESCRIBE {table_id}").fetchall()]
+            # Validate table_id against known session tables (prevents SQL injection)
+            quoted_table = _validate_table_name(db, table_id)
+            columns = [col[0] for col in db.execute(f"DESCRIBE {quoted_table}").fetchall()]
 
             
             # Filter order_by_fields to only include valid column names
@@ -178,7 +181,7 @@ def sample_table():
             ]
             valid_select_fields = [field for field in select_fields if field in columns]
 
-            query, output_column_names = assemble_query(valid_aggregate_fields_and_functions, valid_select_fields, columns, table_id)
+            query, output_column_names = assemble_query(valid_aggregate_fields_and_functions, valid_select_fields, columns, quoted_table)
 
 
             # Modify the original query to include the count:
@@ -251,17 +254,20 @@ def get_table_data():
                     "status": "error",
                     "message": "Table name is required"
                 }), 400
-            
+
+            # Validate against known session tables (prevents SQL injection)
+            quoted_table = _validate_table_name(db, table_name)
+
             # Get total count
-            total_rows = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            total_rows = db.execute(f"SELECT COUNT(*) FROM {quoted_table}").fetchone()[0]
             
             # Get paginated data
             result = db.execute(
-                f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}"
+                f"SELECT * FROM {quoted_table} LIMIT {page_size} OFFSET {offset}"
             ).fetchall()
             
             # Get column names
-            columns = [col[0] for col in db.execute(f"DESCRIBE {table_name}").fetchall()]
+            columns = [col[0] for col in db.execute(f"DESCRIBE {quoted_table}").fetchall()]
             
             # Convert to list of dictionaries
             rows = [dict(zip(columns, row)) for row in result]
@@ -367,15 +373,27 @@ def drop_table():
             return jsonify({"status": "error", "message": "No table name provided"}), 400
             
         with db_manager.connection(session['session_id']) as db:
-            # First check if it exists as a view
-            view_exists = db.execute(f"SELECT view_name FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone() is not None
+            # Validate against known session tables (prevents SQL injection)
+            # This also tells us if it's a view or table
+            try:
+                quoted_table = _validate_table_name(db, table_name)
+            except ValueError:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Table/view '{table_name}' does not exist"
+                }), 404
+
+            view_exists = db.execute(
+                "SELECT view_name FROM duckdb_views() WHERE view_name = ?", [table_name]
+            ).fetchone() is not None
             if view_exists:
-                db.execute(f"DROP VIEW IF EXISTS {table_name}")
-            
-            # Then check if it exists as a table
-            table_exists = db.execute(f"SELECT table_name FROM duckdb_tables() WHERE table_name = '{table_name}'").fetchone() is not None
+                db.execute(f"DROP VIEW IF EXISTS {quoted_table}")
+
+            table_exists = db.execute(
+                "SELECT table_name FROM duckdb_tables() WHERE table_name = ?", [table_name]
+            ).fetchone() is not None
             if table_exists:
-                db.execute(f"DROP TABLE IF EXISTS {table_name}")
+                db.execute(f"DROP TABLE IF EXISTS {quoted_table}")
 
             if not view_exists and not table_exists:
                 return jsonify({
@@ -573,38 +591,40 @@ def analyze_table():
             return jsonify({"status": "error", "message": "No table name provided"}), 400
         
         with db_manager.connection(session['session_id']) as db:
-        
+            # Validate against known session tables (prevents SQL injection)
+            quoted_table = _validate_table_name(db, table_name)
+
             # Get column information
-            columns = db.execute(f"DESCRIBE {table_name}").fetchall()
-            
+            columns = db.execute(f"DESCRIBE {quoted_table}").fetchall()
+
             stats = []
             for col in columns:
                 col_name = col[0]
                 col_type = col[1]
-                
+
                 # Properly quote column names to avoid SQL keywords issues
-                quoted_col_name = f'"{col_name}"'
-                
+                quoted_col_name = '"' + col_name.replace('"', '""') + '"'
+
                 # Basic stats query
                 stats_query = f"""
-                SELECT 
+                SELECT
                     COUNT(*) as count,
                     COUNT(DISTINCT {quoted_col_name}) as unique_count,
                     COUNT(*) - COUNT({quoted_col_name}) as null_count
-                FROM {table_name}
+                FROM {quoted_table}
                 """
-                
+
                 # Add numeric stats if applicable
                 if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
                     stats_query = f"""
-                    SELECT 
+                    SELECT
                         COUNT(*) as count,
                         COUNT(DISTINCT {quoted_col_name}) as unique_count,
                         COUNT(*) - COUNT({quoted_col_name}) as null_count,
                         MIN({quoted_col_name}) as min_value,
                         MAX({quoted_col_name}) as max_value,
                         AVG({quoted_col_name}) as avg_value
-                    FROM {table_name}
+                    FROM {quoted_table}
                     """
                 
                 col_stats = db.execute(stats_query).fetchone()
@@ -640,6 +660,29 @@ def analyze_table():
             "status": "error",
             "message": safe_msg
         }), status_code
+
+def _validate_table_name(db, table_name: str) -> str:
+    """Validate that table_name is a known table/view in the current session.
+
+    Returns a double-quoted, SQL-safe identifier string.
+    Raises ValueError if the name is not found — prevents SQL injection.
+    """
+    rows = db.execute("""
+        SELECT table_name AS name FROM duckdb_tables()
+        WHERE internal=False AND database_name == current_database()
+        UNION ALL
+        SELECT view_name FROM duckdb_views()
+        WHERE view_name NOT LIKE 'duckdb_%'
+          AND view_name NOT LIKE 'sqlite_%'
+          AND view_name NOT LIKE 'pragma_%'
+          AND database_name == current_database()
+    """).fetchall()
+    valid_names = {row[0] for row in rows}
+    if table_name not in valid_names:
+        raise ValueError(f"Table '{table_name}' not found in session")
+    # Escape any embedded double-quotes in the identifier
+    return '"' + table_name.replace('"', '""') + '"'
+
 
 def sanitize_table_name(table_name: str) -> str:
     """

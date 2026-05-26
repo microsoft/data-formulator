@@ -16,8 +16,10 @@ def get_clickhouse_client():
     ch_host = os.environ.get("CH_HOST", "172.19.16.23")
     ch_port = int(os.environ.get("CH_PORT", "8123"))
     ch_user = os.environ.get("CH_USER", "admin")
-    ch_password = os.environ.get("CH_PASSWORD", "1fEQlaBivOpYXzw#")
+    ch_password = os.environ.get("CH_PASSWORD", "")
     ch_db = os.environ.get("CH_DB", "QC_DATA")
+    if not ch_password:
+        raise RuntimeError("CH_PASSWORD is not configured")
     
     return get_client(
         host=ch_host,
@@ -101,7 +103,7 @@ def get_dashboards_by_department(department):
     try:
         client = get_clickhouse_client()
         
-        query = f"""
+        query = """
         SELECT 
             OID,
             NAME,
@@ -109,11 +111,11 @@ def get_dashboards_by_department(department):
             DEPARTMENT,
             LASTUPDATE
         FROM "QC_DATA"."DASHBOARD_INFO"
-        WHERE DEPARTMENT = '{department}'
+        WHERE DEPARTMENT = {department:String}
         ORDER BY NAME
         """
-        
-        df = client.query_df(query)
+
+        df = client.query_df(query, parameters={'department': department})
         
         dashboards = []
         for _, row in df.iterrows():

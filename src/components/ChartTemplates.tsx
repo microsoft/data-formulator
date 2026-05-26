@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 import { ChartTemplate } from "./ComponentType";
@@ -274,7 +274,7 @@ const scatterPlots: ChartTemplate[] = [
       size: ["layer", 0, "encoding", "size"],
     },
 
-    // ✅ Thêm phần postProcessor
+    // âœ… ThÃªm pháº§n postProcessor
     postProcessor: (
       vgSpec: any,
       _table?: any[],
@@ -338,7 +338,7 @@ const scatterPlots: ChartTemplate[] = [
       color: ["layer", 0, "encoding", "color"],
       size: ["layer", 0, "encoding", "size"],
     },
-    // ✅ Thêm postProcessor
+    // âœ… ThÃªm postProcessor
     postProcessor: (
       vgSpec: any,
       _table?: any[],
@@ -350,7 +350,7 @@ const scatterPlots: ChartTemplate[] = [
         const layers = vgSpec.layer || [];
         for (const layer of layers) {
           if (layer.encoding?.y?.type === "quantitative") {
-            // Nếu Y là số thì scale.zero = false
+            // Náº¿u Y lÃ  sá»‘ thÃ¬ scale.zero = false
             layer.encoding.y.scale = { zero: false };
           }
         }
@@ -494,7 +494,7 @@ const barCharts: ChartTemplate[] = [
           delete xDef.scale.type;
           delete xDef.scale.range;
 
-          // 🔧 FORCE ordinal type for bar charts - prevents Vega-Lite from interpolating missing values
+          // ðŸ”§ FORCE ordinal type for bar charts - prevents Vega-Lite from interpolating missing values
           xDef.type = "ordinal";
         }
 
@@ -521,7 +521,7 @@ const barCharts: ChartTemplate[] = [
           delete vgSpec.mark.width;
         }
       } catch (error) {
-        console.warn("⚠️ Bar Chart postProcessor failed:", error);
+        console.warn("âš ï¸ Bar Chart postProcessor failed:", error);
       }
       return vgSpec;
     },
@@ -559,7 +559,7 @@ const barCharts: ChartTemplate[] = [
 
         const xField = xDef.field;
         let categoryField = yDef.field; // Y axis: the ordinal categories (e.g. AgeGroup)
-        let splitField = colorDef.field; // Split left/right (e.g. Gender — should have exactly 2 values)
+        let splitField = colorDef.field; // Split left/right (e.g. Gender â€” should have exactly 2 values)
 
         if (table && table.length > 0) {
           const splitUniq = new Set(table.map((r: any) => r[splitField])).size;
@@ -580,7 +580,7 @@ const barCharts: ChartTemplate[] = [
         const leftVal = splitValues[0];
         const rightVal = splitValues[1];
 
-        // Compute X domain from all data — use Number() to handle string values from CSV
+        // Compute X domain from all data â€” use Number() to handle string values from CSV
         let maxVal = 0;
         if (table) {
           for (const row of table) {
@@ -704,7 +704,7 @@ const barCharts: ChartTemplate[] = [
           xDef.scale.padding = 0.05;
           xDef.scale.paddingOuter = 0.05;
 
-          // 🔧 FORCE ordinal type for grouped bars
+          // ðŸ”§ FORCE ordinal type for grouped bars
           xDef.type = "ordinal";
         }
 
@@ -728,7 +728,7 @@ const barCharts: ChartTemplate[] = [
           delete vgSpec.mark.clip;
         }
       } catch (error) {
-        console.warn("⚠️ Grouped Bar Chart postProcessor failed:", error);
+        console.warn("âš ï¸ Grouped Bar Chart postProcessor failed:", error);
       }
       return vgSpec;
     },
@@ -775,7 +775,7 @@ const barCharts: ChartTemplate[] = [
           xDef.scale.padding = 0.05;
           xDef.scale.paddingOuter = 0.05;
 
-          // 🔧 FORCE ordinal type for stacked bars
+          // ðŸ”§ FORCE ordinal type for stacked bars
           xDef.type = "ordinal";
         }
 
@@ -799,7 +799,7 @@ const barCharts: ChartTemplate[] = [
           delete vgSpec.mark.clip;
         }
       } catch (error) {
-        console.warn("⚠️ Stacked Bar Chart postProcessor failed:", error);
+        console.warn("âš ï¸ Stacked Bar Chart postProcessor failed:", error);
       }
       return vgSpec;
     },
@@ -847,7 +847,7 @@ const barCharts: ChartTemplate[] = [
           xDef.scale.padding = 0.05;
           xDef.scale.paddingOuter = 0.05;
 
-          // 🔧 FORCE ordinal type for histogram
+          // ðŸ”§ FORCE ordinal type for histogram
           xDef.type = "ordinal";
         }
 
@@ -871,7 +871,7 @@ const barCharts: ChartTemplate[] = [
           delete vgSpec.mark.clip;
         }
       } catch (error) {
-        console.warn("⚠️ Histogram postProcessor failed:", error);
+        console.warn("âš ï¸ Histogram postProcessor failed:", error);
       }
       return vgSpec;
     },
@@ -908,7 +908,7 @@ const barCharts: ChartTemplate[] = [
       const xField = xDef.field;
       const yField = yDef.field;
 
-      // Lấy giá trị threshold (nếu có)
+      // Láº¥y giÃ¡ trá»‹ threshold (náº¿u cÃ³)
       let thresholdValue: number | null = null;
       if (thresholdDef?.field && table) {
         const vals = table
@@ -918,20 +918,20 @@ const barCharts: ChartTemplate[] = [
       }
 
       // ===============================
-      // Xác định type trục X (dùng type từ user, mặc định ordinal)
+      // XÃ¡c Ä‘á»‹nh type trá»¥c X (dÃ¹ng type tá»« user, máº·c Ä‘á»‹nh ordinal)
       // ===============================
       const xType = xDef.type || "ordinal";
       const isQuantitativeX = xType === "quantitative";
 
-      // Cấu hình trục X chung
+      // Cáº¥u hÃ¬nh trá»¥c X chung
       const xEncBase: any = { field: xField, type: xType, title: xField };
       if (!isQuantitativeX) {
-        // Ordinal/nominal: dùng band scale, không dùng fixed width
+        // Ordinal/nominal: dÃ¹ng band scale, khÃ´ng dÃ¹ng fixed width
         xEncBase.scale = { padding: 0.1 };
       }
 
       // ===============================
-      // Layer 1: Base bar (xanh dương)
+      // Layer 1: Base bar (xanh dÆ°Æ¡ng)
       // ===============================
       const mainLayer = {
         layer: [
@@ -1092,12 +1092,12 @@ let lineCharts = [
         {
           window: [
             {
-              field: "field2", // Placeholder – được thay bằng field thực tế
+              field: "field2", // Placeholder â€“ Ä‘Æ°á»£c thay báº±ng field thá»±c táº¿
               op: "mean",
               as: "rolling_mean",
             },
           ],
-          frame: [-20, 20], // Rolling 30 điểm (trước 15, sau 15)
+          frame: [-20, 20], // Rolling 30 Ä‘iá»ƒm (trÆ°á»›c 15, sau 15)
         },
       ],
       encoding: { x: {} },
@@ -1132,10 +1132,10 @@ let lineCharts = [
         const fieldTypeY = yFieldDef.type ?? "quantitative";
         const fieldNameX = xFieldDef.field;
 
-        // ✅ Ép trục X là temporal (ngày / thời gian)
+        // âœ… Ã‰p trá»¥c X lÃ  temporal (ngÃ y / thá»i gian)
         xFieldDef.type = "temporal";
 
-        // ✅ Thêm scale.zero = false nếu Y là quantitative
+        // âœ… ThÃªm scale.zero = false náº¿u Y lÃ  quantitative
         const yScale =
           fieldTypeY === "quantitative" ? { scale: { zero: false } } : {};
 
@@ -1157,7 +1157,7 @@ let lineCharts = [
           ...yScale,
         };
 
-        // Dọn encoding gốc
+        // Dá»n encoding gá»‘c
         delete vgSpec.encoding?.x;
         delete vgSpec.encoding?.y;
         delete vgSpec.encoding?.color;
@@ -1208,7 +1208,7 @@ let specialCharts: ChartTemplate[] = [
       return vgSpec;
     },
   },
-  // Trong ChartTemplates.tsx, thêm vào mảng tableCharts:
+  // Trong ChartTemplates.tsx, thÃªm vÃ o máº£ng tableCharts:
   {
     chart: "Pie Chart",
     icon: chartIconPie,
@@ -1238,7 +1238,7 @@ let specialCharts: ChartTemplate[] = [
       chartWidth?: number,
       chartHeight?: number,
     ) => {
-      // Tính tổng giá trị để hiển thị phần trăm
+      // TÃ­nh tá»•ng giÃ¡ trá»‹ Ä‘á»ƒ hiá»ƒn thá»‹ pháº§n trÄƒm
       const total = table ? table.reduce((sum, row) => sum + row.value, 0) : 1;
       vgSpec.encoding.text = {
         field: "value",
@@ -1258,19 +1258,19 @@ let specialCharts: ChartTemplate[] = [
     chart: "Radial Plot",
     icon: chartIconRadialPlot,
     template: {
-      // Khởi tạo đơn giản, postProcessor sẽ chuyển đổi thành Layered Spec
+      // Khá»Ÿi táº¡o Ä‘Æ¡n giáº£n, postProcessor sáº½ chuyá»ƒn Ä‘á»•i thÃ nh Layered Spec
       mark: "arc",
       encoding: {
-        theta: { field: "field1", type: "quantitative" }, // Giá trị
-        color: { field: "field2", type: "nominal" }, // Danh mục
+        theta: { field: "field1", type: "quantitative" }, // GiÃ¡ trá»‹
+        color: { field: "field2", type: "nominal" }, // Danh má»¥c
       },
     },
-    channels: ["theta", "color"], // Các kênh hiển thị cho người dùng
+    channels: ["theta", "color"], // CÃ¡c kÃªnh hiá»ƒn thá»‹ cho ngÆ°á»i dÃ¹ng
     paths: {
-      theta: [["encoding", "theta"]], // Ánh xạ giá trị (field1) vào Theta
-      color: [["encoding", "color"]], // Ánh xạ danh mục (field2) vào Color
+      theta: [["encoding", "theta"]], // Ãnh xáº¡ giÃ¡ trá»‹ (field1) vÃ o Theta
+      color: [["encoding", "color"]], // Ãnh xáº¡ danh má»¥c (field2) vÃ o Color
     },
-    // Trong ChartTemplates.tsx, bên trong định nghĩa Radial Plot
+    // Trong ChartTemplates.tsx, bÃªn trong Ä‘á»‹nh nghÄ©a Radial Plot
 
     postProcessor: (
       vgSpec: any,
@@ -1279,34 +1279,34 @@ let specialCharts: ChartTemplate[] = [
       chartWidth?: number,
       chartHeight?: number,
     ) => {
-      // Đặt lại tên biến cho rõ ràng
-      const valueDef = vgSpec.encoding.theta; // field1: Thường là giá trị (PARAMVALUE)
-      const categoryDef = vgSpec.encoding.color; // field2: Thường là danh mục (QCSTDPARAMNAME)
+      // Äáº·t láº¡i tÃªn biáº¿n cho rÃµ rÃ ng
+      const valueDef = vgSpec.encoding.theta; // field1: ThÆ°á»ng lÃ  giÃ¡ trá»‹ (PARAMVALUE)
+      const categoryDef = vgSpec.encoding.color; // field2: ThÆ°á»ng lÃ  danh má»¥c (QCSTDPARAMNAME)
       const textDef = vgSpec.encoding.text;
       const orderDef = vgSpec.encoding.order;
 
       if (!valueDef || !categoryDef) return vgSpec;
 
-      // 1. Cấu hình Theta (Góc): Luôn sử dụng trường Giá trị (field1)
+      // 1. Cáº¥u hÃ¬nh Theta (GÃ³c): LuÃ´n sá»­ dá»¥ng trÆ°á»ng GiÃ¡ trá»‹ (field1)
       if (valueDef.aggregate === undefined) {
         valueDef.aggregate = "sum";
       }
       valueDef.stack = true;
       valueDef.scale = { range: [0, 2 * Math.PI] };
 
-      // 2. Cấu hình Radius (Bán kính): Luôn sử dụng trường Danh mục (field2)
-      // Đây là mấu chốt để tạo ra hình cột tròn (Radial Bar)
+      // 2. Cáº¥u hÃ¬nh Radius (BÃ¡n kÃ­nh): LuÃ´n sá»­ dá»¥ng trÆ°á»ng Danh má»¥c (field2)
+      // ÄÃ¢y lÃ  máº¥u chá»‘t Ä‘á»ƒ táº¡o ra hÃ¬nh cá»™t trÃ²n (Radial Bar)
       const radiusEncoding = {
-        field: categoryDef.field, // SỬ DỤNG TRƯỜNG DANH MỤC LÀM BÁN KÍNH
+        field: categoryDef.field, // Sá»¬ Dá»¤NG TRÆ¯á»œNG DANH Má»¤C LÃ€M BÃN KÃNH
         type: categoryDef.type,
         scale: {
-          range: [20, 150], // Phạm vi bán kính
+          range: [20, 150], // Pháº¡m vi bÃ¡n kÃ­nh
         },
         legend: null,
       };
 
-      // 3. Cấu hình Order (Thứ tự): Đảm bảo thứ tự vẽ thanh đúng
-      // Nếu người dùng không chỉ định Order, sử dụng Category (field2)
+      // 3. Cáº¥u hÃ¬nh Order (Thá»© tá»±): Äáº£m báº£o thá»© tá»± váº½ thanh Ä‘Ãºng
+      // Náº¿u ngÆ°á»i dÃ¹ng khÃ´ng chá»‰ Ä‘á»‹nh Order, sá»­ dá»¥ng Category (field2)
       const finalOrder = orderDef && orderDef.field ? orderDef : categoryDef;
       finalOrder.type = finalOrder.type || "ordinal";
 
@@ -1339,7 +1339,7 @@ let specialCharts: ChartTemplate[] = [
               format: labelType === "quantitative" ? ",.1f" : undefined,
             },
             radius: radiusEncoding,
-            color: categoryDef, // Color cho nhãn
+            color: categoryDef, // Color cho nhÃ£n
             order: finalOrder,
           },
         };
@@ -1348,7 +1348,7 @@ let specialCharts: ChartTemplate[] = [
         delete vgSpec.encoding.text;
       }
 
-      // 6. Dọn dẹp
+      // 6. Dá»n dáº¹p
       if (vgSpec.encoding.order) delete vgSpec.encoding.order;
 
       vgSpec.layer = layers;
@@ -1394,7 +1394,7 @@ let specialCharts: ChartTemplate[] = [
       chartHeight?: number,
     ) => {
       // ------------------------------
-      // 🧩 1. Chuẩn hóa lại các channel
+      // ðŸ§© 1. Chuáº©n hÃ³a láº¡i cÃ¡c channel
       // ------------------------------
       const xDef = vgSpec.encoding.x;
       const yDef = vgSpec.encoding.y;
@@ -1402,10 +1402,10 @@ let specialCharts: ChartTemplate[] = [
       const colorDef = vgSpec.encoding.color;
 
       // ------------------------------
-      // ⚙️ 2. Tự động xác định type của X/Y
+      // âš™ï¸ 2. Tá»± Ä‘á»™ng xÃ¡c Ä‘á»‹nh type cá»§a X/Y
       // ------------------------------
       if (xDef) {
-        // Nếu là số → quantitative, nếu là date → temporal
+        // Náº¿u lÃ  sá»‘ â†’ quantitative, náº¿u lÃ  date â†’ temporal
         if (!xDef.type) {
           const sample = table?.[0]?.[xDef.field];
           xDef.type =
@@ -1434,7 +1434,7 @@ let specialCharts: ChartTemplate[] = [
       }
 
       // ------------------------------
-      // ⚪ 3. Cấu hình size (bong bóng)
+      // âšª 3. Cáº¥u hÃ¬nh size (bong bÃ³ng)
       // ------------------------------
       if (sizeDef) {
         sizeDef.type = "quantitative";
@@ -1444,7 +1444,7 @@ let specialCharts: ChartTemplate[] = [
       }
 
       // ------------------------------
-      // 🌈 4. Cấu hình màu sắc
+      // ðŸŒˆ 4. Cáº¥u hÃ¬nh mÃ u sáº¯c
       // ------------------------------
       const finalColorField = colorDef?.field || yDef?.field;
       if (finalColorField) {
@@ -1456,7 +1456,7 @@ let specialCharts: ChartTemplate[] = [
       }
 
       // ------------------------------
-      // 🧹 5. Làm sạch dữ liệu (bỏ field _1)
+      // ðŸ§¹ 5. LÃ m sáº¡ch dá»¯ liá»‡u (bá» field _1)
       // ------------------------------
       if (Array.isArray(vgSpec.data?.values)) {
         vgSpec.data.values = vgSpec.data.values.map((row: any) => {
@@ -1469,11 +1469,11 @@ let specialCharts: ChartTemplate[] = [
       }
 
       // ------------------------------
-      // 🪄 6. Layout hiển thị - Responsive sizing
+      // ðŸª„ 6. Layout hiá»ƒn thá»‹ - Responsive sizing
       // ------------------------------
       vgSpec.autosize = { type: "fit", contains: "padding" };
 
-      // 🔧 IMPORTANT: If postProcessor set width, don't override it
+      // ðŸ”§ IMPORTANT: If postProcessor set width, don't override it
       // Bar charts set width at top level
       const chartTypeLocal = vgSpec.mark?.type || vgSpec.mark;
       const hasPostProcessorWidth = vgSpec.width && vgSpec.width > 800;
@@ -1625,7 +1625,7 @@ let specialCharts: ChartTemplate[] = [
       chartWidth?: number,
       chartHeight?: number,
     ) => {
-      // 🔧 Tự động gán fieldX/fieldY theo người dùng
+      // ðŸ”§ Tá»± Ä‘á»™ng gÃ¡n fieldX/fieldY theo ngÆ°á»i dÃ¹ng
       const xField = vgSpec.layer[0].encoding.x.field;
       const yField = vgSpec.layer[1].encoding.text.field;
 
@@ -1669,10 +1669,10 @@ let customCharts: ChartTemplate[] = [
         color: { field: "color", type: "nominal" },
         qcdate: { field: "QCDATE", type: "quantitative" },
         QCSHIFT: { field: "QCSHIFT", type: "nominal" },
-        // *** ĐÃ XÓA CÁC KÊNH PHỤ TRỢ KHÔNG CẦN THIẾT KHỎI ENCODING GỐC ***
+        // *** ÄÃƒ XÃ“A CÃC KÃŠNH PHá»¤ TRá»¢ KHÃ”NG Cáº¦N THIáº¾T KHá»ŽI ENCODING Gá»C ***
       },
     },
-    // *** ĐÃ XÓA CÁC KÊNH PHỤ TRỢ KHỎI CHANNELS VÀ PATHS ***
+    // *** ÄÃƒ XÃ“A CÃC KÃŠNH PHá»¤ TRá»¢ KHá»ŽI CHANNELS VÃ€ PATHS ***
     channels: ["QCDATE", "QCSHIFT", "INDEX", "VALUE", "color"],
     paths: {
       index: [["encoding", "INDEX"]],
@@ -1690,7 +1690,7 @@ let customCharts: ChartTemplate[] = [
     ) => {
       if (!table || table.length === 0) return vgSpec;
       // =========================================================================
-      // 1. LẤY KÊNH CHÍNH
+      // 1. Láº¤Y KÃŠNH CHÃNH
       // =========================================================================
       const indexDef = vgSpec.encoding.index;
       const valueDef = vgSpec.encoding.value;
@@ -1705,7 +1705,7 @@ let customCharts: ChartTemplate[] = [
       const colorField = colorDef?.field || valueField;
 
       // =========================================================================
-      // 2. DỮ LIỆU GỐC
+      // 2. Dá»® LIá»†U Gá»C
       // =========================================================================
       const tableColumns = Object.keys(table[0]);
 
@@ -1736,11 +1736,11 @@ let customCharts: ChartTemplate[] = [
       });
 
       // =========================================================================
-      // 5. TÍNH DOMAIN Y
+      // 5. TÃNH DOMAIN Y
       // =========================================================================
       let finalMin: number | undefined = undefined;
       let finalMax: number | undefined = undefined;
-      let foundValue = false; // Cờ để kiểm tra có tìm thấy giá trị nào không
+      let foundValue = false; // Cá» Ä‘á»ƒ kiá»ƒm tra cÃ³ tÃ¬m tháº¥y giÃ¡ trá»‹ nÃ o khÃ´ng
 
       for (const r of table) {
         const v = r[valueField];
@@ -1750,8 +1750,10 @@ let customCharts: ChartTemplate[] = [
           foundValue = true;
         }
       }
+      const valueOnlyMin = finalMin;
+      const valueOnlyMax = finalMax;
 
-      // Nếu có ít nhất 1 cận thì tính padding domain dựa trên UL/LL hoặc min/max value
+      // Náº¿u cÃ³ Ã­t nháº¥t 1 cáº­n thÃ¬ tÃ­nh padding domain dá»±a trÃªn UL/LL hoáº·c min/max value
       const hasAnyLimit = Object.keys(detectedLimitSeries).length > 0;
       if (hasAnyLimit) {
         const valueMin = finalMin ?? 0;
@@ -1766,21 +1768,63 @@ let customCharts: ChartTemplate[] = [
       }
       console.log("Calculated Y domain:", { finalMin, finalMax, hasAnyLimit });
       // =========================================================================
-      // 6. LAYER: ĐIỂM + LOESS + GIỚI HẠN (CHỈ DỪNG TẠI detectedLimits)
+      // 6. LAYER: ÄIá»‚M + LOESS + GIá»šI Háº N (CHá»ˆ Dá»ªNG Táº I detectedLimits)
       // =========================================================================
 
+      const finiteValueRows = table.filter(
+        (r: any) => typeof r[valueField] === "number" && isFinite(r[valueField]),
+      );
+      const valueAbsMax =
+        finiteValueRows.length > 0
+          ? Math.max(...finiteValueRows.map((r: any) => Math.abs(r[valueField])))
+          : 0;
+      let limitAbsMax = 0;
+      for (const series of Object.values(detectedLimitSeries)) {
+        for (const d of series) {
+          const v = Math.abs(d.limit);
+          if (v > limitAbsMax) limitAbsMax = v;
+        }
+      }
+      const limitToValueRatio =
+        valueAbsMax > 0 ? limitAbsMax / valueAbsMax : Number.POSITIVE_INFINITY;
+      const suppressLimitLayersForScale =
+        table.length > 10000 && hasAnyLimit && limitToValueRatio > 50;
+      const useValueOnlyDomain = table.length > 10000;
+      const valueOnlyDomain =
+        valueOnlyMin != null && valueOnlyMax != null
+          ? [
+              valueOnlyMin - (valueOnlyMax - valueOnlyMin || 1) * 0.08,
+              valueOnlyMax + (valueOnlyMax - valueOnlyMin || 1) * 0.08,
+            ]
+          : undefined;
+
       // detect UL/LL column names (case-insensitive)
-      const ulCol = tableColumns.find((c: string) => c.toUpperCase() === "UL");
-      const llCol = tableColumns.find((c: string) => c.toUpperCase() === "LL");
+      const ulCol = suppressLimitLayersForScale
+        ? undefined
+        : tableColumns.find((c: string) => c.toUpperCase() === "UL");
+      const llCol = suppressLimitLayersForScale
+        ? undefined
+        : tableColumns.find((c: string) => c.toUpperCase() === "LL");
 
       const pointLayer = {
-        mark: { type: "line", point: true, interpolate: "monotone" },
+        mark: {
+          type: "line",
+          interpolate: "monotone",
+          strokeWidth: 2,
+          point: {
+            filled: true,
+            size: 48,
+            strokeWidth: 1.2,
+          },
+        },
         encoding: {
           x: { ...indexDef, type: "quantitative", title: indexDef.field },
           y: {
             ...valueDef,
             type: "quantitative",
-            scale: { zero: false },
+            scale: useValueOnlyDomain
+              ? { zero: false, domain: valueOnlyDomain }
+              : { zero: false },
           },
           color: {
             condition:
@@ -1837,7 +1881,7 @@ let customCharts: ChartTemplate[] = [
           {
             loess: valueDef.field,
             on: indexDef.field,
-            bandwidth: 0.03, // ✅ Giảm bandwidth (mặc định 0.3) → đường sát dữ liệu hơn, capture biến động nhỏ
+            bandwidth: 0.03, // âœ… Giáº£m bandwidth (máº·c Ä‘á»‹nh 0.3) â†’ Ä‘Æ°á»ng sÃ¡t dá»¯ liá»‡u hÆ¡n, capture biáº¿n Ä‘á»™ng nhá»
           },
           // Add a constant field so Vega-Lite can show a legend entry for the LOESS line
           { calculate: "'Trend Line'", as: "series" },
@@ -1845,8 +1889,8 @@ let customCharts: ChartTemplate[] = [
         mark: {
           type: "line",
           size: 3,
-          interpolate: "linear", // ✅ Đường gấp khúc mạnh mẽ, không mượt
-          strokeCap: "square", // ✅ Góc cạnh hơn
+          interpolate: "linear", // âœ… ÄÆ°á»ng gáº¥p khÃºc máº¡nh máº½, khÃ´ng mÆ°á»£t
+          strokeCap: "square", // âœ… GÃ³c cáº¡nh hÆ¡n
           opacity: 0.9,
         },
         encoding: {
@@ -1854,7 +1898,9 @@ let customCharts: ChartTemplate[] = [
           y: {
             field: valueDef.field,
             type: "quantitative",
-            scale: { zero: false },
+            scale: useValueOnlyDomain
+              ? { zero: false, domain: valueOnlyDomain }
+              : { zero: false },
           },
           color: {
             field: "series",
@@ -1865,7 +1911,7 @@ let customCharts: ChartTemplate[] = [
         },
       };
 
-      // 🟢 Gom tất cả rule (TARGET, UL, LL, ARUL, ARLL) vào 1 layer có legend
+      // ðŸŸ¢ Gom táº¥t cáº£ rule (TARGET, UL, LL, ARUL, ARLL) vÃ o 1 layer cÃ³ legend
       let ruleLayers: any[] = [];
       const limitColors: Record<string, string> = {
         TARGET: "#00FFFF",
@@ -1881,9 +1927,10 @@ let customCharts: ChartTemplate[] = [
 
       if (
         qcLimitsMode === true &&
-        Object.keys(detectedLimitSeries).length > 0
+        Object.keys(detectedLimitSeries).length > 0 &&
+        !suppressLimitLayersForScale
       ) {
-        // Merge tất cả limit series thành 1 data array
+        // Merge táº¥t cáº£ limit series thÃ nh 1 data array
         const allLimitData: Array<{
           index: number;
           limit: number;
@@ -1905,7 +1952,7 @@ let customCharts: ChartTemplate[] = [
           }
         });
 
-        // Tạo 1 layer duy nhất với tất cả data
+        // Táº¡o 1 layer duy nháº¥t vá»›i táº¥t cáº£ data
         if (allLimitData.length > 0) {
           ruleLayers.push({
             data: { values: allLimitData },
@@ -1950,16 +1997,16 @@ let customCharts: ChartTemplate[] = [
       vgSpec.resolve = { scale: { color: "independent" } };
 
       // =========================================================================
-      // 🟣 PHÁT HIỆN VÀ VẼ ĐƯỜNG DỌC THEO QCDATE + QCSHIFT
+      // ðŸŸ£ PHÃT HIá»†N VÃ€ Váº¼ ÄÆ¯á»œNG Dá»ŒC THEO QCDATE + QCSHIFT
       // =========================================================================
 
-      // Bước 1️⃣: Dò cột trong table
+      // BÆ°á»›c 1ï¸âƒ£: DÃ² cá»™t trong table
       const hasQCDate = table.some((r) => r["QCDATE"] !== undefined);
       const hasQCShift = table.some((r) => r["QCSHIFT"] !== undefined);
       const hasIndex = table.some((r) => r["INDEX"] !== undefined);
       const shiftRuleLayers: any[] = [];
       if (hasQCDate && hasQCShift && hasIndex) {
-        // Bước 2️⃣: Gom nhóm theo (QCDATE, QCSHIFT) để tìm INDEX nhỏ nhất của mỗi nhóm
+        // BÆ°á»›c 2ï¸âƒ£: Gom nhÃ³m theo (QCDATE, QCSHIFT) Ä‘á»ƒ tÃ¬m INDEX nhá» nháº¥t cá»§a má»—i nhÃ³m
         const groupMap = new Map<
           string,
           { QCDATE: any; QCSHIFT: any; INDEX: number }
@@ -1987,7 +2034,7 @@ let customCharts: ChartTemplate[] = [
           index: number;
         }[] = [];
 
-        // ✅ Convert thành danh sách marker
+        // âœ… Convert thÃ nh danh sÃ¡ch marker
         detectedMetadata.forEach((m) => {
           if (m.QCDATE && m.QCSHIFT && m.INDEX !== undefined) {
             shiftMarkers.push({
@@ -1998,14 +2045,14 @@ let customCharts: ChartTemplate[] = [
           }
         });
 
-        // ✅ Sort theo INDEX tăng dần để hiển thị đúng thứ tự thời gian
+        // âœ… Sort theo INDEX tÄƒng dáº§n Ä‘á»ƒ hiá»ƒn thá»‹ Ä‘Ãºng thá»© tá»± thá»i gian
         shiftMarkers.sort((a, b) => a.index - b.index);
         shiftMarkers.forEach((m) => {
           const isNight = m.shift?.toUpperCase() === "NIGHT";
-          const color = isNight ? "#000000" : "#9467bd"; // 🔹 NIGHT = đen, DAY = tím
-          const shortLabel = isNight ? m.date + "-N" : m.date + "-D"; // 🔹 Text hiển thị
+          const color = isNight ? "#000000" : "#9467bd"; // ðŸ”¹ NIGHT = Ä‘en, DAY = tÃ­m
+          const shortLabel = isNight ? m.date + "-N" : m.date + "-D"; // ðŸ”¹ Text hiá»ƒn thá»‹
 
-          // 1️⃣ Đường dọc
+          // 1ï¸âƒ£ ÄÆ°á»ng dá»c
           shiftRuleLayers.push({
             data: {
               values: [{ index: m.index, date: m.date, shift: m.shift }],
@@ -2039,15 +2086,9 @@ let customCharts: ChartTemplate[] = [
             },
             mark: {
               type: "text",
-              angle: -90, // 🔹 Nằm dọc
+              angle: -90, // ðŸ”¹ Náº±m dá»c
               dy: isNight ? -8 : 8,
-              dx: finalMax
-                ? isNight
-                  ? -(finalMax * 2.5)
-                  : finalMax * 2.5
-                : isNight
-                ? -8
-                : 8, // 🔹 Scale động theo finalMax
+              dx: isNight ? -8 : 8,
               fontSize: 10,
               fontWeight: "bold",
               color,
@@ -2059,32 +2100,32 @@ let customCharts: ChartTemplate[] = [
           });
         });
 
-        // ✅ Đảm bảo layer tồn tại trước khi push
+        // âœ… Äáº£m báº£o layer tá»“n táº¡i trÆ°á»›c khi push
         if (!vgSpec.layer) vgSpec.layer = [];
 
-        // ✅ Thêm vào biểu đồ
+        // âœ… ThÃªm vÃ o biá»ƒu Ä‘á»“
         if (shiftRuleLayers.length > 0) {
           vgSpec.layer.push(...shiftRuleLayers);
         } else {
-          console.warn("⚠️ Không tìm thấy nhóm QCDATE + QCSHIFT hợp lệ để vẽ");
+          console.warn("âš ï¸ KhÃ´ng tÃ¬m tháº¥y nhÃ³m QCDATE + QCSHIFT há»£p lá»‡ Ä‘á»ƒ váº½");
         }
       } else {
         console.warn(
-          "⚠️ Không có cột QCDATE, QCSHIFT hoặc INDEX trong dữ liệu!",
+          "âš ï¸ KhÃ´ng cÃ³ cá»™t QCDATE, QCSHIFT hoáº·c INDEX trong dá»¯ liá»‡u!",
         );
       }
 
       // =========================================================================
-      // 8. DỌN DẸP + FALLBACK
+      // 8. Dá»ŒN Dáº¸P + FALLBACK
       // =========================================================================
       delete vgSpec.encoding;
       delete vgSpec.mark;
       delete vgSpec.width;
       delete vgSpec.height;
 
-      // Không cần kiểm tra TARGET, chỉ cần có ít nhất 1 cận thì hiển thị rule
-      // Nếu không có cận nào thì chỉ hiển thị pointLayer, loessLayer, shiftRuleLayers
-      if (!hasAnyLimit) {
+      // KhÃ´ng cáº§n kiá»ƒm tra TARGET, chá»‰ cáº§n cÃ³ Ã­t nháº¥t 1 cáº­n thÃ¬ hiá»ƒn thá»‹ rule
+      // Náº¿u khÃ´ng cÃ³ cáº­n nÃ o thÃ¬ chá»‰ hiá»ƒn thá»‹ pointLayer, loessLayer, shiftRuleLayers
+      if (!hasAnyLimit || suppressLimitLayersForScale) {
         vgSpec.layer = [pointLayer, loessLayer, ...shiftRuleLayers];
         if (pointLayer.encoding?.y?.scale) delete pointLayer.encoding.y.scale;
       }
@@ -2131,7 +2172,7 @@ let customCharts: ChartTemplate[] = [
     ) => {
       if (!table || table.length === 0) return vgSpec;
       // =========================================================================
-      // 1️⃣ LẤY CÁC CHANNEL CHÍNH
+      // 1ï¸âƒ£ Láº¤Y CÃC CHANNEL CHÃNH
       // =========================================================================
       const valueDef = vgSpec.encoding?.value;
       const indexDef = vgSpec.encoding?.index;
@@ -2142,11 +2183,11 @@ let customCharts: ChartTemplate[] = [
       const valueField = valueDef.field;
       const colorField = colorDef?.field || "color";
       // =========================================================================
-      // 2. DỮ LIỆU GỐC
+      // 2. Dá»® LIá»†U Gá»C
       // =========================================================================
       const tableColumns = Object.keys(table[0]);
       // =========================================================================
-      // 2️⃣ PHÁT HIỆN GIỚI HẠN QC
+      // 2ï¸âƒ£ PHÃT HIá»†N GIá»šI Háº N QC
       // =========================================================================
       // Create local detectedLimits to avoid caching from previous renders
       let detectedLimits: Record<string, number | undefined> = {};
@@ -2162,24 +2203,24 @@ let customCharts: ChartTemplate[] = [
         }
       });
       // =========================================================================
-      // 3️⃣ TÍNH DOMAIN TRỤC X BAO GỒM GIỚI HẠN
+      // 3ï¸âƒ£ TÃNH DOMAIN TRá»¤C X BAO Gá»’M GIá»šI Háº N
       // =========================================================================
       const valueValues = table
         .map((r) => r[valueField])
-        .filter((v: any) => typeof v === "number" && isFinite(v))
-        .slice(0, 1); // giới hạn 1 điểm để tránh lag
+        .filter((v: any) => typeof v === "number" && isFinite(v));
 
-      const vMin = Math.min(...valueValues);
-      const vMax = Math.max(...valueValues);
+      const vMin = valueValues.length > 0 ? Math.min(...valueValues) : 0;
+      const vMax = valueValues.length > 0 ? Math.max(...valueValues) : 1;
       const limits = Object.values(detectedLimits).filter(
         (v): v is number => typeof v === "number" && isFinite(v),
       );
-      const globalMin = Math.min(vMin, ...limits);
-      const globalMax = Math.max(vMax, ...limits);
-      const padding = (globalMax - globalMin) * 0.07;
+      const globalMin = limits.length > 0 ? Math.min(vMin, ...limits) : vMin;
+      const globalMax = limits.length > 0 ? Math.max(vMax, ...limits) : vMax;
+      const padding = (globalMax - globalMin || 1) * 0.07;
+      const xDomain: [number, number] = [globalMin - padding, globalMax + padding];
 
       // =========================================================================
-      // 4️⃣ LỚP HISTOGRAM STACK THEO PHẦN TRĂM
+      // 4ï¸âƒ£ Lá»šP HISTOGRAM STACK THEO PHáº¦N TRÄ‚M
       // =========================================================================
       const histogramLayer = {
         transform: [
@@ -2192,7 +2233,7 @@ let customCharts: ChartTemplate[] = [
           { calculate: "datum.count / datum.total", as: "percent" },
         ],
 
-        // nếu qcLimitsMode=true thì điều chỉnh size
+        // náº¿u qcLimitsMode=true thÃ¬ Ä‘iá»u chá»‰nh size
         mark: qcLimitsMode ? { type: "bar" } : { type: "bar", size: 16 },
 
         encoding: {
@@ -2200,7 +2241,7 @@ let customCharts: ChartTemplate[] = [
             field: "binned_value",
             type: "quantitative",
             title: "value",
-            scale: { zero: false },
+            scale: { zero: false, domain: xDomain },
           },
           y: {
             field: "percent",
@@ -2226,26 +2267,26 @@ let customCharts: ChartTemplate[] = [
         },
       };
 
-      // ===== smooth envelope line per color, spanning LL → UL and touching baseline (y=0) =====
+      // ===== smooth envelope line per color, spanning LL â†’ UL and touching baseline (y=0) =====
       const envelopeLayer = {
         transform: [
-          // 1️⃣ Bin dữ liệu theo X
+          // 1ï¸âƒ£ Bin dá»¯ liá»‡u theo X
           { bin: { maxbins: 50 }, field: valueField, as: "binned_value" },
 
-          // 2️⃣ Gom nhóm theo bin + color
+          // 2ï¸âƒ£ Gom nhÃ³m theo bin + color
           {
             aggregate: [{ op: "count", as: "count" }],
             groupby: ["binned_value", colorField],
           },
 
-          // 3️⃣ Tính phần trăm theo nhóm màu
+          // 3ï¸âƒ£ TÃ­nh pháº§n trÄƒm theo nhÃ³m mÃ u
           {
             joinaggregate: [{ op: "sum", field: "count", as: "group_total" }],
             groupby: [colorField],
           },
           { calculate: "datum.count / datum.group_total * 2.5", as: "percent" },
 
-          // 4️⃣ Làm mượt (loess) riêng cho từng nhóm
+          // 4ï¸âƒ£ LÃ m mÆ°á»£t (loess) riÃªng cho tá»«ng nhÃ³m
           {
             loess: "percent",
             on: "binned_value",
@@ -2253,16 +2294,16 @@ let customCharts: ChartTemplate[] = [
             bandwidth: 0.5,
           },
 
-          // 5️⃣ Chặn chân về baseline y=0 để không xuyên trục
+          // 5ï¸âƒ£ Cháº·n chÃ¢n vá» baseline y=0 Ä‘á»ƒ khÃ´ng xuyÃªn trá»¥c
           {
-            calculate: "max(datum.percent, 0)", // ép giá trị âm về 0
+            calculate: "max(datum.percent, 0)", // Ã©p giÃ¡ trá»‹ Ã¢m vá» 0
             as: "percent_clamped",
           },
         ],
 
         mark: {
           type: "line",
-          interpolate: "monotone", // mượt tự nhiên
+          interpolate: "monotone", // mÆ°á»£t tá»± nhiÃªn
           size: 1.5,
           opacity: 0.9,
         },
@@ -2273,6 +2314,7 @@ let customCharts: ChartTemplate[] = [
             type: "quantitative",
             scale: {
               zero: false,
+              domain: xDomain,
             },
           },
           y: {
@@ -2299,14 +2341,14 @@ let customCharts: ChartTemplate[] = [
       };
 
       // =========================================================================
-      // 5️⃣ CÁC ĐƯỜNG DỌC QC RULE
+      // 5ï¸âƒ£ CÃC ÄÆ¯á»œNG Dá»ŒC QC RULE
       // =========================================================================
       const limitColors: Record<string, string> = {
-        UL: "#d62728", // đỏ
+        UL: "#d62728", // Ä‘á»
         LL: "#d62728",
         ARUL: "#ff7f0e", // cam
         ARLL: "#ff7f0e",
-        TARGET: "#00FFFF", // xanh lá
+        TARGET: "#00FFFF", // xanh lÃ¡
       };
 
       // Only show rule layers for limits that have a valid number value
@@ -2336,7 +2378,7 @@ let customCharts: ChartTemplate[] = [
           }));
 
         // =========================================================================
-        // 6️⃣ NHÃN TRÊN CÁC ĐƯỜNG DỌC
+        // 6ï¸âƒ£ NHÃƒN TRÃŠN CÃC ÄÆ¯á»œNG Dá»ŒC
         // =========================================================================
         labelLayers = Object.entries(detectedLimits)
           .filter(([_, val]) => typeof val === "number" && isFinite(val))
@@ -2359,7 +2401,7 @@ let customCharts: ChartTemplate[] = [
       }
 
       // =========================================================================
-      // 7️⃣ GHÉP LỚP VÀ HOÀN THIỆN
+      // 7ï¸âƒ£ GHÃ‰P Lá»šP VÃ€ HOÃ€N THIá»†N
       // =========================================================================
 
       vgSpec.layer = [
@@ -2610,3 +2652,4 @@ export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = {
   line: lineCharts,
   special: specialCharts,
 };
+

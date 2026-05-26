@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(dotnet new sln -n GDIS -o $root)",
+      "PowerShell($root = \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\")",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Aspire\\\\GDIS_Business\" -Recurse | Where-Object { $_.Name -match \"User|Permission|Role\" -and !$_.PSIsContainer } | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Aspire\\\\GDIS_Business\\\\\",\"\"\\) })",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Aspire\\\\GDIS_DTOModels\\\\APIModels\" | Where-Object { $_.Name -match \"Token|Permission|Role\" } | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\CrossCutting\\\\GDIS.Auth\" | ForEach-Object { $_.Name })",
+      "PowerShell(dotnet remove $csproj reference \"GDIS.Auth.Application\\\\GDIS.Auth.Application.csproj\")",
+      "PowerShell($csproj = \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\CrossCutting\\\\GDIS.Auth\\\\GDIS.Auth.csproj\")",
+      "PowerShell(Get-ChildItem \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Aspire\\\\GDIS_PDInput_Hybrid\\\\GDIS_PDInput_Hybrid.Shared\" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object Name | Sort-Object Name | Format-Table -AutoSize)",
+      "PowerShell(Get-ChildItem \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Aspire\\\\GDIS_PDInput_Hybrid\\\\GDIS_PDInput_Hybrid.Shared\" -Recurse | Where-Object { !$_.PSIsContainer -and $_.Name -match \"DataManagement|ExtensionService|MasterBase|TokenStorage\" } | Select-Object FullName)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet restore *)",
+      "Bash(Get-Content \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Aspire\\\\GDIS_Aspire.PDInput\\\\GDIS_Aspire.PDInput.csproj\")",
+      "Bash(Select-String -Pattern \"IgniteUI|Infragistics|Blazored|Bootstrap\")",
+      "Bash(Format-Table -Wrap)",
+      "Bash(dotnet fsi -e ' *)",
+      "Bash(python3 -c ' *)",
+      "Bash(cd /d \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\")",
+      "Bash(Get-ChildItem -Recurse -Filter \"*.sln\")",
+      "Bash(Select-Object FullName)",
+      "Bash(Get-ChildItem -Recurse \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\docs\")",
+      "Bash(Select-Object FullName, Length)",
+      "Bash(Get-ChildItem -Path \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(Remove-Item \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\Services\\\\PD\\\\GDIS.PD.Application\\\\DTOs\\\\SaveCustomerRequest.cs\" -Force)",
+      "Bash(Remove-Item \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\Services\\\\PD\\\\GDIS.PD.Application\\\\Validators\\\\SaveCustomerValidator.cs\" -Force)",
+      "Bash(Remove-Item \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\Services\\\\PD\\\\GDIS.PD.Domain\\\\Class1.cs\" -Force)",
+      "Bash(Remove-Item \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\Services\\\\PD\\\\GDIS.PD.Application\\\\Class1.cs\" -Force)",
+      "Bash(Remove-Item \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\Services\\\\PD\\\\GDIS.PD.Infrastructure\\\\Class1.cs\" -Force)",
+      "Bash(Get-ChildItem -Path \"D:\\\\THANHBV\\\\GDIS_Solution\\\\GDIS_Monorepo\\\\src\\\\Web\\\\GDIS.Web.PD\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(npm info *)",
+      "PowerShell(Get-ChildItem *)"
+    ]
+  }
+}

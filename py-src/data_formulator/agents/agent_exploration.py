@@ -182,25 +182,34 @@ class ExplorationAgent(object):
             {"role": "user", "content": f"[CONTEXT]\n\n{data_summary}"},
         ]
 
-        for i,step in enumerate(completed_steps):
+        # Keep only the last 2 completed steps to avoid growing context / token usage.
+        # Summarise earlier steps as a brief text note.
+        MAX_FULL_STEPS = 2
+        if len(completed_steps) > MAX_FULL_STEPS:
+            skipped = len(completed_steps) - MAX_FULL_STEPS
+            summary_lines = [f"- Step {i+1}: {s['question']}" for i, s in enumerate(completed_steps[:skipped])]
+            messages.append({"role": "user", "content": f"[EARLIER STEPS SUMMARY - {skipped} step(s) omitted to save context]\n" + "\n".join(summary_lines)})
+            steps_to_send = completed_steps[-MAX_FULL_STEPS:]
+            offset = skipped
+        else:
+            steps_to_send = completed_steps
+            offset = 0
+
+        for i, step in enumerate(steps_to_send):
+            step_num = i + offset + 1
             code = step['code']
             if 'name' not in step['data'] or step['data']['name'] is None:
-                step['data']['name'] = f'table-s-{i+1}'
+                step['data']['name'] = f'table-s-{step_num}'
             data = self.get_data_summary([step['data']])
 
-            if step['visualization']:
-                chart_message = self.get_chart_message(step['visualization'])
-                
-                # Create content array with text and image
-                content = [
-                    {"type": "text", "text": f"[COMPLETED STEP {i+1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}\n\n**Visualization**:"}
-                ]
-                content.append(chart_message)
-            else:
-                content = [
-                    {"type": "text", "text": f"[COMPLETED STEP {i+1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}"}
-                ]
-            
+            # Send text-only description — images (base64 PNG) are extremely token-heavy
+            # (10K-33K tokens each) and are not needed for planning the next exploration step.
+            viz_note = ""
+            if step.get('visualization'):
+                chart_type = step.get('chart_type') or step['data'].get('chart_type', '')
+                viz_note = f"\n\n**Visualization**: A chart was generated{(' (' + chart_type + ')') if chart_type else ''} — image omitted to conserve tokens."
+
+            content = f"[COMPLETED STEP {step_num}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}{viz_note}"
             messages.append({"role": "user", "content": content})
         
         messages.append({"role": "user", "content": f"[NEXT STEPS]\n\n{json.dumps(next_steps, indent=4)}"})

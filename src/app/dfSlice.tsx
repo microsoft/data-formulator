@@ -112,6 +112,21 @@ export interface GeneratedReport {
   createdAt: number;
 }
 
+export interface ChartRejectInfo {
+  reason_code: string;
+  reason_short: string;
+  message_vi: string;
+  context_columns?: string[];
+  suggested_chart_types?: string[];
+  suggested_actions?: string[];
+}
+
+export interface ChartIncompatibleState {
+  open: boolean;
+  reject: ChartRejectInfo | null;
+  instruction: string;
+}
+
 export interface DataFormulatorState {
   agentRules: {
     coding: string;
@@ -185,6 +200,7 @@ export interface DataFormulatorState {
   >; // Cached preview images for reports (includes chart `dataVersion` for staleness checks)
   chartOriginalTables: Record<string, any[]>; // Original raw table rows (QC limits / SLIPNO) per chart
   chartSampleReady: Record<string, number>; // timestamp when sampleData was last set for chart
+  chartIncompatible: ChartIncompatibleState;
 }
 
 // Define the initial state using that type
@@ -245,6 +261,11 @@ const initialState: DataFormulatorState = {
   chartPreviewImages: {},
   chartOriginalTables: {},
   chartSampleReady: {},
+  chartIncompatible: {
+    open: false,
+    reject: null,
+    instruction: "",
+  },
 };
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -464,6 +485,15 @@ export const dataFormulatorSlice = createSlice({
 
       state.generatedReports = [];
 
+      // Clear all in-memory caches
+      state.chartSampleData = {};
+      state.chartPreviewImages = {};
+      state.chartOriginalTables = {};
+      state.chartSampleReady = {};
+      state.chartIncompatible = initialState.chartIncompatible;
+
+      state.pendingEncodings = [];
+
       state.chatHistory = [];
       // Redux Persist will handle persistence automatically
     },
@@ -503,6 +533,15 @@ export const dataFormulatorSlice = createSlice({
       state.agentActions = savedState.agentActions || [];
 
       state.generatedReports = savedState.generatedReports || [];
+
+      // Clear stale in-memory caches from the previous session
+      state.chartSampleData = {};
+      state.chartPreviewImages = {};
+      state.chartOriginalTables = {};
+      state.chartSampleReady = {};
+      state.chartIncompatible = initialState.chartIncompatible;
+
+      state.pendingEncodings = [];
     },
     updateAgentWorkInProgress: (
       state,
@@ -1316,6 +1355,23 @@ export const dataFormulatorSlice = createSlice({
     addMessages: (state, action: PayloadAction<Message>) => {
       state.messages = [...state.messages, action.payload];
     },
+    showChartIncompatible: (
+      state,
+      action: PayloadAction<{ reject: ChartRejectInfo; instruction: string }>,
+    ) => {
+      state.chartIncompatible = {
+        open: true,
+        reject: action.payload.reject,
+        instruction: action.payload.instruction,
+      };
+    },
+    hideChartIncompatible: (state) => {
+      state.chartIncompatible = {
+        open: false,
+        reject: null,
+        instruction: "",
+      };
+    },
     setDisplayedMessageIndex: (state, action: PayloadAction<number>) => {
       state.displayedMessageIdx = action.payload;
     },
@@ -1547,8 +1603,15 @@ export const dataFormulatorSlice = createSlice({
         ];
 
         if (defaultModels.length > 0) {
+          const allModelIds = new Set(
+            state.models.map((m: ModelConfig) => m.id),
+          );
           for (const slotType of MODEL_SLOT_TYPES) {
-            if (state.modelSlots[slotType] == undefined) {
+            // Reset slot if it points to a model id that no longer exists
+            if (
+              state.modelSlots[slotType] == undefined ||
+              !allModelIds.has(state.modelSlots[slotType]!)
+            ) {
               state.modelSlots[slotType] = defaultModels[0].id;
             }
           }
@@ -1696,6 +1759,11 @@ export const dfSelectors = {
   getAgentActions: createSelector(
     [(state: DataFormulatorState) => state.agentActions],
     (actions) => actions,
+  ),
+
+  getChartIncompatible: createSelector(
+    [(state: DataFormulatorState) => state.chartIncompatible],
+    (chartIncompatible) => chartIncompatible,
   ),
 
   replaceChart: (state: DataFormulatorState, chart: Chart) => {

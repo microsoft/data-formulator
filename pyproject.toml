@@ -43,6 +43,13 @@ dependencies = [
     "scikit-learn"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-mock>=3.10",
+    "pytest-cov>=4.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/xxx"
 Repository = "https://github.com/xxx.git"
@@ -51,6 +58,17 @@ Repository = "https://github.com/xxx.git"
 [tool.setuptools]
 package-dir = {"" = "py-src"}
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["py-src"]
+exclude = ["data_formulator.tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["py-src/data_formulator/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"

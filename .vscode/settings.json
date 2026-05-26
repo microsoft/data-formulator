@@ -1,6 +1,7 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
-    "python.pythonPath": "${workspaceFolder}/venv/bin/python",
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    "python.pythonPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    "python.terminal.activateEnvironment": false,
     "python-envs.pythonProjects": [
         {
             "path": ".",

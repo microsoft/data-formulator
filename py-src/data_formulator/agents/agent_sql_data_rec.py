@@ -7,10 +7,21 @@ from data_formulator.agents.agent_utils import extract_json_objects, extract_cod
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_all_columns_from_input_tables
 from data_formulator.agents.qc_chart_config import (
-    get_full_qc_chart_rules, 
+    get_full_qc_chart_rules,
     get_compact_qc_chart_info,
     fix_qc_chart_encodings,
-    validate_qc_chart_encodings
+    validate_qc_chart_encodings,
+    is_qc_data,
+    QC_SYSTEM_PROMPT_EXTENSION,
+)
+from data_formulator.agents.field_metadata import FieldMeta, compute_field_metadata
+from data_formulator.agents.chart_compatibility import (
+    RejectInfo,
+    check_chart_data_compatibility,
+    validate_chart,
+    strict_validation_enabled,
+    reject_info_to_response,
+    format_field_metadata_hint,
 )
 
 import random
@@ -38,11 +49,28 @@ The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what t
 
 Concretely, you should infer the appropriate data and create a SQL query based off the [CONTEXT] and [GOAL] in two steps:
 
-**CRITICAL INSTRUCTION FOR CHART TYPE HANDLING:**
-- If the [GOAL] object contains a "chart_type" field with a value (e.g., "chart_type": "qc_trend_line"), you MUST use exactly that chart type in your response.
-- Do NOT override or change the chart_type from [GOAL] - use it as-is in your output.
-- If [GOAL] has "chart_type_source": "user_explicitly_requested", this means the user specifically asked for this chart type, so you MUST honor it.
-- Only infer/suggest a chart_type if [GOAL] does NOT specify one.
+**⚠️ CRITICAL INSTRUCTION FOR CHART TYPE HANDLING - DO NOT SKIP:**
+
+🔴 **RULE #1: NEVER OVERRIDE USER'S CHART TYPE SELECTION**
+- If the [GOAL] object contains a "chart_type" field with a value, you MUST use EXACTLY that chart type in your response.
+- Do NOT suggest, recommend, or change to a different chart type, even if you think a different chart would be better for the data.
+- Examples:
+  * If [GOAL] has "chart_type": "linear-regression", output MUST have "chart_type": "linear-regression" (not "qc_trend_line")
+  * If [GOAL] has "chart_type": "scatter", output MUST have "chart_type": "scatter" (not "histogram" or "boxplot")
+  * If [GOAL] has "chart_type": "bar", output MUST have "chart_type": "bar" (not any other type)
+- This applies EVEN IF the data looks like QC data or control limit data.
+- This applies EVEN IF you think a different chart would visualize the data better.
+
+🟡 **RULE #2: HONOR CHART_TYPE_SOURCE MARKERS**
+- If [GOAL] has "chart_type_source": "user_selected_from_ui", the user explicitly selected this chart type from a dropdown menu.
+- If [GOAL] has "chart_type_source": "user_explicitly_requested", the user explicitly requested this chart type in their description.
+- BOTH cases mean: this is NOT a suggestion - this is a user DECISION. You MUST honor it.
+
+🟢 **RULE #3: ONLY INFER IF NO CHART_TYPE IN GOAL**
+- Only infer/suggest a chart_type if the [GOAL] object does NOT have a "chart_type" field.
+- If chart_type is absent from [GOAL], then you may recommend based on the user description.
+
+**Your responsibility:** Transform the data to work well with the user's selected chart type, NOT to convince them to use a different chart type.
 
 1. First, based on users' [GOAL]. Create a json object that represents the inferred user intent. The json object should have the following format:
 
@@ -61,57 +89,43 @@ Concretely, you should infer the appropriate data and create a SQL query based o
         "opacity": "",
         "facet": "",
     } // object: map visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of output fields, appropriate visual channels for different chart types are defined below.
-    
-    **DEFAULT AXIS MAPPINGS (apply these if no other specification is clear):**
-    - **RULE: Always check if the default column exists in the actual input data BEFORE using it**
-    - If the chart has an "x" channel:
-      * First, check if "INDEX" column exists in input data - if YES, use "INDEX"
-      * If "INDEX" doesn't exist, look for similar ordinal/sequential columns (id, seq, num, order, etc.)
-      * If no suitable column found, use the first column or leave x empty
-    - If the chart has a "y" channel:
-      * First, check if "VALUE" column exists in input data - if YES, use "VALUE"
-      * If "VALUE" doesn't exist, look for numeric columns (amount, quantity, price, score, count, etc.)
-      * If no numeric column found, use first available quantitative column or leave y empty
-    - If the chart has a "color" channel:
-      * First, check if "QCSTDPARAMNAME" column exists in input data - if YES, use "QCSTDPARAMNAME"
-      * If "QCSTDPARAMNAME" doesn't exist, look for categorical columns (category, type, name, group, etc.)
-      * If no categorical column found, use first available non-numeric column or leave color empty
 }
 
-Additional rules:
-- CRITICAL: Prioritize natural language matching for chart type selection:
-  * If user explicitly mentions "QC Trend Line", "QC Trend Line", "QC Trend Line", "quality control trend", use "qc_trend_line" (only if QC control limit data exists)
-  * If user explicitly mentions "QC Histogram", "QC histogram", "qc histogram", "quality control histogram", use "qc_histogram" (only if QC control limit data exists)
-  * If user explicitly mentions "QC Trend Bar", "QC trend bar", "qc trend bar", "quality control trend bar", use "qc_trend_bar" (only if QC control limit data exists)
-  * If user explicitly mentions "linear regression", "linear regress", "regression line", use "linear_regression" chart type (NOT qc_trend_line, even if QC data exists)
-  * If user only says "trend", "line chart", "line", without "QC", use "line" chart type (standard line chart)
-  * If user only says "histogram", "distribution", without "QC", use "histogram" chart type (standard histogram)
-  * If user only says "bar chart", "bar", use "bar" chart type
-  * ALWAYS respect user's explicit chart type request - if they say a specific chart name, use exactly that chart type
-- Chart types "qc_trend_line", "qc_histogram", and "qc_trend_bar" should ONLY be used when:
-  - User explicitly requests the specific QC chart type AND the dataset contains QC control limit columns (TARGET, LL, UL, ARLL, ARUL)
-- **IMPORTANT: Always respect the user's explicit chart type request**, regardless of data characteristics. If user requests a chart type (e.g., "linear regression", "histogram", "line", "bar") and it's in the supported list, use exactly that chart type without questioning it.
-- To identify QC data, check for the presence of these control limit fields: TARGET (required), LL, UL, ARLL, ARUL. If TARGET column exists along with at least one of (LL, UL, ARLL, ARUL), then it's QC data.
-  * For "qc_trend_line": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME for rendering control limit lines (these are used by frontend to display limits, not in chart_encodings).
-  * For "qc_histogram": Output fields must include INDEX, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME.
-  * For "qc_trend_bar": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE. Also include TARGET, SLIPNO, ITEMNAME.
-  * For other chart types with QC data: Keep all fields used in chart_encodings. Use QCSTDPARAMNAME as default color field if needed.
-  * **NOTE ON QCDATE vs LASTUPDATE**: QCDATE is the control date, LASTUPDATE is the record timestamp. Always include both if available. Use LASTUPDATE for temporal sorting/ordering when needed.
-- "qc_trend_line" means a quality control trend chart that visualizes values and control limits over time. Only use this when user explicitly requests it.
-- "qc_trend_bar" means a quality control trend bar chart that visualizes categorical values and control limits. Only use this when user explicitly requests it.
-- "qc_histogram" means a quality control histogram for distribution analysis. Only use this when user explicitly requests it.
+🎯 **RULE #4: PICK FIELDS BY SEMANTIC ROLE (NEVER hardcode by column name)**
 
-**IMPORTANT: Always Use Actual Column Names from Input Data:**
-- When setting chart_encodings (x, y, color, etc.), ONLY use column names that actually exist in the input data
-- Do NOT use placeholder or theoretical column names that don't exist
-- If default columns (INDEX, VALUE, QCSTDPARAMNAME) don't exist:
-  * Look for columns with similar semantics/names in the actual data
-  * For x-axis: Look for columns like ID, id, INDEX, index, row_num, seq, sequence, order
-  * For y-axis: Look for columns like VALUE, value, amount, quantity, price, score, count, measure
-  * For color: Look for columns like QCSTDPARAMNAME, category, type, name, group, parameter
-  * If no suitable column found, you can leave that channel empty in chart_encodings
-- Example: If input data has columns [id, product_name, sales_amount, date], and we need x="INDEX" and y="VALUE":
-  * Use x="id" (not "INDEX"), y="sales_amount" (not "VALUE") - these are the actual column names
+The [CONTEXT] section labels each column with a role. Pick fields whose role
+matches the channel's intent:
+
+| Chart                  | x                                                  | y               | color           |
+|------------------------|----------------------------------------------------|-----------------|-----------------|
+| line, area, rolling_avg| temporal > sequential > quantitative               | quantitative    | categorical_low |
+| linear_regression      | quantitative > temporal > sequential               | quantitative    | categorical_low |
+| bar, group_bar         | categorical_low > temporal > categorical_mid       | quantitative    | categorical_low |
+| histogram              | quantitative ONLY (NEVER sequential/categorical)   | —               | categorical_low |
+| boxplot                | categorical_low/mid                                | quantitative    | categorical_low |
+| point (scatter)        | quantitative > temporal                            | quantitative≠x  | categorical_low |
+| heatmap                | temporal > categorical_low/mid                     | categorical_low/mid | quantitative |
+| pie, donut             | label=categorical_low (≤12 distinct), value=quantitative — NO x/y channels |||
+| funnel, pyramid        | label=categorical_low/mid, value=quantitative — NO x/y channels            |||
+| pareto                 | categorical_low/mid                                | quantitative    | —               |
+| timeline               | temporal (required)                                | categorical_low/mid | —           |
+
+🚫 **HARD CONSTRAINTS (violating these = invalid chart):**
+- NEVER put control_limit columns (TARGET, LL, UL, ARLL, ARUL) in chart_encodings — they render as reference lines.
+- NEVER use sequential columns (INDEX, id-like) for bar.x, histogram.x, heatmap.x, boxplot.x — chart becomes unreadable.
+- NEVER use categorical_huge columns (>500 distinct) for ANY encoding — overloads the chart.
+- pie/donut/funnel/pyramid use label+value, NOT x/y.
+
+Additional rules:
+- CRITICAL: Prioritize natural language matching for chart type selection. ALWAYS respect user's explicit chart type request.
+- Chart types "qc_trend_line", "qc_histogram", and "qc_trend_bar" should ONLY be used when user explicitly requests the specific QC chart type. Full QC specifications are provided separately when QC data is detected in input.
+- **IMPORTANT: Always respect the user's explicit chart type request**, regardless of data characteristics.
+- "qc_trend_line" means a quality control trend chart. "qc_trend_bar" means a QC trend bar chart. "qc_histogram" means a QC distribution chart.
+
+**Use Actual Column Names from Input Data:**
+- ONLY use column names that actually exist in [CONTEXT]. Do NOT invent placeholder names.
+- Match columns to channels using the role table in RULE #4 — pick by ROLE, not by name pattern.
+- If no column with the required role exists, leave that channel empty.
 
 Concretely:
     - recap what the user's goal is in a short summary in "recap".
@@ -134,115 +148,22 @@ Concretely:
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "rolling_average", "radial_plot", "linear_regression", "qc_trend_line", "qc_histogram", "qc_trend_bar", "waterfall", "radar", "pie", "donut", "bubble", "histogram", "pareto", "gauge", "funnel", "treemap", "sankey", "timeline", "pyramid", "threshold"
-    - "chart_encodings" should specify which fields should be used to create the visualization
-        - **DEFAULT FIELD MAPPING RULES (when column choice is not explicitly requested):**
-          * **CRITICAL: Always verify that the default column actually exists in the input data!**
-          * If chart has "x" channel:
-            - Priority 1: Use "INDEX" if it exists in the actual input columns
-            - Priority 2: If no INDEX, use any ordinal/sequence/ID column
-            - Priority 3: Use first column if no INDEX-like column found
-          * If chart has "y" channel:
-            - Priority 1: Use "VALUE" if it exists in the actual input columns
-            - Priority 2: If no VALUE, use first numeric/quantitative column
-            - Priority 3: Leave y empty if no quantitative column available
-          * If chart has "color" channel:
-            - Priority 1: Use "QCSTDPARAMNAME" if it exists in the actual input columns
-            - Priority 2: If no QCSTDPARAMNAME, use first categorical/text column
-            - Priority 3: Leave color empty if no suitable column available
-        - decide which visual channels should be used to create the visualization appropriate for the chart type.
-            - IMPORTANT: Standard charts use "x" and "y" channels. QC charts use DIFFERENT channel names - see below.
-            - **CRITICAL: For all default mappings below, FIRST verify that the column (INDEX, VALUE, QCSTDPARAMNAME, etc.) actually exists in the input data. If not, use actual column names from the input data instead.**
-            - Standard charts with DEFAULT mappings (verify columns exist first!):
-                - point: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default), size, facet
-                - histogram: x="INDEX" (default), color="QCSTDPARAMNAME" (default), facet
-                - bar: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default), facet
-                - line: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default), facet
-                - linear_regression: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default)
-                - area: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default), facet
-                - heatmap: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default), facet
-                - group_bar: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default), facet
-                - boxplot: x="INDEX" (default), y="VALUE" (default), color="QCSTDPARAMNAME" (default), facet
-                - rolling_average: x="INDEX" (default), y="VALUE" (default), color (optional)
-                - radial_plot: x="INDEX" (default), y="VALUE" (default), color (optional)
-            - ⚠️ QC CHARTS (CRITICAL - DO NOT USE x, y):
-                - **IMPORTANT: For QC charts, VERIFY that columns (INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME) exist in the actual input data. If any required column is missing, use available alternatives or note that data is incomplete for this chart type.**
-                - qc_trend_line: ONLY use [INDEX, VALUE, QCDATE, QCSHIFT, color] - NEVER use x, y
-                  * INDEX = x-axis (position/sequence)
-                  * VALUE = y-axis (quantitative data)
-                  * QCDATE & QCSHIFT = metadata for shift markers
-                  * color = QCSTDPARAMNAME (default)
-                - qc_histogram: ONLY use [VALUE, INDEX, color] - NEVER use x, y
-                  * VALUE = data distribution
-                  * INDEX = secondary field
-                  * color = QCSTDPARAMNAME (default)
-                - qc_trend_bar: ONLY use [VALUE, QCDATE, QCSHIFT] - NEVER use x, y, color
-        
-        - **QC CHART ENCODING REQUIREMENTS** (CRITICAL - MUST FOLLOW for QC CHARTS):
-            - When chart_type is "qc_trend_line", chart_encodings MUST include ALL 5 channels:
-              * {"INDEX": "INDEX", "VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT", "color": "QCSTDPARAMNAME"}
-              * NEVER omit QCDATE or QCSHIFT - they are REQUIRED
-              * Do NOT use "x" or "y" channels
-            
-            - When chart_type is "qc_histogram", chart_encodings MUST include ALL 3 channels:
-              * {"VALUE": "VALUE", "INDEX": "INDEX", "color": "QCSTDPARAMNAME"}
-              * Do NOT use "x" or "y" channels
-            
-            - When chart_type is "qc_trend_bar", chart_encodings MUST include ALL 3 channels:
-              * {"VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT"}
-              * Do NOT include "color" or use "x", "y" channels
-        
-        - note that all fields used in "chart_encodings" should be included in "output_fields".
-            - all fields you need for visualizations should be transformed into the output fields!
-            - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
-        - typically only 2-3 fields should be used to create the visualization (x, y, color/size), facet use be added if it's a faceted visualization (totally 4 fields used). **EXCEPTION: QC charts may use 3-5 channels as specified in QC CHART ENCODING REQUIREMENTS above.**
-    - Guidelines for choosing chart type and visualization fields:
-        - Consider chart types as follows:
-             - (point) Scatter Plots: x (DEFAULT: INDEX), y (DEFAULT: VALUE), color (DEFAULT: QCSTDPARAMNAME), size, facet
-                - best for: Relationships, correlations, distributions
-                - scatter plots are good default way to visualize data when other chart types are not applicable.
-                - **Default mappings: x="INDEX", y="VALUE", color="QCSTDPARAMNAME" (if exists)**
-                - use color to visualize points from different categories.
-                - use size to visualize data points with an additional quantitative dimension of the data points.
-             - (histogram) Histograms: x (DEFAULT: INDEX), color (DEFAULT: QCSTDPARAMNAME), facet
-                - best for: Distribution of a quantitative field
-                - **Default mappings: x="INDEX", color="QCSTDPARAMNAME" (if exists)**
-                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
-                - when color is specified, the histogram will be grouped automatically (items with the same x values will be grouped).
-             - (bar) Bar Charts: x (DEFAULT: INDEX), y (DEFAULT: VALUE), color (DEFAULT: QCSTDPARAMNAME), facet
-                - best for: Comparisons across categories
-                - **Default mappings: x="INDEX", y="VALUE", color="QCSTDPARAMNAME" (if exists)**
-                - use (bar) for simple bar chart or stacked bar chart (when it makes sense to add up Y values for each category with the same X value), 
-                    - when color is specified, the bar will be stacked automatically (items with the same x values will be stacked).
-                    - note that when there are multiple rows in the data with same x values, the bar will be stacked automatically.
-                        - 1. consider to use an aggregated field for y values if the value is not suitable for stacking.
-                        - 2. consider to introduce facets so that each group is visualized in a separate bar.
-            - (group_bar) Grouped Bar Chart: x (DEFAULT: INDEX), y (DEFAULT: VALUE), color (DEFAULT: QCSTDPARAMNAME), facet
-                - best for: Comparing grouped categories
-                - **Default mappings: x="INDEX", y="VALUE", color="QCSTDPARAMNAME" (if exists)**
-                - when color is specified, bars from different groups will be grouped automatically.
-                - only use facet if the cardinality of color field is small (less than 5).
-            - (line) Line Charts: x (DEFAULT: INDEX), y (DEFAULT: VALUE), color (DEFAULT: QCSTDPARAMNAME), facet
-                - best for: Trends over time, continuous data
-                - **Default mappings: x="INDEX", y="VALUE", color="QCSTDPARAMNAME" (if exists)**
-                - note that when there are multiple rows in the data belong to the same group (same x and color values) but different y values, the line will not look correct.
-                - consider to use an aggregated field for y values, or introduce facets so that each group is visualized in a separate line.
-            - (linear_regression) Linear Regression Charts: x: Quantitative (DEFAULT: INDEX), y: Quantitative (DEFAULT: VALUE), color: Categorical (DEFAULT: QCSTDPARAMNAME, optional)
-                - best for: Showing correlation, trend lines, and linear relationships between two quantitative variables
-                - **Default mappings: x="INDEX", y="VALUE", color="QCSTDPARAMNAME" (if exists)**
-                - the frontend will automatically add regression line overlay and scatter points
-            - (area) Area Charts: x (DEFAULT: INDEX), y (DEFAULT: VALUE), color (DEFAULT: QCSTDPARAMNAME), facet
-                - best for: Trends over time, continuous data
-                - **Default mappings: x="INDEX", y="VALUE", color="QCSTDPARAMNAME" (if exists)**
-            - (heatmap) Heatmaps: x (DEFAULT: INDEX), y (DEFAULT: VALUE), color (DEFAULT: QCSTDPARAMNAME)
-                - best for: Pattern discovery in matrix data
-                - **Default mappings: x="INDEX", y="VALUE", color="QCSTDPARAMNAME" (if exists)**
-                - note: you may need to convert quantitative values to categorical/nominal for x or y depending on data
-            - QC Charts (qc_trend_line, qc_histogram, qc_trend_bar): See QC_CHART_SPECIFICATIONS section below.
-        - Additional rules for QC chart visualization fields:
-            Please refer to the QC_CHART_SPECIFICATIONS section (embedded below) for detailed rules on output_fields and chart_encodings for each QC chart type. The rules are FIXED and cannot be modified.
-        - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
-        - if you really need additional legend fields:
-            - you can use opacity for legend (support Quantitative and Categorical).
+    - "chart_encodings" should specify which fields should be used to create the visualization. See RULE #4 above for the role-based channel mapping — DO NOT hardcode defaults by column name.
+    - ⚠️ QC CHARTS (qc_trend_line, qc_histogram, qc_trend_bar) use specific channel names (INDEX, VALUE, QCDATE, QCSHIFT, color) — NEVER use x or y. Full QC channel specifications are injected separately when QC data is detected.
+    - All fields used in "chart_encodings" MUST appear in "output_fields".
+    - Typically 2-3 fields are enough (x, y, color/size); add facet for faceted views (4 total). QC charts may use 3-5 channels.
+    - Chart-type intent (use ROLE TABLE in RULE #4 for channel mappings):
+        - point (scatter): correlations, relationships. Color = category, size = extra quantitative dim.
+        - histogram: distribution of ONE quantitative field. If x is categorical, bin or transform first. Color groups bars.
+        - bar / group_bar: compare metric ACROSS categories. Multiple rows with same x → stack or facet. Group_bar: keep color cardinality < 5.
+        - line / area: trends along an ordered axis. Duplicate (x, color) with different y breaks the line — aggregate or facet.
+        - linear_regression: 2 quantitative variables; frontend overlays regression line on scatter.
+        - heatmap: 2 categorical axes + quantitative color intensity. Bin quantitative axes if needed.
+        - pie / donut: composition (≤ 12 slices). Avoid for many categories.
+        - boxplot: distribution of quantitative per categorical group.
+        - QC charts (qc_trend_line, qc_histogram, qc_trend_bar): require QC data and use INDEX/VALUE/QCDATE/QCSHIFT/color channels — NOT x/y. Full specs injected separately.
+        - facet: categorical with small cardinality, splits visualization into sub-panels.
+        - opacity: legend channel for quantitative or categorical.
     - visualization fields require tidy data. 
         - similar to VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
         - consider data transformations if you want to visualize multiple fields together:
@@ -317,13 +238,8 @@ some notes:
   * Example: Instead of quote ~ '[\\u0400-\\u04FF]', use quote ~ '[а-яА-ЯёЁ]'
 
 **QC_CHART_SPECIFICATIONS:**
-
-Refer to QC chart definitions embedded below. These channel and field specifications are FIXED and CANNOT be modified:
-- qc_trend_line: Channels=[INDEX, VALUE, QCDATE, QCSHIFT, color] | Default color=QCSTDPARAMNAME | Include control limits (TARGET, LL, UL, ARLL, ARUL) and additional fields (SLIPNO, ITEMNAME) in output_fields
-- qc_histogram: Channels=[VALUE, INDEX, color] | Default color=QCSTDPARAMNAME | Include control limits (TARGET, LL, UL, ARLL, ARUL) and additional fields (SLIPNO, ITEMNAME) in output_fields
-- qc_trend_bar: Channels=[VALUE, QCDATE, QCSHIFT] | No color field | Include TARGET and additional fields (SLIPNO, ITEMNAME) in output_fields
-
-For detailed field mapping rules for each QC chart type, refer to the QC_CHART_SPECIFICATIONS embedded within SYSTEM_PROMPT implementation.
+QC chart types (qc_trend_line, qc_histogram, qc_trend_bar) require specific fixed channels.
+Full specifications are injected into context when QC control limit data (TARGET + LL/UL/ARLL/ARUL) is detected.
 '''
 
 example = """
@@ -447,10 +363,10 @@ Key points:
 
 class SQLDataRecAgent(object):
 
-    def __init__(self, client, conn, system_prompt=None, agent_coding_rules=""):
+    def __init__(self, client, conn, system_prompt=None, agent_coding_rules="", guard_client=None):
         self.client = client
         self.conn = conn
-        self.guard = PromptGuardAgent(client=client)
+        self.guard = PromptGuardAgent(client=guard_client or client)
         
         # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
@@ -462,10 +378,123 @@ class SQLDataRecAgent(object):
             else:
                 self.system_prompt = base_prompt
 
-    def process_gpt_response(self, input_tables, messages, response):
+    def validate_chart_data_compatibility(self, chart_type: str, output_fields: list, refined_goal: dict) -> tuple:
+        """
+        Validate if the output fields support the selected chart_type.
+        Returns: (is_valid: bool, error_message: str)
+        """
+        if not chart_type or chart_type == "Auto" or chart_type == "Table":
+            return True, ""
+        
+        if not output_fields:
+            return False, f"No output fields available for {chart_type}"
+        
+        chart_encodings = refined_goal.get('chart_encodings', {})
+        
+        # Chart-specific validation rules
+        validation_rules = {
+            'scatter': {
+                'minFields': 2,
+                'minEncodings': ['x', 'y'],
+                'message': 'Scatter plot requires at least 2 data fields (X and Y axes)'
+            },
+            'line': {
+                'minFields': 1,
+                'minEncodings': ['x'],
+                'message': 'Line chart requires at least one X axis field (time series or sequence)'
+            },
+            'bar': {
+                'minFields': 1,
+                'message': 'Bar chart requires at least one data field'
+            },
+            'area': {
+                'minFields': 2,
+                'minEncodings': ['x', 'y'],
+                'message': 'Area chart requires at least 2 data fields (X and Y axes)'
+            },
+            'histogram': {
+                'minFields': 1,
+                'message': 'Histogram requires at least one numeric field'
+            },
+            'boxplot': {
+                'minFields': 1,
+                'message': 'Box plot requires at least one numeric field'
+            },
+            'heatmap': {
+                'minFields': 3,
+                'minEncodings': ['x', 'y', 'color'],
+                'message': 'Heatmap requires at least 3 fields (X, Y, and Color/Value)'
+            },
+            'linear-regression': {
+                'minFields': 2,
+                'minEncodings': ['x', 'y'],
+                'message': 'Linear regression requires at least 2 numeric fields (X and Y axes)'
+            },
+            'bubble': {
+                'minFields': 3,
+                'minEncodings': ['x', 'y', 'size'],
+                'message': 'Bubble chart requires at least 3 fields (X, Y, and Size)'
+            }
+        }
+        
+        rule = validation_rules.get(chart_type, {})
+        
+        # Check minimum field count
+        if 'minFields' in rule:
+            if len(output_fields) < rule['minFields']:
+                return False, f"{rule['message']}. Got {len(output_fields)} field(s): {', '.join(output_fields[:3])}"
+        
+        # Check if required encodings are present
+        if 'minEncodings' in rule:
+            missing_encodings = [enc for enc in rule['minEncodings'] if not chart_encodings.get(enc)]
+            if missing_encodings:
+                return False, f"{rule['message']}. Missing encodings: {', '.join(missing_encodings)}"
+        
+        return True, ""
+
+    def _compute_all_field_metas(self, input_tables) -> dict:
+        """Compute FieldMeta for every column across all input tables.
+
+        Returns a single flat dict (column_name → FieldMeta). When the same
+        column name appears in multiple tables we keep the first occurrence —
+        the validator only needs one entry per name to match against the
+        LLM's encoding, and downstream SQL joins typically disambiguate.
+
+        Failures per-table are logged and skipped, not raised — metadata is a
+        BEST-EFFORT input to the validator; the agent should still attempt
+        the LLM call if a single table fails introspection.
+        """
+        all_metas: dict = {}
+        for table in input_tables:
+            table_name = table.get('name', '')
+            if not table_name:
+                continue
+            try:
+                sanitized = sanitize_table_name(table_name)
+                table_metas = compute_field_metadata(self.conn, sanitized)
+                for col_name, meta in table_metas.items():
+                    if col_name not in all_metas:
+                        all_metas[col_name] = meta
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to compute FieldMeta for table '{table_name}': {e}")
+        return all_metas
+
+    def process_gpt_response(
+        self,
+        input_tables,
+        messages,
+        response,
+        user_preferred_chart_type: str = "",
+        all_field_metas: dict = None,
+        domain: str = "generic",
+    ):
         """process gpt response to handle execution"""
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
+
+        # 🔍 DEBUG: Log what we received
+        logger.info(f"🔍 process_gpt_response called with user_preferred_chart_type='{user_preferred_chart_type}'")
+        logger.info(f"🔍 post-validate domain='{domain}', field_metas_count={len(all_field_metas) if all_field_metas else 0}")
 
         if isinstance(response, Exception):
             result = {'status': 'other error', 'content': str(response.body)}
@@ -506,10 +535,18 @@ class SQLDataRecAgent(object):
                     logger.info("⚠️ INDEX not in output_fields, adding it automatically")
                     refined_goal['output_fields'].insert(0, 'INDEX')
 
-            # ⚠️ VALIDATION & AUTO-FIX for QC charts
+            # 🔍 VALIDATE CHART COMPATIBILITY WITH DATA FIELDS
             chart_type = refined_goal.get('chart_type', '')
-            chart_encodings = refined_goal.get('chart_encodings', {})
+            output_fields = refined_goal.get('output_fields', [])
+            is_compatible, compatibility_error = self.validate_chart_data_compatibility(chart_type, output_fields, refined_goal)
             
+            if not is_compatible:
+                logger.warning(f"❌ Chart compatibility error: {compatibility_error}")
+                refined_goal['_chart_compatibility_error'] = compatibility_error
+
+            # ⚠️ VALIDATION & AUTO-FIX for QC charts
+            chart_encodings = refined_goal.get('chart_encodings', {})
+
             if chart_type and chart_type.startswith('qc_'):
                 # Try to auto-fix common LLM mistakes (x, y instead of INDEX, VALUE, etc.)
                 fixed_encodings = fix_qc_chart_encodings(chart_type, chart_encodings)
@@ -517,7 +554,7 @@ class SQLDataRecAgent(object):
                     refined_goal['chart_encodings'] = fixed_encodings
                     chart_encodings = fixed_encodings
                     logger.info(f"✅ Auto-corrected QC chart encodings: {fixed_encodings}")
-                
+
                 # Validate the (possibly corrected) encodings
                 is_valid, errors = validate_qc_chart_encodings(chart_type, chart_encodings)
                 if not is_valid:
@@ -525,6 +562,56 @@ class SQLDataRecAgent(object):
                         logger.warning(f"❌ {error}")
                     # Log but continue - frontend may handle it
                     refined_goal['_qc_validation_errors'] = errors
+
+            # === NEW (M3): POST VALIDATE for non-QC charts ===
+            # QC chart validation above is auto-correcting (LLM mistakes get
+            # fixed in place). Standard charts go through the strict
+            # CHART_REQUIREMENTS validator instead — it REJECTS rather than
+            # auto-corrects, per the "thà không vẽ còn hơn vẽ rác" principle.
+            if (
+                strict_validation_enabled()
+                and all_field_metas
+                and chart_type
+                and not chart_type.startswith("qc_")
+            ):
+                validation = validate_chart(
+                    chart_type, chart_encodings, all_field_metas, domain
+                )
+                if not validation.is_valid:
+                    reject = validation.reject
+                    # Allow derived columns referenced in encodings:
+                    # at this stage validation sees only INPUT FieldMeta, while
+                    # the LLM may intentionally encode on a computed output
+                    # field (e.g. Avg_VALUE). If missing column exists in
+                    # output_fields, defer strict check until after transform.
+                    if (
+                        reject
+                        and reject.short == "missing_column"
+                        and reject.context_columns
+                    ):
+                        output_fields = set(refined_goal.get("output_fields", []))
+                        if all(col in output_fields for col in reject.context_columns):
+                            logger.info(
+                                "ℹ️ Skip POST reject missing_column for derived output field(s): %s",
+                                reject.context_columns,
+                            )
+                            reject = None
+                    if reject is None:
+                        pass
+                    else:
+                        logger.warning(
+                            f"🚫 POST REJECT: {reject.code} ({reject.short}) — {reject.message_vi}"
+                        )
+                        reject_resp = reject_info_to_response(
+                            reject,
+                            agent_name="SQLDataRecAgent",
+                            messages=[*messages, {"role": choice.message.role, "content": content}],
+                        )
+                        # Preserve LLM output for client-side debugging
+                        reject_resp["refined_goal"]["_llm_chart_type"] = chart_type
+                        reject_resp["refined_goal"]["_llm_chart_encodings"] = chart_encodings
+                        candidates.append(reject_resp)
+                        continue
 
             code_blocks = extract_code_from_gpt_response(content + "\n", "sql")
 
@@ -587,7 +674,35 @@ class SQLDataRecAgent(object):
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'SQLDataRecAgent'
+            
+            # 🔴 HARD OVERRIDE: If user explicitly selected chart_type, FORCE it
+            # This prevents LLM from overriding user's UI selection - NO EXCEPTIONS
+            logger.info(f"🔍 OVERRIDE CHECK START")
+            logger.info(f"   user_preferred_chart_type type: {type(user_preferred_chart_type)}")
+            logger.info(f"   user_preferred_chart_type value: '{user_preferred_chart_type}'")
+            logger.info(f"   user_preferred_chart_type bool: {bool(user_preferred_chart_type)}")
+            logger.info(f"   user_preferred_chart_type len: {len(user_preferred_chart_type) if isinstance(user_preferred_chart_type, str) else 'N/A'}")
+            
+            if user_preferred_chart_type and len(user_preferred_chart_type.strip()) > 0:
+                logger.warning(f"🔴🔴🔴 OVERRIDE IS ACTIVE! Forcing chart_type to '{user_preferred_chart_type}'")
+                llm_chart_type = refined_goal.get('chart_type', '')
+                logger.info(f"   LLM returned chart_type: '{llm_chart_type}'")
+                
+                # FORCE the override - no exceptions
+                refined_goal['chart_type'] = user_preferred_chart_type
+                refined_goal['chart_type_source'] = 'user_selected_from_ui'
+                
+                logger.warning(f"🔴 OVERRIDE APPLIED!")
+                logger.warning(f"   refined_goal['chart_type'] is now: '{refined_goal['chart_type']}'")
+                logger.warning(f"   Verification: {refined_goal.get('chart_type', 'NOT SET!')}")
+            else:
+                logger.info(f"ℹ️ No override - user_preferred_chart_type is empty or whitespace")
+            
             result['refined_goal'] = refined_goal
+            
+            # 🔍 FINAL VERIFICATION: Log what's actually in the result
+            logger.info(f"🔍 FINAL result['refined_goal']['chart_type'] = '{result['refined_goal'].get('chart_type', 'NOT SET!')}'")
+            
             candidates.append(result)
 
         logger.info("=== Recommendation Candidates ===>")
@@ -601,12 +716,28 @@ class SQLDataRecAgent(object):
         return candidates
     
 
-    def run(self, input_tables, description, n=1, prev_messages: list[dict] = [], prompt_source: str = "user"):
+    def run(self, input_tables, description, n=1, prev_messages: list[dict] = [], prompt_source: str = "user", user_preferred_chart_type: str = ""):
+        # � LOG USER'S CHART SELECTION
+        if user_preferred_chart_type:
+            logger.info(f"📊 User selected chart type from UI: '{user_preferred_chart_type}'")
+        else:
+            logger.info(f"📊 No chart type pre-selected by user")
+        
+        # === Compute FieldMeta FIRST so we have authoritative column metadata
+        # (DuckDB schema is the source of truth — not the sample rows passed
+        # through, which may be empty in tests or sliced in prod). ===
+        all_field_metas = self._compute_all_field_metas(input_tables)
+
+        # Derive column list from FieldMeta; fall back to row-based extraction
+        # if introspection failed (preserves legacy behavior).
+        if all_field_metas:
+            data_columns = list(all_field_metas.keys())
+        else:
+            data_columns = extract_all_columns_from_input_tables(input_tables)
+
         # 🛡️ Guard: Validate prompt before processing
         # Skip guard validation for agent-generated prompts
         if prompt_source == "user":
-            # Extract columns from input_tables for QC data validation
-            data_columns = extract_all_columns_from_input_tables(input_tables)
             guard_result = self.guard.validate(description, data_columns=data_columns)
             if not guard_result["ok"]:
                 logger.info(f"🚫 Prompt blocked by guard: {guard_result['reason']}")
@@ -627,7 +758,33 @@ class SQLDataRecAgent(object):
                 }]
         else:
             logger.info(f"✅ Skipping guard validation for agent-generated prompt: '{description[:50]}...'")
-        
+
+        # === NEW (M3): Detect domain (field metadata already computed above) ===
+        # Domain selects QC-aware vs generic field-picking rules.
+        domain = "qc" if is_qc_data(data_columns) else "generic"
+        logger.info(
+            f"📊 Domain detected: '{domain}' "
+            f"(field_metas_count={len(all_field_metas)})"
+        )
+
+        # === NEW (M3): EARLY REJECT if user-picked chart incompatible with data ===
+        # This catches R1/R2/R4 BEFORE the LLM is invoked — fail-fast UX and
+        # saves a token-expensive LLM call.
+        if strict_validation_enabled() and user_preferred_chart_type:
+            early_reject = check_chart_data_compatibility(
+                user_preferred_chart_type, all_field_metas, domain
+            )
+            if early_reject is not None:
+                logger.info(
+                    f"🚫 EARLY REJECT: {early_reject.code} ({early_reject.short}) "
+                    f"chart='{user_preferred_chart_type}' domain='{domain}'"
+                )
+                return [reject_info_to_response(
+                    early_reject,
+                    agent_name="SQLDataRecAgent",
+                    messages=[*prev_messages, {"role": "user", "content": description}],
+                )]
+
         data_summary = ""
         qc_notes = []
 
@@ -708,13 +865,24 @@ class SQLDataRecAgent(object):
             table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
             data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
 
+        # === NEW (M4): Inject per-column semantic-role hints ===
+        # Replaces the old prompt's hardcoded "x=INDEX (default)" pattern. The
+        # LLM now reads ROLES per column and picks via the RULE #4 table.
+        field_metadata_hint = format_field_metadata_hint(all_field_metas)
+        if field_metadata_hint:
+            data_summary += f"{field_metadata_hint}\n\n"
+
 
         # Build structured GOAL to send to the model
-        # ⚠️ RULE: Only include chart_type if user explicitly requested it
-        # Do NOT auto-suggest chart types based on data characteristics
-        if extracted_chart_type:
+        # ⚠️ RULE: Only include chart_type if user explicitly requested it or selected from UI
+        # Priority: user_preferred_chart_type (from UI dropdown) > extracted_chart_type (from text patterns)
+        if user_preferred_chart_type:
+            # User selected chart type from UI dropdown - MUST honor it
+            goal_obj = {"description": description, "chart_type": user_preferred_chart_type, "chart_type_source": "user_selected_from_ui"}
+            logger.info(f"✅ User selected chart type '{user_preferred_chart_type}' from UI - this MUST be honored in output")
+        elif extracted_chart_type:
             goal_obj = {"description": description, "chart_type": extracted_chart_type, "chart_type_source": "user_explicitly_requested"}
-            logger.info(f"✅ User explicitly requested chart type '{extracted_chart_type}' - this MUST be honored in output")
+            logger.info(f"✅ User explicitly requested chart type '{extracted_chart_type}' in text - this MUST be honored in output")
         else:
             goal_obj = {"description": description}
             logger.info("ℹ️ No explicit chart type specified - LLM will infer from description")
@@ -730,7 +898,16 @@ class SQLDataRecAgent(object):
         # Filter out system messages from prev_messages
         filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
 
-        messages = [{"role":"system", "content": self.system_prompt},
+        # Dynamically inject QC prompt extension only when input data has QC columns.
+        # This keeps the base system prompt lean for non-QC queries (~1,500 tokens saved).
+        system_content = self.system_prompt
+        if is_qc_data(data_columns):
+            system_content = system_content + QC_SYSTEM_PROMPT_EXTENSION
+            logger.info("🔬 QC data detected — QC prompt extension injected into system message")
+        else:
+            logger.info("📊 Non-QC data — base system prompt used (no QC extension)")
+
+        messages = [{"role":"system", "content": system_content},
                     *filtered_prev_messages,
                     {"role":"user","content": user_query}]
         
@@ -740,9 +917,14 @@ class SQLDataRecAgent(object):
         #extract_and_log_user_prompt(messages, "SQLDataRecAgent")
         
         response = self.client.get_completion(messages = messages)
-        
-        return self.process_gpt_response(input_tables, messages, response)
-        
+
+        return self.process_gpt_response(
+            input_tables, messages, response,
+            user_preferred_chart_type=user_preferred_chart_type,
+            all_field_metas=all_field_metas,
+            domain=domain,
+        )
+
 
     def followup(self, input_tables, dialog, latest_data_sample, new_instruction: str, n=1):
         """extend the input data (in json records format) to include new fields

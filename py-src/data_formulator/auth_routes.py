@@ -1,19 +1,24 @@
 # auth_routes.py
 
-import token
-
+import os
+import logging
 from flask import Blueprint, request, session, jsonify
-import bcrypt
 import jwt
-import requests  # ✅ Dùng để gọi Microsoft Graph API
+import requests
 
+logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
-# Fake DB mẫu
-fake_users_db = {
-    "admin": bcrypt.hashpw("123456".encode(), bcrypt.gensalt())
-}
 AUTH_SERVICE_URL = "http://172.19.16.22:8888/auth/user/local"
+
+
+def _decode_token(token: str) -> dict:
+    """Decode JWT payload from auth service response.
+    Signature verification is skipped because we trust our internal auth service
+    (we only reach this after receiving HTTP 200 from it).
+    Raises jwt.PyJWTError if token is malformed.
+    """
+    return jwt.decode(token, options={"verify_signature": False})
 # ===== LOGIN BẰNG USERNAME PASSWORD =====
 @auth_bp.route('/login', methods=['POST'])
 def login():
@@ -25,11 +30,20 @@ def login():
     resp = requests.post(AUTH_SERVICE_URL, json=data)
 
     if resp.status_code != 200:
+        logger.warning("Auth service returned %s for user '%s': %s", resp.status_code, username, resp.text[:200])
         return jsonify({"status": "error", "message": "Login failed"}), 401
 
     result = resp.json()
     token = result.get('token')
-    decoded_token = jwt.decode(token, options={"verify_signature": False})
+    try:
+        decoded_token = _decode_token(token)
+    except RuntimeError as e:
+        logger.error("JWT config error: %s", e)
+        return jsonify({"status": "error", "message": "Server configuration error"}), 500
+    except jwt.PyJWTError as e:
+        logger.warning("JWT decode failed for user '%s': %s", username, e)
+        session.clear()
+        return jsonify({"status": "error", "message": "Invalid auth token"}), 401
     # lấy claim 'agent' để lưu vào session (nếu có)
     agent_claim = decoded_token.get('agent')
     #nếu có claim  'agent' và nó  = "1" thì tiếp tục lưu session, ngược lại clear session và trả lỗi
@@ -55,8 +69,6 @@ def microsoft_login():
         return jsonify({"message": "Invalid request"}), 400
     id_token = data["idToken"]
 
-
-    import requests
     api_url = "http://172.19.16.22:8888/auth/user/microsoft"
     response = requests.post(api_url, json={"idToken": id_token})
     result = response.json()
@@ -66,14 +78,15 @@ def microsoft_login():
         return jsonify({"message": result.get("message")}), 403
 
     # ✅ OK -> login thành công, lưu session
-
     token = result.get('token')
-    decoded_token = jwt.decode(token, options={"verify_signature": False})
+    try:
+        decoded_token = _decode_token(token)
+    except jwt.PyJWTError:
+        session.clear()
+        return jsonify({"message": "Invalid auth token"}), 401
     # lấy claim 'agent' để lưu vào session (nếu có)
     agent_claim = decoded_token.get('agent')
     #nếu có claim  'agent' và nó  = "1" thì tiếp tục lưu session, ngược lại clear session và trả lỗi
-    #log agent_claim để debug
-    print(f"Agent claim from token: {agent_claim}")
     if agent_claim != "1":
         session.clear()
         return jsonify({"message": "Your account does not have permission to use this application. Please contact your administrator."}), 403

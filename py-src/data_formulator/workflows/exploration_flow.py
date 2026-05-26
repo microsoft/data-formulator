@@ -3,7 +3,6 @@
 
 import json
 import logging
-from this import d
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Generator
 
@@ -97,7 +96,6 @@ def run_exploration_flow_streaming(
     """
     # Initialize variables
     iteration = 0
-    previous_transformation_dialog = []
     previous_transformation_data = []
     
     # Initialize client and agents
@@ -153,25 +151,13 @@ def run_exploration_flow_streaming(
         logger.info(f"Iteration {iteration}: Using rec agent for question: {current_question}")
         
         attempt = 0
-        if previous_transformation_dialog:
-
-            if isinstance(previous_transformation_data, dict) and 'rows' in previous_transformation_data:
-                latest_data_sample = previous_transformation_data['rows']
-            else:
-                latest_data_sample = []  # Use empty list as fallback
-            
-            transformation_results = rec_agent.followup(
-                input_tables=input_tables,
-                new_instruction=current_question,
-                latest_data_sample=latest_data_sample,
-                dialog=previous_transformation_dialog
-            )
-        else:
-            transformation_results = rec_agent.run(
-                input_tables=input_tables,
-                description=current_question,
-                prompt_source="agent"
-            )
+        # Always start a fresh rec agent call for each new question/iteration.
+        # Carrying the full dialog across iterations grows context unboundedly.
+        transformation_results = rec_agent.run(
+            input_tables=input_tables,
+            description=current_question,
+            prompt_source="agent"
+        )
 
         # give one attempt to fix potential errors
         while (not transformation_results or transformation_results[0]['status'] != 'ok'):
@@ -214,7 +200,6 @@ def run_exploration_flow_streaming(
         transformed_data = transform_result['content']
         refined_goal = transform_result.get('refined_goal', {})
         code = transform_result.get('code', '')
-        previous_transformation_dialog = transform_result.get('dialog', [])
         previous_transformation_data = transformed_data
 
         yield {

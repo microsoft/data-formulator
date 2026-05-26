@@ -222,7 +222,7 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
 
     return f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
 
-def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7, max_val_chars=140):
+def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=5, max_val_chars=140):
     
     def assemble_table_summary(input_table, idx):
         table_id = f'table{idx+1}'
@@ -234,7 +234,7 @@ def generate_data_summary(input_tables, include_data_samples=True, field_sample_
         fields_summary = '\n'.join(['\t*' + get_field_summary(fname, df, field_sample_size, max_val_chars)  for fname in list(df.columns.values)])
 
         fields_section = f'## fields\n{fields_summary}\n\n'
-        sample_section = f'## sample\n{pd.DataFrame(rows[:5]).to_string()}\n......\n\n' if include_data_samples else ''
+        sample_section = f'## sample\n{pd.DataFrame(rows[:3]).to_string()}\n......\n\n' if include_data_samples else ''
         description_section = f'## description\n{description}\n\n' if description else ''
 
         summary_str = f'''# {table_id} ({name})\n\n{description_section}{fields_section}{sample_section}'''

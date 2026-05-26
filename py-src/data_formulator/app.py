@@ -37,6 +37,12 @@ import base64
 APP_ROOT = Path(Path(__file__).parent).absolute()
 
 import os
+
+# Load env files BEFORE importing blueprints so module-level env reads work
+load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, '.env'))
+
 from flask_session import Session
 from redis import Redis
 
@@ -68,10 +74,7 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 app.json_encoder = CustomJSONEncoder
 
-# Load env files early
-load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
-load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
-load_dotenv(os.path.join(APP_ROOT, '.env'))
+# env files already loaded above before blueprint imports
 
 # Configure server-side sessions using Redis when available
 # To enable, set REDIS_HOST and optionally REDIS_PORT in the environment (defaults to 127.0.0.1:6379)

@@ -54,22 +54,32 @@ QC_CHART_TYPES = {
 
 def is_qc_data(column_names):
     """
-    Detect if a dataset is QC data based on the presence of control limit columns.
-    
+    Detect if a dataset is QC data.
+
+    Strict criteria (avoids false positives on generic data that happens to
+    have columns named TARGET or LL):
+
+    1. Has TARGET column.
+    2. Has at least one control-limit column (LL / UL / ARLL / ARUL).
+    3. Has at least one QC-signature column (QCDATE / QCSHIFT /
+       QCSTDPARAMNAME / SLIPNO) — these are unique to the GDIS QC schema
+       and would not appear in unrelated sales/finance data.
+
     Args:
-        column_names: List or set of column names
-        
+        column_names: Iterable of column names (case-insensitive comparison).
+
     Returns:
-        bool: True if TARGET column exists and at least one control limit column exists
+        bool: True iff all three criteria are met.
     """
     col_upper = {col.upper() for col in column_names}
-    required = {"TARGET"}
-    optional = {"LL", "UL", "ARLL", "ARUL"}
-    
-    has_required = required.issubset(col_upper)
-    has_optional = bool(optional.intersection(col_upper))
-    
-    return has_required and has_optional
+    has_target_limits = (
+        "TARGET" in col_upper
+        and bool({"LL", "UL", "ARLL", "ARUL"} & col_upper)
+    )
+    has_qc_signature = bool(
+        {"QCDATE", "QCSHIFT", "QCSTDPARAMNAME", "SLIPNO"} & col_upper
+    )
+    return has_target_limits and has_qc_signature
 
 
 def get_qc_chart_def(chart_type):
@@ -302,3 +312,46 @@ def fix_qc_chart_encodings(chart_type, chart_encodings):
         print(f"   Fixed:    {fixed}")
     
     return fixed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QC SYSTEM PROMPT EXTENSION
+# Injected into the LLM system prompt ONLY when input data is detected as QC.
+# Keeps base SYSTEM_PROMPT lean for non-QC queries (~1,500 tokens saved).
+# ─────────────────────────────────────────────────────────────────────────────
+QC_SYSTEM_PROMPT_EXTENSION = """
+**[QC DATA DETECTED — QC CHART RULES APPLY]**
+
+The input data contains QC control limit columns (TARGET + at least one of LL, UL, ARLL, ARUL).
+The following rules are MANDATORY when working with this QC dataset:
+
+**QC Data Identification:**
+- QC data requires: TARGET column (mandatory) + at least one of (LL, UL, ARLL, ARUL)
+- QCDATE = control date field; LASTUPDATE = record timestamp (include both when available, use LASTUPDATE for sorting)
+- QCSTDPARAMNAME = parameter name / color grouping field
+
+**When to use QC chart types (ONLY if user explicitly requests):**
+- "qc_trend_line" / "QC Trend Line" / "quality control trend" → qc_trend_line
+- "qc_histogram" / "QC Histogram" / "quality control histogram" → qc_histogram
+- "qc_trend_bar" / "QC Trend Bar" / "quality control trend bar" → qc_trend_bar
+- If user says "trend" or "line" (without "QC") → use standard "line" chart type
+- If user says "histogram" (without "QC") → use standard "histogram" chart type
+- ALWAYS respect user's explicit chart type — NEVER auto-upgrade to a QC chart type
+
+**QC Output Fields (MANDATORY — include ALL for each type):**
+- qc_trend_line: INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME
+- qc_histogram:  INDEX, VALUE, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME
+- qc_trend_bar:  INDEX, VALUE, QCDATE, QCSHIFT, TARGET, SLIPNO, ITEMNAME
+- Other chart types with QC data: keep fields used in chart_encodings; use QCSTDPARAMNAME as default color
+
+**⚠️ QC Chart Encodings — FIXED channel names (NEVER use x, y for QC charts):**
+- qc_trend_line:  {"INDEX": "INDEX", "VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT", "color": "QCSTDPARAMNAME"}
+- qc_histogram:   {"VALUE": "VALUE", "INDEX": "INDEX", "color": "QCSTDPARAMNAME"}
+- qc_trend_bar:   {"VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT"}
+
+**QC Chart Encoding Requirements (CRITICAL):**
+- qc_trend_line: ALL 5 channels REQUIRED (INDEX, VALUE, QCDATE, QCSHIFT, color). NEVER omit QCDATE or QCSHIFT.
+- qc_histogram:  ALL 3 channels REQUIRED (VALUE, INDEX, color). Do NOT use x or y channels.
+- qc_trend_bar:  ALL 3 channels REQUIRED (VALUE, QCDATE, QCSHIFT). No color channel. No x or y channels.
+- Do NOT include control limit fields (LL, UL, ARLL, ARUL, TARGET) in chart_encodings — they are read internally.
+"""

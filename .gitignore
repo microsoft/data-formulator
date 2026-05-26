@@ -405,3 +405,9 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 venv
+
+# npm lockfile (project uses yarn — see .github/workflows/)
+package-lock.json
+
+# Test/scratch files with credentials
+testkey.py

@@ -57,6 +57,12 @@ def export_pptx():
     template_name = request.form.get('template', '')
     title = request.form.get('title', '')
 
+    # Sanitize template_name: allow only safe filename characters, must end with .pptx
+    import re as _re
+    if template_name:
+        if not _re.fullmatch(r'[\w\- ]+\.pptx', template_name):
+            return jsonify({'error': 'Invalid template name'}), 400
+
     try:
         img_bytes = image_file.read()
         img_io = io.BytesIO(img_bytes)
@@ -67,7 +73,12 @@ def export_pptx():
             current_app.logger.info(f"Looking for template: {template_name}")
             found = None
             for d in PPT_TEMPLATE_DIRS:
-                candidate = d / template_name
+                candidate = (d / template_name).resolve()
+                # Verify resolved path is inside the template directory (prevent traversal)
+                try:
+                    candidate.relative_to(d.resolve())
+                except ValueError:
+                    continue
                 current_app.logger.info(f"Checking: {candidate}")
                 if candidate.exists():
                     current_app.logger.info(f"Template found at: {candidate}")

@@ -5,7 +5,6 @@ import _ from "lodash";
 import { useEffect, useRef } from "react";
 import ts from "typescript";
 import {
-  ChannelGroups,
   getChartChannels,
   getChartTemplate,
 } from "../components/ChartTemplates";
@@ -76,6 +75,42 @@ export function getUrls() {
 
 import * as vm from "vm-browserify";
 import { generateFreshChart } from "./dfSlice";
+
+// Local fallback to avoid hard runtime coupling on ChannelGroups export shape.
+const LOCAL_CHANNEL_GROUPS: Record<string, string[]> = {
+  "": [
+    "x",
+    "y",
+    "x2",
+    "y2",
+    "latitude",
+    "longitude",
+    "id",
+    "radius",
+    "theta",
+    "detail",
+  ],
+  legends: ["color", "group", "size", "shape", "text", "opacity"],
+  facets: ["column", "row"],
+  "data fields": [
+    "field 1",
+    "field 2",
+    "field 3",
+    "field 4",
+    "field 5",
+    "field 6",
+    "TARGET",
+    "ARUL",
+    "ARLL",
+    "UL",
+    "LL",
+    "QCDATE",
+    "QCSHIFT",
+    "VALUE",
+    "INDEX",
+    "threshold",
+  ],
+};
 
 export function usePrevious<T>(value: T): T | undefined {
   const ref = useRef<T>();
@@ -360,6 +395,76 @@ export function prepVisTable(
   }
 
   let result = processedTable;
+
+  // Stabilize large bar charts:
+  // with high-cardinality ordinal x (e.g., QCDATE) and many rows, bars become sub-pixel
+  // and look like "missing chart". Pre-aggregate before rendering.
+  if (
+    aggregateFields.length === 0 &&
+    processedTable.length > 10000 &&
+    chartType.toLowerCase().includes("bar")
+  ) {
+    const getFieldName = (channel: keyof EncodingMap): string | undefined => {
+      const fieldId = encodingMap[channel]?.fieldID;
+      return fieldId
+        ? allFields.find((f) => f.id === fieldId)?.name
+        : undefined;
+    };
+
+    const xField = getFieldName("x");
+    const yField = getFieldName("y");
+    const colorField = getFieldName("color");
+
+    if (xField && yField) {
+      const grouped = d3.flatGroup(
+        processedTable.filter(
+          (r: any) =>
+            r[xField] != null &&
+            typeof r[yField] === "number" &&
+            isFinite(r[yField]),
+        ),
+        (d: any) => d[xField],
+        ...(colorField ? [((d: any) => d[colorField]) as (d: any) => any] : []),
+      );
+
+      const aggregated = grouped.map((row) => {
+        const keys = row.slice(0, -1);
+        const groupRows = row[row.length - 1] as any[];
+        const yValues = groupRows
+          .map((r) => r[yField])
+          .filter((v) => typeof v === "number" && isFinite(v));
+        const ySum =
+          yValues.length > 0
+            ? yValues.reduce((a: number, b: number) => a + b, 0)
+            : 0;
+
+        const out: any = { [xField]: keys[0], [yField]: ySum };
+        if (colorField) out[colorField] = keys[1];
+        return out;
+      });
+
+      // Keep chart readable while preserving global trend context:
+      // stratified pick across the whole aggregated range instead of tail-only slicing.
+      const MAX_BAR_BUCKETS = 1500;
+      if (aggregated.length <= MAX_BAR_BUCKETS) {
+        return aggregated;
+      }
+
+      const step = aggregated.length / MAX_BAR_BUCKETS;
+      const sampled: any[] = [];
+      for (let i = 0; i < MAX_BAR_BUCKETS; i++) {
+        const idx = Math.min(
+          Math.floor(i * step),
+          Math.max(aggregated.length - 1, 0),
+        );
+        sampled.push(aggregated[idx]);
+      }
+
+      // Ensure last point is represented
+      sampled[sampled.length - 1] = aggregated[aggregated.length - 1];
+      return sampled;
+    }
+  }
 
   if (aggregateFields.length > 0) {
     // Step 2: Group by and aggregate (with optimization for large datasets)
@@ -1291,7 +1396,7 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
   // for channels that will be discarded, find another way to adapt it
   for (let [ch, enc] of discardedChannels) {
     let otherChannelsFromSameGroup = (
-      Object.entries(ChannelGroups).find(([grp, channelList]) =>
+      Object.entries(LOCAL_CHANNEL_GROUPS).find(([grp, channelList]) =>
         channelList.includes(ch),
       ) as [string, string[]]
     )[1];
@@ -1362,6 +1467,17 @@ export const resolveRecommendedChart = (
   if (rawChartType == "histogram") {
     newChart.encodingMap.y = { aggregate: "count" };
   }
+
+  // Force INDEX → x-axis: if the table has an INDEX column AND the chart
+  // supports an x channel, always use INDEX for x (overrides AI suggestion).
+  const indexFieldName = table.names?.find((n) => n.toUpperCase() === "INDEX");
+  if (indexFieldName && "x" in newChart.encodingMap) {
+    const indexField = allFields.find((f) => f.name?.toUpperCase() === "INDEX");
+    if (indexField) {
+      newChart.encodingMap.x = { fieldID: indexField.id };
+    }
+  }
+
   return newChart;
 };
 
@@ -1371,11 +1487,13 @@ export const resolveChartFields = (
   chartEncodings: { [key: string]: string },
   table: DictTable,
 ) => {
+  const allowedChannels = new Set(Object.keys(chart.encodingMap));
+
   // Get the keys that should be present after this update
   const newEncodingKeys = new Set(
-    Object.keys(chartEncodings).map((key) =>
-      key === "facet" ? "column" : key,
-    ),
+    Object.keys(chartEncodings)
+      .map((key) => (key === "facet" ? "column" : key))
+      .filter((key) => allowedChannels.has(key)),
   );
 
   // Remove encodings that are no longer in chartEncodings
@@ -1392,6 +1510,9 @@ export const resolveChartFields = (
   for (let [key, value] of Object.entries(chartEncodings)) {
     if (key == "facet") {
       key = "column";
+    }
+    if (!allowedChannels.has(key)) {
+      continue;
     }
 
     let field = allFields.find((c) => c.name === value);
