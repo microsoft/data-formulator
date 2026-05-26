@@ -17,7 +17,7 @@ Domain semantics:
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from data_formulator.agents.chart_compatibility import (
     CHART_REQUIREMENTS,
@@ -92,7 +92,11 @@ def _priority_score(
 
 
 def pick_default_encoding(
-    chart_type: str, field_metas: Dict[str, FieldMeta], domain: str
+    chart_type: str,
+    field_metas: Dict[str, FieldMeta],
+    domain: str,
+    allowed_channels: Optional[List[str]] = None,
+    required_channels: Optional[List[str]] = None,
 ) -> Dict[str, str]:
     """Pick the best default encoding for `chart_type` from the available fields.
 
@@ -120,10 +124,37 @@ def pick_default_encoding(
         if meta.qc_role != "control_limit"
     }
 
+    # If template constraints are supplied (M2), restrict the compatibility
+    # spec to the template channels so we never emit out-of-template channels.
+    if allowed_channels is not None:
+        allowed_set = set(allowed_channels)
+        spec_channels = {
+            ch_name: ch_spec
+            for ch_name, ch_spec in spec.channels.items()
+            if ch_name in allowed_set
+        }
+    else:
+        spec_channels = dict(spec.channels)
+
+    if required_channels is not None:
+        required_set = set(required_channels)
+        for ch_name, ch_spec in list(spec_channels.items()):
+            spec_channels[ch_name] = ChannelSpec(
+                required=ch_name in required_set,
+                accept_roles=ch_spec.accept_roles,
+                reject_roles=ch_spec.reject_roles,
+                soft_priority=ch_spec.soft_priority,
+                min_distinct=ch_spec.min_distinct,
+                max_distinct=ch_spec.max_distinct,
+            )
+
+    if not spec_channels:
+        return {}
+
     # Step 1: build candidate list per channel (fields that pass all hard
     # rules: accept_roles, reject_roles, cardinality bounds).
     candidates: Dict[str, List[Tuple[str, FieldMeta]]] = {}
-    for channel_name, ch_spec in spec.channels.items():
+    for channel_name, ch_spec in spec_channels.items():
         ch_candidates = [
             (col_name, meta)
             for col_name, meta in available.items()
@@ -136,10 +167,10 @@ def pick_default_encoding(
     # candidates = pick first, so a critical channel doesn't lose its only
     # candidate to a less-constrained channel).
     required = [
-        ch for ch, sp in spec.channels.items() if sp.required
+        ch for ch, sp in spec_channels.items() if sp.required
     ]
     optional = [
-        ch for ch, sp in spec.channels.items() if not sp.required
+        ch for ch, sp in spec_channels.items() if not sp.required
     ]
 
     required.sort(key=lambda c: len(candidates[c]))
@@ -149,7 +180,7 @@ def pick_default_encoding(
     used_columns: set[str] = set()
 
     for channel in required + optional:
-        ch_spec = spec.channels[channel]
+        ch_spec = spec_channels[channel]
         ch_candidates = [
             (col, meta)
             for (col, meta) in candidates[channel]
