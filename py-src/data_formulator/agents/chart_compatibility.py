@@ -27,9 +27,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from data_formulator.agents.field_metadata import FieldMeta
+from data_formulator.agents.chart_template_registry import CHART_TEMPLATE_REGISTRY
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +80,108 @@ class RejectInfo:
 class ValidationResult:
     is_valid: bool
     reject: Optional[RejectInfo] = None
+
+
+# Internal chart type -> frontend template name.
+INTERNAL_TO_TEMPLATE_CHART: Dict[str, str] = {
+    "point": "Scatter Plot",
+    "linear_regression": "Linear Regression",
+    "loess": "Loess Regression",
+    "boxplot": "Boxplot",
+    "bar": "Bar Chart",
+    "group_bar": "Grouped Bar Chart",
+    "stacked_bar": "Stacked Bar Chart",
+    "histogram": "Histogram",
+    "line": "Line Chart",
+    "rolling_average": "Rolling Average",
+    "heatmap": "Heat Map",
+    "pie": "Pie Chart",
+    "radial_plot": "Radial Plot",
+    "bubble": "Bubble Plot",
+    "area": "Area Chart",
+    "waterfall": "Waterfall",
+    "qc_trend_line": "QC Trend Line",
+    "qc_histogram": "QC Histogram",
+    "qc_trend_bar": "QC Trend Bar",
+}
+
+
+def normalize_to_template_chart(chart_type: str) -> Tuple[Optional[str], bool]:
+    """Map incoming chart_type to a known template chart name.
+
+    Returns (template_chart_name, mapped_from_unknown).
+    - template_chart_name is None when chart_type is unsupported.
+    - mapped_from_unknown indicates R8 path (best-effort mapping happened).
+    """
+    if not chart_type:
+        return None, False
+
+    if chart_type in CHART_TEMPLATE_REGISTRY:
+        return chart_type, False
+
+    if chart_type in INTERNAL_TO_TEMPLATE_CHART:
+        return INTERNAL_TO_TEMPLATE_CHART[chart_type], False
+
+    normalized = chart_type.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in INTERNAL_TO_TEMPLATE_CHART:
+        return INTERNAL_TO_TEMPLATE_CHART[normalized], True
+
+    for internal, template in INTERNAL_TO_TEMPLATE_CHART.items():
+        if internal in normalized or normalized in internal:
+            return template, True
+    return None, False
+
+
+def validate_template_constraints(chart_type: str, chart_encodings: Dict[str, str]) -> ValidationResult:
+    """Validate chart type and channel set against fixed template registry.
+
+    R8: chart type not in supported templates.
+    R9: encoding channel not in the selected template channels.
+    """
+    template_chart, mapped = normalize_to_template_chart(chart_type)
+    if template_chart is None:
+        return ValidationResult(
+            False,
+            RejectInfo(
+                code="R8",
+                short="template_not_supported",
+                message_vi=f"Loại biểu đồ '{chart_type}' không nằm trong 25 template hỗ trợ.",
+            ),
+        )
+
+    spec = CHART_TEMPLATE_REGISTRY.get(template_chart)
+    if spec is None:
+        return ValidationResult(
+            False,
+            RejectInfo(
+                code="R8",
+                short="template_not_supported",
+                message_vi=f"Loại biểu đồ '{chart_type}' không nằm trong 25 template hỗ trợ.",
+            ),
+        )
+
+    encoding_keys = set(chart_encodings.keys())
+    allowed = set(spec.channels)
+    invalid = sorted(list(encoding_keys - allowed))
+    if invalid:
+        return ValidationResult(
+            False,
+            RejectInfo(
+                code="R9",
+                short="template_channel_mismatch",
+                message_vi=(
+                    f"Biểu đồ '{template_chart}' không hỗ trợ channel {invalid}. "
+                    f"Channels hợp lệ: {spec.channels}."
+                ),
+                context_columns=invalid,
+            ),
+        )
+
+    if mapped:
+        # Inform caller mapping happened by returning valid result; caller may
+        # still annotate refined_goal for telemetry/debugging.
+        return ValidationResult(True)
+    return ValidationResult(True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

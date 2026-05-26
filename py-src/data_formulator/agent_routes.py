@@ -19,6 +19,7 @@ import json
 import html
 import time
 import threading
+import pandas as pd
 
 from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
 from data_formulator.agents.agent_py_concept_derive import PyConceptDeriveAgent
@@ -39,6 +40,17 @@ from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.agent_utils import log_prompt_to_clickhouse
 from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_all_columns_from_input_tables
 from data_formulator.agents.client_utils import Client
+from data_formulator.agents.prompt_classifier import (
+    classify_prompt,
+    PROMPT_CONCRETE,
+    PROMPT_PARTIAL,
+    PROMPT_VAGUE,
+    PROMPT_OFF_TOPIC,
+)
+from data_formulator.agents.drawable_catalog import build_drawable_catalog
+from data_formulator.agents.sample_prompts import SAMPLE_PROMPT_TEMPLATES_VI
+from data_formulator.agents.field_metadata import FieldMeta
+from data_formulator.agents.qc_chart_config import is_qc_data
 
 from data_formulator.db_manager import db_manager
 
@@ -190,6 +202,116 @@ def sanitize_model_error(error_message: str) -> str:
         message = message[:500] + "..."
         
     return message
+
+
+def _classify_cardinality(cardinality: int) -> str:
+    if cardinality <= 12:
+        return "low"
+    if cardinality <= 50:
+        return "mid"
+    if cardinality <= 500:
+        return "high"
+    return "huge"
+
+
+def _build_field_metas_from_input_tables(input_tables) -> dict:
+    metas = {}
+    for table in input_tables:
+        rows = table.get("rows", [])
+        df = pd.DataFrame.from_records(rows)
+        row_count = len(df.index)
+        if row_count == 0:
+            continue
+        for col in df.columns:
+            if col in metas:
+                continue
+            series = df[col]
+            non_null = int(series.notna().sum())
+            cardinality = int(series.nunique(dropna=True))
+            null_ratio = 0.0 if row_count == 0 else float((row_count - non_null) / row_count)
+            cardinality_class = _classify_cardinality(cardinality)
+            is_temporal = pd.api.types.is_datetime64_any_dtype(series)
+            is_numeric = pd.api.types.is_numeric_dtype(series)
+            is_integer = pd.api.types.is_integer_dtype(series)
+            stddev = float(series.std()) if is_numeric and pd.notna(series.std()) else None
+            min_val = float(series.min()) if is_numeric and pd.notna(series.min()) else None
+            max_val = float(series.max()) if is_numeric and pd.notna(series.max()) else None
+            is_sequential = (
+                bool(is_integer)
+                and non_null == row_count
+                and cardinality == row_count
+                and min_val is not None
+                and max_val is not None
+                and int(max_val - min_val + 1) == cardinality
+            )
+            is_quantitative = bool(is_numeric and (not is_sequential) and stddev is not None and stddev > 0 and cardinality >= 10)
+            is_categorical = cardinality_class in ("low", "mid") and (not is_temporal) and (not is_sequential) and (not is_quantitative)
+            metas[col] = FieldMeta(
+                name=col,
+                sql_type=str(series.dtype),
+                cardinality=cardinality,
+                null_ratio=null_ratio,
+                cardinality_class=cardinality_class,
+                is_temporal=is_temporal,
+                is_sequential=is_sequential,
+                is_quantitative=is_quantitative,
+                is_categorical=is_categorical,
+                qc_role=None,
+                looks_like_id=False,
+                row_count=row_count,
+                stddev=stddev,
+                min_value=min_val,
+                max_value=max_val,
+            )
+    return metas
+
+
+def _run_derive_data_core(content):
+    token = content["token"]
+    client = get_client(content['model'])
+
+    _sid = session.get('session_id', request.remote_addr or 'anon')
+    if _is_rate_limited(f"derive:{_sid}", max_requests=20):
+        return {"token": token, "status": "error", "results": [{"status": "error", "content": "Too many requests. Please wait a moment before trying again.", "dialog": [], "code": ""}]}, 429
+
+    input_tables = content["input_tables"]
+    chart_type = content.get("chart_type", "")
+    chart_encodings = content.get("chart_encodings", {})
+    user_preferred_chart_type = content.get("user_preferred_chart_type", "")
+    instruction = content["extra_prompt"]
+    language = content.get("language", "python")
+    prompt_source = content.get("prompt_source", "user")
+    max_repair_attempts = content.get("max_repair_attempts", 1)
+    agent_coding_rules = content.get("agent_coding_rules", "")
+    prev_messages = content.get("additional_messages", [])[-MAX_DIALOG_HISTORY:]
+
+    mode = "transform"
+    if chart_encodings == {}:
+        mode = "recommendation"
+
+    conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
+    if mode == "recommendation":
+        _lw = get_lightweight_client(client)
+        agent = SQLDataRecAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules, guard_client=_lw) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules, guard_client=_lw)
+        results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, prompt_source=prompt_source, user_preferred_chart_type=user_preferred_chart_type)
+    else:
+        agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
+        results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
+
+    repair_attempts = 0
+    while results and results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
+        error_message = results[0]['content']
+        new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+        prev_dialog = results[0]['dialog'][-MAX_DIALOG_HISTORY:]
+        if mode == "transform":
+            results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
+        if mode == "recommendation":
+            results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+        repair_attempts += 1
+
+    if conn:
+        conn.close()
+    return {"token": token, "status": "ok", "results": results}, 200
 
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
@@ -428,80 +550,74 @@ def derive_data():
 
     if request.is_json:
         logger.info("# request data: ")
-        content = request.get_json()        
-        token = content["token"]
-
-        client = get_client(content['model'])
-
-        # Rate limit: max 20 derive-data requests per session per minute
-        _sid = session.get('session_id', request.remote_addr or 'anon')
-        if _is_rate_limited(f"derive:{_sid}", max_requests=20):
-            return flask.jsonify({"token": token, "status": "error", "results": [{"status": "error", "content": "Too many requests. Please wait a moment before trying again.", "dialog": [], "code": ""}]}), 429
-
-        # each table is a dict with {"name": xxx, "rows": [...]}
-        input_tables = content["input_tables"]
-        chart_type = content.get("chart_type", "")
-        chart_encodings = content.get("chart_encodings", {})
-        user_preferred_chart_type = content.get("user_preferred_chart_type", "")  # User's chart type selection
-        
-        instruction = content["extra_prompt"]
-        language = content.get("language", "python") # whether to use sql or python, default to python
-        prompt_source = content.get("prompt_source", "user")  # "user" or "agent"
-        
-        max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
-        agent_coding_rules = content.get("agent_coding_rules", "")
-
-        if "additional_messages" in content:
-            # Cap to prevent accumulated context from previous interactions bloating tokens
-            prev_messages = content["additional_messages"][-MAX_DIALOG_HISTORY:]
-        else:
-            prev_messages = []
-
-        logger.info("== input tables ===>")
-        for table in input_tables:
-            logger.info(f"===> Table: {table['name']} (first 5 rows)")
-            logger.info(table['rows'][:5])
-
-        logger.info("== user spec ===")
-        logger.info(chart_type)
-        logger.info(chart_encodings)
-        logger.info(instruction)
-
-        mode = "transform"
-        if chart_encodings == {}:
-            mode = "recommendation"
-
-        conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
-
-        if mode == "recommendation":
-            _lw = get_lightweight_client(client)
-            agent = SQLDataRecAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules, guard_client=_lw) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules, guard_client=_lw)
-            results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, prompt_source=prompt_source, user_preferred_chart_type=user_preferred_chart_type)
-        else:
-            agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-            results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
-
-        repair_attempts = 0
-        while results and results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # try up to n times
-            error_message = results[0]['content']
-            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-
-            prev_dialog = results[0]['dialog'][-MAX_DIALOG_HISTORY:]  # cap to prevent token bloat
-
-            if mode == "transform":
-                results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
-            if mode == "recommendation":
-                results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-
-            repair_attempts += 1
-        
-        if conn:
-            conn.close()
-        
-        response = flask.jsonify({ "token": token, "status": "ok", "results": results })
+        content = request.get_json()
+        payload, status_code = _run_derive_data_core(content)
+        response = flask.jsonify(payload)
+        response.status_code = status_code
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
+@agent_bp.route('/smart-chat', methods=['GET', 'POST'])
+def smart_chat():
+    if not request.is_json:
+        response = flask.jsonify({"token": "", "status": "error", "message": "Invalid request format"})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+    content = request.get_json()
+    token = content.get("token", "")
+    input_tables = content.get("input_tables", [])
+    instruction = content.get("extra_prompt", "")
+    data_columns = extract_all_columns_from_input_tables(input_tables)
+    classification = classify_prompt(instruction, data_columns)
+
+    if classification.category == PROMPT_OFF_TOPIC:
+        samples = list(SAMPLE_PROMPT_TEMPLATES_VI.values())[:5]
+        response = flask.jsonify({
+            "token": token,
+            "status": "ok",
+            "category": classification.category,
+            "action": "info",
+            "message": "Prompt không liên quan tới vẽ biểu đồ/phân tích dữ liệu.",
+            "sample_prompts": samples,
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+    if classification.category in (PROMPT_VAGUE, PROMPT_PARTIAL):
+        field_metas = _build_field_metas_from_input_tables(input_tables)
+        domain = "qc" if is_qc_data(data_columns) else "generic"
+        top_k = 6 if classification.category == PROMPT_VAGUE else 3
+        suggestions = build_drawable_catalog(field_metas, domain, top_k=top_k)
+        response = flask.jsonify({
+            "token": token,
+            "status": "ok",
+            "category": classification.category,
+            "action": "suggestion" if classification.category == PROMPT_VAGUE else "confirm",
+            "missing_info": classification.missing_info,
+            "suggestions": [
+                {
+                    "chart_type": s.chart_type,
+                    "encoding": s.encoding,
+                    "confidence": s.confidence,
+                    "rationale_vi": s.rationale_vi,
+                    "sample_prompt_vi": s.sample_prompt_vi,
+                }
+                for s in suggestions
+            ],
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+    payload, status_code = _run_derive_data_core(content)
+    payload["category"] = classification.category
+    payload["action"] = "derive"
+    response = flask.jsonify(payload)
+    response.status_code = status_code
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 

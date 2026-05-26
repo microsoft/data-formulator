@@ -22,6 +22,8 @@ from data_formulator.agents.chart_compatibility import (
     strict_validation_enabled,
     reject_info_to_response,
     format_field_metadata_hint,
+    validate_template_constraints,
+    normalize_to_template_chart,
 )
 
 import random
@@ -537,6 +539,22 @@ class SQLDataRecAgent(object):
 
             # 🔍 VALIDATE CHART COMPATIBILITY WITH DATA FIELDS
             chart_type = refined_goal.get('chart_type', '')
+            chart_encodings = refined_goal.get('chart_encodings', {})
+            template_validation = validate_template_constraints(chart_type, chart_encodings)
+            if not template_validation.is_valid:
+                reject_resp = reject_info_to_response(
+                    template_validation.reject,
+                    agent_name="SQLDataRecAgent",
+                    messages=[*messages, {"role": choice.message.role, "content": content}],
+                )
+                reject_resp["refined_goal"]["_llm_chart_type"] = chart_type
+                reject_resp["refined_goal"]["_llm_chart_encodings"] = chart_encodings
+                candidates.append(reject_resp)
+                continue
+            normalized_template_chart, mapped_unknown = normalize_to_template_chart(chart_type)
+            if normalized_template_chart and mapped_unknown:
+                refined_goal["_mapped_template_chart_type"] = normalized_template_chart
+
             output_fields = refined_goal.get('output_fields', [])
             is_compatible, compatibility_error = self.validate_chart_data_compatibility(chart_type, output_fields, refined_goal)
             
