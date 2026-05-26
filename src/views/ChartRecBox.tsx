@@ -65,7 +65,11 @@ import MovingIcon from "@mui/icons-material/Moving";
 import RotateRightIcon from "@mui/icons-material/RotateRight";
 import EditIcon from "@mui/icons-material/Edit";
 import { ThinkingBufferEffect } from "../components/FunComponents";
-import { ChartIncompatibleModal } from "../components/ChartIncompatibleModal";
+import {
+  ChartAssistantModal,
+  ChartAssistantMode,
+} from "../components/ChartAssistantModal";
+import { ChartSuggestion } from "../components/ChartThumbnail";
 
 // when this is set to true, the new chart will be focused automatically
 const AUTO_FOCUS_NEW_CHART = false;
@@ -686,7 +690,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   const dataLoaderConnectParams = useSelector(
     (state: DataFormulatorState) => state.dataLoaderConnectParams,
   );
-  const chartIncompatible = useSelector(dfSelectors.getChartIncompatible);
 
   const [mode] = useState<"interactive">("interactive");
 
@@ -697,6 +700,18 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
 
   const [prompt, setPrompt] = useState<string>("");
   const [isFormulating, setIsFormulating] = useState<boolean>(false);
+  const [assistantOpen, setAssistantOpen] = useState<boolean>(false);
+  const [assistantMode, setAssistantMode] =
+    useState<ChartAssistantMode>("SUGGESTION");
+  const [assistantTitle, setAssistantTitle] = useState<string>("Gợi ý biểu đồ");
+  const [assistantMessage, setAssistantMessage] = useState<string>("");
+  const [assistantInstruction, setAssistantInstruction] = useState<string>("");
+  const [assistantSuggestions, setAssistantSuggestions] = useState<
+    ChartSuggestion[]
+  >([]);
+  const [assistantSamplePrompts, setAssistantSamplePrompts] = useState<
+    string[]
+  >([]);
   const [ideas, setIdeas] = useState<
     {
       text: string;
@@ -1160,7 +1175,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       prompt_source: promptSource,
       user_preferred_chart_type: internalChartType,
     });
-    let engine = getUrls().DERIVE_DATA;
+    let engine = getUrls().SMART_CHAT;
 
     if (currentTable && currentTable.derive?.dialog && !currentTable.anchored) {
       let sourceTableIds = currentTable.derive?.source;
@@ -1196,7 +1211,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           prompt_source: promptSource,
           user_preferred_chart_type: internalChartType,
         });
-        engine = getUrls().DERIVE_DATA;
+        engine = getUrls().SMART_CHAT;
       } else {
         messageBody = JSON.stringify({
           token: token,
@@ -1257,8 +1272,51 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           }),
         );
 
-        if (data.results.length > 0) {
-          if (data["token"] === token) {
+        if (data["token"] === token) {
+          if (data.action === "suggestion" || data.action === "confirm") {
+            setAssistantMode(data.action === "suggestion" ? "SUGGESTION" : "CONFIRM");
+            setAssistantTitle(
+              data.action === "suggestion" ? "Gợi ý biểu đồ có thể vẽ ngay" : "Xác nhận cấu hình biểu đồ",
+            );
+            setAssistantMessage(
+              data.action === "suggestion"
+                ? "Chọn một gợi ý để vẽ nhanh hoặc dùng prompt mẫu."
+                : "Prompt của bạn còn thiếu thông tin. Chọn cấu hình phù hợp để tiếp tục.",
+            );
+            setAssistantSuggestions(data.suggestions || []);
+            setAssistantSamplePrompts([]);
+            setAssistantInstruction(instruction);
+            setAssistantOpen(true);
+            dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+            return;
+          }
+
+          if (data.action === "info") {
+            setAssistantMode("INFO");
+            setAssistantTitle("Nội dung chưa phù hợp");
+            setAssistantMessage(data.message || "Hãy thử một prompt liên quan tới biểu đồ.");
+            setAssistantSuggestions([]);
+            setAssistantSamplePrompts(data.sample_prompts || []);
+            setAssistantInstruction(instruction);
+            setAssistantOpen(true);
+            dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+            return;
+          }
+
+          if (!data.results || data.results.length === 0) {
+            dispatch(
+              dfActions.addMessages({
+                timestamp: Date.now(),
+                type: "error",
+                component: "chart builder",
+                value: "Không có kết quả phù hợp từ hệ thống.",
+              }),
+            );
+            dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+            return;
+          }
+
+          if (data.results.length > 0) {
             const candidates = data["results"].filter(
               (item: any) => item["status"] === "ok",
             );
@@ -1268,12 +1326,28 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                 (item: any) => item["status"] === "rejected_incompatible",
               );
               if (rejected?.reject) {
-                dispatch(
-                  dfActions.showChartIncompatible({
-                    reject: rejected.reject,
-                    instruction: instruction,
-                  }),
+                setAssistantMode("REJECT");
+                setAssistantTitle("Biểu đồ không tương thích");
+                setAssistantMessage(
+                  rejected.reject.message_vi ||
+                    "Yêu cầu hiện tại không phù hợp với dữ liệu.",
                 );
+                setAssistantSuggestions(
+                  (rejected.reject.suggested_chart_types || []).map(
+                    (ct: string) =>
+                      ({
+                        chart_type: ct,
+                        encoding: {},
+                        rationale_vi: "Đề xuất thay thế tương thích với dữ liệu hiện tại.",
+                        sample_prompt_vi: `${instruction} (vẽ bằng ${ct})`,
+                      }) as ChartSuggestion,
+                  ),
+                );
+                setAssistantSamplePrompts([]);
+                setAssistantInstruction(
+                  rejected.reject.original_instruction || instruction,
+                );
+                setAssistantOpen(true);
                 dispatch(dfActions.deleteAgentWorkInProgress(actionId));
                 return;
               }
@@ -2263,14 +2337,28 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           </Box>
         )}
       </Card>
-      <ChartIncompatibleModal
-        open={chartIncompatible.open}
-        reject={chartIncompatible.reject}
-        onClose={() => dispatch(dfActions.hideChartIncompatible())}
-        onApplySuggestion={(chartType) => {
-          dispatch(dfActions.hideChartIncompatible());
+      <ChartAssistantModal
+        open={assistantOpen}
+        mode={assistantMode}
+        title={assistantTitle}
+        message={assistantMessage}
+        suggestions={assistantSuggestions}
+        samplePrompts={assistantSamplePrompts}
+        onClose={() => setAssistantOpen(false)}
+        onDrawNow={(suggestion) => {
+          setAssistantOpen(false);
           focusNextChartRef.current = true;
-          deriveDataFromNL(chartIncompatible.instruction, "user", chartType);
+          const nextInstruction =
+            suggestion.sample_prompt_vi || assistantInstruction || prompt;
+          setPrompt(nextInstruction);
+          deriveDataFromNL(nextInstruction, "user", suggestion.chart_type);
+        }}
+        onUsePrompt={(suggestion) => {
+          const nextInstruction =
+            suggestion.sample_prompt_vi ||
+            `${assistantInstruction || prompt} (vẽ bằng ${suggestion.chart_type})`;
+          setPrompt(nextInstruction);
+          setAssistantOpen(false);
         }}
       />
     </Box>

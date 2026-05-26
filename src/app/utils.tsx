@@ -44,6 +44,7 @@ export function getUrls() {
     SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
 
     DERIVE_DATA: `/api/agent/derive-data`,
+    SMART_CHAT: `/api/agent/smart-chat`,
     REFINE_DATA: `/api/agent/refine-data`,
     EXPLORE_DATA_STREAMING: `/api/agent/explore-data-streaming`,
 
