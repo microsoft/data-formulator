@@ -1008,7 +1008,7 @@ def smart_chat():
     main_client = get_client(model_config)
     lw_client = get_lightweight_client(main_client)
     agent = SmartChatAgent(client=lw_client)
-    result = agent.run(instruction, data_columns, domain, drawable_catalog)
+    result = agent.run(instruction, data_columns, domain, drawable_catalog, field_metas=field_metas)
 
     qc_chart_names = {"QC Trend Line", "QC Histogram", "QC Trend Bar"}
     if (

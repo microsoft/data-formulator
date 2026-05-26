@@ -5,7 +5,7 @@ import difflib
 import json
 import logging
 import re
-from typing import List
+from typing import Any, Dict, List, Optional
 import unicodedata
 
 from data_formulator.agents.drawable_catalog import DrawableChartEntry
@@ -26,13 +26,67 @@ class SmartChatResult:
     rationale: str
 
 
-def _build_catalog_summary(catalog: List[DrawableChartEntry], max_items: int = 8) -> str:
+def _build_catalog_summary(catalog: List[DrawableChartEntry], max_items: int = 15) -> str:
+    """Tóm tắt drawable catalog — tăng lên 15 entries để LLM thấy đủ biểu đồ."""
     if not catalog:
         return "(No drawable chart template found for current data.)"
     lines: List[str] = []
     for entry in catalog[:max_items]:
         enc = ", ".join(f"{k}={v}" for k, v in entry.encoding.items())
-        lines.append(f"- {entry.chart_type} ({enc}) [confidence={entry.confidence:.2f}]")
+        line = f"- {entry.chart_type} ({enc}) [conf={entry.confidence:.2f}]"
+        if entry.rationale_vi:
+            line += f" — {entry.rationale_vi}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _build_column_profile(field_metas: Dict[str, Any]) -> str:
+    """Xây dựng column profile ngắn gọn cho LLM — type + cardinality + range.
+
+    Thông tin này giúp LLM hiểu data thực sự thay vì chỉ đoán từ tên cột.
+    Ví dụ: LLM biết QCSHIFT là categorical (3 values) → tốt để group/color.
+            VALUE là quantitative (range 0.5-2.1) → tốt cho trục Y.
+    """
+    if not field_metas:
+        return ""
+    lines: List[str] = []
+    for name, m in field_metas.items():
+        # Xác định type tag
+        if m.is_temporal:
+            type_tag = "temporal"
+        elif m.is_sequential:
+            type_tag = "sequential(index-like)"
+        elif m.is_quantitative:
+            type_tag = "quantitative"
+        elif m.is_categorical:
+            type_tag = "categorical"
+        else:
+            type_tag = getattr(m, "sql_type", "unknown").lower()
+
+        parts = [f"- {name} [{type_tag}]"]
+        parts.append(f"cards={m.cardinality}({m.cardinality_class})")
+
+        # Range cho numeric
+        min_v = getattr(m, "min_value", None)
+        max_v = getattr(m, "max_value", None)
+        if m.is_quantitative and min_v is not None and max_v is not None:
+            parts.append(f"range=[{min_v:.2f},{max_v:.2f}]")
+
+        # QC role (biết cột này dùng để làm gì trong QC chart)
+        qc_role = getattr(m, "qc_role", None)
+        if qc_role:
+            parts.append(f"qc_role={qc_role}")
+
+        # Gợi ý sử dụng
+        if m.is_categorical and m.cardinality_class == "low":
+            parts.append("→ ideal for grouping/color")
+        elif m.is_categorical and m.cardinality_class == "mid":
+            parts.append("→ usable for grouping")
+        elif getattr(m, "looks_like_id", False):
+            parts.append("⚠ id-like, avoid as axis")
+
+        lines.append(" ".join(parts))
+
     return "\n".join(lines)
 
 
@@ -219,30 +273,48 @@ def _parse_llm_response(raw: str) -> dict:
         return json.loads(match.group(0))
 
 
-def _build_system_prompt(columns: List[str], domain: str, catalog_summary: str) -> str:
+def _build_system_prompt(
+    columns: List[str],
+    domain: str,
+    catalog_summary: str,
+    column_profile: str = "",
+) -> str:
     qc_guard = (
         "Domain=qc: QC charts can be used.\n"
         "Domain=generic: QC charts (QC Trend Line/QC Histogram/QC Trend Bar) are forbidden. "
         "If requested, you MUST return action='info' with a short explanation."
     )
+
+    # Nếu có column profile, ưu tiên dùng thay vì chỉ liệt kê tên cột
+    col_section = (
+        f"Column profiles (name [type] cardinality stats):\n{column_profile}"
+        if column_profile
+        else f"Columns (names only): {columns}"
+    )
+
     return f"""
 You are a chart assistant. Decide one action and return JSON only.
 
 Data domain: {domain}
-Columns: {columns}
-Catalog (already drawable with this data):
+{col_section}
+
+Catalog (drawable charts pre-computed for this data — explore all options):
 {catalog_summary}
 
 Rules:
 1) Actions must be one of: draw, qc_suggest, suggest, confirm, info.
 2) {qc_guard}
-3) draw: user clearly asks specific chart and enough fields/context.
-4) qc_suggest: domain=qc and user asks QC chart in general (not specific QC chart).
-5) confirm: user provides metric/dimension intent but chart type is unclear.
-6) suggest: user is vague but chart-related.
-7) info: off-topic, or QC request on generic domain.
-8) Keep message_vi natural and short (1-3 sentences), language matching user.
-9) chart_type_hint should be exact chart type name when possible, otherwise empty string.
+3) draw: user clearly asks a specific chart and enough fields/context are given.
+4) qc_suggest: domain=qc and user asks QC chart in general (not a specific QC chart).
+5) confirm: user mentions a specific column or metric but chart type is unclear — propose 2-3 fitting charts.
+6) suggest: user is vague but chart-related — show diverse options from catalog.
+7) info: off-topic, or QC chart request on generic domain.
+8) message_vi: natural language, 1-3 sentences, match user language.
+   GOOD: "Tôi thấy VALUE là chỉ số đo lường, QCSHIFT là 3 ca..."
+   BAD: "Prompt của bạn còn thiếu thông tin"
+9) chart_type_hint: exact chart type name when possible, else empty string.
+10) Use column profile to reason about suitability: categorical(low) → ideal for grouping;
+    quantitative → good for Y-axis; temporal → time series; sequential(index-like) → avoid as axis.
 
 Output JSON schema:
 {{
@@ -266,9 +338,11 @@ class SmartChatAgent:
         columns: List[str],
         domain: str,
         drawable_catalog: List[DrawableChartEntry],
+        field_metas: Optional[Dict[str, Any]] = None,
     ) -> SmartChatResult:
         catalog_summary = _build_catalog_summary(drawable_catalog)
-        system_prompt = _build_system_prompt(columns, domain, catalog_summary)
+        column_profile = _build_column_profile(field_metas) if field_metas else ""
+        system_prompt = _build_system_prompt(columns, domain, catalog_summary, column_profile)
         try:
             response = self.client.get_completion(
                 messages=[
