@@ -84,25 +84,26 @@ const CHART_NAME_TO_INTERNAL_TYPE: Record<string, string> = {
   // Display Name → Internal Type (as expected by LLM system prompt)
   Table: "table",
   Auto: "auto",
-  "Scatter Plot": "scatter",
+  "Scatter Plot": "point",
   "Linear Regression": "linear_regression",
   "Loess Regression": "loess",
-  "Ranged Dot Plot": "scatter",
+  "Ranged Dot Plot": "point",
   Boxplot: "boxplot",
   "Bar Chart": "bar",
   "Pyramid Chart": "bar",
   "Grouped Bar Chart": "group_bar",
-  "Stacked Bar Chart": "bar",
+  "Stacked Bar Chart": "group_bar",
   Histogram: "histogram",
-  "Threshold Bar Chart": "bar",
+  "Threshold Bar Chart": "threshold",
   "Line Chart": "line",
   "Dotted Line Chart": "line",
-  "Rolling Average": "line",
+  "Rolling Average": "rolling_average",
   "Heat Map": "heatmap",
   "Pie Chart": "pie",
-  "Radial Plot": "radar",
+  "Radial Plot": "radial_plot",
   "Bubble Plot": "bubble",
   "Area Chart": "area",
+  Waterfall: "waterfall",
   // QC (Quality Control) chart types
   "QC Trend Line": "qc_trend_line",
   "QC Trend Bar": "qc_trend_bar",
@@ -1286,16 +1287,27 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         );
 
         if (data["token"] === token) {
-          if (data.action === "suggestion" || data.action === "confirm") {
-            setAssistantMode(data.action === "suggestion" ? "SUGGESTION" : "CONFIRM");
+          if (
+            data.action === "suggestion" ||
+            data.action === "suggest" ||
+            data.action === "confirm" ||
+            data.action === "qc_suggest"
+          ) {
+            const mode =
+              data.action === "qc_suggest"
+                ? "QC_SUGGEST"
+                : data.action === "suggest" || data.action === "suggestion"
+                  ? "SUGGESTION"
+                  : "CONFIRM";
+            setAssistantMode(mode);
             setAssistantTitle(
-              data.action === "suggestion" ? "Gợi ý biểu đồ có thể vẽ ngay" : "Xác nhận cấu hình biểu đồ",
+              data.action === "qc_suggest"
+                ? "QC Charts"
+                : data.action === "suggest" || data.action === "suggestion"
+                  ? "Gợi ý biểu đồ có thể vẽ ngay"
+                  : "Xác nhận cấu hình biểu đồ",
             );
-            setAssistantMessage(
-              data.action === "suggestion"
-                ? "Chọn một gợi ý để vẽ nhanh hoặc dùng prompt mẫu."
-                : "Prompt của bạn còn thiếu thông tin. Chọn cấu hình phù hợp để tiếp tục.",
-            );
+            setAssistantMessage(data.message_vi || "Chọn biểu đồ phù hợp:");
             setAssistantSuggestions(data.suggestions || []);
             setAssistantSamplePrompts([]);
             setAssistantInstruction(instruction);
@@ -1313,8 +1325,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           if (data.action === "info") {
             setAssistantMode("INFO");
             setAssistantTitle("Nội dung chưa phù hợp");
-            setAssistantMessage(data.message || "Hãy thử một prompt liên quan tới biểu đồ.");
-            setAssistantSuggestions([]);
+            setAssistantMessage(
+              data.message_vi ||
+                data.message ||
+                "Hãy thử một prompt liên quan tới biểu đồ.",
+            );
+            setAssistantSuggestions(data.suggestions || []);
             setAssistantSamplePrompts(data.sample_prompts || []);
             setAssistantInstruction(instruction);
             setAssistantHasAction(false);
@@ -1327,7 +1343,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             return;
           }
-
           if (!data.results || data.results.length === 0) {
             dispatch(
               dfActions.addMessages({
@@ -2293,6 +2308,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         message={assistantMessage}
         suggestions={assistantSuggestions}
         samplePrompts={assistantSamplePrompts}
+        initialCustomPrompt={assistantInstruction || prompt}
         onClose={() => {
           if (!assistantHasAction) {
             logTelemetryEvent("modal_closed_no_action", {
@@ -2305,8 +2321,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           setAssistantHasAction(true);
           setAssistantOpen(false);
           focusNextChartRef.current = true;
-          const nextInstruction =
-            suggestion.sample_prompt_vi || assistantInstruction || prompt;
+          const suggestionText =
+            suggestion.rationale_vi ||
+            suggestion.sample_prompt_vi ||
+            assistantInstruction ||
+            prompt;
+          const hasChartTypeInText = (suggestionText || "")
+            .toLowerCase()
+            .includes((suggestion.chart_type || "").toLowerCase());
+          const nextInstruction = hasChartTypeInText
+            ? suggestionText
+            : `Vẽ ${suggestion.chart_type}: ${suggestionText}`;
           const positionInGrid = assistantSuggestions.findIndex(
             (s) => s.chart_type === suggestion.chart_type,
           );
@@ -2321,9 +2346,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         }}
         onUsePrompt={(suggestion) => {
           setAssistantHasAction(true);
-          const nextInstruction =
+          const suggestionText =
+            suggestion.rationale_vi ||
             suggestion.sample_prompt_vi ||
-            `${assistantInstruction || prompt} (vẽ bằng ${suggestion.chart_type})`;
+            assistantInstruction ||
+            prompt;
+          const hasChartTypeInText = (suggestionText || "")
+            .toLowerCase()
+            .includes((suggestion.chart_type || "").toLowerCase());
+          const nextInstruction = hasChartTypeInText
+            ? suggestionText
+            : `Vẽ ${suggestion.chart_type}: ${suggestionText}`;
           const positionInGrid = assistantSuggestions.findIndex(
             (s) => s.chart_type === suggestion.chart_type,
           );
@@ -2335,6 +2368,25 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           });
           setPrompt(nextInstruction);
           setAssistantOpen(false);
+        }}
+        onSubmitCustomPrompt={(customPrompt) => {
+          setAssistantHasAction(true);
+          setAssistantOpen(false);
+          focusNextChartRef.current = true;
+
+          const normalizedPrompt = customPrompt.trim();
+          const matchedSuggestion = assistantSuggestions.find((s) =>
+            normalizedPrompt.toLowerCase().includes(s.chart_type.toLowerCase()),
+          );
+          const preferredChartType = matchedSuggestion?.chart_type;
+
+          logTelemetryEvent("suggestion_custom_prompt_submitted", {
+            source_mode: assistantMode,
+            preferred_chart_type: preferredChartType || "",
+          });
+
+          setPrompt(normalizedPrompt);
+          deriveDataFromNL(normalizedPrompt, "user", preferredChartType);
         }}
       />
       <Dialog

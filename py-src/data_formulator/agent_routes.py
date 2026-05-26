@@ -41,14 +41,10 @@ from data_formulator.agents.agent_utils import log_prompt_to_clickhouse
 from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_all_columns_from_input_tables
 from data_formulator.agents.client_utils import Client
 from data_formulator.agents.prompt_classifier import (
-    classify_prompt,
     PROMPT_CONCRETE,
-    PROMPT_PARTIAL,
-    PROMPT_VAGUE,
-    PROMPT_OFF_TOPIC,
 )
+from data_formulator.agents.agent_smart_chat import SmartChatAgent, SmartChatResult
 from data_formulator.agents.drawable_catalog import build_drawable_catalog
-from data_formulator.agents.sample_prompts import SAMPLE_PROMPT_TEMPLATES_VI
 from data_formulator.agents.field_metadata import FieldMeta
 from data_formulator.agents.qc_chart_config import is_qc_data
 
@@ -326,6 +322,408 @@ def _run_derive_data_core(content):
         conn.close()
     return {"token": token, "status": "ok", "results": results}, 200
 
+
+def _entry_to_dict(entry):
+    rationale_vi, sample_prompt_vi = _build_business_rationale(
+        entry.chart_type, entry.encoding, entry.domain
+    )
+    return {
+        "chart_type": entry.chart_type,
+        "encoding": entry.encoding,
+        "confidence": entry.confidence,
+        "rationale_vi": rationale_vi or entry.rationale_vi,
+        "sample_prompt_vi": sample_prompt_vi or entry.sample_prompt_vi,
+    }
+
+
+def _get_default_qc_entries():
+    return [
+        {
+            "chart_type": "QC Trend Line",
+            "encoding": {"x": "QCDATE", "y": "VALUE", "color": "QCSHIFT"},
+            "confidence": 0.9,
+            "rationale_vi": "Track VALUE trend over time in QC context to monitor process stability.",
+            "sample_prompt_vi": "Draw a QC Trend Line for VALUE by QCDATE / QCSHIFT",
+        },
+        {
+            "chart_type": "QC Histogram",
+            "encoding": {"x": "VALUE"},
+            "confidence": 0.9,
+            "rationale_vi": "Inspect VALUE distribution and variation to evaluate QC behavior.",
+            "sample_prompt_vi": "Draw a QC Histogram for VALUE distribution",
+        },
+        {
+            "chart_type": "QC Trend Bar",
+            "encoding": {"x": "QCDATE", "y": "VALUE", "color": "QCSHIFT"},
+            "confidence": 0.88,
+            "rationale_vi": "Compare VALUE trend across shifts/days in bar form.",
+            "sample_prompt_vi": "Draw a QC Trend Bar for VALUE by QCDATE",
+        },
+    ]
+
+
+def _filter_catalog_by_hint(drawable_catalog, hint: str, top_k: int = 3):
+    if not drawable_catalog:
+        return []
+    if not hint:
+        return drawable_catalog[:top_k]
+    hint_lower = hint.strip().lower()
+    exact = [e for e in drawable_catalog if e.chart_type.lower() == hint_lower]
+    if exact:
+        rest = [e for e in drawable_catalog if e.chart_type.lower() != hint_lower]
+        return (exact + rest)[:top_k]
+    fuzzy = [e for e in drawable_catalog if hint_lower in e.chart_type.lower()]
+    if fuzzy:
+        rest = [e for e in drawable_catalog if e not in fuzzy]
+        return (fuzzy + rest)[:top_k]
+    return drawable_catalog[:top_k]
+
+
+def _normalize_chart_type_hint(chart_type_hint: str) -> str:
+    if not chart_type_hint:
+        return ""
+    direct = chart_type_hint.strip()
+    if not direct:
+        return ""
+    display_to_internal = {
+        "Scatter Plot": "point",
+        "Linear Regression": "linear_regression",
+        "Loess Regression": "loess",
+        "Ranged Dot Plot": "point",
+        "Boxplot": "boxplot",
+        "Bar Chart": "bar",
+        "Pyramid Chart": "bar",
+        "Grouped Bar Chart": "group_bar",
+        "Stacked Bar Chart": "group_bar",
+        "Histogram": "histogram",
+        "Threshold Bar Chart": "threshold",
+        "Line Chart": "line",
+        "Dotted Line Chart": "line",
+        "Rolling Average": "rolling_average",
+        "Heat Map": "heatmap",
+        "Pie Chart": "pie",
+        "Radial Plot": "radial_plot",
+        "Bubble Plot": "bubble",
+        "Area Chart": "area",
+        "Waterfall": "waterfall",
+        "QC Trend Line": "qc_trend_line",
+        "QC Trend Bar": "qc_trend_bar",
+        "QC Histogram": "qc_histogram",
+    }
+    return display_to_internal.get(direct, direct)
+
+
+def _build_business_rationale(chart_type: str, encoding: dict, domain: str) -> tuple[str, str]:
+    def g(key: str, default: str = "") -> str:
+        return str(encoding.get(key, default)).strip()
+
+    ct = (chart_type or "").lower()
+    x = g("x")
+    y = g("y")
+    color = g("color")
+    theta = g("theta")
+
+    if chart_type == "QC Trend Line":
+        value = g("VALUE", "VALUE")
+        qdate = g("QCDATE", "QCDATE")
+        shift = g("QCSHIFT", "QCSHIFT")
+        rationale = (
+            f"Group by {shift} and track {value} over {qdate} to monitor quality trend over time "
+            "and detect deviations from control behavior."
+        )
+        prompt = f"Draw a QC Trend Line to track {value} over {qdate}, split by {shift}"
+        return rationale, prompt
+
+    if chart_type == "QC Histogram":
+        value = g("VALUE", "VALUE")
+        rationale = (
+            f"Analyze the distribution of {value} to assess spread, central tendency, and QC risk."
+        )
+        prompt = f"Draw a QC Histogram for {value} distribution to check process stability"
+        return rationale, prompt
+
+    if chart_type == "QC Trend Bar":
+        value = g("VALUE", "VALUE")
+        qdate = g("QCDATE", "QCDATE")
+        shift = g("QCSHIFT", "QCSHIFT")
+        rationale = (
+            f"Aggregate {value} by {qdate} and group by {shift} to compare shift performance."
+        )
+        prompt = f"Draw a QC Trend Bar with average {value} by {qdate}, grouped by {shift}"
+        return rationale, prompt
+
+    if "linear regression" in ct:
+        rationale = (
+            f"Model {y} against {x} to estimate linear trend; "
+            f"{'split by ' + color + ' to compare each group.' if color else 'use it to assess correlation and upward/downward tendency.'}"
+        )
+        prompt = (
+            f"Draw a Linear Regression between {y} and {x}"
+            + (f", split by {color}" if color else "")
+        )
+        return rationale, prompt
+
+    if "loess regression" in ct:
+        rationale = (
+            f"Smooth the trend of {y} over {x}"
+            + (f", split by {color}" if color else "")
+            + " to reveal stable underlying trend and reduce point-level noise."
+        )
+        prompt = (
+            f"Draw a Loess Regression to smooth {y} over {x}"
+            + (f", split by {color}" if color else "")
+        )
+        return rationale, prompt
+
+    if "line" in ct:
+        rationale = (
+            f"Aggregate {y} by {x}"
+            + (f" and group by {color}" if color else "")
+            + " to track change over sequence/time."
+        )
+        prompt = (
+            f"Draw a Line Chart with average {y} by {x}"
+            + (f", grouped by {color}" if color else "")
+        )
+        return rationale, prompt
+
+    if "bar" in ct:
+        rationale = (
+            f"Aggregate {y} by {x}"
+            + (f", split by {color}" if color else "")
+            + " to compare differences across groups."
+        )
+        prompt = (
+            f"Draw a Bar Chart with sum {y} by {x}"
+            + (f", grouped by {color}" if color else "")
+        )
+        return rationale, prompt
+
+    if "scatter" in ct:
+        rationale = (
+            f"Use {x} and {y} to examine relationship between two variables"
+            + (f", and segment by {color}" if color else "")
+            + " to detect clusters and outliers."
+        )
+        prompt = (
+            f"Draw a Scatter Plot between {y} and {x}"
+            + (f", colored by {color}" if color else "")
+        )
+        return rationale, prompt
+
+    if "histogram" in ct:
+        hx = x or g("VALUE", "VALUE")
+        rationale = f"Analyze distribution of {hx} to evaluate spread, skew, and outliers."
+        prompt = f"Draw a Histogram for {hx} distribution"
+        return rationale, prompt
+
+    if "pie" in ct:
+        rationale = f"Compute share of {theta} by {color} to see contribution composition."
+        prompt = f"Draw a Pie Chart for {theta} share by {color}"
+        return rationale, prompt
+
+    if "heat map" in ct:
+        rationale = (
+            f"Aggregate values at intersections of {x} and {y}, then use color to highlight high/low regions and anomalies."
+        )
+        prompt = f"Draw a Heat Map for {x} vs {y}, colored by aggregated value"
+        return rationale, prompt
+
+    # default
+    keys = ", ".join(f"{k}={v}" for k, v in encoding.items())
+    rationale = (
+        f"Use fields {keys} to build a meaningful view; "
+        "the goal is to summarize data into actionable trend/comparison insight."
+    )
+    prompt = f"Draw {chart_type} with encoding {keys}"
+    if domain == "qc":
+        prompt += " for QC analysis"
+    return rationale, prompt
+
+
+def _is_prompt_explicit_fields(prompt: str, columns: list[str]) -> bool:
+    text = (prompt or "").lower()
+    if not text or not columns:
+        return False
+    hit_count = 0
+    for col in columns:
+        c = (col or "").strip().lower()
+        if len(c) < 2:
+            continue
+        if re.search(rf"(?<![a-z0-9_]){re.escape(c)}(?![a-z0-9_])", text):
+            hit_count += 1
+            if hit_count >= 1:
+                return True
+    return False
+
+
+def _select_balanced_suggestions(drawable_catalog, domain: str, top_k: int = 6):
+    if not drawable_catalog:
+        return []
+    if domain != "qc":
+        return drawable_catalog[:top_k]
+    qc = [e for e in drawable_catalog if e.chart_type.startswith("QC")]
+    generic = [e for e in drawable_catalog if not e.chart_type.startswith("QC")]
+    picks = []
+    qi, gi = 0, 0
+    while len(picks) < top_k and (qi < len(qc) or gi < len(generic)):
+        if qi < len(qc):
+            picks.append(qc[qi])
+            qi += 1
+            if len(picks) >= top_k:
+                break
+        if gi < len(generic):
+            picks.append(generic[gi])
+            gi += 1
+    return picks[:top_k]
+
+
+def _select_chart_family_suggestions(drawable_catalog, chart_type_hint: str, domain: str, top_k: int = 4):
+    if not chart_type_hint:
+        return _select_balanced_suggestions(drawable_catalog, domain, top_k=top_k)
+    hint = chart_type_hint.lower()
+    family = None
+    if "bar" in hint:
+        family = "bar"
+    elif "line" in hint:
+        family = "line"
+    elif "box" in hint:
+        family = "box"
+    elif "scatter" in hint or "dot" in hint:
+        family = "scatter"
+    elif "histogram" in hint:
+        family = "histogram"
+    elif "regression" in hint:
+        family = "regression"
+    elif "pie" in hint:
+        family = "pie"
+    elif "area" in hint:
+        family = "area"
+    elif "heat" in hint:
+        family = "heat"
+
+    if not family:
+        return _select_balanced_suggestions(drawable_catalog, domain, top_k=top_k)
+
+    matched = [e for e in drawable_catalog if family in e.chart_type.lower()]
+    if domain == "qc":
+        matched = _select_balanced_suggestions(matched, domain, top_k=top_k)
+    if len(matched) >= top_k:
+        return matched[:top_k]
+    fill = [e for e in _select_balanced_suggestions(drawable_catalog, domain, top_k=top_k * 2) if e not in matched]
+    return (matched + fill)[:top_k]
+
+
+def _enrich_suggestions_with_agent(client: Client, prompt: str, domain: str, suggestion_dicts: list[dict]) -> list[dict]:
+    if not suggestion_dicts:
+        return suggestion_dicts
+    payload = []
+    for s in suggestion_dicts:
+        payload.append({
+            "chart_type": s.get("chart_type", ""),
+            "encoding": s.get("encoding", {}),
+        })
+
+    system_prompt = (
+        "You are a senior data analyst. For each chart suggestion, explain concretely what to compute and group by.\n"
+        "Rules:\n"
+        "1) Keep encoding unchanged.\n"
+        "2) rationale_vi must state: metric to compute, grouping dimension, and why it is feasible.\n"
+        "3) sample_prompt_vi must be executable and specific (mention concrete columns from encoding).\n"
+        "4) Do not invent columns outside encoding.\n"
+        "5) Return JSON only: {\"items\":[{\"chart_type\":\"...\",\"rationale_vi\":\"...\",\"sample_prompt_vi\":\"...\"}]}\n"
+    )
+    user_prompt = json.dumps(
+        {"user_prompt": prompt, "domain": domain, "suggestions": payload},
+        ensure_ascii=False,
+    )
+    try:
+        response = client.get_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        raw = response.choices[0].message.content.strip()
+        parsed = json.loads(raw)
+        items = parsed.get("items", []) if isinstance(parsed, dict) else []
+        by_type = {str(i.get("chart_type", "")).strip(): i for i in items if isinstance(i, dict)}
+        updated = []
+        for s in suggestion_dicts:
+            ct = s.get("chart_type", "")
+            item = by_type.get(ct, {})
+            next_s = dict(s)
+            if item.get("rationale_vi"):
+                next_s["rationale_vi"] = item["rationale_vi"]
+            if item.get("sample_prompt_vi"):
+                next_s["sample_prompt_vi"] = item["sample_prompt_vi"]
+            updated.append(next_s)
+        return updated
+    except Exception as e:
+        logger.warning(f"Suggestion enrichment failed, keep defaults: {e}")
+        return suggestion_dicts
+
+
+def _fallback_suggestions_from_fields(field_metas: dict, chart_type_hint: str, domain: str, top_k: int = 4) -> list[dict]:
+    if not field_metas:
+        return []
+    metas = list(field_metas.values())
+    quantitative = [m.name for m in metas if getattr(m, "is_quantitative", False)]
+    categorical = [m.name for m in metas if getattr(m, "is_categorical", False)]
+    temporal = [m.name for m in metas if getattr(m, "is_temporal", False)]
+
+    y = quantitative[0] if quantitative else (metas[0].name if metas else "")
+    x_cat = categorical[0] if categorical else (temporal[0] if temporal else (metas[0].name if metas else ""))
+    x_time = temporal[0] if temporal else (categorical[0] if categorical else (metas[0].name if metas else ""))
+
+    hint = (chart_type_hint or "").lower()
+    suggestions: list[dict] = []
+
+    def add(chart_type: str, encoding: dict, rationale_vi: str, sample_prompt_vi: str):
+        if not encoding:
+            return
+        suggestions.append({
+            "chart_type": chart_type,
+            "encoding": encoding,
+            "confidence": 0.6,
+            "rationale_vi": rationale_vi,
+            "sample_prompt_vi": sample_prompt_vi,
+        })
+
+    if "bar" in hint or not hint:
+        add(
+            "Bar Chart",
+            {"x": x_cat, "y": y},
+            f"Aggregate {y} and group by {x_cat} to compare across categories.",
+            f"Draw a Bar Chart with sum {y} by {x_cat}",
+        )
+        add(
+            "Grouped Bar Chart",
+            {"x": x_cat, "y": y, "color": (categorical[1] if len(categorical) > 1 else x_cat)},
+            f"Group {y} by {x_cat} and split by {(categorical[1] if len(categorical) > 1 else x_cat)} for detailed comparison.",
+            f"Draw a Grouped Bar Chart with sum {y} by {x_cat}, split by {(categorical[1] if len(categorical) > 1 else x_cat)}",
+        )
+    if "line" in hint or not hint:
+        add(
+            "Line Chart",
+            {"x": x_time, "y": y},
+            f"Track trend of {y} over sequence/time using {x_time}.",
+            f"Draw a Line Chart of {y} by {x_time}",
+        )
+    if domain == "qc":
+        add(
+            "QC Trend Line",
+            {"QCDATE": "QCDATE", "INDEX": "INDEX", "VALUE": "VALUE"},
+            "Track VALUE over QC timeline to detect drift from control behavior.",
+            "Draw a QC Trend Line for VALUE by QCDATE",
+        )
+
+    # dedupe by chart_type
+    unique = {}
+    for s in suggestions:
+        unique[s["chart_type"]] = s
+    return list(unique.values())[:top_k]
+
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
     if request.is_json:
@@ -586,61 +984,168 @@ def smart_chat():
     input_tables = content.get("input_tables", [])
     instruction = content.get("extra_prompt", "")
     data_columns = extract_all_columns_from_input_tables(input_tables)
-    classification = classify_prompt(instruction, data_columns)
+    domain = "qc" if is_qc_data(data_columns) else "generic"
+    field_metas = _build_field_metas_from_input_tables(input_tables)
+    # Build full drawable catalog first; action-specific branches will slice later.
+    # This prevents early truncation from hiding relevant family variants
+    # (e.g., Line Chart / Dotted Line Chart when user asks for line).
+    drawable_catalog = build_drawable_catalog(field_metas, domain, top_k=None)
+
+    model_config = content.get("model")
+    if not model_config:
+        response = flask.jsonify({
+            "token": token,
+            "status": "ok",
+            "category": "VAGUE",
+            "action": "suggest",
+            "message_vi": "Chọn một biểu đồ phù hợp với dữ liệu hiện tại của bạn.",
+            "suggestions": [_entry_to_dict(e) for e in drawable_catalog[:6]],
+            "sample_prompts": [e.sample_prompt_vi for e in drawable_catalog[:5]],
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+    main_client = get_client(model_config)
+    lw_client = get_lightweight_client(main_client)
+    agent = SmartChatAgent(client=lw_client)
+    result = agent.run(instruction, data_columns, domain, drawable_catalog)
+
+    qc_chart_names = {"QC Trend Line", "QC Histogram", "QC Trend Bar"}
+    if (
+        result.action in {"draw", "confirm"}
+        and result.chart_type_hint in qc_chart_names
+        and domain == "generic"
+    ):
+        result = SmartChatResult(
+            action="info",
+            message_vi=(
+                "Biểu đồ QC cần các cột đặc trưng như TARGET, LL, UL, QCDATE, QCSHIFT "
+                "mà dữ liệu hiện tại không có. Bạn có thể chọn các biểu đồ thay thế bên dưới."
+            ),
+            chart_type_hint=result.chart_type_hint,
+            detected_fields=result.detected_fields,
+            confidence=0.95,
+            rationale=f"safety override for generic domain qc chart: {result.chart_type_hint}",
+        )
+
+    category_map = {
+        "draw": PROMPT_CONCRETE,
+        "confirm": "PARTIAL",
+        "suggest": "VAGUE",
+        "qc_suggest": "VAGUE",
+        "info": "OFF_TOPIC",
+    }
+    category = category_map.get(result.action, "VAGUE")
+
     _log_telemetry_event(
         "prompt_classified",
         {
-            "category": classification.category,
-            "confidence": classification.confidence,
-            "missing_info": classification.missing_info,
+            "category": category,
+            "confidence": result.confidence,
+            "missing_info": [],
+            "domain": domain,
             "table_count": len(input_tables),
             "column_count": len(data_columns),
         },
     )
 
-    if classification.category == PROMPT_OFF_TOPIC:
-        samples = list(SAMPLE_PROMPT_TEMPLATES_VI.values())[:5]
+    if result.action == "draw":
+        # Guard: chart type only (e.g. "vẽ bar chart") should trigger guided confirm,
+        # not immediate draw, unless prompt contains explicit fields.
+        # Exception: QC chart names on QC domain can draw directly — their templates
+        # have fixed field mappings so the user doesn't need to spell out column names.
+        is_qc_chart_direct = result.chart_type_hint in qc_chart_names and domain == "qc"
+        if result.chart_type_hint and not is_qc_chart_direct and not _is_prompt_explicit_fields(instruction, data_columns):
+            result = SmartChatResult(
+                action="confirm",
+                message_vi=(
+                    "Mình đã hiểu loại biểu đồ bạn muốn. "
+                    "Chọn một gợi ý bên dưới để xác định metric và trường dữ liệu cụ thể."
+                ),
+                chart_type_hint=result.chart_type_hint,
+                detected_fields=result.detected_fields,
+                confidence=result.confidence,
+                rationale="draw downgraded to confirm due to missing explicit fields",
+            )
+        else:
+            if result.chart_type_hint and not content.get("user_preferred_chart_type"):
+                content["user_preferred_chart_type"] = _normalize_chart_type_hint(result.chart_type_hint)
+            payload, status_code = _run_derive_data_core(content)
+            payload["category"] = category
+            payload["action"] = "draw"
+            payload["message_vi"] = result.message_vi
+            payload["classifier_hints"] = {
+                "chart_type_hint": result.chart_type_hint,
+                "detected_fields": result.detected_fields,
+            }
+            response = flask.jsonify(payload)
+            response.status_code = status_code
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+
+    if result.action == "qc_suggest":
+        qc_entries = [e for e in drawable_catalog if e.chart_type.startswith("QC")]
+        generic_entries = [e for e in drawable_catalog if not e.chart_type.startswith("QC")]
+        mixed_entries = (qc_entries[:3] + generic_entries[:3]) if generic_entries else qc_entries[:3]
+        suggestions = [_entry_to_dict(e) for e in mixed_entries] if mixed_entries else _get_default_qc_entries()
+        suggestions = _enrich_suggestions_with_agent(main_client, instruction, domain, suggestions)
         response = flask.jsonify({
             "token": token,
             "status": "ok",
-            "category": classification.category,
-            "action": "info",
-            "message": "Prompt không liên quan tới vẽ biểu đồ/phân tích dữ liệu.",
-            "sample_prompts": samples,
+            "category": category,
+            "action": "qc_suggest",
+            "message_vi": result.message_vi,
+            "suggestions": suggestions,
+            "classifier_hints": {"chart_type_hint": result.chart_type_hint},
         })
         response.headers.add('Access-Control-Allow-Origin', '*')
         return response
 
-    if classification.category in (PROMPT_VAGUE, PROMPT_PARTIAL):
-        field_metas = _build_field_metas_from_input_tables(input_tables)
-        domain = "qc" if is_qc_data(data_columns) else "generic"
-        top_k = 6 if classification.category == PROMPT_VAGUE else 3
-        suggestions = build_drawable_catalog(field_metas, domain, top_k=top_k)
+    if result.action == "confirm":
+        suggestions_entries = _select_chart_family_suggestions(
+            drawable_catalog, result.chart_type_hint, domain, top_k=4
+        )
+        suggestions = [_entry_to_dict(s) for s in suggestions_entries]
+        if not suggestions:
+            suggestions = _fallback_suggestions_from_fields(field_metas, result.chart_type_hint, domain, top_k=4)
+        suggestions = _enrich_suggestions_with_agent(main_client, instruction, domain, suggestions)
         response = flask.jsonify({
             "token": token,
             "status": "ok",
-            "category": classification.category,
-            "action": "suggestion" if classification.category == PROMPT_VAGUE else "confirm",
-            "missing_info": classification.missing_info,
-            "suggestions": [
-                {
-                    "chart_type": s.chart_type,
-                    "encoding": s.encoding,
-                    "confidence": s.confidence,
-                    "rationale_vi": s.rationale_vi,
-                    "sample_prompt_vi": s.sample_prompt_vi,
-                }
-                for s in suggestions
-            ],
+            "category": category,
+            "action": "confirm",
+            "message_vi": result.message_vi,
+            "suggestions": suggestions,
         })
         response.headers.add('Access-Control-Allow-Origin', '*')
         return response
 
-    payload, status_code = _run_derive_data_core(content)
-    payload["category"] = classification.category
-    payload["action"] = "derive"
-    response = flask.jsonify(payload)
-    response.status_code = status_code
+    if result.action == "suggest":
+        suggestions_entries = _select_balanced_suggestions(drawable_catalog, domain, top_k=6)
+        suggestions = [_entry_to_dict(e) for e in suggestions_entries]
+        if not suggestions:
+            suggestions = _fallback_suggestions_from_fields(field_metas, result.chart_type_hint, domain, top_k=6)
+        suggestions = _enrich_suggestions_with_agent(main_client, instruction, domain, suggestions)
+        response = flask.jsonify({
+            "token": token,
+            "status": "ok",
+            "category": category,
+            "action": "suggest",
+            "message_vi": result.message_vi,
+            "suggestions": suggestions,
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+    response = flask.jsonify({
+        "token": token,
+        "status": "ok",
+        "category": category,
+        "action": "info",
+        "message_vi": result.message_vi,
+        "sample_prompts": [e.sample_prompt_vi for e in drawable_catalog[:5]],
+        "suggestions": [_entry_to_dict(e) for e in drawable_catalog[:6]],
+    })
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
