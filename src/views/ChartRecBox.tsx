@@ -14,6 +14,7 @@ import {
 
 import { AppDispatch } from "../app/store";
 import { logUserPrompt } from "../utils/promptLogger";
+import { logTelemetryEvent } from "../utils/telemetryLogger";
 
 import {
   Box,
@@ -33,6 +34,10 @@ import {
   Divider,
   List,
   ListItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   alpha,
   useTheme,
   Theme,
@@ -109,6 +114,18 @@ const QC_CHART_TYPES: { value: string; label: string }[] = [
   { value: "QC Trend Line", label: "QC Trend Line" },
   { value: "QC Trend Bar", label: "QC Trend Bar" },
   { value: "QC Histogram", label: "QC Histogram" },
+];
+
+const ONBOARDING_STORAGE_KEY = "df_chart_onboarding_seen_v1";
+const QC_SAMPLE_PROMPTS = [
+  "Vẽ QC trend line VALUE theo QCDATE / QCSHIFT",
+  "Vẽ QC histogram phân bố VALUE",
+  "Vẽ QC trend bar VALUE theo QCDATE",
+];
+const GENERIC_SAMPLE_PROMPTS = [
+  "Vẽ bar chart so sánh doanh thu theo tháng",
+  "Vẽ line chart doanh thu theo thời gian",
+  "Vẽ scatter plot giữa giá và số lượng",
 ];
 
 // Detect if a table's column names indicate Quality Control / SPC data.
@@ -712,6 +729,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   const [assistantSamplePrompts, setAssistantSamplePrompts] = useState<
     string[]
   >([]);
+  const [assistantHasAction, setAssistantHasAction] = useState<boolean>(false);
+  const [onboardingOpen, setOnboardingOpen] = useState<boolean>(false);
   const [ideas, setIdeas] = useState<
     {
       text: string;
@@ -745,6 +764,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
 
   // Use the provided tableId and find additional available tables for multi-table operations
   const currentTable = tables.find((t) => t.id === tableId);
+  const isCurrentQc = isQcData(currentTable?.names || []);
+  const domainSamplePrompts = isCurrentQc
+    ? QC_SAMPLE_PROMPTS
+    : GENERIC_SAMPLE_PROMPTS;
 
   const availableTables = tables.filter(
     (t) => t.derive === undefined || t.anchored,
@@ -764,9 +787,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
 
   // Function to get a question from the list with cycling
   const getQuestion = (): string => {
-    return mode === "agent"
-      ? "let's explore something interesting about the data"
-      : "show something interesting about the data";
+    return domainSamplePrompts[0];
   };
 
   // Function to predict chart type from goal description
@@ -1054,6 +1075,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     }
   }, [tableId]);
 
+  useEffect(() => {
+    if (!currentTable) {
+      return;
+    }
+    const seen = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+    if (!seen) {
+      setOnboardingOpen(true);
+    }
+  }, [currentTable?.id]);
+
   // Handle tab key press for auto-completion
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Tab" && !event.shiftKey) {
@@ -1286,7 +1317,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             setAssistantSuggestions(data.suggestions || []);
             setAssistantSamplePrompts([]);
             setAssistantInstruction(instruction);
+            setAssistantHasAction(false);
             setAssistantOpen(true);
+            logTelemetryEvent("prompt_classified", {
+              category: data.category || "UNKNOWN",
+              confidence: data.confidence,
+              source: "smart_chat",
+            });
             dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             return;
           }
@@ -1298,7 +1335,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             setAssistantSuggestions([]);
             setAssistantSamplePrompts(data.sample_prompts || []);
             setAssistantInstruction(instruction);
+            setAssistantHasAction(false);
             setAssistantOpen(true);
+            logTelemetryEvent("prompt_classified", {
+              category: data.category || "OFF_TOPIC",
+              confidence: data.confidence,
+              source: "smart_chat",
+            });
             dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             return;
           }
@@ -1347,7 +1390,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                 setAssistantInstruction(
                   rejected.reject.original_instruction || instruction,
                 );
+                setAssistantHasAction(false);
                 setAssistantOpen(true);
+                logTelemetryEvent("prompt_classified", {
+                  category: data.category || "CONCRETE",
+                  source: "rejected_incompatible",
+                });
                 dispatch(dfActions.deleteAgentWorkInProgress(actionId));
                 return;
               }
@@ -2344,23 +2392,91 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         message={assistantMessage}
         suggestions={assistantSuggestions}
         samplePrompts={assistantSamplePrompts}
-        onClose={() => setAssistantOpen(false)}
+        onClose={() => {
+          if (!assistantHasAction) {
+            logTelemetryEvent("modal_closed_no_action", {
+              mode: assistantMode,
+            });
+          }
+          setAssistantOpen(false);
+        }}
         onDrawNow={(suggestion) => {
+          setAssistantHasAction(true);
           setAssistantOpen(false);
           focusNextChartRef.current = true;
           const nextInstruction =
             suggestion.sample_prompt_vi || assistantInstruction || prompt;
+          const positionInGrid = assistantSuggestions.findIndex(
+            (s) => s.chart_type === suggestion.chart_type,
+          );
+          logTelemetryEvent("suggestion_clicked", {
+            chart_type: suggestion.chart_type,
+            position_in_grid: positionInGrid,
+            source_mode: assistantMode,
+            button: "draw_now",
+          });
           setPrompt(nextInstruction);
           deriveDataFromNL(nextInstruction, "user", suggestion.chart_type);
         }}
         onUsePrompt={(suggestion) => {
+          setAssistantHasAction(true);
           const nextInstruction =
             suggestion.sample_prompt_vi ||
             `${assistantInstruction || prompt} (vẽ bằng ${suggestion.chart_type})`;
+          const positionInGrid = assistantSuggestions.findIndex(
+            (s) => s.chart_type === suggestion.chart_type,
+          );
+          logTelemetryEvent("suggestion_clicked", {
+            chart_type: suggestion.chart_type,
+            position_in_grid: positionInGrid,
+            source_mode: assistantMode,
+            button: "use_prompt",
+          });
           setPrompt(nextInstruction);
           setAssistantOpen(false);
         }}
       />
+      <Dialog
+        open={onboardingOpen}
+        onClose={() => {
+          localStorage.setItem(ONBOARDING_STORAGE_KEY, "1");
+          setOnboardingOpen(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Bắt đầu nhanh với Chart Assistant</DialogTitle>
+        <DialogContent dividers>
+          <Typography sx={{ fontSize: 14, mb: 1 }}>
+            Nhập prompt cụ thể để vẽ nhanh, hoặc gõ prompt ngắn để hệ thống gợi ý biểu đồ phù hợp.
+          </Typography>
+          {domainSamplePrompts.map((sample, idx) => (
+            <Button
+              key={`${sample}-${idx}`}
+              variant="outlined"
+              size="small"
+              sx={{ mr: 1, mb: 1, textTransform: "none" }}
+              onClick={() => {
+                setPrompt(sample);
+                setOnboardingOpen(false);
+                localStorage.setItem(ONBOARDING_STORAGE_KEY, "1");
+              }}
+            >
+              {sample}
+            </Button>
+          ))}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              localStorage.setItem(ONBOARDING_STORAGE_KEY, "1");
+              setOnboardingOpen(false);
+            }}
+          >
+            Đã hiểu
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

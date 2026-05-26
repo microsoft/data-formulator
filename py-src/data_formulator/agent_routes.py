@@ -57,6 +57,19 @@ from data_formulator.db_manager import db_manager
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
 
+
+def _log_telemetry_event(event_name: str, payload: dict):
+    """Best-effort telemetry sink via existing ClickHouse prompt log table."""
+    try:
+        safe_payload = json.dumps(payload, ensure_ascii=False)
+        log_prompt_to_clickhouse(
+            agent_name=f"telemetry_{event_name}",
+            prompt_text=safe_payload,
+            user_id=session.get("username") or session.get("user_id"),
+        )
+    except Exception as e:
+        logger.warning(f"Telemetry logging failed for {event_name}: {e}")
+
 # ─── Rate limiter (fixed-window, per session) ───────────────────────────────
 _rl_lock = threading.Lock()
 _rl_windows: dict = {}  # key -> {"count": int, "window_start": float}
@@ -574,6 +587,16 @@ def smart_chat():
     instruction = content.get("extra_prompt", "")
     data_columns = extract_all_columns_from_input_tables(input_tables)
     classification = classify_prompt(instruction, data_columns)
+    _log_telemetry_event(
+        "prompt_classified",
+        {
+            "category": classification.category,
+            "confidence": classification.confidence,
+            "missing_info": classification.missing_info,
+            "table_count": len(input_tables),
+            "column_count": len(data_columns),
+        },
+    )
 
     if classification.category == PROMPT_OFF_TOPIC:
         samples = list(SAMPLE_PROMPT_TEMPLATES_VI.values())[:5]
@@ -620,6 +643,24 @@ def smart_chat():
     response.status_code = status_code
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
+
+
+@agent_bp.route('/log-telemetry', methods=['POST'])
+def log_telemetry():
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Invalid request format"}), 400
+
+    content = request.get_json() or {}
+    event_name = str(content.get("event_name", "")).strip()
+    payload = content.get("payload", {})
+    if not event_name:
+        return jsonify({"status": "error", "message": "event_name is required"}), 400
+
+    if not isinstance(payload, dict):
+        payload = {"value": payload}
+
+    _log_telemetry_event(event_name, payload)
+    return jsonify({"status": "ok"})
 
 
 @agent_bp.route('/refine-data', methods=['GET', 'POST'])

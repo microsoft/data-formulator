@@ -86,3 +86,14 @@ def test_smart_chat_concrete_delegates_to_derive(monkeypatch):
     assert data["action"] == "derive"
     assert data["status"] == "ok"
 
+
+def test_log_telemetry_endpoint_accepts_event():
+    app = _make_app()
+    client = app.test_client()
+    res = client.post(
+        "/api/agent/log-telemetry",
+        json={"event_name": "suggestion_clicked", "payload": {"chart_type": "Bar Chart"}},
+    )
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["status"] == "ok"
