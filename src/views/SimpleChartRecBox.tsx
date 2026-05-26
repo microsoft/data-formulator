@@ -1126,6 +1126,35 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         agentAbortRef.current = controller;
         let accumulatedMarkdown = '';
 
+        // Coalesce per-token updates: dispatching on every text_delta forces the
+        // Tiptap editor to re-parse the entire document each time, which makes
+        // the stream feel chunky / non-streaming. Batch updates on a short
+        // timer so the editor refreshes ~10×/sec while the wire still streams.
+        const FLUSH_INTERVAL_MS = 90;
+        let lastDispatched = '';
+        let flushTimer: ReturnType<typeof setTimeout> | null = null;
+        const flushNow = () => {
+            if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+            }
+            if (accumulatedMarkdown === lastDispatched) return;
+            lastDispatched = accumulatedMarkdown;
+            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
+            dispatch(dfActions.updateGeneratedReportContent({
+                id: reportId,
+                content: accumulatedMarkdown,
+                title: titleMatch ? titleMatch[1].trim() : undefined,
+            }));
+        };
+        const scheduleFlush = () => {
+            if (flushTimer) return;
+            flushTimer = setTimeout(() => {
+                flushTimer = null;
+                flushNow();
+            }, FLUSH_INTERVAL_MS);
+        };
+
         try {
             for await (const event of streamRequest(getUrls().GENERATE_REPORT_CHAT, {
                 method: 'POST',
@@ -1134,6 +1163,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }, controller.signal)) {
                 if (event.type === 'text_delta') {
                     accumulatedMarkdown += (event as any).content;
+                    scheduleFlush();
                 } else if (event.type === 'error') {
                     const errMsg = event.error ? getErrorMessage(event.error) : t('messages.error');
                     accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
@@ -1141,6 +1171,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         timestamp: Date.now(), type: 'error',
                         component: 'report-agent', value: errMsg,
                     }));
+                    flushNow();
                 } else if (event.type === 'warning') {
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(), type: 'warning',
@@ -1148,15 +1179,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         value: (event as any).warning?.message ?? 'Warning from server',
                     }));
                 }
-                const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
-                dispatch(dfActions.updateGeneratedReportContent({
-                    id: reportId,
-                    content: accumulatedMarkdown,
-                    title: titleMatch ? titleMatch[1].trim() : undefined,
-                }));
             }
 
-            // Final update with completed status
+            // Final update with completed status — make sure the latest content
+            // is in state before we mark it complete.
+            flushNow();
             const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
             dispatch(dfActions.updateGeneratedReportContent({
                 id: reportId,
@@ -1173,6 +1200,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }));
             }
         } finally {
+            if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+            }
             agentAbortRef.current = null;
             setIsChatFormulating(false);
         }

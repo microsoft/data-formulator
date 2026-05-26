@@ -90,8 +90,8 @@ import { ResizeHandle } from '../components/ResizeHandle';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const RAIL_WIDTH = 40;
-const DEFAULT_PANEL_WIDTH = 260;
-const MIN_PANEL_WIDTH = 200;
+const DEFAULT_PANEL_WIDTH = 280;
+const MIN_PANEL_WIDTH = 240;
 const MAX_PANEL_WIDTH = 450;
 
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';

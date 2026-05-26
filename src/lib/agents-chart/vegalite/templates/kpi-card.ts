@@ -304,6 +304,7 @@ export const kpiCardDef: ChartTemplateDef = {
                         stroke: CARD_STROKE,
                         strokeWidth: 1,
                         cornerRadius: CARD_RADIUS,
+                        tooltip: null,
                     },
                     encoding: {
                         x:  { value: cardLeft },
@@ -325,6 +326,7 @@ export const kpiCardDef: ChartTemplateDef = {
                     align: 'center',
                     baseline: 'top',
                     text: t.caption,
+                    tooltip: null,
                 },
                 encoding: {
                     x: { value: tileW / 2 },
@@ -343,6 +345,7 @@ export const kpiCardDef: ChartTemplateDef = {
                     align: 'center',
                     baseline: 'middle',
                     text: t.valueText,
+                    tooltip: null,
                 },
                 encoding: {
                     x: { value: tileW / 2 },
@@ -378,6 +381,7 @@ export const kpiCardDef: ChartTemplateDef = {
                         align: 'center',
                         baseline: 'top',
                         text: pctText,
+                        tooltip: null,
                     },
                     encoding: {
                         x: { value: tileW / 2 },
@@ -392,6 +396,7 @@ export const kpiCardDef: ChartTemplateDef = {
                         type: 'rect',
                         fill: PROGRESS_TRACK,
                         cornerRadius: barHeight / 2,
+                        tooltip: null,
                     },
                     encoding: {
                         x:  { value: barLeft },
@@ -410,6 +415,7 @@ export const kpiCardDef: ChartTemplateDef = {
                         type: 'rect',
                         fill: fillColor,
                         cornerRadius: barHeight / 2,
+                        tooltip: null,
                     },
                     encoding: {
                         x:  { value: barLeft },
@@ -429,6 +435,7 @@ export const kpiCardDef: ChartTemplateDef = {
                         align: 'center',
                         baseline: 'top',
                         text: `Goal: ${t.goalText}`,
+                        tooltip: null,
                     },
                     encoding: {
                         x: { value: tileW / 2 },
