@@ -392,6 +392,42 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     deleteTablesFromWorkspace(tablesToDelete.map(t => t.virtual.tableId));
 
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
+
+    // If the focus we just set lands on a table that has now been cascade-
+    // deleted (e.g. an unanchored derived table whose only chart we just
+    // removed), walk up the derive chain to land on a still-present chart
+    // — the "previous chart above this table" the user expects. Falls
+    // through to the parent table itself, then to any remaining chart.
+    if (state.focusedId?.type === 'table' && !state.tables.some(t => t.id === (state.focusedId as any).tableId)) {
+        const deletedTablesById = new Map(tablesToDelete.map(t => [t.id, t]));
+        let cursor: string | undefined = (state.focusedId as any).tableId;
+        let resolved = false;
+        while (cursor) {
+            const removedTable = deletedTablesById.get(cursor);
+            const parentId: string | undefined = removedTable?.derive?.trigger.tableId;
+            if (!parentId) break;
+            if (state.tables.some(t => t.id === parentId)) {
+                const parentCharts = state.charts.filter(c => c.tableRef === parentId);
+                if (parentCharts.length > 0) {
+                    state.focusedId = { type: 'chart', chartId: parentCharts[parentCharts.length - 1].id };
+                } else {
+                    state.focusedId = { type: 'table', tableId: parentId };
+                }
+                resolved = true;
+                break;
+            }
+            cursor = parentId;
+        }
+        if (!resolved) {
+            if (state.charts.length > 0) {
+                state.focusedId = { type: 'chart', chartId: state.charts[state.charts.length - 1].id };
+            } else if (state.tables.length > 0) {
+                state.focusedId = { type: 'table', tableId: state.tables[0].id };
+            } else {
+                state.focusedId = undefined;
+            }
+        }
+    }
 }
 
 /**

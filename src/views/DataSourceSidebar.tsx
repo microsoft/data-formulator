@@ -155,13 +155,11 @@ export const DataSourceSidebar: React.FC<{
 
     const toggle = () => dispatch(dfActions.setDataSourceSidebarOpen(!isOpen));
 
-    // When connectors are disabled (browser-only / hosted mode) we land
-    // users on 'upload' instead of 'sources' so they don't open the panel
-    // straight onto an upgrade message — but the sources tab remains
-    // available so users can learn what local install unlocks.
-    const [initialTab, setInitialTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>(
-        disableConnectors ? 'upload' : 'sources',
-    );
+    // Default landing tab is 'sources' — even in browser-only mode the
+    // built-in sample_datasets connector is shown there, giving users
+    // something useful to explore immediately. The upgrade message only
+    // appears when they try to add a new connector or link a folder.
+    const [initialTab, setInitialTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>('sources');
 
     // External callers (e.g. SaveExperienceButton on success) can ask the
     // sidebar to open and switch to a specific tab.
@@ -634,7 +632,9 @@ const DataSourceSidebarPanel: React.FC<{
     // ── Connector list ───────────────────────────────────────────────────────
 
     const fetchConnectors = useCallback(() => {
-        if (disableConnectors) return;
+        // Even when external connectors are disabled, the backend still
+        // exposes the built-in `sample_datasets` connector — fetch the
+        // list so users in browser-only mode still see example datasets.
         setLoadingConnectors(true);
         apiRequest(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(({ data }) => {
@@ -643,7 +643,7 @@ const DataSourceSidebarPanel: React.FC<{
             })
             .catch(() => { /* connector list is best-effort */ })
             .finally(() => setLoadingConnectors(false));
-    }, [disableConnectors]);
+    }, []);
 
     // Fetch on mount and whenever identity changes.
     useEffect(() => {
@@ -1325,29 +1325,12 @@ const DataSourceSidebarPanel: React.FC<{
             </Box>
             )}
 
-            {/* ── Data Connectors tab ── */}
-            {activeTab === 'sources' && disableConnectors && (
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Box
-                    sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
-                >
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
-                        {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
-                    </Typography>
-                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-                <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-                    <LocalInstallUpgradePanel compact />
-                </Box>
-            </Box>
-            )}
-
-            {/* ── Data Connectors tab ── */}
-            {activeTab === 'sources' && !disableConnectors && (
+            {/* ── Data Connectors tab ──
+                Sample datasets remain available even when external
+                connectors are disabled; the Add Connector / Link Folder
+                actions route through the upload dialog, which renders
+                the LocalInstallUpgradePanel in disabled mode. */}
+            {activeTab === 'sources' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
                     sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}

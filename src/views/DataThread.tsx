@@ -41,6 +41,7 @@ import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
+import { deleteWorkspace } from '../app/workspaceService';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
@@ -836,6 +837,7 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
     const { manualRefresh } = useDataRefresh();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
@@ -2216,7 +2218,27 @@ let SingleThreadGroupView: FC<{
                 onClick={(e) => {
                     e.stopPropagation();
                     if (selectedTableForMenu) {
+                        // If this is the last source table, also wipe the
+                        // session itself — a workspace with no source
+                        // table is effectively empty and the user would
+                        // otherwise be left staring at a blank thread.
+                        const isSource = !selectedTableForMenu.derive;
+                        const remainingSources = tables.filter(t => !t.derive && t.id !== selectedTableForMenu.id);
+                        const shouldDeleteSession = isSource && remainingSources.length === 0;
+                        const wsToDelete = shouldDeleteSession ? activeWorkspace?.id : undefined;
                         dispatch(dfActions.deleteTable(selectedTableForMenu.id));
+                        if (shouldDeleteSession && wsToDelete) {
+                            (async () => {
+                                try {
+                                    await deleteWorkspace(wsToDelete);
+                                } catch {
+                                    // best effort — user can still manually delete from the sidebar
+                                }
+                                // Drop into the unsessioned landing state instead of
+                                // auto-creating a new "Untitled Session" workspace.
+                                dispatch(dfActions.resetState());
+                            })();
+                        }
                     }
                     handleCloseTableMenu();
                 }}

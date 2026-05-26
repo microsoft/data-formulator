@@ -311,12 +311,24 @@ export async function importWorkspaceFromZip(
     if (!stateFile) throw new Error('Invalid workspace zip: missing session_state.json');
     const state: Record<string, unknown> = JSON.parse(await stateFile.async('string'));
 
-    // Read workspace.yaml (JSON format) — may be at root or under workspace/
+    // Read workspace.yaml — may be at root or under workspace/.
+    // Demo zips (built by build_demo_zips.py) write actual YAML here,
+    // while exported workspaces write JSON for parsing convenience. The
+    // tableIndex inside is optional metadata used to drive on-demand
+    // refresh of stream/live tables; demos don't need it because their
+    // rows are embedded directly in session_state.json/state.json. So
+    // we try JSON.parse and fall back to an empty tableIndex on any
+    // parse error.
     let tableIndex: TableIndexEntry[] = [];
     const yamlFile = zip.file('workspace.yaml') || zip.file('workspace/workspace.yaml');
     if (yamlFile) {
-        const meta = JSON.parse(await yamlFile.async('string'));
-        tableIndex = meta.tableIndex || [];
+        const raw = await yamlFile.async('string');
+        try {
+            const meta = JSON.parse(raw);
+            tableIndex = meta.tableIndex || [];
+        } catch {
+            // Non-JSON (YAML demo manifest) — skip; demo state is self-contained.
+        }
     }
 
     // Save workspace metadata + state
@@ -324,6 +336,7 @@ export async function importWorkspaceFromZip(
 
     // Read data/*.json or workspace/data/*.json → table_data store
     let tableCount = 0;
+    const savedTableIds = new Set<string>();
     const dataFolder = zip.folder('data') ?? zip.folder('workspace/data');
     if (dataFolder) {
         const filePromises: Promise<void>[] = [];
@@ -333,12 +346,33 @@ export async function importWorkspaceFromZip(
             filePromises.push(
                 zipEntry.async('string').then(content => {
                     const rows = JSON.parse(content);
+                    savedTableIds.add(tableId);
                     return tableDataDB.save(workspaceId, tableId, rows);
                 })
             );
             tableCount++;
         });
         await Promise.all(filePromises);
+    }
+
+    // Fallback for demo zips (build_demo_zips.py): the data/ folder contains
+    // .parquet files which we can't read in the browser, but the state
+    // itself carries the first N rows inline under each table's `rows`
+    // field. Persist those into tableDataDB so ephemeral mode can ship them
+    // to the server with each request — otherwise the backend has no file
+    // to read and the agent fails with FileNotFoundError.
+    const stateTables = Array.isArray((state as any).tables) ? (state as any).tables : [];
+    const inlinePromises: Promise<void>[] = [];
+    for (const t of stateTables) {
+        const tableId: string | undefined = t?.id || t?.name;
+        const rows = t?.rows;
+        if (!tableId || !Array.isArray(rows) || rows.length === 0) continue;
+        if (savedTableIds.has(tableId)) continue;
+        inlinePromises.push(tableDataDB.save(workspaceId, tableId, rows));
+        tableCount++;
+    }
+    if (inlinePromises.length > 0) {
+        await Promise.all(inlinePromises);
     }
 
     return { state, tableCount };

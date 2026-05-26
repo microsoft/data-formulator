@@ -103,7 +103,25 @@ def _load_catalog_raw(workspace_root: Path | str, source_id: str) -> dict[str, A
 
 
 def load_catalog(workspace_root: Path | str, source_id: str) -> list[dict[str, Any]] | None:
-    """Load cached catalog. Returns None if not found or corrupted."""
+    """Load cached catalog. Returns None if not found or corrupted.
+
+    In disabled-connectors mode, only admin source_ids (e.g.
+    ``sample_datasets``) are readable — user catalogs on disk are hidden.
+    """
+    try:
+        from flask import current_app
+        disabled = bool(
+            current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors')
+        )
+    except RuntimeError:
+        disabled = False
+    if disabled:
+        try:
+            from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
+            if source_id not in _ADMIN_CONNECTOR_IDS:
+                return None
+        except Exception:
+            pass
     raw = _load_catalog_raw(workspace_root, source_id)
     if raw is None:
         return None
@@ -135,6 +153,12 @@ def list_cached_sources(workspace_root: Path | str) -> list[str]:
     id and re-apply ``safe_source_id`` internally when touching the disk.
 
     Falls back to the filename stem if a cache file is missing or corrupt.
+
+    When external connectors are disabled (browser-only / hosted mode),
+    only built-in admin source IDs (e.g. ``sample_datasets``) are
+    returned. This keeps the agent's data-discovery tools consistent with
+    the sidebar — previously-persisted user catalogs on disk stay there
+    but aren't surfaced.
     """
     cache_dir = _cache_dir(workspace_root)
     if not cache_dir.exists():
@@ -152,6 +176,22 @@ def list_cached_sources(workspace_root: Path | str) -> list[str]:
         except Exception:
             logger.debug("Failed to read source_id from %s", path, exc_info=True)
         sources.append(original or path.stem)
+
+    # Filter to admin-only sources when external connectors are disabled.
+    try:
+        from flask import current_app
+        disabled = bool(
+            current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors')
+        )
+    except RuntimeError:
+        disabled = False
+    if disabled:
+        try:
+            from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
+            allowed = set(_ADMIN_CONNECTOR_IDS)
+            sources = [s for s in sources if s in allowed]
+        except Exception:
+            logger.debug("Failed to filter cached sources by admin set", exc_info=True)
     return sources
 
 

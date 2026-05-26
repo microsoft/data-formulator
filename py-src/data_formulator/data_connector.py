@@ -237,8 +237,21 @@ def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConne
     Admin connectors are global. User connectors are keyed by identity in the
     process registry. Raw non-admin entries are treated as legacy/test globals;
     newly created user connectors should use ``_user_connector_key``.
+
+    When external connectors are disabled (browser-only / hosted mode), only
+    built-in admin connectors (e.g. ``sample_datasets``) are exposed —
+    previously-persisted user connectors on disk are hidden so the sidebar
+    stays clean and consistent with the disabled-add-connector UI.
     """
-    if identity:
+    from flask import current_app
+
+    try:
+        disabled = bool(current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors'))
+    except RuntimeError:
+        # Outside an app context (e.g. unit tests) — fall back to enabled.
+        disabled = False
+
+    if identity and not disabled:
         load_connectors(identity)
 
     result = []
@@ -246,6 +259,9 @@ def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConne
     for key, connector in DATA_CONNECTORS.items():
         if key in _ADMIN_CONNECTOR_IDS:
             result.append((key, connector, True))
+        elif disabled:
+            # Skip user / legacy connectors entirely when disabled.
+            continue
         elif user_prefix and key.startswith(user_prefix):
             result.append((key, connector, False))
         elif not _is_user_connector_key(key):
