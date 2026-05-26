@@ -493,7 +493,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   // reference to states
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const config = useSelector((state: DataFormulatorState) => state.config);
-  const agentRules = useSelector(dfSelectors.getAgentRules);
+  const agentRules = { coding: "", exploration: "" };
   let existMultiplePossibleBaseTables =
     tables.filter((t) => t.derive == undefined || t.anchored).length > 1;
 

@@ -40,10 +40,10 @@ const features: Feature[] = [
     mediaType: "video",
   },
   {
-    title: "Agent Mode",
+    title: "Guided Suggestions",
     description:
-      "Vibe with your data. Hands-off and let agents automatically explore and visualize data from high-level goals.",
-    media: "/feature-agent-mode.mp4",
+      "Use one interactive chat flow with actionable suggestions to quickly move from vague requests to concrete charts.",
+    media: "/feature-interactive-control.mp4",
     mediaType: "video",
   },
   {

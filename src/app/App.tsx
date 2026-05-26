@@ -91,7 +91,6 @@ import CategoryIcon from "@mui/icons-material/Category";
 import { getUrls } from "./utils";
 import { DataLoadingChatDialog } from "../views/DataLoadingChat";
 import ChatIcon from "@mui/icons-material/Chat";
-import { AgentRulesDialog } from "../views/AgentRulesDialog";
 import ArticleIcon from "@mui/icons-material/Article";
 import EditIcon from "@mui/icons-material/Edit";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -196,7 +195,6 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
       "testedModels",
       "dataLoaderConnectParams",
       "sessionId",
-      "agentRules",
       "serverConfig",
     ]);
 

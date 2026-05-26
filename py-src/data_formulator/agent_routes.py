@@ -41,7 +41,6 @@ from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
-from data_formulator.workflows.exploration_flow import run_exploration_flow_streaming
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -504,107 +503,6 @@ def derive_data():
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
     response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
-
-@agent_bp.route('/explore-data-streaming', methods=['GET', 'POST'])
-def explore_data_streaming():
-    def generate():
-        if request.is_json:
-            logger.info("# explore data request: ")
-            content = request.get_json()        
-            token = content["token"]
-
-            # Rate limit: max 5 exploration requests per session per minute (expensive multi-step op)
-            _sid = session.get('session_id', request.remote_addr or 'anon')
-            if _is_rate_limited(f"explore:{_sid}", max_requests=5):
-                error_data = {"token": token, "status": "error", "result": None, "error_message": "Too many requests. Please wait before starting a new exploration."}
-                yield json.dumps(error_data) + '\n'
-                return
-
-            # each table is a dict with {"name": xxx, "rows": [...]}
-            input_tables = content["input_tables"]
-            initial_plan = content["initial_plan"]  # The exploration question
-            language = content.get("language", "python")  # whether to use sql or python, default to python
-            max_iterations = content.get("max_iterations", 3)  # Number of exploration iterations
-            max_repair_attempts = content.get("max_repair_attempts", 1)
-            agent_exploration_rules = content.get("agent_exploration_rules", "")
-            agent_coding_rules = content.get("agent_coding_rules", "")
-
-            logger.info("== input tables ===>")
-            for table in input_tables:
-                logger.info(f"===> Table: {table['name']} (first 5 rows)")
-                logger.info(table['rows'][:5])
-
-            logger.info("== exploration question ===")
-            logger.info(initial_plan)
-
-            # Model config for the exploration flow
-            _endpoint = content['model']['endpoint']
-            model_config = {
-                "endpoint": _endpoint,
-                "model": content['model']['model'],
-                "api_key": content['model'].get('api_key') or os.getenv(f"{_endpoint.upper()}_API_KEY", "") or None,
-                "api_base": content['model'].get('api_base', ''),
-                "api_version": content['model'].get('api_version', '')
-            }
-
-            session_id = session.get('session_id') if language == "sql" else None
-            exec_python_in_subprocess = current_app.config['CLI_ARGS']['exec_python_in_subprocess']
-
-            try:
-                for result in run_exploration_flow_streaming(
-                    model_config=model_config,
-                    input_tables=input_tables,
-                    initial_plan=initial_plan,
-                    language=language,
-                    session_id=session_id,
-                    exec_python_in_subprocess=exec_python_in_subprocess,
-                    max_iterations=max_iterations,
-                    max_repair_attempts=max_repair_attempts,
-                    agent_exploration_rules=agent_exploration_rules,
-                    agent_coding_rules=agent_coding_rules
-                ):
-                    response_data = { 
-                        "token": token, 
-                        "status": "ok", 
-                        "result": result 
-                    }
-                    
-                    yield json.dumps(response_data) + '\n'
-                    
-                    # Break if we get a completion result
-                    if result.get("type") == "completion":
-                        break
-            
-            except Exception as e:
-                logger.error(f"Error in exploration flow: {e}")
-                logger.error(traceback.format_exc())
-                error_data = { 
-                    "token": token, 
-                    "status": "error", 
-                    "result": None,
-                    "error_message": str(e)
-                }
-                yield json.dumps(error_data) + '\n'
-
-        else:
-            error_data = { 
-                "token": "", 
-                "status": "error", 
-                "result": None,
-                "error_message": "Invalid request format"
-            }
-            yield json.dumps(error_data) + '\n'
-
-    response = Response(
-        stream_with_context(generate()),
-        mimetype='application/json',
-        headers={
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
-    )
     return response
 
 

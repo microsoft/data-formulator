@@ -36,10 +36,7 @@ import {
   alpha,
   useTheme,
   Theme,
-  ToggleButton,
-  ToggleButtonGroup,
   Button,
-  ButtonGroup,
   Select,
   FormControl,
 } from "@mui/material";
@@ -58,8 +55,6 @@ import { CHART_TEMPLATES } from "../components/ChartTemplates";
 
 import AddIcon from "@mui/icons-material/Add";
 import PrecisionManufacturing from "@mui/icons-material/PrecisionManufacturing";
-import SmartToyIcon from "@mui/icons-material/SmartToy";
-import TouchAppIcon from "@mui/icons-material/TouchApp";
 import { Type } from "../data/types";
 import CloseIcon from "@mui/icons-material/Close";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
@@ -683,9 +678,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   // reference to states
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const config = useSelector((state: DataFormulatorState) => state.config);
-  const agentRules = useSelector(
-    (state: DataFormulatorState) => state.agentRules,
-  );
+  const agentRules = { coding: "", exploration: "" };
   const conceptShelfItems = useSelector(
     (state: DataFormulatorState) => state.conceptShelfItems,
   );
@@ -695,28 +688,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   );
   const chartIncompatible = useSelector(dfSelectors.getChartIncompatible);
 
-  let preferredMode =
-    activeModel.model == "gpt-5" ||
-    activeModel.model.startsWith("claude-sonnet-4") ||
-    activeModel.model.startsWith("claude-opus-4") ||
-    activeModel.model.startsWith("o1") ||
-    activeModel.model.startsWith("o3") ||
-    activeModel.model == "gpt-4.1"
-      ? "agent"
-      : "interactive";
-
-  const [mode, setMode] = useState<"agent" | "interactive">(
-    preferredMode as "agent" | "interactive",
-  );
+  const [mode] = useState<"interactive">("interactive");
 
   const focusNextChartRef = useRef<boolean>(true);
 
   // Color map for different modes - easy to customize!
-  const modeColorMap = {
-    agent: theme.palette.primary.main, // purple for agent mode
-    interactive: theme.palette.secondary.main, // blue for interactive mode
-  };
-  const modeColor = modeColorMap[mode];
+  const modeColor = theme.palette.secondary.main;
 
   const [prompt, setPrompt] = useState<string>("");
   const [isFormulating, setIsFormulating] = useState<boolean>(false);
@@ -1953,62 +1930,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", ...sx }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <ButtonGroup
-          size="small"
-          sx={{
-            ml: 1,
-            "& .MuiButton-root": {
-              textTransform: "none",
-              fontSize: "0.625rem",
-              fontWeight: 500,
-              border: "none",
-              borderRadius: "4px",
-              borderBottomLeftRadius: 0,
-              borderBottomRightRadius: 0,
-              padding: "2px 6px",
-              minWidth: "auto",
-            },
-          }}
-        >
-          <Button
-            variant="text"
-            value="interactive"
-            sx={{
-              color:
-                mode === "interactive"
-                  ? modeColorMap["interactive"]
-                  : "text.secondary",
-              backgroundColor:
-                mode === "interactive"
-                  ? alpha(modeColorMap["interactive"], 0.08)
-                  : "transparent",
-            }}
-            onClick={() => {
-              setMode("interactive");
-            }}
-          >
-            interactive
-          </Button>
-          <Button
-            variant="text"
-            value="agent"
-            sx={{
-              color:
-                mode === "agent" ? modeColorMap["agent"] : "text.secondary",
-              backgroundColor:
-                mode === "agent"
-                  ? alpha(modeColorMap["agent"], 0.08)
-                  : "transparent",
-            }}
-            onClick={() => {
-              setMode("agent");
-            }}
-          >
-            agent
-          </Button>
-        </ButtonGroup>
-      </Box>
       <Card
         variant="outlined"
         sx={{
@@ -2019,30 +1940,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           gap: 1,
           position: "relative",
           borderColor: alpha(modeColor, 0.5),
-          animation:
-            mode === "agent"
-              ? "glowAgent 2s ease-in-out infinite alternate"
-              : "glowInteractive 2s ease-in-out infinite alternate",
-          "@keyframes glowAgent": {
-            "0%": {
-              boxShadow: `0 0 5px 0 ${alpha(modeColorMap["agent"], 0.1)}`,
-            },
-            "100%": {
-              boxShadow: `0 0 10px 0 ${alpha(
-                modeColorMap["agent"],
-                0.3,
-              )}, 0 0 10px 0 ${alpha(modeColorMap["agent"], 0.3)}`,
-            },
-          },
+          animation: "glowInteractive 2s ease-in-out infinite alternate",
           "@keyframes glowInteractive": {
             "0%": {
-              boxShadow: `0 0 5px 0 ${alpha(modeColorMap["interactive"], 0.1)}`,
+              boxShadow: `0 0 5px 0 ${alpha(modeColor, 0.1)}`,
             },
             "100%": {
-              boxShadow: `0 0 10px 0 ${alpha(
-                modeColorMap["interactive"],
-                0.3,
-              )}, 0 0 10px 0 ${alpha(modeColorMap["interactive"], 0.3)}`,
+              boxShadow: `0 0 10px 0 ${alpha(modeColor, 0.3)}, 0 0 10px 0 ${alpha(modeColor, 0.3)}`,
             },
           },
         }}

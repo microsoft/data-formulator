@@ -128,11 +128,6 @@ export interface ChartIncompatibleState {
 }
 
 export interface DataFormulatorState {
-  agentRules: {
-    coding: string;
-    exploration: string;
-  };
-
   sessionId: string | undefined;
   models: ModelConfig[];
   modelSlots: ModelSlots;
@@ -205,11 +200,6 @@ export interface DataFormulatorState {
 
 // Define the initial state using that type
 const initialState: DataFormulatorState = {
-  agentRules: {
-    coding: "",
-    exploration: "",
-  },
-
   sessionId: undefined,
   models: [],
   modelSlots: {},
@@ -453,7 +443,6 @@ export const dataFormulatorSlice = createSlice({
       //state.table = undefined;
 
       // state.modelSlots = {};
-      //state.agentRules = initialState.agentRules;
       //state.config = initialState.config;
       //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
 
@@ -501,7 +490,6 @@ export const dataFormulatorSlice = createSlice({
       let savedState = action.payload;
 
       // models should not be loaded again, especially they may be from others
-      state.agentRules = state.agentRules || initialState.agentRules;
       state.models = state.models || [];
       state.modelSlots = state.modelSlots || {};
       state.testedModels = state.testedModels || [];
@@ -589,12 +577,6 @@ export const dataFormulatorSlice = createSlice({
       action: PayloadAction<"editor" | "report" | "live">,
     ) => {
       state.viewMode = action.payload;
-    },
-    setAgentRules: (
-      state,
-      action: PayloadAction<{ coding: string; exploration: string }>,
-    ) => {
-      state.agentRules = action.payload;
     },
     selectModel: (state, action: PayloadAction<string | undefined>) => {
       state.modelSlots = { ...state.modelSlots, generation: action.payload };
@@ -1717,12 +1699,6 @@ export const dfSelectors = {
   getModels: createSelector(
     [(state: DataFormulatorState) => state.models],
     (models) => models,
-  ),
-
-  // Memoized selector for agent rules
-  getAgentRules: createSelector(
-    [(state: DataFormulatorState) => state.agentRules],
-    (rules) => rules,
   ),
 
   // Memoized selector for config
