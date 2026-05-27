@@ -33,41 +33,75 @@ class Client:
 
 ## reasoning_effort 分层
 
-默认 `"low"`（安全、省 token）。需要高推理的 Agent 调用时显式传 `"high"`。
+每个 Agent 的默认 tier 在 `py-src/data_formulator/agent_config.py` 的
+`AGENT_REASONING_EFFORT` 字典里统一维护。Agent 调用 LLM 时通过
+`reasoning_effort_for(_AGENT_ID, self.client.model)` 解析最终值，自动按
+目标模型做能力降级。
 
-### LOW（走默认）
+### 五档定义
 
-| Agent | 文件 |
-|---|---|
-| SortDataAgent | `agent_sort_data.py` |
-| SimpleAgents（×3 方法） | `agent_simple.py` |
-| CodeExplanationAgent | `agent_code_explanation.py` |
-| DataLoadAgent | `agent_data_load.py` |
-| ChartRestyleAgent | `agent_chart_restyle.py` |
-| DataCleanAgentStream | `agent_data_clean_stream.py` |
-| ChartInsightAgent | `agent_chart_insight.py` |
-
-### HIGH（显式传参）
-
-| Agent | 文件 |
-|---|---|
-| DataAgent | `data_agent.py` |
-| DataLoadingAgent | `agent_data_loading_chat.py` |
-| ReportGenAgent | `agent_report_gen.py` |
-| ExperienceDistillAgent | `agent_experience_distill.py` |
-| DataTransformationAgent | `agent_data_transform.py` |
-| DataRecAgent | `agent_data_rec.py` |
-
-### 混合模式
-
-| Agent | LOW 路径 | HIGH 路径 |
+| Tier | 适用范围 | 不支持的模型如何降级 |
 |---|---|---|
-| InteractiveExploreAgent | `run()` 主流 `get_completion()` | `_call_llm_with_tools()` 工具轮 `get_completion_with_tools(..., reasoning_effort="high")` |
+| `none` | 仅 GPT-5 `codex` / `pro`（最轻档） | 其它模型回退到 `low` |
+| `minimal` | 仅 OpenAI GPT-5 base / mini / nano / 5.x | GPT-5 codex/pro → `none`；其它 → `low` |
+| `low` / `medium` / `high` | 所有支持 reasoning 的模型（LiteLLM 统一映射） | 不支持 reasoning 的模型由 `drop_params=True` 静默忽略 |
+
+> 选择原则：**挑能产出可接受质量的最低档**。重型代码生成 / 多步工具
+> 调用使用 `low`；单轮抽取 / 分类 / 格式化使用 `minimal`。
+
+### 当前配置（来源：`agent_config.py`）
+
+| Agent ID | Tier | 备注 |
+|---|---|---|
+| `data_transform` | `low` | 生成 Python 转换脚本 |
+| `data_rec` | `low` | 图表 / 转换推荐 |
+| `data_agent` | `low` | 多步探索 agent |
+| `report_gen` | `low` | 叙述 + inspect/embed 工具 |
+| `interactive_explore` | `low` | 探索想法 agent |
+| `data_loading_chat` | `low` | 会话式数据加载（带工具） |
+| `data_load` | `minimal` | 一次性类型推断 |
+| `experience_distill` | `minimal` | 总结分析上下文 |
+| `chart_insight` | `minimal` | 图表标题 + 1–3 个 takeaway |
+| `chart_restyle` | `minimal` | 对 Vega-Lite spec 做样式编辑 |
+| `code_explanation` | `minimal` | 解释衍生字段 |
+| `sort_data` | `minimal` | 小列表的自然顺序排序 |
+| `simple` | `minimal` | nl_to_filter / workspace_name / intent |
+
+`DEFAULT_REASONING_EFFORT = "low"` —— 未在表中列出的 agent id 走默认值。
+
+### 运行时覆盖
+
+通过环境变量 `DF_REASONING_EFFORT_<AGENT_ID>` 可在不改代码的情况下临时
+调整某个 agent 的 tier：
+
+```bash
+DF_REASONING_EFFORT_DATA_TRANSFORM=medium
+DF_REASONING_EFFORT_REPORT_GEN=high
+```
+
+合法取值：`none` / `minimal` / `low` / `medium` / `high`。
+
+### Agent 调用模板
+
+```python
+from data_formulator.agent_config import reasoning_effort_for
+
+_AGENT_ID = "data_transform"
+
+response = self.client.get_completion(
+    messages=messages,
+    reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+)
+```
 
 ### 查询方式
 
 ```bash
-grep -r 'reasoning_effort="high"' py-src/data_formulator/agents/
+# 当前所有 agent 的默认 tier
+grep -nE '"\w+": +"' py-src/data_formulator/agent_config.py
+
+# 所有调用点
+grep -rn 'reasoning_effort_for' py-src/data_formulator/agents/
 ```
 
 ## 已删除的机制
@@ -86,11 +120,12 @@ grep -r 'reasoning_effort="high"' py-src/data_formulator/agents/
 ## 新增 Agent 检查清单
 
 - [ ] Agent 继承正确的 base class 并使用 `self.client`
-- [ ] 简单任务 → 调用 `self.client.get_completion(messages)`（默认 low）
-- [ ] 复杂 / 代码生成任务 → 调用时传 `reasoning_effort="high"`
+- [ ] 在 `agent_config.py` 的 `AGENT_REASONING_EFFORT` 中为新 agent_id 设置默认 tier
+- [ ] 调用 LLM 时使用 `reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model)`
 - [ ] 需要 tools → 使用 `self.client.get_completion_with_tools(messages, tools, ...)`
 - [ ] **不要** 直接 `import litellm` 或 `import openai` 调用 API
-- [ ] **不要** 检查模型名来决定是否支持某功能
+- [ ] **不要** 检查模型名来决定是否支持某功能（vision / reasoning 等）
+- [ ] **不要** 在调用点硬编码 `reasoning_effort="high"`——统一通过 `agent_config.py` 维护
 
 ## 厂商映射
 

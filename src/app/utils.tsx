@@ -23,7 +23,6 @@ export function getUrls() {
         TEST_MODEL: `/api/agent/test-model`,
 
         SORT_DATA_URL: `/api/agent/sort-data`,
-        CLEAN_DATA_URL: `/api/agent/clean-data-stream`,
         DATA_LOADING_CHAT_URL: `/api/agent/data-loading-chat`,
         SCRATCH_UPLOAD_URL: `/api/agent/workspace/scratch/upload`,
         SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,

@@ -95,7 +95,7 @@ agent = SortDataAgent(client=client, language_instruction=language_instruction)
 | 场景 | Mode |
 |------|------|
 | `DataAgent`、`ChartInsightAgent`、`InteractiveExploreAgent`、`ReportGenAgent` | `full` |
-| `CodeExplanationAgent`、`DataCleanAgentStream`、`DataLoadingAgent` | `full` |
+| `CodeExplanationAgent`、`DataLoadingAgent` | `full` |
 | `DataRecAgent`、`DataTransformationAgent`、`DataLoadAgent` | `compact` |
 | `SortDataAgent`、`ChartRestyleAgent` | `compact` |
 | `workspace-name` | `full` |
@@ -224,7 +224,6 @@ event = {
 | `agent.noCodeBlock` | `DataRecAgent` / `DataTransformationAgent` |
 | `agent.unexpectedError` | `DataRecAgent` fallback |
 | `agent.codeExecError` | code execution fallback |
-| `agent.unableExtractTables` | `DataCleanAgentStream` |
 | `agent.unableExtractScript` | `DataLoadAgent` / `SortDataAgent` |
 | `agent.errorCallingModel` | `DataLoadingChatAgent` |
 

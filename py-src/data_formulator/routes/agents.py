@@ -29,7 +29,6 @@ from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace import Workspace, get_user_home
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
-from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_chart_insight import ChartInsightAgent
@@ -295,63 +294,6 @@ def process_data_on_load_request():
     except Exception as e:
         logger.exception(e)
         raise classify_and_wrap_llm_error(e) from e
-
-
-@agent_bp.route('/clean-data-stream', methods=['GET', 'POST'])
-def clean_data_stream_request():
-    from data_formulator.error_handler import stream_error_event
-
-    if not request.is_json:
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
-
-    content = request.get_json()
-    client = get_client(content['model'])
-
-    logger.info("# clean-data-stream request")
-    logger.debug(f" model: {content['model']}")
-
-    language_instruction = get_language_instruction()
-    prompt = content.get('prompt', '')
-    artifacts = content.get('artifacts', [])
-    dialog = content.get('dialog', [])
-
-    def generate():
-        agent = DataCleanAgentStream(client=client, language_instruction=language_instruction)
-        try:
-            for chunk in agent.stream(prompt, artifacts, dialog):
-                stripped = chunk.strip()
-                if stripped.startswith("{"):
-                    try:
-                        result = json.loads(stripped)
-                    except (json.JSONDecodeError, ValueError):
-                        result = None
-                    if isinstance(result, dict):
-                        if result.get("status") == "ok":
-                            yield json.dumps({
-                                "type": "result",
-                                "data": result,
-                            }, ensure_ascii=False) + "\n"
-                        else:
-                            yield stream_error_event(AppError(
-                                ErrorCode.AGENT_ERROR,
-                                sanitize_error_message(result.get("content", "Unable to extract tables")),
-                            ))
-                        continue
-                yield json.dumps({"type": "text_delta", "text": chunk}, ensure_ascii=False) + "\n"
-        except Exception as e:
-            logger.error("clean-data-stream error", exc_info=e)
-            if 'unable to download html from url' in str(e):
-                yield stream_error_event(AppError(
-                    ErrorCode.DATA_LOAD_ERROR,
-                    "This website doesn't allow us to download HTML from URL",
-                ))
-            else:
-                yield stream_error_event(classify_and_wrap_llm_error(e))
-
-    return Response(
-        stream_with_context(_with_warnings(generate())),
-        mimetype='application/x-ndjson',
-    )
 
 
 @agent_bp.route('/sort-data', methods=['GET', 'POST'])
@@ -1264,7 +1206,7 @@ def scratch_serve(filename):
 
 
 # ---------------------------------------------------------------------------
-# Conversational data loading agent (replaces old clean-data-stream)
+# Conversational data loading agent
 # ---------------------------------------------------------------------------
 
 @agent_bp.route('/data-loading-chat', methods=['POST'])

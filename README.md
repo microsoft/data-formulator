@@ -26,21 +26,36 @@
 <!-- 
 https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 -->
 
+
+## Why Data Formulator?
+
+Your data is spread across databases, warehouses, BI tools, and files. AI assistants and coding agents can help analyze it, but only after someone wires them up to every source and builds a workflow around them. Even then, when all you see is code and text replies, it's hard to follow what the agent did, hard to explore broadly, and hard to share your insights.
+
+Data Formulator makes both easy. Connect your data in a few clicks, then work with it on an **interactive, visual** canvas: ask agents questions, see results as tables and charts, edit visuals directly, and branch into follow-ups without losing your place.
+
+- **Data & platform teams**: Data Formulator can help you fill the gap between your data platform and users. Wire up your databases, warehouses, and BI sources once, and everyone in your organizaiton has a ready-to-use workspace to explore that data with AI.
+- **Analysts & domain experts**: Data Formulator is your workspace for data exploration. Whether your data lives in Excel files, images, websites, or databases, it's never been easier to grow simple ideas into refined visuals and share what you find. All can be done interactive interface where you work reliably with AI agents, without the verbosity of chat or code.
+
+
+
 <kbd>
   <img src="https://github.com/user-attachments/assets/3ffb15aa-93ce-42b8-92cf-aaf321f9a06a">
 </kbd>
 
 
+
+
 ## News 🔥🔥🔥
 
-[05-11-2026] **Data Formulator 0.7 (alpha 2)** — A new chapter for AI-powered data exploration
--  🔌 **Data connectors** — first-class persistent connection to Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, S3, Azure Blob, BigQuery, and more, with SSO, lazy catalog loading, search, and smart filters.
--  💬 **Conversational agent with thread memory** — a unified `DataAgent` that weaves explanation, exploration, visualization, and recommendation into one fluid conversation, carrying context across turns so the agent stays in sync with your train of thought.
--  🗂️ **Persistent session & workspace management** — identity-isolated workspaces with local and Azure Blob backends; sessions persist across restarts with timestamps and sort.
--  📊 **Expressive visualization** — 30+ chart types via a new semantic chart engine (area, streamgraph, candlestick, pie, radar, maps, …), plus a chart style-refinement agent that turns rough charts into presentation-ready visuals: restyle in one click, refine typography, color, layout, and annotations through natural language.
--  📚 **Knowledge distillation (experimental)** — agents distill reusable skills and experiences from your sessions into a shared knowledge library that informs future sessions.
+[05-28-2026] **Data Formulator 0.7** — a major new release to empower enterprise data analytics:
 
-> Install the pre-release with `pip install --pre data-formulator` or pin `==0.7.0a2`.
+-  🔌 **Data Connectors** — governed, reusable connections to databases, warehouses, BI systems, object stores, and local files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Connect once; analysts and agents share it.
+-  🤖 **Context-aware agents** — a `DataLoadingAgent` extracts data from screenshots, text, websites, and connector catalogs; a unified `DataAgent` inspects data, runs sandboxed code, builds charts, and asks clarifying questions — all with access to your tables, prior charts, and goals.
+-  🧵 **Interactive workspace, not just chat** — unlike linear chat assistants where context is buried in a transcript and visuals are throwaway artifacts, Data Formulator gives you a persistent canvas. The **Data Thread** records every question, intermediate result, and chart so long analyses stay navigable — revisit any earlier step, branch into alternative directions, and compare them side by side without losing context. The **interactive canvas** lets you edit charts directly with UI controls or in natural language, inspecting the underlying data and code at any time.
+-  📊 **30+ chart types** — new semantic chart engine (area, streamgraph, candlestick, radar, maps, KPI, …) plus a style-refinement agent for presentation-ready visuals.
+-  🌐 **Multilingual UI** — Data Formulator now speaks Chinese in addition to English (没错，DF现在会说中文了！). More languages on the way — [contributions welcome](src/i18n/TRANSLATION_GUIDE.md).
+
+> Install with `pip install data_formulator` or run instantly with `uvx data_formulator`.
 
 > [!TIP]
 > **Are you a developer?** Join us to shape the future of AI-powered data exploration!
@@ -50,6 +65,7 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 ## Previous Updates
 
 Here are milestones that lead to the current design:
+- **v0.7 alpha 2** (05-11-2026): Early preview of data connectors, the unified `DataAgent` with thread memory, persistent workspaces, the semantic chart engine, and experimental knowledge distillation.
 - **v0.6** ([Demo](https://github.com/microsoft/data-formulator/releases/tag/0.6)): Real-time insights from live data — connect to URLs and databases with automatic refresh
 - **uv support**: Faster installation with [uv](https://docs.astral.sh/uv/) — `uvx data_formulator` or `uv pip install data_formulator`
 - **v0.5.1** ([Demo](https://github.com/microsoft/data-formulator/pull/200#issue-3635408217)): Community data loaders, US Map & Pie Chart, editable reports, snappier UI
@@ -67,9 +83,7 @@ Here are milestones that lead to the current design:
 
 ## Overview
 
-**Data Formulator** is a Microsoft Research prototype for data exploration with visualizations powered by AI agents.
-
-Data Formulator enables analysts to explore data with visualizations. Started with data in any format (screenshot, text, csv, or database), you can work with AI agents with a novel blended interface that combines *user interface interactions (UI)* and *natural language (NL) inputs* to communicate their intents, control branching exploration directions, and create reports to share their insights. 
+**Data Formulator** is a Microsoft Research project for data exploration with visualizations powered by AI agents. It combines *UI interactions* with *natural language* so analysts can communicate intent, branch into alternative analyses, and share results — starting from any data format (screenshot, text, CSV, or database).
 
 ## Get Started
 

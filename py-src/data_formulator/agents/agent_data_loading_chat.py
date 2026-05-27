@@ -3,8 +3,7 @@
 
 """Conversational data loading agent.
 
-Replaces the old DataCleanAgentStream with a general-purpose
-conversational agent that can:
+General-purpose conversational agent that can:
 - Extract tables from images / text / files
 - Execute Python code in a sandboxed environment
 - Show inline table previews
@@ -20,7 +19,6 @@ import re
 import pandas as pd
 
 from data_formulator.agent_config import reasoning_effort_for
-from data_formulator.agents.agent_data_clean_stream import parse_table_sections
 from data_formulator.agents.agent_utils import accumulate_reasoning_content
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 

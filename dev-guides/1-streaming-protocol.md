@@ -34,7 +34,6 @@
 | `get-recommendation-questions` | `"question"` | 探索建议问题 |
 | `generate-report-chat` | `"text_delta"`, `"embed_chart"`, `"embed_table"` | 报告生成流 |
 | `data-loading-chat` | `"text_delta"`, `"tool_call"`, `"tool_result"`, `"done"` | 数据加载对话 |
-| `clean-data-stream` | 各种 agent 事件 | 数据清洗流 |
 | （跨端点通用） | `"thinking_text"` | Agent 推理/思考过程文本（参见 2.4） |
 
 `data-agent-streaming` 的 `result.type === "clarify"` 使用结构化多问题格式。后端和前端都以
@@ -272,7 +271,6 @@ if (parsed.text) { ... }
 | `/get-recommendation-questions` | `x-ndjson` | route 累积碎片 → `_try_parse_explore_line` | `stream_error_event` | ✅ `_with_warnings` |
 | `/generate-report-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/data-loading-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
-| `/clean-data-stream` | `x-ndjson` | agent 直接 yield | `stream_error_event` | ✅ `_with_warnings` |
 
 > **注意**: `/refine-data` 曾出现在此表中，但实际实现为普通 JSON endpoint（`jsonify` 返回），不使用 NDJSON 流。已于 2026-04-30 Phase 0 盘点中确认并移除。详见 `design-docs/20` 附录 A.10。
 
