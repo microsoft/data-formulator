@@ -7,9 +7,9 @@ Architecture:
   - **Tools** (explore, inspect_source_data): Called via OpenAI tool-calling
     API within a single LLM turn.  The agent gathers data silently — these
     are internal to the agent and not surfaced to the user.
-  - **Actions** (visualize, clarify, explain, present): Structured JSON output
-    in the LLM's text response.  These are externalized to the user — each
-    one ends the current turn and produces visible output.
+  - **Actions** (visualize, clarify, explain, summary, delegate): Structured
+    JSON output in the LLM's text response.  These are externalized to the
+    user — each one ends the current turn and produces visible output.
 
 The server-side while loop handles one action per iteration:
   1. Call LLM (with tools) → agent may call tools internally
@@ -40,8 +40,6 @@ from data_formulator.agents.context import (
     build_lightweight_table_context,
     build_peripheral_thread_context,
     handle_inspect_source_data,
-    handle_read_catalog_metadata,
-    handle_search_data_tables,
 )
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.parquet_utils import df_to_safe_records
@@ -60,7 +58,7 @@ logger = logging.getLogger(__name__)
 _AGENT_ID = "data_agent"
 
 # ── Weak-model rescue helpers ─────────────────────────────────────────────
-# When a weaker LLM calls visualize/clarify/explain/present as a tool instead
+# When a weaker LLM calls visualize/clarify/explain/summary as a tool instead
 # of outputting JSON in text, these helpers validate and normalise the args
 # so the action can be rescued without wasting rounds.
 
@@ -68,8 +66,12 @@ _ACTION_REQUIRED_FIELDS: dict[str, list[str]] = {
     "visualize": ["code", "output_variable", "chart"],
     "clarify": ["questions"],
     "explain": ["explanation"],
-    "present": ["summary"],
+    "summary": ["summary"],
+    "delegate": ["target", "options"],
 }
+
+# Valid targets for a `delegate` action.
+_DELEGATE_TARGETS: tuple[str, ...] = ("data_loading", "report_gen")
 
 
 def _rescue_unpack_json_strings(data: dict) -> None:
@@ -149,61 +151,6 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_data_tables",
-            "description": (
-                "Search for tables by keyword across workspace and connected "
-                "data sources. Returns Level 0 summaries: table name, one-line "
-                "description, matched columns, and — for not-imported tables — "
-                "source_id and table_key needed by read_catalog_metadata. "
-                "Use inspect_source_data for imported tables, "
-                "read_catalog_metadata for not-imported candidates."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Keyword to search for (matches table names, descriptions, column names, column descriptions).",
-                    },
-                    "scope": {
-                        "type": "string",
-                        "enum": ["workspace", "connected", "all"],
-                        "description": "Search scope: 'workspace' (imported tables only), 'connected' (cached catalogs from connected sources), 'all' (both).",
-                    },
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_catalog_metadata",
-            "description": (
-                "Read detailed metadata for a specific table from a connected "
-                "data source's cached catalog. Shows columns, types, descriptions "
-                "(both source and user-annotated), schema, row count, and metadata "
-                "status. Use after search_data_tables finds a not-imported candidate."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "source_id": {
-                        "type": "string",
-                        "description": "The data source / connector ID (from search results).",
-                    },
-                    "table_key": {
-                        "type": "string",
-                        "description": "The table's unique key (UUID or _source_name, from search results).",
-                    },
-                },
-                "required": ["source_id", "table_key"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "search_knowledge",
             "description": (
                 "Search the user's knowledge base (rules, experiences) "
@@ -276,18 +223,14 @@ You have tools you can call to gather data:
   transforming, printing) into a single explore() call.
 - **inspect_source_data(table_names)** — get schema, stats, and sample rows
   for source tables (cheaper than explore for basic inspection).
-- **search_data_tables(query, scope)** — search for tables by keyword across
-  workspace and connected data sources.  Returns Level 0 summaries (name,
-  description, matched columns).  Not-imported results include ``source_id``
-  and ``table_key`` — pass them to read_catalog_metadata to see full details.
-  For imported tables, use inspect_source_data instead.
-- **read_catalog_metadata(source_id, table_key)** — read full cached metadata
-  for a specific not-imported table from a connected source (columns, types,
-  descriptions, schema, row count).  Only use with ``source_id`` and
-  ``table_key`` from search_data_tables results; do NOT fabricate these values.
 - **search_knowledge(query, categories?)** — search the user's knowledge base
   (rules, experiences) for relevant entries.
 - **read_knowledge(category, path)** — read the full content of a knowledge entry.
+
+You analyse data that is **already in the workspace**.  If the user's
+question requires data that isn't present, do NOT try to find it yourself —
+emit a `delegate` action targeting the Data Loading agent and the user
+can hand off in one click.
 
 The initial context already includes sample rows and statistics for each
 table.  If the data is straightforward, proceed directly to your action
@@ -300,12 +243,12 @@ After gathering data (or immediately if the data is clear), output
 **exactly one action** as a JSON object in your text response.  Actions
 are shown to the user and end the current turn.
 
-⚠ **CRITICAL**: `visualize`, `clarify`, `explain`, and `present` are
-**actions**, NOT tools.  Never call them via function/tool calling — they
-MUST appear as a JSON object in your **text reply**.  Only the items
-listed in the Tools section above (`explore`, `inspect_source_data`,
-`search_data_tables`, `read_catalog_metadata`, `search_knowledge`,
-`read_knowledge`) may be invoked as tool calls.
+⚠ **CRITICAL**: `visualize`, `clarify`, `explain`, `summary`, and
+`delegate` are **actions**, NOT tools.  Never call them via
+function/tool calling — they MUST appear as a JSON object in your **text
+reply**.  Only the items listed in the Tools section above (`explore`,
+`inspect_source_data`, `search_knowledge`, `read_knowledge`) may be
+invoked as tool calls.
 
 ### `visualize`
 ```json
@@ -349,9 +292,9 @@ only when the user needs to type a custom answer. Ask at most 3 questions.
 ```json
 {{
     "action": "explain",
-    "explanation": "<a short, friendly answer in 1–3 sentences. Bold **column names**. Stay grounded in what the data actually shows; admit when something is unknown. Avoid long lectures.>",
+    "explanation": "<a short, friendly answer in 1–3 sentences. Stay grounded in what the data actually shows; admit when something is unknown. Avoid long lectures.>",
     "followups": [
-        "<a short visualization question the user might click next, phrased as something the user would say. Each followup should be a chart-producing question that naturally builds on the explanation, e.g. 'Plot **revenue** by **region**', 'Show monthly trend of **sign_ups**'.>"
+        "<a short visualization question the user might click next, phrased as something the user would say. Each followup should be a chart-producing question that naturally builds on the explanation, e.g. 'Plot **revenue** by region', 'Show monthly trend of **sign_ups**'.>"
     ]
 }}
 ```
@@ -364,13 +307,44 @@ explanation concise (1–3 sentences). Followups are optional (≤4 items,
 should lead to a `visualize` action on the next turn. Omit `followups`
 entirely if no useful chart-producing follow-ups exist.
 
-### `present`
+**Column-name emphasis:** in `explain.explanation`, `followups[]`, and
+`clarify.questions[].text` / `options[]`, you may wrap a column name in
+`**…**` to render it as a highlighted token in the UI.
+
+### `summary`
 ```json
 {{
-    "action": "present",
+    "action": "summary",
     "summary": "<one sentence (≤ 25 words) summarizing the key finding>"
 }}
 ```
+
+Use `summary` to end the run after visualization(s) with a one-sentence
+closing remark on the key finding. This is the standard close for any
+question you answer with charts.
+
+### `delegate`
+```json
+{{
+    "action": "delegate",
+    "target": "data_loading" | "report_gen",
+    "message": "<short note to the user that you're handing off, e.g. 'I'll hand this to the data loading agent — pick a search:'>",
+    "options": ["<seed prompt for the target agent>"]
+}}
+```
+
+Use `delegate` to hand off to a peer agent. Each option becomes a one-click
+button (the string is both the button label and the seed prompt). Provide
+1–2 options; if two, make them meaningfully distinct (e.g. different search
+angles, or executive summary vs. deep-dive).
+
+Valid `target` values:
+- **`data_loading`** — the user's question needs data that isn't in the
+  workspace. Options are short search phrases (e.g. `'monthly orders 2024'`).
+  Prefer `clarify` if the workspace tables might already cover the question.
+- **`report_gen`** — the user wants a narrative report or write-up over
+  the charts already produced. Options restate the report style in one
+  short sentence.
 
 ## Understanding your context
 
@@ -380,10 +354,13 @@ entirely if no useful chart-producing follow-ups exist.
 
 - **Classify the question first** (silently) to calibrate effort, not as a hard rule:
   - *Conceptual / informational* (asking about meaning, schema, what a field represents, why something is the way it is — no chart needed): use `explain`.
-  - *Concrete* (one specific answer, e.g. "avg price by region", "which sold most"): **1 visualization** → `present`.
-  - *Progressive* (one question best answered by a small sequence, e.g. "why did revenue drop?", "compare regions"): **2–3 visualizations** → `present`.
-  - *Open-ended* (explicit exploration, e.g. "explore", "overview", "what's interesting"): **3–5 visualizations** forming a narrative → `present`.
-- **After each chart**, continue only if the next chart answers a gap *raised* by the previous one — not just another interesting angle. Otherwise `present` and let the user ask for more.
+  - *Concrete* (one specific answer, e.g. "avg price by region", "which sold most"): **1 visualization** → `summary` (one-line takeaway).
+  - *Progressive* (one question best answered by a small sequence, e.g. "why did revenue drop?", "compare regions"): **2–3 visualizations** → `summary` to tie them together.
+  - *Open-ended* (explicit exploration, e.g. "explore", "overview", "what's interesting"): **3–5 visualizations** forming a narrative → `summary` to tie them together.
+  - *Hand-off needed* — use `delegate` as the terminal action when the request is better served by a peer agent:
+    - *Missing data* (the user's question needs tables not in the workspace): `delegate(target="data_loading")` with a short search phrase as `prompt`.
+    - *Report request* (e.g. "create a report about X", "write up the findings", "summarize Y as a narrative"): produce any charts the report needs (0–3, judgment-based — if the workspace already has relevant charts you may delegate immediately), then end with `delegate(target="report_gen")`.
+- **After each chart**, continue only if the next chart answers a gap *raised* by the previous one — not just another interesting angle. Otherwise close out (`summary`, or `delegate` for hand-off cases) and let the user ask for more.
 - If ambiguous, `clarify`.
 - **Never** repeat a visualization already in the trajectory or in another thread.
 - {max_iterations} visualizations is a **hard ceiling**, not a target.
@@ -476,6 +453,7 @@ class DataAgent:
             ``"explore_result"`` – explore code output
             ``"clarify"``     – clarification question (loop pauses)
             ``"explain"``     – conversational explanation (loop pauses)
+            ``"delegate"``    – hand-off to a peer agent (loop terminates)
             ``"completion"``  – final summary (loop terminates)
             ``"error"``       – error information
         """
@@ -585,8 +563,8 @@ class DataAgent:
                                             "label_code": "agent.clarifyOptionSimplify",
                                         },
                                         {
-                                            "label": "Present what you have so far",
-                                            "label_code": "agent.clarifyOptionPresent",
+                                            "label": "Summarize what you have so far",
+                                            "label_code": "agent.clarifyOptionSummary",
                                         },
                                     ],
                                 }
@@ -623,7 +601,7 @@ class DataAgent:
                                 "Here is what was already completed:\n"
                                 f"{steps_summary}\n\n"
                                 "Please output a JSON action object "
-                                "(visualize / clarify / explain / present) "
+                                "(visualize / clarify / explain / summary / delegate) "
                                 "to continue."
                             ),
                         })
@@ -693,8 +671,8 @@ class DataAgent:
                     self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
                     return
 
-                elif action_type == "present":
-                    rlog.log("action_execution", action="present", status="ok",
+                elif action_type == "summary":
+                    rlog.log("action_execution", action="summary", status="ok",
                              iteration=iteration, total_steps=len(completed_steps))
                     final_status = "success"
                     yield {
@@ -706,6 +684,32 @@ class DataAgent:
                             "summary": action.get("summary", ""),
                             "total_steps": len(completed_steps),
                         },
+                    }
+                    self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                    return
+
+                elif action_type == "delegate":
+                    rlog.log("action_execution", action="delegate", status="ok",
+                             iteration=iteration)
+                    final_status = "delegate"
+                    try:
+                        delegate_payload = self._normalize_delegate_action(action)
+                    except ValueError as exc:
+                        final_status = "parse_failed"
+                        yield self._error_event(
+                            iteration,
+                            str(exc) or "delegate action requires non-empty target and options.",
+                            message_code="agent.parseActionFailed",
+                        )
+                        self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                        return
+                    yield {
+                        "type": "delegate",
+                        "iteration": iteration,
+                        "thought": action.get("thought", ""),
+                        **delegate_payload,
+                        "trajectory": self._strip_images(trajectory),
+                        "completed_step_count": len(completed_steps),
                     }
                     self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
                     return
@@ -788,7 +792,7 @@ class DataAgent:
                         "role": "user",
                         "content": (
                             f"[ERROR] Unknown action '{action_type}'. "
-                            "Please choose one of: visualize, clarify, explain, present."
+                            "Please choose one of: visualize, clarify, explain, summary, delegate."
                         ),
                     })
                     yield self._error_event(iteration, f"Unknown action: {action_type}", message_code="agent.unknownAction")
@@ -910,6 +914,47 @@ class DataAgent:
         if options:
             question["options"] = options
         return {"questions": [question]}
+
+    @classmethod
+    def _normalize_delegate_action(cls, action: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a delegate action.
+
+        The agent emits this when it wants to hand off to a peer agent
+        (e.g. the Data Loading agent when the workspace lacks needed
+        data, or the Report Gen agent when the user wants a written
+        report).  The frontend renders each option as a one-click
+        handoff card.
+
+        Shape: ``{target, message?, options: [str, ...]}`` with 1–2
+        options.
+        """
+        target = str(action.get("target", "")).strip()
+        if target not in _DELEGATE_TARGETS:
+            raise ValueError(
+                f"delegate action requires 'target' ∈ {_DELEGATE_TARGETS}, got {target!r}"
+            )
+
+        message = str(action.get("message") or "").strip()
+
+        raw_options = action.get("options")
+        cleaned: list[str] = []
+        if isinstance(raw_options, list):
+            for opt in raw_options:
+                if isinstance(opt, str):
+                    text = opt.strip()
+                    if text:
+                        cleaned.append(text)
+
+        if not cleaned:
+            raise ValueError("delegate action requires non-empty 'options[]'")
+
+        # Cap at 2 — keep the user choice cognitively light.
+        cleaned = cleaned[:2]
+
+        payload: dict[str, Any] = {"target": target, "options": cleaned}
+        if message:
+            payload["message"] = message
+        return payload
 
     # ------------------------------------------------------------------
     # Visualize execution (with repair)
@@ -1599,7 +1644,7 @@ class DataAgent:
                         "purpose": tool_args.get("purpose") if tool_name == "explore" else None,
                         "code": tool_args.get("code") if tool_name == "explore" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
-                        "query": tool_args.get("query") if tool_name in ("search_data_tables", "search_knowledge") else None,
+                        "query": tool_args.get("query") if tool_name == "search_knowledge" else None,
                     }
 
                     tool_t0 = time.time()
@@ -1632,30 +1677,6 @@ class DataAgent:
                             "status": "ok",
                             "stdout": tool_content,
                         }
-                    elif tool_name == "search_data_tables":
-                        tool_content = handle_search_data_tables(
-                            query=tool_args.get("query", ""),
-                            scope=tool_args.get("scope", "all"),
-                            workspace=self.workspace,
-                        )
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "status": "ok",
-                            "stdout": tool_content,
-                        }
-                    elif tool_name == "read_catalog_metadata":
-                        tool_content = handle_read_catalog_metadata(
-                            source_id=tool_args.get("source_id", ""),
-                            table_key=tool_args.get("table_key", ""),
-                            workspace=self.workspace,
-                        )
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "status": "ok",
-                            "stdout": tool_content,
-                        }
                     elif tool_name == "search_knowledge":
                         tool_content = self._handle_search_knowledge(tool_args)
                         rlog.log("knowledge_search",
@@ -1675,10 +1696,10 @@ class DataAgent:
                             "status": "ok",
                             "stdout": tool_content,
                         }
-                    elif tool_name in ("visualize", "clarify", "explain", "present", "action"):
+                    elif tool_name in ("visualize", "clarify", "explain", "summary", "delegate", "action"):
                         action_data = dict(tool_args)
                         if "action" not in action_data:
-                            real_name = tool_name if tool_name != "action" else action_data.get("type", "present")
+                            real_name = tool_name if tool_name != "action" else action_data.get("type", "summary")
                             action_data["action"] = real_name
 
                         _rescue_unpack_json_strings(action_data)
@@ -1755,7 +1776,7 @@ class DataAgent:
                     "content": (
                         "[FORMAT ERROR] Your previous response did not contain a valid JSON action. "
                         "Please output ONLY a JSON object with one of these actions: "
-                        "visualize, clarify, explain, or present. Do NOT repeat your analysis — "
+                        "visualize, clarify, explain, summary, or delegate. Do NOT repeat your analysis — "
                         "just reformat your conclusion as JSON."
                     ),
                 })

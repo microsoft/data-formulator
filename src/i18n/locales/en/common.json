@@ -558,6 +558,12 @@
     "invalidExplanation": "The agent returned an invalid explanation.",
     "explanationTitle": "Explanation",
     "explanationFollowupsLabel": "Possible next steps:",
+    "delegateTitle": "Suggested next agent",
+    "delegateMinimize": "Minimize",
+    "delegateExpand": "Expand",
+    "delegateDismiss": "Dismiss",
+    "delegateToDataLoading": "Search in Data Loading",
+    "delegateToReportGen": "Generate report",
     "errorDuringExploration": "Error during exploration",
     "explorationStep": "Exploration step {{step}}: {{question}}",
     "threadExplorePrompt": "Explore interesting patterns and trends in this data",
@@ -751,6 +757,10 @@
   "interaction": {
     "askedForClarification": "asked for clarification",
     "gaveExplanation": "shared an explanation",
+    "delegatedToDataLoading": "suggested loading more data",
+    "delegatedToReportGen": "suggested generating a report",
+    "delegateLabelDataLoading": "Suggested data",
+    "delegateLabelReportGen": "Suggested report",
     "clarificationNeeded": "Awaiting actions"
   },
   "concepts": {

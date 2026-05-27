@@ -319,6 +319,21 @@ export const DataFormulatorFC = ({ }) => {
         setUploadDialogOpen(true);
     };
 
+    // Honor cross-component requests to hand off to the Data Loading
+    // chat seeded with a prompt (e.g. Data Agent's `delegate` card with
+    // target='data_loading'). Hand-offs targeting other agents (e.g.
+    // `report_gen`) are consumed elsewhere — we only clear our own.
+    const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
+    useEffect(() => {
+        if (agentHandoffRequest && agentHandoffRequest.target === 'data_loading') {
+            openUploadDialog('extract', agentHandoffRequest.prompt, agentHandoffRequest.images);
+            dispatch(dfActions.clearAgentHandoffRequest());
+        }
+        // openUploadDialog is stable enough for this purpose; we only react
+        // to changes in the handoff request itself.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [agentHandoffRequest]);
+
     const handleLoadExampleSession = async (session: ExampleSession) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
 

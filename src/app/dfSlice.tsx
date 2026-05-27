@@ -210,6 +210,15 @@ export interface DataFormulatorState {
      * Transient — not persisted.
      */
     dataLoadingChatResetCounter: number;
+    /**
+     * Pending hand-off from the Data Agent to a peer agent. Set by the
+     * Data Agent's `delegate` action card; consumed by `DataFormulator`
+     * (for `data_loading` → opens the upload dialog) or
+     * `SimpleChartRecBox` (for `report_gen` → kicks off the report
+     * generator) which clear this back to null. Transient — not
+     * persisted across sessions.
+     */
+    agentHandoffRequest: { target: 'data_loading' | 'report_gen'; prompt: string; images?: string[] } | null;
 
     // Generated reports state
     generatedReports: GeneratedReport[];
@@ -290,6 +299,7 @@ const initialState: DataFormulatorState = {
     dataLoadingChatMessages: [],
     dataLoadingChatInProgress: false,
     dataLoadingChatResetCounter: 0,
+    agentHandoffRequest: null,
 
     generatedReports: [],
 
@@ -838,6 +848,7 @@ export const dataFormulatorSlice = createSlice({
                 cleanInProgress: false,
                 dataLoadingChatInProgress: false,
                 dataLoadingChatResetCounter: 0,
+                agentHandoffRequest: null,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
 
@@ -1672,6 +1683,25 @@ export const dataFormulatorSlice = createSlice({
         },
         setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
             state.dataLoadingChatInProgress = action.payload;
+        },
+        /**
+         * Request that the Data Agent hand off to a peer agent
+         * (Data Loading or Report Gen) seeded with a specific prompt
+         * (and optional images). Consumed by `DataFormulator` (for
+         * `data_loading` — opens the unified upload dialog on the
+         * 'extract' tab) or `SimpleChartRecBox` (for `report_gen`
+         * — kicks off the report generator); each clears the
+         * request after handling.
+         */
+        requestAgentHandoff: (state, action: PayloadAction<{ target: 'data_loading' | 'report_gen'; prompt: string; images?: string[] }>) => {
+            state.agentHandoffRequest = {
+                target: action.payload.target,
+                prompt: action.payload.prompt,
+                images: action.payload.images,
+            };
+        },
+        clearAgentHandoffRequest: (state) => {
+            state.agentHandoffRequest = null;
         },
         // Generated reports actions
         saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {

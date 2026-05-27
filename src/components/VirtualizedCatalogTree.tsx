@@ -346,7 +346,6 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
 
     return (
         <Box sx={sx}>
-            {/* @ts-expect-error react-window v1 class component vs React 19 JSX type */}
             <FixedSizeList
                 height={maxVirtualHeight}
                 width="100%"

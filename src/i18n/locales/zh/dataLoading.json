@@ -2,6 +2,11 @@
   "dataLoading": {
     "title": "数据加载助手",
     "subtitle": "我可以帮你提取、生成或浏览数据 — 有问题随时问。",
+    "capabilityAsk": "回答关于已连接数据源的问题",
+    "capabilitySearch": "搜索并浏览精选示例数据集",
+    "capabilityExtractImage": "从图片中提取结构化数据",
+    "capabilityExtractFile": "从 PDF 或粘贴的文本中提取数据",
+    "capabilityHint": "聚焦下方输入框查看示例提示。",
     "sectionTry": "试试这些任务",
     "sectionChat": "或直接提问",
     "chatHint": "",

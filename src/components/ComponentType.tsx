@@ -58,15 +58,24 @@ export interface ClarificationResponse {
     source: 'option' | 'free_text' | 'freeform';
 }
 
+export type DelegateTarget = 'data_loading' | 'report_gen';
+
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
-    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain';
+    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain' | 'delegate';
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
+    /** For 'delegate' entries: which peer agent the Data Agent wants to
+     *  hand off to. Rendered as one or two one-click button cards. */
+    delegateTarget?: DelegateTarget;
+    /** For 'delegate' entries: 1–2 hand-off option prompts. Each string
+     *  is shown on its own button and used as the seed prompt sent to
+     *  the target agent on click. */
+    delegateOptions?: string[];
     timestamp?: number;
 }
 

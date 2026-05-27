@@ -2,9 +2,13 @@ import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ClarificationPanel } from '../../../../src/views/ClarificationPanel';
+import { ClarificationPanel } from '../../../../src/views/AgentPausePanel';
 
 vi.mock('react-i18next', () => ({
+  // The panel now lives in `AgentPausePanel.tsx` which transitively pulls
+  // in `dfSlice` → `i18n/index` → `.use(initReactI18next)`. Provide a no-op
+  // plugin shim so the i18n init code path succeeds under the mock.
+  initReactI18next: { type: '3rdParty', init: () => {} },
   useTranslation: () => ({
     t: (key: string, params?: Record<string, any>) => {
       const labels: Record<string, string> = {

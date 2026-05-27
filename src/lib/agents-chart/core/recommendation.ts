@@ -321,7 +321,12 @@ function adaptViaRecommendation(
         const st = tv.fieldSemanticType[field] ?? '';
         const card = tv.fieldLevels[field]?.length ?? 0;
         switch (role) {
-            case 'category':  return isDiscreteLike(ft, st, card);
+            // 'category' is for true discrete axes (nominal/ordinal/temporal).
+            // Quantitative fields — even low-cardinality ones — must NOT
+            // satisfy this role, otherwise a measure can land on the
+            // category axis (e.g. Bar Table y) and push the real discrete
+            // field onto color.
+            case 'category':  return !isQuantitativeField(ft, st) && isDiscreteLike(ft, st, card);
             case 'measure':   return isQuantitativeField(ft, st);
             case 'series':    return isDiscreteLike(ft, st, card);
             case 'geo':       return isGeoCoordinateType(st) || ft === 'quantitative';

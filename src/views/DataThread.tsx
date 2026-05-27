@@ -45,6 +45,7 @@ import { deleteWorkspace } from '../app/workspaceService';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
@@ -95,7 +96,7 @@ import CallMergeIcon from '@mui/icons-material/CallMerge';
 import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
+import { InteractionEntryCard, ResolvedConversationCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
 
 /** Pick the icon component for a step line based on known prefixes. */
 // Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
@@ -903,10 +904,11 @@ let SingleThreadGroupView: FC<{
         const ids = new Map<string, { question: string }>();
         for (const d of draftNodes) {
             if (d.derive?.status === 'clarifying') {
-                // The pause entry is either 'clarify' or 'explain'; both shape
-                // the timeline the same way.
+                // The pause entry is one of clarify / explain /
+                // delegate; all three shape the timeline the
+                // same way (an attention row above the input box).
                 const pauseEntry = d.derive.trigger.interaction
-                    ?.filter(e => e.role === 'clarify' || e.role === 'explain').pop();
+                    ?.filter(e => e.role === 'clarify' || e.role === 'explain' || e.role === 'delegate').pop();
                 ids.set(d.derive.trigger.tableId, { question: pauseEntry?.content || '' });
             }
         }
@@ -1175,7 +1177,7 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string };
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string; gutterIcon?: React.ReactNode };
     let timelineItems: TimelineItem[] = [];
 
     // Each running/clarifying draft should produce at most ONE banner per
@@ -1256,7 +1258,57 @@ let SingleThreadGroupView: FC<{
                 ? { ...entry, inputTableNames: deriveSourceNames }
                 : entry;
 
-            const isResolved = (entry.role === 'clarify' || entry.role === 'explain')
+            // ── Resolved Q&A folding ──
+            // When a clarify/explain/delegate has been resolved
+            // by a following user reply, fold the pair into a single
+            // compact "conversation" timeline item. Consecutive resolved
+            // pairs are accumulated into ONE item so a back-and-forth of
+            // multiple rounds collapses to one trace.
+            const isPauseRole = entry.role === 'clarify'
+                || entry.role === 'explain'
+                || entry.role === 'delegate';
+            if (isPauseRole && entry.from !== 'user') {
+                const pairs: { agentEntry: InteractionEntry; userEntry: InteractionEntry }[] = [];
+                let cursor = ei;
+                while (cursor < entries.length) {
+                    const ag = entries[cursor];
+                    const agIsPause = ag.role === 'clarify' || ag.role === 'explain' || ag.role === 'delegate';
+                    if (!agIsPause || ag.from === 'user') break;
+                    // Find the next user entry to pair with this agent question.
+                    let userIdx = -1;
+                    for (let j = cursor + 1; j < entries.length; j++) {
+                        if (entries[j].from === 'user') { userIdx = j; break; }
+                        // Stop searching if we hit another agent pause without
+                        // an intervening user reply — that pause is still
+                        // unresolved and shouldn't fold.
+                        const r = entries[j].role;
+                        if (r === 'clarify' || r === 'explain' || r === 'delegate') break;
+                    }
+                    if (userIdx < 0) break;
+                    pairs.push({ agentEntry: ag, userEntry: entries[userIdx] });
+                    cursor = userIdx + 1;
+                }
+                if (pairs.length > 0) {
+                    timelineItems.push({
+                        key: `${keyPrefix}-conv-${tableId}-${ei}`,
+                        type: triggerType,
+                        highlighted,
+                        element: <ResolvedConversationCard pairs={pairs} highlighted={highlighted} />,
+                        interactionEntry: pairs[pairs.length - 1].userEntry,
+                        gutterIcon: (
+                            <ForumOutlinedIcon sx={{
+                                fontSize: 16,
+                                color: highlighted ? theme.palette.text.secondary : 'rgba(0,0,0,0.25)',
+                            }} />
+                        ),
+                        ...extraProps,
+                    });
+                    ei = cursor - 1; // for-loop's ++ will advance past the last consumed user entry
+                    continue;
+                }
+            }
+
+            const isResolved = (entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate')
                 && entries.slice(ei + 1).some(e => e.from === 'user');
             timelineItems.push({
                 key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
@@ -1361,7 +1413,7 @@ let SingleThreadGroupView: FC<{
                 }
                 return interaction[0]?.timestamp;
             })();
-            const pauseIdx = interaction.findIndex(e => e.role === 'clarify' || e.role === 'explain');
+            const pauseIdx = interaction.findIndex(e => e.role === 'clarify' || e.role === 'explain' || e.role === 'delegate');
             if (pauseIdx < 0) {
                 // No pause — render all entries then ThinkingStepsBanner
                 pushInteractionEntries(interaction, tableId, triggerType, highlighted, keyPrefix);
@@ -1456,7 +1508,7 @@ let SingleThreadGroupView: FC<{
                     'agent-clarify-entry',
                 );
                 const lastItem = timelineItems[timelineItems.length - 1];
-                if (lastItem?.interactionEntry?.role === 'clarify' || lastItem?.interactionEntry?.role === 'explain') {
+                if (lastItem?.interactionEntry?.role === 'clarify' || lastItem?.interactionEntry?.role === 'explain' || lastItem?.interactionEntry?.role === 'delegate') {
                     lastItem.isClarifying = true;
                 }
             } else {
@@ -1720,8 +1772,8 @@ let SingleThreadGroupView: FC<{
     // entry card's palette.
     const getClarifyIcon = (item: typeof timelineItems[0]) => {
         const role = item.interactionEntry?.role;
-        const color = role === 'explain' ? theme.palette.info.main : theme.palette.warning.main;
-        const variant = role === 'explain' ? 'explain' : 'clarify';
+        const color = role === 'explain' || role === 'delegate' ? theme.palette.info.main : theme.palette.warning.main;
+        const variant = role === 'explain' || role === 'delegate' ? 'explain' : 'clarify';
         return <AgentToyIcon variant={variant} sx={{
             width: 16, height: 16, color,
             animation: 'df-clarify-bounce 1.4s ease-in-out infinite',
@@ -1890,9 +1942,11 @@ let SingleThreadGroupView: FC<{
                     ? getClarifyIcon(item)
                     : item.isCompleted && item.stepLabel
                         ? getStepIcon(item.stepLabel, iconColor)
-                        : entry
-                            ? getEntryGutterIcon(entry, iconColor)
-                            : getDefaultGutterIcon(iconColor);
+                        : item.gutterIcon
+                            ? item.gutterIcon
+                            : entry
+                                ? getEntryGutterIcon(entry, iconColor)
+                                : getDefaultGutterIcon(iconColor);
 
             // Clarification rows are clickable to bring the agent's pause
             // back into focus. Prefer the latest chart on the associated

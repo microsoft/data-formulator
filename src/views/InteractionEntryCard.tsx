@@ -171,18 +171,28 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
     </Box>
 );
 
-/** Render text with **field** markers as styled spans with subtle background. */
-export function renderFieldHighlights(text: string, bgColor: string): React.ReactNode {
+/** Render text with `**field**` markers as styled spans. The marker is
+ *  rendered as a flat "highlighter underline" — a thin colored bar sitting
+ *  just below the text baseline. Text weight, size, and color stay
+ *  unchanged so the cue scales gracefully with marker density (one or many)
+ *  without dominating the prose.
+ *
+ *  `accentColor` is the solid base color; alpha is applied internally. */
+export function renderFieldHighlights(text: string, accentColor: string): React.ReactNode {
     const parts = text.split(/(\*\*[^*]+\*\*)/g);
     return parts.map((part, i) => {
         const match = part.match(/^\*\*(.+)\*\*$/);
         if (match) {
             return (
                 <Box key={i} component="span" sx={{
-                    backgroundColor: bgColor,
-                    borderRadius: '3px',
-                    px: '3px',
-                    py: '1px',
+                    // Flat highlighter bar beneath the text. `text-underline-*`
+                    // tokens are used (rather than border-bottom) so the bar
+                    // wraps with the text and doesn't push line-height.
+                    textDecorationLine: 'underline',
+                    textDecorationColor: alpha(accentColor, 0.22),
+                    textDecorationThickness: '2px',
+                    textUnderlineOffset: '3px',
+                    textDecorationSkipInk: 'none',
                 }}>
                     {match[1]}
                 </Box>
@@ -218,7 +228,6 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     // User prompts and user instructions — card with custom palette
     if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
         const palette = theme.palette.custom;
-        const fieldBg = alpha(palette.main, 0.08);
         // Provenance for multi-input derivations is rendered as a structural
         // "merge node" in the timeline gutter (see DataThread), so the
         // instruction card itself stays free of chip-strip chrome.
@@ -237,7 +246,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 ...clickSx,
             }}>
                 <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
-                    {renderFieldHighlights(text, fieldBg)}
+                    {renderFieldHighlights(text, palette.main)}
                 </Typography>
             </Box>
         );
@@ -260,17 +269,28 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color = theme.palette.text.secondary;
                 break;
             case 'clarify':
-                color = resolved ? theme.palette.text.secondary : theme.palette.warning.main;
+                // Active conversational entries (clarify / explain /
+                // suggest_data_search) use neutral text — the semantic cue
+                // is carried by the icon, not by recoloring whole paragraphs.
+                color = resolved ? theme.palette.text.secondary : theme.palette.text.primary;
                 if (resolved) collapsedLabel = (displayText || t('interaction.askedForClarification')).replace(/\s+/g, ' ').trim();
                 break;
             case 'explain': {
-                color = resolved ? theme.palette.text.secondary : theme.palette.info.main;
+                color = resolved ? theme.palette.text.secondary : theme.palette.text.primary;
                 if (resolved) {
                     collapsedLabel = (displayText || t('interaction.gaveExplanation')).replace(/\s+/g, ' ').trim();
                 }
-                // Active explain renders inline in the info color (same
-                // treatment as an active clarify) so it reads as primary
-                // content, not a disabled preview.
+                break;
+            }
+            case 'delegate': {
+                color = resolved ? theme.palette.text.secondary : theme.palette.text.primary;
+                if (resolved) {
+                    const target = entry.delegateTarget || 'data_loading';
+                    const defaultLabel = target === 'report_gen'
+                        ? t('interaction.delegatedToReportGen')
+                        : t('interaction.delegatedToDataLoading');
+                    collapsedLabel = (displayText || defaultLabel).replace(/\s+/g, ' ').trim();
+                }
                 break;
             }
             case 'summary':
@@ -290,7 +310,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         // click). Their truncated preview here should always stay clamped —
         // no in-place expand, to avoid duplicating the panel content.
         const isActiveAgentPause = !resolved
-            && (entry.role === 'clarify' || entry.role === 'explain');
+            && (entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate');
 
         // Auto-clamp very long agent text bubbles. Tied to the same
         // `expanded` state as thinking — one parent click reveals both —
@@ -322,28 +342,56 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         const isConversational = entry.role === 'instruction'
             || entry.role === 'clarify'
             || entry.role === 'explain'
+            || entry.role === 'delegate'
             || entry.role === 'summary';
-        const isSummary = entry.role === 'summary';
+        // Bubble chrome stays close to neutral, but the special states earn
+        // a soft tinted fill in their per-variant semantic hue. The hues
+        // here match `AgentPausePanel` so a paused entry and its panel
+        // above the input read as the same color family:
+        //   clarify              → warning   ("you're being asked")
+        //   explain / suggest    → primary   ("here's an answer / handoff")
+        //   summary              → secondary ("agent's finding")
+        //   error                → error
         const isActiveClarify = entry.role === 'clarify' && !resolved;
-        const isActiveExplain = entry.role === 'explain' && !resolved;
-        // Tinted-fill bubbles read as a stand-alone state ("insight" /
-        // "awaiting actions" / "explanation") rather than in-progress chatter.
-        // All use the same border/shape; only the fill hue differs.
-        const bubbleBg = isSummary
-            ? alpha(theme.palette.info.main, 0.05)
-            : isActiveClarify
-                ? alpha(theme.palette.warning.main, 0.05)
-                : isActiveExplain
-                    ? alpha(theme.palette.info.main, 0.05)
-                    : alpha(theme.palette.text.secondary, 0.025);
-        const bubbleSx = isConversational ? {
+        const isActiveExplain = (entry.role === 'explain'
+            || entry.role === 'delegate') && !resolved;
+        const isSummary = entry.role === 'summary';
+        // Resolved clarify / explain / delegate entries collapse
+        // into a "light timeline trace" — no card chrome, just a faded
+        // one-line note. They still expand on click (the full text is
+        // preserved via `collapsedLabel`/`displayText`), but at rest the
+        // data thread foregrounds charts/data instead of back-and-forth.
+        const isResolvedPause = resolved
+            && (entry.role === 'clarify'
+                || entry.role === 'explain'
+                || entry.role === 'delegate');
+        const bubbleAccent = entry.role === 'error'
+            ? theme.palette.error.main
+            : isSummary
+                ? theme.palette.primary.main
+                : isActiveClarify
+                    ? theme.palette.warning.main
+                    : isActiveExplain
+                        ? theme.palette.primary.main
+                        : null;
+        const bubbleBg = bubbleAccent
+            ? alpha(bubbleAccent, 0.05)
+            : alpha(theme.palette.text.primary, 0.03);
+        const bubbleHover = bubbleAccent
+            ? alpha(bubbleAccent, 0.09)
+            : alpha(theme.palette.text.primary, 0.05);
+        // Conversational bubbles get card chrome, except resolved pauses
+        // which render as a chrome-less compact trace.
+        const bubbleSx = (isConversational && !isResolvedPause) ? {
             py: 0.5, px: 1,
             borderRadius: radius.sm,
             backgroundColor: bubbleBg,
             border: `1px solid ${borderColor.component}`,
-            // Only error keeps a left accent — it's the one role that needs
-            // an unambiguous "something went wrong" signal regardless of fill.
-            ...(entry.role === 'error' ? { borderLeft: `2px solid ${theme.palette.error.main}` } : {}),
+        } : isResolvedPause ? {
+            // Minimal trace: just inline padding so the text aligns with
+            // the gutter icon and adjacent bubbles. No bg, no border.
+            py: '2px', px: '4px',
+            opacity: 0.7,
         } : {};
 
         return (
@@ -362,15 +410,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
                     } : {}),
                     ...(isCollapsible && isConversational ? {
-                        '&:hover': {
-                            backgroundColor: isSummary
-                                ? alpha(theme.palette.info.main, 0.09)
-                                : isActiveClarify
-                                    ? alpha(theme.palette.warning.main, 0.09)
-                                    : isActiveExplain
-                                        ? alpha(theme.palette.info.main, 0.09)
-                                        : alpha(theme.palette.text.secondary, 0.05),
-                        },
+                        '&:hover': { backgroundColor: bubbleHover },
                     } : {}),
                 }}
                 onClick={() => isCollapsible && setExpanded(!expanded)}
@@ -399,11 +439,12 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 {collapsedLabel ? (
                     !expanded && (
                         <Typography component="div" sx={{
-                            fontSize: '11px',
+                            fontSize: isResolvedPause ? '10px' : '11px',
                             color: theme.palette.text.secondary,
+                            fontStyle: isResolvedPause ? 'italic' : 'normal',
                             py: '1px',
                             display: '-webkit-box',
-                            WebkitLineClamp: 2,
+                            WebkitLineClamp: isResolvedPause ? 1 : 2,
                             WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
                         }}>
@@ -426,17 +467,27 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                             overflow: 'hidden',
                         } : {}),
                     }}>
-                        {(entry.role === 'clarify' || entry.role === 'explain') && !resolved && (
+                        {(entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate') && !resolved && (
                             <Box component="span" sx={{
                                 display: 'inline',
                                 fontWeight: 600,
                                 fontSize: '10px',
                                 mr: '4px',
                             }}>
-                                ({t('interaction.clarificationNeeded')})
+                                ({entry.role === 'delegate'
+                                    ? (entry.delegateTarget === 'report_gen'
+                                        ? t('interaction.delegateLabelReportGen')
+                                        : t('interaction.delegateLabelDataLoading'))
+                                    : t('interaction.clarificationNeeded')})
                             </Box>
                         )}
-                        {displayText}
+                        {/* Active conversational bubbles render `**field**`
+                            markers as highlights tinted in the bubble's own
+                            accent color, so the underline matches the
+                            bubble bg (and the matching panel above the input). */}
+                        {(isActiveClarify || isActiveExplain)
+                            ? renderFieldHighlights(text, bubbleAccent ?? theme.palette.primary.main)
+                            : displayText}
                     </Typography>
                 )}
             </Box>
@@ -456,6 +507,125 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     );
 });
 
+export interface ResolvedConversationCardProps {
+    pairs: { agentEntry: InteractionEntry; userEntry: InteractionEntry }[];
+    highlighted?: boolean;
+}
+
+/** Render one or more resolved clarify/explain/suggest_data_search
+ *  exchanges (each followed by a user reply) folded together into a
+ *  single compact "conversation" timeline item. Collapsed by default to
+ *  a one-line trace prefixed with a chat-bubble glyph; clicking expands
+ *  to show every Q & A in order as paired bubbles.
+ *
+ *  This declutters the data thread once a back-and-forth is resolved —
+ *  the timeline foregrounds charts/data; the exchange recedes into a
+ *  hinted "💬 conversation happened here" marker that stays openable
+ *  for context.
+ */
+export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> = memo(({ pairs }) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const [expanded, setExpanded] = useState(false);
+
+    if (pairs.length === 0) return null;
+
+    // Preview uses the LAST user reply (most recent resolution); fall back
+    // to the last agent question if that reply is empty.
+    const lastPair = pairs[pairs.length - 1];
+    const lastUserText = stripFieldMarkers(lastPair.userEntry.displayContent || lastPair.userEntry.content).replace(/\s+/g, ' ').trim();
+    const lastAgentText = stripFieldMarkers(lastPair.agentEntry.displayContent || lastPair.agentEntry.content).replace(/\s+/g, ' ').trim();
+    const previewText = lastUserText || lastAgentText;
+
+    const dim = theme.palette.text.secondary;
+    const customPalette = theme.palette.custom;
+    const turnCount = pairs.length;
+
+    return (
+        <Box
+            onClick={() => setExpanded(v => !v)}
+            sx={{
+                cursor: 'pointer',
+                py: '2px',
+                px: '4px',
+                borderRadius: '4px',
+                '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
+            }}
+        >
+            {!expanded ? (
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '6px',
+                    fontSize: '11px',
+                    color: dim,
+                    opacity: 0.8,
+                }}>
+                    {turnCount > 1 && (
+                        <Typography component="span" sx={{
+                            fontSize: '10px',
+                            color: 'inherit',
+                            opacity: 0.7,
+                            flexShrink: 0,
+                            fontVariantNumeric: 'tabular-nums',
+                            lineHeight: 1.4,
+                            mt: '1px',
+                        }}>
+                            ×{turnCount}
+                        </Typography>
+                    )}
+                    <Typography component="span" sx={{
+                        fontSize: 'inherit',
+                        color: 'inherit',
+                        fontStyle: 'italic',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        flex: 1,
+                        minWidth: 0,
+                        lineHeight: 1.4,
+                    }}>
+                        {previewText}
+                    </Typography>
+                </Box>
+            ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', py: '2px' }}>
+                    {pairs.map((p, idx) => (
+                        <React.Fragment key={idx}>
+                            <Box sx={{
+                                fontSize: '11px',
+                                color: theme.palette.text.primary,
+                                py: 0.5, px: 1,
+                                borderRadius: radius.sm,
+                                backgroundColor: alpha(theme.palette.text.primary, 0.03),
+                                border: `1px solid ${borderColor.component}`,
+                            }}>
+                                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                                    {renderFieldHighlights(p.agentEntry.displayContent || p.agentEntry.content, theme.palette.primary.main)}
+                                </Typography>
+                            </Box>
+                            <Box sx={{
+                                fontSize: '11px',
+                                color: theme.palette.text.primary,
+                                py: 0.5, px: 1,
+                                borderRadius: radius.sm,
+                                backgroundColor: customPalette.bgcolor,
+                                border: `1px solid ${borderColor.component}`,
+                            }}>
+                                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                                    {renderFieldHighlights(p.userEntry.displayContent || p.userEntry.content, customPalette.main)}
+                                </Typography>
+                            </Box>
+                        </React.Fragment>
+                    ))}
+                </Box>
+            )}
+        </Box>
+    );
+});
+ResolvedConversationCard.displayName = 'ResolvedConversationCard';
+
 /** Returns the appropriate gutter icon for an InteractionEntry. */
 export function getEntryGutterIcon(entry: InteractionEntry, color: string): React.ReactNode {
     const iconSx = { width: 18, height: 18, color };
@@ -468,6 +638,7 @@ export function getEntryGutterIcon(entry: InteractionEntry, color: string): Reac
         switch (entry.role) {
             case 'clarify': return 'clarify';
             case 'explain': return 'explain';
+            case 'delegate': return 'explain';
             case 'summary': return 'summary';
             case 'instruction': return 'thinking';
             default: return 'default';

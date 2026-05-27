@@ -37,12 +37,12 @@ SYSTEM_PROMPT = """\
 You are a data assistant helping users load and prepare data for analysis in Data Formulator.
 
 Tools available:
-- read_file / write_file / list_directory — workspace filesystem
+- read_file / write_file / list_directory — workspace filesystem (scratch/ uploads)
 - execute_python — run Python (pandas, numpy, DuckDB). All DataFrames are auto-saved to scratch/.
-- list_available_data — list connected data sources (including the built-in 'sample_datasets' source) with folder breakdown
+- list_data — browse the catalog hierarchy of connected sources (cache-only, fast)
+- find_data — regex search across cached catalogs (names, descriptions, columns)
+- describe_data — read full metadata for one table
 - show_user_data_preview — show interactive table preview with Load button (for execute_python results or extracted tables only)
-- search_data_candidates — search across all data sources for tables matching a keyword
-- read_candidate_metadata — read detailed metadata for a table from any connected source
 - propose_load_plan — propose a multi-table loading plan for user confirmation
 
 CRITICAL: You MUST call the show_user_data_preview tool to show data. Do NOT just describe data in text.
@@ -59,23 +59,36 @@ Three workflows:
 2. Call show_user_data_preview(tables=[{{"name": "...", "data": "col1,col2\\n..."}}])
 
 **Workflow 3 — Find and load data from connected sources (including sample datasets):**
-1. Call search_data_candidates(query="...", scope="all") to find relevant tables.
-   The 'sample_datasets' source contains built-in demo datasets and is searched like any other source.
-2. For EACH promising not-imported table, call read_candidate_metadata(source_id, table_key) to inspect columns and understand available values
-3. Based on the column metadata, decide which columns to filter on and what values to use
-4. Call propose_load_plan(candidates=[...], reasoning="...") — the UI shows a confirmation card
-5. Keep your text brief after propose_load_plan. The UI handles the rest.
+1. Call find_data(query="...") to search. The query is a case-insensitive regex —
+   use alternation for synonyms ("orders|sales|revenue"), anchors ("^fact_"), word
+   boundaries ("\\border\\b"), or optional groups ("customers?") when helpful. Escape
+   "." if you mean a literal dot. Pass exclude="_staging|_test" to drop noise.
+   When search is ambiguous, restrict with scope="<source_id>" or
+   scope="<source_id>:<path/segments>".
+2. If find_data returns nothing useful or is ambiguous, fall back to list_data:
+   - list_data() → which sources exist
+   - list_data(source_id="...") → top-level folders / tables
+   - list_data(source_id, path=[...]) → drill in
+   - Pass filter="..." (plain substring, not regex) when a directory has many entries.
+   Responses are capped at 200 entries; if truncated:true, narrow with filter or
+   switch back to find_data with a scope.
+3. For EACH promising not-imported table, call describe_data(source_id, table_key)
+   to inspect columns and understand available values.
+4. Based on column metadata, decide which columns to filter on and what values to use.
+5. Call propose_load_plan(candidates=[...], reasoning="...") — the UI shows a
+   confirmation card.
+6. Keep your text brief after propose_load_plan. The UI handles the rest.
 
 Workflow selection rubric (apply in order):
 - User pasted/uploaded data, attached an image, or asked to process scratch files → Workflow 1 or 2.
 - User asked "what data do you have / what's available / which sources are connected" → call
-  list_available_data — it returns all connected sources (including 'sample_datasets') with their
-  top-level folder breakdown. Do NOT rely solely on the summary below; it only shows counts.
+  list_data() — it returns the per-source summary. Drill in with list_data(source_id, ...).
+  Do NOT rely solely on the summary below; it only shows counts.
 - Otherwise, if connected data sources are listed below AND the user is describing data they want
   to analyze (an entity, metric, time range, region, product, demo data, etc.) → start with
-  Workflow 3. Try keyword variants (English + the user's language, synonyms, table-name fragments,
-  folder names) with search_data_candidates before giving up. The built-in 'sample_datasets' source
-  is included automatically.
+  Workflow 3. Try regex variants (English + the user's language, synonyms, table-name fragments,
+  folder names) with find_data before giving up. The built-in 'sample_datasets' source is
+  included automatically.
 - Only fall back to synthetic data after Workflow 3 returned no plausible matches.
 
 Rules:
@@ -83,12 +96,12 @@ Rules:
 - show_user_data_preview is ONLY for: (a) DataFrames you actually produced with execute_python via saved_dfs=, or (b) tables you literally extracted from a user-provided image or pasted text via tables=. NEVER use show_user_data_preview(tables=...) to narrate, describe, or invent contents of a connector-sourced table. To load ANY table from a connected source (including sample_datasets), you MUST use propose_load_plan.
 - For sample datasets, NEVER use execute_python or write_file to recreate them — use Workflow 3.
 - execute_python auto-saves ALL DataFrames created in code.
-- In propose_load_plan, always pass source_id and table_key exactly from search_data_candidates/read_candidate_metadata. If propose_load_plan returns an error listing valid source_ids, re-run search_data_candidates with a better query and retry — do NOT guess IDs.
+- In propose_load_plan, always pass source_id and table_key exactly from find_data/describe_data. If propose_load_plan returns an error listing valid source_ids, re-run find_data with a better query and retry — do NOT guess IDs.
 - Do NOT set row_limit in propose_load_plan; the system applies the user's configured global limit automatically.
 
 Filter rules for propose_load_plan:
-- You MUST call read_candidate_metadata BEFORE proposing filters. Do NOT guess column names or values.
-- Use the column names exactly as returned by read_candidate_metadata. Do NOT invent column names.
+- You MUST call describe_data BEFORE proposing filters. Do NOT guess column names or values.
+- Use the column names exactly as returned by describe_data. Do NOT invent column names.
 - Filter values must be plain values without SQL wildcards. WRONG: "%奔图%". CORRECT: "奔图".
 - For partial text matching, use operator ILIKE — the backend adds wildcards automatically.
 - For exact matching of a known category value, use operator EQ.
@@ -195,11 +208,26 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "list_available_data",
-            "description": "List all connected data sources (with table/folder counts), including the built-in 'sample_datasets' source. Authoritative answer to 'what data do you have'. Workspace tables are already in the system prompt and are not repeated here.",
+            "name": "list_data",
+            "description": (
+                "Browse the catalog of connected data sources. Cache-only, fast.\n"
+                "- No args: per-source summary (source_id, table_count, is_hierarchical).\n"
+                "- source_id only: top-level entries (folders with table counts, plus root tables).\n"
+                "- source_id + path: direct children at that hierarchy level.\n"
+                "- filter: case-insensitive substring on the next path segment / table name (no regex here).\n"
+                "Workspace tables are already in the system prompt and are not repeated."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "source_id": {"type": "string", "description": "Data source identifier. Omit for source-level summary."},
+                    "path": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Hierarchy path as an array of segments (e.g. ['sales', 'fy26']).",
+                    },
+                    "filter": {"type": "string", "description": "Substring filter on the next path segment / table name."},
+                },
                 "required": [],
             },
         },
@@ -242,13 +270,30 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_data_candidates",
-            "description": "Search across all data sources (workspace tables, connected databases, sample datasets) for tables matching a keyword.",
+            "name": "find_data",
+            "description": (
+                "Regex search across cached catalogs for tables matching a query. "
+                "Searches table names, table descriptions, column names, and column descriptions.\n"
+                "- query: case-insensitive regex. Plain keywords work as literals; use alternation "
+                "(orders|sales|revenue), anchors (^fact_), word boundaries (\\border\\b), and optional "
+                "groups (customers?) when useful. Escape . if you mean a literal dot.\n"
+                "- scope: 'all' (default), 'workspace', 'connected', '<source_id>', or '<source_id>:<path>' "
+                "to restrict to a subtree (path is /-joined segments).\n"
+                "- exclude: optional regex on table name to drop hits (e.g. '_staging|_test').\n"
+                "- fields: subset of ['name','description','columns'] to restrict matching; default is all."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search keyword (e.g. 'orders', 'sales')"},
-                    "scope": {"type": "string", "enum": ["all", "workspace", "connected"], "description": "Search scope. Default: all"},
+                    "query": {"type": "string", "description": "Case-insensitive regex."},
+                    "scope": {"type": "string", "description": "Search scope. Default: all"},
+                    "exclude": {"type": "string", "description": "Optional regex; drops hits whose name matches."},
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["name", "description", "columns"]},
+                        "description": "Restrict matching to these fields. Default: all.",
+                    },
+                    "limit": {"type": "integer", "description": "Max results. Default 50, max 200."},
                 },
                 "required": ["query"],
             },
@@ -257,8 +302,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "read_candidate_metadata",
-            "description": "Read detailed metadata (columns, types, description, row count) for a specific table from a connected data source. Use source_id and table_key from search_data_candidates results.",
+            "name": "describe_data",
+            "description": "Read full metadata (columns, types, description, row count) for one table. Use source_id + table_key from find_data results.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -347,8 +392,8 @@ def _build_connector_summary_block(
     """Render a compact directory of cached connector catalogs.
 
     Only shows source IDs with table counts (and folder counts when the
-    catalog is hierarchical). The agent is expected to call
-    ``list_data_sources`` / ``list_source_tables`` for full inventory.
+    catalog is hierarchical). The agent is expected to call ``list_data``
+    for full inventory.
     Strictly hard-capped at ``max_total_chars``.
     """
     if not user_home:
@@ -390,7 +435,8 @@ def _build_connector_summary_block(
             lines.append(f"- {sid}: {n} table{'s' if n != 1 else ''}")
 
     lines.append(
-        "  (call list_data_sources / list_source_tables for the full inventory)"
+        "  (call list_data() for sources, list_data(source_id, ...) to drill, "
+        "or find_data(query=...) to search)"
     )
 
     output = "\n".join(lines)
@@ -612,15 +658,12 @@ class DataLoadingAgent:
             return self._tool_execute_python(args)
         elif name == "show_user_data_preview":
             return self._tool_show_user_data_preview(args, scratch_jail)
-        elif name == "list_available_data":
-            return self._tool_list_available_data()
-        elif name == "list_data_sources":
-            # Back-compat alias for list_available_data.
-            return self._tool_list_available_data()
-        elif name == "search_data_candidates":
-            return self._tool_search_data_candidates(args)
-        elif name == "read_candidate_metadata":
-            return self._tool_read_candidate_metadata(args)
+        elif name == "list_data":
+            return self._tool_list_data(args)
+        elif name == "find_data":
+            return self._tool_find_data(args)
+        elif name == "describe_data":
+            return self._tool_describe_data(args)
         elif name == "propose_load_plan":
             return self._tool_propose_load_plan(args)
         else:
@@ -879,105 +922,163 @@ class DataLoadingAgent:
     # Data discovery tools
     # ------------------------------------------------------------------
 
-    def _tool_list_available_data(self):
-        """Directory of all connected sources, including the built-in
-        'sample_datasets' source.  Workspace tables are intentionally
-        omitted \u2014 they are already listed in the system prompt.
-        """
-        return {
-            "connected_sources": self._collect_connected_sources(),
-        }
+    def _tool_list_data(self, args):
+        """Browse the catalog hierarchy.
 
-    def _collect_connected_sources(self):
-        """Return per-source table count, folder count, and top folder sample."""
+        Three modes:
+          * no args                       → per-source summary
+          * source_id only                → top-level entries of that source
+          * source_id + path              → direct children at that level
+
+        Cache-only. Workspace tables are not included; they're already in the
+        system prompt.  See design-docs/32-data-loading-agent-navigation.md §3.1.
+        """
+        from data_formulator.datalake.catalog_cache import (
+            list_path_children,
+            list_sources_summary,
+        )
+
         user_home = getattr(self.workspace, "user_home", None)
         if not user_home:
-            return []
-        try:
-            from pathlib import Path
+            return {"sources": []}
 
-            from data_formulator.datalake.catalog_cache import (
-                list_cached_sources,
-                load_catalog,
-            )
-        except Exception:
-            logger.debug("list_available_data: imports failed", exc_info=True)
-            return []
-
-        try:
-            source_ids = list_cached_sources(user_home)
-        except Exception:
-            logger.debug("list_available_data: list_cached_sources failed", exc_info=True)
-            return []
-
-        user_home_path = Path(user_home)
-        sources = []
-        for sid in sorted(source_ids):
+        source_id = (args.get("source_id") or "").strip()
+        if not source_id:
             try:
-                tables = load_catalog(user_home_path, sid) or []
+                return {"sources": list_sources_summary(user_home)}
             except Exception:
-                logger.debug("list_available_data: load_catalog failed for %s", sid, exc_info=True)
-                tables = []
+                logger.debug("list_data: list_sources_summary failed", exc_info=True)
+                return {"sources": []}
 
-            folder_to_tables: dict[str, list[str]] = {}
-            flat_tables: list[str] = []
-            any_hierarchy = False
-            for t in tables:
-                name = str(t.get("name") or "").strip()
-                if not name:
-                    continue
-                path = t.get("path") or []
-                if isinstance(path, list) and len(path) >= 2:
-                    any_hierarchy = True
-                    folder_to_tables.setdefault(str(path[0]), []).append(name)
-                else:
-                    flat_tables.append(name)
+        path = args.get("path") or []
+        if not isinstance(path, list):
+            return {"error": "path must be an array of strings"}
+        filter_arg = args.get("filter")
 
-            folder_sample = []
-            table_sample: list[str] = []
-            if any_hierarchy:
-                # Top folders by table count, then alphabetical.
-                ordered = sorted(
-                    folder_to_tables.items(),
-                    key=lambda kv: (-len(kv[1]), kv[0]),
+        try:
+            return list_path_children(
+                user_home, source_id, path=path, filter=filter_arg,
+            )
+        except Exception as exc:
+            logger.debug("list_data: list_path_children failed", exc_info=True)
+            return {"error": f"list_data failed: {exc}"}
+
+    def _tool_find_data(self, args):
+        """Regex search across cached catalogs.
+
+        ``scope`` accepts: 'all' (default), 'workspace', 'connected',
+        '<source_id>', or '<source_id>:<path/segments>'. The
+        path-scoped form restricts catalog search to a subtree.
+
+        Workspace tables are searched with a plain substring match (they're
+        small, regex-on-name has little extra value there).  Catalog cache
+        search is regex-based.  See design-docs §3.2.
+        """
+        from data_formulator.datalake.catalog_cache import (
+            CatalogSearchError,
+            search_catalog_cache,
+        )
+
+        query = (args.get("query") or "").strip()
+        if not query:
+            return {"error": "query is required"}
+
+        scope_raw = (args.get("scope") or "all").strip()
+        exclude = args.get("exclude") or None
+        fields = args.get("fields") or None
+        limit = args.get("limit")
+        try:
+            limit = max(1, min(int(limit), 200)) if limit else 50
+        except (TypeError, ValueError):
+            limit = 50
+
+        # ── Parse scope ───────────────────────────────────────────────
+        search_workspace = False
+        source_ids: list[str] | None = None
+        path_prefix: list[str] | None = None
+
+        if scope_raw == "all":
+            search_workspace = True
+        elif scope_raw == "workspace":
+            search_workspace = True
+            source_ids = []  # skip catalog cache entirely
+        elif scope_raw == "connected":
+            pass  # catalog only, all sources
+        elif ":" in scope_raw:
+            sid, _, path_str = scope_raw.partition(":")
+            source_ids = [sid.strip()] if sid.strip() else []
+            path_prefix = [seg for seg in path_str.split("/") if seg]
+        else:
+            source_ids = [scope_raw]
+
+        user_home = getattr(self.workspace, "user_home", None)
+        results: list[dict] = []
+
+        # ── Workspace search (substring; existing semantics) ─────────
+        if search_workspace:
+            try:
+                ws_meta = self.workspace.get_metadata()
+                if ws_meta:
+                    ws_hits = ws_meta.search_tables(query, limit=min(limit, 50))
+                    for hit in ws_hits:
+                        results.append({
+                            "source": "workspace",
+                            "name": hit["name"],
+                            "description": (hit.get("description") or "")[:120],
+                            "matched_columns": hit.get("matched_columns", []),
+                            "status": "imported",
+                        })
+            except Exception:
+                logger.debug("find_data: workspace search failed", exc_info=True)
+
+        # ── Catalog cache search (regex) ─────────────────────────────
+        if source_ids != [] and user_home:
+            try:
+                imported_names = {r["name"] for r in results}
+                cache_hits = search_catalog_cache(
+                    user_home,
+                    query,
+                    source_ids=source_ids,
+                    limit_per_source=min(limit, 50),
+                    exclude_tables=imported_names,
+                    exclude_pattern=exclude,
+                    fields=fields,
+                    path_prefix=path_prefix,
                 )
-                for fname, ftables in ordered[:20]:
-                    folder_sample.append({
-                        "name": fname,
-                        "table_count": len(ftables),
-                        "sample_tables": sorted(ftables)[:5],
+                for hit in cache_hits[:limit]:
+                    results.append({
+                        "source": hit.get("source_id", "connected"),
+                        "source_id": hit.get("source_id", ""),
+                        "table_key": hit.get("table_key", ""),
+                        "name": hit["name"],
+                        "description": (hit.get("description") or "")[:120],
+                        "matched_columns": hit.get("matched_columns", []),
+                        "status": "not imported",
                     })
-                # Also surface root-level (non-folder) tables. sample_datasets
-                # collapses single-table datasets to the root, and without
-                # this they'd be invisible to the model — which then
-                # mis-reports table counts as belonging to the folders.
-                if flat_tables:
-                    table_sample = sorted(flat_tables)[:20]
-            else:
-                # Flat catalog: show up to 10 sample table names.
-                table_sample = sorted(flat_tables)[:10]
+            except CatalogSearchError as exc:
+                return {"error": str(exc)}
+            except Exception:
+                logger.debug("find_data: catalog search failed", exc_info=True)
 
-            sources.append({
-                "source_id": sid,
-                "table_count": len(tables),
-                "folder_count": len(folder_to_tables) if any_hierarchy else 0,
-                "root_table_count": len(flat_tables) if any_hierarchy else 0,
-                "folder_sample": folder_sample,
-                "table_sample": table_sample,
-                "hierarchical": any_hierarchy,
-            })
-        return sources
+        if not results:
+            try:
+                from data_formulator.datalake.catalog_cache import list_cached_sources
+                known = sorted(list_cached_sources(user_home) or []) if user_home else []
+            except Exception:
+                known = []
+            return {
+                "results": [],
+                "valid_source_ids": known,
+                "note": (
+                    f"No tables matched query={query!r} scope={scope_raw!r}. "
+                    "Try a broader pattern, alternation (a|b), or list_data to browse."
+                ),
+            }
 
-    def _tool_search_data_candidates(self, args):
-        """Search across workspace + connector catalog for matching tables."""
-        from data_formulator.agents.context import handle_search_data_tables
-        query = args.get("query", "")
-        scope = args.get("scope", "all")
-        text = handle_search_data_tables(query, scope, self.workspace)
-        return {"result": text}
+        return {"results": results[:limit], "query": query, "scope": scope_raw}
 
-    def _tool_read_candidate_metadata(self, args):
-        """Read detailed metadata for a specific table from a connected source."""
+    def _tool_describe_data(self, args):
+        """Read detailed metadata for one table.  Delegates to context handler."""
         from data_formulator.agents.context import handle_read_catalog_metadata
         source_id = args.get("source_id", "")
         table_key = args.get("table_key", "")

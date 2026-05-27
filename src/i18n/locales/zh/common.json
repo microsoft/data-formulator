@@ -609,6 +609,12 @@
     "invalidExplanation": "Agent 返回了无效的解释。",
     "explanationTitle": "说明",
     "explanationFollowupsLabel": "可能的下一步：",
+    "delegateTitle": "建议下一步交给其他 Agent",
+    "delegateMinimize": "收起",
+    "delegateExpand": "展开",
+    "delegateDismiss": "忽略",
+    "delegateToDataLoading": "在数据加载中搜索",
+    "delegateToReportGen": "生成报告",
     "errorDuringExploration": "探索过程中出错",
     "explorationStep": "探索步骤 {{step}}：{{question}}",
     "threadExplorePrompt": "探索这份数据中有趣的模式和趋势",
@@ -751,6 +757,10 @@
   "interaction": {
     "askedForClarification": "请求澄清",
     "gaveExplanation": "做了说明",
+    "delegatedToDataLoading": "建议加载更多数据",
+    "delegatedToReportGen": "建议生成报告",
+    "delegateLabelDataLoading": "建议加载数据",
+    "delegateLabelReportGen": "建议生成报告",
     "clarificationNeeded": "等待操作"
   },
   "concepts": {

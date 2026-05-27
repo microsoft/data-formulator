@@ -13,22 +13,23 @@ import {
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import LanguageIcon from '@mui/icons-material/Language';
-import ImageIcon from '@mui/icons-material/Image';
-import TextFieldsIcon from '@mui/icons-material/TextFields';
-import DatasetIcon from '@mui/icons-material/Dataset';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
+import SearchIcon from '@mui/icons-material/Search';
+import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
-import exampleImageTable from '../assets/example-image-table.png';
+import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, streamRequest } from '../app/apiClient';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate } from '../components/ComponentType';
@@ -274,7 +275,10 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
                 <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', flex: 1 }}>
                     {t('dataLoading.ranPythonCode')}
                 </Typography>
-                {block.error && <Chip label={t('dataLoading.error')} size="small" color="error" sx={{ height: 18, fontSize: 9, mr: 0.5 }} />}
+                {block.error
+                    ? <ErrorOutlineIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
+                    : <CheckCircleIcon sx={{ fontSize: 13, color: 'success.main', opacity: 0.7, mr: 0.5 }} />
+                }
                 {expanded ? <ExpandLessIcon sx={{ fontSize: 14 }} /> : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
             </Box>
             <Collapse in={expanded}>
@@ -295,10 +299,10 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
                 </Box>
             )}
             {block.error && (
-                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: '#fff5f5' }}>
+                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
                     <Typography component="pre" sx={{
                         fontFamily: CODE_FONT, fontSize: 11, m: 0,
-                        whiteSpace: 'pre-wrap', color: 'error.main', lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.5,
                     }}>
                         {block.error}
                     </Typography>
@@ -578,74 +582,6 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
 };
 
 // ---------------------------------------------------------------------------
-// Sample task list item for empty state
-// ---------------------------------------------------------------------------
-
-const SampleTaskItem: React.FC<{
-    icon: React.ReactElement;
-    title?: string;
-    example: string;
-    onClickExample: () => void;
-}> = ({ icon, title, example, onClickExample }) => {
-    return (
-        <Box
-            role="button"
-            tabIndex={0}
-            onClick={onClickExample}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClickExample(); }
-            }}
-            title={title ? `${title} — ${example}` : example}
-            sx={{
-                display: 'flex', alignItems: 'center', gap: 1.25,
-                px: 1, py: 0.625,
-                mx: -1,
-                borderRadius: 1,
-                cursor: 'pointer',
-                color: 'text.secondary',
-                transition: 'background-color 120ms ease, color 120ms ease',
-                '&:hover': {
-                    backgroundColor: 'action.hover',
-                    color: 'text.primary',
-                },
-                '&:focus-visible': {
-                    outline: 'none',
-                    backgroundColor: 'action.hover',
-                    color: 'text.primary',
-                },
-            }}
-        >
-            <Box sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary' }}>{icon}</Box>
-            <Box sx={{
-                minWidth: 0, flex: 1,
-                display: 'flex', alignItems: 'baseline', gap: 0.75,
-                overflow: 'hidden',
-            }}>
-                {title ? (
-                    <Typography sx={{
-                        fontSize: 12, lineHeight: 1.5,
-                        color: 'text.secondary',
-                        flexShrink: 0,
-                    }}>
-                        {title}
-                    </Typography>
-                ) : null}
-                <Typography sx={{
-                    fontSize: 12, lineHeight: 1.5,
-                    color: 'inherit',
-                    minWidth: 0, flex: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                }}>
-                    {example}
-                </Typography>
-            </Box>
-        </Box>
-    );
-};
-
-// ---------------------------------------------------------------------------
 // Main chat component
 // ---------------------------------------------------------------------------
 
@@ -772,20 +708,25 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
         const hasText = seededPrompt.trim().length > 0;
         const hasImages = !!initialImages && initialImages.length > 0;
         const hasAttachments = extractedNames.length > 0;
-        if (hasText) setPrompt(seededPrompt);
-        if (hasAttachments) setUserAttachments(extractedNames);
-        if (hasImages) {
-            // Always replace, never append. The prop is a "seed" — each
-            // change represents a fresh handoff from the parent, not an
-            // additive update. Appending caused the same image to stack
-            // up every time the parent re-rendered with a new array ref.
-            setUserImages([...initialImages!]);
+        // Skip re-seeding the input on a user-initiated reset — the
+        // reset is meant to restore a clean slate, not re-populate the
+        // input with the prompt the user just cleared.
+        if (!isReset) {
+            if (hasText) setPrompt(seededPrompt);
+            if (hasAttachments) setUserAttachments(extractedNames);
+            if (hasImages) {
+                // Always replace, never append. The prop is a "seed" — each
+                // change represents a fresh handoff from the parent, not an
+                // additive update. Appending caused the same image to stack
+                // up every time the parent re-rendered with a new array ref.
+                setUserImages([...initialImages!]);
+            }
         }
-        // Auto-send when this is a fresh conversation. A reset always
-        // produces a fresh conversation, so allow auto-send post-reset
-        // even though `hasExistingMessages` may not have re-rendered to
-        // `false` yet in this tick.
-        if (autoSendInitialPrompt && (hasText || hasImages || hasAttachments) && (isReset || !hasExistingMessages)) {
+        // Auto-send only on a genuinely fresh open (no prior messages,
+        // and not a user-initiated reset). Resetting means the user wants
+        // a clean slate — re-running the seeded prompt against their will
+        // would defeat the purpose of the reset button.
+        if (autoSendInitialPrompt && !isReset && (hasText || hasImages || hasAttachments) && !hasExistingMessages) {
             setPendingAutoSend(true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1037,48 +978,23 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
         sendMessage();
     }, [pendingAutoSend, prompt, userImages, chatInProgress, sendMessage]);
 
-    const sampleTasks = [
-        {
-            icon: <ImageIcon sx={{ fontSize: 16 }} />,
-            title: t('dataLoading.examples.extractFromImage'),
-            example: t('dataLoading.examples.extractFromImageExample'),
-            action: () => {
-                fetch(exampleImageTable)
-                    .then(res => res.blob())
-                    .then(blob => {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            if (reader.result) {
-                                setUserImages([reader.result as string]);
-                                setPrompt(t('dataLoading.examples.extractFromImageExample'));
-                                setTimeout(() => inputRef.current?.focus(), 50);
-                            }
-                        };
-                        reader.readAsDataURL(blob);
-                    });
-            },
-        },
-        {
-            icon: <TextFieldsIcon sx={{ fontSize: 16 }} />,
-            title: t('dataLoading.examples.extractFromText'),
-            example: t('dataLoading.examples.extractFromTextExample'),
-            action: () => { setPrompt(t('dataLoading.examples.extractFromTextPrompt')); setTimeout(() => inputRef.current?.focus(), 50); },
-        },
-        {
-            icon: <DatasetIcon sx={{ fontSize: 16 }} />,
-            title: t('dataLoading.examples.generateSynthetic'),
-            example: t('dataLoading.examples.generateSyntheticExample'),
-            action: () => { setPrompt(t('dataLoading.examples.generateSyntheticExample')); setTimeout(() => inputRef.current?.focus(), 50); },
-        },
-        {
-            icon: <DatasetIcon sx={{ fontSize: 16 }} />,
-            title: t('dataLoading.examples.browseSamples'),
-            example: t('dataLoading.examples.browseSamplesExample'),
-            action: () => { setPrompt(t('dataLoading.examples.browseSamplesExample')); setTimeout(() => inputRef.current?.focus(), 50); },
-        },
-    ];
+    // Reuse the shared sample-task list so this in-session panel stays in
+    // sync with the upload-dialog entry point (`UnifiedDataUploadDialog`).
+    const focusSuggestions = React.useMemo(() => buildDataLoadingSuggestions({
+        t,
+        setInput: setPrompt,
+        setImages: setUserImages,
+        setAttachments: setUserAttachments,
+    }), [t]);
 
     const isEmpty = chatMessages.length === 0 && !streamingContent;
+
+    const capabilities = [
+        { icon: <QuestionAnswerOutlinedIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilityAsk') },
+        { icon: <SearchIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilitySearch') },
+        { icon: <ImageOutlinedIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilityExtractImage') },
+        { icon: <DescriptionOutlinedIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilityExtractFile') },
+    ];
 
     return (
         <Box sx={{
@@ -1097,43 +1013,36 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                 ...(isEmpty ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}),
               }}>
                 {isEmpty ? (
-                    <Box sx={{ maxWidth: 480, width: '100%' }}>
-                        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.75, textAlign: 'center' }}>
+                    <Box sx={{ maxWidth: 520, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
                             {t('dataLoading.title')}
                         </Typography>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 3.5, textAlign: 'center', lineHeight: 1.5 }}>
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5, textAlign: 'center', mb: 1.5 }}>
                             {t('dataLoading.subtitle')}
                         </Typography>
-
-                        <Typography sx={{
-                            fontSize: 11, fontWeight: 600, letterSpacing: 0.6,
-                            textTransform: 'uppercase', color: 'text.secondary',
-                            mb: 0.75,
+                        <Box component="ul" sx={{
+                            listStyle: 'none', p: 0, m: 0, mb: 1,
+                            display: 'flex', flexDirection: 'column', gap: 0.25,
                         }}>
-                            {t('dataLoading.sectionTry')}
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', mb: 3 }}>
-                            {sampleTasks.map((task, i) => (
-                                <SampleTaskItem key={i} icon={task.icon} title={task.title}
-                                    example={task.example} onClickExample={task.action} />
+                            {capabilities.map((cap, i) => (
+                                <Box component="li" key={i} sx={{
+                                    display: 'flex', alignItems: 'center', gap: 0.75,
+                                }}>
+                                    <Box sx={{
+                                        flexShrink: 0, color: 'text.disabled',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                        {cap.icon}
+                                    </Box>
+                                    <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5 }}>
+                                        {cap.text}
+                                    </Typography>
+                                </Box>
                             ))}
                         </Box>
-
-                        <Typography sx={{
-                            fontSize: 11, fontWeight: 600, letterSpacing: 0.6,
-                            textTransform: 'uppercase', color: 'text.secondary',
-                            mb: 0.75,
-                        }}>
-                            {t('dataLoading.sectionChat')}
+                        <Typography sx={{ fontSize: 11, color: 'text.disabled', textAlign: 'center', fontStyle: 'italic', mt: 0.5 }}>
+                            {t('dataLoading.capabilityHint')}
                         </Typography>
-                        <SampleTaskItem
-                            icon={<ChatBubbleOutlineIcon sx={{ fontSize: 16 }} />}
-                            example={t('dataLoading.chatHintExample')}
-                            onClickExample={() => {
-                                setPrompt(t('dataLoading.chatHintExample'));
-                                setTimeout(() => inputRef.current?.focus(), 50);
-                            }}
-                        />
                     </Box>
                 ) : (
                     <>
@@ -1150,11 +1059,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
 
             {/* ── Input area ─────────────────────────────────────── */}
             <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, pb: 1.5, pt: 0.75 }}>
-              <Box sx={{ width: '100%', maxWidth: 640 }}>
-                <Box sx={{
-                    display: 'flex', flexDirection: 'column',
-                    overflow: 'hidden',
-                }}>
+                <Box sx={{ width: '100%', maxWidth: 640 }}>
                     <AgentChatInput
                         value={prompt}
                         onChange={setPrompt}
@@ -1177,13 +1082,14 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                         }}
                         attachments={userAttachments}
                         onAttachmentsChange={setUserAttachments}
+                        focusSuggestions={isEmpty ? focusSuggestions : undefined}
+                        focusSuggestionsLabel={t('dataLoading.sectionTry')}
+                        focusSuggestionsPlacement="top"
                     />
+                    <Typography sx={{ fontSize: 10, color: 'text.disabled', textAlign: 'center', mt: 0.5 }}>
+                        {t('dataLoading.shiftEnterHint')}
+                    </Typography>
                 </Box>
-
-                <Typography sx={{ fontSize: 10, color: 'text.disabled', textAlign: 'center', mt: 0.5 }}>
-                    {t('dataLoading.shiftEnterHint')}
-                </Typography>
-              </Box>
             </Box>
         </Box>
     );

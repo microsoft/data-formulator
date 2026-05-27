@@ -41,7 +41,7 @@ import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrappe
 import { DataLoadingChat } from './DataLoadingChat';
 import { AnimatedAgentToyIcon } from './AgentToyIcon';
 import { AgentChatInput } from './AgentChatInput';
-import exampleImageTable from '../assets/example-image-table.png';
+import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
 import { getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { generateUUID } from '../app/identity';
@@ -596,108 +596,16 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         setAgentAttachments([]);
     };
 
-    // Suggestions surfaced as a focus-time dropdown — ordered to cover the
-    // primary agent workflows. The `kind` tag renders as a muted suffix
-    // so users can scan task types at a glance (ask vs. find vs. extract).
-    const agentChatSuggestions = useMemo(() => [
-        {
-            kind: t('upload.agentChatSuggestion.kind.ask', { defaultValue: 'ask' }),
-            label: t('upload.agentChatSuggestion.askConnected', {
-                defaultValue: 'What datasets do we have from connected sources?',
-            }),
-            onClick: () => {
-                setAgentImages([]);
-                setAgentAttachments([]);
-                setAgentInput(t('upload.agentChatSuggestion.askConnected', {
-                    defaultValue: 'What datasets do we have from connected sources?',
-                }));
-            },
-        },
-        {
-            kind: t('upload.agentChatSuggestion.kind.find', { defaultValue: 'find' }),
-            label: t('upload.agentChatSuggestion.findCPI', {
-                defaultValue: 'Help me load consumer price index data',
-            }),
-            onClick: () => {
-                setAgentImages([]);
-                setAgentAttachments([]);
-                setAgentInput(t('upload.agentChatSuggestion.findCPI', {
-                    defaultValue: 'Help me load consumer price index data',
-                }));
-            },
-        },
-        {
-            kind: t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' }),
-            label: t('upload.agentChatSuggestion.extractFromExcel', {
-                defaultValue: 'Extract data from an attached Excel file',
-            }),
-            onClick: () => {
-                // Fetch the bundled sample workbook from /public, upload
-                // it to the session scratch space (same path the attach
-                // button uses), then surface its name as a chip so the
-                // example is ready to send.
-                setAgentImages([]);
-                setAgentAttachments([]);
-                setAgentInput(t('upload.agentChatSuggestion.extractFromExcel', {
-                    defaultValue: 'Extract data from an attached Excel file',
-                }));
-                const sampleName = 'climate-gas-indicator.xlsx';
-                ensureActiveWorkspace();
-                fetch(`/${sampleName}`)
-                    .then(res => res.blob())
-                    .then(blob => {
-                        const file = new File([blob], sampleName, {
-                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        });
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        return apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
-                            method: 'POST', body: formData,
-                        });
-                    })
-                    .then(() => setAgentAttachments([sampleName]))
-                    .catch(err => console.error('Sample Excel upload failed:', err));
-            },
-        },
-        {
-            kind: t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' }),
-            label: t('dataLoading.examples.extractFromImageExample', {
-                defaultValue: 'Extract revenue data from this image',
-            }),
-            onClick: () => {
-                fetch(exampleImageTable)
-                    .then(res => res.blob())
-                    .then(blob => {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            if (reader.result) {
-                                setAgentImages([reader.result as string]);
-                                setAgentAttachments([]);
-                                setAgentInput(t('dataLoading.examples.extractFromImageExample', {
-                                    defaultValue: 'Extract revenue data from this image',
-                                }));
-                            }
-                        };
-                        reader.readAsDataURL(blob);
-                    });
-            },
-        },
-        {
-            kind: t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' }),
-            label: t('dataLoading.examples.extractFromTextExample', {
-                defaultValue: 'Extract revenue growth data from this text: Business Highlights ...',
-            }),
-            onClick: () => {
-                setAgentImages([]);
-                setAgentAttachments([]);
-                setAgentInput(t('dataLoading.examples.extractFromTextPrompt', {
-                    defaultValue: t('dataLoading.examples.extractFromTextExample', {
-                        defaultValue: 'Extract revenue growth data from this text...',
-                    }),
-                }));
-            },
-        },
-    ], [t]);
+    // Suggestions surfaced as a focus-time dropdown — sourced from a shared
+    // factory so the in-session `DataLoadingChat` panel renders the exact
+    // same list. See `dataLoadingSuggestions.ts`.
+    const agentChatSuggestions = useMemo(() => buildDataLoadingSuggestions({
+        t,
+        setInput: setAgentInput,
+        setImages: setAgentImages,
+        setAttachments: setAgentAttachments,
+        ensureActiveWorkspace,
+    }), [t]);
     const agentChatBox = (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 640 }}>
             <Box

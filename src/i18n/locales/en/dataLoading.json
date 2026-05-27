@@ -2,6 +2,11 @@
   "dataLoading": {
     "title": "Data Loading Assistant",
     "subtitle": "I can help you extract, generate, or browse data — or just ask me anything.",
+    "capabilityAsk": "Ask questions about your connected data sources",
+    "capabilitySearch": "Search and browse curated sample datasets",
+    "capabilityExtractImage": "Extract structured data from images",
+    "capabilityExtractFile": "Extract data from PDFs or pasted text",
+    "capabilityHint": "Focus the input below to see example prompts.",
     "sectionTry": "Try a task",
     "sectionChat": "Or just ask",
     "chatHint": "",

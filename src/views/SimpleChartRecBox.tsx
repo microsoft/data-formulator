@@ -45,7 +45,7 @@ import { transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
-import { ClarificationPanel } from './ClarificationPanel';
+import { ClarificationPanel, DelegatePanel } from './AgentPausePanel';
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
     const { t } = useTranslation();
@@ -336,15 +336,26 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Extract the active structured clarification (or explanation) from
     // DraftNode interaction log. Both are stored as ClarificationQuestion[]
     // — the entry's role ('clarify' vs 'explain') is what differs.
+    // `delegate` pauses share the same slot but render a different panel
+    // (a one-click handoff to the target peer agent).
     const clarificationQuestions = React.useMemo(() => {
         if (!pendingClarification?.draftId) return null;
         const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
         const interaction = draft?.derive?.trigger?.interaction || [];
-        // Find the most recent clarify or explain entry.
+        // Find the most recent pause entry (clarify / explain / delegate).
         for (let i = interaction.length - 1; i >= 0; i--) {
             const entry = interaction[i];
+            if (entry.role === 'delegate') {
+                return {
+                    kind: 'delegate' as const,
+                    target: entry.delegateTarget || 'data_loading',
+                    message: entry.content || '',
+                    options: entry.delegateOptions || [],
+                };
+            }
             if (entry.role === 'clarify' || entry.role === 'explain') {
                 return {
+                    kind: 'clarification' as const,
                     questions: entry.clarificationQuestions || null,
                     variant: entry.role === 'explain' ? 'explain' as const : 'clarify' as const,
                 };
@@ -931,6 +942,54 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 isCompleted = true;
             }
 
+            // ── delegate: agent hands off to a peer agent ──
+            // The data agent has decided the conversation is better
+            // served by another agent (data loading when the workspace
+            // lacks needed data; report gen when the user wants a
+            // narrative). We render the rationale + a one-click handoff
+            // card. Shares the 'clarifying' status / pending-clarification
+            // slot with the clarify/explain pauses so the panel renders in
+            // the same UI position above the input box.
+            if (result.type === "delegate") {
+                const message = String(result.message || '').trim();
+                const rawOptions = Array.isArray(result.options) ? result.options : [];
+                const options: string[] = rawOptions
+                    .map((o: any) => (typeof o === 'string' ? o.trim() : ''))
+                    .filter((s: string) => s.length > 0)
+                    .slice(0, 2);
+                const target = (result.target === 'report_gen' ? 'report_gen' : 'data_loading') as 'data_loading' | 'report_gen';
+                if (currentDraftId) {
+                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    thinkingSteps = [];
+                    pendingThought = '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+
+                    const pauseEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user',
+                        role: 'delegate',
+                        plan: priorSteps || result.thought || undefined,
+                        content: message,
+                        delegateTarget: target,
+                        delegateOptions: options,
+                        timestamp: Date.now(),
+                    };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
+                    currentDraftInteraction.push(pauseEntry);
+                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
+                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
+                        trajectory: result.trajectory || [],
+                        completedStepCount: result.completed_step_count || 0,
+                        lastCreatedTableId,
+                    }}));
+                }
+                setIsChatFormulating(false);
+                agentAbortRef.current = null;
+                clearTimeout(timeoutId);
+                setChatPrompt("");
+                setAttachedImages([]);
+                isCompleted = true;
+            }
+
             // ── completion: final summary ──
             if (result.type === "completion") {
                 if (lastCreatedTableId) {
@@ -1012,7 +1071,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                     allResults.push(data);
                     processStreamingResult(data);
-                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain") {
+                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "delegate") {
                         handleCompletion();
                         return;
                     }
@@ -1209,6 +1268,22 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch]);
 
+    // Honor cross-component handoff requests targeting the Report Gen
+    // agent (e.g. Data Agent's `delegate` card with target='report_gen').
+    // Hand-offs targeting other agents (e.g. `data_loading`) are consumed
+    // elsewhere — we only react to ours.
+    const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
+    useEffect(() => {
+        if (agentHandoffRequest && agentHandoffRequest.target === 'report_gen') {
+            const promptText = agentHandoffRequest.prompt;
+            dispatch(dfActions.clearAgentHandoffRequest());
+            // Fire-and-forget: reportFromChat manages its own streaming
+            // state via Redux dispatches.
+            reportFromChat(promptText);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [agentHandoffRequest]);
+
     // ── Unified submit handler ───────────────────────────────────────
     const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string) => {
         if (selectedAgent === 'report') {
@@ -1398,13 +1473,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             },
         }}
         >
-            {clarificationQuestions?.questions && pendingClarification && !isChatFormulating && (
+            {clarificationQuestions?.kind === 'clarification' && clarificationQuestions.questions && pendingClarification && !isChatFormulating && (
                 <ClarificationPanel
                     questions={clarificationQuestions.questions}
                     variant={clarificationQuestions.variant}
                     selectedAnswers={clarifyAnswers}
                     onSelectAnswer={handleSelectAnswer}
                     onSubmit={resumeFromClarification}
+                    onCancel={cancelAgent}
+                />
+            )}
+            {clarificationQuestions?.kind === 'delegate' && pendingClarification && !isChatFormulating && (
+                <DelegatePanel
+                    target={clarificationQuestions.target}
+                    message={clarificationQuestions.message}
+                    options={clarificationQuestions.options}
                     onCancel={cancelAgent}
                 />
             )}

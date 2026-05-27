@@ -100,12 +100,19 @@ export interface AgentChatInputProps {
      * suggestions can hand off arbitrary state (e.g. a sample image
      * plus a long prompt). Does not push surrounding content.
      */
-    focusSuggestions?: Array<{ label: string; onClick: () => void; kind?: string }>;
+    focusSuggestions?: Array<{ label: string; onClick: () => void; kind?: string; icon?: React.ReactNode }>;
     /**
      * Optional header label shown above the focus-suggestion list.
      * Defaults to "Try asking".
      */
     focusSuggestionsLabel?: string;
+    /**
+     * Where to anchor the focus-suggestion overlay relative to the input.
+     *  - 'bottom' (default): drops down below the input.
+     *  - 'top': pops up above the input. Use when the input is pinned to
+     *    the bottom of its container and downward overlays would clip.
+     */
+    focusSuggestionsPlacement?: 'top' | 'bottom';
     sx?: any;
 }
 
@@ -136,6 +143,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     tabSuggestion,
     focusSuggestions,
     focusSuggestionsLabel,
+    focusSuggestionsPlacement = 'bottom',
     sx,
 }) => {
     const theme = useTheme();
@@ -413,7 +421,9 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                 <Box
                     sx={{
                         position: 'absolute',
-                        top: 'calc(100% + 4px)',
+                        ...(focusSuggestionsPlacement === 'top'
+                            ? { bottom: 'calc(100% + 4px)' }
+                            : { top: 'calc(100% + 4px)' }),
                         left: 0,
                         right: 0,
                         zIndex: 20,
@@ -459,6 +469,20 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
                             }}
                         >
+                            {s.icon ? (
+                                <Box
+                                    aria-hidden
+                                    sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: 16, flexShrink: 0,
+                                        color: 'text.disabled',
+                                    }}
+                                >
+                                    {s.icon}
+                                </Box>
+                            ) : null}
                             <Typography
                                 variant="body2"
                                 sx={{
@@ -468,12 +492,14 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                     textOverflow: 'ellipsis',
                                     whiteSpace: 'nowrap',
                                     color: 'inherit',
-                                    '&::before': {
-                                        content: '"–"',
-                                        display: 'inline-block',
-                                        width: '1em',
-                                        color: 'text.disabled',
-                                    },
+                                    ...(s.icon ? {} : {
+                                        '&::before': {
+                                            content: '"–"',
+                                            display: 'inline-block',
+                                            width: '1em',
+                                            color: 'text.disabled',
+                                        },
+                                    }),
                                 }}
                             >
                                 {s.label}
