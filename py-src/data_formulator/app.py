@@ -59,7 +59,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # Stores SSO tokens + service tokens without hitting the 4 KB cookie limit.
 _data_home = os.environ.get(
     'DATA_FORMULATOR_HOME',
-    str(Path.home() / '.data-formulator'),
+    str(Path.home() / '.data_formulator'),
 )
 _session_dir = os.path.join(_data_home, 'sessions')
 os.makedirs(_session_dir, exist_ok=True)

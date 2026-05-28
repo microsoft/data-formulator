@@ -709,10 +709,14 @@ def list_data_loaders():
     This is the discovery endpoint — tells the frontend what kinds of
     connectors can be created.
     """
-    from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
+    from data_formulator.data_loader import (
+        DATA_LOADERS, DISABLED_LOADERS, PLUGIN_LOADERS, PLUGIN_ERRORS, PLUGIN_DIR,
+    )
+    from data_formulator.data_loader import _plugin_scanning_enabled  # type: ignore[attr-defined]
     from data_formulator.auth.identity import is_local_mode
 
     loaders = []
+    plugin_loaded_summary = []
     for key, loader_class in DATA_LOADERS.items():
         # local_folder has its own dedicated card — hide from Add Connection list
         if key == "local_folder":
@@ -720,22 +724,39 @@ def list_data_loaders():
         params = loader_class.list_params()
         # Append common table_filter param (same as DataConnector.get_frontend_config)
         params.append(DataConnector._TABLE_FILTER_PARAM)
+        plugin_path = PLUGIN_LOADERS.get(key)
+        display_name = loader_class.DISPLAY_NAME or key.replace("_", " ").title()
         loaders.append({
             "type": key,
-            "name": key.replace("_", " ").title(),
+            "name": display_name,
             "params": params,
             "hierarchy": _hierarchy_dicts(loader_class.catalog_hierarchy()),
             "auth_mode": loader_class.auth_mode(),
             "auth_instructions": loader_class.auth_instructions(),
             "delegated_login": loader_class.delegated_login_config(),
+            "source": "plugin" if plugin_path else "builtin",
+            "source_path": plugin_path,
         })
+        if plugin_path:
+            plugin_loaded_summary.append({
+                "type": key, "name": display_name, "source_path": plugin_path,
+            })
 
     disabled = {
         name: {"install_hint": hint}
         for name, hint in DISABLED_LOADERS.items()
     }
 
-    return json_ok({"loaders": loaders, "disabled": disabled})
+    enabled, reason = _plugin_scanning_enabled()
+    plugins_info = {
+        "dir": PLUGIN_DIR,
+        "enabled": enabled,
+        "reason": reason,
+        "loaded": plugin_loaded_summary,
+        "errors": list(PLUGIN_ERRORS),
+    }
+
+    return json_ok({"loaders": loaders, "disabled": disabled, "plugins": plugins_info})
 
 
 @connectors_bp.route("/api/local/pick-directory", methods=["POST"])

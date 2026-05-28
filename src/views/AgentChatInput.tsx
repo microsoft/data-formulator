@@ -221,11 +221,15 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         <Tooltip title={stopTooltip ?? t('dataLoading.stopTooltip')} placement="top">
             <IconButton size="small" onClick={onStop}
                 sx={{
-                    bgcolor: 'error.main', color: 'white',
                     width: 28, height: 28,
-                    '&:hover': { bgcolor: 'error.dark' },
+                    bgcolor: 'transparent',
+                    color: 'error.main',
+                    '&:hover': {
+                        bgcolor: alpha(theme.palette.error.main, 0.08),
+                        color: 'error.dark',
+                    },
                 }}>
-                <StopIcon sx={{ fontSize: 16 }} />
+                <StopIcon sx={{ fontSize: 14 }} />
             </IconButton>
         </Tooltip>
     ) : (

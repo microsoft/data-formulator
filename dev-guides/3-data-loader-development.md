@@ -249,7 +249,7 @@ Loader type 注册后，`DataConnector` 会自动把它包装成 connector insta
 1. **内置 loader**：修改源码，在 `data_loader/__init__.py` 的 `_LOADER_SPECS`
    列表中添加 `(registry_key, module_path, class_name, pip_package)` 条目。
 2. **外部 loader 插件**：不修改仓库源码，把 `*_data_loader.py` 放到
-   `DF_PLUGIN_DIR` 指向的目录。默认目录是 `~/.data-formulator/plugins/`。
+   `DF_PLUGIN_DIR` 指向的目录。默认目录是 `~/.data_formulator/plugins/`。
 
 内置 loader 当前**不是**包内自动发现；新增内置 loader 必须显式更新 `_LOADER_SPECS`。
 零源码修改只适用于外部 `DF_PLUGIN_DIR` 插件。

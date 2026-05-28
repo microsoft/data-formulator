@@ -45,13 +45,26 @@ export const barTableDef: ChartTemplateDef = {
         // canvas is sized for what the user will actually see, not for
         // the (possibly huge) raw row count.
         const yField = cs.y?.field;
-        const rawRowCount = yField
-            ? new Set((table ?? []).map((r: any) => r[yField])).size
-            : 0;
+        const facetFields = [cs.column?.field, cs.row?.field].filter(Boolean) as string[];
+        const rawRowCount = (() => {
+            if (!yField) return 0;
+            if (facetFields.length === 0) {
+                return new Set((table ?? []).map((r: any) => r[yField])).size;
+            }
+            const perFacetRows = new Map<string, Set<any>>();
+            for (const r of table ?? []) {
+                const key = facetFields.map(f => String(r[f] ?? '')).join('\x00');
+                const rows = perFacetRows.get(key) ?? new Set<any>();
+                rows.add(r[yField]);
+                perFacetRows.set(key, rows);
+            }
+            return Math.max(0, ...Array.from(perFacetRows.values()).map(rows => rows.size));
+        })();
         const maxRows = Math.max(0, Number(chartProperties?.maxRows ?? 20));
         const displayedRows = maxRows > 0
             ? Math.min(rawRowCount, maxRows)
             : rawRowCount;
+        const minSubplotSize = displayedRows >= 30 ? 360 : 280;
 
         return {
             axisFlags: { y: { banded: true } },
@@ -62,7 +75,7 @@ export const barTableDef: ChartTemplateDef = {
                 // Floor on overall subplot size — scales up when rows
                 // are dense so the bar column doesn't collapse below
                 // legibility.
-                minSubplotSize: displayedRows >= 30 ? 360 : 280,
+                minSubplotSize,
                 // Lengthen the continuous axis (bar) relative to the
                 // step height. Without this, a tall narrow canvas
                 // (many rows) leaves bars only a sliver wide.
@@ -90,6 +103,10 @@ export const barTableDef: ChartTemplateDef = {
         const xField: string = x?.field || 'Value';
         const yField: string = y?.field || 'Category';
         const colorField: string | undefined = color?.field;
+        const facetFields = [column?.field, row?.field].filter(Boolean) as string[];
+        const hasFacet = facetFields.length > 0;
+        const scopeKeyOf = (r: any) => facetFields.map(f => String(r[f] ?? '')).join('\x00');
+        const scopeValuesOf = (r: any) => Object.fromEntries(facetFields.map(f => [f, r[f]]));
 
         // ── Channel semantics (resolved by framework, may be undefined
         //    when the chart is rendered without a full pipeline) ───────
@@ -122,15 +139,34 @@ export const barTableDef: ChartTemplateDef = {
         const aggValue = (g: { sum: number; n: number }) =>
             useMeanForDisplay ? g.sum / Math.max(1, g.n) : g.sum;
 
-        const categoryAgg = new Map<any, { sum: number; n: number }>();
+        const scopedCategoryAgg = new Map<string, {
+            facetValues: Record<string, any>;
+            categories: Map<any, { sum: number; n: number }>;
+        }>();
         for (const r of table) {
             const v = r[xField];
             if (typeof v !== 'number' || !isFinite(v)) continue;
-            const g = categoryAgg.get(r[yField]) ?? { sum: 0, n: 0 };
+            const scopeKey = hasFacet ? scopeKeyOf(r) : '';
+            let scope = scopedCategoryAgg.get(scopeKey);
+            if (!scope) {
+                scope = { facetValues: hasFacet ? scopeValuesOf(r) : {}, categories: new Map() };
+                scopedCategoryAgg.set(scopeKey, scope);
+            }
+            const g = scope.categories.get(r[yField]) ?? { sum: 0, n: 0 };
             g.sum += v; g.n += 1;
-            categoryAgg.set(r[yField], g);
+            scope.categories.set(r[yField], g);
         }
-        const uniqueCats = Array.from(categoryAgg.keys());
+        const scopes = Array.from(scopedCategoryAgg.entries());
+        const globalCategoryAgg = new Map<any, { sum: number; n: number }>();
+        for (const { categories } of scopedCategoryAgg.values()) {
+            for (const [cat, g] of categories.entries()) {
+                const total = globalCategoryAgg.get(cat) ?? { sum: 0, n: 0 };
+                total.sum += g.sum;
+                total.n += g.n;
+                globalCategoryAgg.set(cat, total);
+            }
+        }
+        const uniqueCats = Array.from(globalCategoryAgg.keys());
 
         // ── Top-N + "Others" rollup ──────────────────────────────────
         //
@@ -149,34 +185,82 @@ export const barTableDef: ChartTemplateDef = {
         // stack; the Others row carries no color value and renders gray.
         const maxRows: number = Math.max(0, Number(config?.maxRows ?? 20));
         const ySortOrderForTrim: string[] | undefined = yCS?.ordinalSortOrder;
+        const maxScopedCategoryCount = Math.max(0, ...scopes.map(([, scope]) => scope.categories.size));
         const canTrim = maxRows > 0
             && !(ySortOrderForTrim && ySortOrderForTrim.length > 0)
-            && uniqueCats.length > maxRows;
+            && maxScopedCategoryCount > maxRows;
 
-        let displayTable: any[] = table;
+        const sortRowsByValue = (items: Array<{ cat: any; value: number }>) => items
+            .sort((a, b) => yCS?.reversed ? a.value - b.value : b.value - a.value);
+
+        let displayTable: any[] = [];
         let othersCatLabel: string | undefined;
         let keptCatOrder: any[] | undefined;
-        let perCatAggValues: number[] = uniqueCats.map(c => aggValue(categoryAgg.get(c)!));
+        let perCatAggValues: number[] = [];
+        const perScopeAggValues: number[][] = [];
+        let maxDisplayRowsPerScope = 0;
 
         if (canTrim) {
-            const sorted = uniqueCats
-                .map(cat => ({ cat, value: aggValue(categoryAgg.get(cat)!) }))
-                .sort((a, b) => yCS?.reversed ? a.value - b.value : b.value - a.value);
             const keepN = Math.max(1, maxRows - 1);
-            const keptItems = sorted.slice(0, keepN);
-            const rest      = sorted.slice(keepN);
-            keptCatOrder    = keptItems.map(a => a.cat);
-            const keptCats  = new Set(keptCatOrder);
+            const displayRows: any[] = [];
+            for (const [scopeKey, scope] of scopes) {
+                const sorted = sortRowsByValue(Array.from(scope.categories.entries())
+                    .map(([cat, g]) => ({ cat, value: aggValue(g) })));
+                const keptItems = sorted.slice(0, keepN);
+                const rest = sorted.slice(keepN);
+                if (!hasFacet) {
+                    keptCatOrder = keptItems.map(a => a.cat);
+                }
+                const keptCats = new Set(keptItems.map(a => a.cat));
 
-            const restSum     = rest.reduce((s, a) => s + a.value, 0);
-            const othersValue = useMeanForDisplay && rest.length > 0 ? restSum / rest.length : restSum;
-            othersCatLabel    = `Others (+${rest.length})`;
-            const othersSynth = { [yField]: othersCatLabel, [xField]: othersValue, __bt_others: true };
+                if (colorField) {
+                    const keptRanks = new Map(keptItems.map((a, idx) => [a.cat, idx]));
+                    for (const r of table) {
+                        if ((hasFacet ? scopeKeyOf(r) : '') === scopeKey && keptCats.has(r[yField])) {
+                            displayRows.push({ ...r, __bt_sort: keptRanks.get(r[yField]) ?? 0, __bt_others: false, __bt_others_num: 0 });
+                        }
+                    }
+                } else {
+                    keptItems.forEach((a, idx) => {
+                        displayRows.push({ ...scope.facetValues, [yField]: a.cat, [xField]: a.value, __bt_sort: idx, __bt_others: false, __bt_others_num: 0 });
+                    });
+                }
 
-            displayTable = colorField
-                ? [...table.filter(r => keptCats.has(r[yField])), othersSynth]
-                : [...keptItems.map(a => ({ [yField]: a.cat, [xField]: a.value })), othersSynth];
-            perCatAggValues = [...keptItems.map(a => a.value), othersValue];
+                const restSum = rest.reduce((s, a) => s + a.value, 0);
+                const othersValue = useMeanForDisplay && rest.length > 0 ? restSum / rest.length : restSum;
+                const scopeOthersLabel = `Others (+${rest.length})`;
+                othersCatLabel = othersCatLabel ?? scopeOthersLabel;
+                displayRows.push({
+                    ...scope.facetValues,
+                    [yField]: scopeOthersLabel,
+                    [xField]: othersValue,
+                    __bt_sort: keptItems.length,
+                    __bt_others: true,
+                    __bt_others_num: 1,
+                });
+                const scopeAggValues = [...keptItems.map(a => a.value), othersValue];
+                perCatAggValues.push(...scopeAggValues);
+                perScopeAggValues.push(scopeAggValues);
+                maxDisplayRowsPerScope = Math.max(maxDisplayRowsPerScope, keptItems.length + 1);
+            }
+            displayTable = displayRows;
+        }
+
+        if (!canTrim) {
+            const sortRanksByScope = new Map<string, Map<any, number>>();
+            for (const [scopeKey, scope] of scopes) {
+                const sorted = sortRowsByValue(Array.from(scope.categories.entries())
+                    .map(([cat, g]) => ({ cat, value: aggValue(g) })));
+                sortRanksByScope.set(scopeKey, new Map(sorted.map((a, idx) => [a.cat, idx])));
+                const scopeAggValues = sorted.map(a => a.value);
+                perCatAggValues.push(...scopeAggValues);
+                perScopeAggValues.push(scopeAggValues);
+                maxDisplayRowsPerScope = Math.max(maxDisplayRowsPerScope, sorted.length);
+            }
+            displayTable = table.map(r => {
+                const scopeKey = hasFacet ? scopeKeyOf(r) : '';
+                return { ...r, __bt_sort: sortRanksByScope.get(scopeKey)?.get(r[yField]) ?? 0, __bt_others: false, __bt_others_num: 0 };
+            });
         }
 
         // ── Column header labels ─────────────────────────────────────
@@ -212,31 +296,68 @@ export const barTableDef: ChartTemplateDef = {
         // mark (overlapping) and each share would be value/grand-total
         // (~0% per row instead of the per-category percent).
         const sortOp: 'sum' | 'mean' = (xCS?.aggregationDefault === 'average') ? 'mean' : 'sum';
+        const uniqueGroupby = (fields: string[]) => Array.from(new Set(fields));
+        const textGroupby = hasFacet ? uniqueGroupby([...facetFields, yField]) : [yField];
         const textPanelTransform: any[] = [
-            { aggregate: [{ op: sortOp, field: xField, as: '__bt_val' }], groupby: [yField] },
+            { aggregate: [{ op: sortOp, field: xField, as: '__bt_val' }, { op: 'min', field: '__bt_sort', as: '__bt_sort' }, { op: 'max', field: '__bt_others_num', as: '__bt_others_num' }], groupby: textGroupby },
         ];
         if (showPercent) {
+            const totalTransform: any = { joinaggregate: [{ op: 'sum', field: '__bt_val', as: '__bt_total' }] };
+            if (hasFacet) {
+                totalTransform.groupby = facetFields;
+            }
             textPanelTransform.push(
-                { joinaggregate: [{ op: 'sum', field: '__bt_val', as: '__bt_total' }] },
-                { calculate: `datum.__bt_val / datum.__bt_total`, as: '__bt_pct' },
+                totalTransform,
+                { calculate: `datum.__bt_total === 0 ? null : datum.__bt_val / datum.__bt_total`, as: '__bt_pct' },
             );
         }
+
+        const uniqueFacetValueCount = (field?: string) => field
+            ? new Set(displayTable.map(r => r[field])).size
+            : 0;
+        const columnFacetCount = uniqueFacetValueCount(column?.field);
+        const rowFacetCount = uniqueFacetValueCount(row?.field);
+        const layoutFacetColumns = ctx.layout?.facet?.columns ?? (columnFacetCount || 1);
+        const facetColsForSizing = hasFacet
+            ? Math.max(1, Math.min(layoutFacetColumns, columnFacetCount || 1))
+            : 1;
+        const facetRowsForSizing = hasFacet
+            ? Math.max(1, rowFacetCount || Math.ceil(Math.max(1, columnFacetCount) / facetColsForSizing))
+            : 1;
+        const subplotWidth = hasFacet ? (ctx.layout?.subplotWidth ?? canvasSize?.width) : canvasSize?.width;
+        const layoutSubplotHeight = hasFacet ? (ctx.layout?.subplotHeight ?? canvasSize?.height) : canvasSize?.height;
+        const facetHeightBudget = hasFacet && facetRowsForSizing > 1
+            ? (() => {
+                const maxStretch = ctx.assembleOptions?.maxStretch ?? 2;
+                const facetElasticity = ctx.assembleOptions?.facetElasticity ?? 0.3;
+                const fixH = ctx.assembleOptions?.facetFixedPadding?.height ?? 0;
+                const gap = ctx.layout?.effectiveFacetGap ?? ctx.assembleOptions?.facetGap ?? 0;
+                const stretch = Math.min(maxStretch, Math.pow(facetRowsForSizing, facetElasticity));
+                return Math.max(0, Math.round((canvasSize.height * stretch - fixH) / facetRowsForSizing - gap));
+            })()
+            : layoutSubplotHeight;
 
         // ── Sizing constants (responsive to row density) ────────
         // `displayCount` is the number of rows the chart will actually
         // render (post-rollup). As it grows, we shrink fonts so labels
-        // don't crowd; we also bump up the minimum bar-panel width so
-        // the bar column remains a real visual signal, not a sliver
-        // between text.
-        const displayCount = canTrim
-            ? (keptCatOrder!.length + 1)
-            : uniqueCats.length;
+        // don't crowd. In facets, shrink again when each mini-table has
+        // substantially less plot budget than the full canvas.
+        const displayCount = maxDisplayRowsPerScope || uniqueCats.length;
         // 0 (sparse, ≤12 rows) … 1 (dense, ≥52 rows) — font/density curve.
         const density = Math.min(1, Math.max(0, (displayCount - 12) / 40));
         const lerp = (a: number, b: number) => Math.round(a + (b - a) * density);
+        const subplotWidthRatio = hasFacet && canvasSize?.width
+            ? Math.min(1, Math.max(0, (subplotWidth ?? canvasSize.width) / canvasSize.width))
+            : 1;
+        const subplotHeightRatio = hasFacet && canvasSize?.height
+            ? Math.min(1, Math.max(0, (facetHeightBudget ?? canvasSize.height) / canvasSize.height))
+            : 1;
+        const facetFontDrop = hasFacet
+            ? Math.round((1 - Math.min(subplotWidthRatio, subplotHeightRatio)) * 3)
+            : 0;
 
-        const fontSize       = lerp(12, 10);   // text panels
-        const labelFontSize  = lerp(13, 10);   // y-axis tick labels
+        const fontSize       = Math.max(9, lerp(12, 10) - facetFontDrop);   // text panels
+        const labelFontSize  = Math.max(9, lerp(13, 10) - facetFontDrop);   // y-axis tick labels
 
         // ── Bar geometry: capped thickness, proportional gap ─────────
         //
@@ -295,13 +416,13 @@ export const barTableDef: ChartTemplateDef = {
                 return [...keptCatOrder, othersCatLabel];
             }
             return uniqueCats
-                .map(cat => ({ cat, value: aggValue(categoryAgg.get(cat)!) }))
+                .map(cat => ({ cat, value: aggValue(globalCategoryAgg.get(cat)!) }))
                 .sort((a, b) => yCS?.reversed ? a.value - b.value : b.value - a.value)
                 .map(a => a.cat);
         })();
         const ySort: any = ySortOrder && ySortOrder.length > 0
             ? ySortOrder
-            : rankedCatOrder;
+            : hasFacet ? { field: '__bt_sort', op: 'min', order: 'ascending' } : rankedCatOrder;
 
         // Labels are left-aligned and pushed flush with the panel's left
         // edge so they line up under the "Category" column header.
@@ -449,31 +570,37 @@ export const barTableDef: ChartTemplateDef = {
             maxTextPanel,
             Math.max(valuePanelDataWidth, valueHeaderWrap.widthPx + headerPad, minTextPanel),
         );
-        const displayTotal = perCatAggValues.reduce((a, b) => a + b, 0);
-        const percentPanelWidth = showPercent && Math.abs(displayTotal) > 1e-9
+        const pctValuesForSizing = perScopeAggValues.flatMap(values => {
+            const scopeTotal = values.reduce((a, b) => a + b, 0);
+            return Math.abs(scopeTotal) > 1e-9 ? values.map(v => v / scopeTotal) : [];
+        });
+        const percentPanelWidth = showPercent && pctValuesForSizing.length > 0
             ? Math.min(
                 maxTextPanel,
                 Math.max(
-                    measure(perCatAggValues.map(v => approxPct(v / displayTotal))),
+                    measure(pctValuesForSizing.map(approxPct)),
                     percentHeaderWrap.widthPx + headerPad,
                     minTextPanel,
                 ),
             )
             : 0;
 
-        const totalWidth = canvasSize?.width ?? 480;
+        const totalWidth = subplotWidth ?? 480;
         const interPanelGap = 8;
         const reservedForText = valuePanelWidth + interPanelGap
             + (showPercent ? percentPanelWidth + interPanelGap : 0);
         // Bar panel needs a meaningful min width — a 3-panel layout
         // squeezes the bar column more than a basic bar chart, and the
         // bar IS the chart, so it should never collapse below ~45% of
-        // the canvas (or 180px absolute, whichever is larger).
-        const minBarPanelWidth = Math.max(180, Math.round(totalWidth * 0.45));
+        // the plot budget. Faceted small multiples get a smaller
+        // absolute floor so each mini-table can shrink like other charts.
+        const minBarPanelWidth = hasFacet
+            ? Math.max(80, Math.round(totalWidth * 0.45))
+            : Math.max(180, Math.round(totalWidth * 0.45));
         const barPanelWidth = Math.max(minBarPanelWidth, totalWidth - reservedForText - categoryLabelWidth);
 
-        const yCard = Math.max(1, new Set(displayTable.map(r => r[yField])).size);
-        const panelHeight = Math.max(canvasSize?.height ?? 0, yCard * rowStep);
+        const yCard = Math.max(1, maxDisplayRowsPerScope || new Set(displayTable.map(r => r[yField])).size);
+        const panelHeight = Math.max(facetHeightBudget ?? 0, yCard * rowStep);
 
         // ── Helpers to build a text encoding honoring prefix/suffix ──
         //
@@ -519,14 +646,17 @@ export const barTableDef: ChartTemplateDef = {
         //    drop categories behind our back).
         const datasetName = '__bt_displayTable';
         spec.datasets = { ...(spec.datasets || {}), [datasetName]: displayTable };
-        const withData = (panel: any) => ({ data: { name: datasetName }, ...panel });
+        if (hasFacet) {
+            spec.data = { name: datasetName };
+        }
+        const withData = (panel: any) => hasFacet ? panel : ({ data: { name: datasetName }, ...panel });
 
         // ── Others row: gray out across panels ───────────────────────
-        // Bar panel rows still carry `__bt_others: true` (no transform).
-        // Text panels lose it after the aggregate, so detect by label.
+        // Text panels aggregate rows, so carry a numeric flag through
+        // the aggregate instead of relying on facet-specific labels.
         const othersGray = '#bdbdbd';
-        const othersTextTest = canTrim && othersCatLabel
-            ? `datum['${yField.replace(/'/g, "\\'")}'] === '${othersCatLabel.replace(/'/g, "\\'")}'`
+        const othersTextTest = canTrim
+            ? `datum.__bt_others_num === 1 || datum.__bt_others === true`
             : undefined;
 
         // ── Panel 0: bar (with y-axis labels) ────────────────────────
@@ -544,8 +674,8 @@ export const barTableDef: ChartTemplateDef = {
         const barAggregate = useMeanForDisplay;
         const barTransform: any[] | undefined = barAggregate
             ? [{
-                aggregate: [{ op: sortOp, field: xField, as: '__bt_val' }],
-                groupby: colorField ? [yField, colorField] : [yField],
+                aggregate: [{ op: sortOp, field: xField, as: '__bt_val' }, { op: 'min', field: '__bt_sort', as: '__bt_sort' }, { op: 'max', field: '__bt_others_num', as: '__bt_others_num' }],
+                groupby: uniqueGroupby([...facetFields, yField, ...(colorField ? [colorField] : [])]),
             }]
             : undefined;
         const barXField = barAggregate ? '__bt_val' : xField;

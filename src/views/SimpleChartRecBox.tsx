@@ -68,9 +68,9 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             px: 2,
             overflow: 'hidden',
         }}>
-            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
-                <WritingPencil size={14} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 13 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
+                <WritingPencil size={12} />
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, fontSize: 12, lineHeight: 1.5 }}>
                     {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
@@ -79,21 +79,22 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
                     <IconButton
                         size="small"
                         onClick={onCancel}
-                        // Filled error-circle stop affordance \u2014 same recipe
-                        // as AgentChatInput's in-flight stop button so the
-                        // cancel action reads consistently across surfaces.
                         sx={{
                             position: 'absolute', bottom: 8, right: 8,
-                            width: 28, height: 28, p: 0,
-                            bgcolor: 'error.main', color: 'common.white',
-                            '&:hover': { bgcolor: 'error.dark' },
+                            width: 24, height: 24, p: 0,
+                            bgcolor: 'transparent',
+                            color: 'error.main',
+                            '&:hover': {
+                                bgcolor: alpha(theme.palette.error.main, 0.08),
+                                color: 'error.dark',
+                            },
                         }}
                     >
-                        <StopIcon sx={{ fontSize: 16 }} />
+                        <StopIcon sx={{ fontSize: 14 }} />
                     </IconButton>
                 </Tooltip>
             )}
-            <Typography variant="caption" sx={{
+            <Typography variant="body2" sx={{
                 color: 'text.disabled',
                 fontSize: 12,
                 textAlign: 'center',

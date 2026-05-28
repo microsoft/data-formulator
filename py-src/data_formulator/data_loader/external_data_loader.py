@@ -539,6 +539,13 @@ class ExternalDataLoader(ABC):
         """Return human-readable authentication instructions."""
         pass
 
+    #: Human-friendly UI label.  When ``None``, the ``/api/data-loaders``
+    #: endpoint falls back to title-casing the registry key.  Override on
+    #: the subclass to fix awkward casing (``"SQLite"``, ``"BigQuery"``,
+    #: ``"MySQL"`` instead of the default ``"Sqlite"`` / ``"Bigquery"`` /
+    #: ``"Mysql"``).
+    DISPLAY_NAME: str | None = None
+
     @staticmethod
     def delegated_login_config() -> dict[str, Any] | None:
         """Return config for delegated (popup-based) token login, or None.

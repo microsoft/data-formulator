@@ -44,7 +44,7 @@ DF_PLUGIN_DIR       # 不改源码外加 loader type 的目录
 如果要接入一个全新的报表系统或内部数据服务，管理员可以提供一个外部 loader 文件：
 
 ```text
-~/.data-formulator/plugins/my_report_data_loader.py
+~/.data_formulator/plugins/my_report_data_loader.py
 ```
 
 也可以通过环境变量指定目录：

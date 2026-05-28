@@ -5,6 +5,8 @@ import * as React from 'react';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { borderColor, transition, radius } from '../app/tokens';
 import {
+    Alert,
+    AlertTitle,
     Box,
     Button,
     Chip,
@@ -798,6 +800,16 @@ interface LoaderType {
     auth_mode?: string;
     auth_instructions?: string;
     delegated_login?: { login_url: string; label?: string } | null;
+    source?: 'plugin' | 'builtin';
+    source_path?: string | null;
+}
+
+interface PluginsInfo {
+    dir: string;
+    enabled: boolean;
+    reason: string;
+    loaded: Array<{ type: string; name: string; source_path: string }>;
+    errors: Array<{ file: string; reason: string; kind: string }>;
 }
 
 const AddConnectionPanel: React.FC<{
@@ -809,6 +821,7 @@ const AddConnectionPanel: React.FC<{
     );
     const [loaderTypes, setLoaderTypes] = useState<LoaderType[]>([]);
     const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
+    const [pluginsInfo, setPluginsInfo] = useState<PluginsInfo | null>(null);
     const [selectedType, setSelectedType] = useState<string>('');
     const [displayName, setDisplayName] = useState('');
     const dispatch = useDispatch<AppDispatch>();
@@ -827,6 +840,7 @@ const AddConnectionPanel: React.FC<{
             .then(({ data }) => {
                 setLoaderTypes(data.loaders || []);
                 setDisabledLoaders(data.disabled || {});
+                setPluginsInfo(data.plugins || null);
                 if (data.loaders?.length > 0) {
                     setSelectedType(data.loaders[0].type);
                     setDisplayName(data.loaders[0].name);
@@ -930,17 +944,47 @@ const AddConnectionPanel: React.FC<{
                 }}>
                     {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
                 </Typography>
-                {[...loaderTypes].sort((a, b) => connectorSortOrder(a.type, b.type)).map((loader) => (
-                    <Button
-                        key={loader.type}
-                        variant="text" size="small" color="primary"
-                        onClick={() => handleSelectLoader(loader)}
-                        sx={sidebarButtonSx(loader.type)}
-                        startIcon={getConnectorIcon(loader.type, { sx: { fontSize: 16, opacity: 0.7 } })}
-                    >
-                        {loader.name}
-                    </Button>
-                ))}
+                {[...loaderTypes].sort((a, b) => connectorSortOrder(a.type, b.type)).map((loader) => {
+                    const isPlugin = loader.source === 'plugin';
+                    const btn = (
+                        <Button
+                            key={loader.type}
+                            variant="text" size="small" color="primary"
+                            onClick={() => handleSelectLoader(loader)}
+                            sx={sidebarButtonSx(loader.type)}
+                            startIcon={getConnectorIcon(loader.type, { sx: { fontSize: 16, opacity: 0.7 } })}
+                        >
+                            <Box component="span" sx={{ flex: 1, textAlign: 'left' }}>{loader.name}</Box>
+                            {isPlugin && (
+                                <Box
+                                    component="span"
+                                    sx={{
+                                        ml: 0.5,
+                                        px: 0.5,
+                                        fontSize: 9,
+                                        fontWeight: 500,
+                                        color: 'text.secondary',
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 0.5,
+                                        lineHeight: '12px',
+                                    }}
+                                >
+                                    plugin
+                                </Box>
+                            )}
+                        </Button>
+                    );
+                    return isPlugin ? (
+                        <Tooltip
+                            key={loader.type}
+                            title={`External plugin loaded from ${loader.source_path}`}
+                            placement="right" arrow
+                        >
+                            <span>{btn}</span>
+                        </Tooltip>
+                    ) : btn;
+                })}
                 {Object.entries(disabledLoaders).sort(([a], [b]) => connectorSortOrder(a, b)).map(([name, { install_hint }]) => (
                     <Tooltip key={name} title={install_hint} placement="right" arrow>
                         <span style={{ width: '100%' }}>
@@ -963,6 +1007,36 @@ const AddConnectionPanel: React.FC<{
 
             {/* Right panel: display name + DataLoaderForm (or simplified Local Folder panel) */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+                {/* Plugin status banner — surfaces loaded plugins (info) and rejected
+                    plugins (warning) so the user knows what extension code is running. */}
+                {pluginsInfo && (pluginsInfo.errors.length > 0 || pluginsInfo.loaded.length > 0) && (
+                    <Box sx={{ px: 2, pt: 1.5 }}>
+                        {pluginsInfo.errors.length > 0 && (
+                            <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: 11, py: 0.5 }}>
+                                <AlertTitle sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>
+                                    {pluginsInfo.errors.length} plugin{pluginsInfo.errors.length === 1 ? '' : 's'} rejected
+                                </AlertTitle>
+                                {pluginsInfo.errors.map((e, i) => (
+                                    <Box key={i} sx={{ fontSize: 11, lineHeight: 1.4 }}>
+                                        <code style={{ fontSize: 10 }}>{e.file.split('/').pop()}</code>: {e.reason}
+                                    </Box>
+                                ))}
+                            </Alert>
+                        )}
+                        {pluginsInfo.loaded.length > 0 && (
+                            <Alert severity="warning" variant="outlined" icon={false}
+                                sx={{ mb: 1, fontSize: 11, py: 0.25, '& .MuiAlert-message': { py: 0.5 } }}>
+                                <strong>{pluginsInfo.loaded.length} external plugin{pluginsInfo.loaded.length === 1 ? '' : 's'} loaded</strong>
+                                {' — '}
+                                {pluginsInfo.loaded.map(p => p.name).join(', ')}.
+                                {' '}Plugins run with full server privileges; only load files you trust.
+                                {' '}<Box component="span" sx={{ color: 'text.secondary', fontSize: 10 }}>
+                                    (dir: <code>{pluginsInfo.dir}</code>)
+                                </Box>
+                            </Alert>
+                        )}
+                    </Box>
+                )}
                 {selectedLoader && selectedType === 'local_folder' ? (
                     /* Simplified Local Folder panel — no connection name, no form tiers */
                     <LocalFolderPanel

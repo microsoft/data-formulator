@@ -1039,6 +1039,132 @@ export function genBarTableTests(): TestCase[] {
         });
     }
 
+    // 16. Column-faceted launch leaders with color = facet field and
+    //     % of total enabled. Mirrors the app scenario where hconcat
+    //     Bar Table needs top-level faceting and per-facet denominators.
+    {
+        const agencyTypes = ['private', 'startup', 'state'];
+        const data = [
+            { Agency: 'Arianespace', 'Agency Type': 'private', 'Launch Count': 258 },
+            { Agency: 'ILS-K', 'Agency Type': 'private', 'Launch Count': 97 },
+            { Agency: 'ULA/LMA', 'Agency Type': 'private', 'Launch Count': 70 },
+            { Agency: 'MDSSC', 'Agency Type': 'private', 'Launch Count': 62 },
+            { Agency: 'OSC-Fairfax', 'Agency Type': 'private', 'Launch Count': 60 },
+            { Agency: 'ULA/Boeing', 'Agency Type': 'private', 'Launch Count': 58 },
+            { Agency: 'Boeing', 'Agency Type': 'private', 'Launch Count': 56 },
+            { Agency: 'LMA', 'Agency Type': 'private', 'Launch Count': 43 },
+            { Agency: 'SpaceX', 'Agency Type': 'startup', 'Launch Count': 65 },
+            { Agency: 'Rocket Lab', 'Agency Type': 'startup', 'Launch Count': 2 },
+            { Agency: 'RVSN', 'Agency Type': 'state', 'Launch Count': 1528 },
+            { Agency: 'UNKS', 'Agency Type': 'state', 'Launch Count': 904 },
+            { Agency: 'NASA', 'Agency Type': 'state', 'Launch Count': 469 },
+            { Agency: 'USAF', 'Agency Type': 'state', 'Launch Count': 388 },
+            { Agency: 'AFSC', 'Agency Type': 'state', 'Launch Count': 247 },
+            { Agency: 'VKS RVSN', 'Agency Type': 'state', 'Launch Count': 200 },
+            { Agency: 'CALT', 'Agency Type': 'state', 'Launch Count': 181 },
+            { Agency: 'Roskosmos', 'Agency Type': 'state', 'Launch Count': 128 },
+        ];
+        tests.push({
+            title: 'Faceted launch leaders (% within agency type)',
+            description: 'column + color both use Agency Type; % of total should be computed within each facet',
+            tags: ['nominal', 'facet', 'column', 'color', 'percentage', 'regression'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Agency'), makeField('Agency Type'), makeField('Launch Count')],
+            metadata: {
+                Agency: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Agency) },
+                'Agency Type': { type: Type.String, semanticType: 'Category', levels: agencyTypes },
+                'Launch Count': { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                y: makeEncodingItem('Agency'),
+                x: makeEncodingItem('Launch Count'),
+                color: makeEncodingItem('Agency Type'),
+                column: makeEncodingItem('Agency Type'),
+            },
+            chartProperties: { showPercent: true },
+        });
+    }
+
+    // 17. Many column facets with compact row counts. Exercises column
+    //     wrapping, adaptive subplot height, and facet-aware fonts.
+    {
+        const markets = ['Americas', 'Europe', 'Middle East', 'Africa', 'East Asia', 'Oceania', 'South Asia'];
+        const agencies = ['Atlas', 'Beacon', 'Cosmos', 'Delta'];
+        const rand = seededRandom(8181);
+        const data: any[] = [];
+        for (const market of markets) {
+            for (const agency of agencies) {
+                data.push({
+                    Market: market,
+                    Agency: `${agency} ${market}`,
+                    Launches: Math.round(rand() * 180 + 20),
+                });
+            }
+        }
+        tests.push({
+            title: 'Wrapped market facets (7 panels)',
+            description: 'Seven column facets with four rows each — mini-table height and font size should adapt after wrapping',
+            tags: ['nominal', 'facet', 'wrap', 'small-multiple', 'layout'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Market'), makeField('Agency'), makeField('Launches')],
+            metadata: {
+                Market: { type: Type.String, semanticType: 'Category', levels: markets },
+                Agency: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Agency) },
+                Launches: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                y: makeEncodingItem('Agency'),
+                x: makeEncodingItem('Launches'),
+                column: makeEncodingItem('Market'),
+            },
+            chartProperties: { showPercent: true },
+        });
+    }
+
+    // 18. Row + column faceting. Ensures Bar Table's hconcat spec also
+    //     hoists correctly for two-dimensional facet grids.
+    {
+        const regions = ['US', 'EU'];
+        const eras = ['Historic', 'Recent'];
+        const agencies = ['National', 'Commercial', 'Defense'];
+        const data: any[] = [];
+        for (const era of eras) {
+            for (const region of regions) {
+                for (let i = 0; i < agencies.length; i++) {
+                    data.push({
+                        Era: era,
+                        Region: region,
+                        Agency: `${region} ${agencies[i]}`,
+                        Missions: (era === 'Historic' ? 120 : 70) + i * 35 + (region === 'US' ? 40 : 0),
+                    });
+                }
+            }
+        }
+        tests.push({
+            title: 'Row + column facets (region × era)',
+            description: 'Two-dimensional faceting with percent totals computed per region/era panel',
+            tags: ['nominal', 'facet', 'row', 'column', 'percentage', 'layout'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Era'), makeField('Region'), makeField('Agency'), makeField('Missions')],
+            metadata: {
+                Era: { type: Type.String, semanticType: 'Category', levels: eras },
+                Region: { type: Type.String, semanticType: 'Region', levels: regions },
+                Agency: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Agency) },
+                Missions: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                y: makeEncodingItem('Agency'),
+                x: makeEncodingItem('Missions'),
+                column: makeEncodingItem('Region'),
+                row: makeEncodingItem('Era'),
+            },
+            chartProperties: { showPercent: true },
+        });
+    }
+
     return tests;
 }
 
