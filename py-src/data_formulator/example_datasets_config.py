@@ -413,6 +413,67 @@ SPX,65,SPX,US,O/LA/LV/PL/S,B,2007 Aug,-,SpaceX,SpaceX,"Hawthorne, California",-,
 1974-063,2442268.64,1974-08-09,1974,Thor Burner 2A,,DMSP Block 5C F-1,US,US,O,state'''
             }
         ]
+    }, {
+        'source': 'gdis',
+        'name': 'Employee HR',
+        'description': 'Sample HR dataset for 50 employees across 7 departments and 6 position levels. Includes salary, age, experience, hire date, performance rating, city, gender and education — covers categorical, quantitative and temporal columns so you can explore bar/pie/box/scatter/histogram/line/heatmap charts.',
+        'tables': [
+            {
+                "format": 'csv',
+                "url": '',
+                "sample": '''employee_id,name,department,position,gender,age,years_experience,salary,hire_date,performance_rating,city,education
+E001,Nguyen Van An,IT,Director,Male,48,22,85000000,2015-03-15,4.8,Ha Noi,Master
+E002,Tran Thi Binh,HR,Director,Female,45,20,75000000,2016-06-01,4.5,Ha Noi,Master
+E003,Le Van Cuong,Sales,Manager,Male,42,18,62000000,2017-01-20,4.6,TP.HCM,Bachelor
+E004,Pham Thi Dung,Marketing,Manager,Female,40,16,58000000,2017-09-10,4.4,TP.HCM,Master
+E005,Hoang Van Em,Finance,Manager,Male,44,19,60000000,2016-04-25,4.3,Ha Noi,Master
+E006,Vu Thi Phuong,Operations,Manager,Female,38,15,55000000,2018-02-14,4.5,Da Nang,Bachelor
+E007,Bui Van Giang,IT,Lead,Male,36,12,48000000,2018-11-05,4.7,Ha Noi,Master
+E008,Dang Thi Huong,R&D,Manager,Female,41,17,65000000,2017-03-30,4.6,Ha Noi,PhD
+E009,Do Van Khanh,IT,Senior,Male,33,10,38000000,2019-06-15,4.2,TP.HCM,Bachelor
+E010,Mai Thi Lan,Sales,Senior,Female,32,9,35000000,2019-08-22,4.5,Ha Noi,Bachelor
+E011,Nguyen Van Minh,IT,Senior,Male,31,8,36000000,2020-01-10,4.3,Da Nang,Bachelor
+E012,Tran Thi Nga,Marketing,Senior,Female,30,7,32000000,2020-05-18,4.4,TP.HCM,Bachelor
+E013,Le Van Oanh,Finance,Senior,Male,34,11,40000000,2019-02-28,4.1,Ha Noi,Master
+E014,Pham Thi Phuc,HR,Senior,Female,33,10,35000000,2019-04-15,4.5,Ha Noi,Bachelor
+E015,Hoang Van Quan,Sales,Senior,Male,35,12,42000000,2018-07-20,4.7,TP.HCM,Bachelor
+E016,Vu Thi Rang,IT,Mid,Female,28,5,22000000,2021-03-12,4.0,Ha Noi,Bachelor
+E017,Bui Van Son,Operations,Mid,Male,29,6,24000000,2020-09-08,3.8,Hai Phong,Bachelor
+E018,Dang Thi Tham,Marketing,Mid,Female,27,4,20000000,2022-01-18,4.2,TP.HCM,Bachelor
+E019,Do Van Uy,Sales,Mid,Male,30,7,25000000,2020-06-25,4.5,Ha Noi,Bachelor
+E020,Mai Thi Van,Finance,Mid,Female,28,5,23000000,2021-08-30,4.0,TP.HCM,Bachelor
+E021,Nguyen Van Xuan,IT,Mid,Male,29,6,24000000,2020-11-15,3.9,Da Nang,Bachelor
+E022,Tran Thi Yen,R&D,Senior,Female,32,9,42000000,2019-10-05,4.6,Ha Noi,PhD
+E023,Le Van Anh,Sales,Junior,Male,25,2,14000000,2023-04-10,4.0,TP.HCM,College
+E024,Pham Thi Bich,Marketing,Junior,Female,24,1,12000000,2024-02-20,3.8,Ha Noi,Bachelor
+E025,Hoang Van Chi,IT,Junior,Male,23,1,13000000,2024-06-15,4.1,Ha Noi,Bachelor
+E026,Vu Thi Dao,HR,Mid,Female,29,6,22000000,2020-10-12,4.3,Ha Noi,Bachelor
+E027,Bui Van Em,Operations,Junior,Male,24,2,11000000,2023-08-22,3.6,Can Tho,College
+E028,Dang Thi Phuong,Sales,Mid,Female,28,5,24000000,2021-01-30,4.4,TP.HCM,Bachelor
+E029,Do Van Giap,IT,Senior,Male,34,11,40000000,2018-12-08,4.5,Ha Noi,Master
+E030,Mai Thi Hanh,Marketing,Junior,Female,23,1,12500000,2024-09-05,3.9,TP.HCM,Bachelor
+E031,Nguyen Van Khang,Finance,Junior,Male,25,2,13500000,2023-02-14,3.7,Ha Noi,Bachelor
+E032,Tran Thi Lien,R&D,Senior,Female,33,10,45000000,2019-05-20,4.8,TP.HCM,PhD
+E033,Le Van Manh,Sales,Lead,Male,38,14,52000000,2017-11-18,4.6,Ha Noi,Bachelor
+E034,Pham Thi Nguyet,HR,Mid,Female,30,7,25000000,2020-03-25,4.1,Ha Noi,Bachelor
+E035,Hoang Van Phu,IT,Lead,Male,37,13,50000000,2018-04-30,4.4,TP.HCM,Master
+E036,Vu Thi Quynh,Marketing,Senior,Female,31,8,33000000,2020-02-10,4.3,Ha Noi,Bachelor
+E037,Bui Van Roi,Operations,Mid,Male,27,4,19000000,2022-05-15,3.5,Da Nang,Bachelor
+E038,Dang Thi Suong,Finance,Senior,Female,33,10,38000000,2019-07-22,4.2,TP.HCM,Master
+E039,Do Van Tung,Sales,Mid,Male,28,5,23000000,2021-06-10,4.0,Ha Noi,Bachelor
+E040,Mai Thi Uyen,IT,Junior,Female,24,2,14500000,2023-11-08,4.2,Ha Noi,Bachelor
+E041,Nguyen Van Vinh,HR,Junior,Male,23,1,11000000,2024-07-15,3.7,Hai Phong,College
+E042,Tran Thi Xinh,R&D,Mid,Female,28,6,28000000,2020-08-20,4.4,Ha Noi,Master
+E043,Le Van Yen,Marketing,Mid,Male,29,6,23000000,2020-12-05,3.9,TP.HCM,Bachelor
+E044,Pham Thi Anh,Sales,Junior,Female,24,2,13500000,2023-09-25,4.1,Ha Noi,Bachelor
+E045,Hoang Van Bao,Finance,Mid,Male,30,7,26000000,2020-04-18,4.0,Ha Noi,Master
+E046,Vu Thi Cuc,IT,Senior,Female,32,9,37000000,2019-11-12,4.3,Ha Noi,Master
+E047,Bui Van Dat,Operations,Senior,Male,35,12,38000000,2018-08-28,4.2,Can Tho,Bachelor
+E048,Dang Thi Em,Marketing,Lead,Female,36,13,49000000,2018-03-15,4.5,TP.HCM,Master
+E049,Do Van Phong,Sales,Senior,Male,33,10,38000000,2019-09-10,4.4,TP.HCM,Bachelor
+E050,Mai Thi Giang,HR,Lead,Female,37,14,48000000,2018-06-25,4.6,Ha Noi,Master'''
+            }
+        ]
     }
 ]
 

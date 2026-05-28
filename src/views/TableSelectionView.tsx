@@ -416,12 +416,40 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> =
               handleSelectDataset={(dataset) => {
                 setTableDialogOpen(false);
                 for (let table of dataset.tables) {
+                  const fallbackName =
+                    "table-" + Date.now().toString().substring(0, 8);
+                  const nameFromUrl = table.url
+                    ? table.url.split("/").pop()?.split(".")[0]
+                    : "";
+                  const tableName =
+                    nameFromUrl ||
+                    dataset.name?.replace(/\s+/g, "_") ||
+                    fallbackName;
+
+                  // Inline dataset (no url): build the table from the
+                  // already-parsed sample so we don't fetch the SPA index.html.
+                  if (!table.url) {
+                    const inlineSample = Array.isArray(table.sample)
+                      ? table.sample
+                      : [];
+                    if (inlineSample.length === 0) {
+                      continue;
+                    }
+                    const dictTable = createTableFromFromObjectArray(
+                      tableName,
+                      inlineSample,
+                      true,
+                    );
+                    if (dictTable) {
+                      dispatch(dfActions.loadTable(dictTable));
+                      dispatch(fetchFieldSemanticType(dictTable));
+                    }
+                    continue;
+                  }
+
                   fetch(table.url)
                     .then((res) => res.text())
                     .then((textData) => {
-                      let tableName =
-                        table.url.split("/").pop()?.split(".")[0] ||
-                        "table-" + Date.now().toString().substring(0, 8);
                       let dictTable;
                       if (table.format == "csv") {
                         dictTable = createTableFromText(tableName, textData);
