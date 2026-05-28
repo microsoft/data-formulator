@@ -29,12 +29,12 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 ## Why Data Formulator?
 
-Your data is everywhere: databases, warehouses, BI tools, and files. Coding agents can help, but only after someone wires them up. When answers come back as code or chat, they're hard to follow, refine, or share.
+Your data lives everywhere — databases, warehouses, BI tools, files. Coding agents can help, but only after someone wires them up, and answers come back as walls of code or text that are hard to follow, refine, or share.
 
-Data Formulator makes it easy. Connect any data in a few clicks, then explore it on an **interactive, visual** canvas. Ask questions, edit charts directly, branch into follow-ups, and turn ideas into results that are ready to share.
+Data Formulator makes it simple: **connect any data, ask anything, get charts you can edit, branch, and share** — all on one interactive, visual canvas.
 
-- **Data & platform teams**: wire up your databases, warehouses, and BI sources once, and your whole organization has a flexible AI-powered data exploration layer.
-- **Analysts & domain experts**: ask, edit, branch, and share. No SQL, no harness engineering, and no walls of text or code, just insights you can see in good-looking charts.
+- **Data & platform teams**: wire up your databases, warehouses, and BI sources once, and give the whole org an AI-powered data exploration layer.
+- **Analysts & users**: ask, edit, branch, share. It's so easy to get insights from good-looking charts.
 
 <kbd>
   <img src="https://github.com/user-attachments/assets/3ffb15aa-93ce-42b8-92cf-aaf321f9a06a">
@@ -44,15 +44,15 @@ Data Formulator makes it easy. Connect any data in a few clicks, then explore it
 
 [05-28-2026] **Data Formulator 0.7** — turn ANY data into insights in five easy steps:
 
-1.  🔌 **Connect.** Governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Need a custom source? Point your coding agent at the [data loader plugin guide](examples/plugins/README.md).
-2.  🤖 **Load.** Ask the **data-loading agent** to find tables from connected databases, or extract data from Excel files, images, websites, and text.
-3.  💬 **Explore.** A unified **Data Agent** with thread memory inspects data, runs sandboxed code, and weaves explanation, exploration, and recommendation into one fluid conversation — grounded in your context. The **Data Thread** keeps questions, intermediate results, and charts navigable: revisit earlier steps, branch into alternatives, and compare side by side.
-4.  🎨 **Refine.** 30+ chart types (area, streamgraph, candlestick, radar, maps, KPI, …) via a new semantic chart engine, plus a **style-refinement agent** that turns rough charts into presentation-ready visuals through natural language.
-5.  📤 **Share.** Build reports and export as image or PDF to tell the story.
+1.  **Connect.** Governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Need a custom source? Point your coding agent at the [data loader plugin guide](examples/plugins/README.md).
+2.  **Load.** Ask the **data-loading agent** to find tables from connected databases, or extract data from Excel files, images, websites, and text.
+3.  **Explore.** A unified **Data Agent** with thread memory inspects data, runs sandboxed code, and weaves explanation, exploration, and recommendation into one fluid conversation — grounded in your context. The **Data Thread** keeps questions, intermediate results, and charts navigable: revisit earlier steps, branch into alternatives, and compare side by side.
+4.  **Refine.** 30+ chart types (area, streamgraph, candlestick, radar, maps, KPI, …) via a new semantic chart engine, plus a **style-refinement agent** that turns rough charts into presentation-ready visuals through natural language.
+5.  **Share.** Build reports and export as image or PDF to tell the story.
 
-➕ 🗂️ **Persistent sessions & workspaces** — identity-isolated, saved across restarts. Data Formulator is your de facto data analysis pane.
+➕ **Persistent sessions & workspaces** — identity-isolated, saved across restarts. Data Formulator is your de facto data analysis pane.
 
-🌐 **Multilingual UI** — Data Formulator now speaks Chinese in addition to English (没错，DF现在会说中文了！). More languages on the way — [contributions welcome](src/i18n/TRANSLATION_GUIDE.md).
+**Multilingual UI** — Data Formulator now speaks Chinese in addition to English (没错，DF现在会说中文了！). More languages on the way — [contributions welcome](src/i18n/TRANSLATION_GUIDE.md).
 
 > Install with `pip install data_formulator` or run instantly with `uvx data_formulator`.
 
