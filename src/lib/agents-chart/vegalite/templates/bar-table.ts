@@ -621,8 +621,11 @@ export const barTableDef: ChartTemplateDef = {
             if (!hasAffix) {
                 return { field: sourceField, type: 'quantitative', format: fmt.pattern };
             }
-            const escPfx = (fmt.prefix ?? '').replace(/'/g, "\\'");
-            const escSfx = (fmt.suffix ?? '').replace(/'/g, "\\'");
+            // Escape backslashes first (so we don't double-escape the ones
+            // we add next), then escape single quotes for safe embedding in
+            // the Vega expression string literal.
+            const escPfx = (fmt.prefix ?? '').replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+            const escSfx = (fmt.suffix ?? '').replace(/\\/g, "\\\\").replace(/'/g, "\\'");
             const formatExpr = fmt.pattern
                 ? `format(datum['${sourceField}'], '${fmt.pattern}')`
                 : `datum['${sourceField}']`;
