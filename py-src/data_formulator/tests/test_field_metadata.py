@@ -396,3 +396,17 @@ class TestHelpers:
         """Sanity check the QC_ROLE_MAP includes all critical QC columns."""
         required = {"TARGET", "LL", "UL", "VALUE", "QCDATE", "QCSHIFT"}
         assert required.issubset(QC_ROLE_MAP.keys())
+
+
+def test_sample_values_populated_for_low_cardinality(conn, make_table):
+    rows = [(v,) for v in ["iPhone", "Samsung", "Oppo", "Samsung"]]
+    make_table("t", {"product": "VARCHAR"}, rows)
+    meta = compute_field_metadata(conn, "t")["product"]
+    assert set(meta.sample_values) == {"iPhone", "Samsung", "Oppo"}
+
+
+def test_sample_values_populated_for_temporal(conn, make_table):
+    rows = [(dt.date(2026, 1, d),) for d in [1, 2, 3, 4, 5]]
+    make_table("t", {"day": "DATE"}, rows)
+    meta = compute_field_metadata(conn, "t")["day"]
+    assert len(meta.sample_values) in (3, 5)

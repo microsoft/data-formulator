@@ -46,9 +46,10 @@ class TestQcModePicks:
         assert enc["y"] in {"QCSHIFT", "QCSTDPARAMNAME"}
         assert enc["color"] == "VALUE"
 
-    def test_qc_boxplot_picks_qcshift_and_value(self, qc_full_metas):
+    def test_qc_boxplot_picks_qcdate_and_value(self, qc_full_metas):
         enc = pick_default_encoding("boxplot", qc_full_metas, "qc")
-        assert enc["x"] == "QCSHIFT"  # smallest cardinality categorical with QC bias
+        # For QC exploratory boxplot, temporal grouping is preferred first.
+        assert enc["x"] == "QCDATE"
         assert enc["y"] == "VALUE"
 
     def test_qc_pie_picks_label_and_value_no_xy(self, qc_full_metas):
