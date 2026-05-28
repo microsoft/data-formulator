@@ -55,6 +55,7 @@ import { getUrls } from "../app/utils";
 import { DataLoadingChatDialog } from "./DataLoadingChat";
 import { ReportView } from "./ReportView";
 import { LiveView } from "./LiveView";
+import { generateChartPreview, yieldToIdle } from "./chartPreviewUtils";
 import {
   ExampleSession,
   exampleSessions,
@@ -81,8 +82,60 @@ export const DataFormulatorFC = ({}) => {
     );
   });
 
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<any>();
   const [isThreadCollapsed, setIsThreadCollapsed] = useState(false);
+
+  // Pre-render chart previews in background whenever chart sample data changes.
+  // This runs while the user is in the editor so Reports tab loads from cache instantly.
+  const charts = useSelector((state: DataFormulatorState) => state.charts);
+  const chartSampleData = useSelector((state: DataFormulatorState) => state.chartSampleData);
+  const chartSampleReady = useSelector(dfSelectors.getChartSampleReady);
+  const chartPreviewImages = useSelector(dfSelectors.getChartPreviewImages);
+  const conceptShelfItems = useSelector(dfSelectors.getConceptShelfItems) as any[];
+  const previewConfig = useSelector(dfSelectors.getConfig);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      for (const chart of charts) {
+        if (cancelled) break;
+        if (chart.chartType === "Table" || chart.chartType === "?" || chart.chartType === "Auto") continue;
+
+        const cached = chartPreviewImages[chart.id];
+        const isFresh = cached?.url && cached.dataVersion === (chart.dataVersion || 0);
+        if (isFresh) continue;
+
+        const chartTable = tables.find((t) => t.id === chart.tableRef);
+        if (!chartTable) continue;
+
+        // Only generate when browser is idle to avoid interfering with editing
+        await yieldToIdle(1000);
+        if (cancelled) break;
+
+        try {
+          const sample = chartSampleData[chart.id];
+          const result = await generateChartPreview(
+            chart, chartTable, conceptShelfItems,
+            previewConfig.defaultChartWidth, previewConfig.defaultChartHeight,
+            sample,
+          );
+          if (!cancelled && result.dataUrl) {
+            dispatch(dfActions.updateChartPreviewImage({
+              chartId: chart.id,
+              url: result.dataUrl,
+              width: result.width,
+              height: result.height,
+              dataVersion: chart.dataVersion || 0,
+            }));
+          }
+        } catch (e) {
+          // silent — preview generation is best-effort
+        }
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [chartSampleReady]);
 
   const handleLoadExampleSession = (session: ExampleSession) => {
     dispatch(

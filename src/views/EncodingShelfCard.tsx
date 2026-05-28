@@ -13,7 +13,6 @@ import {
   generateFreshChart,
 } from "../app/dfSlice";
 
-import embed from "vega-embed";
 import { logUserPrompt } from "../utils/promptLogger";
 
 import {
@@ -66,8 +65,6 @@ import { createDictTable, DictTable } from "../components/ComponentType";
 import {
   getUrls,
   resolveChartFields,
-  getTriggers,
-  assembleVegaChart,
   resolveRecommendedChart,
 } from "../app/utils";
 import { EncodingBox } from "./EncodingBox";
@@ -717,75 +714,24 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
     setIdeas([]);
 
     try {
-      // Build exploration thread from current table to root
-      let explorationThread: any[] = [];
-
-      // If current table is derived, build the exploration thread
-      if (currentTable.derive && !currentTable.anchored) {
-        let triggers = getTriggers(currentTable, tables);
-
-        // Build exploration thread with all derived tables in the chain
-        explorationThread = triggers.map((trigger) => ({
-          name: trigger.resultTableId,
-          rows: tables.find((t2) => t2.id === trigger.resultTableId)?.rows,
-          description: `Derive from ${trigger.sourceTableIds} with instruction: ${trigger.instruction}`,
-        }));
-      }
-
-      // Get the root table (first table in actionTableIds)
-      const rootTable = tables.find((t) => t.id === actionTableIds[0]);
-      if (!rootTable) {
-        throw new Error("No root table found");
-      }
-
-      let chartAvailable = checkChartAvailability(
-        chart,
-        conceptShelfItems,
-        currentTable.rows,
-      );
-      let currentChartPng = chartAvailable
-        ? await vegaLiteSpecToPng(
-            assembleVegaChart(
-              chart.chartType,
-              chart.encodingMap,
-              activeFields,
-              currentTable.rows,
-              currentTable.metadata,
-              20,
-              false,
-              100,
-              80,
-              false,
-              chart.qcLimitsMode || false,
-              undefined,
-              undefined,
-              currentTable.rows,
-            ),
-          )
-        : undefined;
-
       const token = String(Date.now());
       const messageBody = JSON.stringify({
         token: token,
         model: activeModel,
-        input_tables: [
-          {
-            name:
-              rootTable.virtual?.tableId ||
-              rootTable.id.replace(/\.[^/.]+$/, ""),
-            rows: rootTable.rows,
-            attached_metadata: rootTable.attachedMetadata,
-          },
-        ],
+        extra_prompt:
+          "Suggest chart ideas I can draw from this data. Keep them actionable.",
+        input_tables: actionTableIds
+          .map((id) => tables.find((t) => t.id === id))
+          .filter((t): t is DictTable => Boolean(t))
+          .map((t) => ({
+            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
+            rows: t.rows,
+            attached_metadata: t.attachedMetadata,
+          })),
         language: currentTable.virtual ? "sql" : "python",
-        exploration_thread: explorationThread,
-        current_data_sample: currentTable.rows.slice(0, 10),
-        current_chart: currentChartPng,
-        mode: "interactive",
-        agent_exploration_rules: agentRules.exploration,
       });
 
-      const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
+      const engine = getUrls().SMART_CHAT;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
@@ -804,79 +750,25 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Use streaming reader instead of response.json()
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("No response body reader available");
-      }
-
-      const decoder = new TextDecoder();
-
-      let lines: string[] = [];
-      let buffer = "";
-
-      let updateState = (lines: string[]) => {
-        let dataBlocks = lines
-          .map((line) => {
-            try {
-              return JSON.parse(line.trim());
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((block) => block != null);
-
-        let questions = dataBlocks
-          .filter((block) => block.type == "question")
-          .map((block) => ({
-            text: block.text,
-            goal: block.goal,
-            difficulty: block.difficulty,
-            tag: block.tag,
-          }));
-
-        setIdeas(questions);
-      };
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          let newLines = buffer
-            .split("data: ")
-            .filter((line) => line.trim() !== "");
-
-          buffer = newLines.pop() || "";
-          if (newLines.length > 0) {
-            lines.push(...newLines);
-            updateState(lines);
-          }
-          setThinkingBuffer(buffer.replace(/^data: /, ""));
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      lines.push(buffer);
-      updateState(lines);
-
-      // Process the final result
-      if (lines.length == 0) {
-        throw new Error("No valid results returned from agent");
-      }
+      const data = await response.json();
+      const suggestions = data.suggestions || [];
+      const questions = suggestions.slice(0, 6).map((s: any) => {
+        const text =
+          s.sample_prompt_vi || s.rationale_vi || `Draw ${s.chart_type}`;
+        return {
+          text,
+          goal: text,
+          difficulty: "easy" as const,
+        };
+      });
+      setIdeas(questions);
     } catch (error) {
       dispatch(
         dfActions.addMessages({
           timestamp: Date.now(),
           type: "error",
           component: "encoding shelf",
-          value:
-            "Failed to get ideas from the exploration agent. Please try again.",
+          value: "Failed to get ideas. Please try again.",
           detail: error instanceof Error ? error.message : "Unknown error",
         }),
       );
@@ -1093,7 +985,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               let code = candidate["code"];
               let rows = candidate["content"]["rows"];
               let dialog = candidate["dialog"];
-              let refinedGoal = candidate["refined_goal"];
+              let refinedGoal = candidate["refined_goal"] || {};
+              if (
+                chartType &&
+                (!refinedGoal["chart_type"] ||
+                  String(refinedGoal["chart_type"]).trim().length === 0)
+              ) {
+                refinedGoal["chart_type"] = chartType;
+              }
               let displayInstruction = refinedGoal["display_instruction"];
 
               // determine the table id for the new table
@@ -1963,78 +1862,3 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   return encodingShelfCard;
 };
 
-// Function to convert Vega-Lite spec to PNG data URL with improved resolution
-const vegaLiteSpecToPng = async (
-  spec: any,
-  scale: number = 2.0,
-  quality: number = 1.0,
-): Promise<string | null> => {
-  try {
-    // Create a temporary container
-    const tempId = `temp-chart-${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-    const tempContainer = document.createElement("div");
-    tempContainer.id = tempId;
-    tempContainer.style.position = "absolute";
-    tempContainer.style.left = "-9999px";
-    tempContainer.style.top = "-9999px";
-    document.body.appendChild(tempContainer);
-
-    // Embed the chart with higher resolution settings
-    const result = await embed("#" + tempId, spec, {
-      actions: false,
-      renderer: "canvas",
-      scaleFactor: scale, // Apply scale factor for higher resolution
-    });
-
-    // Get the canvas and apply high-resolution rendering
-    const canvas = await result.view.toCanvas(scale); // Pass scale to toCanvas
-    const pngDataUrl = canvas.toDataURL("image/png", quality);
-
-    // Clean up
-    document.body.removeChild(tempContainer);
-
-    return pngDataUrl;
-  } catch (error) {
-    console.error("Error converting Vega-Lite spec to PNG:", error);
-    return null;
-  }
-};
-
-// Alternative method using toImageURL for even better quality
-const vegaLiteSpecToPngWithImageURL = async (
-  spec: any,
-  scale: number = 2.0,
-): Promise<string | null> => {
-  try {
-    // Create a temporary container
-    const tempId = `temp-chart-${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-    const tempContainer = document.createElement("div");
-    tempContainer.id = tempId;
-    tempContainer.style.position = "absolute";
-    tempContainer.style.left = "-9999px";
-    tempContainer.style.top = "-9999px";
-    document.body.appendChild(tempContainer);
-
-    // Embed the chart
-    const result = await embed("#" + tempId, spec, {
-      actions: false,
-      renderer: "canvas",
-      scaleFactor: scale,
-    });
-
-    // Use toImageURL for better quality
-    const pngDataUrl = await result.view.toImageURL("png", scale);
-
-    // Clean up
-    document.body.removeChild(tempContainer);
-
-    return pngDataUrl;
-  } catch (error) {
-    console.error("Error converting Vega-Lite spec to PNG:", error);
-    return null;
-  }
-};

@@ -69,7 +69,6 @@ export function getUrls() {
     EXECUTE_SQL: `/api/tables/execute-sql`,
 
     QUERY_COMPLETION: `/api/agent/query-completion`,
-    GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
     GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
   };
 }
@@ -1425,6 +1424,8 @@ export const resolveRecommendedChart = (
 ) => {
   let rawChartType = refinedGoal["chart_type"];
   let chartEncodings = refinedGoal["chart_encodings"];
+  const rawChartTypeNorm =
+    typeof rawChartType === "string" ? rawChartType.trim().toLowerCase() : "";
 
   if (chartEncodings == undefined || rawChartType == undefined) {
     let newChart = generateFreshChart(table.id, "Scatter Plot") as Chart;
@@ -1442,7 +1443,10 @@ export const resolveRecommendedChart = (
     grouped_bar: "Grouped Bar Chart",
     group_bar: "Grouped Bar Chart",
     point: "Scatter Plot",
+    ranged_dot_plot: "Ranged Dot Plot",
     boxplot: "Boxplot",
+    linear_regression: "Linear Regression",
+    loess: "Loess Regression",
     qc_trend_line: "QC Trend Line",
     qc_histogram: "QC Histogram",
     qc_trend_bar: "QC Trend Bar",
@@ -1462,21 +1466,17 @@ export const resolveRecommendedChart = (
     rolling_average: "Rolling Average",
     radial_plot: "Radial Plot",
   };
-  let chartType = chartTypeMap[rawChartType] || "Scatter Plot";
+  const candidateChartType =
+    chartTypeMap[rawChartType] ||
+    (typeof rawChartType === "string" ? rawChartType : "");
+  let chartType = getChartTemplate(candidateChartType)
+    ? candidateChartType
+    : "Scatter Plot";
   let newChart = generateFreshChart(table.id, chartType) as Chart;
   newChart = resolveChartFields(newChart, allFields, chartEncodings, table);
-  if (rawChartType == "histogram") {
+  if (rawChartTypeNorm === "histogram" || chartType === "Histogram") {
+    // Histogram y-axis must be frequency/count, never a data column.
     newChart.encodingMap.y = { aggregate: "count" };
-  }
-
-  // Force INDEX → x-axis: if the table has an INDEX column AND the chart
-  // supports an x channel, always use INDEX for x (overrides AI suggestion).
-  const indexFieldName = table.names?.find((n) => n.toUpperCase() === "INDEX");
-  if (indexFieldName && "x" in newChart.encodingMap) {
-    const indexField = allFields.find((f) => f.name?.toUpperCase() === "INDEX");
-    if (indexField) {
-      newChart.encodingMap.x = { fieldID: indexField.id };
-    }
   }
 
   return newChart;

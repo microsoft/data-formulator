@@ -54,6 +54,7 @@ export const generateFreshChart = (
     saved: false,
     source: source,
     unread: true,
+    qcLimitsMode: true,
     chartWidth: 800,
     chartHeight: 400,
   };

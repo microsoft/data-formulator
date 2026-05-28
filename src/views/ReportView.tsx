@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 import React, { FC, useState, useRef, useEffect, memo, useMemo } from "react";
@@ -27,6 +27,7 @@ import {
   alpha,
   Select,
   MenuItem,
+  Skeleton,
 } from "@mui/material";
 import Masonry from "@mui/lab/Masonry";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -55,14 +56,8 @@ import {
   GeneratedReport,
 } from "../app/dfSlice";
 import { Message } from "./MessageSnackbar";
-import {
-  getUrls,
-  assembleVegaChart,
-  getTriggers,
-  prepVisTable,
-} from "../app/utils";
+import { getUrls, getTriggers } from "../app/utils";
 import { MuiMarkdown, getOverrides } from "mui-markdown";
-import embed from "vega-embed";
 import { getDataTable } from "./VisualizationView";
 import { DictTable } from "../components/ComponentType";
 import { AppDispatch } from "../app/store";
@@ -71,6 +66,19 @@ import { Collapse } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { convertToChartifact, openChartifactViewer } from "./ChartifactDialog";
+import { generateChartPreview, yieldToIdle } from "./chartPreviewUtils";
+
+// Accent colors for dataset grouping (cycles if more tables than colors)
+const TABLE_ACCENT_COLORS = [
+  "#2196f3", // blue
+  "#4caf50", // green
+  "#ff9800", // orange
+  "#9c27b0", // purple
+  "#f44336", // red
+  "#00bcd4", // cyan
+  "#ff5722", // deep orange
+  "#607d8b", // blue grey
+];
 
 // Typography constants
 const FONT_FAMILY_SYSTEM =
@@ -674,6 +682,9 @@ export const ReportView: FC = () => {
       { url: string; width: number; height: number; dataVersion?: number }
     >
   >(new Map());
+  const [loadingChartIds, setLoadingChartIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>("");
   const [style, setStyle] = useState<string>("short note");
@@ -799,12 +810,12 @@ export const ReportView: FC = () => {
               const previousInline = style ? style.getPropertyValue(p) : "";
               prev.get(el)![p] = previousInline || null;
               let safeColor = val;
-              // Nếu là oklch/lch/lab hoặc bất kỳ hàm màu nào không phải rgb/rgba/hsl/hex thì ép về fallback trắng/đen luôn
+              // If value uses unsupported color functions, force a safe fallback color.
               if (
                 /oklch|lch\(|lab\(/i.test(val) ||
                 /^(?!rgb|hsl|#)/i.test(val.trim())
               ) {
-                // Xóa mọi inline style cũ có chứa oklch/lch/lab
+                // XÃ³a má»i inline style cÅ© cÃ³ chá»©a oklch/lch/lab
                 if (style && typeof style.removeProperty === "function") {
                   const inlineVal = style.getPropertyValue(p);
                   if (/oklch|lch\(|lab\(/i.test(inlineVal)) {
@@ -1056,18 +1067,235 @@ export const ReportView: FC = () => {
               width: img.naturalWidth || 800,
               height: img.naturalHeight || 400,
               alt: img.alt || "",
+              src: img.src || "",
             };
           }),
         );
 
-        // Extract paragraph blocks
-        const rawText = reportElement.innerText || "";
-        const paragraphs = rawText
-          .split(/\n\s*\n/)
-          .map((p) => p.trim())
-          .filter(Boolean);
+        // Build chart sections from raw markdown using [IMAGE(chart_id)] placeholders.
+        // This keeps each chart with its local narrative when exporting to PPTX.
+        const rawReportSource = generatedReport || "";
+        const markdownMatch = rawReportSource.match(
+          /```markdown\n([\s\S]*?)(?:\n```)?$/,
+        );
+        const markdownText = markdownMatch ? markdownMatch[1] : rawReportSource;
 
-        // Title slide (page 1) — large title, Space Grotesk
+        const cleanMarkdownText = (s: string) =>
+          s
+            .replace(/```[\s\S]*?```/g, " ")
+            .replace(/^#{1,6}\s+/gm, "")
+            .replace(/^\s*>\s?/gm, "")
+            .replace(/\*\*/g, "")
+            .replace(/\*/g, "")
+            .replace(/`/g, "")
+            .replace(/\[[^\]]+\]\(([^)]+)\)/g, "$1")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+
+        const paginateNarrative = (
+          text: string,
+          charsPerLine: number,
+          maxLinesPerSlide: number,
+        ): string[] => {
+          const normalized = text.replace(/\r/g, "").trim();
+          if (!normalized) return [""];
+
+          const paragraphs = normalized
+            .split(/\n\s*\n/)
+            .map((p) => p.trim())
+            .filter(Boolean);
+
+          const pages: string[] = [];
+          let currentLines = 0;
+          let currentChunks: string[] = [];
+
+          const pushPage = () => {
+            pages.push(currentChunks.join("\n\n").trim());
+            currentChunks = [];
+            currentLines = 0;
+          };
+
+          const estimateLines = (chunk: string) => {
+            const lines = chunk.split("\n");
+            let total = 0;
+            for (const line of lines) {
+              const len = line.trim().length;
+              total += Math.max(1, Math.ceil(len / charsPerLine));
+            }
+            return total;
+          };
+
+          const splitLongParagraphBySentences = (p: string): string[] => {
+            const pieces = p
+              .split(/(?<=[.!?])\s+/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            if (pieces.length <= 1) return [p];
+            return pieces;
+          };
+
+          for (const paragraph of paragraphs) {
+            const parts = splitLongParagraphBySentences(paragraph);
+            for (const part of parts) {
+              const needed = estimateLines(part);
+              if (
+                currentLines > 0 &&
+                currentLines + needed > maxLinesPerSlide
+              ) {
+                pushPage();
+              }
+
+              // Handle a very long sentence/part that still doesn't fit on an empty page
+              if (needed > maxLinesPerSlide) {
+                const words = part.split(/\s+/).filter(Boolean);
+                let buf = "";
+                for (const w of words) {
+                  const cand = buf ? `${buf} ${w}` : w;
+                  const candLines = estimateLines(cand);
+                  if (candLines > maxLinesPerSlide && buf) {
+                    if (currentChunks.length > 0) pushPage();
+                    currentChunks.push(buf);
+                    currentLines = estimateLines(buf);
+                    pushPage();
+                    buf = w;
+                    currentLines = 0;
+                  } else {
+                    buf = cand;
+                  }
+                }
+                if (buf) {
+                  const bufLines = estimateLines(buf);
+                  if (
+                    currentLines > 0 &&
+                    currentLines + bufLines > maxLinesPerSlide
+                  ) {
+                    pushPage();
+                  }
+                  currentChunks.push(buf);
+                  currentLines += bufLines;
+                }
+                continue;
+              }
+
+              currentChunks.push(part);
+              currentLines += needed;
+            }
+          }
+
+          if (currentChunks.length > 0) {
+            pushPage();
+          }
+          return pages.length > 0 ? pages : [normalized];
+        };
+
+        const splitIntoSentences = (text: string): string[] => {
+          const cleaned = text.trim();
+          if (!cleaned) return [];
+          const raw = cleaned
+            .replace(/\n+/g, " ")
+            .split(/(?<=[\.\!\?\:\;])\s+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          return raw.length > 0 ? raw : [cleaned];
+        };
+
+        const wrapParagraph = (text: string, maxChars: number): string[] => {
+          const cleaned = text.trim();
+          if (!cleaned) return [];
+          const out: string[] = [];
+
+          const sentences = splitIntoSentences(cleaned);
+          for (let si = 0; si < sentences.length; si += 1) {
+            const sentence = sentences[si];
+            if (sentence.length <= maxChars) {
+              out.push(sentence);
+            } else {
+              const words = sentence.split(/\s+/).filter(Boolean);
+              let current = "";
+              for (const w of words) {
+                const candidate = current ? `${current} ${w}` : w;
+                if (candidate.length > maxChars && current) {
+                  out.push(current);
+                  current = w;
+                } else {
+                  current = candidate;
+                }
+              }
+              if (current) out.push(current);
+            }
+
+            // Between full sentences, insert one empty line:
+            // rendered with join("\n"), this becomes a visual double line break.
+            if (si < sentences.length - 1) {
+              out.push("");
+            }
+          }
+          return out;
+        };
+
+        const wrapLines = (lines: string[], maxChars: number): string[] => {
+          const out: string[] = [];
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            out.push(...wrapParagraph(trimmed, maxChars));
+          }
+          return out;
+        };
+
+        const normalizeNarrative = (text: string): string =>
+          text
+            .replace(/\r/g, "")
+            .replace(/\*\*/g, "")
+            .replace(/\*/g, "")
+            .replace(/^\s*[-•]\s+/gm, "")
+            .replace(/^\s*#{1,6}\s*/gm, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .replace(/[ \t]+\n/g, "\n")
+            .replace(/[ \t]{2,}/g, " ")
+            .trim();
+
+        const splitByCharLimit = (
+          text: string,
+          limit: number,
+        ): { chunk: string; rest: string } => {
+          const cleaned = text.trim();
+          if (!cleaned) return { chunk: "", rest: "" };
+          if (cleaned.length <= limit) return { chunk: cleaned, rest: "" };
+
+          let cut = limit;
+          while (cut > Math.floor(limit * 0.6) && cleaned[cut] !== " ") {
+            cut -= 1;
+          }
+          if (cut <= Math.floor(limit * 0.6)) cut = limit;
+          return {
+            chunk: cleaned.slice(0, cut).trim(),
+            rest: cleaned.slice(cut).trim(),
+          };
+        };
+
+        const sections: { chartId: string; text: string }[] = [];
+        const markerRegex = /\[IMAGE\(([^)]+)\)\]/g;
+        let match: RegExpExecArray | null;
+        let lastPos = 0;
+        while ((match = markerRegex.exec(markdownText)) !== null) {
+          const chartId = match[1]?.trim();
+          const before = cleanMarkdownText(
+            markdownText.slice(lastPos, match.index),
+          );
+          if (chartId) {
+            sections.push({ chartId, text: before });
+          }
+          lastPos = markerRegex.lastIndex;
+        }
+        const tailText = cleanMarkdownText(markdownText.slice(lastPos));
+        if (sections.length > 0 && tailText) {
+          sections[sections.length - 1].text = `${
+            sections[sections.length - 1].text
+          }\n\n${tailText}`.trim();
+        }
+
+        // Title slide (page 1) - large title, Space Grotesk
         const slideTitle = pres.addSlide();
         slideTitle.addText(titleText, {
           x: 0.5,
@@ -1080,32 +1308,143 @@ export const ReportView: FC = () => {
           align: pres.AlignH ? pres.AlignH.center : "center",
         });
 
-        // Add one slide per image (chart) — ensure captions use Space Grotesk
-        images.forEach((img, idx) => {
-          if (!img) return;
-          const slide = pres.addSlide();
-          slide.addText(img.alt || `Chart ${idx + 1}`, {
-            x: 0.5,
-            y: 0.25,
-            fontSize: 18,
-            bold: true,
-            fontFace: "Space Grotesk",
+        // Add one slide per chart image, each with its own local text context.
+        if (sections.length > 0) {
+          const sectionSlides = await Promise.all(
+            sections.map(async (s, idx) => {
+              const fromCache = cachedReportImages[s.chartId];
+              const imgData = fromCache?.url
+                ? await urlToDataUrl(fromCache.url)
+                : null;
+              const fallbackImg = images[idx] || null;
+              return {
+                chartId: s.chartId,
+                text: s.text,
+                img: imgData
+                  ? {
+                      data: imgData,
+                      width: fromCache?.width || 800,
+                      height: fromCache?.height || 400,
+                    }
+                  : fallbackImg
+                  ? {
+                      data: fallbackImg.data,
+                      width: fallbackImg.width,
+                      height: fallbackImg.height,
+                    }
+                  : null,
+              };
+            }),
+          );
+
+          sectionSlides.forEach((s, idx) => {
+            if (!s.img) return;
+            const maxW = 5.3;
+            const maxH = 4.9;
+            const imageScale = 1.2;
+            let w = maxW * imageScale;
+            let h = (s.img.height / Math.max(1, s.img.width)) * w;
+            if (h > maxH) {
+              h = maxH;
+              w = (s.img.width / Math.max(1, s.img.height)) * h;
+            }
+            const narrative =
+              s.text || "No chart-specific narrative found in report text.";
+
+            const rightBox = { x: 6.75, y: 0.55, w: 3.1, h: 3.75 };
+            const bottomBox = { x: 0.5, y: 4, w: 8.95, h: 2.9 };
+            const rightFont = 9;
+            const bottomFont = 9;
+            const maxCharsPerRightBox = 450;
+            const maxCharsPerBottomBox = 450;
+
+            let remainingText = normalizeNarrative(narrative);
+
+            while (remainingText.length > 0) {
+              const slide = pres.addSlide();
+              slide.addImage({ data: s.img!.data, x: 0.35, y: 0.5, w, h });
+
+              const rightPart = splitByCharLimit(
+                remainingText,
+                maxCharsPerRightBox,
+              );
+              const bottomPart = splitByCharLimit(
+                rightPart.rest,
+                maxCharsPerBottomBox,
+              );
+              const rightLines = wrapParagraph(rightPart.chunk, 47);
+              const bottomLines = wrapParagraph(bottomPart.chunk, 110);
+
+              const drawTextbox = (
+                targetSlide: any,
+                box: { x: number; y: number; w: number; h: number },
+                lines: string[],
+                fontSize: number,
+              ) => {
+                const text = lines
+                  .map((l) => l.trim())
+                  .join("\n")
+                  .replace(/\n{3,}/g, "\n\n")
+                  .trim();
+                if (!text) return;
+                targetSlide.addText(text, {
+                  x: box.x,
+                  y: box.y,
+                  w: box.w,
+                  h: box.h,
+                  fontSize,
+                  bold: false,
+                  color: "444444",
+                  valign: "top",
+                  fontFace: "Space Grotesk",
+                  breakLine: true,
+                  margin: 0.05,
+                  paraSpaceAfterPt: 2,
+                  lineSpacingMultiple: 1.05,
+                  fit: "shrink",
+                });
+              };
+
+              drawTextbox(slide, rightBox, rightLines, rightFont);
+              drawTextbox(slide, bottomBox, bottomLines, bottomFont);
+              remainingText = bottomPart.rest;
+            }
           });
+        } else {
+          // Fallback when report has no [IMAGE(chart_id)] markers: keep image slides by order.
+          images.forEach((img, idx) => {
+            if (!img) return;
+            const slide = pres.addSlide();
+            slide.addText(img.alt || `Chart ${idx + 1}`, {
+              x: 0.5,
+              y: 0.25,
+              fontSize: 18,
+              bold: true,
+              fontFace: "Space Grotesk",
+            });
+            const maxW = 9;
+            const maxH = 5;
+            let w = maxW;
+            let h = (img.height / Math.max(1, img.width)) * w;
+            if (h > maxH) {
+              h = maxH;
+              w = (img.width / Math.max(1, img.height)) * h;
+            }
+            slide.addImage({ data: img.data, x: 0.5, y: 0.8, w, h });
+          });
+        }
 
-          // Compute aspect-preserving size within max bounds
-          const maxW = 9; // inches
-          const maxH = 5; // inches
-          let w = maxW;
-          let h = (img.height / Math.max(1, img.width)) * w;
-          if (h > maxH) {
-            h = maxH;
-            w = (img.width / Math.max(1, img.height)) * h;
-          }
+        // Add remaining analysis text slides (global context), chunked to fit.
+        const residualText = cleanMarkdownText(
+          sections.length > 0
+            ? ""
+            : markdownText || reportElement.innerText || "",
+        );
+        const paragraphs = residualText
+          .split(/\n\s*\n/)
+          .map((p) => p.trim())
+          .filter(Boolean);
 
-          slide.addImage({ data: img.data, x: 0.5, y: 0.8, w, h });
-        });
-
-        // Add analysis text slides, chunked to fit nicely
         if (paragraphs.length > 0) {
           let slide = pres.addSlide();
           slide.addText("Analysis Insights", {
@@ -1307,10 +1646,7 @@ export const ReportView: FC = () => {
     return processed;
   };
 
-  const loadReport = async (
-    reportId: string,
-    forceRegenerate: boolean = false,
-  ) => {
+  const loadReport = (reportId: string, forceRegenerate: boolean = false) => {
     const report = allGeneratedReports.find((r) => r.id === reportId);
     if (!report) return;
 
@@ -1318,206 +1654,112 @@ export const ReportView: FC = () => {
     setGeneratedReport(report.content);
     setGeneratedStyle(report.style);
 
-    // Load chart images for the report - prefer cached preview images but
-    // regenerate synchronously for selected charts to ensure freshness when
-    // the report is opened immediately after a resample in VisualizationView.
+    // Fire all chart image loading in background â€” never block the UI thread.
+    // Mark stale/missing charts as loading so compose view shows skeletons.
+    const staleIds: string[] = [];
     for (const chartId of report.selectedChartIds) {
       const chart = charts.find((c) => c.id === chartId);
       if (!chart) continue;
-
-      const chartTable = tables.find((t) => t.id === chart.tableRef);
-      if (!chartTable) continue;
-
       if (chart.chartType === "Table" || chart.chartType === "?") continue;
-
-      try {
-        // If there is a cached preview in Redux and the URL exists AND it matches
-        // the chart's current data version, use it first. Otherwise generate
-        // synchronously so report shows up-to-date image.
-        const cached = chartPreviewImages[chart.id];
-        const cachedVersion = cached?.dataVersion ?? -1;
-        const currentVersion = chart.dataVersion || 0;
-        console.debug("ReportView: loadReport decision inputs", {
-          chartId: chart.id,
-          cachedExists: !!cached?.url,
-          cachedVersion,
-          currentVersion,
-          hasSample: Boolean(chartSampleData[chart.id]),
-        });
-        // If there is a cached preview that matches the chart's version AND
-        // we don't currently have fresh sample data for the chart, it's safe
-        // to use it. If `chartSampleData` exists (recent resample occurred),
-        // prefer regenerating synchronously so ReportView matches
-        // VisualizationView immediately.
-        const hasSample = Boolean(chartSampleData[chart.id]);
-        if (
-          cached &&
-          cached.url &&
-          cachedVersion === currentVersion &&
-          !hasSample &&
-          !forceRegenerate
-        ) {
-          updateCachedReportImages(
-            chart.id,
-            cached.url,
-            cached.width,
-            cached.height,
-            cached.dataVersion,
-          );
-          console.debug(`ReportView: using cached preview for ${chart.id}`);
-          // Still regenerate in background to ensure freshness, but do not block UI
-          (async () => {
-            try {
-              // Wait briefly for latest originalTable and sampleData if they're being populated
-              const original =
-                chartOriginalTables[chart.id] ||
-                (await waitForOriginalTable(chart.id, 800));
-              // Prefer immediate sample data; otherwise wait for Visualization to mark sample ready
-              const sample =
-                chartSampleData[chart.id] ||
-                ((await waitForChartSampleReady(chart.id, 800)) &&
-                  chartSampleDataRef.current[chart.id]);
-              console.log(
-                "ReportView: calling getChartImageFromVega (background)",
-                {
-                  chartId: chart.id,
-                  hasSample: !!sample,
-                  hasOriginal: !!original,
-                  dataVersion: chart.dataVersion,
-                  ts: Date.now(),
-                },
-              );
-              const generated = await getChartImageFromVega(
-                chart,
-                chartTable,
-                sample,
-                original,
-              );
-              if (generated.dataUrl) {
-                updateCachedReportImages(
-                  chart.id,
-                  generated.dataUrl,
-                  generated.width,
-                  generated.height,
-                  chart.dataVersion || 0,
-                );
-                dispatch(
-                  dfActions.updateChartPreviewImage({
-                    chartId: chart.id,
-                    url: generated.dataUrl,
-                    width: generated.width,
-                    height: generated.height,
-                    dataVersion: chart.dataVersion || 0,
-                  }),
-                );
-                console.debug(
-                  `ReportView: background refreshed preview for ${chart.id}`,
-                  {
-                    dataVersion: chart.dataVersion || 0,
-                  },
-                );
-              }
-            } catch (e) {
-              console.warn(
-                `Background refresh failed for chart ${chart.id}:`,
-                e,
-              );
-            }
-          })();
-        } else {
-          // Cached preview is missing or stale — generate synchronously so report shows up-to-date image
-          const original =
-            chartOriginalTables[chart.id] ||
-            (await waitForOriginalTable(chart.id, 800));
-          const sample =
-            chartSampleData[chart.id] ||
-            ((await waitForChartSampleReady(chart.id, 800)) &&
-              chartSampleDataRef.current[chart.id]);
-          console.log("ReportView: calling getChartImageFromVega (sync)", {
-            chartId: chart.id,
-            hasSample: !!sample,
-            hasOriginal: !!original,
-            dataVersion: chart.dataVersion,
-            ts: Date.now(),
-          });
-          const generated = await getChartImageFromVega(
-            chart,
-            chartTable,
-            sample,
-            original,
-          );
-          if (generated.dataUrl) {
-            updateCachedReportImages(
-              chart.id,
-              generated.dataUrl,
-              generated.width,
-              generated.height,
-              chart.dataVersion || 0,
-            );
-            dispatch(
-              dfActions.updateChartPreviewImage({
-                chartId: chart.id,
-                url: generated.dataUrl,
-                width: generated.width,
-                height: generated.height,
-                dataVersion: chart.dataVersion || 0,
-              }),
-            );
-            console.debug(
-              `ReportView: synchronously generated preview for ${chart.id}`,
-              {
-                dataVersion: chart.dataVersion || 0,
-              },
-            );
-          }
-        }
-      } catch (e) {
-        console.warn(
-          `Failed to load/generate preview for chart ${chart.id}:`,
-          e,
+      const cached = chartPreviewImages[chart.id];
+      const hasSample = Boolean(chartSampleData[chart.id]);
+      const isFresh =
+        cached?.url &&
+        cached.dataVersion === (chart.dataVersion || 0) &&
+        !hasSample &&
+        !forceRegenerate;
+      if (isFresh) {
+        // Already fresh â€” use immediately
+        updateCachedReportImages(
+          chart.id,
+          cached.url,
+          cached.width,
+          cached.height,
+          cached.dataVersion,
         );
+      } else {
+        staleIds.push(chartId);
       }
+    }
+
+    if (staleIds.length > 0) {
+      setLoadingChartIds((prev) => new Set([...prev, ...staleIds]));
+
+      // Generate stale charts in background, batch of 2 to keep UI responsive
+      (async () => {
+        const BATCH = 2;
+        for (let i = 0; i < staleIds.length; i += BATCH) {
+          const batch = staleIds.slice(i, i + BATCH);
+          await Promise.allSettled(
+            batch.map(async (chartId) => {
+              const chart = charts.find((c) => c.id === chartId);
+              const chartTable = chart
+                ? tables.find((t) => t.id === chart.tableRef)
+                : undefined;
+              if (!chart || !chartTable) return;
+              try {
+                const original =
+                  chartOriginalTables[chart.id] ||
+                  (await waitForOriginalTable(chart.id, 800));
+                const sample =
+                  chartSampleData[chart.id] ||
+                  ((await waitForChartSampleReady(chart.id, 800)) &&
+                    chartSampleDataRef.current[chart.id]);
+                const generated = await getChartImageFromVega(
+                  chart,
+                  chartTable,
+                  sample,
+                );
+                if (generated.dataUrl) {
+                  updateCachedReportImages(
+                    chart.id,
+                    generated.dataUrl,
+                    generated.width,
+                    generated.height,
+                    chart.dataVersion || 0,
+                  );
+                  dispatch(
+                    dfActions.updateChartPreviewImage({
+                      chartId: chart.id,
+                      url: generated.dataUrl,
+                      width: generated.width,
+                      height: generated.height,
+                      dataVersion: chart.dataVersion || 0,
+                    }),
+                  );
+                }
+              } catch (e) {
+                console.warn(
+                  `loadReport: failed to generate preview for ${chartId}:`,
+                  e,
+                );
+              } finally {
+                setLoadingChartIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(chartId);
+                  return next;
+                });
+              }
+            }),
+          );
+          // yield to browser idle between batches
+          await yieldToIdle();
+        }
+      })();
     }
   };
 
   useEffect(() => {
     if (currentReportId === undefined && allGeneratedReports.length > 0) {
-      (async () => {
-        await loadReport(allGeneratedReports[0].id);
-      })();
+      loadReport(allGeneratedReports[0].id);
     }
   }, [currentReportId]);
 
-  // When the app switches to Report view, ensure previews for the currently
-  // loaded report are refreshed immediately so the user sees the latest charts
+  // When the app switches to Report view, load the current report.
+  // loadReport is non-blocking â€” it fires background tasks and returns immediately.
   useEffect(() => {
     if (viewMode === "report" && currentReportId) {
-      (async () => {
-        // Clear Redux cached previews for charts in this report so we force
-        // synchronous regeneration and avoid stale blob usage on first open.
-        try {
-          const report = allGeneratedReports.find(
-            (r) => r.id === currentReportId,
-          );
-          if (report) {
-            for (const cid of report.selectedChartIds) {
-              dispatch(
-                dfActions.updateChartPreviewImage({
-                  chartId: cid,
-                  url: "",
-                  width: 0,
-                  height: 0,
-                  dataVersion: -1,
-                }),
-              );
-            }
-          }
-        } catch (e) {
-          console.warn("ReportView: failed to clear cached previews", e);
-        }
-
-        await loadReport(currentReportId, true);
-      })();
+      loadReport(currentReportId, false);
     }
   }, [viewMode, currentReportId]);
 
@@ -1599,9 +1841,6 @@ export const ReportView: FC = () => {
     chartId: string,
     timeoutMs: number = 5000,
   ): Promise<any[] | undefined> => {
-    // Enforce a reasonable minimum so callers that pass short timeouts
-    // (e.g. 800ms) don't race with Visualization updates under load.
-    timeoutMs = Math.max(timeoutMs, 5000);
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const val = chartOriginalTablesRef.current?.[chartId];
@@ -1620,8 +1859,6 @@ export const ReportView: FC = () => {
     chartId: string,
     timeoutMs: number = 5000,
   ): Promise<any[] | undefined> => {
-    // Enforce minimum polling duration to avoid premature timeouts
-    timeoutMs = Math.max(timeoutMs, 5000);
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const val = chartSampleDataRef.current?.[chartId];
@@ -1640,8 +1877,6 @@ export const ReportView: FC = () => {
     chartId: string,
     timeoutMs: number = 5000,
   ): Promise<number | undefined> => {
-    // Enforce minimum polling duration to avoid premature timeouts
-    timeoutMs = Math.max(timeoutMs, 5000);
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const ts = chartSampleReadyRef.current?.[chartId];
@@ -1671,62 +1906,78 @@ export const ReportView: FC = () => {
     }
   }, [chartPreviewImages]);
 
-  // Generate missing preview images on-demand and cache them in Redux
+  // Generate missing preview images on-demand and cache them in Redux (parallel, batch of 4)
   useEffect(() => {
     let isMounted = true;
 
     const refreshPreviewsInBackground = async () => {
-      // Regenerate previews in background to ensure ReportView images match VisualizationView.
-      // Run sequentially to avoid CPU spikes.
-      for (const chart of sortedCharts) {
-        if (!isMounted) break;
-
+      const chartsToRefresh = sortedCharts.filter((chart) => {
         if (
           chart.chartType === "Table" ||
           chart.chartType === "?" ||
           chart.chartType === "Auto"
-        ) {
-          continue;
-        }
+        )
+          return false;
+        const cached = chartPreviewImages[chart.id];
+        if (cached?.url && cached.dataVersion === (chart.dataVersion || 0))
+          return false;
+        if (!tables.find((t) => t.id === chart.tableRef)) return false;
+        return true;
+      });
 
-        const chartTable = tables.find((t) => t.id === chart.tableRef);
-        if (!chartTable) continue;
+      if (chartsToRefresh.length === 0) return;
 
-        try {
-          const original =
-            chartOriginalTables[chart.id] ||
-            (await waitForOriginalTable(chart.id, 5000));
-          const sample =
-            chartSampleData[chart.id] ||
-            ((await waitForChartSampleReady(chart.id, 5000)) &&
-              chartSampleDataRef.current[chart.id]);
-          const { dataUrl, width, height } = await getChartImageFromVega(
-            chart,
-            chartTable,
-            sample,
-            original,
-          );
+      // Mark all as loading upfront
+      setLoadingChartIds(new Set(chartsToRefresh.map((c) => c.id)));
 
-          if (isMounted && dataUrl) {
-            dispatch(
-              dfActions.updateChartPreviewImage({
-                chartId: chart.id,
-                url: dataUrl,
-                width,
-                height,
-                dataVersion: chart.dataVersion || 0,
-              }),
-            );
-          }
+      const BATCH = 4;
+      for (let i = 0; i < chartsToRefresh.length; i += BATCH) {
+        if (!isMounted) break;
+        const batch = chartsToRefresh.slice(i, i + BATCH);
 
-          // small pause between charts to keep UI snappy
-          await new Promise((r) => setTimeout(r, 120));
-        } catch (error) {
-          console.warn(
-            `Failed to refresh preview for chart ${chart.id}:`,
-            error,
-          );
-        }
+        await yieldToIdle();
+        if (!isMounted) break;
+
+        await Promise.allSettled(
+          batch.map(async (chart) => {
+            const chartTable = tables.find((t) => t.id === chart.tableRef)!;
+            try {
+              const sample =
+                chartSampleData[chart.id] ||
+                ((await waitForChartSampleReady(chart.id, 1500)) &&
+                  chartSampleDataRef.current[chart.id]);
+              const { dataUrl, width, height } = await getChartImageFromVega(
+                chart,
+                chartTable,
+                sample,
+              );
+              if (isMounted && dataUrl) {
+                dispatch(
+                  dfActions.updateChartPreviewImage({
+                    chartId: chart.id,
+                    url: dataUrl,
+                    width,
+                    height,
+                    dataVersion: chart.dataVersion || 0,
+                  }),
+                );
+              }
+            } catch (err) {
+              console.warn(
+                `Failed to refresh preview for chart ${chart.id}:`,
+                err,
+              );
+            } finally {
+              if (isMounted) {
+                setLoadingChartIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(chart.id);
+                  return next;
+                });
+              }
+            }
+          }),
+        );
       }
     };
 
@@ -1749,15 +2000,14 @@ export const ReportView: FC = () => {
   };
 
   const selectAll = () => {
-    // Only select available charts (excluding Table, ?, Auto, and charts without preview images)
+    // Only select charts that have a loaded preview (not still loading)
     const availableChartIds = sortedCharts
       .filter((chart) => {
         const isUnavailable =
           chart.chartType === "Table" ||
           chart.chartType === "?" ||
           chart.chartType === "Auto";
-        const hasPreview = previewImages.has(chart.id);
-        return !isUnavailable && hasPreview;
+        return !isUnavailable && previewImages.has(chart.id);
       })
       .map((c) => c.id);
     setSelectedChartIds(new Set(availableChartIds));
@@ -1771,158 +2021,19 @@ export const ReportView: FC = () => {
     chart: any,
     chartTable: any,
     chartSampleDataForChart?: any[],
-    originalTableFromRedux?: any[],
-  ): Promise<{
-    dataUrl: string;
-    blobUrl: string;
-    width: number;
-    height: number;
-  }> => {
+  ): Promise<{ dataUrl: string; width: number; height: number }> => {
     try {
-      try {
-        console.debug("ReportView.getChartImageFromVega:start", {
-          chartId: chart?.id,
-          hasSampleParam: !!chartSampleDataForChart,
-          hasOriginalParam: !!originalTableFromRedux,
-          chartDataVersion: chart?.dataVersion,
-          ts: Date.now(),
-        });
-      } catch (e) {}
-      // Use sample data from Redux if available, otherwise use table rows
-      const dataToUse = chartSampleDataForChart || chartTable.rows;
-
-      // Only preprocess if using chartTable.rows (not already preprocessed from Redux)
-      let processedRows: any[];
-      if (chartSampleDataForChart) {
-        // Data is already preprocessed from Redux
-        processedRows = chartSampleDataForChart;
-      } else {
-        // Need to preprocess table rows
-        processedRows = prepVisTable(
-          dataToUse,
-          conceptShelfItems,
-          chart.encodingMap,
-        );
-      }
-
-      // Assemble the Vega spec
-      const assembledChart = assembleVegaChart(
-        chart.chartType,
-        chart.encodingMap,
+      return await generateChartPreview(
+        chart,
+        chartTable,
         conceptShelfItems,
-        processedRows,
-        chartTable.metadata,
-        24,
-        true,
-        // prefer chart's configured size when available so preview matches VisualizationView
-        chart.chartWidth || config.defaultChartWidth,
-        chart.chartHeight || config.defaultChartHeight,
-        true,
-        chart.qcLimitsMode || false,
-        undefined,
-        undefined,
-        // Prefer originalTable from Redux (set by VisualizationView) so QC limit
-        // columns (LL/UL/SLIPNO/etc.) are available to chart postProcessors the
-        // same way VisualizationView uses them.
-        originalTableFromRedux || chartTable.rows,
+        config.defaultChartWidth,
+        config.defaultChartHeight,
+        chartSampleDataForChart,
       );
-
-      // Create a temporary container for embedding
-      const tempId = `temp-chart-${chart.id}-${Date.now()}`;
-      const tempDiv = document.createElement("div");
-      tempDiv.id = tempId;
-      tempDiv.style.position = "absolute";
-      tempDiv.style.left = "-9999px";
-      document.body.appendChild(tempDiv);
-
-      try {
-        // Embed the chart
-        const result = await embed(`#${tempId}`, assembledChart, {
-          actions: false,
-          renderer: "svg",
-        });
-
-        // Export to SVG with high resolution
-        const svgString = await result.view.toSVG(4);
-
-        // Parse SVG to get original dimensions
-        const parser = new DOMParser();
-        const svgDoc = parser.parseFromString(svgString, "image/svg+xml");
-        const svgElement = svgDoc.querySelector("svg");
-
-        if (!svgElement) {
-          throw new Error("Could not parse SVG");
-        }
-
-        // Get original dimensions
-        const originalWidth = parseFloat(
-          svgElement.getAttribute("width") || "0",
-        );
-        const originalHeight = parseFloat(
-          svgElement.getAttribute("height") || "0",
-        );
-
-        // Convert SVG to PNG using canvas
-        const { dataUrl, blobUrl } = await new Promise<{
-          dataUrl: string;
-          blobUrl: string;
-        }>((resolve, reject) => {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            reject(new Error("Could not get canvas context"));
-            return;
-          }
-
-          const img = new Image();
-          const svgBlob = new Blob([svgString], {
-            type: "image/svg+xml;charset=utf-8",
-          });
-          const svgUrl = URL.createObjectURL(svgBlob);
-
-          img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            URL.revokeObjectURL(svgUrl);
-
-            const dataUrl = canvas.toDataURL("image/png");
-
-            canvas.toBlob((blob) => {
-              if (blob) {
-                const blobUrl = URL.createObjectURL(blob);
-                resolve({ dataUrl, blobUrl });
-              } else {
-                resolve({ dataUrl, blobUrl: "" });
-              }
-            }, "image/png");
-          };
-
-          img.onerror = (err) => {
-            URL.revokeObjectURL(svgUrl);
-            reject(err);
-          };
-
-          img.src = svgUrl;
-        });
-
-        document.body.removeChild(tempDiv);
-
-        return {
-          dataUrl,
-          blobUrl,
-          width: originalWidth,
-          height: originalHeight,
-        };
-      } catch (error) {
-        if (document.body.contains(tempDiv)) {
-          document.body.removeChild(tempDiv);
-        }
-        throw error;
-      }
     } catch (e) {
       console.warn("Could not capture chart image:", e);
-      return { dataUrl: "", blobUrl: "", width: 0, height: 0 };
+      return { dataUrl: "", width: 0, height: 0 };
     }
   };
 
@@ -2003,7 +2114,6 @@ export const ReportView: FC = () => {
                 chart,
                 chartTable,
                 sample,
-                original,
               );
               dataUrl = generated.dataUrl;
               width = generated.width;
@@ -2051,7 +2161,22 @@ export const ReportView: FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate report");
+        let detail = `Failed to generate report (HTTP ${response.status})`;
+        try {
+          const raw = await response.text();
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              detail =
+                parsed?.content || parsed?.error || parsed?.message || detail;
+            } catch {
+              detail = raw.slice(0, 500);
+            }
+          }
+        } catch {
+          // keep default detail
+        }
+        throw new Error(detail);
       }
 
       const reader = response.body?.getReader();
@@ -2082,7 +2207,11 @@ export const ReportView: FC = () => {
 
         if (chunk.startsWith("error:")) {
           const errorData = JSON.parse(chunk.substring(6));
-          throw new Error(errorData.content || "Error generating report");
+          throw new Error(
+            errorData.content ||
+              errorData.debug_hint ||
+              "Error generating report",
+          );
         }
 
         accumulatedReport += chunk;
@@ -2125,7 +2254,7 @@ export const ReportView: FC = () => {
   };
 
   let displayedReport = isGenerating
-    ? `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">✏️</span>`
+    ? `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">âœï¸</span>`
     : generatedReport;
   displayedReport = processReport(displayedReport);
 
@@ -2269,10 +2398,10 @@ export const ReportView: FC = () => {
                     { icon: string; label: string }
                   > = {
                     en: { icon: usaFlagIcon, label: "English" },
-                    vi: { icon: vietnamFlagIcon, label: "Tiếng Việt" },
-                    th: { icon: thailandFlagIcon, label: "ไทย" },
+                    vi: { icon: vietnamFlagIcon, label: "Tiáº¿ng Viá»‡t" },
+                    th: { icon: thailandFlagIcon, label: "à¹„à¸—à¸¢" },
                     lo: { icon: laosFlagIcon, label: "Lao" },
-                    ja: { icon: japanFlagIcon, label: "日本語" },
+                    ja: { icon: japanFlagIcon, label: "æ—¥æœ¬èªž" },
                   };
                   const lang =
                     languageIcons[selected as string] || languageIcons.en;
@@ -2329,10 +2458,10 @@ export const ReportView: FC = () => {
                     <Box
                       component="img"
                       src={vietnamFlagIcon}
-                      alt="Tiếng Việt"
+                      alt="Tiáº¿ng Viá»‡t"
                       sx={{ width: 20, height: 20, borderRadius: "2px" }}
                     />
-                    Tiếng Việt
+                    Tiáº¿ng Viá»‡t
                   </Box>
                 </MenuItem>
                 <MenuItem value="th">
@@ -2340,10 +2469,10 @@ export const ReportView: FC = () => {
                     <Box
                       component="img"
                       src={thailandFlagIcon}
-                      alt="ไทย"
+                      alt="à¹„à¸—à¸¢"
                       sx={{ width: 20, height: 20, borderRadius: "2px" }}
                     />
-                    ไทย
+                    à¹„à¸—à¸¢
                   </Box>
                 </MenuItem>
                 <MenuItem value="lo">
@@ -2362,10 +2491,10 @@ export const ReportView: FC = () => {
                     <Box
                       component="img"
                       src={japanFlagIcon}
-                      alt="日本語"
+                      alt="æ—¥æœ¬èªž"
                       sx={{ width: 20, height: 20, borderRadius: "2px" }}
                     />
-                    日本語
+                    æ—¥æœ¬èªž
                   </Box>
                 </MenuItem>
               </Select>
@@ -2442,124 +2571,397 @@ export const ReportView: FC = () => {
               </Typography>
             ) : (
               (() => {
-                // Filter out unavailable charts (Table, ?, Auto, and charts without preview images)
+                // Filter out only truly unavailable chart types; loading charts get skeleton cards
                 const availableCharts = sortedCharts.filter((chart) => {
-                  const isUnavailable =
-                    chart.chartType === "Table" ||
-                    chart.chartType === "?" ||
-                    chart.chartType === "Auto";
-                  const hasPreview = previewImages.has(chart.id);
-                  return !isUnavailable && hasPreview;
+                  return (
+                    chart.chartType !== "Table" &&
+                    chart.chartType !== "?" &&
+                    chart.chartType !== "Auto"
+                  );
                 });
 
                 if (availableCharts.length === 0) {
                   return (
                     <Typography color="text.secondary">
-                      No available charts to display. Charts may still be
-                      loading or unavailable.
+                      No charts available. Create some visualizations first.
                     </Typography>
                   );
                 }
 
+                // Walk up derive chain to find root table for a given table
+                const findRootTable = (
+                  startTable: (typeof tables)[number],
+                ): (typeof tables)[number] => {
+                  let t = startTable;
+                  while (true) {
+                    if (!t.derive) return t;
+                    if (t !== startTable && t.anchored) return t;
+                    const parentId = t.derive.trigger.tableId;
+                    const parent = tables.find((x) => x.id === parentId);
+                    if (!parent) return t;
+                    t = parent;
+                  }
+                };
+
+                // Build 3-level structure: rootId â†’ { rootTable, subGroups: { directId â†’ { directTable, charts[] } } }
+                type SubGroup = {
+                  directTable: (typeof tables)[number] | undefined;
+                  charts: typeof availableCharts;
+                };
+                type RootGroup = {
+                  rootTable: (typeof tables)[number] | undefined;
+                  subGroups: Record<string, SubGroup>;
+                };
+                const chartsByRoot: Record<string, RootGroup> = {};
+
+                availableCharts.forEach((chart) => {
+                  const directTable = tables.find(
+                    (t) => t.id === chart.tableRef,
+                  );
+                  const rootTable = directTable
+                    ? findRootTable(directTable)
+                    : undefined;
+                  const rootId = rootTable?.id ?? chart.tableRef;
+                  if (!chartsByRoot[rootId])
+                    chartsByRoot[rootId] = { rootTable, subGroups: {} };
+                  if (!chartsByRoot[rootId].subGroups[chart.tableRef])
+                    chartsByRoot[rootId].subGroups[chart.tableRef] = {
+                      directTable,
+                      charts: [],
+                    };
+                  chartsByRoot[rootId].subGroups[chart.tableRef].charts.push(
+                    chart,
+                  );
+                });
+
+                const rootIds = Object.keys(chartsByRoot);
+                const getRootAccentColor = (rootId: string) =>
+                  TABLE_ACCENT_COLORS[
+                    rootIds.indexOf(rootId) % TABLE_ACCENT_COLORS.length
+                  ];
+
+                const toggleRootSelection = (rootId: string) => {
+                  const ids = Object.values(
+                    chartsByRoot[rootId].subGroups,
+                  ).flatMap((sg) => sg.charts.map((c) => c.id));
+                  const allSelected = ids.every((id) =>
+                    selectedChartIds.has(id),
+                  );
+                  const next = new Set(selectedChartIds);
+                  if (allSelected) ids.forEach((id) => next.delete(id));
+                  else ids.forEach((id) => next.add(id));
+                  setSelectedChartIds(next);
+                };
+
+                const toggleSubGroupSelection = (
+                  directId: string,
+                  rootId: string,
+                ) => {
+                  const ids = chartsByRoot[rootId].subGroups[
+                    directId
+                  ].charts.map((c) => c.id);
+                  const allSelected = ids.every((id) =>
+                    selectedChartIds.has(id),
+                  );
+                  const next = new Set(selectedChartIds);
+                  if (allSelected) ids.forEach((id) => next.delete(id));
+                  else ids.forEach((id) => next.add(id));
+                  setSelectedChartIds(next);
+                };
+
                 return (
-                  <Masonry columns={{ xs: 2, sm: 3, md: 4, lg: 5 }} spacing={2}>
-                    {availableCharts.map((chart) => {
-                      const table = tables.find((t) => t.id === chart.tableRef);
-                      const previewImage = previewImages.get(chart.id);
+                  <Box
+                    sx={{ display: "flex", flexDirection: "column", gap: 4 }}
+                  >
+                    {rootIds.map((rootId) => {
+                      const { rootTable, subGroups } = chartsByRoot[rootId];
+                      const accentColor = getRootAccentColor(rootId);
+                      const allChartIds = Object.values(subGroups).flatMap(
+                        (sg) => sg.charts.map((c) => c.id),
+                      );
+                      const rootSelectedCount = allChartIds.filter((id) =>
+                        selectedChartIds.has(id),
+                      ).length;
+                      const allRootSelected =
+                        rootSelectedCount === allChartIds.length;
 
                       return (
-                        <Card
-                          key={chart.id}
-                          variant="outlined"
-                          sx={{
-                            cursor: "pointer",
-                            position: "relative",
-                            overflow: "hidden",
-                            backgroundColor: selectedChartIds.has(chart.id)
-                              ? alpha(theme.palette.primary.main, 0.08)
-                              : "background.paper",
-                            border: selectedChartIds.has(chart.id)
-                              ? "2px solid"
-                              : "1px solid",
-                            borderColor: selectedChartIds.has(chart.id)
-                              ? "primary.main"
-                              : "divider",
-                            "&:hover": {
-                              backgroundColor: "action.hover",
-                              boxShadow: 3,
-                              transform: "translateY(-2px)",
-                              transition: "all 0.2s ease-in-out",
-                            },
-                          }}
-                          onClick={() => toggleChartSelection(chart.id)}
-                        >
-                          <Box sx={{ position: "relative" }}>
-                            <Checkbox
-                              checked={selectedChartIds.has(chart.id)}
-                              onChange={() => toggleChartSelection(chart.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              sx={{
-                                position: "absolute",
-                                top: 4,
-                                right: 4,
-                                p: 0.5,
-                                zIndex: 3,
-                                backgroundColor: "rgba(255, 255, 255, 0.9)",
-                                borderRadius: 1,
-                                "&:hover": {
-                                  backgroundColor: "rgba(255, 255, 255, 1)",
-                                },
-                              }}
-                            />
-                            <Box
-                              component="img"
-                              src={previewImage!.url}
-                              alt={chart.chartType}
-                              sx={{
-                                p: 1,
-                                width: `calc(100% - 16px)`,
-                                height: "auto",
-                                maxHeight: config.defaultChartHeight,
-                                display: "block",
-                                objectFit: "contain",
-                                backgroundColor: "white",
-                              }}
-                            />
-                          </Box>
-                          <CardContent
-                            sx={{ p: 1, "&:last-child": { pb: 1.5 } }}
+                        <Box key={rootId}>
+                          {/* Root-level header */}
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                              mb: 2,
+                              pb: 1,
+                              borderBottom: `3px solid ${accentColor}`,
+                            }}
                           >
+                            <Box
+                              sx={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: "50%",
+                                backgroundColor: accentColor,
+                                flexShrink: 0,
+                              }}
+                            />
+                            <Typography
+                              variant="subtitle1"
+                              sx={{ fontWeight: 700, flex: 1 }}
+                            >
+                              {rootTable?.displayId ?? rootId}
+                            </Typography>
                             <Typography
                               variant="caption"
+                              color="text.secondary"
+                              sx={{ mr: 0.5 }}
+                            >
+                              {rootSelectedCount}/{allChartIds.length} selected
+                            </Typography>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => toggleRootSelection(rootId)}
                               sx={{
-                                display: "block",
-                                fontWeight: 500,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
+                                textTransform: "none",
+                                fontSize: 11,
+                                color: accentColor,
+                                borderColor: accentColor,
+                                py: 0.25,
+                                px: 1,
+                                minWidth: 0,
+                                "&:hover": {
+                                  borderColor: accentColor,
+                                  backgroundColor: alpha(accentColor, 0.08),
+                                },
                               }}
                             >
-                              {chart.chartType}
-                            </Typography>
-                            {table?.displayId && (
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                sx={{
-                                  display: "block",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {table.displayId}
-                              </Typography>
+                              {allRootSelected ? "Deselect all" : "Select all"}
+                            </Button>
+                          </Box>
+
+                          {/* All charts in one horizontal scrollable row */}
+                          <Box
+                            sx={{
+                              display: "flex",
+                              flexDirection: "row",
+                              flexWrap: "nowrap",
+                              gap: 1.5,
+                              overflowX: "auto",
+                              minWidth: 0,
+                              pb: 1,
+                              "&::-webkit-scrollbar": { height: 4 },
+                              "&::-webkit-scrollbar-thumb": {
+                                backgroundColor: alpha(accentColor, 0.3),
+                                borderRadius: 2,
+                              },
+                            }}
+                          >
+                            {Object.entries(subGroups).flatMap(
+                              ([
+                                directId,
+                                { directTable, charts: subCharts },
+                              ]) =>
+                                subCharts.map((chart) => {
+                                  const previewImage = previewImages.get(
+                                    chart.id,
+                                  );
+                                  const isLoading =
+                                    !previewImage &&
+                                    loadingChartIds.has(chart.id);
+                                  const isSelected = selectedChartIds.has(
+                                    chart.id,
+                                  );
+                                  const showBadge = directId !== rootId;
+                                  return (
+                                    <Card
+                                      key={chart.id}
+                                      variant="outlined"
+                                      sx={{
+                                        cursor: isLoading
+                                          ? "default"
+                                          : "pointer",
+                                        position: "relative",
+                                        overflow: "hidden",
+                                        flexShrink: 0,
+                                        width: 200,
+                                        backgroundColor: isSelected
+                                          ? alpha(accentColor, 0.08)
+                                          : "background.paper",
+                                        border: isSelected
+                                          ? "2px solid"
+                                          : "1px solid",
+                                        borderColor: isSelected
+                                          ? accentColor
+                                          : "divider",
+                                        borderLeftColor: accentColor,
+                                        borderLeftWidth: "4px",
+                                        "&:hover": isLoading
+                                          ? {}
+                                          : {
+                                              backgroundColor: alpha(
+                                                accentColor,
+                                                0.05,
+                                              ),
+                                              boxShadow: 3,
+                                              transform: "translateY(-2px)",
+                                              transition:
+                                                "all 0.2s ease-in-out",
+                                            },
+                                      }}
+                                      onClick={() =>
+                                        !isLoading &&
+                                        toggleChartSelection(chart.id)
+                                      }
+                                    >
+                                      {isLoading ? (
+                                        <Box>
+                                          <Skeleton
+                                            variant="rectangular"
+                                            width="100%"
+                                            height={130}
+                                            sx={{
+                                              backgroundColor: alpha(
+                                                accentColor,
+                                                0.08,
+                                              ),
+                                            }}
+                                          />
+                                          <CardContent
+                                            sx={{
+                                              p: 1,
+                                              "&:last-child": { pb: 1 },
+                                            }}
+                                          >
+                                            <Box
+                                              sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 0.75,
+                                              }}
+                                            >
+                                              <CircularProgress
+                                                size={10}
+                                                thickness={5}
+                                                sx={{
+                                                  color: accentColor,
+                                                  flexShrink: 0,
+                                                }}
+                                              />
+                                              <Skeleton
+                                                variant="text"
+                                                width="70%"
+                                                height={14}
+                                              />
+                                            </Box>
+                                          </CardContent>
+                                        </Box>
+                                      ) : previewImage ? (
+                                        <Box>
+                                          <Box sx={{ position: "relative" }}>
+                                            {/* Derived-table badge â€” shown only when chart belongs to a derived table */}
+                                            {showBadge && (
+                                              <Box
+                                                sx={{
+                                                  position: "absolute",
+                                                  top: 6,
+                                                  left: 6,
+                                                  zIndex: 3,
+                                                  backgroundColor: alpha(
+                                                    accentColor,
+                                                    0.85,
+                                                  ),
+                                                  color: "#fff",
+                                                  fontSize: 9,
+                                                  fontWeight: 600,
+                                                  px: 0.6,
+                                                  py: 0.2,
+                                                  borderRadius: 0.5,
+                                                  maxWidth: 120,
+                                                  overflow: "hidden",
+                                                  textOverflow: "ellipsis",
+                                                  whiteSpace: "nowrap",
+                                                }}
+                                              >
+                                                {directTable?.displayId ??
+                                                  directId}
+                                              </Box>
+                                            )}
+                                            <Checkbox
+                                              checked={isSelected}
+                                              onChange={() =>
+                                                toggleChartSelection(chart.id)
+                                              }
+                                              onClick={(e) =>
+                                                e.stopPropagation()
+                                              }
+                                              sx={{
+                                                position: "absolute",
+                                                top: 4,
+                                                right: 4,
+                                                p: 0.5,
+                                                zIndex: 3,
+                                                backgroundColor:
+                                                  "rgba(255,255,255,0.9)",
+                                                borderRadius: 1,
+                                                color: accentColor,
+                                                "&.Mui-checked": {
+                                                  color: accentColor,
+                                                },
+                                                "&:hover": {
+                                                  backgroundColor:
+                                                    "rgba(255,255,255,1)",
+                                                },
+                                              }}
+                                            />
+                                            <Box
+                                              component="img"
+                                              src={previewImage.url}
+                                              alt={chart.chartType}
+                                              sx={{
+                                                p: 1,
+                                                width: "calc(100% - 16px)",
+                                                height: "auto",
+                                                maxHeight:
+                                                  config.defaultChartHeight,
+                                                display: "block",
+                                                objectFit: "contain",
+                                                backgroundColor: "white",
+                                              }}
+                                            />
+                                          </Box>
+                                          <CardContent
+                                            sx={{
+                                              p: 1,
+                                              "&:last-child": { pb: 1.5 },
+                                            }}
+                                          >
+                                            <Typography
+                                              variant="caption"
+                                              sx={{
+                                                display: "block",
+                                                fontWeight: 500,
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                              }}
+                                            >
+                                              {chart.chartType}
+                                            </Typography>
+                                          </CardContent>
+                                        </Box>
+                                      ) : null}
+                                    </Card>
+                                  );
+                                }),
                             )}
-                          </CardContent>
-                        </Card>
+                          </Box>
+                        </Box>
                       );
                     })}
-                  </Masonry>
+                  </Box>
                 );
               })()
             )}
@@ -2691,8 +3093,8 @@ export const ReportView: FC = () => {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {new Date(report.createdAt).toLocaleDateString()} •{" "}
-                            {report.style}
+                            {new Date(report.createdAt).toLocaleDateString()}{" "}
+                            â€¢ {report.style}
                           </Typography>
                         </Box>
                       </Button>

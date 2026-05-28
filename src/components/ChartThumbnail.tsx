@@ -1,4 +1,4 @@
-import React, { FC } from "react";
+﻿import React, { FC } from "react";
 import { Box, Button, Chip, Typography } from "@mui/material";
 
 export interface ChartSuggestion {
@@ -15,11 +15,19 @@ interface ChartThumbnailProps {
   onUsePrompt: (suggestion: ChartSuggestion) => void;
 }
 
+const QC_SPECIAL_CHARTS = new Set([
+  "QC Trend Line",
+  "QC Histogram",
+  "QC Trend Bar",
+]);
+
 export const ChartThumbnail: FC<ChartThumbnailProps> = ({
   suggestion,
   onDrawNow,
   onUsePrompt,
 }) => {
+  const isQcSpecialChart = QC_SPECIAL_CHARTS.has(suggestion.chart_type);
+
   return (
     <Box
       sx={{
@@ -34,30 +42,41 @@ export const ChartThumbnail: FC<ChartThumbnailProps> = ({
       <Typography sx={{ fontSize: 12, fontWeight: 700 }}>
         {suggestion.chart_type}
       </Typography>
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-        {Object.entries(suggestion.encoding || {}).map(([k, v]) => (
-          <Chip
-            key={`${suggestion.chart_type}-${k}-${v}`}
-            size="small"
-            label={`${k}: ${v}`}
-            sx={{ fontSize: 10, height: 20 }}
-          />
-        ))}
-      </Box>
+      {!isQcSpecialChart && (
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+          {Object.entries(suggestion.encoding || {}).map(([k, v]) => (
+            <Chip
+              key={`${suggestion.chart_type}-${k}-${v}`}
+              size="small"
+              label={`${k}: ${v}`}
+              sx={{ fontSize: 10, height: 20 }}
+            />
+          ))}
+        </Box>
+      )}
       {suggestion.rationale_vi && (
         <Typography sx={{ fontSize: 11, color: "text.secondary" }}>
           {suggestion.rationale_vi}
         </Typography>
       )}
       <Box sx={{ display: "flex", gap: 0.75 }}>
-        <Button size="small" variant="contained" onClick={() => onDrawNow(suggestion)}>
-          Vẽ ngay
+        <Button
+          size="small"
+          variant="contained"
+          onClick={() => onDrawNow(suggestion)}
+        >
+          Draw now
         </Button>
-        <Button size="small" variant="outlined" onClick={() => onUsePrompt(suggestion)}>
-          💬 Dùng
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => onUsePrompt(suggestion)}
+        >
+          Customize
         </Button>
       </Box>
     </Box>
   );
 };
+
 

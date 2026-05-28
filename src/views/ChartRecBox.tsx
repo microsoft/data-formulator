@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState, useRef } from "react";
@@ -42,8 +42,6 @@ import {
   useTheme,
   Theme,
   Button,
-  Select,
-  FormControl,
 } from "@mui/material";
 
 import React from "react";
@@ -81,13 +79,13 @@ const AUTO_FOCUS_NEW_CHART = false;
 
 // Mapping from display names to internal chart type names (what LLM expects)
 const CHART_NAME_TO_INTERNAL_TYPE: Record<string, string> = {
-  // Display Name → Internal Type (as expected by LLM system prompt)
+  // Display Name â†’ Internal Type (as expected by LLM system prompt)
   Table: "table",
   Auto: "auto",
   "Scatter Plot": "point",
   "Linear Regression": "linear_regression",
   "Loess Regression": "loess",
-  "Ranged Dot Plot": "point",
+  "Ranged Dot Plot": "ranged_dot_plot",
   Boxplot: "boxplot",
   "Bar Chart": "bar",
   "Pyramid Chart": "bar",
@@ -119,15 +117,60 @@ const QC_CHART_TYPES: { value: string; label: string }[] = [
 
 const ONBOARDING_STORAGE_KEY = "df_chart_onboarding_seen_v1";
 const QC_SAMPLE_PROMPTS = [
-  "Vẽ QC trend line VALUE theo QCDATE / QCSHIFT",
-  "Vẽ QC histogram phân bố VALUE",
-  "Vẽ QC trend bar VALUE theo QCDATE",
+  "Draw a QC trend line ",
+  "Draw a QC histogram",
+  "Draw a QC trend bar",
 ];
 const GENERIC_SAMPLE_PROMPTS = [
-  "Vẽ bar chart so sánh doanh thu theo tháng",
-  "Vẽ line chart doanh thu theo thời gian",
-  "Vẽ scatter plot giữa giá và số lượng",
+  "Draw a bar chart comparing revenue by month",
+  "Draw a line chart showing revenue over time",
+  "Draw a scatter plot showing the relationship between price and quantity",
 ];
+const QC_CONTROL_LIMIT_COLS = new Set(["TARGET", "LL", "UL", "ARLL", "ARUL"]);
+
+const buildPieRecoverySuggestions = (rows: any[]): ChartSuggestion[] => {
+  if (!rows || rows.length === 0) return [];
+  const sample = rows.slice(0, 300);
+  const cols = Object.keys(sample[0] || {});
+  const categorical: string[] = [];
+  const quantitative: string[] = [];
+
+  cols.forEach((col) => {
+    const upper = col.toUpperCase();
+    if (QC_CONTROL_LIMIT_COLS.has(upper) || upper === "INDEX") {
+      return;
+    }
+    const values = sample
+      .map((r) => r?.[col])
+      .filter((v) => v !== null && v !== undefined && v !== "");
+    if (values.length === 0) return;
+
+    const isNumeric = values.every(
+      (v) => typeof v === "number" || (!Number.isNaN(Number(v)) && v !== ""),
+    );
+    if (isNumeric) quantitative.push(col);
+
+    const uniq = new Set(values.map((v) => String(v))).size;
+    if (uniq >= 2 && uniq <= 12) categorical.push(col);
+  });
+
+  if (categorical.length === 0 || quantitative.length === 0) return [];
+
+  const suggestions: ChartSuggestion[] = [];
+  for (const c of categorical.slice(0, 3)) {
+    for (const q of quantitative.slice(0, 2)) {
+      if (c === q) continue;
+      suggestions.push({
+        chart_type: "Pie Chart",
+        encoding: { theta: q, color: c },
+        rationale_vi: `Group by ${c}, use ${q} as pie value.`,
+        sample_prompt_vi: `Draw a Pie Chart for ${q} share by ${c}`,
+      });
+      if (suggestions.length >= 4) return suggestions;
+    }
+  }
+  return suggestions;
+};
 
 // Detect if a table's column names indicate Quality Control / SPC data.
 // Detect if a table is a QC table by checking for required QC columns.
@@ -157,6 +200,33 @@ const getInternalChartType = (displayName: string): string => {
   return CHART_NAME_TO_INTERNAL_TYPE[displayName] || displayName;
 };
 
+const inferPreferredChartTypeFromInstruction = (
+  instruction: string,
+): string | undefined => {
+  const text = (instruction || "").toLowerCase();
+  if (!text.trim()) return undefined;
+
+  const displayNames = Object.keys(CHART_NAME_TO_INTERNAL_TYPE).sort(
+    (a, b) => b.length - a.length,
+  );
+  const matchedDisplay = displayNames.find((name) =>
+    text.includes(name.toLowerCase()),
+  );
+  if (matchedDisplay) return matchedDisplay;
+
+  const internalToDisplay = Object.entries(CHART_NAME_TO_INTERNAL_TYPE).reduce(
+    (acc, [display, internal]) => {
+      acc[internal.toLowerCase()] = display;
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+  const matchedInternal = Object.keys(internalToDisplay).find((name) =>
+    text.includes(name),
+  );
+  return matchedInternal ? internalToDisplay[matchedInternal] : undefined;
+};
+
 // Generate available chart types from CHART_TEMPLATES in the system
 const getAvailableChartTypes = (): { value: string; label: string }[] => {
   const chartTypes: { value: string; label: string }[] = [];
@@ -164,7 +234,7 @@ const getAvailableChartTypes = (): { value: string; label: string }[] => {
     templates.forEach((t) => {
       if (t.chart && t.chart !== "Auto") {
         chartTypes.push({
-          value: t.chart, // 🔧 Use actual chart name, not hyphenated version
+          value: t.chart, // ðŸ”§ Use actual chart name, not hyphenated version
           label: t.chart,
         });
       }
@@ -316,9 +386,13 @@ export const IdeaChip: FC<{
     type?: "branch" | "deep_dive";
     predictedChartType?: string;
     isQcIdea?: boolean;
+    predictedEncoding?: Record<string, string>;
   };
   theme: Theme;
-  onClick: (chartType?: string) => void;
+  onClick: (
+    chartType?: string,
+    encodings?: Record<string, string>,
+  ) => void;
   sx?: SxProps;
   disabled?: boolean;
   /** Override the dropdown chart type list (e.g. for QC chips) */
@@ -327,8 +401,7 @@ export const IdeaChip: FC<{
   const systemChartTypes = getAvailableChartTypes();
   const availableChartTypes = customChartTypes ?? systemChartTypes;
 
-  // Initialize dropdown to AI-predicted chart type if it exists in available list
-  const getInitialChartType = (): string => {
+  const getPreferredChartType = (): string => {
     if (idea.predictedChartType) {
       const matched = availableChartTypes.find(
         (ct) =>
@@ -339,76 +412,10 @@ export const IdeaChip: FC<{
     return availableChartTypes.length > 0 ? availableChartTypes[0].value : "";
   };
 
-  const [selectedChartType, setSelectedChartType] =
-    useState<string>(getInitialChartType);
-  const [compatibilityWarning, setCompatibilityWarning] = useState<
-    string | null
-  >(null);
-
-  // Chart types that are generally incompatible with certain goal keywords
-  const checkCompatibility = (
-    chartType: string,
-    goal: string,
-  ): string | null => {
-    const lowerGoal = goal.toLowerCase();
-    const lowerChart = chartType.toLowerCase();
-
-    const incompatibleRules: Array<{
-      chartPattern: string;
-      goalKeywords: string[];
-      reason: string;
-    }> = [
-      {
-        chartPattern: "pie",
-        goalKeywords: ["trend", "over time", "time series", "compare many"],
-        reason: "Pie chart is not suitable for trends or time-series data",
-      },
-      {
-        chartPattern: "line",
-        goalKeywords: ["distribution", "frequency", "proportion", "percentage"],
-        reason: "Line chart is not suitable for distributions or proportions",
-      },
-      {
-        chartPattern: "scatter",
-        goalKeywords: ["proportion", "percentage", "composition"],
-        reason: "Scatter plot is not suitable for showing proportions",
-      },
-      {
-        chartPattern: "histogram",
-        goalKeywords: ["trend", "over time", "compare", "ranking"],
-        reason: "Histogram is not suitable for trends or comparisons",
-      },
-      {
-        chartPattern: "radar",
-        goalKeywords: ["trend", "over time", "distribution"],
-        reason:
-          "Radar/radial chart is not suitable for time-series or distributions",
-      },
-    ];
-
-    for (const rule of incompatibleRules) {
-      if (lowerChart.includes(rule.chartPattern)) {
-        const hasIncompatibleKeyword = rule.goalKeywords.some((kw) =>
-          lowerGoal.includes(kw),
-        );
-        if (hasIncompatibleKeyword) {
-          return rule.reason;
-        }
-      }
-    }
-    return null;
-  };
-
-  // Recheck compatibility whenever chart type changes
-  const handleChartTypeChange = (newChartType: string) => {
-    setSelectedChartType(newChartType);
-    const warning = checkCompatibility(newChartType, idea.goal);
-    setCompatibilityWarning(warning);
-  };
   const getDifficultyColor = (difficulty: "easy" | "medium" | "hard") => {
     switch (difficulty) {
       case "easy":
-        return theme.palette.success.main;
+        return theme.palette.info.main;
       case "medium":
         return theme.palette.primary.main;
       case "hard":
@@ -438,7 +445,7 @@ export const IdeaChip: FC<{
     ) &&
     availableChartTypes.find(
       (ct) => ct.label.toLowerCase() === idea.predictedChartType!.toLowerCase(),
-    )?.value === selectedChartType;
+    )?.value === getPreferredChartType();
 
   return (
     <Box
@@ -468,17 +475,13 @@ export const IdeaChip: FC<{
         ...sx,
       }}
     >
-      {/* Goal text — click to execute */}
+      {/* Goal text â€” click to execute */}
       <Box
         onClick={
           disabled
             ? undefined
             : () => {
-                if (compatibilityWarning) {
-                  // Do not draw — just show warning, already displayed below
-                  return;
-                }
-                onClick(selectedChartType);
+                onClick(getPreferredChartType(), idea.predictedEncoding || {});
               }
         }
         sx={{ width: "100%", cursor: disabled ? "default" : "pointer" }}
@@ -487,7 +490,7 @@ export const IdeaChip: FC<{
           component="div"
           sx={{
             fontSize: "11px",
-            color: getDifficultyColor(idea.difficulty || "medium"),
+            color: theme.palette.text.primary,
           }}
         >
           {ideaTextComponent}
@@ -533,58 +536,6 @@ export const IdeaChip: FC<{
         </Box>
       )}
 
-      {/* Chart Type Selection Dropdown */}
-      <FormControl
-        size="small"
-        sx={{ minWidth: "100%" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Select
-          value={selectedChartType}
-          onChange={(e) => handleChartTypeChange(e.target.value)}
-          sx={{
-            fontSize: "10px",
-            height: "24px",
-            padding: "0px 4px",
-            color: compatibilityWarning ? theme.palette.error.main : styleColor,
-            "& .MuiOutlinedInput-notchedOutline": {
-              borderColor: compatibilityWarning
-                ? alpha(theme.palette.error.main, 0.5)
-                : alpha(styleColor, 0.3),
-            },
-            "&:hover .MuiOutlinedInput-notchedOutline": {
-              borderColor: compatibilityWarning
-                ? theme.palette.error.main
-                : alpha(styleColor, 0.5),
-            },
-            "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-              borderColor: compatibilityWarning
-                ? theme.palette.error.main
-                : styleColor,
-            },
-          }}
-        >
-          {availableChartTypes.map((chartType) => (
-            <MenuItem key={chartType.value} value={chartType.value}>
-              {chartType.label}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-
-      {/* Compatibility warning */}
-      {compatibilityWarning && (
-        <Typography
-          sx={{
-            fontSize: "9px",
-            color: theme.palette.error.main,
-            mt: 0.25,
-            lineHeight: 1.3,
-          }}
-        >
-          ⚠️ {compatibilityWarning}. Clicking will not generate a chart.
-        </Typography>
-      )}
     </Box>
   );
 };
@@ -719,7 +670,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   const [assistantOpen, setAssistantOpen] = useState<boolean>(false);
   const [assistantMode, setAssistantMode] =
     useState<ChartAssistantMode>("SUGGESTION");
-  const [assistantTitle, setAssistantTitle] = useState<string>("Gợi ý biểu đồ");
+  const [assistantTitle, setAssistantTitle] = useState<string>(
+    "Chart suggestions",
+  );
   const [assistantMessage, setAssistantMessage] = useState<string>("");
   const [assistantInstruction, setAssistantInstruction] = useState<string>("");
   const [assistantSuggestions, setAssistantSuggestions] = useState<
@@ -737,10 +690,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       difficulty: "easy" | "medium" | "hard";
       predictedChartType?: string;
       isQcIdea?: boolean;
+      predictedEncoding?: Record<string, string>;
     }[]
   >([]);
-  const [, setAgentIdeas] = useState<any[]>([]);
-
   const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
 
   let thinkingBufferEffect = (
@@ -781,107 +733,39 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     return domainSamplePrompts[0];
   };
 
-  // Function to predict chart type from goal description
-  // Returns a chart label that matches available chart types in CHART_TEMPLATES
-  const predictChartType = (goal: string): string => {
-    const lowerGoal = goal.toLowerCase();
-
-    if (
-      lowerGoal.includes("trend") ||
-      lowerGoal.includes("over time") ||
-      lowerGoal.includes("time series")
-    ) {
-      return "Line Chart";
-    } else if (
-      lowerGoal.includes("distribution") ||
-      lowerGoal.includes("frequency")
-    ) {
-      return "Histogram";
-    } else if (
-      lowerGoal.includes("composition") ||
-      lowerGoal.includes("proportion") ||
-      lowerGoal.includes("percentage")
-    ) {
-      return "Pie Chart";
-    } else if (
-      lowerGoal.includes("relationship") ||
-      lowerGoal.includes("correlation") ||
-      lowerGoal.includes("vs")
-    ) {
-      return "Scatter Plot";
-    } else if (
-      lowerGoal.includes("compare") ||
-      lowerGoal.includes("across") ||
-      lowerGoal.includes("between") ||
-      lowerGoal.includes("rank")
-    ) {
-      return "Bar Chart";
-    } else if (lowerGoal.includes("heat") || lowerGoal.includes("matrix")) {
-      return "Heat Map";
-    } else if (lowerGoal.includes("area") || lowerGoal.includes("cumulative")) {
-      return "Area Chart";
-    } else {
-      return "Bar Chart";
-    }
-  };
-
-  // Function to get ideas from the interactive explore agent
-  const getIdeasFromAgent = async (
-    mode: "interactive" | "agent",
-    startQuestion?: string,
-    autoRunFirstIdea: boolean = false,
-    rawUserInput?: string,
-  ) => {
+  // Get chart ideas from Smart Chat (same backend logic as normal prompt flow).
+  const getIdeasFromAgent = async () => {
     if (!currentTable || isLoadingIdeas) {
       return;
     }
 
     setIsLoadingIdeas(true);
     setThinkingBuffer("");
-    if (mode === "agent") {
-      setAgentIdeas([]);
-    } else {
-      setIdeas([]);
-    }
+    setIdeas([]);
 
     try {
-      // Determine the root table and derived tables context
-      let explorationThread: any[] = [];
       let sourceTables = selectedTableIds.map(
         (id) => tables.find((t) => t.id === id) as DictTable,
       );
 
-      // If current table is derived, find the root table and build exploration thread
-      if (currentTable.derive && !currentTable.anchored) {
-        // Find the root table (anchored or not derived)
-        let triggers = getTriggers(currentTable, tables);
-
-        // Build exploration thread with all derived tables in the chain
-        explorationThread = triggers.map((trigger) => ({
-          name: trigger.resultTableId,
-          rows: tables.find((t2) => t2.id === trigger.resultTableId)?.rows,
-          description: `Derive from ${trigger.sourceTableIds} with instruction: ${trigger.instruction}`,
-        }));
-      }
+      const tableNames = currentTable?.names ?? [];
+      const defaultIdeaPrompt = isQcData(tableNames)
+        ? "Suggest the best charts for this QC data."
+        : "Suggest charts I can draw with this data.";
 
       const messageBody = JSON.stringify({
         token: String(Date.now()),
         model: activeModel,
-        start_question: startQuestion,
-        mode: mode,
+        extra_prompt: defaultIdeaPrompt,
         input_tables: sourceTables.map((t) => ({
           name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
           rows: t.rows,
           attached_metadata: t.attachedMetadata,
         })),
         language: currentTable.virtual ? "sql" : "python",
-        exploration_thread: explorationThread,
-        agent_exploration_rules: agentRules.exploration,
-        raw_user_input: rawUserInput,
-        prompt_source: rawUserInput ? "user" : "system",
       });
 
-      const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
+      const engine = getUrls().SMART_CHAT;
       const controller = new AbortController();
       const timeoutId = setTimeout(
         () => controller.abort(),
@@ -903,143 +787,24 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Use streaming reader instead of response.json()
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("No response body reader available");
-      }
+      const data = await response.json();
+      const suggestions: ChartSuggestion[] = data.suggestions || [];
+      const mappedIdeas = suggestions.slice(0, 6).map((s) => {
+        const baseText =
+          s.sample_prompt_vi ||
+          s.rationale_vi ||
+          `Draw ${s.chart_type}`;
+        return {
+          text: baseText,
+          goal: baseText,
+          difficulty: "easy" as const,
+          predictedChartType: s.chart_type,
+          isQcIdea: QC_CHART_TYPES.some((q) => q.value === s.chart_type),
+          predictedEncoding: s.encoding || {},
+        };
+      });
 
-      const decoder = new TextDecoder();
-
-      let lines: string[] = [];
-      let buffer = "";
-
-      let runNextIdea = autoRunFirstIdea;
-      let updateState = (lines: string[]) => {
-        let dataBlocks = lines
-          .map((line) => {
-            try {
-              return JSON.parse(line.trim());
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((block) => block != null);
-
-        if (mode === "agent") {
-          // Check if prompt was blocked by guard
-          const blockedBlock = dataBlocks.find(
-            (b: any) => b.type === "guard_blocked",
-          );
-          if (blockedBlock) {
-            runNextIdea = false;
-            dispatch(
-              dfActions.addMessages({
-                timestamp: Date.now(),
-                component: "chart builder",
-                type: "warning",
-                value:
-                  blockedBlock.user_message ||
-                  "Please enter a data visualization request.",
-              }),
-            );
-            return;
-          }
-
-          let questions = dataBlocks.map((block) => ({
-            breadth_questions: block.breadth_questions,
-            depth_questions: block.depth_questions,
-            goal: block.goal,
-            difficulty: block.difficulty,
-            focus: block.focus,
-          }));
-          const newIdeas = questions.map((question: any) => ({
-            breadth_questions: question.breadth_questions,
-            depth_questions: question.depth_questions,
-            goal: question.goal,
-            difficulty: question.difficulty,
-            focus: question.focus,
-          }));
-          if (runNextIdea) {
-            runNextIdea = false;
-            for (let i = 1; i < newIdeas[0].breadth_questions.length; i++) {
-              setTimeout(() => {
-                deriveDataFromNL(newIdeas[0].breadth_questions[i]);
-              }, i + 1 * 1000);
-            }
-            setTimeout(() => {
-              exploreDataFromNL(newIdeas[0].depth_questions);
-            }, newIdeas[0].breadth_questions.length + 1 * 1000);
-          }
-          setAgentIdeas(newIdeas);
-        } else {
-          let questions: {
-            text: string;
-            goal: string;
-            difficulty: "easy" | "medium" | "hard";
-            tag?: string;
-            predictedChartType?: string;
-            isQcIdea?: boolean;
-          }[] = dataBlocks.map((block) => ({
-            text: block.text,
-            goal: block.goal,
-            difficulty: block.difficulty,
-            tag: block.tag,
-            predictedChartType: predictChartType(
-              block.goal || block.text || "",
-            ),
-          }));
-
-          // Prepend a QC chip as the first idea if QC data is detected
-          const tableNames = currentTable?.names ?? [];
-          if (isQcData(tableNames)) {
-            questions = [
-              {
-                text: "Draw a QC chart for the quality control data",
-                goal: "Draw a QC chart",
-                difficulty: "easy" as const,
-                tag: "qc",
-                predictedChartType: "QC Trend Line",
-                isQcIdea: true,
-              },
-              ...questions,
-            ];
-          }
-
-          setIdeas(questions);
-        }
-      };
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          let newLines = buffer
-            .split("data: ")
-            .filter((line) => line.trim() !== "");
-          buffer = newLines.pop() || "";
-          if (newLines.length > 0) {
-            lines.push(...newLines);
-            updateState(lines);
-          }
-          setThinkingBuffer(buffer.replace(/^data: /, ""));
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      lines.push(buffer);
-      updateState(lines);
-
-      // Process the final result
-      if (lines.length == 0) {
-        throw new Error("No valid results returned from agent");
-      }
+      setIdeas(mappedIdeas);
     } catch (error) {
       console.error("Error getting ideas from agent:", error);
       dispatch(
@@ -1047,8 +812,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           timestamp: Date.now(),
           type: "error",
           component: "chart builder",
-          value:
-            "Failed to get ideas from the exploration agent. Please try again.",
+          value: "Failed to get ideas. Please try again.",
           detail: error instanceof Error ? error.message : "Unknown error",
         }),
       );
@@ -1090,18 +854,22 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     instruction: string,
     promptSource: string = "user",
     preferredChartType?: string,
+    preferredChartEncodings?: Record<string, string>,
   ) => {
-    // 🔍 DEBUG: Log chart type selection
+    const effectivePreferredChartType =
+      preferredChartType || inferPreferredChartTypeFromInstruction(instruction);
+
+    // DEBUG: Log chart type selection
     console.log(
-      `🔍 deriveDataFromNL called with preferredChartType='${preferredChartType}'`,
+      `[deriveDataFromNL] preferredChartType='${effectivePreferredChartType}'`,
     );
 
-    // 🔧 Convert display name to internal chart type name
-    const internalChartType = preferredChartType
-      ? getInternalChartType(preferredChartType)
+    // Convert display name to internal chart type name
+    const internalChartType = effectivePreferredChartType
+      ? getInternalChartType(effectivePreferredChartType)
       : "";
     console.log(
-      `🔧 Converted to internal type: display='${preferredChartType}' → internal='${internalChartType}'`,
+      `[deriveDataFromNL] mapped chart type: display='${effectivePreferredChartType}' -> internal='${internalChartType}'`,
     );
 
     if (selectedTableIds.length === 0 || instruction.trim() === "") {
@@ -1169,6 +937,27 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     setIsFormulating(true);
 
     const token = String(Date.now());
+    const canonicalColumnMap = new Map<string, string>();
+    actionTables.forEach((t) => {
+      const names =
+        t.names && t.names.length > 0
+          ? t.names
+          : Object.keys((t.rows && t.rows[0]) || {});
+      names.forEach((name) => {
+        canonicalColumnMap.set(String(name).toLowerCase(), String(name));
+      });
+    });
+    const normalizedPreferredEncodings = Object.fromEntries(
+      Object.entries(preferredChartEncodings || {})
+        .map(([channel, value]) => {
+          if (typeof value !== "string" || value.trim().length === 0) {
+            return null;
+          }
+          const canonical = canonicalColumnMap.get(value.trim().toLowerCase());
+          return canonical ? [channel, canonical] : null;
+        })
+        .filter((entry): entry is [string, string] => entry !== null),
+    );
     let messageBody = JSON.stringify({
       token: token,
       mode: "formulate",
@@ -1178,8 +967,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         attached_metadata: t.attachedMetadata,
       })),
 
-      chart_type: "",
-      chart_encodings: {},
+      chart_type: internalChartType || "",
+      chart_encodings: normalizedPreferredEncodings,
 
       extra_prompt: instruction,
       model: activeModel,
@@ -1213,8 +1002,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               attached_metadata: t.attachedMetadata,
             };
           }),
-          chart_type: "",
-          chart_encodings: {},
+          chart_type: internalChartType || "",
+          chart_encodings: normalizedPreferredEncodings,
 
           extra_prompt: instruction,
           model: activeModel,
@@ -1238,8 +1027,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             };
           }),
 
-          chart_type: "",
-          chart_encodings: {},
+          chart_type: internalChartType || "",
+          chart_encodings: normalizedPreferredEncodings,
 
           dialog: currentTable.derive?.dialog,
           latest_data_sample: currentTable.rows.slice(0, 10),
@@ -1255,10 +1044,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       }
     }
 
-    // 🔍 DEBUG: Log what's being sent to backend
+    // DEBUG: Log what's being sent to backend
     const parsedBody = JSON.parse(messageBody);
     console.log(
-      `📤 Sending to backend: display='${preferredChartType}' → internal='${parsedBody.user_preferred_chart_type}'`,
+      `[deriveDataFromNL] sending to backend: display='${effectivePreferredChartType}' -> internal='${parsedBody.user_preferred_chart_type}'`,
     );
 
     const controller = new AbortController();
@@ -1297,17 +1086,19 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               data.action === "qc_suggest"
                 ? "QC_SUGGEST"
                 : data.action === "suggest" || data.action === "suggestion"
-                  ? "SUGGESTION"
-                  : "CONFIRM";
+                ? "SUGGESTION"
+                : "CONFIRM";
             setAssistantMode(mode);
             setAssistantTitle(
               data.action === "qc_suggest"
                 ? "QC Charts"
                 : data.action === "suggest" || data.action === "suggestion"
-                  ? "Gợi ý biểu đồ có thể vẽ ngay"
-                  : "Xác nhận cấu hình biểu đồ",
+                ? "Chart suggestions you can draw now"
+                : "Confirm chart configuration",
             );
-            setAssistantMessage(data.message_vi || "Chọn biểu đồ phù hợp:");
+            setAssistantMessage(
+              data.message_vi || "Choose a suitable chart:",
+            );
             setAssistantSuggestions(data.suggestions || []);
             setAssistantSamplePrompts([]);
             setAssistantInstruction(instruction);
@@ -1324,11 +1115,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
 
           if (data.action === "info") {
             setAssistantMode("INFO");
-            setAssistantTitle("Nội dung chưa phù hợp");
+            setAssistantTitle("Content not applicable");
             setAssistantMessage(
               data.message_vi ||
                 data.message ||
-                "Hãy thử một prompt liên quan tới biểu đồ.",
+                "Try a prompt related to charts.",
             );
             setAssistantSuggestions(data.suggestions || []);
             setAssistantSamplePrompts(data.sample_prompts || []);
@@ -1349,7 +1140,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                 timestamp: Date.now(),
                 type: "error",
                 component: "chart builder",
-                value: "Không có kết quả phù hợp từ hệ thống.",
+                value: "No suitable result returned from the system.",
               }),
             );
             dispatch(dfActions.deleteAgentWorkInProgress(actionId));
@@ -1366,22 +1157,40 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                 (item: any) => item["status"] === "rejected_incompatible",
               );
               if (rejected?.reject) {
+                const lowerInstruction = (instruction || "").toLowerCase();
+                const isPieRequest =
+                  lowerInstruction.includes("pie") ||
+                  lowerInstruction.includes("donut") ||
+                  String(rejected.reject.message_vi || "")
+                    .toLowerCase()
+                    .includes("pie");
+                const pieRecoverySuggestions = isPieRequest
+                  ? buildPieRecoverySuggestions(currentTable?.rows || [])
+                  : [];
                 setAssistantMode("REJECT");
-                setAssistantTitle("Biểu đồ không tương thích");
+                setAssistantTitle("Chart not compatible");
+                const suggestedActions: string[] =
+                  rejected.reject.suggested_actions || [];
                 setAssistantMessage(
-                  rejected.reject.message_vi ||
-                    "Yêu cầu hiện tại không phù hợp với dữ liệu.",
+                  `${rejected.reject.message_vi || "This request is not compatible with the current data."}${
+                    suggestedActions.length > 0
+                      ? `\n\nQuick suggestions:\n- ${suggestedActions.join("\n- ")}`
+                      : ""
+                  }`,
                 );
                 setAssistantSuggestions(
-                  (rejected.reject.suggested_chart_types || []).map(
-                    (ct: string) =>
-                      ({
-                        chart_type: ct,
-                        encoding: {},
-                        rationale_vi: "Đề xuất thay thế tương thích với dữ liệu hiện tại.",
-                        sample_prompt_vi: `${instruction} (vẽ bằng ${ct})`,
-                      }) as ChartSuggestion,
-                  ),
+                  pieRecoverySuggestions.length > 0
+                    ? pieRecoverySuggestions
+                    : (rejected.reject.suggested_chart_types || []).map(
+                        (ct: string) =>
+                          ({
+                            chart_type: ct,
+                            encoding: {},
+                            rationale_vi:
+                              "Alternative suggestion compatible with current data.",
+                            sample_prompt_vi: `Draw ${ct}: ${instruction}`,
+                          } as ChartSuggestion),
+                      ),
                 );
                 setAssistantSamplePrompts([]);
                 setAssistantInstruction(
@@ -1415,17 +1224,24 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               const code = candidate["code"];
               const rows = candidate["content"]["rows"];
               const dialog = candidate["dialog"];
-              const refinedGoal = candidate["refined_goal"];
+              const refinedGoal = candidate["refined_goal"] || {};
+              if (
+                internalChartType &&
+                (!refinedGoal["chart_type"] ||
+                  String(refinedGoal["chart_type"]).trim().length === 0)
+              ) {
+                refinedGoal["chart_type"] = internalChartType;
+              }
               const displayInstruction = refinedGoal["display_instruction"];
 
-              // 🔴 CHECK FOR COMPATIBILITY ERRORS FROM BACKEND VALIDATION
+              // ðŸ”´ CHECK FOR COMPATIBILITY ERRORS FROM BACKEND VALIDATION
               if (refinedGoal["_chart_compatibility_error"]) {
                 dispatch(
                   dfActions.addMessages({
                     timestamp: Date.now(),
                     type: "error",
                     component: "chart builder",
-                    value: `⚠️ Selected chart type is not compatible with the generated data:`,
+                    value: `Selected chart type is not compatible with the generated data:`,
                     detail: refinedGoal["_chart_compatibility_error"],
                   }),
                 );
@@ -1577,18 +1393,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           dispatch(dfActions.deleteAgentWorkInProgress(actionId));
         }
       });
-  };
-
-  const exploreDataFromNLWithStartingQuestion = (startingQuestion: string) => {
-    // Log user prompt to backend
-    logUserPrompt(startingQuestion, "ChartRecBox", "agent");
-
-    getIdeasFromAgent(
-      "agent",
-      `starting question: ${startingQuestion}\n\n generate only one question group that contains a deepdive question with 3 steps based on the starting question`,
-      true,
-      startingQuestion,
-    );
   };
 
   const exploreDataFromNL = (initialPlan: string[]) => {
@@ -2065,7 +1869,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               boxShadow: `0 0 5px 0 ${alpha(modeColor, 0.1)}`,
             },
             "100%": {
-              boxShadow: `0 0 10px 0 ${alpha(modeColor, 0.3)}, 0 0 10px 0 ${alpha(modeColor, 0.3)}`,
+              boxShadow: `0 0 10px 0 ${alpha(
+                modeColor,
+                0.3,
+              )}, 0 0 10px 0 ${alpha(modeColor, 0.3)}`,
             },
           },
         }}
@@ -2214,7 +2021,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                         backgroundColor: alpha(modeColor, 0.08),
                       },
                     }}
-                    onClick={() => getIdeasFromAgent("interactive")}
+                    onClick={() => getIdeasFromAgent()}
                   >
                     {isLoadingIdeas ? (
                       <Box
@@ -2284,10 +2091,15 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                   key={index}
                   idea={idea}
                   theme={theme}
-                  onClick={(chartType) => {
+                  onClick={(chartType, encodings) => {
                     focusNextChartRef.current = true;
                     setPrompt(idea.text);
-                    deriveDataFromNL(idea.text, "idea", chartType);
+                    deriveDataFromNL(
+                      idea.text,
+                      "idea",
+                      chartType,
+                      encodings || {},
+                    );
                   }}
                   disabled={isFormulating}
                   customChartTypes={idea.isQcIdea ? QC_CHART_TYPES : undefined}
@@ -2331,7 +2143,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             .includes((suggestion.chart_type || "").toLowerCase());
           const nextInstruction = hasChartTypeInText
             ? suggestionText
-            : `Vẽ ${suggestion.chart_type}: ${suggestionText}`;
+            : `Draw ${suggestion.chart_type}: ${suggestionText}`;
           const positionInGrid = assistantSuggestions.findIndex(
             (s) => s.chart_type === suggestion.chart_type,
           );
@@ -2342,21 +2154,25 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             button: "draw_now",
           });
           setPrompt(nextInstruction);
-          deriveDataFromNL(nextInstruction, "user", suggestion.chart_type);
+          deriveDataFromNL(
+            nextInstruction,
+            "user",
+            suggestion.chart_type,
+            suggestion.encoding || {},
+          );
         }}
         onUsePrompt={(suggestion) => {
           setAssistantHasAction(true);
           const suggestionText =
-            suggestion.rationale_vi ||
-            suggestion.sample_prompt_vi ||
-            assistantInstruction ||
-            prompt;
+            suggestion.sample_prompt_vi || suggestion.rationale_vi || "";
           const hasChartTypeInText = (suggestionText || "")
             .toLowerCase()
             .includes((suggestion.chart_type || "").toLowerCase());
-          const nextInstruction = hasChartTypeInText
-            ? suggestionText
-            : `Vẽ ${suggestion.chart_type}: ${suggestionText}`;
+          const nextInstruction = suggestionText
+            ? hasChartTypeInText
+              ? suggestionText
+              : `Draw ${suggestion.chart_type}: ${suggestionText}`
+            : `Draw ${suggestion.chart_type}`;
           const positionInGrid = assistantSuggestions.findIndex(
             (s) => s.chart_type === suggestion.chart_type,
           );
@@ -2366,8 +2182,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             source_mode: assistantMode,
             button: "use_prompt",
           });
-          setPrompt(nextInstruction);
-          setAssistantOpen(false);
+          setAssistantInstruction(nextInstruction);
         }}
         onSubmitCustomPrompt={(customPrompt) => {
           setAssistantHasAction(true);
@@ -2386,7 +2201,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           });
 
           setPrompt(normalizedPrompt);
-          deriveDataFromNL(normalizedPrompt, "user", preferredChartType);
+          deriveDataFromNL(
+            normalizedPrompt,
+            "user",
+            preferredChartType,
+            matchedSuggestion?.encoding || {},
+          );
         }}
       />
       <Dialog
@@ -2398,10 +2218,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Bắt đầu nhanh với Chart Assistant</DialogTitle>
+        <DialogTitle>Quick Start with Chart Assistant</DialogTitle>
         <DialogContent dividers>
           <Typography sx={{ fontSize: 14, mb: 1 }}>
-            Nhập prompt cụ thể để vẽ nhanh, hoặc gõ prompt ngắn để hệ thống gợi ý biểu đồ phù hợp.
+            Enter a specific prompt to draw quickly, or type a short prompt
+            to get suitable chart suggestions.
           </Typography>
           {domainSamplePrompts.map((sample, idx) => (
             <Button
@@ -2426,7 +2247,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               setOnboardingOpen(false);
             }}
           >
-            Đã hiểu
+            Got it
           </Button>
         </DialogActions>
       </Dialog>
