@@ -39,7 +39,7 @@ DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml # 用户个人连接
 ```
 
 这些文件在重启和升级后持续保留。迁移服务器时必须一起备份，详见
-`docs-cn/7-server-migration-guide.md`。
+`docs/docs-cn/7-server-migration-guide.md`。
 
 ---
 
@@ -114,7 +114,7 @@ service token 或通过 SSO exchange 获取目标系统 token。
 5. 使用 vault 中保存的静态凭证。
 6. 无可用凭证，提示用户重新授权或重新输入。
 
-开发细节见 `dev-guides/4-authentication-oidc-tokenstore.md`。
+开发细节见 `docs/dev-guides/4-authentication-oidc-tokenstore.md`。
 
 ---
 
@@ -174,6 +174,6 @@ py-src/data_formulator/credential_vault/
 
 相关文档：
 
-- `docs-cn/1-data-source-connections.md`
-- `docs-cn/7-server-migration-guide.md`
-- `dev-guides/5-data-connector-api.md`
+- `docs/docs-cn/1-data-source-connections.md`
+- `docs/docs-cn/7-server-migration-guide.md`
+- `docs/dev-guides/5-data-connector-api.md`

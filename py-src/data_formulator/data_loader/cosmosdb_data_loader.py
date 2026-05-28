@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class CosmosDBDataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "Cosmos DB"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

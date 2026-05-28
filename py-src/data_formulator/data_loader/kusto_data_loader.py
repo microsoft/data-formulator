@@ -13,6 +13,7 @@ from azure.kusto.data.helpers import dataframe_from_result_table
 logger = logging.getLogger(__name__)
 
 class KustoDataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "Kusto"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

@@ -191,7 +191,7 @@ return json_ok(data), 400  # json_ok 已返回 (Response, status_code)
 
 ## 3. 后端流式 API
 
-流式端点使用 NDJSON，详见 `dev-guides/1-streaming-protocol.md`。
+流式端点使用 NDJSON，详见 `docs/dev-guides/1-streaming-protocol.md`。
 
 基本要求：
 
@@ -459,7 +459,7 @@ metadata 请求不要复制短客户端 abort 模式。
 
 前端通过 `getErrorMessage(apiError)` 优先使用本地 i18n，缺失时回退到后端英文 `message`。
 
-普通后端固定消息如果不是 `AppError` 体系，优先参考 `dev-guides/6-i18n-language-injection.md` 的 `message_code` / `content_code` 规则。
+普通后端固定消息如果不是 `AppError` 体系，优先参考 `docs/dev-guides/6-i18n-language-injection.md` 的 `message_code` / `content_code` 规则。
 
 ## 6. 错误分类工具
 

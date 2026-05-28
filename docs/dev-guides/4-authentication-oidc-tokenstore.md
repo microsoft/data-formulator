@@ -140,7 +140,7 @@ def auth_config() -> dict:
 - 前端收到消息后调用 `POST /api/auth/tokens/save`，请求体包含 `system_id`、`access_token`、可选 `refresh_token`、`user`、`remember`。
 - Loader 的 `__init__` 必须消费注入的 `access_token` 或 `sso_access_token`，否则声明 delegated/SSO 模式没有实际效果。
 
-用户或运维侧 Superset 配置步骤见 `docs-cn/5.1-superset-sso-oauth-config-guide.md`。
+用户或运维侧 Superset 配置步骤见 `docs/docs-cn/5.1-superset-sso-oauth-config-guide.md`。
 
 ---
 

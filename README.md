@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 Your data is everywhere: databases, warehouses, BI tools, and files. Coding agents can help, but only after someone wires them up. When answers come back as code or chat, they're hard to follow, refine, or share.
 
-Data Formulator makes it easy. Connect your data in a few clicks, then explore it on an **interactive, visual** canvas. Ask questions, edit charts directly, branch into follow-ups, and turn ideas into results that are ready to share.
+Data Formulator makes it easy. Connect any data in a few clicks, then explore it on an **interactive, visual** canvas. Ask questions, edit charts directly, branch into follow-ups, and turn ideas into results that are ready to share.
 
 - **Data & platform teams**: wire up your databases, warehouses, and BI sources once, and your whole organization has a flexible AI-powered data exploration layer.
 - **Analysts & domain experts**: ask, edit, branch, and share. No SQL, no harness engineering, and no walls of text or code, just insights you can see in good-looking charts.
@@ -44,7 +44,7 @@ Data Formulator makes it easy. Connect your data in a few clicks, then explore i
 
 [05-28-2026] **Data Formulator 0.7** — a major new release to empower enterprise data analytics:
 
--  🔌 **Data Connectors** — governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Connect once; share with analysts and agents.
+-  🔌 **Data Connectors** — governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Connect once; share with analysts and agents. Need to connect to a custom data source? Let your coding agent check out the [data loader plugin guide](examples/plugins/README.md).
 -  🤖 **Context-aware agents** — data-loading agents help you find tables from connected databases or extract data from Excel files, images, websites, and text. Data Agent takes your exploration question, inspects the data, runs sandboxed code, builds charts and produce reports grounded on your exploration contexts.
 -  🧵 **Interactive workspace, not just chat** — the **Data Thread** keeps questions, intermediate results, and charts navigable. Revisit earlier steps, branch into alternatives, compare side by side, and edit charts with UI controls or natural language.
 -  📊 **30+ chart types** — area, streamgraph, candlestick, radar, maps, KPI, and more, plus a style-refinement agent for presentation-ready visuals.

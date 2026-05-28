@@ -225,7 +225,7 @@ DF_SOURCES__my_report_prod__params__url=https://report.example.com
 | `delegated_login_config()` | 声明弹窗登录 URL 与按钮文案 |
 | `auth_mode()` | 旧兼容接口，新 loader 优先使用 `auth_config()` |
 
-认证细节见 `dev-guides/4-authentication-oidc-tokenstore.md`。
+认证细节见 `docs/dev-guides/4-authentication-oidc-tokenstore.md`。
 
 ---
 
@@ -250,5 +250,5 @@ DF_SOURCES__my_report_prod__params__url=https://report.example.com
 - [ ] 服务重启后，`GET /api/data-loaders` 能看到新的 loader type。
 - [ ] Add Connection 能创建连接，preview/import/refresh 能正常工作。
 
-更多开发细节见 [dev-guides/3-data-loader-development.md](../dev-guides/3-data-loader-development.md)
-和 [dev-guides/5-data-connector-api.md](../dev-guides/5-data-connector-api.md)。
+更多开发细节见 [docs/dev-guides/3-data-loader-development.md](../dev-guides/3-data-loader-development.md)
+和 [docs/dev-guides/5-data-connector-api.md](../dev-guides/5-data-connector-api.md)。

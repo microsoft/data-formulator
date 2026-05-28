@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class S3DataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "Amazon S3"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

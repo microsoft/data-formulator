@@ -12,7 +12,9 @@ log = logging.getLogger(__name__)
 
 class BigQueryDataLoader(ExternalDataLoader):
     """BigQuery data loader implementation"""
-    
+
+    DISPLAY_NAME = "BigQuery"
+
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         return [

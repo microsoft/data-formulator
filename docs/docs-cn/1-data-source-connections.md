@@ -132,7 +132,7 @@ DATA_FORMULATOR_HOME/credentials.db
 ```
 
 服务器迁移、备份或 Docker 部署时，这两个文件需要和用户数据一起保留。更多说明见
-`docs-cn/6-credential-vault.md` 和 `docs-cn/7-server-migration-guide.md`。
+`docs/docs-cn/6-credential-vault.md` 和 `docs/docs-cn/7-server-migration-guide.md`。
 
 ---
 

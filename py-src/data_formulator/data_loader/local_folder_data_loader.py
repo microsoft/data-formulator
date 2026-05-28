@@ -9,6 +9,7 @@ Uses ConfinedDir to ensure all file access stays within the connected root direc
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,8 @@ SUPPORTED_EXTENSIONS = frozenset({
 
 class LocalFolderDataLoader(ExternalDataLoader):
     """Browse and import data files from a local directory."""
+
+    DISPLAY_NAME = "Local Folder"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -79,7 +82,11 @@ class LocalFolderDataLoader(ExternalDataLoader):
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
-        self.root_dir = Path(params.get("root_dir", "")).resolve()
+        raw_root = params.get("root_dir", "") or ""
+        # Expand ~ and environment variables (e.g. $HOME, %USERPROFILE%) so users
+        # can paste shell-style paths into the connect dialog.
+        expanded = os.path.expandvars(os.path.expanduser(raw_root))
+        self.root_dir = Path(expanded).resolve()
         recursive_val = params.get("recursive", True)
         if isinstance(recursive_val, str):
             self.recursive = recursive_val.lower() not in ("false", "0", "no")

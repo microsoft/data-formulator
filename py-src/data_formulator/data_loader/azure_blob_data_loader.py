@@ -15,6 +15,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 class AzureBlobDataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "Azure Blob"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

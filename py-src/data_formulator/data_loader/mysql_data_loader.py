@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class MySQLDataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "MySQL"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

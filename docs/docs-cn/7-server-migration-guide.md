@@ -240,5 +240,5 @@ Vault 加密密钥丢失后，已存储的凭证 **无法恢复**。处理方式
 ## 8. 相关文档
 
 - [凭证保险箱（Credential Vault）](6-credential-vault.md) — Vault 加密机制详解
-- [DEVELOPMENT.md — Server Migration Checklist](../DEVELOPMENT.md) — 英文版迁移清单
-- [.env.template](../.env.template) — 完整配置项说明
+- [DEVELOPMENT.md — Server Migration Checklist](../../DEVELOPMENT.md) — 英文版迁移清单
+- [.env.template](../../.env.template) — 完整配置项说明

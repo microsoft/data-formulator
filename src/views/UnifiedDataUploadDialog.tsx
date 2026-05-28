@@ -85,6 +85,27 @@ function TabPanel(props: TabPanelProps) {
     );
 }
 
+// Collapse a filesystem path's home prefix to `~` for privacy / readability
+// (so screenshots and shared workspaces don't expose usernames). Recognizes
+// macOS (/Users/<u>/), Linux (/home/<u>/), and Windows (C:\Users\<u>\).
+// If `tail` is given, also keeps only the last N path segments, prefixed
+// with `…/` when truncated.
+const displayPath = (p: string, tail?: number): string => {
+    if (!p) return '';
+    let s = p.replace(/^\/Users\/[^/]+/, '~')
+             .replace(/^\/home\/[^/]+/, '~')
+             .replace(/^[A-Za-z]:\\Users\\[^\\]+/, '~');
+    if (tail && tail > 0) {
+        const sep = s.includes('\\') ? '\\' : '/';
+        const parts = s.split(sep).filter(Boolean);
+        if (parts.length > tail) {
+            const prefix = s.startsWith('~') ? '~' + sep : '';
+            s = (prefix || '…' + sep) + parts.slice(-tail).join(sep);
+        }
+    }
+    return s;
+};
+
 // Data source menu card component
 interface DataSourceCardProps {
     icon: React.ReactNode;
@@ -99,6 +120,8 @@ interface DataSourceCardProps {
      */
     variant?: 'data' | 'action';
     badge?: React.ReactNode;
+    /** Optional hover tooltip; useful when `description` is truncated. */
+    tooltip?: React.ReactNode;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -109,6 +132,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     disabled = false,
     variant = 'data',
     badge,
+    tooltip,
 }) => {
     const theme = useTheme();
     const isAction = variant === 'action';
@@ -181,7 +205,9 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
         </Paper>
     );
 
-    return card;
+    return tooltip
+        ? <Tooltip title={tooltip} placement="top" arrow>{card}</Tooltip>
+        : card;
 };
 
 const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
@@ -508,21 +534,26 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     ];
 
     // Data connections — persistent configured sources (databases, services, etc.)
-    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action' }> = [
+    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action'; tooltip?: React.ReactNode }> = [
         // Per-connector cards — all instances
         ...connectors.map((conn) => {
             const isLocalFolder = conn.source_type === 'LocalFolderDataLoader' || conn.id.startsWith('local_folder');
             const folderPath = isLocalFolder ? (conn.pinned_params?.root_dir || '') : '';
+            // Show only the tail of the path on the card (privacy-friendly
+            // for screenshots), with the home-collapsed full path on hover.
+            const folderDisplay = displayPath(folderPath, 2);
+            const folderTooltip = displayPath(folderPath);
             return {
                 value: `connector:${conn.id}` as UploadTabType,
                 title: conn.display_name,
                 description: isLocalFolder
-                    ? (folderPath || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
+                    ? (folderDisplay || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
                     : getConnectorTypeDescription(conn.source_type, conn.connected, t),
                 icon: isLocalFolder
                     ? <FolderOpenIcon />
                     : getConnectorIcon(conn.icon || conn.source_type),
                 disabled: false,
+                tooltip: isLocalFolder && folderTooltip ? folderTooltip : undefined,
             };
         }),
         // "Local Folder" card (action variant, local mode only)
@@ -780,6 +811,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
                             variant={source.variant}
+                            tooltip={source.tooltip}
                         />
                     ))}
                 </Box>
@@ -1007,34 +1039,21 @@ const AddConnectionPanel: React.FC<{
 
             {/* Right panel: display name + DataLoaderForm (or simplified Local Folder panel) */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
-                {/* Plugin status banner — surfaces loaded plugins (info) and rejected
-                    plugins (warning) so the user knows what extension code is running. */}
-                {pluginsInfo && (pluginsInfo.errors.length > 0 || pluginsInfo.loaded.length > 0) && (
+                {/* Plugin rejection banner — surfaces plugins that failed to load
+                    so users notice broken extensions. Successful loads are indicated
+                    by the "plugin" tag next to the loader name in the sidebar. */}
+                {pluginsInfo && pluginsInfo.errors.length > 0 && (
                     <Box sx={{ px: 2, pt: 1.5 }}>
-                        {pluginsInfo.errors.length > 0 && (
-                            <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: 11, py: 0.5 }}>
-                                <AlertTitle sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>
-                                    {pluginsInfo.errors.length} plugin{pluginsInfo.errors.length === 1 ? '' : 's'} rejected
-                                </AlertTitle>
-                                {pluginsInfo.errors.map((e, i) => (
-                                    <Box key={i} sx={{ fontSize: 11, lineHeight: 1.4 }}>
-                                        <code style={{ fontSize: 10 }}>{e.file.split('/').pop()}</code>: {e.reason}
-                                    </Box>
-                                ))}
-                            </Alert>
-                        )}
-                        {pluginsInfo.loaded.length > 0 && (
-                            <Alert severity="warning" variant="outlined" icon={false}
-                                sx={{ mb: 1, fontSize: 11, py: 0.25, '& .MuiAlert-message': { py: 0.5 } }}>
-                                <strong>{pluginsInfo.loaded.length} external plugin{pluginsInfo.loaded.length === 1 ? '' : 's'} loaded</strong>
-                                {' — '}
-                                {pluginsInfo.loaded.map(p => p.name).join(', ')}.
-                                {' '}Plugins run with full server privileges; only load files you trust.
-                                {' '}<Box component="span" sx={{ color: 'text.secondary', fontSize: 10 }}>
-                                    (dir: <code>{pluginsInfo.dir}</code>)
+                        <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: 11, py: 0.5 }}>
+                            <AlertTitle sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>
+                                {pluginsInfo.errors.length} plugin{pluginsInfo.errors.length === 1 ? '' : 's'} rejected
+                            </AlertTitle>
+                            {pluginsInfo.errors.map((e, i) => (
+                                <Box key={i} sx={{ fontSize: 11, lineHeight: 1.4 }}>
+                                    <code style={{ fontSize: 10 }}>{e.file.split('/').pop()}</code>: {e.reason}
                                 </Box>
-                            </Alert>
-                        )}
+                            ))}
+                        </Alert>
                     </Box>
                 )}
                 {selectedLoader && selectedType === 'local_folder' ? (

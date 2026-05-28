@@ -147,7 +147,7 @@ def _enforce_deployment_restrictions():
         )
 ```
 
-`local_folder` 是当前参考实现。Data Loader 通用开发规范见 `dev-guides/3-data-loader-development.md`。
+`local_folder` 是当前参考实现。Data Loader 通用开发规范见 `docs/dev-guides/3-data-loader-development.md`。
 
 ## 7. Sandbox 部署
 

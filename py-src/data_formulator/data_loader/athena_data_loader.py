@@ -57,6 +57,8 @@ class AthenaDataLoader(ExternalDataLoader):
     Use ingest_to_workspace() to store results as parquet in the workspace.
     """
 
+    DISPLAY_NAME = "Athena"
+
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
