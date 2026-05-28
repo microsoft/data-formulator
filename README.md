@@ -36,9 +36,7 @@ Data Formulator makes it simple: **connect any data, ask anything, get charts yo
 - **Data & platform teams**: wire up your databases, warehouses, and BI sources once, and give the whole org an AI-powered data exploration layer.
 - **Analysts & users**: ask, edit, branch, share. It's so easy to get insights from good-looking charts.
 
-<kbd>
-  <img src="https://github.com/user-attachments/assets/3ffb15aa-93ce-42b8-92cf-aaf321f9a06a">
-</kbd>
+https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
 ## News 🔥🔥🔥
 
