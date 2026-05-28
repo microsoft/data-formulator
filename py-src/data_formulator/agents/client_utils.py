@@ -1,5 +1,4 @@
 import litellm
-import openai
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 
@@ -21,7 +20,10 @@ class Client(object):
         if api_version is not None and api_version != "":
             self.params["api_version"] = api_version
 
-        if self.endpoint == "gemini":
+        if self.endpoint == "openai":
+            if not model.startswith("openai/"):
+                self.model = f"openai/{model}"
+        elif self.endpoint == "gemini":
             if model.startswith("gemini/"):
                 self.model = model
             else:
@@ -85,6 +87,13 @@ class Client(object):
         lowered = error_text.lower()
         return ("image_url" in lowered and "expected `text`" in lowered) or "unknown variant `image_url`" in lowered
 
+    def _is_reasoning_effort_error(self, error_text: str) -> bool:
+        """Detect provider errors caused by an unsupported ``reasoning_effort``
+        value (e.g. ``"minimal"`` on a model that only accepts
+        ``none/low/medium/high/xhigh``). The provider message reliably
+        mentions the parameter name."""
+        return "reasoning_effort" in error_text.lower()
+
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
         """
@@ -113,106 +122,72 @@ class Client(object):
         """Lightweight connectivity check: send a minimal completion with
         max_tokens=3 and a short timeout.  Raises on any failure."""
         messages = [{"role": "user", "content": "Reply only 'ok'."}]
+        params = self.params.copy()
+        params["timeout"] = timeout
+        litellm.completion(
+            model=self.model, messages=messages,
+            max_tokens=3, drop_params=True, **params,
+        )
 
-        if self.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.params.get("api_base", None),
-                api_key=self.params.get("api_key", ""),
-                timeout=timeout,
-            )
-            client.chat.completions.create(
-                model=self.model, messages=messages, max_tokens=3,
-            )
-        else:
-            params = self.params.copy()
-            params["timeout"] = timeout
-            litellm.completion(
+    def get_completion(self, messages, stream=False, reasoning_effort="low",
+                       **kwargs):
+        """Send a chat completion request via LiteLLM.
+
+        All providers (OpenAI, Azure, Anthropic, etc.) are handled uniformly
+        by LiteLLM.  ``drop_params=True`` ensures unsupported parameters
+        (like ``reasoning_effort`` on non-reasoning models) are silently
+        ignored rather than causing errors.
+        """
+        params = self.params.copy()
+        params["reasoning_effort"] = reasoning_effort
+        params.update(kwargs)
+        try:
+            return litellm.completion(
                 model=self.model, messages=messages,
-                max_tokens=3, drop_params=True, **params,
+                drop_params=True, stream=stream, **params,
             )
-
-    def get_completion(self, messages, stream=False):
-        """
-        Returns a LiteLLM client configured for the specified endpoint and model.
-        Supports OpenAI, Azure, Ollama, and other providers via LiteLLM.
-        """
-        # Configure LiteLLM 
-
-        if self.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.params.get("api_base", None),
-                api_key=self.params.get("api_key", ""),
-                timeout=120
-            )
-
-            completion_params = {
-                "model": self.model,
-                "messages": messages,
-            }
-
-            if self.model.startswith("gpt-5") or self.model.startswith("o1") or self.model.startswith("o3"):
-                completion_params["reasoning_effort"] = "low"
-
-            try:
-                return client.chat.completions.create(**completion_params, stream=stream)
-            except Exception as e:
-                error_text = str(e)
-                if self._is_image_deserialize_error(error_text):
-                    sanitized_messages = self._strip_images_from_messages(messages)
-                    completion_params["messages"] = sanitized_messages
-                    return client.chat.completions.create(**completion_params, stream=stream)
-                raise
-        else:
-
-            params = self.params.copy()
-
-            if (self.model.startswith("gpt-5") or self.model.startswith("o1") or self.model.startswith("o3")
-                or self.model.startswith("claude-sonnet-4-5") or self.model.startswith("claude-opus-4")):
-                params["reasoning_effort"] = "low"
-
-            try:
+        except Exception as e:
+            err = str(e)
+            if self._is_reasoning_effort_error(err):
+                params.pop("reasoning_effort", None)
                 return litellm.completion(
-                    model=self.model,
-                    messages=messages,
-                    drop_params=True,
-                    stream=stream,
-                    **params
+                    model=self.model, messages=messages,
+                    drop_params=True, stream=stream, **params,
                 )
-            except Exception as e:
-                error_text = str(e)
-                if self._is_image_deserialize_error(error_text):
-                    sanitized_messages = self._strip_images_from_messages(messages)
-                    return litellm.completion(
-                        model=self.model,
-                        messages=sanitized_messages,
-                        drop_params=True,
-                        stream=stream,
-                        **params
-                    )
-                raise
+            if self._is_image_deserialize_error(err):
+                sanitized = self._strip_images_from_messages(messages)
+                return litellm.completion(
+                    model=self.model, messages=sanitized,
+                    drop_params=True, stream=stream, **params,
+                )
+            raise
 
-        
-    def get_response(self, messages: list[dict], tools: list | None = None):
+    def get_completion_with_tools(self, messages, tools, stream=False,
+                                  reasoning_effort="low", **kwargs):
+        """Send a chat completion request with tool definitions via LiteLLM.
+
+        Same as ``get_completion`` but accepts ``tools`` (and optional
+        ``tool_choice``, ``parallel_tool_calls``, etc. via ``**kwargs``).
         """
-        Returns a response using OpenAI's Response API approach.
-        """
-        if self.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.params.get("api_base", None),
-                api_key=self.params.get("api_key", ""),
-                timeout=120
+        params = self.params.copy()
+        params["reasoning_effort"] = reasoning_effort
+        try:
+            return litellm.completion(
+                model=self.model, messages=messages, tools=tools,
+                drop_params=True, stream=stream, **params, **kwargs,
             )
-            return client.responses.create(
-                model=self.model,
-                input=messages,
-                tools=tools,
-                **self.params
-            )
-        else:
-            return litellm.responses(
-                model=self.model,
-                input=messages,
-                tools=tools,
-                drop_params=True,
-                **self.params
-            )
+        except Exception as e:
+            err = str(e)
+            if self._is_reasoning_effort_error(err):
+                params.pop("reasoning_effort", None)
+                return litellm.completion(
+                    model=self.model, messages=messages, tools=tools,
+                    drop_params=True, stream=stream, **params, **kwargs,
+                )
+            if self._is_image_deserialize_error(err):
+                sanitized = self._strip_images_from_messages(messages)
+                return litellm.completion(
+                    model=self.model, messages=sanitized, tools=tools,
+                    drop_params=True, stream=stream, **params, **kwargs,
+                )
+            raise

@@ -1,0 +1,48 @@
+# DataFrame Serialization
+
+All DataFrame-to-records conversion for API responses, streaming events, or
+frontend-visible data MUST use the centralized helpers in
+`data_formulator.datalake.parquet_utils`:
+
+| Source type | Helper |
+|---|---|
+| `pd.DataFrame` | `df_to_safe_records(df)` |
+| `pa.Table` (Arrow) | `get_sample_rows_from_arrow(table)` |
+
+## Why
+
+`pandas.DataFrame.to_json(orient='records')` defaults to `date_format='epoch'`,
+which serializes datetime columns as **epoch milliseconds** (e.g. `1773532800000`).
+The frontend interprets these as plain numbers and renders them with commas
+(`1,773,532,800,000`) instead of formatted dates.
+
+`df_to_safe_records` enforces `date_format='iso'` and `default_handler=str`,
+ensuring datetimes become ISO-8601 strings and exotic types degrade gracefully.
+
+## Banned Patterns
+
+```python
+# BAD — missing date_format, datetimes become epoch numbers
+json.loads(df.to_json(orient='records'))
+
+# BAD — to_dict returns Timestamp objects, not JSON-safe values
+df.to_dict(orient='records')
+
+# ACCEPTABLE but should be unified for consistency
+json.loads(df.to_json(orient='records', date_format='iso'))
+```
+
+## Correct Pattern
+
+```python
+from data_formulator.datalake.parquet_utils import df_to_safe_records
+
+rows = df_to_safe_records(df)
+preview = df_to_safe_records(df.head(5))
+```
+
+## Exceptions
+
+Internal data processing that never reaches the frontend or JSON serialization
+(e.g. Kusto SDK metadata parsing, Vega-Lite spec construction) may use
+`to_dict(orient='records')` directly.

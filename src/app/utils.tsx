@@ -17,15 +17,12 @@ export function getUrls() {
         APP_CONFIG: `/api/app-config`,
         AUTH_INFO_PREFIX: `/api/.auth/`,
 
-        EXAMPLE_DATASETS: `/api/example-datasets`,
-
         // these functions involves ai agents
         LIST_GLOBAL_MODELS: `/api/agent/list-global-models`,
         CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,
         TEST_MODEL: `/api/agent/test-model`,
 
         SORT_DATA_URL: `/api/agent/sort-data`,
-        CLEAN_DATA_URL: `/api/agent/clean-data-stream`,
         DATA_LOADING_CHAT_URL: `/api/agent/data-loading-chat`,
         SCRATCH_UPLOAD_URL: `/api/agent/workspace/scratch/upload`,
         SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,

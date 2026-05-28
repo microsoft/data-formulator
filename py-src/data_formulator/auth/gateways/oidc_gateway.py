@@ -115,6 +115,14 @@ def oidc_callback():
     if not is_backend_oidc_mode():
         return _error_redirect("backend_oidc_not_enabled")
 
+    idp_error = request.args.get("error")
+    if idp_error:
+        logger.warning("OIDC callback: IdP returned error=%s", idp_error)
+        session.pop("_oauth_state", None)
+        return _error_redirect(
+            "access_denied" if idp_error == "access_denied" else "token_exchange_failed",
+        )
+
     code = request.args.get("code")
     state = request.args.get("state")
 

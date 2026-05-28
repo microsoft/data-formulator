@@ -25,6 +25,8 @@ export {
     genGalleryRegionalSurveyRoseTests,
 } from './regional-survey-tests';
 
+export { genGalleryKpiCardTests } from './bi-tests';
+
 /** Keys registered in `TEST_GENERATORS` for the Regional Survey gallery tab. */
 export const GALLERY_REGIONAL_SURVEY_GENERATOR_KEYS = [
     'Gallery: Scatter',

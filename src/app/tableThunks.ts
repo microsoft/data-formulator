@@ -15,10 +15,10 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type, mapApiTypeToAppType } from '../data/types';
-import { inferTypeFromValueArray } from '../data/utils';
+import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import { getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
 import { apiRequest } from './apiClient';
-import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
+import { DataFormulatorState, dfActions, fetchColumnStats, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
 import i18n from '../i18n';
 
@@ -256,14 +256,18 @@ export const loadTable = createAsyncThunk<
                         displayId: table.displayId || table.id,
                         names,
                         rows,
-                        metadata: names.reduce((acc: Record<string, any>, name: string) => ({
-                            ...acc,
-                            [name]: {
-                                type: inferTypeFromValueArray(rows.map((r: any) => r[name])),
-                                semanticType: "",
-                                levels: []
-                            }
-                        }), {}),
+                        metadata: names.reduce((acc: Record<string, any>, name: string) => {
+                            const colVals = rows.map((r: any) => r[name]);
+                            const inferred = inferTypeFromValueArray(colVals);
+                            return {
+                                ...acc,
+                                [name]: {
+                                    type: refineTemporalType(colVals, inferred),
+                                    semanticType: "",
+                                    levels: []
+                                }
+                            };
+                        }, {}),
                         anchored: true,
                     };
                 } catch (err) {
@@ -311,6 +315,12 @@ export const loadTable = createAsyncThunk<
         // Dispatch the table into Redux state
         dispatch(dfActions.addTableToStore(finalTable));
         dispatch(fetchFieldSemanticType(finalTable));
+        // Workspace-stored tables get backend-computed column stats
+        // (distinct/null counts + low-card value lists) for the grid
+        // filter popover. Browser-only tables skip this in v1.
+        if (finalTable.virtual) {
+            dispatch(fetchColumnStats(finalTable));
+        }
 
         // Notify user about local (browser) truncation only.
         // Database-side truncation (row limit from import options) is
@@ -393,15 +403,22 @@ export function buildDictTableFromWorkspace(
         id: wsTable.name,
         displayId: wsTable.name,
         names: wsTable.columns.map((col: any) => col.name),
-        metadata: wsTable.columns.reduce((acc: Record<string, any>, col: any) => ({
-            ...acc,
-            [col.name]: {
-                type: convertSqlTypeToAppType(col.type),
-                semanticType: "",
-                levels: [],
-                ...(col.description ? { description: col.description } : {}),
+        metadata: wsTable.columns.reduce((acc: Record<string, any>, col: any) => {
+            let colType = convertSqlTypeToAppType(col.type);
+            if (colType === Type.DateTime && Array.isArray(wsTable.sample_rows) && wsTable.sample_rows.length > 0) {
+                const vals = wsTable.sample_rows.map((r: any) => r[col.name]);
+                colType = refineTemporalType(vals, colType);
             }
-        }), {}),
+            return {
+                ...acc,
+                [col.name]: {
+                    type: colType,
+                    semanticType: "",
+                    levels: [],
+                    ...(col.description ? { description: col.description } : {}),
+                }
+            };
+        }, {}),
         rows: wsTable.sample_rows,
         virtual: {
             tableId: wsTable.name,

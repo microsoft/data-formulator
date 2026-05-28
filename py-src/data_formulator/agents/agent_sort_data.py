@@ -2,12 +2,15 @@
 # Licensed under the MIT License.
 
 import json
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects
 from data_formulator.agents.agent_language import inject_language_instruction
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "sort_data"
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to sort data.
@@ -74,7 +77,7 @@ class SortDataAgent(object):
 
         input_obj = {
             'name': name,
-            'value': values
+            'values': values
         }
 
         user_query = f"[INPUT]\n\n{json.dumps(input_obj, ensure_ascii=False)}\n\n[OUTPUT]"
@@ -90,7 +93,7 @@ class SortDataAgent(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 

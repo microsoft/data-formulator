@@ -3,7 +3,7 @@
 
 import { Type } from '../data/types';
 import { channels, type ChartTemplateDef } from '../lib/agents-chart';
-import { inferTypeFromValueArray } from '../data/utils';
+import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 
 export type FieldSource = "custom" | "original";
 
@@ -58,15 +58,24 @@ export interface ClarificationResponse {
     source: 'option' | 'free_text' | 'freeform';
 }
 
+export type DelegateTarget = 'data_loading' | 'report_gen';
+
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
-    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain';
+    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain' | 'delegate';
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
+    /** For 'delegate' entries: which peer agent the Data Agent wants to
+     *  hand off to. Rendered as one or two one-click button cards. */
+    delegateTarget?: DelegateTarget;
+    /** For 'delegate' entries: 1–2 hand-off option prompts. Each string
+     *  is shown on its own button and used as the seed prompt sent to
+     *  the target agent on click. */
+    delegateOptions?: string[];
     timestamp?: number;
 }
 
@@ -155,16 +164,6 @@ export interface PendingTableLoad {
     csvScratchPath: string;
     preview: InlineTablePreview;
     confirmed: boolean;
-    // For sample dataset loading
-    sampleDataset?: {
-        datasetName: string;
-        tables: Array<{
-            tableUrl: string;
-            format: string;
-        }>;
-        live?: boolean;
-        refreshIntervalSeconds?: number;
-    };
 }
 
 export interface LoadPlanCandidate {
@@ -177,6 +176,8 @@ export interface LoadPlanCandidate {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     selected?: boolean;
+    /** Backend-detected reason this candidate cannot be loaded (unknown source_id, missing table_key, etc.). */
+    resolutionError?: string;
 }
 
 export interface LoadPlan {
@@ -243,6 +244,15 @@ export interface DictTable {
         type: Type,
         semanticType: string, 
         levels: any[],
+        // Parallel to `levels` (same order); only populated when `levels`
+        // was filled by the backend column-stats pass (design-doc 31).
+        // When `levels` is curated (chart-gallery / LLM) this stays undefined
+        // and the column filter checklist hides the count column.
+        levelCounts?: number[],
+        // Total distinct non-null values; drives the filter popover variant
+        // (≤ 100 → checklist, > 100 → keyword search).
+        distinctCount?: number,
+        nullCount?: number,
         intrinsicDomain?: [number, number],
         unit?: string,
         displayName?: string,
@@ -305,14 +315,18 @@ export function createDictTable(
         displayId: `${id}`,
         names, 
         rows,
-        metadata: names.reduce((acc, name) => ({
-            ...acc,
-            [name]: {
-                type: inferTypeFromValueArray(rows.map(r => r[name])),
-                semanticType: "",
-                levels: []
-            }
-        }), {}),
+        metadata: names.reduce((acc, name) => {
+            const colValues = rows.map(r => r[name]);
+            const inferred = inferTypeFromValueArray(colValues);
+            return {
+                ...acc,
+                [name]: {
+                    type: refineTemporalType(colValues, inferred),
+                    semanticType: "",
+                    levels: []
+                }
+            };
+        }, {}),
         derive,
         virtual,
         anchored,
@@ -352,13 +366,12 @@ export type Chart = {
     chartType: string, 
     encodingMap: EncodingMap, 
     tableRef: string, 
-    saved: boolean,
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
-    thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
     insight?: ChartInsight,  // AI-generated insight about the visualization
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
+    unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
 
 /** Compute a string key for insight invalidation: chartType|sortedFieldIds */
@@ -394,7 +407,6 @@ export let duplicateChart = (chart: Chart) : Chart => {
         chartType: chart.chartType,
         encodingMap: JSON.parse(JSON.stringify(chart.encodingMap)) as EncodingMap,
         tableRef: chart.tableRef,
-        saved: false,
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
         // styleVariants are intentionally NOT copied: they are user-authored

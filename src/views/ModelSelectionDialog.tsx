@@ -58,7 +58,6 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 
 import { getUrls } from '../app/utils';
 import { apiRequest, ApiRequestError } from '../app/apiClient';
@@ -336,16 +335,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     /** Render a single model row. isGlobal controls delete button and key display. */
     const renderModelRow = (model: ModelConfig, isGlobal: boolean) => {
         const status = getStatus(model.id);
+        // Server-configured models in 'unknown' are trusted by default and
+        // displayed as "server configured" instead of an untested "Test" row.
+        const serverConfigured = isGlobal && status === 'unknown';
 
         const statusIcon =
-            status === 'configured' ? <SettingsOutlinedIcon color="info" sx={{ fontSize: 16 }} /> :
-            status === 'unknown'    ? <HelpOutlineIcon color="warning" sx={{ fontSize: 16 }} /> :
-            status === 'testing'    ? <CircularProgress size={14} /> :
-            status === 'ok'         ? <CheckCircleOutlineIcon color="success" sx={{ fontSize: 16 }} /> :
-                                      <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />;
+            serverConfigured     ? <CheckCircleOutlineIcon color="info" sx={{ fontSize: 16 }} /> :
+            status === 'unknown' ? <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.disabled' }} /> :
+            status === 'testing' ? <CircularProgress size={14} /> :
+            status === 'ok'      ? <CheckCircleOutlineIcon color="success" sx={{ fontSize: 16 }} /> :
+                                   <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />;
 
         let message = t('model.modelReadyMessage');
-        if (status === 'configured') {
+        if (serverConfigured) {
             message = t('model.configuredMessage', 'Server configured, click to verify connectivity');
         } else if (status === 'unknown') {
             message = t('model.clickToTestModel');
@@ -354,7 +356,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             message = t('model.errorMessage', { message: decodeHtmlEntities(rawMessage) });
         }
 
-        const selectable = status === 'ok' || status === 'configured' || (isGlobal && status !== 'error');
+        // Selectable when verified ('ok'), or when it's a server-configured
+        // model in 'unknown' state (trusted by default, no test required).
+        const selectable = status === 'ok' || serverConfigured;
         const isSelected = tempSelectedModelId === model.id;
 
         return (
@@ -363,7 +367,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     sx={{
                         cursor: selectable ? 'pointer' : 'default',
                         // Don't dim error rows so the Retest button and error message remain clearly clickable.
-                        opacity: selectable || status === 'error' ? 1 : 0.5,
+                        opacity: selectable || status === 'error' || status === 'testing' ? 1 : 0.5,
                         backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
                         outline: isSelected ? `2px solid ${theme.palette.primary.main}` : 'none',
                         outlineOffset: -2,
@@ -374,11 +378,37 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     )}
                 >
                     <TableCell align="left">
-                        {model.model}
+                        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+                            <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {model.model}
+                            </Box>
+                            {isGlobal && (
+                                <Tooltip title={t('model.serverManagedTooltip', 'Managed by administrator')}>
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            fontSize: '0.6rem',
+                                            lineHeight: 1,
+                                            px: 0.5,
+                                            py: '2px',
+                                            borderRadius: 0.5,
+                                            color: 'text.secondary',
+                                            border: '1px solid',
+                                            borderColor: 'divider',
+                                            textTransform: 'lowercase',
+                                            letterSpacing: '0.02em',
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                    >
+                                        {t('model.serverChip', 'server configured')}
+                                    </Box>
+                                </Tooltip>
+                            )}
+                        </Box>
                     </TableCell>
                     <TableCell>
                         {isGlobal
-                            ? <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.serverManaged', 'Server managed')}</Box>
+                            ? null
                             : model.api_key
                                 ? (showKeys
                                     ? <Box component="span" sx={{ fontSize: '0.5rem', fontFamily: 'monospace', wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3 }}>{model.api_key}</Box>
@@ -390,34 +420,40 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         {model.endpoint}
                     </TableCell>
                     <TableCell align="left">
-                        {model.api_base
-                            ? <Box component="span" sx={{ wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3 }}>{model.api_base}</Box>
-                            : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
+                        {isGlobal
+                            ? null
+                            : model.api_base
+                                ? <Box component="span" sx={{ wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3 }}>{model.api_base}</Box>
+                                : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
                         }
                     </TableCell>
                     <TableCell align="left">
-                        {model.api_version
-                            ? model.api_version
-                            : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
+                        {isGlobal
+                            ? null
+                            : model.api_version
+                                ? model.api_version
+                                : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
                         }
                     </TableCell>
-                    <TableCell align="left">
+                    <TableCell align="left" colSpan={isGlobal ? 2 : 1}>
                         <Tooltip title={message}>
                             <Button
                                 size="small"
-                                color={status === 'ok' ? 'success' : status === 'configured' ? 'info' : status === 'error' ? 'error' : 'warning'}
+                                color={serverConfigured ? 'info' : status === 'ok' ? 'success' : status === 'error' ? 'error' : status === 'testing' ? 'inherit' : 'warning'}
                                 onClick={(e) => { e.stopPropagation(); testModel(model); }}
                                 sx={{ p: 0.5, minWidth: 0, textTransform: 'none', fontSize: 'inherit' }}
                                 startIcon={statusIcon}
                             >
-                                {status === 'ok' ? t('model.ready') :
-                                 status === 'configured' ? t('model.configured', 'Configured') :
-                                 status === 'error' ? t('model.retest') : t('model.test')}
+                                {serverConfigured ? t('model.serverConfigured', 'server configured') :
+                                 status === 'ok' ? t('model.ready') :
+                                 status === 'error' ? t('model.retest') :
+                                 status === 'testing' ? t('model.testing', 'Testing…') :
+                                 t('model.test')}
                             </Button>
                         </Tooltip>
                     </TableCell>
-                    <TableCell align="right">
-                        {!isGlobal && (
+                    {!isGlobal && (
+                        <TableCell align="right">
                             <Tooltip title={t('model.removeModel')}>
                                 <IconButton
                                     size="small"
@@ -431,8 +467,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     <ClearIcon sx={{ fontSize: 14 }} />
                                 </IconButton>
                             </Tooltip>
-                        )}
-                    </TableCell>
+                        </TableCell>
+                    )}
                 </TableRow>
                 {status === 'error' && (
                     <TableRow>
@@ -447,16 +483,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             </React.Fragment>
         );
     };
-
-    const sectionHeader = (label: string) => (
-        <TableRow>
-            <TableCell colSpan={7} sx={{ pt: 1, pb: 0, borderBottom: 'none' }}>
-                <Typography sx={{ fontSize: '0.65rem', fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {label}
-                </Typography>
-            </TableCell>
-        </TableRow>
-    );
 
     let modelTable = <TableContainer>
         <Table sx={{
@@ -494,14 +520,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 </TableRow>
             </TableHead>
             <TableBody>
-                {/* Global / server-managed models */}
-                {globalModels.length > 0 && sectionHeader(
-                    t('model.serverManagedSection', 'Server configured models'),
-                )}
+                {/* Server-configured models first, then user-added models. */}
                 {globalModels.map(model => renderModelRow(model, true))}
-
-                {/* User-added models */}
-                {sectionHeader(t('model.userManagedSection', 'My models'))}
                 {models.map(model => renderModelRow(model, false))}
                 {newModelEntry}
             </TableBody>
@@ -510,12 +530,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     const allModels = [...globalModels, ...models];
 
-    // A model is "ready" if tested ok, or if it's a server-configured model
-    // (status "configured") that the admin has set up and is trusted to work.
+    // A model is "ready" to use when it's been verified ('ok') or when it's a
+    // server-configured model in 'unknown' state (trusted by default).
     const isModelReady = (id: string | undefined): boolean => {
         if (!id) return false;
         const status = getStatus(id);
-        return status === 'ok' || status === 'configured';
+        if (status === 'ok') return true;
+        const isGlobal = globalModels.some(m => m.id === id);
+        return isGlobal && status === 'unknown';
     };
 
     let modelNotReady = !isModelReady(tempSelectedModelId);

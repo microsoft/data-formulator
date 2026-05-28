@@ -1,7 +1,16 @@
 {
   "dataLoading": {
     "title": "数据加载助手",
-    "subtitle": "从图片、文件、网页或文本中提取数据。生成合成数据集。浏览示例数据。",
+    "subtitle": "我可以帮你提取、生成或浏览数据 — 有问题随时问。",
+    "capabilityAsk": "回答关于已连接数据源的问题",
+    "capabilitySearch": "搜索并浏览精选示例数据集",
+    "capabilityExtractImage": "从图片中提取结构化数据",
+    "capabilityExtractFile": "从 PDF 或粘贴的文本中提取数据",
+    "capabilityHint": "聚焦下方输入框查看示例提示。",
+    "sectionTry": "试试这些任务",
+    "sectionChat": "或直接提问",
+    "chatHint": "",
+    "chatHintExample": "这里有什么数据？",
     "placeholder": "描述要提取、上传或生成的数据...",
     "attachTooltip": "附加文件或图片",
     "stopTooltip": "停止生成",
@@ -18,7 +27,6 @@
     "stopped": "— 已停止",
     "uploaded": "[已上传：{{name}}]",
     "defaultImageMessage": "从这张图片中提取数据",
-    "imageModelUnsupported": "当前选择的模型不支持图片输入。请切换到支持视觉的模型，或移除图片后再发送。",
     "syncInProgress": "正在同步目录元数据…",
     "syncComplete": "目录同步完成",
     "syncPartial": "目录同步部分完成，部分元数据可能缺失",
@@ -27,15 +35,15 @@
     "metadataStatusUnavailable": "不可用",
     "metadataStatusNotSynced": "未同步",
     "loadPlan": {
-      "title": "Agent 建议载入以下数据",
       "filters": "筛选条件",
       "rowLimit": "行数限制",
       "loadSelected": "加载选中的表",
-      "loaded": "已加载",
+      "loadedCount": "✓ 已加载 {{count}} 张表",
       "preview": "预览",
+      "hidePreview": "收起",
       "previewing": "正在预览...",
       "previewFailed": "预览失败",
-      "noFilters": "无筛选条件"
+      "fromSource": "来自"
     },
     "toolLabels": {
       "readingFile": "读取文件",

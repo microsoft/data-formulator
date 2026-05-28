@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Group 1 -->
+  <rect x="64"  y="120" width="20" height="94"  fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <rect x="84"  y="100" width="20" height="114" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <!-- Group 2 -->
+  <rect x="128" y="80"  width="20" height="134" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <rect x="148" y="140" width="20" height="74"  fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <!-- Group 3 -->
+  <rect x="192" y="60"  width="20" height="154" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <rect x="212" y="110" width="20" height="104" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+</svg>

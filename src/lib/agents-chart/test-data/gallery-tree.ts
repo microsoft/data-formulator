@@ -69,7 +69,6 @@ const VEGALITE_CHART_TYPES: GalleryPage[] = [
     { id: 'histogram',          label: 'Histogram',          generatorKeys: ['Histogram'] },
     { id: 'heatmap',            label: 'Heatmap',            generatorKeys: ['Heatmap'] },
     { id: 'line-chart',         label: 'Line Chart',         generatorKeys: ['Line Chart'] },
-    { id: 'dotted-line',        label: 'Dotted Line Chart',  generatorKeys: ['Dotted Line Chart'] },
     { id: 'boxplot',            label: 'Boxplot',            generatorKeys: ['Boxplot'] },
     { id: 'pie-chart',          label: 'Pie Chart',          generatorKeys: ['Pie Chart'] },
     { id: 'ranged-dot-plot',    label: 'Ranged Dot Plot',    generatorKeys: ['Ranged Dot Plot'] },
@@ -80,10 +79,12 @@ const VEGALITE_CHART_TYPES: GalleryPage[] = [
     { id: 'bump-chart',         label: 'Bump Chart',         generatorKeys: ['Bump Chart'] },
     { id: 'candlestick',        label: 'Candlestick Chart', generatorKeys: ['Candlestick Chart'] },
     { id: 'waterfall',          label: 'Waterfall Chart',   generatorKeys: ['Waterfall Chart'] },
+    { id: 'bar-table',          label: 'Bar Table',          generatorKeys: ['Bar Table'] },
     { id: 'strip-plot',         label: 'Strip Plot',         generatorKeys: ['Strip Plot'] },
     { id: 'radar-chart',        label: 'Radar Chart',        generatorKeys: ['Radar Chart'] },
     { id: 'pyramid-chart',      label: 'Pyramid Chart',      generatorKeys: ['Pyramid Chart'] },
     { id: 'rose-chart',         label: 'Rose Chart',         generatorKeys: ['Rose Chart'] },
+    { id: 'kpi-card',           label: 'KPI Card',           generatorKeys: ['Gallery: KPI Card'] },
     { id: 'custom-charts',      label: 'Custom Charts',      generatorKeys: ['Custom Charts'] },
 ].map(p => ({ ...p, render: 'single' as const, library: 'vegalite' as const }));
 

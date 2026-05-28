@@ -10,10 +10,13 @@ returns a plain dict result (no streaming, no workspace access).
 import json
 import logging
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects
 from data_formulator.agents.agent_language import inject_language_instruction
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "simple"
 
 
 # ---------------------------------------------------------------------------
@@ -67,17 +70,25 @@ _WORKSPACE_NAME_SYSTEM_PROMPT = (
 _CHART_INTENT_SYSTEM_PROMPT = (
     "Route a chart edit request to one of two agents.\n"
     "\n"
-    "STYLE — refine the current chart, keeping its analytical intent.\n"
-    "  Uses only the fields already on the chart, plus simple derivations\n"
-    "  expressible in Vega-Lite transforms (filter, sort, top-N, bin,\n"
-    "  aggregate over an existing field, simple calculate). Also covers\n"
-    "  any purely visual change: theme, colors, fonts, legend, axes,\n"
-    "  mark size/opacity, donut hole, etc.\n"
+    "The test: does the request change the set of fields bound to chart\n"
+    "encodings (x, y, color, size, shape, row, column, facet, theta, etc.)?\n"
     "\n"
-    "DATA — a new analytical intent or a transformation beyond simple\n"
-    "  Vega-Lite: bring in a different field that isn't on the chart,\n"
-    "  add a column from another table, pivot/unpivot,joins,\n"
-    "  or otherwise reshape the data so it answers a different question.\n"
+    "STYLE — encoding fields are unchanged. The user is refining the same\n"
+    "chart that answers the same question. This includes:\n"
+    "  - filter / sort / top-N / limit (even on fields not currently encoded,\n"
+    "    as long as the field already exists in the data)\n"
+    "  - layering or overlay on the same encoded fields (trend line, error bars)\n"
+    "  - aggregation / bin changes on an already-encoded field\n"
+    "  - any visual change: theme, colors, fonts, legend, axes, mark\n"
+    "    size/opacity, donut hole, tooltip text\n"
+    "\n"
+    "DATA — encoding fields change, or a new field must be computed/joined:\n"
+    "  - replace, add, or remove an encoded field (e.g. \"color by region\",\n"
+    "    \"use quantity instead of price on y\", \"drop size\")\n"
+    "  - change chart type in a way that requires different fields\n"
+    "  - pivot / unpivot / reshape, bring in a field from another table\n"
+    "  - compute a new derived field beyond a simple Vega-Lite calculate\n"
+    "    (moving average, percentile rank, etc.)\n"
     "\n"
     "Requests may be in any language. Reply with one word: STYLE or DATA."
 )
@@ -123,7 +134,7 @@ class SimpleAgents:
         ]
 
         logger.info("[SimpleAgents.nl_to_filter] run start")
-        response = self.client.get_completion(messages=messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         raw = response.choices[0].message.content.strip()
 
         # Strip markdown code fences if present
@@ -176,7 +187,7 @@ class SimpleAgents:
         ]
 
         logger.info("[SimpleAgents.workspace_name] run start")
-        response = self.client.get_completion(messages=messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         display_name = response.choices[0].message.content.strip().strip("\"'")
         if len(display_name) > 60:
             display_name = display_name[:57] + "..."
@@ -211,7 +222,7 @@ class SimpleAgents:
         ]
 
         try:
-            response = self.client.get_completion(messages=messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             raw = (response.choices[0].message.content or "").strip().upper()
         except Exception as e:
             logger.warning("[SimpleAgents.classify_chart_intent] LLM call failed: %s", e)

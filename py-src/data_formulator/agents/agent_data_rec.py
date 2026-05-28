@@ -4,8 +4,10 @@
 import json
 import time
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary, supplement_missing_block, ensure_output_variable_in_code
+from data_formulator.agent_config import reasoning_effort_for
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary, supplement_missing_block, ensure_output_variable_in_code, compose_system_prompt
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.security.sanitize import sanitize_error_message
 
 import pandas as pd
@@ -14,108 +16,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# Shared prompt sections  (imported by DataTransformationAgent)
-# =============================================================================
+_AGENT_ID = "data_rec"
 
-SHARED_ENVIRONMENT = '''**About the execution environment:**
-- You can use BOTH DuckDB SQL and pandas operations in the same script
-- The script will run in the workspace data directory (all data files are in the current directory)
-- Each table in [CONTEXT] has a **file path** (e.g., `student_exam.parquet`, `sales.csv`). Use EXACTLY that path to load data:
-    - `.parquet`: `pd.read_parquet('file.parquet')` or DuckDB `read_parquet('file.parquet')`
-    - `.csv`: `pd.read_csv('file.csv')` or DuckDB `read_csv_auto('file.csv')`
-    - `.json`: `pd.read_json('file.json')`
-    - `.xlsx`/`.xls`: `pd.read_excel('file.xlsx')`
-    - `.txt`: `pd.read_csv('file.txt', sep='\\t')`
-- **IMPORTANT:** Use the exact filename from the context — do NOT change the file extension or assume all files are parquet.
-- **Allowed libraries:** pandas, numpy, duckdb, math, datetime, json, statistics, collections, re, sklearn, scipy, random, itertools, functools, operator, time
-- **Not allowed:** matplotlib, plotly, seaborn, requests, subprocess, os, sys, io, or any other library not listed above.
-- File system access (open, write) and network access are also forbidden.
-
-**When to use DuckDB vs pandas:**
-- **Prefer plain pandas** for most tasks — it's simpler and more readable.
-- Only use DuckDB when the dataset is very large and you need efficient SQL aggregations, filtering, joins, or window functions.
-- You can combine both: DuckDB for initial loading/filtering on large files, then pandas for complex operations.
-
-**Code structure:** standalone script (no function wrapper), imports at top. **CRITICAL:** The final result DataFrame MUST be assigned to the exact variable name you specified in `"output_variable"` in the JSON spec — the system uses this name to extract the result. For example, if your output_variable is `sales_by_region`, the script must contain `sales_by_region = ...`.'''
-
-
-SHARED_SEMANTIC_TYPE_REFERENCE = '''**[SEMANTIC TYPE REFERENCE]**
-
-Choose the most specific type that fits. Only annotate fields used in chart encodings.
-
-| Category | Types |
-|---|---|
-| Temporal | DateTime, Date, Time, Timestamp, Year, Quarter, Month, Week, Day, Hour, YearMonth, YearQuarter, YearWeek, Decade, Duration |
-| Monetary measures | Amount, Price |
-| Physical measures | Quantity, Temperature |
-| Proportion | Percentage |
-| Signed/diverging | Profit, PercentageChange, Sentiment, Correlation |
-| Generic measures | Count, Number |
-| Discrete numeric | Rank, Score |
-| Identifier | ID |
-| Geographic | Latitude, Longitude, Country, State, City, Region, Address, ZipCode |
-| Entity names | Category, Name |
-| Coded categorical | Status, Boolean, Direction |
-| Binned ranges | Range |
-| Fallback | Unknown |
-
-Key guidelines:
-- Use **Amount** for summed monetary totals, **Price** for per-unit prices, **Profit** for values that can be negative.
-- Use **Temperature** (not Quantity) for temperature — it has special diverging behavior.
-- Use **Year** (not Number) for columns like "year" with values 2020, 2021.'''
-
-
-SHARED_CHART_REFERENCE = '''**[CHART TYPE REFERENCE]**
-
-| chart_type | encodings | config |
-|---|---|---|
-| Scatter Plot | x, y, color, size, facet | opacity (0.1–1.0) |
-| Regression | x, y, color, size, facet | regressionMethod ("linear","log","exp","pow","quad","poly"), polyOrder (2–10) |
-| Bar Chart | x, y, color, facet | — |
-| Grouped Bar Chart | x, y, group, facet | — |
-| Line Chart | x, y, color, strokeDash, facet | interpolate ("linear","monotone","step") |
-| Area Chart | x, y, color, facet | — |
-| Heatmap | x, y, color, facet | colorScheme ("viridis","blues","reds","oranges","greens","blueorange","redblue") |
-| Boxplot | x, y, color, facet | — |
-| Pie Chart | size, color, facet | innerRadius (0–100; 0=pie, >0=donut) |
-| Lollipop Chart | x, y, color, facet | — |
-| Waterfall Chart | x, y, color, facet | — |
-| Candlestick Chart | x, open, high, low, close, facet | — |
-| World Map | longitude, latitude, color, size | projection ("mercator","equalEarth","naturalEarth1","orthographic"), projectionCenter ([lon,lat]) |
-| US Map | longitude, latitude, color, size | — (fixed albersUsa) |
-
-**Critical chart rules:**
-- **Scatter Plot**: good default for relationships/correlations. Use config opacity (0.1–1.0) for dense data instead of encoding opacity.
-- **Regression**: automatically overlays a trend line — do NOT compute regression in Python. Use color to get separate trend lines per group.
-- **Bar Chart**: x=categorical, y=quantitative (vertical bars). Swap x↔y for horizontal bars. For histograms/distributions, bin the data in the Python step. Same-x rows are auto-stacked.
-- **Grouped Bar Chart**: use the group channel (not color) for side-by-side bars.
-- **Line Chart**: use strokeDash to differentiate line styles (e.g. actual vs forecast).
-- **Pie Chart**: use "size" channel (not "theta") for the wedge values. Avoid when >7–8 categories.
-- **Lollipop Chart**: like bar but with dot+line — cleaner for ranked comparisons.
-- **Waterfall Chart**: cumulative gain/loss — each bar starts where the previous ended.
-- **Candlestick Chart**: OHLC financial data — requires open, high, low, close columns.
-- **World Map/US Map**: use "longitude"/"latitude" as channel names, not "x"/"y".
-- **facet**: available for all chart types; use a categorical field with small cardinality.
-- All fields in "encodings" must also appear in "output_fields". Typically use 2–3 channels (x, y, color/size).'''
-
-
-SHARED_STATISTICAL_ANALYSIS = '''**Statistical analysis guide:**
-- **Regression**: use chart_type "Regression" — the trend line is automatic, do NOT compute regression values in Python code. Configure method via `{"regressionMethod": "linear"}` (options: "linear", "log", "exp", "pow", "quad", "poly"; for poly add `{"polyOrder": 3}`).
-- **Forecasting**: compute predicted future values in Python. Use Line Chart with strokeDash to distinguish actual vs forecast, and color for series grouping.
-- **Clustering**: compute cluster assignments in Python. Output [x, y, cluster_id]. Use Scatter Plot with color → cluster_id.'''
-
-
-SHARED_DUCKDB_NOTES = '''**DuckDB notes:**
-- Escape single quotes with '' (not \\')
-- No Unicode escapes (\\u0400); use character ranges directly: [а-яА-Я]
-- Cast date columns explicitly: `CAST(col AS DATE)`, `CAST(col AS TIMESTAMP)`
-- For complex datetime operations, load data first then use pandas datetime functions
-- Critical identifier quoting rule:
-  * If a table/column name contains non-ASCII characters (e.g., Chinese, Japanese, Korean, Cyrillic, etc.), spaces, or punctuation,
-    you MUST wrap it in double quotes, e.g. SELECT "金额" FROM "客户表".
-  * Never output placeholder identifiers like your_table_name, your_column, your_condition.'''
-
+from data_formulator.agents.chart_creation_guide import (
+    SHARED_ENVIRONMENT,
+    SHARED_SEMANTIC_TYPE_REFERENCE,
+    SHARED_CHART_REFERENCE,
+    SHARED_STATISTICAL_ANALYSIS,
+    SHARED_DUCKDB_NOTES,
+)
 
 # =============================================================================
 # DataRecAgent system prompt
@@ -193,29 +102,18 @@ class DataRecAgent(object):
 
         if system_prompt is not None:
             self._base_prompt = system_prompt
-            self.system_prompt = system_prompt
         else:
             self._base_prompt = SYSTEM_PROMPT
-            base_prompt = SYSTEM_PROMPT
-            if combined_rules:
-                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + combined_rules
-            else:
-                self.system_prompt = base_prompt
 
-        if language_instruction:
-            # Insert early (after role definition, before technical sections)
-            # so the LLM's "last impression" remains chart/code rules,
-            # reducing recency-bias interference on chart-type selection.
-            marker = "**About the execution environment:**"
-            idx = self.system_prompt.find(marker)
-            if idx > 0:
-                self.system_prompt = (
-                    self.system_prompt[:idx]
-                    + language_instruction + "\n\n"
-                    + self.system_prompt[idx:]
-                )
-            else:
-                self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+        # Insert language instruction early (after role definition, before technical
+        # sections) so the LLM's "last impression" remains chart/code rules,
+        # reducing recency-bias interference on chart-type selection.
+        self.system_prompt = compose_system_prompt(
+            self._base_prompt,
+            agent_coding_rules=combined_rules if system_prompt is None else "",
+            language_instruction=language_instruction,
+            language_marker="**About the execution environment:**",
+        )
 
         self._diag = AgentDiagnostics(
             agent_name="DataRecAgent",
@@ -349,7 +247,7 @@ class DataRecAgent(object):
                             "status": "ok",
                             "code": code,
                             "content": {
-                                'rows': json.loads(query_output.to_json(orient='records')),
+                                'rows': df_to_safe_records(query_output),
                                 'virtual': {
                                     'table_name': output_table_name,
                                     'row_count': row_count
@@ -461,7 +359,7 @@ class DataRecAgent(object):
                     {"role":"user","content": user_query}]
 
         t_llm_start = time.time()
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(input_tables, messages, response, t_llm=t_llm)
@@ -496,7 +394,7 @@ class DataRecAgent(object):
                     "content": f"This is the result from the latest transformation:\n\n{sample_data_str}\n\nUpdate the Python script above based on the following instruction:\n\n{new_instruction}"}]
 
         t_llm_start = time.time()
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         t_llm = time.time() - t_llm_start
 
         return self.process_gpt_response(input_tables, messages, response, t_llm=t_llm)

@@ -7,10 +7,13 @@ import time
 
 import pandas as pd
 
-import litellm
-import openai
-
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agent_config import reasoning_effort_for
+from data_formulator.agents.agent_utils import (
+    attach_reasoning_content,
+    extract_json_objects,
+    generate_data_summary,
+)
+from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.agents.context import (
     build_focused_thread_context,
     build_lightweight_table_context,
@@ -19,6 +22,8 @@ from data_formulator.agents.context import (
 )
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "interactive_explore"
 
 # ── Tool definition (inspect only) ────────────────────────────────────────
 
@@ -184,8 +189,7 @@ class InteractiveExploreAgent(object):
         if self._knowledge_store:
             system_prompt += self._knowledge_store.format_rules_block()
 
-        if self.language_instruction:
-            system_prompt = system_prompt + "\n\n" + self.language_instruction
+        system_prompt = inject_language_instruction(system_prompt, self.language_instruction)
 
         ctx_elapsed = time.time() - t_ctx
         logger.info(
@@ -222,7 +226,7 @@ class InteractiveExploreAgent(object):
 
         # ── Stream the final response ─────────────────────────────────
         try:
-            stream = self.client.get_completion(messages=messages, stream=True)
+            stream = self.client.get_completion(messages=messages, stream=True, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         except Exception as e:
             # If image fails, retry without it
             if current_chart:
@@ -303,6 +307,7 @@ class InteractiveExploreAgent(object):
                     for tc in tool_calls
                 ],
             }
+            attach_reasoning_content(assistant_msg, choice.message)
             messages.append(assistant_msg)
 
             # Execute each tool call
@@ -333,45 +338,6 @@ class InteractiveExploreAgent(object):
 
     def _call_llm_with_tools(self, messages, tools):
         """Non-streaming LLM call with tool definitions."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
-            )
-            try:
-                return client.chat.completions.create(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=tools,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return client.chat.completions.create(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=tools,
-                    )
-                raise
-        else:
-            params = self.client.params.copy()
-            try:
-                return litellm.completion(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=tools,
-                    drop_params=True,
-                    **params,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return litellm.completion(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=tools,
-                        drop_params=True,
-                        **params,
-                    )
-                raise
+        return self.client.get_completion_with_tools(
+            messages, tools=tools, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+        )

@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Unified Error Protocol
 
-See `dev-guides/7-unified-error-handling.md` for the full developer guide.
+See `docs/dev-guides/7-unified-error-handling.md` for the full developer guide.
 
 ## HTTP Status Code Policy
 

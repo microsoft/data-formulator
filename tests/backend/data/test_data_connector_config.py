@@ -517,6 +517,7 @@ class TestLoadConnectors:
         assert entry["default_params"] == {
             "host": "db.local",
             "database": "analytics",
+            "user": "alice",
         }
 
 

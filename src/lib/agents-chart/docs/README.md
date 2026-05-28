@@ -918,25 +918,25 @@ visualization decisions:
 
 ## Template Catalog
 
-### Vega-Lite (30 chart types)
+### Vega-Lite (29 chart types)
 
 | Category | Charts |
 |----------|--------|
 | **Scatter & Point** | Scatter Plot, Regression, Ranged Dot Plot, Boxplot, Strip Plot |
 | **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram, Heatmap, Lollipop Chart, Pyramid Chart |
-| **Line & Area** | Line Chart, Dotted Line Chart, Bump Chart, Area Chart, Streamgraph |
+| **Line & Area** | Line Chart, Bump Chart, Area Chart, Streamgraph |
 | **Part-to-Whole** | Pie Chart, Rose Chart, Waterfall Chart |
 | **Statistical** | Density Plot, Candlestick Chart, Radar Chart |
 | **Map** | US Map, World Map |
 | **Custom** | Custom Point, Custom Line, Custom Bar, Custom Rect, Custom Area |
 
-### ECharts (28 chart types)
+### ECharts (27 chart types)
 
 | Category | Charts |
 |----------|--------|
 | **Scatter & Point** | Scatter Plot, Regression, Ranged Dot Plot, Boxplot, Strip Plot |
 | **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram, Heatmap, Lollipop Chart, Pyramid Chart |
-| **Line & Area** | Line Chart, Dotted Line Chart, Bump Chart, Area Chart, Streamgraph |
+| **Line & Area** | Line Chart, Bump Chart, Area Chart, Streamgraph |
 | **Part-to-Whole** | Pie Chart, Funnel Chart, Treemap, Sunburst Chart |
 | **Polar** | Radar Chart, Rose Chart |
 | **Financial** | Candlestick Chart |

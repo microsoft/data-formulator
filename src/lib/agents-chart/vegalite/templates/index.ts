@@ -14,7 +14,7 @@ import { ChartTemplateDef } from '../../core/types';
 // --- Individual chart imports ---
 import { scatterPlotDef, regressionDef, rangedDotPlotDef, boxplotDef } from './scatter';
 import { barChartDef, pyramidChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, heatmapDef } from './bar';
-import { lineChartDef, dottedLineChartDef } from './line';
+import { lineChartDef } from './line';
 import { bumpChartDef } from './bump';
 import { areaChartDef, streamgraphDef } from './area';
 import { pieChartDef } from './pie';
@@ -23,23 +23,29 @@ import { densityPlotDef } from './density';
 import { stripPlotDef } from './jitter';
 import { candlestickChartDef } from './candlestick';
 import { waterfallChartDef } from './waterfall';
+import { barTableDef } from './bar-table';
 import { radarChartDef } from './radar';
 import { roseChartDef } from './rose';
 import { usMapDef, worldMapDef } from './map';
 import { customPointDef, customLineDef, customBarDef, customRectDef, customAreaDef } from './custom';
+import { kpiCardDef } from './kpi-card';
 
 /**
  * All chart template definitions, grouped by category.
  * Keys are category names shown in the UI, values are arrays of template definitions.
+ *
+ * Categories are organized by *mark family* — charts in the same group share
+ * their dominant visual primitive (point, bar, line/area, etc.). This keeps
+ * placement objective and the picker readable.
  */
 export const vlTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
-    "Scatter & Point":  [scatterPlotDef, regressionDef, boxplotDef, stripPlotDef],
-    "Bar":              [barChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, lollipopChartDef, pyramidChartDef],
-    "Line & Area":      [lineChartDef, dottedLineChartDef, bumpChartDef, areaChartDef, streamgraphDef],
-    "Part-to-Whole":    [pieChartDef, roseChartDef, heatmapDef, waterfallChartDef],
-    "Statistical":      [densityPlotDef, rangedDotPlotDef, radarChartDef, candlestickChartDef],
-    "Map":              [usMapDef, worldMapDef],
-    "Custom":           [customPointDef, customLineDef, customBarDef, customRectDef, customAreaDef],
+    "Points":          [scatterPlotDef, regressionDef, rangedDotPlotDef, stripPlotDef],
+    "Bars":            [barChartDef, groupedBarChartDef, stackedBarChartDef, lollipopChartDef, waterfallChartDef],
+    "Distributions":   [histogramDef, densityPlotDef, boxplotDef, pyramidChartDef, candlestickChartDef],
+    "Lines & Areas":   [lineChartDef, bumpChartDef, areaChartDef, streamgraphDef],
+    "Circular":        [pieChartDef, roseChartDef, radarChartDef],
+    "Tables & Maps":   [heatmapDef, barTableDef, kpiCardDef, usMapDef, worldMapDef],
+    "Custom":          [customPointDef, customLineDef, customBarDef, customRectDef, customAreaDef],
 };
 
 /**

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Stacked bar 1 -->
+  <rect x="72"  y="160" width="32" height="54" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <rect x="72"  y="100" width="32" height="60" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <!-- Stacked bar 2 -->
+  <rect x="124" y="180" width="32" height="34" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <rect x="124" y="140" width="32" height="40" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <!-- Stacked bar 3 -->
+  <rect x="176" y="140" width="32" height="74" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <rect x="176" y="60"  width="32" height="80" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+</svg>

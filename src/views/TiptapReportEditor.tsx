@@ -6,6 +6,10 @@ import { useTranslation } from 'react-i18next';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
 import { Markdown } from 'tiptap-markdown';
 import { Box, Button, IconButton, Menu, MenuItem, Tooltip, Divider, useTheme, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
@@ -194,6 +198,13 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
             ResizableImage.configure({
                 inline: false,
             }),
+            Table.configure({
+                resizable: true,
+                HTMLAttributes: { class: 'report-table' },
+            }),
+            TableRow,
+            TableHeader,
+            TableCell,
             Markdown.configure({
                 html: true,
                 transformPastedText: true,
@@ -583,6 +594,41 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                         border: 'none',
                         borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
                         margin: '1.5em 0',
+                    },
+                    '& table': {
+                        borderCollapse: 'collapse',
+                        margin: '0.75em 0',
+                        width: 'auto',
+                        tableLayout: 'auto',
+                        fontSize: '0.82em',
+                        lineHeight: 1.35,
+                        color: 'rgb(73, 73, 73)',
+                    },
+                    '& table td, & table th': {
+                        border: `1px solid ${alpha(theme.palette.divider, 0.55)}`,
+                        padding: '4px 8px',
+                        verticalAlign: 'top',
+                        position: 'relative',
+                        minWidth: '1em',
+                    },
+                    '& table th': {
+                        backgroundColor: alpha(theme.palette.text.primary, 0.04),
+                        fontWeight: 600,
+                        textAlign: 'left',
+                        color: 'rgb(55, 53, 47)',
+                    },
+                    '& .tableWrapper': {
+                        overflowX: 'auto',
+                        margin: '0.75em 0',
+                    },
+                    '& .column-resize-handle': {
+                        position: 'absolute',
+                        right: -2,
+                        top: 0,
+                        bottom: -2,
+                        width: 4,
+                        backgroundColor: alpha(theme.palette.primary.main, 0.35),
+                        pointerEvents: 'none',
                     },
                 },
             }}>

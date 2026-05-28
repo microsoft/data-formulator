@@ -23,7 +23,13 @@ import json
 import logging
 from typing import Any
 
+from data_formulator.agent_config import reasoning_effort_for
+logger = logging.getLogger(__name__)
+
+_AGENT_ID = "chart_restyle"
+
 from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_language import inject_language_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +136,7 @@ class ChartRestyleAgent(object):
 
         user_text = "\n".join(parts)
 
-        system_prompt = SYSTEM_PROMPT
-        if self.language_instruction:
-            system_prompt = system_prompt + "\n\n" + self.language_instruction
+        system_prompt = inject_language_instruction(SYSTEM_PROMPT, self.language_instruction)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -141,7 +145,7 @@ class ChartRestyleAgent(object):
 
         logger.info("[ChartRestyleAgent] run start | chart_type=%s", chart_type)
 
-        response = self.client.get_completion(messages=messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
         for choice in response.choices:
             content = choice.message.content or ""

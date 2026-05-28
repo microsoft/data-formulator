@@ -1,7 +1,16 @@
 {
   "dataLoading": {
     "title": "Data Loading Assistant",
-    "subtitle": "Extract data from images, files, webpages, or text. Generate synthetic datasets. Browse sample data.",
+    "subtitle": "I can help you extract, generate, or browse data — or just ask me anything.",
+    "capabilityAsk": "Ask questions about your connected data sources",
+    "capabilitySearch": "Search and browse curated sample datasets",
+    "capabilityExtractImage": "Extract structured data from images",
+    "capabilityExtractFile": "Extract data from PDFs or pasted text",
+    "capabilityHint": "Focus the input below to see example prompts.",
+    "sectionTry": "Try a task",
+    "sectionChat": "Or just ask",
+    "chatHint": "",
+    "chatHintExample": "What data do we have here?",
     "placeholder": "Describe data to extract, upload, or generate...",
     "attachTooltip": "Attach file or image",
     "stopTooltip": "Stop generation",
@@ -18,7 +27,6 @@
     "stopped": "— stopped",
     "uploaded": "[Uploaded: {{name}}]",
     "defaultImageMessage": "Extract data from this image",
-    "imageModelUnsupported": "The selected model does not support image input. Please switch to a vision-capable model or remove the image.",
     "syncInProgress": "Syncing catalog metadata…",
     "syncComplete": "Catalog sync complete",
     "syncPartial": "Catalog sync partially completed — some metadata may be missing",
@@ -27,15 +35,16 @@
     "metadataStatusUnavailable": "Unavailable",
     "metadataStatusNotSynced": "Not synced",
     "loadPlan": {
-      "title": "Agent recommends loading",
       "filters": "Filters",
       "rowLimit": "Row limit",
       "loadSelected": "Load selected",
-      "loaded": "Loaded",
+      "loadedCount": "✓ Loaded {{count}} table",
+      "loadedCount_plural": "✓ Loaded {{count}} tables",
       "preview": "Preview",
+      "hidePreview": "Hide",
       "previewing": "Previewing...",
       "previewFailed": "Preview failed",
-      "noFilters": "No filters"
+      "fromSource": "from"
     },
     "toolLabels": {
       "readingFile": "Reading file",

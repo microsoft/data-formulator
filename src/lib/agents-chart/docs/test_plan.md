@@ -23,7 +23,7 @@ UI (`ChartGallery.tsx`) uses `TEST_GENERATORS` and `GALLERY_SECTIONS` from
 | **Facets** | facet-tests | Column, row, col+row, wrap, clip, overflow faceting |
 | **Stress/sizing** | stress-tests, gas-pressure-tests, line-area-stretch-tests, discrete-axis-tests | Overflow, elasticity, pressure model, discrete axis sizing |
 | **Temporal** | date-tests | Year, Month, YearMonth, Decade, DateTime, Hours parsing/formatting |
-| **Line/area variants** | line-area-tests | Dotted Line, Bump Chart |
+| **Line/area variants** | line-area-tests | Bump Chart |
 
 ---
 

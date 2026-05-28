@@ -10,11 +10,13 @@ import pyarrow.parquet as pq
 from pyarrow import fs as pa_fs
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
 
 
 class S3DataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "Amazon S3"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -145,7 +147,7 @@ class S3DataLoader(ExternalDataLoader):
                         'type': str(sample_df[col].dtype)
                     } for col in sample_df.columns]
                     
-                    sample_rows = json.loads(sample_df.to_json(orient="records"))
+                    sample_rows = df_to_safe_records(sample_df)
                     row_count = self._estimate_row_count(s3_url)
                     
                     table_metadata = {
@@ -256,7 +258,7 @@ class S3DataLoader(ExternalDataLoader):
             sample = self._read_sample_arrow(s3_url, 5)
             sample_df = sample.to_pandas()
             columns = [{"name": c, "type": str(sample_df[c].dtype)} for c in sample_df.columns]
-            sample_rows = json.loads(sample_df.to_json(orient="records"))
+            sample_rows = df_to_safe_records(sample_df)
             row_count = self._estimate_row_count(s3_url)
             return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
         except Exception as e:

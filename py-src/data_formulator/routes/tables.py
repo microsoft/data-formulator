@@ -18,7 +18,7 @@ from pathlib import Path
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
-from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename, normalize_dtype_to_app_type
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename, normalize_dtype_to_app_type, df_to_safe_records
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, get_file_type, normalize_text_encoding
 from data_formulator.datalake.workspace_metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 import re
@@ -59,6 +59,205 @@ def _quote_duckdb(col: str) -> str:
     return '"' + str(col).replace('"', '""') + '"'
 
 
+def _quote_lit(value) -> str:
+    """Quote a literal for safe DuckDB SQL interpolation.
+
+    Supports str/int/float/bool/None and pandas/datetime values via ``str()``.
+    Numeric values are emitted as-is; strings are single-quoted with internal
+    quotes doubled.  Used by the column-filter WHERE builder (design-doc 31).
+    """
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        # Avoid NaN/Inf landing in SQL.
+        try:
+            import math
+            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                return "NULL"
+        except Exception:
+            pass
+        return repr(value)
+    s = str(value).replace("'", "''")
+    return f"'{s}'"
+
+
+def _column_type_map(columns_info: list[dict]) -> dict[str, str]:
+    """``get_parquet_schema`` columns → ``{name: TYPE_UPPER}`` lookup."""
+    return {c["name"]: str(c.get("type", "")).upper() for c in columns_info}
+
+
+def _extend_eod_if_timestamp(value, col_type_upper: str):
+    """Promote a bare ``YYYY-MM-DD`` upper bound to end-of-day for timestamp
+    columns so a date-only ``<=`` filter is naturally inclusive of that day.
+    """
+    if not isinstance(value, str):
+        return value
+    if "TIMESTAMP" not in col_type_upper:
+        return value
+    if len(value) == 10 and value[4] == "-" and value[7] == "-":
+        return value + " 23:59:59.999"
+    return value
+
+
+def _build_filter_where_duckdb(
+    filters: list | None,
+    columns: list[str],
+    column_types: dict[str, str] | None = None,
+    *,
+    alias: str = "",
+) -> str:
+    """Build a DuckDB ``WHERE`` clause from the three-op filter vocabulary
+    (design-doc 31): ``range`` / ``in`` / ``contains``. Returns either an
+    empty string or ``" WHERE <clause>"`` ready to splice into a query.
+
+    Unknown ops, filters on missing columns, and malformed entries are
+    silently dropped — the route must continue to work even if the
+    frontend sends stale state. An empty ``in`` list collapses to
+    ``WHERE FALSE`` for the field so the user sees an empty grid.
+    """
+    if not filters:
+        return ""
+    column_types = column_types or {}
+    prefix = (alias + ".") if alias else ""
+    clauses: list[str] = []
+    for f in filters:
+        if not isinstance(f, dict):
+            continue
+        op = f.get("op")
+        field = f.get("field")
+        if not field or field not in columns:
+            continue
+        qc = prefix + _quote_duckdb(field)
+        col_type_upper = column_types.get(field, "")
+
+        if op == "range":
+            lo = f.get("min")
+            hi = f.get("max")
+            include_nulls = bool(f.get("include_nulls"))
+            parts = []
+            if lo is not None:
+                parts.append(f"{qc} >= {_quote_lit(lo)}")
+            if hi is not None:
+                hi = _extend_eod_if_timestamp(hi, col_type_upper)
+                parts.append(f"{qc} <= {_quote_lit(hi)}")
+            if not parts:
+                # No bounds → no constraint, unless caller asks to only show nulls.
+                if include_nulls:
+                    clauses.append(f"{qc} IS NULL")
+                continue
+            bounds_clause = "(" + " AND ".join(parts) + ")"
+            if include_nulls:
+                clauses.append(f"({bounds_clause} OR {qc} IS NULL)")
+            else:
+                clauses.append(bounds_clause)
+
+        elif op == "in":
+            values = f.get("values")
+            if not isinstance(values, list):
+                continue
+            if not values:
+                # Empty checklist → user deselected everything.
+                clauses.append("FALSE")
+                continue
+            has_null = any(v is None for v in values)
+            non_null = [v for v in values if v is not None]
+            parts = []
+            if non_null:
+                parts.append(
+                    f"{qc} IN (" + ", ".join(_quote_lit(v) for v in non_null) + ")"
+                )
+            if has_null:
+                parts.append(f"{qc} IS NULL")
+            if parts:
+                clauses.append("(" + " OR ".join(parts) + ")")
+
+        elif op == "contains":
+            v = f.get("value")
+            if not isinstance(v, str) or v == "":
+                continue
+            # ILIKE escape: %, _, and \ in the user pattern get backslash-escaped.
+            esc = v.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{esc}%"
+            clauses.append(
+                f"CAST({qc} AS VARCHAR) ILIKE {_quote_lit(pattern)} ESCAPE '\\'"
+            )
+
+    if not clauses:
+        return ""
+    return " WHERE " + " AND ".join(clauses)
+
+
+def _apply_filters_pandas(df: pd.DataFrame, filters: list | None) -> pd.DataFrame:
+    """Pandas mirror of :func:`_build_filter_where_duckdb`."""
+    if not filters:
+        return df
+    import pandas as _pd  # alias to avoid shadowing
+    columns = set(df.columns)
+    mask = _pd.Series([True] * len(df), index=df.index)
+    for f in filters:
+        if not isinstance(f, dict):
+            continue
+        op = f.get("op")
+        field = f.get("field")
+        if not field or field not in columns:
+            continue
+        col = df[field]
+        if op == "range":
+            lo = f.get("min")
+            hi = f.get("max")
+            include_nulls = bool(f.get("include_nulls"))
+            sub = _pd.Series([True] * len(df), index=df.index)
+            applied_bound = False
+            if lo is not None:
+                try:
+                    sub &= (col >= lo)
+                    applied_bound = True
+                except Exception:
+                    pass
+            if hi is not None:
+                try:
+                    if _pd.api.types.is_datetime64_any_dtype(col):
+                        hi_val = _extend_eod_if_timestamp(hi, "TIMESTAMP")
+                    else:
+                        hi_val = hi
+                    sub &= (col <= hi_val)
+                    applied_bound = True
+                except Exception:
+                    pass
+            if not applied_bound:
+                if include_nulls:
+                    mask &= col.isna()
+                continue
+            if include_nulls:
+                mask &= (sub & col.notna()) | col.isna()
+            else:
+                mask &= sub & col.notna()
+        elif op == "in":
+            values = f.get("values")
+            if not isinstance(values, list):
+                continue
+            if not values:
+                mask &= False
+                continue
+            has_null = any(v is None for v in values)
+            non_null = [v for v in values if v is not None]
+            sub = col.isin(non_null) if non_null else _pd.Series([False] * len(df), index=df.index)
+            if has_null:
+                sub = sub | col.isna()
+            mask &= sub
+        elif op == "contains":
+            v = f.get("value")
+            if not isinstance(v, str) or v == "":
+                continue
+            try:
+                mask &= col.astype(str).str.contains(v, case=False, na=False, regex=False)
+            except Exception:
+                pass
+    return df[mask]
+
+
 def _dedup_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Remove duplicate columns from a DataFrame, keeping the first occurrence."""
     if df.columns.duplicated().any():
@@ -79,14 +278,22 @@ def _build_parquet_sample_sql(
     order_by_fields: list,
     sample_size: int,
     offset: int = 0,
+    filters: list | None = None,
+    column_types: dict[str, str] | None = None,
 ) -> tuple[str, str]:
     """
     Build DuckDB SQL for sampling (and optional aggregation) over parquet.
     Returns (main_sql, count_sql) where each contains {parquet} placeholder.
+
+    When ``filters`` is provided (design-doc 31), a WHERE clause is added on
+    the base table — pre-aggregation in the aggregate branch and
+    pre-``ROW_NUMBER()`` in the non-aggregate branch so the surfaced
+    ``#rowId`` is contiguous over the filtered slice.
     """
     valid_agg = [(f, fn) for (f, fn) in aggregate_fields_and_functions if f is None or f in columns]
     valid_select = _dedup_list([f for f in select_fields if f in columns])
     valid_order = [f for f in order_by_fields if f in columns]
+    where_clause = _build_filter_where_duckdb(filters, columns, column_types, alias="t")
 
     if valid_agg:
         select_parts = []
@@ -110,7 +317,7 @@ def _build_parquet_sample_sql(
             select_parts.append(f"t.{_quote_duckdb(f)}")
         group_cols = valid_select
         group_by = f" GROUP BY {', '.join('t.' + _quote_duckdb(c) for c in group_cols)}" if group_cols else ""
-        inner = f"SELECT {', '.join(select_parts)} FROM {{parquet}} AS t{group_by}"
+        inner = f"SELECT {', '.join(select_parts)} FROM {{parquet}} AS t{where_clause}{group_by}"
         count_sql = f"SELECT COUNT(*) FROM ({inner}) AS sub"
         if method == "random":
             order_by = " ORDER BY RANDOM()"
@@ -124,10 +331,11 @@ def _build_parquet_sample_sql(
         main_sql = f"SELECT * FROM ({inner}) AS sub{order_by} LIMIT {sample_size}{offset_clause}"
         return main_sql, count_sql
 
-    count_sql = "SELECT COUNT(*) FROM {parquet} AS t"
+    count_sql = f"SELECT COUNT(*) FROM {{parquet}} AS t{where_clause}"
     # Wrap the base table with a ROW_NUMBER() so the original row position
-    # is preserved even after sorting / sampling.
-    base = "(SELECT ROW_NUMBER() OVER () AS \"#rowId\", t.* FROM {parquet} AS t) AS t"
+    # is preserved even after sorting / sampling.  When filters are active,
+    # ROW_NUMBER() runs over the filtered set so #rowId is contiguous.
+    base = f"(SELECT ROW_NUMBER() OVER () AS \"#rowId\", t.* FROM {{parquet}} AS t{where_clause}) AS t"
     if method == "random":
         order_by = " ORDER BY RANDOM()"
     elif method == "head" and valid_order:
@@ -241,7 +449,7 @@ def list_tables():
                             df = workspace.read_data_as_df(table_name)
                             df = df.head(1000)
                         df = _dedup_dataframe_columns(df)
-                        sample_rows = json.loads(df.to_json(orient='records', date_format='iso'))
+                        sample_rows = df_to_safe_records(df)
                     except Exception as e:
                         logger.warning("Could not read sample rows for %s", table_name, exc_info=e)
                 source_metadata = _table_metadata_to_source_metadata(meta)
@@ -275,11 +483,14 @@ def _apply_aggregation_and_sample(
     order_by_fields: list,
     sample_size: int,
     offset: int = 0,
+    filters: list | None = None,
 ) -> tuple[pd.DataFrame, int]:
     """
-    Apply aggregation (optional), then sample with ordering.
+    Apply filters (optional), aggregation (optional), then sample with ordering.
     Returns (sampled_df, total_row_count_after_aggregation).
     """
+    if filters:
+        df = _apply_filters_pandas(df, filters)
     columns = list(df.columns)
     valid_agg = [
         (f, fn) for (f, fn) in aggregate_fields_and_functions
@@ -338,6 +549,34 @@ def _apply_aggregation_and_sample(
     return work, total_row_count
 
 
+# Cardinality threshold used by the column-filter popover (design-doc 31):
+# columns with distinct_count <= this get a checklist filter; above get keyword.
+_COLUMN_STATS_LEVELS_LIMIT = 100
+
+
+def _fetch_column_levels_duckdb(workspace, table_name: str, column: str) -> tuple[list, list[int]]:
+    """Top-N value/count pairs (count-desc) for a single low-card column."""
+    qc = _quote_duckdb(column)
+    sql = (
+        f"SELECT {qc} AS value, COUNT(*) AS count "
+        f"FROM {{parquet}} AS t WHERE {qc} IS NOT NULL "
+        f"GROUP BY {qc} ORDER BY count DESC, value ASC "
+        f"LIMIT {_COLUMN_STATS_LEVELS_LIMIT}"
+    )
+    df = workspace.run_parquet_sql(table_name, sql)
+    levels = df["value"].tolist()
+    level_counts = [int(c) for c in df["count"].tolist()]
+    return levels, level_counts
+
+
+def _safe_levels(levels: list) -> list:
+    """Run levels (which may contain pandas/numpy scalars) through df_to_safe_records."""
+    if not levels:
+        return []
+    tmp = pd.DataFrame({"value": levels})
+    return [r["value"] for r in df_to_safe_records(tmp)]
+
+
 @tables_bp.route('/sample-table', methods=['POST'])
 def sample_table():
     """Sample a table from the workspace. Uses DuckDB for parquet (no full load)."""
@@ -350,11 +589,13 @@ def sample_table():
         method = data.get('method', 'random')
         order_by_fields = data.get('order_by_fields', [])
         offset = data.get('offset', 0)
+        filters = data.get('filters') or None
 
         workspace = _get_workspace()
         if _should_use_duckdb(workspace, table_id):
             schema_info = workspace.get_parquet_schema(table_id)
             columns = [c["name"] for c in schema_info.get("columns", [])]
+            column_types = _column_type_map(schema_info.get("columns", []))
             main_sql, count_sql = _build_parquet_sample_sql(
                 columns,
                 aggregate_fields_and_functions,
@@ -363,6 +604,8 @@ def sample_table():
                 order_by_fields,
                 sample_size,
                 offset,
+                filters=filters,
+                column_types=column_types,
             )
             total_row_count = int(workspace.run_parquet_sql(table_id, count_sql).iloc[0, 0])
             result_df = workspace.run_parquet_sql(table_id, main_sql)
@@ -376,9 +619,10 @@ def sample_table():
                 order_by_fields,
                 sample_size,
                 offset,
+                filters=filters,
             )
         result_df = _dedup_dataframe_columns(result_df)
-        rows_json = json.loads(result_df.to_json(orient='records', date_format='iso'))
+        rows_json = df_to_safe_records(result_df)
         return json_ok({
             "rows": rows_json,
             "total_row_count": total_row_count,
@@ -408,14 +652,14 @@ def get_table_data():
             )
             page_df = _dedup_dataframe_columns(page_df)
             columns = list(page_df.columns)
-            rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
+            rows = df_to_safe_records(page_df)
         else:
             df = workspace.read_data_as_df(table_name)
             df = _dedup_dataframe_columns(df)
             total_rows = len(df)
             columns = list(df.columns)
             page_df = df.iloc[offset : offset + page_size]
-            rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
+            rows = df_to_safe_records(page_df)
 
         return json_ok({
             "table_name": table_name,
@@ -617,7 +861,7 @@ def parse_file():
             for sheet_name in xls.sheet_names:
                 df = xls.parse(sheet_name)
                 df = df.where(df.notna(), None)
-                records = df.to_dict(orient='records')
+                records = df_to_safe_records(df)
                 sheets.append({
                     "sheet_name": sheet_name,
                     "columns": list(df.columns),
@@ -629,7 +873,7 @@ def parse_file():
             raw = normalize_text_encoding(file.stream.read(), 'csv')
             df = pd.read_csv(io.BytesIO(raw))
             df = df.where(df.notna(), None)
-            records = df.to_dict(orient='records')
+            records = df_to_safe_records(df)
             return json_ok({
                 "sheets": [{
                     "sheet_name": "Sheet1",
@@ -847,7 +1091,13 @@ def _is_numeric_duckdb_type(col_type: str) -> bool:
 
 @tables_bp.route('/analyze', methods=['POST'])
 def analyze_table():
-    """Get basic statistics about a table in the workspace. Uses DuckDB for parquet (no full load)."""
+    """Get basic statistics about a table in the workspace. Uses DuckDB for parquet (no full load).
+
+    For low-cardinality columns (``unique_count <= _COLUMN_STATS_LEVELS_LIMIT``)
+    also returns ``levels`` and parallel ``level_counts`` arrays so the data-
+    grid column filter popover (design-doc 31) can render a checklist
+    synchronously without a follow-up fetch.
+    """
     try:
         data = request.get_json()
         table_name = data.get('table_name')
@@ -892,6 +1142,20 @@ def analyze_table():
                         "unique_count": int(row["unique_count"]),
                         "null_count": int(row["null_count"]),
                     }
+                # Low-cardinality value list for the filter popover checklist.
+                uc = stats_dict["unique_count"]
+                if 0 < uc <= _COLUMN_STATS_LEVELS_LIMIT:
+                    try:
+                        levels, level_counts = _fetch_column_levels_duckdb(
+                            workspace, table_name, col_name
+                        )
+                        stats_dict["levels"] = _safe_levels(levels)
+                        stats_dict["level_counts"] = level_counts
+                    except Exception as e:
+                        logger.warning(
+                            "analyze: levels pass failed for %s.%s",
+                            table_name, col_name, exc_info=e,
+                        )
                 stats.append({"column": col_name, "type": col_type, "statistics": stats_dict})
         else:
             df = workspace.read_data_as_df(table_name)
@@ -899,15 +1163,26 @@ def analyze_table():
             for col_name in df.columns:
                 s = df[col_name]
                 col_type = str(s.dtype)
+                unique_count = int(s.nunique())
                 stats_dict = {
                     "count": int(s.count()),
-                    "unique_count": int(s.nunique()),
+                    "unique_count": unique_count,
                     "null_count": int(s.isna().sum()),
                 }
                 if pd.api.types.is_numeric_dtype(s):
                     stats_dict["min"] = float(s.min()) if s.notna().any() else None
                     stats_dict["max"] = float(s.max()) if s.notna().any() else None
                     stats_dict["avg"] = float(s.mean()) if s.notna().any() else None
+                if 0 < unique_count <= _COLUMN_STATS_LEVELS_LIMIT:
+                    try:
+                        vc = s.dropna().value_counts().head(_COLUMN_STATS_LEVELS_LIMIT)
+                        stats_dict["levels"] = _safe_levels(vc.index.tolist())
+                        stats_dict["level_counts"] = [int(v) for v in vc.values.tolist()]
+                    except Exception as e:
+                        logger.warning(
+                            "analyze: pandas levels pass failed for %s.%s",
+                            table_name, col_name, exc_info=e,
+                        )
                 stats.append({"column": col_name, "type": col_type, "statistics": stats_dict})
 
         return json_ok({"table_name": table_name, "statistics": stats})

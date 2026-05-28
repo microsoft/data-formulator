@@ -203,16 +203,15 @@ class TestGetCompletionRetryLitellm:
 
 
 # ---------------------------------------------------------------------------
-# get_completion retry logic (openai path)
+# get_completion retry logic (openai endpoint — now also via litellm)
 # ---------------------------------------------------------------------------
 
 class TestGetCompletionRetryOpenAI:
-    @patch("data_formulator.agents.client_utils.openai")
-    def test_retries_on_image_error(self, mock_openai_mod, openai_client):
-        mock_client = MagicMock()
-        mock_openai_mod.OpenAI.return_value = mock_client
+    """OpenAI endpoint now uses litellm.completion like all other providers."""
 
-        mock_client.chat.completions.create.side_effect = [
+    @patch("data_formulator.agents.client_utils.litellm")
+    def test_retries_on_image_error(self, mock_litellm, openai_client):
+        mock_litellm.completion.side_effect = [
             Exception('image_url is not supported, expected `text`'),
             MagicMock(name="success_response"),
         ]
@@ -225,18 +224,14 @@ class TestGetCompletionRetryOpenAI:
         ]
         result = openai_client.get_completion(messages)
 
-        assert mock_client.chat.completions.create.call_count == 2
-        retry_kwargs = mock_client.chat.completions.create.call_args_list[1][1]
-        retry_msgs = retry_kwargs.get("messages", retry_kwargs)
+        assert mock_litellm.completion.call_count == 2
         assert result is not None
 
-    @patch("data_formulator.agents.client_utils.openai")
-    def test_raises_unrelated_error(self, mock_openai_mod, openai_client):
-        mock_client = MagicMock()
-        mock_openai_mod.OpenAI.return_value = mock_client
-        mock_client.chat.completions.create.side_effect = Exception("Unauthorized")
+    @patch("data_formulator.agents.client_utils.litellm")
+    def test_raises_unrelated_error(self, mock_litellm, openai_client):
+        mock_litellm.completion.side_effect = Exception("Unauthorized")
 
         with pytest.raises(Exception, match="Unauthorized"):
             openai_client.get_completion([{"role": "user", "content": "hi"}])
 
-        assert mock_client.chat.completions.create.call_count == 1
+        assert mock_litellm.completion.call_count == 1

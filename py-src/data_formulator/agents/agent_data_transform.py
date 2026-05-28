@@ -4,22 +4,25 @@
 import json
 import time
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block, ensure_output_variable_in_code
+from data_formulator.agent_config import reasoning_effort_for
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block, ensure_output_variable_in_code, compose_system_prompt
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.security.sanitize import sanitize_error_message
-from data_formulator.agents.agent_data_rec import (
+from data_formulator.agents.chart_creation_guide import (
     SHARED_ENVIRONMENT,
     SHARED_SEMANTIC_TYPE_REFERENCE,
     SHARED_CHART_REFERENCE,
     SHARED_STATISTICAL_ANALYSIS,
     SHARED_DUCKDB_NOTES,
-
 )
 import pandas as pd
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "data_transform"
 
 SYSTEM_PROMPT = f'''You are a data scientist who transforms data for visualization.
 Given [CONTEXT] (dataset summaries) and [GOAL] (user intent + chart spec), refine the goal and write a Python script to produce the transformed data.
@@ -99,26 +102,15 @@ class DataTransformationAgent(object):
 
         if system_prompt is not None:
             self._base_prompt = system_prompt
-            self.system_prompt = system_prompt
         else:
             self._base_prompt = SYSTEM_PROMPT
-            base_prompt = SYSTEM_PROMPT
-            if combined_rules:
-                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + combined_rules
-            else:
-                self.system_prompt = base_prompt
 
-        if language_instruction:
-            marker = "**About the execution environment:**"
-            idx = self.system_prompt.find(marker)
-            if idx > 0:
-                self.system_prompt = (
-                    self.system_prompt[:idx]
-                    + language_instruction + "\n\n"
-                    + self.system_prompt[idx:]
-                )
-            else:
-                self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+        self.system_prompt = compose_system_prompt(
+            self._base_prompt,
+            agent_coding_rules=combined_rules if system_prompt is None else "",
+            language_instruction=language_instruction,
+            language_marker="**About the execution environment:**",
+        )
 
         self._diag = AgentDiagnostics(
             agent_name="DataTransformationAgent",
@@ -250,7 +242,7 @@ class DataTransformationAgent(object):
                             "status": "ok",
                             "code": code,
                             "content": {
-                                'rows': json.loads(query_output.to_json(orient='records')),
+                                'rows': df_to_safe_records(query_output),
                                 'virtual': {
                                     'table_name': output_table_name,
                                     'row_count': row_count
@@ -383,16 +375,16 @@ class DataTransformationAgent(object):
                         {"role":"user","content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
             logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
-            messages = [{"role":"system", "content": self.system_prompt},
+            messages = [{'role':'system', 'content': self.system_prompt},
                         *filtered_prev_messages,
-                        {"role":"user","content": user_query}]
+                        {'role':'user','content': user_query}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)
@@ -454,14 +446,14 @@ class DataTransformationAgent(object):
             messages = [*updated_dialog, {"role":"user", "content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
             logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
-            messages = [*updated_dialog, {"role":"user", "content": followup_text}]
+            messages = [*updated_dialog, {'role':'user', 'content': followup_text}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)

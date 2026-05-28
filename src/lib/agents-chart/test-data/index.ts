@@ -20,11 +20,11 @@ export { genScatterTests, genRegressionTests } from './scatter-tests';
 export { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 export { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
 export { genLineTests } from './line-tests';
-export { genDottedLineTests, genBumpChartTests } from './line-area-tests';
+export { genBumpChartTests } from './line-area-tests';
 export { genAreaTests, genStreamgraphTests } from './area-tests';
 export {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
-    genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
+    genCustomTests, genWaterfallTests, genBarTableTests, genCandlestickTests, genRadarTests, genPyramidTests,
     genRoseTests,
 } from './specialized-tests';
 export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests, genFacetOverflowedColTests, genFacetOverflowedColRowTests, genFacetOverflowedRowTests, genFacetDenseLineTests } from './facet-tests';
@@ -86,11 +86,11 @@ import { genScatterTests, genRegressionTests } from './scatter-tests';
 import { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 import { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
 import { genLineTests } from './line-tests';
-import { genDottedLineTests, genBumpChartTests } from './line-area-tests';
+import { genBumpChartTests } from './line-area-tests';
 import { genAreaTests, genStreamgraphTests } from './area-tests';
 import {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
-    genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
+    genCustomTests, genWaterfallTests, genBarTableTests, genCandlestickTests, genRadarTests, genPyramidTests,
     genRoseTests,
 } from './specialized-tests';
 import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests, genFacetOverflowedColTests, genFacetOverflowedColRowTests, genFacetOverflowedRowTests, genFacetDenseLineTests } from './facet-tests';
@@ -115,6 +115,7 @@ import {
     genGalleryRegionalSurveyRadarTests,
     genGalleryRegionalSurveyRoseTests,
 } from '../gallery/regional-survey-tests';
+import { genGalleryKpiCardTests } from '../gallery/bi-tests';
 import {
     genOmniVizGroupedBarTests,
     genOmniVizLineTests,
@@ -135,7 +136,6 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Histogram': genHistogramTests,
     'Heatmap': genHeatmapTests,
     'Line Chart': genLineTests,
-    'Dotted Line Chart': genDottedLineTests,
     'Bump Chart': genBumpChartTests,
     'Boxplot': genBoxplotTests,
     'Pie Chart': genPieTests,
@@ -146,6 +146,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Density Plot': genDensityTests,
     'Candlestick Chart': genCandlestickTests,
     'Waterfall Chart': genWaterfallTests,
+    'Bar Table': genBarTableTests,
     'Strip Plot': genStripPlotTests,
     'Radar Chart': genRadarTests,
     'Pyramid Chart': genPyramidTests,
@@ -219,6 +220,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Gallery: Histogram': genGalleryRegionalSurveyHistogramTests,
     'Gallery: Radar': genGalleryRegionalSurveyRadarTests,
     'Gallery: Rose': genGalleryRegionalSurveyRoseTests,
+    'Gallery: KPI Card': genGalleryKpiCardTests,
     'Omni: Line': genOmniVizLineTests,
     'Omni: Grouped Bar': genOmniVizGroupedBarTests,
     'Omni: Waterfall': genOmniVizWaterfallTests,

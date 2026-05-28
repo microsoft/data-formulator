@@ -11,7 +11,7 @@
 import { ChartTemplateDef } from '../../core/types';
 import { ecScatterPlotDef, ecRegressionDef } from './scatter';
 import { ecBarChartDef, ecStackedBarChartDef, ecGroupedBarChartDef } from './bar';
-import { ecLineChartDef, ecDottedLineChartDef, ecBumpChartDef } from './line';
+import { ecLineChartDef, ecBumpChartDef } from './line';
 import { ecAreaChartDef } from './area';
 import { ecPieChartDef } from './pie';
 import { ecHeatmapDef } from './heatmap';
@@ -39,10 +39,10 @@ import { ecDensityPlotDef } from './density';
  */
 export const ecTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Scatter & Point': [ecScatterPlotDef, ecRegressionDef, ecRangedDotPlotDef, ecBoxplotDef, ecStripPlotDef],
-    'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecHistogramDef, ecLollipopChartDef, ecPyramidChartDef, ecHeatmapDef],
-    'Line & Area':     [ecLineChartDef, ecDottedLineChartDef, ecBumpChartDef, ecAreaChartDef, ecStreamgraphDef],
+    'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecLollipopChartDef, ecPyramidChartDef, ecHeatmapDef],
+    'Line & Area':     [ecLineChartDef, ecBumpChartDef, ecAreaChartDef, ecStreamgraphDef],
     'Part-to-Whole':   [ecPieChartDef, ecFunnelChartDef, ecTreemapDef, ecSunburstDef],
-    'Statistical':     [ecDensityPlotDef],
+    'Statistical':     [ecHistogramDef, ecDensityPlotDef],
     'Financial':       [ecCandlestickDef],
     'Other':           [ecWaterfallChartDef],
     'Polar':           [ecRadarChartDef, ecRoseChartDef],

@@ -46,9 +46,13 @@
     "openaiProviderTip": "对于兼容 OpenAI 的 API，请将 提供商 设置为 openai 。",
     "loadingModels": "模型加载中...",
     "serverManaged": "由服务端管理",
+    "serverChip": "服务端配置",
+    "serverConfigured": "服务端配置",
+    "serverManagedTooltip": "由管理员配置",
     "serverManagedSection": "服务端配置的模型",
     "serverManagedReadonly": "不可删除",
     "userManagedSection": "我添加的模型",
+    "testing": "测试中…",
     "configured": "已配置",
     "configuredMessage": "服务端已配置，点击可验证连通性"
   }

@@ -17,6 +17,9 @@ const EXCLUDED_FIELDS = new Set([
     // Transient fields that shouldn't trigger or be included in saves
     'chartSynthesisInProgress', 'chartInsightInProgress',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
+    // Thumbnails are derived from chart specs + table data; re-rendered
+    // from the module cache on reload, so don't waste bandwidth saving them.
+    'chartThumbnails',
 ]);
 
 /** Debounce interval in milliseconds. */

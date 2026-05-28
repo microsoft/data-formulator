@@ -128,6 +128,38 @@ class TestSessionState:
     def test_load_nonexistent(self, manager):
         assert manager.load_session_state("nope") is None
 
+    def test_update_display_name_patches_session_state(self, manager):
+        """update_display_name writes both meta and session_state."""
+        manager.create_workspace("ws")
+        manager.save_session_state("ws", {
+            "tables": [],
+            "activeWorkspace": {"id": "ws", "displayName": "Old Name"},
+        })
+
+        manager.update_display_name("ws", "New Name")
+
+        meta = json.loads(
+            (manager.get_workspace_path("ws") / WORKSPACE_META_FILENAME)
+            .read_text(encoding="utf-8")
+        )
+        assert meta["displayName"] == "New Name"
+
+        state = manager.load_session_state("ws")
+        assert state["activeWorkspace"]["displayName"] == "New Name"
+
+    def test_update_display_name_skips_missing_session_state(self, manager):
+        """update_display_name does not error when session_state.json is absent."""
+        manager.create_workspace("ws")
+        # No save_session_state call — file does not exist
+
+        manager.update_display_name("ws", "Some Name")
+
+        meta = json.loads(
+            (manager.get_workspace_path("ws") / WORKSPACE_META_FILENAME)
+            .read_text(encoding="utf-8")
+        )
+        assert meta["displayName"] == "Some Name"
+
     def test_save_to_nonexistent_workspace_raises(self, manager):
         with pytest.raises(ValueError, match="does not exist"):
             manager.save_session_state("nope", {"tables": []})

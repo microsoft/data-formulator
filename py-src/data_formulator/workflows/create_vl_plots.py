@@ -137,11 +137,6 @@ CHART_TEMPLATES = [
         "channels": ["x", "y", "color", "strokeDash", "opacity", "detail", "column", "row"]
     },
     {
-        "chart": "Dotted Line Chart",
-        "mark": {"type": "line", "point": True},
-        "channels": ["x", "y", "color", "detail", "column", "row"]
-    },
-    {
         "chart": "Bar Chart",
         "mark": "bar",
         "channels": ["x", "y", "color", "opacity", "column", "row"]
@@ -1895,11 +1890,14 @@ def _apply_chart_config(spec: dict, chart_type: str, config: dict):
             _ensure_mark_obj(spec)
             spec["mark"]["cornerRadius"] = int(corner_radius)
     
-    elif chart_type in ("Line Chart", "Dotted Line Chart"):
+    elif chart_type == "Line Chart":
         interpolate = config.get("interpolate")
         if interpolate:
             _ensure_mark_obj(spec)
             spec["mark"]["interpolate"] = interpolate
+        if config.get("showPoints"):
+            _ensure_mark_obj(spec)
+            spec["mark"]["point"] = True
     
     elif chart_type == "Area Chart":
         interpolate = config.get("interpolate")

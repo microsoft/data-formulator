@@ -19,11 +19,13 @@ from data_formulator.data_loader.external_data_loader import (
     _esc_id,
     _esc_str,
 )
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
 
 
 class PostgreSQLDataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "PostgreSQL"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -824,7 +826,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             sample_df = self._read_sql_on(
                 f'SELECT {col_list} FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))} LIMIT 5', db
             ).to_pandas()
-            sample_rows = json.loads(sample_df.to_json(orient="records"))
+            sample_rows = df_to_safe_records(sample_df)
             result: dict[str, Any] = {
                 "_source_name": full_source,
                 "row_count": row_count,

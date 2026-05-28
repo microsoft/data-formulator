@@ -499,7 +499,6 @@ When `maintainContinuousAxisRatio` is set, both axes use the maximum of the two 
 |---|---|---|---|---|---|
 | Scatter | 30 | 30 | 0.3 | 1.5 | — |
 | Line | 100 | 20 | 0.3 | 1.5 | auto (→ Y) |
-| Dotted Line | 100 | 20 | 0.3 | 1.5 | auto (→ Y) |
 | Area | 100 | 20 | 0.3 | 1.5 | auto (→ Y) |
 | Streamgraph | 100 | 20 | 0.3 | 1.5 | auto (→ Y) |
 | Bump | 80 | 20 | 0.3 | 1.5 | auto (→ Y) |

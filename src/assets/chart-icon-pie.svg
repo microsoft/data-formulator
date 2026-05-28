@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Pie chart: 4 wedges around center (128,128), radius 88.
+       Wedge boundary angles (clockwise from top): 0, 120, 220, 300. -->
+  <path d="M 128 128 L 128 40       A 88 88 0 0 1 204.21 172    Z" fill="#76c6ff" stroke="#363636" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M 128 128 L 204.21 172   A 88 88 0 0 1 71.43 195.41  Z" fill="#B8B8B8" stroke="#363636" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M 128 128 L 71.43 195.41 A 88 88 0 0 1 51.79 84      Z" fill="#cfe9fa" stroke="#363636" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M 128 128 L 51.79 84     A 88 88 0 0 1 128 40        Z" fill="#3aa6ee" stroke="#363636" stroke-width="3" stroke-linejoin="round"/>
+</svg>
+

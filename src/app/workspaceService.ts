@@ -188,7 +188,7 @@ export async function exportWorkspace(id: string): Promise<Blob> {
     const exportRes = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: data.state }),
+        body: JSON.stringify({ state: data.state, workspace_id: id }),
     });
     await assertDownloadResponseOk(exportRes, 'Export failed');
     return exportRes.blob();
@@ -205,9 +205,10 @@ export async function importWorkspace(
         const { state } = await importWorkspaceFromZip(file, workspaceId, displayName);
         return state as Record<string, any>;
     }
-    // Server: upload zip
+    // Server: upload zip with target workspace ID
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('workspace_id', workspaceId);
     const { data } = await apiRequest<{ state: any }>(getUrls().SESSION_IMPORT, {
         method: 'POST',
         body: formData,

@@ -223,7 +223,6 @@ multi-user + no sandbox → `logger.critical` warning, safe configs → no warni
 - `DataRecAgent` — given a mock LLM response, produces correct Vega-Lite spec + code
 - `DataTransformationAgent` — generates valid Python transformation code
 - `DataLoadAgent` — infers semantic types and suggests table names from raw data
-- `DataCleanAgentStream` — streams cleaning suggestions
 - `CodeExplanationAgent` — produces explanation from code input
 - `ChartInsightAgent` — generates insight from chart spec
 - `DataAgent` — observe→think→act loop terminates correctly

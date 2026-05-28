@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Bar Table: category label | horizontal bar | value -->
+  <!-- Row 1 (longest, blue) -->
+  <line x1="20" y1="64"  x2="58"  y2="64"  stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+  <rect x="74" y="54" width="118" height="20" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <line x1="210" y1="64"  x2="232" y2="64"  stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Row 2 (medium, blue) -->
+  <line x1="20" y1="106" x2="58"  y2="106" stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+  <rect x="74" y="96" width="88"  height="20" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <line x1="210" y1="106" x2="228" y2="106" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Row 3 (short, blue) -->
+  <line x1="20" y1="148" x2="58"  y2="148" stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+  <rect x="74" y="138" width="58"  height="20" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <line x1="210" y1="148" x2="224" y2="148" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Row 4 ("Others", grayed) -->
+  <line x1="20" y1="190" x2="58"  y2="190" stroke="#D8D8D8" stroke-width="4" stroke-linecap="round"/>
+  <rect x="74" y="180" width="34"  height="20" fill="#D8D8D8" stroke="#363636" stroke-width="2"/>
+  <line x1="210" y1="190" x2="222" y2="190" stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Column separators (subtle) -->
+  <line x1="66" y1="36" x2="66" y2="218" stroke="#363636" stroke-width="2" stroke-linecap="round"/>
+  <line x1="200" y1="36" x2="200" y2="218" stroke="#363636" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Header underline -->
+  <line x1="20" y1="36" x2="236" y2="36" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <!-- Baseline -->
+  <line x1="20" y1="218" x2="236" y2="218" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+</svg>
+

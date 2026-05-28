@@ -63,6 +63,7 @@
       "clarifyOptionContinue": "Continue exploring",
       "clarifyOptionSimplify": "Simplify the task",
       "clarifyOptionPresent": "Present what you have so far",
+      "clarifyOptionSummary": "Summarize what you have so far",
       "maxIterationsSummary": "Reached the maximum number of exploration steps.",
       "emptyDataframe": "Output DataFrame is empty (0 rows). Check filters or data loading.",
       "fieldsNotFound": "Chart encoding fields not found in output DataFrame: {{missing}}. Available columns: {{available}}",

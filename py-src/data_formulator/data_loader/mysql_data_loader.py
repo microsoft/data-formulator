@@ -15,11 +15,13 @@ from data_formulator.data_loader.external_data_loader import (
     _esc_id,
     _esc_str,
 )
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
 
 
 class MySQLDataLoader(ExternalDataLoader):
+    DISPLAY_NAME = "MySQL"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -458,7 +460,7 @@ class MySQLDataLoader(ExternalDataLoader):
             sample_df = self._read_sql(
                 f"SELECT {col_list} FROM {_esc_id(db, '`')}.{_esc_id(table_name, '`')} LIMIT 5"
             ).to_pandas()
-            sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
+            sample_rows = df_to_safe_records(sample_df)
             result: dict[str, Any] = {
                 "row_count": row_count,
                 "columns": columns,

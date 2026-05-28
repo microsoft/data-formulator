@@ -4,9 +4,22 @@
 import argparse
 import sys
 import os
+import warnings
 import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
+
+# Suppress a noisy pydantic serializer warning emitted by litellm/openai
+# when a Chat Completions ``usage`` dict (prompt_tokens / completion_tokens)
+# gets serialized through a model whose field is typed as the Responses
+# API ``ResponseAPIUsage``. The response itself is correct (HTTP 200);
+# only the serializer's "may not be as expected" notice is misleading.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Pydantic serializer warnings",
+    category=UserWarning,
+    module=r"pydantic\..*",
+)
 
 import flask
 from flask import Flask, request, send_from_directory
@@ -46,7 +59,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # Stores SSO tokens + service tokens without hitting the 4 KB cookie limit.
 _data_home = os.environ.get(
     'DATA_FORMULATOR_HOME',
-    str(Path.home() / '.data-formulator'),
+    str(Path.home() / '.data_formulator'),
 )
 _session_dir = os.path.join(_data_home, 'sessions')
 os.makedirs(_session_dir, exist_ok=True)
@@ -210,13 +223,15 @@ def _register_blueprints():
     from data_formulator.routes.knowledge import knowledge_bp
     app.register_blueprint(knowledge_bp)
 
-    # Auto-register all installed data loaders as DataConnector instances
-    if not app.config['CLI_ARGS'].get('disable_data_connectors'):
-        with spinner("Loading data connectors"):
-            from data_formulator.data_connector import register_data_connectors
-            register_data_connectors(app)
-    else:
-        print("  Data connectors disabled (DISABLE_DATA_CONNECTORS=true)", flush=True)
+    # Auto-register all installed data loaders as DataConnector instances.
+    # We always run this so the connectors blueprint and the built-in
+    # 'sample_datasets' connector are available; the function itself
+    # honors disable_data_connectors by skipping admin YAML/env specs.
+    with spinner("Loading data connectors"):
+        from data_formulator.data_connector import register_data_connectors
+        register_data_connectors(app)
+    if app.config['CLI_ARGS'].get('disable_data_connectors'):
+        print("  External data connectors disabled (DISABLE_DATA_CONNECTORS=true) — sample datasets remain available", flush=True)
 
 
 def _safety_checks():
@@ -238,13 +253,6 @@ def _safety_checks():
 # The guard inside _register_blueprints() prevents double registration when run via CLI.
 _register_blueprints()
 _safety_checks()
-
-
-@app.route('/api/example-datasets')
-def get_sample_datasets():
-    from data_formulator.example_datasets_config import EXAMPLE_DATASETS
-    from data_formulator.error_handler import json_ok
-    return json_ok(EXAMPLE_DATASETS)
 
 
 @app.route("/", defaults={"path": ""})

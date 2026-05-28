@@ -303,6 +303,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         channelSemantics,
         layout: layoutResult,
         table: values,
+        fullTable: convertedData,
         resolvedEncodings,
         encodings,
         chartProperties,
@@ -425,7 +426,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     // RESULT
     // ═══════════════════════════════════════════════════════════════════════
 
-    const result: any = { ...vgObj, data: { values } };
+    const result: any = { ...vgObj, data: vgObj.data ?? { values } };
     if (warnings.length > 0) {
         result._warnings = warnings;
     }
@@ -739,6 +740,32 @@ function restructureFacets(
     facetGrid?: { columns: number; rows: number },
 ): void {
 
+    const isConcatSpec = () => Array.isArray(vgObj.hconcat) || Array.isArray(vgObj.vconcat) || Array.isArray(vgObj.concat);
+
+    const hoistConcatIntoFacet = (facetDef: any, wrapColumns?: number) => {
+        const childSpec: any = {};
+        for (const key of ['hconcat', 'vconcat', 'concat', 'resolve', 'spacing', 'align', 'bounds', 'center'] as const) {
+            if (vgObj[key] !== undefined) {
+                childSpec[key] = vgObj[key];
+                delete vgObj[key];
+            }
+        }
+        if (vgObj.encoding && Object.keys(vgObj.encoding).length > 0) {
+            childSpec.encoding = vgObj.encoding;
+            delete vgObj.encoding;
+        }
+
+        vgObj.facet = facetDef;
+        if (wrapColumns != null) {
+            vgObj.columns = wrapColumns;
+        }
+        vgObj.spec = childSpec;
+        vgObj.resolve = {
+            ...(vgObj.resolve || {}),
+            scale: { ...(vgObj.resolve?.scale || {}), y: 'independent' },
+        };
+    };
+
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
         vgObj.encoding.facet = vgObj.encoding.column;
 
@@ -753,6 +780,20 @@ function restructureFacets(
         // to decide whether titles should be hidden (size-based threshold).
 
         delete vgObj.encoding.column;
+
+        // Faceting a concat spec must use top-level `facet` + child
+        // `spec`. Inline `encoding.facet` is ignored/invalid for
+        // hconcat/vconcat, which is the structure used by Bar Table.
+        if (isConcatSpec()) {
+            const facetDef = { ...vgObj.encoding.facet };
+            delete facetDef.columns;
+            delete vgObj.encoding.facet;
+            if (Object.keys(vgObj.encoding).length === 0) {
+                delete vgObj.encoding;
+            }
+            hoistConcatIntoFacet(facetDef, numCols);
+            return;
+        }
 
         // For layered specs, VL doesn't support encoding.facet inline —
         // restructure to top-level facet + spec.
@@ -777,6 +818,24 @@ function restructureFacets(
             delete vgObj.encoding;
         }
 
+        return;
+    }
+
+    // For concat specs with row-only or column+row facets
+    if (isConcatSpec() && (vgObj.encoding?.column || vgObj.encoding?.row)) {
+        const facetDef: any = {};
+        if (vgObj.encoding.column) {
+            facetDef.column = vgObj.encoding.column;
+            delete vgObj.encoding.column;
+        }
+        if (vgObj.encoding.row) {
+            facetDef.row = vgObj.encoding.row;
+            delete vgObj.encoding.row;
+        }
+        if (Object.keys(vgObj.encoding).length === 0) {
+            delete vgObj.encoding;
+        }
+        hoistConcatIntoFacet(facetDef);
         return;
     }
 

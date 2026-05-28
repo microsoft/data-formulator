@@ -22,6 +22,7 @@ File format::
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,14 @@ from data_formulator.security.path_safety import ConfinedDir
 logger = logging.getLogger(__name__)
 
 CATALOG_CACHE_DIR = "catalog_cache"
+
+
+class CatalogSearchError(ValueError):
+    """Raised when a catalog search receives a malformed query (e.g. bad regex).
+
+    Agent tools should catch this and surface the message verbatim so the
+    model can correct its query, instead of returning an empty result set.
+    """
 
 
 def _cache_dir(workspace_root: Path | str) -> Path:
@@ -103,7 +112,25 @@ def _load_catalog_raw(workspace_root: Path | str, source_id: str) -> dict[str, A
 
 
 def load_catalog(workspace_root: Path | str, source_id: str) -> list[dict[str, Any]] | None:
-    """Load cached catalog. Returns None if not found or corrupted."""
+    """Load cached catalog. Returns None if not found or corrupted.
+
+    In disabled-connectors mode, only admin source_ids (e.g.
+    ``sample_datasets``) are readable — user catalogs on disk are hidden.
+    """
+    try:
+        from flask import current_app
+        disabled = bool(
+            current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors')
+        )
+    except RuntimeError:
+        disabled = False
+    if disabled:
+        try:
+            from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
+            if source_id not in _ADMIN_CONNECTOR_IDS:
+                return None
+        except Exception:
+            pass
     raw = _load_catalog_raw(workspace_root, source_id)
     if raw is None:
         return None
@@ -126,15 +153,55 @@ def delete_catalog(workspace_root: Path | str, source_id: str) -> None:
 
 
 def list_cached_sources(workspace_root: Path | str) -> list[str]:
-    """Return source IDs (sanitised stems) that have a cached catalog.
+    """Return the original source IDs that have a cached catalog.
 
-    The returned strings are filename-safe stems, usable as keys for
-    ``load_catalog`` / ``delete_catalog``.
+    Each cache file stores the original (un-sanitised) ``source_id`` so that
+    ``mysql:mysql`` round-trips correctly even though its filename stem is
+    ``mysql--mysql``. We prefer that stored value here; consumers (agent
+    context, ``load_catalog``, ``delete_catalog``) all accept the original
+    id and re-apply ``safe_source_id`` internally when touching the disk.
+
+    Falls back to the filename stem if a cache file is missing or corrupt.
+
+    When external connectors are disabled (browser-only / hosted mode),
+    only built-in admin source IDs (e.g. ``sample_datasets``) are
+    returned. This keeps the agent's data-discovery tools consistent with
+    the sidebar — previously-persisted user catalogs on disk stay there
+    but aren't surfaced.
     """
     cache_dir = _cache_dir(workspace_root)
     if not cache_dir.exists():
         return []
-    return [p.stem for p in cache_dir.glob("*.json")]
+    sources: list[str] = []
+    for path in cache_dir.glob("*.json"):
+        original: str | None = None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            if isinstance(raw, dict):
+                value = raw.get("source_id")
+                if isinstance(value, str) and value:
+                    original = value
+        except Exception:
+            logger.debug("Failed to read source_id from %s", path, exc_info=True)
+        sources.append(original or path.stem)
+
+    # Filter to admin-only sources when external connectors are disabled.
+    try:
+        from flask import current_app
+        disabled = bool(
+            current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors')
+        )
+    except RuntimeError:
+        disabled = False
+    if disabled:
+        try:
+            from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
+            allowed = set(_ADMIN_CONNECTOR_IDS)
+            sources = [s for s in sources if s in allowed]
+        except Exception:
+            logger.debug("Failed to filter cached sources by admin set", exc_info=True)
+    return sources
 
 
 def _search_python(
@@ -143,9 +210,30 @@ def _search_python(
     all_ids: list[str],
     exclude: set[str],
     limit_per_source: int,
+    *,
+    exclude_pattern: re.Pattern | None = None,
+    fields: set[str] | None = None,
+    path_prefix: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Python-based structured field search over the on-disk catalog cache."""
+    """Structured field search over the on-disk catalog cache.
+
+    ``needle`` is always a regex pattern (case-insensitive).  Callers who
+    want literal substring matching should ``re.escape`` first.  Invalid
+    patterns raise :class:`CatalogSearchError`.
+    """
+    match_fields = fields if fields is not None else {"name", "description", "columns"}
+
+    try:
+        compiled = re.compile(needle, re.IGNORECASE)
+    except re.error as exc:
+        raise CatalogSearchError(f"Invalid query regex: {exc}") from exc
+
+    def _matches(text: str) -> bool:
+        return bool(text) and compiled.search(text) is not None
+
     results: list[dict[str, Any]] = []
+    plen = len(path_prefix) if path_prefix else 0
+    prefix = list(path_prefix or [])
 
     for sid in all_ids:
         raw = _load_catalog_raw(workspace_root, sid)
@@ -161,36 +249,49 @@ def _search_python(
             if tname in exclude:
                 continue
 
+            # Path-prefix filter
+            if plen:
+                tpath = t.get("path") or []
+                if not isinstance(tpath, list) or len(tpath) < plen:
+                    continue
+                if [str(s) for s in tpath[:plen]] != prefix:
+                    continue
+
+            # Exclude pattern (regex on name)
+            if exclude_pattern is not None and exclude_pattern.search(tname):
+                continue
+
             score = 0
             matched_cols: list[str] = []
             match_reasons: list[str] = []
             meta = t.get("metadata") or {}
             table_key = t.get("table_key", "")
 
-            if needle in tname.lower():
+            if "name" in match_fields and _matches(tname):
                 score += 10
                 match_reasons.append("table_name")
 
             # Source description
             src_desc = meta.get("description", "")
-            if src_desc and needle in src_desc.lower():
+            if "description" in match_fields and src_desc and _matches(src_desc):
                 score += 5
                 match_reasons.append("source_description")
 
             # Source columns
-            for col in meta.get("columns", []):
-                cname = col.get("name", "")
-                if needle in cname.lower():
-                    matched_cols.append(cname)
-                    score += 2
-                    if "column_name" not in match_reasons:
-                        match_reasons.append("column_name")
-                cdesc = col.get("description", "")
-                if cdesc and needle in cdesc.lower():
-                    matched_cols.append(cname)
-                    score += 1
-                    if "source_column_description" not in match_reasons:
-                        match_reasons.append("source_column_description")
+            if "columns" in match_fields:
+                for col in meta.get("columns", []):
+                    cname = col.get("name", "")
+                    if cname and _matches(cname):
+                        matched_cols.append(cname)
+                        score += 2
+                        if "column_name" not in match_reasons:
+                            match_reasons.append("column_name")
+                    cdesc = col.get("description", "")
+                    if cdesc and _matches(cdesc):
+                        matched_cols.append(cname)
+                        score += 1
+                        if "source_column_description" not in match_reasons:
+                            match_reasons.append("source_column_description")
 
             if score > 0:
                 source_hits.append({
@@ -211,122 +312,227 @@ def _search_python(
     return results
 
 
-def _search_duckdb(
-    workspace_root: Path | str,
-    needle: str,
-    all_ids: list[str],
-    exclude: set[str],
-    limit_per_source: int,
-) -> list[dict[str, Any]]:
-    """DuckDB-based catalog cache search using read_json_auto + SQL."""
-    import duckdb
-
-    results: list[dict[str, Any]] = []
-    like_pat = f"%{needle}%"
-
-    for sid in all_ids:
-        path = _cache_file(workspace_root, sid)
-        if not path.exists():
-            continue
-
-        escaped = str(path).replace("'", "''")
-        conn = duckdb.connect(":memory:")
-        try:
-            # Flatten tables array from the JSON cache file
-            rows = conn.execute(f"""
-                WITH raw AS (
-                    SELECT unnest(tables) AS t
-                    FROM read_json_auto('{escaped}', format='newline_delimited',
-                         union_by_name=true, maximum_object_size=104857600)
-                ),
-                base AS (
-                    SELECT
-                        t.name                       AS tname,
-                        COALESCE(t.metadata.description, '')  AS tdesc,
-                        t.metadata.columns           AS cols,
-                        CASE WHEN lower(t.name) LIKE ? THEN 10 ELSE 0 END
-                        + CASE WHEN COALESCE(t.metadata.description, '') != ''
-                               AND lower(COALESCE(t.metadata.description, '')) LIKE ?
-                               THEN 5 ELSE 0 END     AS base_score
-                    FROM raw
-                )
-                SELECT tname, tdesc, cols, base_score
-                FROM base
-                WHERE tname NOT IN (SELECT unnest(?::VARCHAR[]))
-                ORDER BY base_score DESC
-            """, [like_pat, like_pat, list(exclude)]).fetchall()
-
-            # Determine original source_id and build table_key lookup from raw data
-            raw = _load_catalog_raw(workspace_root, sid)
-            original_source_id = raw.get("source_id", sid) if raw else sid
-            tkey_lookup = {
-                t.get("name", ""): t.get("table_key", "")
-                for t in (raw.get("tables", []) if raw else [])
-            }
-
-            source_hits: list[dict[str, Any]] = []
-            for tname, tdesc, cols_raw, base_score in rows:
-                score = base_score
-                matched_cols: list[str] = []
-                cols = cols_raw if isinstance(cols_raw, list) else []
-                for col in cols:
-                    if not isinstance(col, dict):
-                        continue
-                    cname = col.get("name", "")
-                    if needle in cname.lower():
-                        matched_cols.append(cname)
-                        score += 2
-                    cdesc = col.get("description", "")
-                    if cdesc and needle in cdesc.lower():
-                        matched_cols.append(cname)
-                        score += 1
-
-                if score > 0:
-                    source_hits.append({
-                        "source_id": original_source_id,
-                        "table_key": tkey_lookup.get(tname, ""),
-                        "name": tname,
-                        "description": tdesc,
-                        "matched_columns": list(dict.fromkeys(matched_cols)),
-                        "score": score,
-                    })
-
-            source_hits.sort(key=lambda r: -r["score"])
-            results.extend(source_hits[:limit_per_source])
-        except Exception:
-            logger.debug("DuckDB search failed for source %s", sid, exc_info=True)
-        finally:
-            conn.close()
-
-    results.sort(key=lambda r: -r["score"])
-    return results
-
-
 def search_catalog_cache(
     workspace_root: Path | str,
     query: str,
     source_ids: list[str] | None = None,
     limit_per_source: int = 20,
     exclude_tables: set[str] | None = None,
+    *,
+    exclude_pattern: str | None = None,
+    fields: list[str] | None = None,
+    path_prefix: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Search across cached catalogs for tables matching a keyword.
+    """Search across cached catalogs for tables matching a regex pattern.
+
+    ``query`` is treated as a case-insensitive regex.  Callers passing
+    user-typed keywords should ``re.escape`` the input first.  Invalid
+    patterns raise :class:`CatalogSearchError`.
 
     Returns a flat list of match dicts with fields:
     ``source_id``, ``table_key``, ``name``, ``description``,
     ``matched_columns``, ``score``, ``match_reasons``, ``metadata_status``.
 
-    Prefers DuckDB for candidate retrieval. Falls back to pure Python
-    search if DuckDB is unavailable.
+    ``exclude_pattern``, ``fields``, and ``path_prefix`` further constrain
+    the search.
     """
-    needle = (query or "").strip().lower()
-    if not needle:
+    needle_raw = (query or "").strip()
+    if not needle_raw:
         return []
 
     exclude = exclude_tables or set()
     all_ids = source_ids or list_cached_sources(workspace_root)
 
-    try:
-        return _search_duckdb(workspace_root, needle, all_ids, exclude, limit_per_source)
-    except Exception:
-        logger.debug("DuckDB catalog search failed, falling back to Python", exc_info=True)
-        return _search_python(workspace_root, needle, all_ids, exclude, limit_per_source)
+    # Compile exclude pattern up-front so a bad pattern surfaces clearly.
+    excl_re = None
+    if exclude_pattern:
+        try:
+            excl_re = re.compile(exclude_pattern, re.IGNORECASE)
+        except re.error as exc:
+            raise CatalogSearchError(f"Invalid exclude regex: {exc}") from exc
+
+    fields_set = set(fields) if fields else None
+
+    return _search_python(
+        workspace_root,
+        needle_raw,
+        all_ids,
+        exclude,
+        limit_per_source,
+        exclude_pattern=excl_re,
+        fields=fields_set,
+        path_prefix=list(path_prefix or []),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hierarchy navigation (used by the data loading agent's list_data tool)
+# ---------------------------------------------------------------------------
+
+# Hard cap on entries returned in one list_path_children response.  See
+# design-docs/32-data-loading-agent-navigation.md §5.  Truncation pushes the
+# agent toward find_data or a tighter filter rather than pagination.
+LIST_DATA_LIMIT = 200
+
+
+def list_sources_summary(
+    workspace_root: Path | str,
+) -> list[dict[str, Any]]:
+    """Return a per-source summary suitable for ``list_data()`` with no args.
+
+    Each entry: ``{source_id, table_count, is_hierarchical}``.  Sources whose
+    cache file is missing or unreadable are skipped silently — the agent
+    treats the cache as ground truth (see design-docs §8).
+    """
+    out: list[dict[str, Any]] = []
+    for sid in list_cached_sources(workspace_root):
+        raw = _load_catalog_raw(workspace_root, sid)
+        if not raw:
+            continue
+        tables = raw.get("tables", []) or []
+        is_hier = False
+        for t in tables:
+            p = t.get("path")
+            if isinstance(p, list) and len(p) >= 2:
+                is_hier = True
+                break
+        out.append({
+            "source_id": raw.get("source_id", sid),
+            "table_count": len(tables),
+            "is_hierarchical": is_hier,
+        })
+    out.sort(key=lambda r: r["source_id"])
+    return out
+
+
+def list_path_children(
+    workspace_root: Path | str,
+    source_id: str,
+    path: list[str] | None = None,
+    filter: str | None = None,
+    limit: int = LIST_DATA_LIMIT,
+) -> dict[str, Any]:
+    """List direct children at a hierarchy level within a source's catalog.
+
+    Path semantics: each cached table record has ``path: list[str]``.  The
+    final element is the table's leaf name in the tree view; earlier elements
+    are folder segments.  For a query at depth ``K = len(path)``:
+
+    * **Folders** = distinct ``path[K]`` from records with ``len(path) >= K+2``
+      whose first ``K`` segments equal the input path.
+    * **Tables** = records with ``len(path) == K+1`` whose first ``K`` segments
+      equal the input path.  At depth 0 we additionally surface records with
+      empty path, using their ``name`` as the leaf.
+
+    ``filter`` is a case-insensitive substring match on the immediate child
+    segment / table name (the *next* segment after the prefix), equivalent to
+    ``ls <path>/*<filter>*``.  Not a regex — keep this primitive cheap.
+
+    Returns ``{source_id, path, folders, tables, total_folders, total_tables,
+    truncated, hint?}``.  Combined ``folders + tables`` are capped at ``limit``
+    (folders take precedence to preserve drill-down).
+    """
+    path = [str(p) for p in (path or [])]
+    K = len(path)
+    cap = max(1, min(int(limit or LIST_DATA_LIMIT), LIST_DATA_LIMIT))
+    filt = (filter or "").strip().lower() or None
+
+    raw = _load_catalog_raw(workspace_root, source_id)
+    if not raw:
+        return {
+            "source_id": source_id,
+            "path": path,
+            "folders": [],
+            "tables": [],
+            "total_folders": 0,
+            "total_tables": 0,
+            "truncated": False,
+        }
+
+    original_sid = raw.get("source_id", source_id)
+    tables_raw = raw.get("tables", []) or []
+
+    folder_counts: dict[str, int] = {}
+    leaf_tables: list[dict[str, Any]] = []
+
+    for t in tables_raw:
+        tname = t.get("name", "")
+        tpath = t.get("path") or []
+        if not isinstance(tpath, list):
+            tpath = []
+        tpath = [str(s) for s in tpath]
+        plen = len(tpath)
+
+        # Prefix must match exactly for K elements.
+        if plen < K:
+            continue
+        if tpath[:K] != path:
+            continue
+
+        # Folder: at least one more segment after the prefix beyond the leaf.
+        if plen >= K + 2:
+            seg = tpath[K]
+            if filt and filt not in seg.lower():
+                continue
+            folder_counts[seg] = folder_counts.get(seg, 0) + 1
+            continue
+
+        # Table at this level.
+        if plen == K + 1:
+            leaf = tpath[K]
+        elif plen == K and K == 0:
+            # Empty-path tables surface only at root.
+            leaf = tname
+        else:
+            continue
+
+        if filt and filt not in leaf.lower():
+            continue
+
+        meta = t.get("metadata") or {}
+        desc = (meta.get("description") or "")[:120]
+        leaf_tables.append({
+            "name": leaf,
+            "table_key": t.get("table_key", "") or "",
+            "description": desc,
+        })
+
+    # Sort folders by table_count desc then name; tables by name.
+    folders = [
+        {"name": name, "table_count": cnt}
+        for name, cnt in sorted(
+            folder_counts.items(), key=lambda kv: (-kv[1], kv[0])
+        )
+    ]
+    leaf_tables.sort(key=lambda r: r["name"])
+
+    total_folders = len(folders)
+    total_tables = len(leaf_tables)
+    total = total_folders + total_tables
+    truncated = total > cap
+
+    # Combined cap: folders first (drill-down has higher value), then tables.
+    if total_folders >= cap:
+        folders = folders[:cap]
+        leaf_tables = []
+    else:
+        leaf_tables = leaf_tables[: cap - total_folders]
+
+    result: dict[str, Any] = {
+        "source_id": original_sid,
+        "path": path,
+        "folders": folders,
+        "tables": leaf_tables,
+        "total_folders": total_folders,
+        "total_tables": total_tables,
+        "truncated": truncated,
+    }
+    if truncated:
+        remaining = total - len(folders) - len(leaf_tables)
+        result["hint"] = (
+            f"{remaining} more entries not shown. Use list_path_children(filter=...) "
+            f"to narrow, or find_data(query=..., scope='{original_sid}"
+            + (":" + "/".join(path) if path else "")
+            + "') to search this subtree."
+        )
+    return result

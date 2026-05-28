@@ -90,6 +90,7 @@ export const DataFormulatorFC = ({ }) => {
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
+    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
@@ -160,17 +161,18 @@ export const DataFormulatorFC = ({ }) => {
         return onWorkspaceListChanged(fetchWorkspaces);
     }, [fetchWorkspaces]);
 
-    const handleOpenWorkspace = useCallback(async (name: string) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
+    const handleOpenWorkspace = useCallback(async (name: string, metaDisplayName?: string) => {
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
         try {
             const result = await loadWorkspace(name);
             if (result && Object.keys(result.state).length > 0) {
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName: result.displayName } }));
+                const displayName = metaDisplayName || result.displayName;
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName } }));
             } else {
-                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'Untitled Session' }));
+                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
             }
         } catch {
-            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'Untitled Session' }));
+            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
     }, [dispatch]);
@@ -182,7 +184,7 @@ export const DataFormulatorFC = ({ }) => {
         } catch {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'error',
-                component: 'workspace', value: 'Failed to delete workspace',
+                component: 'workspace', value: t('workspace.deleteFailed'),
             }));
         }
         setConfirmDeleteWs(null);
@@ -219,42 +221,50 @@ export const DataFormulatorFC = ({ }) => {
         } catch {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'error',
-                component: 'workspace', value: 'Failed to rename workspace',
+                component: 'workspace', value: t('workspace.renameFailed'),
             }));
             // On failure, refetch so the UI returns to the server's truth.
             fetchWorkspaces();
         }
     }, [renamingWs, renameDraft, savedWorkspaces, cancelRenameWorkspace, dispatch, fetchWorkspaces]);
 
-    const handleExportWorkspace = useCallback(async (name: string) => {
+    const handleExportWorkspace = useCallback(async (id: string) => {
         try {
-            const blob = await exportWorkspace(name);
+            const blob = await exportWorkspace(id);
+            const ws = savedWorkspaces.find(w => w.id === id);
+            const fileName = ws?.display_name || id;
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `${name}.zip`;
+            a.download = `${fileName}.zip`;
             a.click();
             URL.revokeObjectURL(a.href);
         } catch (e) {
             console.warn('Failed to export workspace:', e);
         }
-    }, []);
+    }, [savedWorkspaces]);
 
     const importRef = useRef<HTMLInputElement>(null);
     const handleImportWorkspace = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing ${file.name}...` }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.importingFile', { name: file.name }) }));
         try {
             const wsName = file.name.replace(/\.zip$/, '') || 'imported';
             const wsId = generateSessionId();
             const state = await importWorkspace(file, wsId, wsName);
-            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: wsName } }));
+            const restoredName = (state as any).activeWorkspace?.displayName || wsName;
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: restoredName } }));
         } catch (e) {
             console.warn('Failed to import workspace:', e);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'workspace',
+                value: t('workspace.importFailed'),
+            }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
         if (importRef.current) importRef.current.value = '';
-    }, [dispatch]);
+    }, [dispatch, t]);
 
     // Sorted view of saved workspaces. We don't mutate the underlying
     // list (the backend's response is the source of truth); we just
@@ -291,19 +301,38 @@ export const DataFormulatorFC = ({ }) => {
     // State for unified data upload dialog
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
+    const [uploadDialogInitialChatPrompt, setUploadDialogInitialChatPrompt] = useState<string | undefined>(undefined);
+    const [uploadDialogInitialChatImages, setUploadDialogInitialChatImages] = useState<string[] | undefined>(undefined);
 
     // Loading state for sessions (from Redux, shared with App.tsx)
     const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
-    const openUploadDialog = (tab: UploadTabType) => {
+    const openUploadDialog = (tab: UploadTabType, initialChatPrompt?: string, initialChatImages?: string[]) => {
         // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
         setUploadDialogInitialTab(tab);
+        setUploadDialogInitialChatPrompt(initialChatPrompt);
+        setUploadDialogInitialChatImages(initialChatImages);
         setUploadDialogOpen(true);
     };
+
+    // Honor cross-component requests to hand off to the Data Loading
+    // chat seeded with a prompt (e.g. Data Agent's `delegate` card with
+    // target='data_loading'). Hand-offs targeting other agents (e.g.
+    // `report_gen`) are consumed elsewhere — we only clear our own.
+    const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
+    useEffect(() => {
+        if (agentHandoffRequest && agentHandoffRequest.target === 'data_loading') {
+            openUploadDialog('extract', agentHandoffRequest.prompt, agentHandoffRequest.images);
+            dispatch(dfActions.clearAgentHandoffRequest());
+        }
+        // openUploadDialog is stable enough for this purpose; we only react
+        // to changes in the handoff request itself.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [agentHandoffRequest]);
 
     const handleLoadExampleSession = async (session: ExampleSession) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
@@ -701,8 +730,10 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
+                    onStartChat={(prompt, images) => openUploadDialog('extract', prompt, images)}
+                    hasPriorConversation={dataLoadingChatMessages.length > 0}
+                    onResumeChat={() => openUploadDialog('extract')}
                     serverConfig={serverConfig}
-                    variant="page"
                     connectors={pageConnectors}
                 />
             </Box>
@@ -735,7 +766,7 @@ export const DataFormulatorFC = ({ }) => {
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem'}}>
                     <Typography sx={{ color: 'text.secondary' }}>
-                        Your Sessions
+                        {t('workspace.yourSessions')}
                     </Typography>
                 </Divider>
                 {/* Sort control — placed in the upper-right of the section
@@ -760,18 +791,18 @@ export const DataFormulatorFC = ({ }) => {
                         }}
                         renderValue={(v) => {
                             const labels: Record<typeof wsSort, string> = {
-                                created_desc: 'newest',
-                                created_asc: 'oldest',
-                                updated_desc: 'recently modified',
-                                name_asc: 'name',
+                                created_desc: t('workspace.sortNewest'),
+                                created_asc: t('workspace.sortOldest'),
+                                updated_desc: t('workspace.sortRecentlyModified'),
+                                name_asc: t('workspace.sortName'),
                             };
                             return labels[v as typeof wsSort];
                         }}
                     >
-                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>newest first</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>oldest first</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>recently modified</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>name (a–z)</MenuItem>
+                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>{t('workspace.sortNewestFirst')}</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>{t('workspace.sortOldestFirst')}</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>{t('workspace.sortNameAsc')}</MenuItem>
                     </Select>
                 </Box>
                 <Box sx={{
@@ -782,7 +813,7 @@ export const DataFormulatorFC = ({ }) => {
                     {sortedSavedWorkspaces.map(w => {
                         const isRenaming = renamingWs === w.id;
                         return (
-                        <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id)} sx={{
+                        <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id, w.display_name)} sx={{
                             position: 'relative', textAlign: 'left',
                             cursor: isRenaming ? 'default' : 'pointer',
                             '&:hover': isRenaming ? {} : { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
@@ -827,19 +858,19 @@ export const DataFormulatorFC = ({ }) => {
                                 opacity: 0,
                                 transition: 'opacity 0.15s',
                             }}>
-                                <Tooltip title="Rename">
+                                <Tooltip title={t('workspace.rename')}>
                                     <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
                                         onClick={(e) => { e.stopPropagation(); startRenameWorkspace(w.id, w.display_name); }}>
                                         <EditOutlinedIcon fontSize="small" />
                                     </IconButton>
                                 </Tooltip>
-                                <Tooltip title="Export">
+                                <Tooltip title={t('workspace.export')}>
                                     <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
                                         onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
                                         <DownloadIcon fontSize="small" />
                                     </IconButton>
                                 </Tooltip>
-                                <Tooltip title="Delete">
+                                <Tooltip title={t('workspace.delete')}>
                                     <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
                                         onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
                                         <DeleteOutlineIcon fontSize="small" />
@@ -858,24 +889,27 @@ export const DataFormulatorFC = ({ }) => {
                         '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
                     }}>
                         <UploadFileIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-                        <Typography variant="caption" color="text.secondary">Import workspace (.zip)</Typography>
+                        <Typography variant="caption" color="text.secondary">{t('workspace.importZip')}</Typography>
                         <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                     </Card>
                 </Box>
             </Box>
             {/* ── Delete workspace confirmation ────────────────────── */}
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
-                <DialogTitle>Delete session?</DialogTitle>
+                <DialogTitle>{t('workspace.deleteTitle')}</DialogTitle>
                 <DialogContent>
-                    <Typography>
-                        This will permanently delete <strong>{savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs}</strong>{' '}
-                        ({confirmDeleteWs}) and all its data.
-                    </Typography>
+                    <Typography dangerouslySetInnerHTML={{
+                        __html: t('workspace.deleteConfirm', {
+                            name: savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs,
+                            id: confirmDeleteWs,
+                            interpolation: { escapeValue: false },
+                        }),
+                    }} />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setConfirmDeleteWs(null)}>Cancel</Button>
+                    <Button onClick={() => setConfirmDeleteWs(null)}>{t('workspace.cancel')}</Button>
                     <Button color="error" onClick={() => confirmDeleteWs && handleDeleteWorkspace(confirmDeleteWs)}>
-                        Delete
+                        {t('workspace.delete')}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -897,8 +931,18 @@ export const DataFormulatorFC = ({ }) => {
                 )}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
-                    onClose={() => { setUploadDialogOpen(false); refreshPageConnectors(); }}
+                    onClose={() => {
+                        setUploadDialogOpen(false);
+                        // Clear one-shot seed values so the next dialog
+                        // open (e.g. via the upload button) doesn't
+                        // re-fire the agent with a stale prompt/image.
+                        setUploadDialogInitialChatPrompt(undefined);
+                        setUploadDialogInitialChatImages(undefined);
+                        refreshPageConnectors();
+                    }}
                     initialTab={uploadDialogInitialTab}
+                    initialChatPrompt={uploadDialogInitialChatPrompt}
+                    initialChatImages={uploadDialogInitialChatImages}
                     onConnectorsChanged={handleConnectorsChanged}
                 />
                 {/* Loading overlay for session loading */}

@@ -99,7 +99,7 @@ const chartNameToI18nKey: Record<string, string> = {
     "Bar Chart": "barChart", "Grouped Bar Chart": "groupedBarChart",
     "Stacked Bar Chart": "stackedBarChart", "Histogram": "histogram",
     "Lollipop Chart": "lollipopChart", "Pyramid Chart": "pyramidChart",
-    "Line Chart": "lineChart", "Dotted Line Chart": "dottedLineChart",
+    "Line Chart": "lineChart",
     "Bump Chart": "bumpChart", "Area Chart": "areaChart", "Streamgraph": "streamgraph",
     "Pie Chart": "pieChart", "Rose Chart": "roseChart",
     "Heatmap": "heatmap", "Waterfall Chart": "waterfallChart",
@@ -111,9 +111,13 @@ const chartNameToI18nKey: Record<string, string> = {
 };
 
 const chartCategoryToI18nKey: Record<string, string> = {
-    "Scatter & Point": "scatterAndPoint", "Bar": "bar",
-    "Line & Area": "lineAndArea", "Part-to-Whole": "partToWhole",
-    "Statistical": "statistical", "Map": "map", "Custom": "custom",
+    "Points": "points",
+    "Bars": "bars",
+    "Distributions": "distributions",
+    "Lines & Areas": "linesAndAreas",
+    "Circular": "circular",
+    "Tables & Maps": "tablesAndMaps",
+    "Custom": "custom",
 };
 import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
@@ -331,13 +335,6 @@ const STYLE_PRESETS: StylePreset[] = [
             'Restyle this chart in the FiveThirtyEight (538) blog style.',
     },
     {
-        key: 'minimal',
-        label: 'Minimal',
-        description: 'Clean and pared-back',
-        instruction:
-            'Restyle this chart in a minimal, pared-back modernist style.',
-    },
-    {
         key: 'dark',
         label: 'Dark Mode',
         description: 'Dark theme',
@@ -350,6 +347,13 @@ const STYLE_PRESETS: StylePreset[] = [
         description: 'Optimized for slides',
         instruction:
             'Restyle this chart for a slide-deck presentation, optimized for being viewed at a distance.',
+    },
+    {
+        key: 'comic',
+        label: 'Comic',
+        description: 'Hand-drawn comic book look',
+        instruction:
+            'Restyle this chart in a comic style.',
     },
 ];
 
@@ -485,7 +489,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     useEffect(() => {
         if (!isLoadingIdeas) { setIdeaElapsed(0); return; }
-        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
+        // Tick once per second — fast enough to read as live, slow enough to
+        // stay readable; the loading indicator carries the liveness cue.
+        // Anchor to a start timestamp to avoid float drift.
+        const t0 = Date.now();
+        const timer = setInterval(() => setIdeaElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
         return () => clearInterval(timer);
     }, [isLoadingIdeas]);
     
@@ -700,7 +708,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         newChart = structuredClone(chart) as Chart;
                         newChart.source = "user";
                         newChart.id = `chart-${Date.now() - Math.floor(Math.random() * 10000)}`;
-                        newChart.saved = false;
                         newChart.tableRef = candidateTable.id;
                         // Style variants belong to the chart they were authored
                         // against — don't carry them over to a follow-up chart.
@@ -1271,8 +1278,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }}>
             {/* Left group: one-click style presets. Clicking the palette
                 icon opens a menu of curated "style sheets" (NYT, Economist,
-                FiveThirtyEight, minimal, dark mode, presentation). Each
-                preset sends a detailed style instruction straight to the
+                FiveThirtyEight, minimal, dark mode, presentation, comic).
+                Each preset sends a detailed style instruction straight to the
                 restyle agent — bypassing the intent classifier since these
                 are guaranteed style-only changes. The user can still type
                 freeform instructions in the textbox above; the menu's

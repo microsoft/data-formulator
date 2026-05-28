@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from data_formulator.agents.agent_data_rec import SHARED_DUCKDB_NOTES
+from data_formulator.agents.chart_creation_guide import SHARED_DUCKDB_NOTES
 
 pytestmark = [pytest.mark.backend]
 

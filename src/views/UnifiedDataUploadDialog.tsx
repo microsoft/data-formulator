@@ -2,9 +2,11 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { borderColor, transition, radius } from '../app/tokens';
 import {
+    Alert,
+    AlertTitle,
     Box,
     Button,
     Chip,
@@ -26,26 +28,25 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import LinkIcon from '@mui/icons-material/Link';
 import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
-import Backdrop from '@mui/material/Backdrop';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { generateUUID } from '../app/identity';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
-import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
-import { getUrls, fetchWithIdentity, CONNECTOR_URLS } from '../app/utils';
+import { AnimatedAgentToyIcon } from './AgentToyIcon';
+import { AgentChatInput } from './AgentChatInput';
+import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { generateUUID } from '../app/identity';
 import { DataLoaderForm } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
@@ -59,7 +60,7 @@ import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
 
-export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | 'local-folder' | 'add-connection' | `connector:${string}`;
+export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -84,6 +85,27 @@ function TabPanel(props: TabPanelProps) {
     );
 }
 
+// Collapse a filesystem path's home prefix to `~` for privacy / readability
+// (so screenshots and shared workspaces don't expose usernames). Recognizes
+// macOS (/Users/<u>/), Linux (/home/<u>/), and Windows (C:\Users\<u>\).
+// If `tail` is given, also keeps only the last N path segments, prefixed
+// with `…/` when truncated.
+const displayPath = (p: string, tail?: number): string => {
+    if (!p) return '';
+    let s = p.replace(/^\/Users\/[^/]+/, '~')
+             .replace(/^\/home\/[^/]+/, '~')
+             .replace(/^[A-Za-z]:\\Users\\[^\\]+/, '~');
+    if (tail && tail > 0) {
+        const sep = s.includes('\\') ? '\\' : '/';
+        const parts = s.split(sep).filter(Boolean);
+        if (parts.length > tail) {
+            const prefix = s.startsWith('~') ? '~' + sep : '';
+            s = (prefix || '…' + sep) + parts.slice(-tail).join(sep);
+        }
+    }
+    return s;
+};
+
 // Data source menu card component
 interface DataSourceCardProps {
     icon: React.ReactNode;
@@ -98,6 +120,8 @@ interface DataSourceCardProps {
      */
     variant?: 'data' | 'action';
     badge?: React.ReactNode;
+    /** Optional hover tooltip; useful when `description` is truncated. */
+    tooltip?: React.ReactNode;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -108,6 +132,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     disabled = false,
     variant = 'data',
     badge,
+    tooltip,
 }) => {
     const theme = useTheme();
     const isAction = variant === 'action';
@@ -180,7 +205,9 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
         </Paper>
     );
 
-    return card;
+    return tooltip
+        ? <Tooltip title={tooltip} placement="top" arrow>{card}</Tooltip>
+        : card;
 };
 
 const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
@@ -382,6 +409,7 @@ export { type ConnectorInstance } from '../components/ComponentType';
 
 // Map connector source_type (class name) to i18n key suffix
 const CONNECTOR_TYPE_KEY_MAP: Record<string, string> = {
+    SampleDatasetsLoader: 'sample_datasets',
     MySQLDataLoader: 'mysql',
     PostgreSQLDataLoader: 'postgresql',
     MSSQLDataLoader: 'mssql',
@@ -418,31 +446,65 @@ export interface DataLoadMenuProps {
      * instead of opening an in-dialog catalog tab.
      */
     onSelectConnector?: (connector: ConnectorInstance) => void;
+    /**
+     * Called when the user submits a prompt from the top-level Data Loading
+     * Agent chat box. Implementations should open the agent chat surface
+     * with the prompt (and optional pasted/attached images) pre-filled —
+     * typically auto-sent. If not provided, the chat box falls back to
+     * `onSelectTab('extract')`.
+     */
+    onStartChat?: (prompt: string, images?: string[]) => void;
+    /**
+     * True when a prior data-loading agent conversation exists in
+     * state. When set together with `onResumeChat`, the menu renders
+     * a small "Resume previous" affordance next to the agent label so
+     * the user can re-open the previous thread instead of being forced
+     * to overwrite it with a new query.
+     */
+    hasPriorConversation?: boolean;
+    /**
+     * Called when the user clicks the "Resume previous" affordance.
+     * Should open the agent chat surface without clearing the existing
+     * message history and without auto-sending anything.
+     */
+    onResumeChat?: () => void;
     serverConfig?: { WORKSPACE_BACKEND?: string; IS_LOCAL_MODE?: boolean };
-    variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
-    hideSampleDatasets?: boolean;
     connectors?: ConnectorInstance[];
 }
 
 export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
     onSelectTab, 
     onSelectConnector,
+    onStartChat,
+    hasPriorConversation = false,
+    onResumeChat,
     serverConfig = { WORKSPACE_BACKEND: 'local' },
-    variant = 'dialog',
-    hideSampleDatasets = false,
     connectors = [],
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
-    // Data source configurations
+    const dispatch = useDispatch<AppDispatch>();
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    // Backend requires an active workspace (X-Workspace-Id header) for
+    // scratch uploads and chat. The menu can be opened on the entry
+    // surface before any workspace has been picked, so we lazily mint
+    // one here — the parent's `openUploadDialog` does the same when it
+    // can, but we cover the path where this menu is rendered directly.
+    const ensureActiveWorkspace = (): string => {
+        if (activeWorkspace?.id) return activeWorkspace.id;
+        const now = new Date();
+        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const wsId = `session_${date}_${time}_${generateUUID().slice(0, 4)}`;
+        dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: 'Untitled Session' }));
+        return wsId;
+    };
+    // Data source configurations (upload-style entries — file, paste,
+    // URL). The "Data Loading Agent" entry is surfaced separately as a
+    // chat box at the top of the menu. Sample datasets are no longer
+    // listed here — they're now exposed as the built-in `sample_datasets`
+    // connector in the Data Connectors section below.
     const regularDataSources = [
-        { 
-            value: 'explore' as UploadTabType, 
-            title: t('upload.sampleDatasets'), 
-            description: t('upload.sampleDatasetsDesc'),
-            icon: <ExploreIcon />, 
-            disabled: false
-        },
         { 
             value: 'upload' as UploadTabType, 
             title: t('upload.uploadFile'), 
@@ -458,15 +520,8 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             disabled: false
         },
         { 
-            value: 'extract' as UploadTabType, 
-            title: t('upload.extractData'), 
-            description: t('upload.extractDataDesc'),
-            icon: <SmartToyOutlinedIcon />, 
-            disabled: false
-        },
-        { 
             value: 'url' as UploadTabType, 
-            title: t('upload.loadFromUrl'), 
+            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL (live)' }), 
             description: t('upload.loadFromUrlDesc'),
             icon: <LinkIcon />, 
             disabled: false,
@@ -476,24 +531,29 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 '100%': { opacity: 1 },
             } }} />,
         },
-    ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
+    ];
 
     // Data connections — persistent configured sources (databases, services, etc.)
-    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action' }> = [
+    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action'; tooltip?: React.ReactNode }> = [
         // Per-connector cards — all instances
         ...connectors.map((conn) => {
             const isLocalFolder = conn.source_type === 'LocalFolderDataLoader' || conn.id.startsWith('local_folder');
             const folderPath = isLocalFolder ? (conn.pinned_params?.root_dir || '') : '';
+            // Show only the tail of the path on the card (privacy-friendly
+            // for screenshots), with the home-collapsed full path on hover.
+            const folderDisplay = displayPath(folderPath, 2);
+            const folderTooltip = displayPath(folderPath);
             return {
                 value: `connector:${conn.id}` as UploadTabType,
                 title: conn.display_name,
                 description: isLocalFolder
-                    ? (folderPath || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
+                    ? (folderDisplay || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
                     : getConnectorTypeDescription(conn.source_type, conn.connected, t),
                 icon: isLocalFolder
                     ? <FolderOpenIcon />
                     : getConnectorIcon(conn.icon || conn.source_type),
                 disabled: false,
+                tooltip: isLocalFolder && folderTooltip ? folderTooltip : undefined,
             };
         }),
         // "Local Folder" card (action variant, local mode only)
@@ -532,30 +592,168 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         onSelectTab(sourceValue);
     };
 
-    if (variant === 'page') {
-        // Page variant: two sections stacked, local data in 3 columns, live sources in 2 columns with wrap
-        return (
-            <Box sx={{ 
-                width: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-                mx: 0,
-                textAlign: 'left',
-            }}>
-                {/* Local Data Sources */}
+    // ------------------------------------------------------------------
+    // Data Loading Agent quick-chat box. Surfaced at the top of the menu
+    // so users can start a conversation with the agent directly. Pressing
+    // Enter (or the send button) hands the prompt/images off to the chat
+    // surface via `onStartChat`, which opens the agent and auto-sends.
+    // Falls back to `onSelectTab('extract')` if no handler is provided.
+    // ------------------------------------------------------------------
+    const [agentInput, setAgentInput] = useState('');
+    const [agentImages, setAgentImages] = useState<string[]>([]);
+    const [agentAttachments, setAgentAttachments] = useState<string[]>([]);
+    const submitAgentChat = () => {
+        const text = agentInput.trim();
+        if (text.length === 0 && agentImages.length === 0 && agentAttachments.length === 0) {
+            // Empty submission — just open the chat surface.
+            if (onStartChat) onStartChat('', []);
+            else onSelectTab('extract');
+            return;
+        }
+        // Augment the outgoing prompt with `[Uploaded: name]` lines so the
+        // agent sees attachments as text references, without polluting
+        // the editable input the user sees.
+        const mentions = agentAttachments
+            .map(name => t('dataLoading.uploaded', { name }))
+            .join('\n');
+        const finalText = mentions
+            ? (text ? `${text}\n${mentions}` : mentions)
+            : text;
+        if (onStartChat) {
+            onStartChat(finalText, agentImages);
+        } else {
+            onSelectTab('extract');
+        }
+        setAgentInput('');
+        setAgentImages([]);
+        setAgentAttachments([]);
+    };
+
+    // Suggestions surfaced as a focus-time dropdown — sourced from a shared
+    // factory so the in-session `DataLoadingChat` panel renders the exact
+    // same list. See `dataLoadingSuggestions.ts`.
+    const agentChatSuggestions = useMemo(() => buildDataLoadingSuggestions({
+        t,
+        setInput: setAgentInput,
+        setImages: setAgentImages,
+        setAttachments: setAgentAttachments,
+        ensureActiveWorkspace,
+    }), [t]);
+    const agentChatBox = (
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 640 }}>
+            <Box
+                sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    mb: 1.5,
+                }}
+            >
+                <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                        textAlign: 'left',
+                        opacity: 0.6,
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.02em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                    }}
+                >
+                    <AnimatedAgentToyIcon sx={{ fontSize: 14 }} />
+                    {t('upload.dataLoadingAgent', { defaultValue: 'Data Loading Agent' })}
+                </Typography>
+                {hasPriorConversation && onResumeChat && (
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            fontSize: '0.75rem',
+                            letterSpacing: '0.02em',
+                        }}
+                    >
+                        <Link
+                            component="button"
+                            type="button"
+                            onClick={onResumeChat}
+                            underline="hover"
+                            sx={{
+                                fontSize: 'inherit',
+                                letterSpacing: 'inherit',
+                                color: 'text.secondary',
+                                opacity: 0.7,
+                                '&:hover': { opacity: 1 },
+                            }}
+                        >
+                            {t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation →' })}
+                        </Link>
+                    </Typography>
+                )}
+            </Box>
+            <AgentChatInput
+                value={agentInput}
+                onChange={setAgentInput}
+                images={agentImages}
+                onImagesChange={setAgentImages}
+                onSend={submitAgentChat}
+                onNonImageFile={(file) => {
+                    // Upload non-image files (Excel, CSV, JSON, …) to the
+                    // session scratch space. The filename is shown as a
+                    // chip; the `[Uploaded: name]` mention is appended to
+                    // the outgoing prompt at send-time so the editable
+                    // input stays clean.
+                    ensureActiveWorkspace();
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
+                        method: 'POST', body: formData,
+                    }).then(() => {
+                        setAgentAttachments(prev => [...prev, file.name]);
+                    }).catch(err => console.error('Upload failed:', err));
+                }}
+                attachments={agentAttachments}
+                onAttachmentsChange={setAgentAttachments}
+                minRows={1}
+                tabSuggestion={t('upload.agentChatTabSuggestion', {
+                    defaultValue: 'What dataset do we have here?',
+                })}
+                focusSuggestionsLabel={t('upload.agentChatSuggestionsLabel', { defaultValue: 'Try asking' })}
+                focusSuggestions={agentChatSuggestions}
+                placeholder={t('upload.agentChatPlaceholder', {
+                    defaultValue: 'Ask the agent to find datasets, or extract data from an image or text…',
+                })}
+                sendTooltip={t('upload.agentChatSendTooltip', { defaultValue: 'Start chatting with the agent' })}
+            />
+        </Box>
+    );
+
+    return (
+        <Box sx={{ 
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
+            mx: 0,
+            textAlign: 'left',
+        }}>
+            {/* Data Loading Agent quick-chat */}
+            {agentChatBox}
+
+            {/* Upload data */}
+            <Box>
                 <Typography 
                     variant="body2" 
                     color="text.secondary" 
                     sx={{ 
                         textAlign: 'left',
-                        mb: 0.5,
+                        mb: 1.5,
                         opacity: 0.6,
                         fontSize: '0.75rem',
                         letterSpacing: '0.02em'
                     }}
                 >
-                    {t('upload.importData')}
+                    {t('upload.uploadData', { defaultValue: 'Upload data' })}
                 </Typography>
                 <Box sx={{ 
                     display: 'grid', 
@@ -574,15 +772,16 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         />
                     ))}
                 </Box>
+            </Box>
 
-                {/* Data Connections */}
+            {/* Data Connections */}
+            <Box>
                 <Typography 
                     variant="body2" 
                     color="text.secondary" 
                     sx={{ 
                         textAlign: 'left',
-                        mt: 1,
-                        mb: 0.5,
+                        mb: 1.5,
                         opacity: 0.6,
                         fontSize: '0.75rem',
                         letterSpacing: '0.02em',
@@ -612,98 +811,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
                             variant={source.variant}
+                            tooltip={source.tooltip}
                         />
                     ))}
                 </Box>
-            </Box>
-        );
-    }
-
-    // Dialog variant: two-section layout
-    return (
-        <Box sx={{ 
-            width: '100%',
-            maxWidth: 860,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            mx: 0,
-            textAlign: 'left',
-        }}>
-            {/* Import Data */}
-            <Typography 
-                variant="body2" 
-                color="text.secondary" 
-                sx={{ 
-                    textAlign: 'left',
-                    mb: 1,
-                    mt: 1,
-                    opacity: 0.6,
-                    fontSize: '0.75rem',
-                    letterSpacing: '0.02em'
-                }}
-            >
-                {t('upload.importData')}
-            </Typography>
-
-            <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gap: 1.5,
-                mb: 0,
-            }}>
-                {regularDataSources.map((source) => (
-                    <DataSourceCard
-                        key={source.value}
-                        icon={source.icon}
-                        title={source.title}
-                        description={source.description}
-                        onClick={() => onSelectTab(source.value)}
-                        disabled={source.disabled}
-                        badge={source.badge}
-                    />
-                ))}
-            </Box>
-
-            {/* Data Connections */}
-            <Typography 
-                variant="body2" 
-                color="text.secondary" 
-                sx={{ 
-                    textAlign: 'left',
-                    my: 1,
-                    opacity: 0.6,
-                    fontSize: '0.75rem',
-                    letterSpacing: '0.02em',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.5,
-                }}
-            >
-                <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                    '0%': { opacity: 1 },
-                    '50%': { opacity: 0.4 },
-                    '100%': { opacity: 1 },
-                } }} />
-                {t('upload.dataConnections')}
-            </Typography>
-
-            <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gap: 1.5,
-            }}>
-                {connectionSources.map((source) => (
-                    <DataSourceCard
-                        key={source.value}
-                        icon={source.icon}
-                        title={source.title}
-                        description={source.description}
-                        onClick={() => handleConnectionClick(source.value)}
-                        disabled={source.disabled}
-                        variant={source.variant}
-                    />
-                ))}
             </Box>
         </Box>
     );
@@ -721,6 +832,16 @@ interface LoaderType {
     auth_mode?: string;
     auth_instructions?: string;
     delegated_login?: { login_url: string; label?: string } | null;
+    source?: 'plugin' | 'builtin';
+    source_path?: string | null;
+}
+
+interface PluginsInfo {
+    dir: string;
+    enabled: boolean;
+    reason: string;
+    loaded: Array<{ type: string; name: string; source_path: string }>;
+    errors: Array<{ file: string; reason: string; kind: string }>;
 }
 
 const AddConnectionPanel: React.FC<{
@@ -732,6 +853,7 @@ const AddConnectionPanel: React.FC<{
     );
     const [loaderTypes, setLoaderTypes] = useState<LoaderType[]>([]);
     const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
+    const [pluginsInfo, setPluginsInfo] = useState<PluginsInfo | null>(null);
     const [selectedType, setSelectedType] = useState<string>('');
     const [displayName, setDisplayName] = useState('');
     const dispatch = useDispatch<AppDispatch>();
@@ -750,6 +872,7 @@ const AddConnectionPanel: React.FC<{
             .then(({ data }) => {
                 setLoaderTypes(data.loaders || []);
                 setDisabledLoaders(data.disabled || {});
+                setPluginsInfo(data.plugins || null);
                 if (data.loaders?.length > 0) {
                     setSelectedType(data.loaders[0].type);
                     setDisplayName(data.loaders[0].name);
@@ -853,17 +976,47 @@ const AddConnectionPanel: React.FC<{
                 }}>
                     {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
                 </Typography>
-                {[...loaderTypes].sort((a, b) => connectorSortOrder(a.type, b.type)).map((loader) => (
-                    <Button
-                        key={loader.type}
-                        variant="text" size="small" color="primary"
-                        onClick={() => handleSelectLoader(loader)}
-                        sx={sidebarButtonSx(loader.type)}
-                        startIcon={getConnectorIcon(loader.type, { sx: { fontSize: 16, opacity: 0.7 } })}
-                    >
-                        {loader.name}
-                    </Button>
-                ))}
+                {[...loaderTypes].sort((a, b) => connectorSortOrder(a.type, b.type)).map((loader) => {
+                    const isPlugin = loader.source === 'plugin';
+                    const btn = (
+                        <Button
+                            key={loader.type}
+                            variant="text" size="small" color="primary"
+                            onClick={() => handleSelectLoader(loader)}
+                            sx={sidebarButtonSx(loader.type)}
+                            startIcon={getConnectorIcon(loader.type, { sx: { fontSize: 16, opacity: 0.7 } })}
+                        >
+                            <Box component="span" sx={{ flex: 1, textAlign: 'left' }}>{loader.name}</Box>
+                            {isPlugin && (
+                                <Box
+                                    component="span"
+                                    sx={{
+                                        ml: 0.5,
+                                        px: 0.5,
+                                        fontSize: 9,
+                                        fontWeight: 500,
+                                        color: 'text.secondary',
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 0.5,
+                                        lineHeight: '12px',
+                                    }}
+                                >
+                                    plugin
+                                </Box>
+                            )}
+                        </Button>
+                    );
+                    return isPlugin ? (
+                        <Tooltip
+                            key={loader.type}
+                            title={`External plugin loaded from ${loader.source_path}`}
+                            placement="right" arrow
+                        >
+                            <span>{btn}</span>
+                        </Tooltip>
+                    ) : btn;
+                })}
                 {Object.entries(disabledLoaders).sort(([a], [b]) => connectorSortOrder(a, b)).map(([name, { install_hint }]) => (
                     <Tooltip key={name} title={install_hint} placement="right" arrow>
                         <span style={{ width: '100%' }}>
@@ -886,6 +1039,23 @@ const AddConnectionPanel: React.FC<{
 
             {/* Right panel: display name + DataLoaderForm (or simplified Local Folder panel) */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+                {/* Plugin rejection banner — surfaces plugins that failed to load
+                    so users notice broken extensions. Successful loads are indicated
+                    by the "plugin" tag next to the loader name in the sidebar. */}
+                {pluginsInfo && pluginsInfo.errors.length > 0 && (
+                    <Box sx={{ px: 2, pt: 1.5 }}>
+                        <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: 11, py: 0.5 }}>
+                            <AlertTitle sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>
+                                {pluginsInfo.errors.length} plugin{pluginsInfo.errors.length === 1 ? '' : 's'} rejected
+                            </AlertTitle>
+                            {pluginsInfo.errors.map((e, i) => (
+                                <Box key={i} sx={{ fontSize: 11, lineHeight: 1.4 }}>
+                                    <code style={{ fontSize: 10 }}>{e.file.split('/').pop()}</code>: {e.reason}
+                                </Box>
+                            ))}
+                        </Alert>
+                    </Box>
+                )}
                 {selectedLoader && selectedType === 'local_folder' ? (
                     /* Simplified Local Folder panel — no connection name, no form tiers */
                     <LocalFolderPanel
@@ -942,7 +1112,14 @@ export interface UnifiedDataUploadDialogProps {
     open: boolean;
     onClose: () => void;
     initialTab?: UploadTabType;
-    hideSampleDatasets?: boolean;
+    /**
+     * Optional initial prompt to hand off to the Data Loading Agent. When
+     * non-empty and `initialTab === 'extract'`, the prompt is pre-filled
+     * and auto-sent in the chat panel.
+     */
+    initialChatPrompt?: string;
+    /** Optional images (data URLs) to seed the chat alongside `initialChatPrompt`. */
+    initialChatImages?: string[];
     onConnectorsChanged?: () => void;
 }
 
@@ -950,7 +1127,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     open,
     onClose,
     initialTab = 'menu',
-    hideSampleDatasets = false,
+    initialChatPrompt,
+    initialChatImages,
     onConnectorsChanged,
 }) => {
     const theme = useTheme();
@@ -965,6 +1143,21 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
+    // Prompt to seed the agent chat with. Sourced from the `initialChatPrompt`
+    // prop when the dialog opens directly on 'extract', or set internally
+    // when the user submits the in-menu agent chat box.
+    const [seededChatPrompt, setSeededChatPrompt] = useState<string | undefined>(
+        initialTab === 'extract' ? initialChatPrompt : undefined,
+    );
+    const [seededChatImages, setSeededChatImages] = useState<string[] | undefined>(
+        initialTab === 'extract' ? initialChatImages : undefined,
+    );
+    const [autoSendSeededPrompt, setAutoSendSeededPrompt] = useState<boolean>(
+        initialTab === 'extract' && (
+            (!!initialChatPrompt && initialChatPrompt.trim().length > 0)
+            || (!!initialChatImages && initialChatImages.length > 0)
+        ),
+    );
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
 
@@ -982,8 +1175,27 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (open) {
             setConnectorInstances([]);
             refreshConnectors();
+            // Re-seed chat prompt/images from props each time the dialog opens.
+            if (initialTab === 'extract') {
+                setSeededChatPrompt(initialChatPrompt);
+                setSeededChatImages(initialChatImages);
+                const hasText = !!initialChatPrompt && initialChatPrompt.trim().length > 0;
+                const hasImages = !!initialChatImages && initialChatImages.length > 0;
+                setAutoSendSeededPrompt(hasText || hasImages);
+                // Opening the dialog with a fresh prompt/images means the
+                // user wants a new data-loading conversation; clear any
+                // stale messages from a previous session so the new query
+                // isn't appended to an unrelated thread.
+                if ((hasText || hasImages) && dataLoadingChatMessages.length > 0) {
+                    dispatch(dfActions.clearChatMessages());
+                }
+            } else {
+                setSeededChatPrompt(undefined);
+                setSeededChatImages(undefined);
+                setAutoSendSeededPrompt(false);
+            }
         }
-    }, [open, refreshConnectors, identityKey]);
+    }, [open, refreshConnectors, identityKey, initialTab, initialChatPrompt, initialChatImages]);
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
@@ -1014,15 +1226,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Example URLs state
     const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number; resetUrl?: string }>>([]); 
 
-    // Sample datasets state
-    const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
-
     // Loading state for table loading (file/URL/paste)
     const [tableLoading, setTableLoading] = useState<boolean>(false);
-
-    // Loading state for dataset loading
-    const [datasetLoading, setDatasetLoading] = useState<boolean>(false);
-    const [datasetLoadingLabel, setDatasetLoadingLabel] = useState<string>('');
 
     // Constants
     const MAX_DISPLAY_LINES = 20;
@@ -1056,81 +1261,29 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     }, [open, activeTab, connectorInstances]);
 
 
-    // Load sample datasets
+    // Load example URLs for the URL tab. The demo-stream/info endpoint
+    // returns plain JSON (no {status:'success', data:...} envelope), so we
+    // bypass apiRequest's envelope check and call fetch directly.
     useEffect(() => {
-        if (open && activeTab === 'explore') {
-            apiRequest<any>(`${getUrls().EXAMPLE_DATASETS}`)
-            .then(({ data: result }) => {
-                let datasets: DatasetMetadata[] = result.map((info: any) => {
-                    let tables = info["tables"].map((table: any) => {
-                        if (table["format"] == "json") {
-                            return {
-                                table_name: table["name"],
-                                url: table["url"],
-                                format: table["format"],
-                                sample: table["sample"],
-                            }
-                        }
-                        else if (table["format"] == "csv" || table["format"] == "tsv") {
-                            const delimiter = table["format"] === "csv" ? "," : "\t";
-                            const rows = table["sample"]
-                                .split("\n")
-                                .map((row: string) => row.split(delimiter));
-                            
-                            if (rows.length > 0) {
-                                const headers = rows[0];
-                                const dataRows = rows.slice(1);
-                                const sampleData = dataRows.map((row: string[]) => {
-                                    const obj: any = {};
-                                    headers.forEach((header: string, index: number) => {
-                                        obj[header] = row[index] || '';
-                                    });
-                                    return obj;
-                                });
-                                
-                                return {
-                                    table_name: table["name"],
-                                    url: table["url"],
-                                    format: table["format"],
-                                    sample: sampleData,
-                                };
-                            }
-                            
-                            return {
-                                table_name: table["name"],
-                                url: table["url"],
-                                format: table["format"],
-                                sample: [],
-                            };
-                        }
-                    })
-                    return { 
-                        tables: tables, 
-                        name: info["name"], 
-                        source: info["source"],
-                        live: info["live"],
-                        refreshIntervalSeconds: info["refreshIntervalSeconds"]
-                    }
-                }).filter((t: DatasetMetadata | undefined) => t != undefined);
-                setDatasetPreviews(datasets);
-            });
-        } else if (open && activeTab === 'url') {
-            apiRequest<any>(`${window.location.origin}/api/demo-stream/info`)
-            .then(({ data }) => {
-                const demoExamples = data.demo_examples
+        if (!(open && activeTab === 'url')) return;
+        let cancelled = false;
+        fetch(`${window.location.origin}/api/demo-stream/info`)
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+            .then((data) => {
+                if (cancelled) return;
+                const demoExamples = (data.demo_examples || [])
                     .map((ex: any) => ({
                         label: ex.name,
                         url: ex.url,
                         refreshSeconds: ex.refresh_seconds || 60,
                         resetUrl: ex.reset_url || undefined,
-                }));
-                
+                    }));
                 setExampleUrls(demoExamples);
             })
             .catch((err) => {
-                console.error('Failed to load examples:', err);
+                if (!cancelled) console.error('Failed to load demo examples:', err);
             });
-        }
+        return () => { cancelled = true; };
     }, [open, activeTab]);
 
     const handleClose = useCallback(() => {
@@ -1569,6 +1722,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const hasMultipleUrlTables = (urlPreviewTables?.length || 0) > 1;
     const showFilePreview = filePreviewLoading || !!filePreviewError || (filePreviewTables && filePreviewTables.length > 0);
     const showUrlPreview = urlPreviewLoading || !!urlPreviewError || (urlPreviewTables && urlPreviewTables.length > 0);
+    const showExamples = exampleUrls.length > 0
+        && (!urlPreviewTables || urlPreviewTables.length === 0)
+        && !urlPreviewLoading;
     const hasPasteContent = (pasteContent || '').trim() !== '';
 
     // Get current tab title for header
@@ -1583,7 +1739,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
         const tabTitles: Record<string, string> = {
             'menu': t('upload.title'),
-            'explore': t('upload.sampleDatasets'),
             'upload': t('upload.uploadFile'),
             'paste': t('upload.pasteData'),
             'extract': t('upload.dataAssistant'),
@@ -1679,6 +1834,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {/* Main Menu */}
                 <TabPanel value={activeTab} index="menu">
                     <Box sx={{ p: 2, boxSizing: 'border-box', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                        <Box sx={{ width: '100%', maxWidth: 860 }}>
                         <DataLoadMenu 
                             onSelectTab={(tab) => setActiveTab(tab)}
                             onSelectConnector={(conn) => {
@@ -1692,11 +1848,35 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     setActiveTab(`connector:${conn.id}` as UploadTabType);
                                 }
                             }}
+                            onStartChat={(prompt, images) => {
+                                const hasText = prompt.trim().length > 0;
+                                const hasImages = !!images && images.length > 0;
+                                // If a prior conversation exists, treat a
+                                // new query from the menu as a fresh data
+                                // reload and reset the chat. Without this
+                                // the new prompt would be appended onto an
+                                // unrelated thread, confusing the agent.
+                                if ((hasText || hasImages) && dataLoadingChatMessages.length > 0) {
+                                    dispatch(dfActions.clearChatMessages());
+                                }
+                                setSeededChatPrompt(prompt);
+                                setSeededChatImages(images);
+                                setAutoSendSeededPrompt(hasText || hasImages);
+                                setActiveTab('extract');
+                            }}
+                            hasPriorConversation={dataLoadingChatMessages.length > 0}
+                            onResumeChat={() => {
+                                // Reopen the existing thread without
+                                // clearing messages or auto-sending.
+                                setSeededChatPrompt(undefined);
+                                setSeededChatImages(undefined);
+                                setAutoSendSeededPrompt(false);
+                                setActiveTab('extract');
+                            }}
                             serverConfig={serverConfig}
-                            variant="dialog"
-                            hideSampleDatasets={hideSampleDatasets}
                             connectors={connectorInstances}
                         />
+                        </Box>
                     </Box>
                 </TabPanel>
 
@@ -1815,10 +1995,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         p: 2,
                         justifyContent: showUrlPreview ? 'flex-start' : 'center',
                     }}>
-                        <Box sx={{ width: '100%', maxWidth: showUrlPreview ? '80%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            {/* URL Input */}
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{
+                            width: '100%',
+                            maxWidth: showUrlPreview ? '90%' : (showExamples ? 1000 : 640),
+                            alignSelf: 'center',
+                            display: 'grid',
+                            gridTemplateColumns: showExamples && !showUrlPreview ? 'minmax(0, 1fr) minmax(0, 1fr)' : '1fr',
+                            columnGap: 4,
+                            rowGap: 1.5,
+                            alignItems: 'start',
+                        }}>
+                            {/* Left column: URL input + Watch Mode */}
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minWidth: 0 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
                                     <TextField
                                         fullWidth
                                         placeholder={t('upload.placeholder.url')}
@@ -1826,16 +2015,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         onChange={(e) => setTableURL((e.target.value || '').trim())}
                                         inputRef={urlInputRef}
                                         error={tableURL !== "" && !hasValidUrl}
-                                        helperText={tableURL !== "" && !hasValidUrl ? t('upload.helperText.urlInvalid') : undefined}
+                                        helperText={tableURL !== "" && !hasValidUrl
+                                            ? t('upload.helperText.urlInvalid')
+                                            : t('upload.urlFormatHint')}
                                         size="small"
-                                        sx={{ 
+                                        sx={{
                                             flex: 1,
-                                            '& .MuiInputBase-input': {
-                                                fontSize: '0.875rem',
-                                            },
-                                            '& .MuiInputBase-input::placeholder': {
-                                                fontSize: '0.875rem',
-                                            },
+                                            '& .MuiInputBase-input, & .MuiInputBase-input::placeholder': { fontSize: '0.875rem' },
+                                            '& .MuiFormHelperText-root': { fontSize: '0.75rem', ml: 0.5 },
                                         }}
                                     />
                                     <Button
@@ -1843,19 +2030,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         size="small"
                                         onClick={() => handleURLPreview(tableURL || '')}
                                         disabled={!hasValidUrl || urlPreviewLoading}
-                                        sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                                        sx={{ textTransform: 'none', whiteSpace: 'nowrap', mt: '1px' }}
                                     >
                                         {t('upload.preview')}
                                     </Button>
                                 </Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', ml: 0.5 }}>
-                                    {t('upload.urlFormatHint')}
-                                </Typography>
-                            </Box>
-                            
-                            {/* Watch/Auto-refresh options - always visible */}
-                            <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
-                                <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'center', height: 24 }}>
+
+                                {/* Watch mode — single inline row, no card wrapper. */}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
                                     <FormControlLabel
                                         control={
                                             <Switch
@@ -1866,14 +2048,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         }
                                         label={
                                             <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
-                                                {t('upload.watchMode')}
+                                                {t('upload.autoRefresh')}
                                             </Typography>
                                         }
+                                        sx={{ mr: 0.25 }}
                                     />
-                                    {urlAutoRefresh ? (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, }}>
-                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
-                                                {t('upload.checkUpdatesEvery')}
+                                    {urlAutoRefresh && (
+                                        <>
+                                            <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                                                every
                                             </Typography>
                                             {[
                                                 { seconds: 5, label: '5s' },
@@ -1885,118 +2068,110 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                 { seconds: 1800, label: '30m' },
                                                 { seconds: 3600, label: '1h' },
                                                 { seconds: 86400, label: '24h' },
-                                            ].map((opt) => (
-                                                <Chip
-                                                    key={opt.seconds}
-                                                    label={opt.label}
-                                                    size="small"
-                                                    variant={urlRefreshInterval === opt.seconds ? 'filled' : 'outlined'}
-                                                    color={urlRefreshInterval === opt.seconds ? 'primary' : 'default'}
-                                                    onClick={() => setUrlRefreshInterval(opt.seconds)}
-                                                    sx={{ 
-                                                        cursor: 'pointer', 
-                                                        fontSize: '0.7rem',
-                                                        height: 24,
-                                                    }}
-                                                />
-                                            ))}
-                                        </Box>
-                                    ) : <Typography component="span" variant="caption" color="text.secondary">
-                                        {t('upload.watchHint')}
-                                    </Typography>}
-                                    
+                                            ].map((opt) => {
+                                                const selected = urlRefreshInterval === opt.seconds;
+                                                return (
+                                                    <Chip
+                                                        key={opt.seconds}
+                                                        label={opt.label}
+                                                        size="small"
+                                                        onClick={() => setUrlRefreshInterval(opt.seconds)}
+                                                        sx={{
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.7rem',
+                                                            height: 20,
+                                                            border: 'none',
+                                                            bgcolor: selected ? 'primary.main' : 'transparent',
+                                                            color: selected ? 'primary.contrastText' : 'text.secondary',
+                                                            fontWeight: selected ? 600 : 400,
+                                                            '& .MuiChip-label': { px: 0.75 },
+                                                            '&:hover': { bgcolor: selected ? 'primary.dark' : 'action.hover' },
+                                                        }}
+                                                    />
+                                                );
+                                            })}
+                                        </>
+                                    )}
                                 </Box>
-                            </Paper>
+                            </Box>
 
-                            {/* Example APIs - Compact List */}
-                            {(!urlPreviewTables || urlPreviewTables.length === 0) && !urlPreviewLoading && (
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
+                            {/* Right column: example APIs. */}
+                            {showExamples && (
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 0.25,
+                                    minWidth: 0,
+                                    borderLeft: { md: '1px solid' },
+                                    borderColor: { md: 'divider' },
+                                    pl: { xs: 0, md: 3 },
+                                }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, fontWeight: 500 }}>
                                         {t('upload.tryExamples')}
                                     </Typography>
-                                    <Box component="ul" sx={{ 
-                                        listStyle: 'none', 
-                                        padding: 0, 
-                                        margin: 0,
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: 0.25,
-                                    }}>
-                                        {exampleUrls.map((example) => (
-                                            <Box
-                                                component="li"
-                                                key={example.url}
+                                    {exampleUrls.map((example) => (
+                                        <Box
+                                            key={example.url}
+                                            sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}
+                                        >
+                                            <Typography
+                                                component="span"
+                                                variant="caption"
                                                 onClick={() => {
-                                                    console.log('example', example);
-                                                    if (example.url) {
-                                                        
-                                                        setTableURL(example.url);
-                                                        setUrlAutoRefresh(true);
-                                                        setUrlRefreshInterval(example.refreshSeconds || 60);
-                                                        handleURLPreview(example.url);
-                                                    }
+                                                    if (!example.url) return;
+                                                    setTableURL(example.url);
+                                                    setUrlAutoRefresh(true);
+                                                    setUrlRefreshInterval(example.refreshSeconds || 60);
+                                                    handleURLPreview(example.url);
                                                 }}
                                                 sx={{
+                                                    fontSize: '0.75rem',
+                                                    color: 'primary.main',
                                                     cursor: 'pointer',
-                                                    '&::before': {
-                                                        content: '"• "',
-                                                        color: 'text.secondary',
-                                                        marginRight: 0.5,
-                                                    }
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    '&:hover': { textDecoration: 'underline' },
                                                 }}
                                             >
-                                                <Typography 
+                                                {example.label}
+                                            </Typography>
+                                            {example.resetUrl && (
+                                                <Typography
                                                     component="span"
-                                                    variant="caption" 
-                                                    sx={{ 
-                                                        fontSize: '0.75rem',
-                                                        color: 'primary.main',
-                                                        textDecoration: 'none',
-                                                        '&:hover': {
-                                                            textDecoration: 'underline',
-                                                        }
+                                                    variant="caption"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        apiRequest(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
+                                                            .then(() => {
+                                                                dispatch(dfActions.addMessages({
+                                                                    timestamp: Date.now(), type: 'success',
+                                                                    component: 'data upload', value: 'Example data reset successful',
+                                                                }));
+                                                            })
+                                                            .catch(() => {
+                                                                dispatch(dfActions.addMessages({
+                                                                    timestamp: Date.now(), type: 'error',
+                                                                    component: 'data upload', value: 'Failed to reset example data',
+                                                                }));
+                                                            });
+                                                    }}
+                                                    sx={{
+                                                        fontSize: '0.7rem',
+                                                        color: 'text.secondary',
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 0.25,
+                                                        '&:hover': { color: 'warning.main' },
                                                     }}
                                                 >
-                                                    {example.label}
+                                                    <RestartAltIcon sx={{ fontSize: 12 }} />
+                                                    {t('upload.resetLabel')}
                                                 </Typography>
-                                                {example.resetUrl && (
-                                                    <Typography
-                                                        component="span"
-                                                        variant="caption"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                            apiRequest(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
-                                                .then(() => {
-                                                    dispatch(dfActions.addMessages({
-                                                        timestamp: Date.now(), type: 'success',
-                                                        component: 'data upload', value: 'Example data reset successful',
-                                                    }));
-                                                })
-                                                .catch(() => {
-                                                    dispatch(dfActions.addMessages({
-                                                        timestamp: Date.now(), type: 'error',
-                                                        component: 'data upload', value: 'Failed to reset example data',
-                                                    }));
-                                                });
-                                                        }}
-                                                        sx={{
-                                                            fontSize: '0.7rem',
-                                                            color: 'text.secondary',
-                                                            ml: 1,
-                                                            cursor: 'pointer',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 0.25,
-                                                            '&:hover': { color: 'warning.main' },
-                                                        }}
-                                                    >
-                                                        <RestartAltIcon sx={{ fontSize: 12 }} />
-                                                        {t('upload.resetLabel')}
-                                                    </Typography>
-                                                )}
-                                            </Box>
-                                        ))}
-                                    </Box>
+                                            )}
+                                        </Box>
+                                    ))}
                                 </Box>
                             )}
                         </Box>
@@ -2228,7 +2403,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 {/* Extract Data Tab */}
                 <TabPanel value={activeTab} index="extract">
-                    <DataLoadingChat />
+                    <DataLoadingChat
+                        initialPrompt={seededChatPrompt}
+                        initialImages={seededChatImages}
+                        autoSendInitialPrompt={autoSendSeededPrompt}
+                    />
                 </TabPanel>
 
                 {/* Local Folder Tab */}
@@ -2250,147 +2429,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </TabPanel>
                 )}
 
-                {/* Explore Sample Datasets Tab */}
-                <TabPanel value={activeTab} index="explore">
-                    <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-                        <DatasetSelectionView 
-                        datasets={datasetPreviews} 
-                        hideRowNum
-                        handleSelectDataset={async (dataset) => {
-                            // Check if this is a live dataset
-                            const isLiveDataset = dataset.live === true;
-                            
-                            setDatasetLoading(true);
-                            setDatasetLoadingLabel(t('upload.loadingDataset', { name: dataset.name }));
-                            
-                            try {
-                                const loadPromises = dataset.tables.map(async (table) => {
-                                    // For live datasets with relative URLs, construct full URL
-                                    let fullUrl = table.url;
-                                    if (table.url.startsWith('/')) {
-                                        fullUrl = window.location.origin + table.url;
-                                    }
-                                    
-                                    const res = await fetch(fullUrl);
-                                    const textData = await res.text();
-                                    let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
-                                    let dictTable;
-                                    if (table.format == "csv") {
-                                        dictTable = createTableFromText(tableName, textData);
-                                    } else if (table.format == "json") {
-                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
-                                    } 
-                                    if (dictTable) {
-                                        // For live datasets, set up as stream source with auto-refresh
-                                        if (isLiveDataset) {
-                                            dictTable.source = { 
-                                                type: 'stream', 
-                                                url: fullUrl,
-                                                autoRefresh: true,
-                                                refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
-                                                lastRefreshed: Date.now()
-                                            };
-                                        } else {
-                                            // Regular example data
-                                            dictTable.source = { type: 'example', url: table.url };
-                                        }
-                                        await dispatch(loadTable({ table: dictTable }));
-                                    }
-                                });
-                                await Promise.all(loadPromises);
-                            } catch (error) {
-                                console.error('Failed to load dataset:', error);
-                            } finally {
-                                setDatasetLoading(false);
-                                setDatasetLoadingLabel('');
-                            }
-                            handleClose();
-                        }}
-                        handleSelectDatasetNewSession={activeWorkspace ? async (dataset) => {
-                            const now = new Date();
-                            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-                            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                            const short = generateUUID().slice(0, 4);
-                            const wsId = `session_${date}_${time}_${short}`;
-                            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: dataset.name }));
-
-                            const isLiveDataset = dataset.live === true;
-
-                            setDatasetLoading(true);
-                            setDatasetLoadingLabel(t('upload.loadingDataset', { name: dataset.name }));
-
-                            try {
-                                const loadPromises = dataset.tables.map(async (table) => {
-                                    let fullUrl = table.url;
-                                    if (table.url.startsWith('/')) {
-                                        fullUrl = window.location.origin + table.url;
-                                    }
-
-                                    const res = await fetch(fullUrl);
-                                    const textData = await res.text();
-                                    let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
-                                    let dictTable;
-                                    if (table.format == "csv") {
-                                        dictTable = createTableFromText(tableName, textData);
-                                    } else if (table.format == "json") {
-                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
-                                    }
-                                    if (dictTable) {
-                                        if (isLiveDataset) {
-                                            dictTable.source = {
-                                                type: 'stream',
-                                                url: fullUrl,
-                                                autoRefresh: true,
-                                                refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
-                                                lastRefreshed: Date.now()
-                                            };
-                                        } else {
-                                            dictTable.source = { type: 'example', url: table.url };
-                                        }
-                                        await dispatch(loadTable({ table: dictTable }));
-                                    }
-                                });
-                                await Promise.all(loadPromises);
-                            } catch (error) {
-                                console.error('Failed to load dataset:', error);
-                            } finally {
-                                setDatasetLoading(false);
-                                setDatasetLoadingLabel('');
-                            }
-                            handleClose();
-                        } : undefined}
-                        />
-                    </Box>
-                </TabPanel>
-
             </DialogContent>
-
-            {/* Loading overlay for dataset loading */}
-            <Backdrop
-                open={datasetLoading}
-                sx={{
-                    position: 'absolute',
-                    zIndex: (theme) => theme.zIndex.drawer + 1,
-                    backgroundColor: 'rgba(255, 255, 255, 0.85)',
-                    backdropFilter: 'blur(4px)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 2,
-                }}
-            >
-                <CircularProgress size={36} />
-                <Typography variant="body2" color="text.secondary">
-                    {datasetLoadingLabel || t('upload.loadingData')}
-                </Typography>
-                <Button
-                    variant="text"
-                    size="small"
-                    onClick={() => { setDatasetLoading(false); setDatasetLoadingLabel(''); }}
-                    sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
-                >
-                    {t('app.cancel')}
-                </Button>
-            </Backdrop>
         </Dialog>
     );
 };

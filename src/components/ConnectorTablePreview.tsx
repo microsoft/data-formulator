@@ -19,7 +19,6 @@ import {
     Box,
     Button,
     CircularProgress,
-    Collapse,
     IconButton,
     MenuItem,
     Stack,
@@ -31,8 +30,6 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckIcon from '@mui/icons-material/Check';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 
 import { DataFrameTable } from '../views/DataFrameTable';
 import { fetchWithIdentity, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
@@ -172,7 +169,6 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
 
     // Preview refresh loading (separate from parent loading)
     const [refreshing, setRefreshing] = useState(false);
-    const [metadataExpanded, setMetadataExpanded] = useState(false);
 
     const isLoading = loading || refreshing;
     const effectiveDesc = (tableDescription || sourceDescription || '').trim();
@@ -439,67 +435,126 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-            {/* Header — name + row count + max rows */}
+            {/* Header — name + row count */}
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5, flexShrink: 0 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography sx={{ fontSize: 14, fontWeight: 600 }} noWrap>{displayName}</Typography>
                     {pathBreadcrumb && (
                         <Typography sx={{ fontSize: 11, color: 'text.disabled' }} noWrap>{pathBreadcrumb}</Typography>
                     )}
-                    {rowCount != null && (
-                        <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-                            {t('connectorPreview.rowCount', { count: Number(rowCount).toLocaleString(), defaultValue: '{{count}} rows' })}
-                            {sampleRows.length > 0 && (
-                                <span style={{ opacity: 0.7, marginLeft: 4 }}>
-                                    ({t('connectorPreview.previewRowsNotice', { count: sampleRows.length, defaultValue: `Preview shows first ${sampleRows.length} rows only` })})
-                                </span>
-                            )}
-                        </Typography>
-                    )}
+                    {(() => {
+                        // Row-count line — ALWAYS rendered as a single
+                        // `Typography` so the header height is identical
+                        // across loading/loaded states and across tables
+                        // (no wrap, no conditional rendering, no visibility
+                        // toggling between elements).
+                        //
+                        // `rowCount` is shown only when reliable as the
+                        // true table total:
+                        //   - it exceeds the preview sample (more rows
+                        //     exist than we returned), OR
+                        //   - the sample is shorter than the preview cap
+                        //     of 10 (we exhausted the table).
+                        // Otherwise we fall back to the "Preview shows
+                        // first N rows" notice, or — during loading — a
+                        // hidden non-breaking space placeholder that
+                        // reserves the same line height.
+                        const PREVIEW_CAP = 10;
+                        const sampleLen = sampleRows.length;
+                        const totalReliable = rowCount != null && (rowCount > sampleLen || sampleLen < PREVIEW_CAP);
+                        const previewNotice = t('connectorPreview.previewRowsNotice', {
+                            count: sampleLen,
+                            defaultValue: `Preview shows first ${sampleLen} rows only`,
+                        });
+
+                        let content: React.ReactNode;
+                        let hidden = false;
+                        if (totalReliable) {
+                            content = (
+                                <>
+                                    {t('connectorPreview.rowCount', {
+                                        count: Number(rowCount).toLocaleString(),
+                                        defaultValue: '{{count}} rows',
+                                    })}
+                                    {sampleLen > 0 && rowCount! > sampleLen && (
+                                        <Box component="span" sx={{ opacity: 0.7, ml: 0.5 }}>
+                                            ({previewNotice})
+                                        </Box>
+                                    )}
+                                </>
+                            );
+                        } else if (sampleLen > 0) {
+                            content = previewNotice;
+                        } else {
+                            content = '\u00A0';
+                            hidden = true;
+                        }
+
+                        return (
+                            <Typography
+                                noWrap
+                                sx={{
+                                    fontSize: 11,
+                                    color: 'text.disabled',
+                                    visibility: hidden ? 'hidden' : 'visible',
+                                }}
+                            >
+                                {content}
+                            </Typography>
+                        );
+                    })()}
                 </Box>
             </Box>
 
             {hasMetadataRow && (
-                <Box sx={{ flexShrink: 0 }}>
-                    <Box
-                        onClick={() => setMetadataExpanded(v => !v)}
+                <Box sx={{
+                    flexShrink: 0,
+                    mt: 0.5, mb: 0.75,
+                    // Cap the metadata block so a very long description
+                    // doesn't push the table off-screen. Scrolls within.
+                    maxHeight: 120,
+                    overflowY: 'auto',
+                }}>
+                    <Typography
                         sx={{
-                            display: 'flex', alignItems: 'center', gap: 0.5,
-                            py: 0.25, cursor: 'pointer', userSelect: 'none',
-                            '&:hover': { bgcolor: 'action.hover' },
+                            fontSize: 11,
+                            color: 'text.primary',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
                         }}
                     >
-                        {metadataExpanded
-                            ? <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                            : <KeyboardArrowRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />}
-                        <Typography noWrap sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', flex: 1 }}>
-                            {t('connectorPreview.sourceMetadata')}
-                        </Typography>
-                    </Box>
-                    <Collapse in={metadataExpanded}>
-                        <Box sx={{ pl: 2.5, pb: 0.5 }}>
-                            <Typography
-                                sx={{
-                                    fontSize: 11,
-                                    color: 'text.primary',
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-word',
-                                }}
-                            >
-                                {effectiveDesc}
-                            </Typography>
-                        </Box>
-                    </Collapse>
+                        {effectiveDesc}
+                    </Typography>
                 </Box>
             )}
 
-            {/* Preview table — sizes to its content (10-row cap upstream).
-                Scrollbar only kicks in if the parent container is height-
-                constrained below the table's natural size. */}
-            <Box sx={{ flex: '0 0 auto', minHeight: 0, overflowY: 'auto' }}>
-                {isLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                        <CircularProgress size={20} />
+            {/* Preview table — uses a *fixed* height (not minHeight) so the
+                section is identical across all tables and across the
+                loading→loaded transition. The value (290px) covers the
+                worst case: 10 compact rows (~220) + header (~22) + the
+                "…" continuation row that DataFrameTable renders when the
+                full table exceeds 10 rows (~22) + horizontal scrollbar
+                lane for wide tables (~15) + cell borders (~6).
+
+                Overflow is *horizontal only*: content is intrinsically
+                capped at 10 rows + header + "…" row, so a vertical
+                scrollbar would never represent real overflow — it would
+                only appear as a side effect of the horizontal scrollbar
+                eating into the height. `overflowY: hidden` keeps that
+                from happening. */}
+            <Box sx={{
+                flex: '0 0 auto',
+                height: 290,
+                position: 'relative',
+                overflowX: 'auto',
+                overflowY: 'hidden',
+            }}>
+                {isLoading && sampleRows.length === 0 ? (
+                    <Box sx={{
+                        position: 'absolute', inset: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                        <CircularProgress size={18} thickness={4} sx={{ color: 'text.disabled', opacity: 0.6 }} />
                     </Box>
                 ) : sampleRows.length > 0 ? (
                     <DataFrameTable
@@ -530,8 +585,15 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
 
             {/* Filter conditions — sits *below* the preview, next to the
                 Preview-refresh button so editing filters and applying them
-                happen in the same place. */}
-            {enableFilters && columns.length > 0 && !alreadyLoaded && (
+                happen in the same place.
+
+                Rendered as soon as `enableFilters` is on and the table
+                isn't already loaded — we *don't* gate on `columns.length`
+                so the filter row reserves its own space during loading
+                (otherwise the popover would grow when columns arrive).
+                The Add-filter button is disabled until columns are known
+                and the Preview button uses the same isLoading guard. */}
+            {enableFilters && !alreadyLoaded && (
                 <Box sx={{ mt: 0.75, mb: 0.5, flexShrink: 0 }}>
                     {filters.map((f, idx) => {
                         const colMeta = columns.find(c => c.name === f.column);
@@ -589,6 +651,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
                         <Button
                             size="small" startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                            disabled={columns.length === 0}
                             onClick={() => setFilters(prev => [...prev, { column: '', operator: 'EQ', value: '' }])}
                             sx={{ textTransform: 'none', fontSize: 11, px: 1, minHeight: 0, height: 24, color: 'text.secondary' }}
                         >
@@ -597,7 +660,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                         <Button
                             variant="outlined" size="small"
                             startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
-                            disabled={isLoading}
+                            disabled={isLoading || columns.length === 0}
                             onClick={handleRefreshPreview}
                             sx={{ textTransform: 'none', fontSize: 11, px: 1, minHeight: 0, height: 24 }}
                         >

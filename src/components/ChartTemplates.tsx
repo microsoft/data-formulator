@@ -19,37 +19,37 @@ import InsightsIcon from '@mui/icons-material/Insights';
 import React from "react";
 
 // Import all chart icons statically so they are included in the build
-import chartIconScatter from '../assets/chart-icon-scatter-min.png';
-import chartIconLinearRegression from '../assets/chart-icon-linear-regression-min.png';
-import chartIconDotPlotHorizontal from '../assets/chart-icon-dot-plot-horizontal-min.png';
-import chartIconBoxPlot from '../assets/chart-icon-box-plot-min.png';
-import chartIconColumn from '../assets/chart-icon-column-min.png';
-import chartIconColumnGrouped from '../assets/chart-icon-column-grouped-min.png';
-import chartIconColumnStacked from '../assets/chart-icon-column-stacked-min.png';
-import chartIconHistogram from '../assets/chart-icon-histogram-min.png';
-import chartIconHeatMap from '../assets/chart-icon-heat-map-min.png';
-import chartIconLine from '../assets/chart-icon-line-min.png';
-import chartIconDottedLine from '../assets/chart-icon-dotted-line-min.png';
-import chartIconCustomPoint from '../assets/chart-icon-custom-point-min.png';
-import chartIconCustomLine from '../assets/chart-icon-custom-line-min.png';
-import chartIconCustomBar from '../assets/chart-icon-custom-bar-min.png';
-import chartIconCustomRect from '../assets/chart-icon-custom-rect-min.png';
-import chartIconCustomArea from '../assets/chart-icon-custom-area-min.png';
+import chartIconScatter from '../assets/chart-icon-scatter.svg';
+import chartIconLinearRegression from '../assets/chart-icon-linear-regression.svg';
+import chartIconDotPlotHorizontal from '../assets/chart-icon-dot-plot-horizontal.svg';
+import chartIconBoxPlot from '../assets/chart-icon-box-plot.svg';
+import chartIconColumn from '../assets/chart-icon-column.svg';
+import chartIconColumnGrouped from '../assets/chart-icon-column-grouped.svg';
+import chartIconColumnStacked from '../assets/chart-icon-column-stacked.svg';
+import chartIconHistogram from '../assets/chart-icon-histogram.svg';
+import chartIconHeatMap from '../assets/chart-icon-heat-map.svg';
+import chartIconLine from '../assets/chart-icon-line.svg';
+import chartIconCustomPoint from '../assets/chart-icon-custom-point.svg';
+import chartIconCustomLine from '../assets/chart-icon-custom-line.svg';
+import chartIconCustomBar from '../assets/chart-icon-custom-bar.svg';
+import chartIconCustomRect from '../assets/chart-icon-custom-rect.svg';
+import chartIconCustomArea from '../assets/chart-icon-custom-area.svg';
 import chartIconArea from '../assets/chart-icon-area.svg';
 import chartIconStreamgraph from '../assets/chart-icon-streamgraph.svg';
 import chartIconDensity from '../assets/chart-icon-density.svg';
 import chartIconLollipop from '../assets/chart-icon-lollipop.svg';
-import chartIconPie from '../assets/chart-icon-pie-min.png';
+import chartIconPie from '../assets/chart-icon-pie.svg';
 import chartIconUSMap from '../assets/chart-icon-us-map-min.png';
 import chartIconPyramid from '../assets/chart-icon-pyramid.svg';
 import chartIconWorldMap from '../assets/chart-icon-world-map-min.png';
-import chartIconDotPlotVertical from '../assets/chart-icon-dot-plot-vertical-min.png';
 import chartIconCandlestick from '../assets/chart-icon-candlestick.svg';
 import chartIconWaterfall from '../assets/chart-icon-waterfall.svg';
 import chartIconStripPlot from '../assets/chart-icon-strip-plot.svg';
 import chartIconRadar from '../assets/chart-icon-radar.svg';
 import chartIconBump from '../assets/chart-icon-bump.svg';
 import chartIconRose from '../assets/chart-icon-rose.svg';
+import chartIconBarTable from '../assets/chart-icon-bar-table.svg';
+import chartIconKpiCard from '../assets/chart-icon-kpi-card.svg';
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
@@ -67,6 +67,7 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
     "Ranged Dot Plot": <ChartIcon src={chartIconDotPlotHorizontal} />,
     "Boxplot": <ChartIcon src={chartIconBoxPlot} />,
     "Bar Chart": <ChartIcon src={chartIconColumn} />,
+    "Bar Table": <ChartIcon src={chartIconBarTable} />,
     "Pyramid Chart": <ChartIcon src={chartIconPyramid} />,
     "Grouped Bar Chart": <ChartIcon src={chartIconColumnGrouped} />,
     "Stacked Bar Chart": <ChartIcon src={chartIconColumnStacked} />,
@@ -77,7 +78,6 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
     "Pie Chart": <ChartIcon src={chartIconPie} />,
     "Rose Chart": <ChartIcon src={chartIconRose} />,
     "Line Chart": <ChartIcon src={chartIconLine} />,
-    "Dotted Line Chart": <ChartIcon src={chartIconDottedLine} />,
     "Bump Chart": <ChartIcon src={chartIconBump} />,
     "Area Chart": <ChartIcon src={chartIconArea} />,
     "Streamgraph": <ChartIcon src={chartIconStreamgraph} />,
@@ -87,6 +87,7 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
     "Waterfall Chart": <ChartIcon src={chartIconWaterfall} />,
     "Strip Plot": <ChartIcon src={chartIconStripPlot} />,
     "Radar Chart": <ChartIcon src={chartIconRadar} />,
+    "KPI Card": <ChartIcon src={chartIconKpiCard} />,
     "Custom Point": <ChartIcon src={chartIconCustomPoint} />,
     "Custom Line": <ChartIcon src={chartIconCustomLine} />,
     "Custom Bar": <ChartIcon src={chartIconCustomBar} />,

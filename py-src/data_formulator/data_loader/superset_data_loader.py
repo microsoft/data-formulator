@@ -41,6 +41,8 @@ class SupersetLoader(ExternalDataLoader):
     "All Datasets" namespace at the root level.
     """
 
+    DISPLAY_NAME = "Superset"
+
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         return [

@@ -12,6 +12,7 @@ import {
     Tooltip,
     ButtonGroup,
     useTheme,
+    alpha,
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
@@ -29,22 +30,75 @@ import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
 // ─── Chart Card ──────────────────────────────────────────────────────────────
 
 export let buildChartCard = (
-    chartElement: { tableId: string, chartId: string, element: any },
+    chartElement: { tableId: string, chartId: string, element: any, onDelete?: () => void, deleteTooltip?: string, unread?: boolean },
     focusedChartId?: string,
 ) => {
     let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
-    return <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
+    const isUnread = !!chartElement.unread;
+    return <Box
+        className="data-thread-chart-card-wrapper"
         sx={{
-            width: 'fit-content',
-            display: 'flex',
             position: 'relative',
-            border: 'none',
-            borderRadius: '6px',
-            backgroundColor: 'white',
-            px: 1,
+            display: 'flex',
+            alignItems: 'flex-start',
+            width: 'fit-content',
+            '& .data-thread-chart-delete-btn-external': { opacity: 0, transition: 'opacity 0.15s' },
+            '&:hover .data-thread-chart-delete-btn-external': { opacity: 1 },
+            '@keyframes unreadPulse': {
+                '0%, 100%': { transform: 'scale(1)', opacity: 0.75 },
+                '50%': { transform: 'scale(1.2)', opacity: 1 },
+            },
         }}>
-        {chartElement.element}
-    </Card>
+        <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
+            sx={{
+                width: 'fit-content',
+                display: 'flex',
+                position: 'relative',
+                border: 'none',
+                borderRadius: '6px',
+                backgroundColor: 'white',
+                px: 1,
+                zIndex: 1,
+                overflow: 'visible',
+            }}>
+            {chartElement.element}
+            {isUnread && (
+                <Box sx={{
+                    position: 'absolute',
+                    top: 5,
+                    right: 5,
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    backgroundColor: '#FFC107',
+                    boxShadow: '0 0 4px rgba(255, 193, 7, 0.85), 0 0 1px rgba(0,0,0,0.25)',
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                    animation: 'unreadPulse 1.6s ease-in-out infinite',
+                }} />
+            )}
+        </Card>
+        {chartElement.onDelete && (
+            <Tooltip title={chartElement.deleteTooltip ?? ''}>
+                <IconButton
+                    className="data-thread-chart-delete-btn-external"
+                    size="small"
+                    color="error"
+                    aria-label={chartElement.deleteTooltip ?? 'delete chart'}
+                    sx={{
+                        alignSelf: 'flex-start',
+                        ml: 0.25,
+                        padding: 0.5,
+                        flexShrink: 0,
+                        '&:hover': { transform: 'scale(1.15)' },
+                    }}
+                    onClick={(event) => { event.stopPropagation(); chartElement.onDelete?.(); }}
+                >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+            </Tooltip>
+        )}
+    </Box>
 }
 
 // ─── Trigger Card Wrapper ────────────────────────────────────────────────────

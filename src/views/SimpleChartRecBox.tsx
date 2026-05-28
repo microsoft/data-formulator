@@ -32,19 +32,20 @@ import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clar
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
-import SendIcon from '@mui/icons-material/Send';
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
+import StopIcon from '@mui/icons-material/Stop';
 
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
+import { transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
-import { ClarificationPanel } from './ClarificationPanel';
+import { ClarificationPanel, DelegatePanel } from './AgentPausePanel';
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
     const { t } = useTranslation();
@@ -67,30 +68,41 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             px: 2,
             overflow: 'hidden',
         }}>
-            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
-                <WritingPencil size={10} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
+                <WritingPencil size={12} />
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, fontSize: 12, lineHeight: 1.5 }}>
                     {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
             {onCancel && (
-                <IconButton
-                    size="small"
-                    onClick={onCancel}
-                    sx={{ position: 'absolute', bottom: 6, right: 6, p: 1.5, width: 16, height: 16, color: theme.palette.warning.main }}
-                >
-                    <StopCircleOutlinedIcon sx={{ fontSize: 14 }} />
-                </IconButton>
+                <Tooltip title={t('dataLoading.stopTooltip', { defaultValue: 'Stop' })} placement="top">
+                    <IconButton
+                        size="small"
+                        onClick={onCancel}
+                        sx={{
+                            position: 'absolute', bottom: 8, right: 8,
+                            width: 24, height: 24, p: 0,
+                            bgcolor: 'transparent',
+                            color: 'error.main',
+                            '&:hover': {
+                                bgcolor: alpha(theme.palette.error.main, 0.08),
+                                color: 'error.dark',
+                            },
+                        }}
+                    >
+                        <StopIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                </Tooltip>
             )}
-            <Typography variant="caption" sx={{
+            <Typography variant="body2" sx={{
                 color: 'text.disabled',
-                fontSize: 10,
+                fontSize: 12,
                 textAlign: 'center',
                 display: '-webkit-box',
                 WebkitLineClamp: 3,
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                lineHeight: 1.3,
+                lineHeight: 1.35,
                 wordBreak: 'break-word',
             }}>
                 {latestMessage}{elapsedSuffix}
@@ -113,6 +125,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const config = useSelector((state: DataFormulatorState) => state.config);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+    const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -142,11 +155,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const agentAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
     const lastAutoFocusedChartIdRef = useRef<string | null>(null);
+    // Whether we've already auto-focused an artifact during the current
+    // agent run. We only jump focus once per run (to the FIRST generated
+    // chart), so the user isn't yanked around as further charts stream in.
+    // Subsequent artifacts rely on the "freshly created" highlight + NEW
+    // tag for discoverability instead.
+    const firstFocusedThisRunRef = useRef(false);
 
     useEffect(() => {
         if (!isChatFormulating) {
             userChartFocusLockedRef.current = false;
             lastAutoFocusedChartIdRef.current = null;
+            firstFocusedThisRunRef.current = false;
             return;
         }
         if (focusedId?.type === 'chart') {
@@ -317,15 +337,26 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Extract the active structured clarification (or explanation) from
     // DraftNode interaction log. Both are stored as ClarificationQuestion[]
     // — the entry's role ('clarify' vs 'explain') is what differs.
+    // `delegate` pauses share the same slot but render a different panel
+    // (a one-click handoff to the target peer agent).
     const clarificationQuestions = React.useMemo(() => {
         if (!pendingClarification?.draftId) return null;
         const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
         const interaction = draft?.derive?.trigger?.interaction || [];
-        // Find the most recent clarify or explain entry.
+        // Find the most recent pause entry (clarify / explain / delegate).
         for (let i = interaction.length - 1; i >= 0; i--) {
             const entry = interaction[i];
+            if (entry.role === 'delegate') {
+                return {
+                    kind: 'delegate' as const,
+                    target: entry.delegateTarget || 'data_loading',
+                    message: entry.content || '',
+                    options: entry.delegateOptions || [],
+                };
+            }
             if (entry.role === 'clarify' || entry.role === 'explain') {
                 return {
+                    kind: 'clarification' as const,
                     questions: entry.clarificationQuestions || null,
                     variant: entry.role === 'explain' ? 'explain' as const : 'clarify' as const,
                 };
@@ -356,6 +387,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const isResume = !!clarificationContext;
         const actionId = isResume ? clarificationContext!.actionId : `exploreDataFromNL_${String(Date.now())}`;
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
+
+        // Seed the auto-focus baseline with whatever chart the user is
+        // currently looking at. Otherwise the lock effect would compare the
+        // current focused chart to `null` on run-start and trip immediately,
+        // blocking the first-artifact auto-focus.
+        lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
+        firstFocusedThisRunRef.current = false;
+        userChartFocusLockedRef.current = false;
 
         setIsChatFormulating(true);
 
@@ -421,8 +460,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 };
 
                 // Include chart thumbnail for the focused leaf table (the one the user is looking at)
-                if (walkTable.id === focusedTableId && resolvedChart?.thumbnail) {
-                    step.chart_thumbnail = resolvedChart.thumbnail;
+                if (walkTable.id === focusedTableId && resolvedChart && chartThumbnails[resolvedChart.id]) {
+                    step.chart_thumbnail = chartThumbnails[resolvedChart.id];
                 }
 
                 focusedSteps.unshift(step);
@@ -448,6 +487,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 const triggers = getTriggers(leaf, tables);
                 if (triggers.length === 0) continue;
 
+                const STEP_FINDING_CHAR_LIMIT = 200;
                 const steps: string[] = [];
                 for (const trig of triggers) {
                     const tt = tables.find(t2 => t2.id === trig.resultTableId);
@@ -466,7 +506,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             })
                             .join(', ')
                         : '';
-                    steps.push(`${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`);
+                    // Per-step agent commentary: the `summary` entry that the
+                    // visualize action emits after running this step.
+                    let finding = trig.interaction?.find(
+                        (e: InteractionEntry) => e.role === 'summary',
+                    )?.content?.trim() || '';
+                    if (finding.length > STEP_FINDING_CHAR_LIMIT) {
+                        finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
+                    }
+                    const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
+                    steps.push(finding ? `${head} — finding: ${finding}` : head);
                 }
 
                 if (steps.length > 0) {
@@ -623,8 +672,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
 
             // ── tool_start: agent is calling a tool (explore/inspect) ──
-            // (think tool is handled via thinking_text event, not here)
-            if (result.type === "tool_start" && result.tool !== "think") {
+            if (result.type === "tool_start") {
                 // Show pending thought as a visible step before the tool step
                 if (pendingThought) {
                     thinkingSteps.push(pendingThought);
@@ -654,8 +702,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
 
             // ── tool_result: mark the last tool step as done ──
-            // (skip for think tool — it doesn't add steps)
-            if (result.type === "tool_result" && result.tool !== "think") {
+            if (result.type === "tool_result") {
                 const isError = result.status === "error" || !!result.error;
                 for (let i = thinkingSteps.length - 1; i >= 0; i--) {
                     if (!thinkingSteps[i].startsWith('✓') && !thinkingSteps[i].startsWith('✗')) {
@@ -805,9 +852,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                 const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
                 let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                // Mark as unread by default; cleared below if we auto-focus it
+                // (i.e. it's the first artifact this run) or by setFocused when
+                // the user clicks the card.
+                newChart.unread = true;
                 createdCharts.push(newChart);
                 dispatch(dfActions.addChart(newChart));
-                if (shouldAutoFocusGeneratedChart(userChartFocusLockedRef.current)) {
+                if (!firstFocusedThisRunRef.current && shouldAutoFocusGeneratedChart(userChartFocusLockedRef.current)) {
+                    firstFocusedThisRunRef.current = true;
                     lastAutoFocusedChartIdRef.current = newChart.id;
                     dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
                 }
@@ -882,6 +934,54 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     // Don't change the user's focus — they may have been looking
                     // at a chart and the clarify/explain pause shouldn't yank
                     // their attention back to the parent table.
+                }
+                setIsChatFormulating(false);
+                agentAbortRef.current = null;
+                clearTimeout(timeoutId);
+                setChatPrompt("");
+                setAttachedImages([]);
+                isCompleted = true;
+            }
+
+            // ── delegate: agent hands off to a peer agent ──
+            // The data agent has decided the conversation is better
+            // served by another agent (data loading when the workspace
+            // lacks needed data; report gen when the user wants a
+            // narrative). We render the rationale + a one-click handoff
+            // card. Shares the 'clarifying' status / pending-clarification
+            // slot with the clarify/explain pauses so the panel renders in
+            // the same UI position above the input box.
+            if (result.type === "delegate") {
+                const message = String(result.message || '').trim();
+                const rawOptions = Array.isArray(result.options) ? result.options : [];
+                const options: string[] = rawOptions
+                    .map((o: any) => (typeof o === 'string' ? o.trim() : ''))
+                    .filter((s: string) => s.length > 0)
+                    .slice(0, 2);
+                const target = (result.target === 'report_gen' ? 'report_gen' : 'data_loading') as 'data_loading' | 'report_gen';
+                if (currentDraftId) {
+                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    thinkingSteps = [];
+                    pendingThought = '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+
+                    const pauseEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user',
+                        role: 'delegate',
+                        plan: priorSteps || result.thought || undefined,
+                        content: message,
+                        delegateTarget: target,
+                        delegateOptions: options,
+                        timestamp: Date.now(),
+                    };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
+                    currentDraftInteraction.push(pauseEntry);
+                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
+                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
+                        trajectory: result.trajectory || [],
+                        completedStepCount: result.completed_step_count || 0,
+                        lastCreatedTableId,
+                    }}));
                 }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
@@ -972,7 +1072,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                     allResults.push(data);
                     processStreamingResult(data);
-                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain") {
+                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "delegate") {
                         handleCompletion();
                         return;
                     }
@@ -1020,6 +1120,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const cleanPrompt = prompt.trim() || 'Create a report summarizing the exploration.';
 
         setChatPrompt('');
+        lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
+        firstFocusedThisRunRef.current = false;
+        userChartFocusLockedRef.current = false;
         setIsChatFormulating(true);
 
         // Build available charts list
@@ -1083,6 +1186,35 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         agentAbortRef.current = controller;
         let accumulatedMarkdown = '';
 
+        // Coalesce per-token updates: dispatching on every text_delta forces the
+        // Tiptap editor to re-parse the entire document each time, which makes
+        // the stream feel chunky / non-streaming. Batch updates on a short
+        // timer so the editor refreshes ~10×/sec while the wire still streams.
+        const FLUSH_INTERVAL_MS = 90;
+        let lastDispatched = '';
+        let flushTimer: ReturnType<typeof setTimeout> | null = null;
+        const flushNow = () => {
+            if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+            }
+            if (accumulatedMarkdown === lastDispatched) return;
+            lastDispatched = accumulatedMarkdown;
+            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
+            dispatch(dfActions.updateGeneratedReportContent({
+                id: reportId,
+                content: accumulatedMarkdown,
+                title: titleMatch ? titleMatch[1].trim() : undefined,
+            }));
+        };
+        const scheduleFlush = () => {
+            if (flushTimer) return;
+            flushTimer = setTimeout(() => {
+                flushTimer = null;
+                flushNow();
+            }, FLUSH_INTERVAL_MS);
+        };
+
         try {
             for await (const event of streamRequest(getUrls().GENERATE_REPORT_CHAT, {
                 method: 'POST',
@@ -1091,6 +1223,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }, controller.signal)) {
                 if (event.type === 'text_delta') {
                     accumulatedMarkdown += (event as any).content;
+                    scheduleFlush();
                 } else if (event.type === 'error') {
                     const errMsg = event.error ? getErrorMessage(event.error) : t('messages.error');
                     accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
@@ -1098,6 +1231,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         timestamp: Date.now(), type: 'error',
                         component: 'report-agent', value: errMsg,
                     }));
+                    flushNow();
                 } else if (event.type === 'warning') {
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(), type: 'warning',
@@ -1105,15 +1239,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         value: (event as any).warning?.message ?? 'Warning from server',
                     }));
                 }
-                const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
-                dispatch(dfActions.updateGeneratedReportContent({
-                    id: reportId,
-                    content: accumulatedMarkdown,
-                    title: titleMatch ? titleMatch[1].trim() : undefined,
-                }));
             }
 
-            // Final update with completed status
+            // Final update with completed status — make sure the latest content
+            // is in state before we mark it complete.
+            flushNow();
             const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
             dispatch(dfActions.updateGeneratedReportContent({
                 id: reportId,
@@ -1130,10 +1260,30 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }));
             }
         } finally {
+            if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+            }
             agentAbortRef.current = null;
             setIsChatFormulating(false);
         }
     }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch]);
+
+    // Honor cross-component handoff requests targeting the Report Gen
+    // agent (e.g. Data Agent's `delegate` card with target='report_gen').
+    // Hand-offs targeting other agents (e.g. `data_loading`) are consumed
+    // elsewhere — we only react to ours.
+    const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
+    useEffect(() => {
+        if (agentHandoffRequest && agentHandoffRequest.target === 'report_gen') {
+            const promptText = agentHandoffRequest.prompt;
+            dispatch(dfActions.clearAgentHandoffRequest());
+            // Fire-and-forget: reportFromChat manages its own streaming
+            // state via Redux dispatches.
+            reportFromChat(promptText);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [agentHandoffRequest]);
 
     // ── Unified submit handler ───────────────────────────────────────
     const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string) => {
@@ -1237,25 +1387,74 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.3)}, ${alpha(theme.palette.warning.dark, 0.25)})`
         : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
 
+    // Landing / "no thread yet" highlight: when the user has loaded data
+    // but hasn't started an exploration on the focused table (no real
+    // charts AND the table isn't part of a derivation chain), gently pulse
+    // a colored ring around the input card to anchor the eye here.
+    // Suppressed once they start typing, while an agent is running, or
+    // while a clarification is pending — anything that already draws focus.
+    const focusedTableHasCharts = !!focusedTableId && charts.some(c =>
+        c.tableRef === focusedTableId
+        && c.chartType !== '?'
+        && c.chartType !== 'Auto'
+        && c.source !== 'trigger'
+    );
+    const focusedTableObj = focusedTableId ? tables.find(t => t.id === focusedTableId) : undefined;
+    const focusedTableHasDerivation = !!focusedTableObj && (
+        focusedTableObj.derive !== undefined
+        || tables.some(t => t.derive?.trigger?.tableId === focusedTableId)
+    );
+    const isLandingHighlight = (
+        !!focusedTableId
+        && !focusedTableHasCharts
+        && !focusedTableHasDerivation
+        && !isChatFormulating
+        && !pendingClarification
+        && chatPrompt.trim() === ''
+    );
+
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
             mx: 1, mb: 1, mt: 0.5,
-            px: 1, pt: 0.5, pb: 0.25,
-            borderRadius: '8px',
+            px: 1.25, pt: 1, pb: 0.5,
+            borderRadius: '12px',
+            // The 2-tone border is drawn by the `::before` gradient
+            // overlay below (works through border-radius + masks). We
+            // intentionally leave the Card's own border off so the two
+            // don't fight; focus state uses a shadow halo instead of a
+            // border-color shift.
             border: 'none',
             outline: 'none',
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            transition: 'box-shadow 0.25s ease, background-color 0.3s ease',
+            transition: transition.fast,
             backgroundColor: isChatFormulating
                 ? alpha(theme.palette.action.disabledBackground, 0.06)
                 : isReportMode
-                    ? alpha(theme.palette.warning.main, 0.03)
-                    : 'transparent',
+                    ? alpha(theme.palette.warning.main, 0.04)
+                    : theme.palette.background.paper,
+            // Neutral elevation shadow recipe shared with AgentChatInput;
+            // hover lifts the card a touch without shifting any colors.
+            boxShadow: '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
+            '&:hover': {
+                boxShadow: '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
+            },
+            ...(isLandingHighlight ? {
+                animation: 'df-chatinput-landing-pulse 2.4s ease-in-out infinite',
+                '@keyframes df-chatinput-landing-pulse': {
+                    '0%, 100%': {
+                        boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0.0)}, 0 4px 14px ${alpha(theme.palette.common.black, 0.06)}`,
+                    },
+                    '50%': {
+                        boxShadow: `0 0 0 6px ${alpha(theme.palette.primary.main, 0.14)}, 0 4px 18px ${alpha(theme.palette.common.black, 0.08)}`,
+                    },
+                },
+            } : {}),
             '&:focus-within': {
-                boxShadow: `0 0 0 3px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.10)}`,
+                animation: 'none',
+                boxShadow: `0 0 0 2px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
             },
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {
@@ -1275,13 +1474,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             },
         }}
         >
-            {clarificationQuestions?.questions && pendingClarification && !isChatFormulating && (
+            {clarificationQuestions?.kind === 'clarification' && clarificationQuestions.questions && pendingClarification && !isChatFormulating && (
                 <ClarificationPanel
                     questions={clarificationQuestions.questions}
                     variant={clarificationQuestions.variant}
                     selectedAnswers={clarifyAnswers}
                     onSelectAnswer={handleSelectAnswer}
                     onSubmit={resumeFromClarification}
+                    onCancel={cancelAgent}
+                />
+            )}
+            {clarificationQuestions?.kind === 'delegate' && pendingClarification && !isChatFormulating && (
+                <DelegatePanel
+                    target={clarificationQuestions.target}
+                    message={clarificationQuestions.message}
+                    options={clarificationQuestions.options}
                     onCancel={cancelAgent}
                 />
             )}
@@ -1456,8 +1663,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
                 fullWidth
                 multiline
-                minRows={2}
-                maxRows={4}
+                minRows={3}
+                maxRows={6}
             />
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
@@ -1466,11 +1673,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         <IconButton
                             size="small"
                             onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
-                            sx={{ p: 0, width: 18, height: 18, color: theme.palette.text.secondary,
+                            sx={{
+                                p: 0.5,
+                                color: theme.palette.text.secondary,
                                 borderRadius: '4px',
-                                '&:hover': { color: theme.palette.primary.main, borderColor: alpha(theme.palette.primary.main, 0.5) } }}
+                                '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.06) },
+                            }}
                         >
-                            <AddIcon sx={{ fontSize: 12 }} />
+                            <AddIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                     </Tooltip>
                     {/* Agent mode toggle */}
@@ -1480,22 +1690,22 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
                             sx={{
                                 textTransform: 'none',
-                                fontSize: 10,
+                                fontSize: 11,
                                 minWidth: 0,
-                                px: 0.75,
+                                px: 0.875,
                                 py: 0,
-                                height: 20,
+                                height: 26,
                                 color: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
                                 borderRadius: '4px',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '2px',
+                                gap: '3px',
                                 '&:hover': { backgroundColor: alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.08) },
                             }}
                         >
                             {selectedAgent === 'explore'
-                                ? <AutoGraphIcon sx={{ fontSize: '10px !important' }} />
-                                : <DescriptionOutlinedIcon sx={{ fontSize: '10px !important' }} />}
+                                ? <AutoGraphIcon sx={{ fontSize: '14px !important' }} />
+                                : <DescriptionOutlinedIcon sx={{ fontSize: '14px !important' }} />}
                             {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
                         </Button>
                     </Tooltip>
@@ -1523,8 +1733,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             <span>
                                 <IconButton
                                     size="small"
-                                    color="primary"
-                                    sx={{ p: 0.5 }}
                                     disabled={!canSend}
                                     onClick={() => {
                                         if (pendingClarification) {
@@ -1533,8 +1741,26 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                             submitChat(chatPrompt);
                                         }
                                     }}
+                                    // When the user has typed text, promote
+                                    // the arrow to a contained primary
+                                    // affordance so it reads as the active
+                                    // submit action. Otherwise stay as a
+                                    // quiet outlined icon button.
+                                    sx={{
+                                        p: 0,
+                                        width: 28, height: 28,
+                                        bgcolor: canSend ? 'primary.main' : 'transparent',
+                                        color: canSend ? 'common.white' : 'primary.main',
+                                        '&:hover': {
+                                            bgcolor: canSend ? 'primary.dark' : 'transparent',
+                                        },
+                                        '&.Mui-disabled': {
+                                            bgcolor: 'transparent',
+                                            color: 'text.disabled',
+                                        },
+                                    }}
                                 >
-                                    <SendIcon sx={{ fontSize: 18 }} />
+                                    <ArrowUpwardRoundedIcon sx={{ fontSize: 18 }} />
                                 </IconButton>
                             </span>
                         </Tooltip>
@@ -1564,7 +1790,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 open={uploadDialogOpen}
                 onClose={() => setUploadDialogOpen(false)}
                 initialTab="menu"
-                hideSampleDatasets
             />
         </Box>
     );

@@ -25,17 +25,17 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace import Workspace, get_user_home
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
-from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
-from data_formulator.model_registry import model_registry, model_supports_vision
+from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
 
 from data_formulator.agents.data_agent import DataAgent
@@ -112,15 +112,6 @@ def _with_warnings(gen):
         yield chunk
     for w in flush_stream_warnings():
         yield w
-
-
-def _messages_include_image(messages: list[dict]) -> bool:
-    """Return True when a chat payload contains user image attachments."""
-    for msg in messages:
-        for att in msg.get("attachments") or []:
-            if att.get("type") == "image" and att.get("url"):
-                return True
-    return False
 
 
 @agent_bp.after_request
@@ -303,63 +294,6 @@ def process_data_on_load_request():
     except Exception as e:
         logger.exception(e)
         raise classify_and_wrap_llm_error(e) from e
-
-
-@agent_bp.route('/clean-data-stream', methods=['GET', 'POST'])
-def clean_data_stream_request():
-    from data_formulator.error_handler import stream_error_event
-
-    if not request.is_json:
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
-
-    content = request.get_json()
-    client = get_client(content['model'])
-
-    logger.info("# clean-data-stream request")
-    logger.debug(f" model: {content['model']}")
-
-    language_instruction = get_language_instruction()
-    prompt = content.get('prompt', '')
-    artifacts = content.get('artifacts', [])
-    dialog = content.get('dialog', [])
-
-    def generate():
-        agent = DataCleanAgentStream(client=client, language_instruction=language_instruction)
-        try:
-            for chunk in agent.stream(prompt, artifacts, dialog):
-                stripped = chunk.strip()
-                if stripped.startswith("{"):
-                    try:
-                        result = json.loads(stripped)
-                    except (json.JSONDecodeError, ValueError):
-                        result = None
-                    if isinstance(result, dict):
-                        if result.get("status") == "ok":
-                            yield json.dumps({
-                                "type": "result",
-                                "data": result,
-                            }, ensure_ascii=False) + "\n"
-                        else:
-                            yield stream_error_event(AppError(
-                                ErrorCode.AGENT_ERROR,
-                                sanitize_error_message(result.get("content", "Unable to extract tables")),
-                            ))
-                        continue
-                yield json.dumps({"type": "text_delta", "text": chunk}, ensure_ascii=False) + "\n"
-        except Exception as e:
-            logger.error("clean-data-stream error", exc_info=e)
-            if 'unable to download html from url' in str(e):
-                yield stream_error_event(AppError(
-                    ErrorCode.DATA_LOAD_ERROR,
-                    "This website doesn't allow us to download HTML from URL",
-                ))
-            else:
-                yield stream_error_event(classify_and_wrap_llm_error(e))
-
-    return Response(
-        stream_with_context(_with_warnings(generate())),
-        mimetype='application/x-ndjson',
-    )
 
 
 @agent_bp.route('/sort-data', methods=['GET', 'POST'])
@@ -738,12 +672,6 @@ def request_chart_insight():
     if not model_config:
         raise AppError(ErrorCode.INVALID_REQUEST, "Model configuration is required")
 
-    if not model_supports_vision(model_config):
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            "The selected model does not support image input. Please switch to a vision-capable model.",
-        )
-
     client = get_client(model_config)
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
@@ -1013,10 +941,10 @@ def refresh_derived_data():
                 else:
                     display_df = result_df
                 display_df = display_df.loc[:, ~display_df.columns.duplicated()]
-                response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
+                response_data["rows"] = df_to_safe_records(display_df)
             else:
                 result_df = result_df.loc[:, ~result_df.columns.duplicated()]
-                response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
+                response_data["rows"] = df_to_safe_records(result_df)
 
             return json_ok(response_data)
         else:
@@ -1198,7 +1126,7 @@ def chart_restyle():
     client = get_client(model_config)
 
     try:
-        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction())
+        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction(mode="compact"))
         result = agent.run(
             vl_spec=vl_spec,
             instruction=instruction,
@@ -1278,7 +1206,7 @@ def scratch_serve(filename):
 
 
 # ---------------------------------------------------------------------------
-# Conversational data loading agent (replaces old clean-data-stream)
+# Conversational data loading agent
 # ---------------------------------------------------------------------------
 
 @agent_bp.route('/data-loading-chat', methods=['POST'])
@@ -1296,9 +1224,6 @@ def data_loading_chat():
     logger.info("# data-loading-chat request")
 
     messages = content.get("messages", [])
-    if _messages_include_image(messages) and not model_supports_vision(content.get("model")):
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "The selected model does not support image input. Please switch to a vision-capable model or remove the image."))
-
     client = get_client(content['model'])
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)

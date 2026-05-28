@@ -112,9 +112,12 @@ def build_language_instruction(language: str, *, mode: str = "full") -> str:
         ``"full"``    – detailed field-level rules (for text-heavy agents).
         ``"compact"`` – minimal instruction (for code-generation agents).
 
-    Returns ``""`` when *language* is ``"en"`` (or empty / unrecognised).
+    Returns ``""`` when *language* is ``"en"``, or when it is empty /
+    whitespace-only (which normalises to the default language, English).
+    For unrecognised codes (e.g. ``"xx"``), a non-empty instruction block
+    is still returned using the raw code as the display name.
     """
-    lang = (language or DEFAULT_LANGUAGE).strip().lower()
+    lang = ((language or "").strip().lower()) or DEFAULT_LANGUAGE.lower()
 
     if lang == "en":
         return ""

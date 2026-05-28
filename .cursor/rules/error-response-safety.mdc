@@ -10,7 +10,7 @@ Never return raw exception text (`str(e)`, `f"...{e}"`) directly in HTTP respons
 Python exceptions may contain stack traces, file paths, database connection strings,
 API keys, or internal IP addresses — all of which are security risks (CWE-209).
 
-See `dev-guides/7-unified-error-handling.md` for the full error handling contract.
+See `docs/dev-guides/7-unified-error-handling.md` for the full error handling contract.
 
 ## Unified Error System
 

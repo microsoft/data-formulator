@@ -527,7 +527,7 @@ cp -r /backup/workspaces $DATA_FORMULATOR_HOME/workspaces
 
 > **Tip:** If you forgot to back up `FLASK_SECRET_KEY` and it was auto-generated, there is no way to recover it. Users will need to log in again, and any chart with a cached code signature will need to be re-executed by the Agent.
 
-> **中文版:** 详细的迁移操作指南见 [docs-cn/7-server-migration-guide.md](docs-cn/7-server-migration-guide.md)。
+> **中文版:** 详细的迁移操作指南见 [docs/docs-cn/7-server-migration-guide.md](docs/docs-cn/7-server-migration-guide.md)。
 
 ## Authentication Architecture
 

@@ -41,10 +41,11 @@ import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
+import { deleteWorkspace } from '../app/workspaceService';
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import StarIcon from '@mui/icons-material/Star';
 import PersonIcon from '@mui/icons-material/Person';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
@@ -81,6 +82,7 @@ import { AgentRulesDialog } from './AgentRulesDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import { AgentToyIcon } from './AgentToyIcon';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ArticleIcon from '@mui/icons-material/Article';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -89,26 +91,79 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+import CallMergeIcon from '@mui/icons-material/CallMerge';
 
 import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
+import { InteractionEntryCard, ResolvedConversationCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
 
 /** Pick the icon component for a step line based on known prefixes. */
 // Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
 
-/** Render a multi-step thinking banner as a single block with sectioned steps. */
-export const ThinkingStepsBanner = (steps: string[], sx?: SxProps) => {
+/** Live elapsed-time hint in whole seconds (`5s`, `12s`).
+ *  Ticks once per second — fast enough to read as live, slow enough that the
+ *  digit stays readable and doesn't pull peripheral attention. Liveness is
+ *  also conveyed by the banner's shimmer animation.
+ *  When `startTime` is omitted, anchors to the component's mount time —
+ *  useful for places where we don't have a meaningful upstream anchor.
+ *  When `resetKey` changes (e.g. the active step transitions from "thinking"
+ *  to "running code"), the anchor is reset to *now* so the timer reflects
+ *  the duration of the **current** action rather than the cumulative wait. */
+const LiveStatus: React.FC<{ startTime?: number; resetKey?: string }> = ({ startTime, resetKey }) => {
+    const anchorRef = useRef(startTime ?? Date.now());
+    const lastResetKeyRef = useRef(resetKey);
+    if (startTime != null && anchorRef.current !== startTime && resetKey === lastResetKeyRef.current) {
+        anchorRef.current = startTime;
+    }
+    if (resetKey !== lastResetKeyRef.current) {
+        anchorRef.current = Date.now();
+        lastResetKeyRef.current = resetKey;
+    }
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(id);
+    }, []);
+    const secs = Math.max(0, Math.floor((now - anchorRef.current) / 1000));
+    const label = secs < 60
+        ? `${secs}s`
+        : `${Math.floor(secs / 60)}m${secs % 60}s`;
     return (
-        <Box sx={sx}>
-            <PlanStepsView steps={steps} activeLastStep />
+        <Typography component="span" sx={{
+            fontSize: 10,
+            color: 'text.disabled',
+            fontVariantNumeric: 'tabular-nums',
+            ml: '6px',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+        }}>
+            {label}
+        </Typography>
+    );
+};
+
+/** Render a multi-step thinking banner as a single block with sectioned steps.
+ *  When `startTime` is provided, the live timer is appended *inline* next to
+ *  the active (last) step's text — same alignment grammar as the single-line
+ *  ThinkingBanner — rather than right-flushed in a separate column.
+ *  The timer resets whenever the active step changes so it shows the time
+ *  spent on the **current** action, not the cumulative wait. */
+export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number) => {
+    const activeStep = steps.length > 0 ? steps[steps.length - 1] : '';
+    return (
+        <Box sx={{ ...sx }}>
+            <PlanStepsView
+                steps={steps}
+                activeLastStep
+                trailing={startTime != null ? <LiveStatus startTime={startTime} resetKey={activeStep} /> : undefined}
+            />
         </Box>
     );
 };
 
 /** Simple single-message thinking banner (used when no step breakdown is available). */
-export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = true) => {
+export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = true, showTimer: boolean = false, startTime?: number) => {
     return (
         <Box sx={{
             display: 'flex', alignItems: 'center', gap: '4px',
@@ -132,6 +187,7 @@ export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = 
             <Typography variant="body2" sx={{ fontSize: 10, color: 'text.secondary' }}>
                 {message}
             </Typography>
+            {showTimer && <LiveStatus startTime={startTime} resetKey={message} />}
         </Box>
     );
 };
@@ -782,6 +838,7 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
     const { manualRefresh } = useDataRefresh();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
@@ -847,10 +904,11 @@ let SingleThreadGroupView: FC<{
         const ids = new Map<string, { question: string }>();
         for (const d of draftNodes) {
             if (d.derive?.status === 'clarifying') {
-                // The pause entry is either 'clarify' or 'explain'; both shape
-                // the timeline the same way.
+                // The pause entry is one of clarify / explain /
+                // delegate; all three shape the timeline the
+                // same way (an attention row above the input box).
                 const pauseEntry = d.derive.trigger.interaction
-                    ?.filter(e => e.role === 'clarify' || e.role === 'explain').pop();
+                    ?.filter(e => e.role === 'clarify' || e.role === 'explain' || e.role === 'delegate').pop();
                 ids.set(d.derive.trigger.tableId, { question: pauseEntry?.content || '' });
             }
         }
@@ -1119,8 +1177,43 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string };
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string; gutterIcon?: React.ReactNode };
     let timelineItems: TimelineItem[] = [];
+
+    // Each running/clarifying draft should produce at most ONE banner per
+    // render pass. The same draft can be reachable from multiple
+    // pushAgentDraftItems call sites (the trigger-table loop *and* the
+    // leaf-table loop both call it for whichever tableId they're rendering),
+    // and after a `visualize` event the draft's `trigger.tableId` flips to
+    // the freshly-created child — which is then visited again as a leaf,
+    // so without deduping we get a duplicate "working..." banner.
+    const renderedDraftIds = new Set<string>();
+
+    // Provenance tracker: the set of source-table IDs currently in scope for
+    // this thread. A merge node is emitted whenever an instruction's input
+    // table set differs from this — covering joins (set grows), narrowings
+    // (set shrinks), and substitutions (set changes). Initialised to the
+    // **root computation parents** of the thread's anchor so the first
+    // derivation against the same roots stays silent.
+    //
+    // We compare on table IDs rather than display names: names are derived
+    // from `displayId || stripExt(sid)` and can drift between sides.
+    //
+    // Why "root parents" instead of `parentTable.id`: `derive.source`
+    // contains *root/anchored* table IDs (computation parents), while
+    // `parentTable` may itself be a derived intermediate. Comparing the
+    // intermediate's own id against an instruction's root-id source set
+    // would always mismatch and emit a redundant merge node on the very
+    // first derivation in the thread.
+    const sourceSetKey = (ids: string[]): string => [...ids].sort().join('\x1F');
+    const initialSourceIds: string[] = (() => {
+        if (!parentTable) return [];
+        // If parentTable is a root (no derive) or anchored, it IS the source.
+        const src = parentTable.derive?.source as string[] | undefined;
+        if (!src || src.length === 0) return [parentTable.id];
+        return src;
+    })();
+    let prevSourceKey: string | null = initialSourceIds.length > 0 ? sourceSetKey(initialSourceIds) : null;
 
     // ── Shared helpers for building timeline items from interaction entries ──
 
@@ -1165,7 +1258,57 @@ let SingleThreadGroupView: FC<{
                 ? { ...entry, inputTableNames: deriveSourceNames }
                 : entry;
 
-            const isResolved = (entry.role === 'clarify' || entry.role === 'explain')
+            // ── Resolved Q&A folding ──
+            // When a clarify/explain/delegate has been resolved
+            // by a following user reply, fold the pair into a single
+            // compact "conversation" timeline item. Consecutive resolved
+            // pairs are accumulated into ONE item so a back-and-forth of
+            // multiple rounds collapses to one trace.
+            const isPauseRole = entry.role === 'clarify'
+                || entry.role === 'explain'
+                || entry.role === 'delegate';
+            if (isPauseRole && entry.from !== 'user') {
+                const pairs: { agentEntry: InteractionEntry; userEntry: InteractionEntry }[] = [];
+                let cursor = ei;
+                while (cursor < entries.length) {
+                    const ag = entries[cursor];
+                    const agIsPause = ag.role === 'clarify' || ag.role === 'explain' || ag.role === 'delegate';
+                    if (!agIsPause || ag.from === 'user') break;
+                    // Find the next user entry to pair with this agent question.
+                    let userIdx = -1;
+                    for (let j = cursor + 1; j < entries.length; j++) {
+                        if (entries[j].from === 'user') { userIdx = j; break; }
+                        // Stop searching if we hit another agent pause without
+                        // an intervening user reply — that pause is still
+                        // unresolved and shouldn't fold.
+                        const r = entries[j].role;
+                        if (r === 'clarify' || r === 'explain' || r === 'delegate') break;
+                    }
+                    if (userIdx < 0) break;
+                    pairs.push({ agentEntry: ag, userEntry: entries[userIdx] });
+                    cursor = userIdx + 1;
+                }
+                if (pairs.length > 0) {
+                    timelineItems.push({
+                        key: `${keyPrefix}-conv-${tableId}-${ei}`,
+                        type: triggerType,
+                        highlighted,
+                        element: <ResolvedConversationCard pairs={pairs} highlighted={highlighted} />,
+                        interactionEntry: pairs[pairs.length - 1].userEntry,
+                        gutterIcon: (
+                            <ForumOutlinedIcon sx={{
+                                fontSize: 16,
+                                color: highlighted ? theme.palette.text.secondary : 'rgba(0,0,0,0.25)',
+                            }} />
+                        ),
+                        ...extraProps,
+                    });
+                    ei = cursor - 1; // for-loop's ++ will advance past the last consumed user entry
+                    continue;
+                }
+            }
+
+            const isResolved = (entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate')
                 && entries.slice(ei + 1).some(e => e.from === 'user');
             timelineItems.push({
                 key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
@@ -1175,6 +1318,57 @@ let SingleThreadGroupView: FC<{
                 interactionEntry: entry,
                 ...extraProps,
             });
+
+            // Emit a structural "merge node" between the instruction and its
+            // result table whenever the set of source tables CHANGES from the
+            // previously-active set in this thread — covers joining-in new
+            // sources, narrowing the set, or substituting one source for
+            // another. Repeated derivations against the same source set stay
+            // silent (no chrome).
+            //
+            // Compare on table IDs (from `derive.source`) for stability;
+            // names are only used for display.
+            const mergeNames = enrichedEntry.inputTableNames;
+            const mergeIds = derivedTable?.derive?.source as string[] | undefined;
+            if (entry.role === 'instruction' && mergeNames && mergeNames.length > 0 && mergeIds && mergeIds.length > 0) {
+                const nextKey = sourceSetKey(mergeIds);
+                // eslint-disable-next-line no-console
+                console.log('[merge-node check]', {
+                    tableId,
+                    parentTableId: parentTable?.id,
+                    initialSourceIds,
+                    prevSourceKey,
+                    mergeIds,
+                    mergeNames,
+                    nextKey,
+                    fires: nextKey !== prevSourceKey,
+                });
+                if (nextKey !== prevSourceKey) {
+                    const mergeColor = highlighted ? theme.palette.primary.main : theme.palette.text.secondary;
+                    timelineItems.push({
+                        key: `${keyPrefix}-merge-${tableId}-${ei}`,
+                        type: 'merge',
+                        highlighted,
+                        element: (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '6px', rowGap: 0, color: mergeColor, fontSize: '11px' }}>
+                                <Typography component="span" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                                    {t('dataThread.usingSources')}
+                                </Typography>
+                                {mergeNames.map((name, idx) => (
+                                    <Box key={`${name}-${idx}`} component="span" sx={{ display: 'inline-flex', alignItems: 'center', columnGap: '3px' }}>
+                                        <TableIcon sx={{ fontSize: '11px', color: 'inherit' }} />
+                                        <Typography component="span" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                                            {name}
+                                        </Typography>
+                                    </Box>
+                                ))}
+                            </Box>
+                        ),
+                        ...extraProps,
+                    });
+                    prevSourceKey = nextKey;
+                }
+            }
         }
     };
 
@@ -1207,7 +1401,19 @@ let SingleThreadGroupView: FC<{
             isRunning: boolean,
             keyPrefix: string,
         ) => {
-            const pauseIdx = interaction.findIndex(e => e.role === 'clarify' || e.role === 'explain');
+            // For the live banner, anchor elapsed-time to the most recent
+            // user-side entry so resuming after a clarify resets the counter
+            // (the agent's *current* cycle started then, not the original
+            // prompt). Falls back to the first interaction timestamp.
+            const lastUserTs = (() => {
+                for (let i = interaction.length - 1; i >= 0; i--) {
+                    if (interaction[i].from === 'user' && interaction[i].timestamp) {
+                        return interaction[i].timestamp as number;
+                    }
+                }
+                return interaction[0]?.timestamp;
+            })();
+            const pauseIdx = interaction.findIndex(e => e.role === 'clarify' || e.role === 'explain' || e.role === 'delegate');
             if (pauseIdx < 0) {
                 // No pause — render all entries then ThinkingStepsBanner
                 pushInteractionEntries(interaction, tableId, triggerType, highlighted, keyPrefix);
@@ -1217,7 +1423,7 @@ let SingleThreadGroupView: FC<{
                     type: triggerType,
                     highlighted,
                     isRunning,
-                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, isRunning ? lastUserTs : undefined),
                 });
                 return;
             }
@@ -1257,13 +1463,17 @@ let SingleThreadGroupView: FC<{
                     type: triggerType,
                     highlighted,
                     isRunning: true,
-                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, lastUserTs),
                 });
             }
         };
 
         if (runningAgentTableIds.has(tableId)) {
             const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            if (runningDraft && renderedDraftIds.has(runningDraft.id)) {
+                return;
+            }
+            if (runningDraft) renderedDraftIds.add(runningDraft.id);
             const draftInteraction = runningDraft?.derive?.trigger?.interaction;
             if (draftInteraction && draftInteraction.length > 0) {
                 renderSplitByClarity(
@@ -1280,11 +1490,15 @@ let SingleThreadGroupView: FC<{
                     type: 'chart',
                     highlighted,
                     isRunning: true,
-                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
+                    element: ThinkingBanner(message, { px: 1, py: 0.5 }, true, true),
                 });
             }
         } else if (clarifyAgentTableIds.has(tableId)) {
             const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+            if (clarifyDraft && renderedDraftIds.has(clarifyDraft.id)) {
+                return;
+            }
+            if (clarifyDraft) renderedDraftIds.add(clarifyDraft.id);
             const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
             if (clarifyInteraction && clarifyInteraction.length > 0) {
                 renderSplitByClarity(
@@ -1294,7 +1508,7 @@ let SingleThreadGroupView: FC<{
                     'agent-clarify-entry',
                 );
                 const lastItem = timelineItems[timelineItems.length - 1];
-                if (lastItem?.interactionEntry?.role === 'clarify' || lastItem?.interactionEntry?.role === 'explain') {
+                if (lastItem?.interactionEntry?.role === 'clarify' || lastItem?.interactionEntry?.role === 'explain' || lastItem?.interactionEntry?.role === 'delegate') {
                     lastItem.isClarifying = true;
                 }
             } else {
@@ -1558,14 +1772,15 @@ let SingleThreadGroupView: FC<{
     // entry card's palette.
     const getClarifyIcon = (item: typeof timelineItems[0]) => {
         const role = item.interactionEntry?.role;
-        const color = role === 'explain' ? theme.palette.info.main : theme.palette.warning.main;
-        return <SmartToyOutlinedIcon sx={{
-            width: 14, height: 14, color,
+        const color = role === 'explain' || role === 'delegate' ? theme.palette.info.main : theme.palette.warning.main;
+        const variant = role === 'explain' || role === 'delegate' ? 'explain' : 'clarify';
+        return <AgentToyIcon variant={variant} sx={{
+            width: 16, height: 16, color,
             animation: 'df-clarify-bounce 1.4s ease-in-out infinite',
             '@keyframes df-clarify-bounce': {
                 '0%, 100%': { transform: 'scale(1) translateY(0)' },
-                '30%':      { transform: 'scale(1.25) translateY(-2px)' },
-                '60%':      { transform: 'scale(0.95) translateY(1px)' },
+                '30%':      { transform: 'scale(1.15) translateY(-1.5px)' },
+                '60%':      { transform: 'scale(0.97) translateY(1px)' },
             },
         }} />;
     };
@@ -1661,6 +1876,7 @@ let SingleThreadGroupView: FC<{
         const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
+        const isMerge = item.type === 'merge';
         const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const dashedWidth = '2px';
         const dashedStyle = 'solid';
@@ -1671,6 +1887,32 @@ let SingleThreadGroupView: FC<{
         const bottomDashedStyle = 'solid';
         // No dimming or background — rely on timeline color + card border for highlighting
         const rowHighlightSx = {};
+
+        // Merge nodes: a confluence glyph in the gutter + inline list of
+        // joined source tables. Communicates provenance changes (join, narrow,
+        // or substitute) — rendered with stronger weight than ambient chrome
+        // since it conveys meaningful lineage information.
+        if (isMerge) {
+            return (
+                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                    <Box sx={{
+                        width: TIMELINE_WIDTH, flexShrink: 0,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    }}>
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'white' }}>
+                            <CallMergeIcon sx={{ fontSize: 12, color: item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.15)', transform: 'rotate(180deg)' }} />
+                        </Box>
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
+                        {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
+                        {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, display: 'flex', alignItems: 'center' }}>
+                        {item.element}
+                    </Box>
+                </Box>
+            );
+        }
 
         // Triggers: icon based on interaction entry's `from` actor
         if (isTrigger) {
@@ -1700,9 +1942,11 @@ let SingleThreadGroupView: FC<{
                     ? getClarifyIcon(item)
                     : item.isCompleted && item.stepLabel
                         ? getStepIcon(item.stepLabel, iconColor)
-                        : entry
-                            ? getEntryGutterIcon(entry, iconColor)
-                            : getDefaultGutterIcon(iconColor);
+                        : item.gutterIcon
+                            ? item.gutterIcon
+                            : entry
+                                ? getEntryGutterIcon(entry, iconColor)
+                                : getDefaultGutterIcon(iconColor);
 
             // Clarification rows are clickable to bring the agent's pause
             // back into focus. Prefer the latest chart on the associated
@@ -2028,7 +2272,27 @@ let SingleThreadGroupView: FC<{
                 onClick={(e) => {
                     e.stopPropagation();
                     if (selectedTableForMenu) {
+                        // If this is the last source table, also wipe the
+                        // session itself — a workspace with no source
+                        // table is effectively empty and the user would
+                        // otherwise be left staring at a blank thread.
+                        const isSource = !selectedTableForMenu.derive;
+                        const remainingSources = tables.filter(t => !t.derive && t.id !== selectedTableForMenu.id);
+                        const shouldDeleteSession = isSource && remainingSources.length === 0;
+                        const wsToDelete = shouldDeleteSession ? activeWorkspace?.id : undefined;
                         dispatch(dfActions.deleteTable(selectedTableForMenu.id));
+                        if (shouldDeleteSession && wsToDelete) {
+                            (async () => {
+                                try {
+                                    await deleteWorkspace(wsToDelete);
+                                } catch {
+                                    // best effort — user can still manually delete from the sidebar
+                                }
+                                // Drop into the unsessioned landing state instead of
+                                // auto-creating a new "Untitled Session" workspace.
+                                dispatch(dfActions.resetState());
+                            })();
+                        }
                     }
                     handleCloseTableMenu();
                 }}
@@ -2072,25 +2336,11 @@ const ChartThumbnail: FC<{
     table: DictTable;
     status: 'available' | 'pending' | 'unavailable';
     onChartClick: (chartId: string, tableId: string) => void;
-    onDelete: (chartId: string) => void;
-}> = ({ chart, table, status, onChartClick, onDelete }) => {
+}> = ({ chart, table, status, onChartClick }) => {
     const { t } = useTranslation();
-
-    let deleteButton = <Tooltip title={t('dataThread.deleteChart')}>
-        <IconButton className='data-thread-chart-delete-btn' size="small" color="error"
-            aria-label={t('dataThread.deleteChart')}
-            sx={{ 
-                zIndex: 10, position: "absolute", right: 1, top: 1,
-                p: 0.5,
-                opacity: 0, transition: 'opacity 0.15s',
-                backgroundColor: 'rgba(255,255,255,0.85)',
-                '&:hover': { transform: 'scale(1.15)', backgroundColor: 'rgba(255,255,255,0.95)' },
-                '.vega-thumbnail-box:hover &': { opacity: 1 },
-            }}
-            onClick={(event) => { event.stopPropagation(); onDelete(chart.id); }}>
-            <DeleteIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-    </Tooltip>
+    // Thumbnails live in a dedicated slice so updating one chart's preview
+    // doesn't invalidate the `charts` array reference for every consumer.
+    const thumbnail = useSelector(dfSelectors.getChartThumbnail(chart.id));
 
     const pendingOverlay = status == 'pending' ? <Box sx={{
         position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
@@ -2107,7 +2357,6 @@ const ChartThumbnail: FC<{
             sx={{ width: "100%", color: 'text.secondary', height: 48, display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
             {pendingOverlay}
             <InsightIcon sx={{ margin: 'auto', color: 'darkgray' }}  fontSize="medium" />
-            {deleteButton}
         </Box>;
     }
 
@@ -2122,13 +2371,12 @@ const ChartThumbnail: FC<{
                 <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
                     {generateChartSkeleton(chartTemplate?.icon, 32, 32, chart.chartType == 'Table' ? 1 : 0.5)} 
                 </Box>
-                {deleteButton}
             </Box>
         </Box>;
     }
 
     // ---- Thumbnail path: use cached PNG from ChartRenderService ----
-    if (chart.thumbnail) {
+    if (thumbnail) {
         return (
             <Box
                 onClick={() => onChartClick(chart.id, table.id)}
@@ -2136,15 +2384,11 @@ const ChartThumbnail: FC<{
                 style={{ width: "100%", position: "relative", cursor: "pointer" }}
             >
                 <Box sx={{ margin: "auto" }}>
-                    {chart.saved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                    </Typography>}
                     {pendingOverlay}
-                    {deleteButton}
                     <Box className={"vega-thumbnail"}
                         sx={{
                             display: "flex",
-                            backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                            backgroundColor: "white",
                             justifyContent: 'center',
                             alignItems: 'center',
                             minHeight: 48,
@@ -2152,7 +2396,7 @@ const ChartThumbnail: FC<{
                         }}
                     >
                         <img 
-                            src={chart.thumbnail} 
+                            src={thumbnail} 
                             alt={t('dataThread.chartAlt', { type: chart.chartType })}
                             style={{ maxWidth: 120, maxHeight: 100, objectFit: 'contain' }} 
                         />
@@ -2171,15 +2415,11 @@ const ChartThumbnail: FC<{
             style={{ width: "100%", position: "relative", cursor: "pointer" }}
         >
             <Box sx={{ margin: "auto" }}>
-                {chart.saved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                    <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                </Typography>}
                 {pendingOverlay}
-                {deleteButton}
                 <Box className={"vega-thumbnail"}
                     sx={{
                         display: "flex",
-                        backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                        backgroundColor: "white",
                         justifyContent: 'center',
                         alignItems: 'center',
                         minHeight: 60,
@@ -2839,9 +3079,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 onChartClick={() => {
                     dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
                 }}
-                onDelete={() => {dispatch(dfActions.deleteChartById(chart.id))}}
             />;
-            return { chartId: chart.id, tableId: table.id, element };
+            return {
+                chartId: chart.id,
+                tableId: table.id,
+                element,
+                onDelete: () => { dispatch(dfActions.deleteChartById(chart.id)); },
+                deleteTooltip: t('dataThread.deleteChart'),
+                unread: !!chart.unread,
+            };
         });
     }, [charts, tables, conceptShelfItems, chartSynthesisInProgress]);
 

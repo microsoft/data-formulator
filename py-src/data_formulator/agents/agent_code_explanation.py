@@ -2,39 +2,41 @@
 # Licensed under the MIT License.
 
 import json
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects, extract_code_from_gpt_response
+from data_formulator.agents.agent_language import inject_language_instruction
 
 import logging
 
 logger = logging.getLogger(__name__)
 
+_AGENT_ID = "code_explanation"
 
-SYSTEM_PROMPT = r'''You are a data scientist to help user explain derived data concepts, 
-so that a non-coder can clearly understand what new fields mean. You are provided with a summary of the input data, and the transformation code.
 
-Your goal:
-1. Generate a list of explanations for new fields (fields not from the input data) that introduce metrics/concepts that are not obvious from the code.
-    - provide a declarative definition that explains the new field, use a mathematical notation if applicable.
-    - only include new fields explanation of new metrics that are involved in computation (e.g., ROI, commerical_success_score)
-    - *DO NOT* explain trivial new fields like "Decade" or "Avg_Rating", "US_Sales" that are self-explanatory.
-        - Avoid explaining fields that are simple aggregate of fields in the original data (min_score, avg_value, count, etc.)
-    - When a field involves mathematical computation, you can use LaTeX math notation in the explanation. Format mathematical expressions using:
-        - Inline math: `\( ... \)` for formulas within text
-        - Block math: `\[ ... \]` for standalone formulas
-        - Examples: `\( \frac{\text{Revenue}}{\text{Cost}} \)` for ratios, `\[ \text{Score} = \text{Rating} \times \text{Worldwide\_Gross} \]` for formulas
-        - note: when using underscores as part of the text, you need to escape them with a backslash, e.g., `\_`
-    - Note: don't use math notation for fields whose computation is trivial (use plain english), it will likely be confusing to the reader. 
-      Only use math notation for fields that can not be easilyexplained in plain english. Use it sparingly.
-2. If there are multiple fields that have the similar computation, you can explain them together in one explanation.
-    - in "field", you can provide a list of fields in format of "field1, field2, ..."
-    - in "explanation", you can provide a single explanation for the computation of the fields.
-    - for example, if you have fields like "Norm_Rating", "Norm_Gross", "Critical_Commercial_Score", you can explain Norm_Rating, Norm_Gross together in one explanation and explain Critical_Commercial_Score in another explanation.
-3. If the code is about statistical analysis, you should explain the statistical analysis in the explanation as a concept named "Statistical Analysis".
-    - explain how you model the data, which fields are used, how data processing is done, and what models are used.
-    - suggest some other modeling approaches that can be used to analyze the data in the explanation as well.
-    
-The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc.
-If there are no non-trivial new fields/concepts, return an empty list.
+SYSTEM_PROMPT = r'''You help a non-coder understand how newly derived fields are computed.
+
+For each non-trivial derived field, output:
+  1. the field name(s)
+  2. a short formula — use actual field names (e.g. `Profit = Revenue - Cost`),
+     and reach for formal math (\sum, \frac, etc.) only when it's the clearest
+     way to express the computation.
+
+A brief one-line description before the formula is allowed when it adds clarity
+(e.g. "Within each Major\_category:"). Otherwise keep it to just the formula.
+
+Skip fields whose computation is trivial or obvious from the name
+(count/min/max/avg/sum, year/decade extraction, simple rename, etc.).
+Group fields that share the same formula shape into one entry
+(`"field": "f1, f2, ..."`).
+
+For statistical-analysis code (regression, clustering, hypothesis tests),
+emit a single entry with `"field": "Statistical Analysis"` containing the
+model's defining equation(s).
+
+LaTeX: inline `\( ... \)`, block `\[ ... \]`, escape underscores as `\_`.
+Prefer inline for short formulas, block when there's vertical structure.
+
+If nothing is worth showing, return an empty list.
 
 Provide the result as a JSON block (start with ```json) in the [CONCEPTS EXPLANATION] section.
 
@@ -127,15 +129,15 @@ def transform_data(df_movies):
 
 ```json
 [
-    {  
-        "field": "Norm_Rating, Norm_Gross",  
-        "explanation": "Normalized values that scale the original values between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Normalized} = -BSLASH-frac{-BSLASH-text{Value} - -BSLASH-text{Min}}{-BSLASH-text{Max} - -BSLASH-text{Min}} -BSLASH-)"  
-    },  
-    {  
-        "field": "Critical_Commercial_Score",  
-        "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: -BSLASH-(-BSLASH-text{Critical-BSLASH-_Commercial-BSLASH-_Score} = -BSLASH-text{Norm-BSLASH-_Rating} -BSLASH-times -BSLASH-text{Norm-BSLASH-_Gross} -BSLASH-)"  
+    {
+        "field": "Norm_Rating, Norm_Gross",
+        "explanation": "-BSLASH-[ -BSLASH-text{Normalized} = -BSLASH-frac{x - -BSLASH-min(x)}{-BSLASH-max(x) - -BSLASH-min(x)} -BSLASH-]"
+    },
+    {
+        "field": "Critical_Commercial_Score",
+        "explanation": "-BSLASH-[ -BSLASH-text{Critical-BSLASH-_Commercial-BSLASH-_Score} = -BSLASH-text{Norm-BSLASH-_Rating} -BSLASH-times -BSLASH-text{Norm-BSLASH-_Gross} -BSLASH-]"
     }
-]  
+]
 '''
 
 class CodeExplanationAgent(object):
@@ -158,14 +160,12 @@ class CodeExplanationAgent(object):
         logger.debug(user_query)
         logger.info(f"[CodeExplanationAgent] run start")
 
-        system_prompt = SYSTEM_PROMPT
-        if self.language_instruction:
-            system_prompt = system_prompt + "\n\n" + self.language_instruction
+        system_prompt = inject_language_instruction(SYSTEM_PROMPT, self.language_instruction)
 
         messages = [{"role":"system", "content": system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
         candidates = []
         for choice in response.choices:

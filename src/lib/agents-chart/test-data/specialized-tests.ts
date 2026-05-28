@@ -4,7 +4,7 @@
 import { Type } from '../../../data/types';
 import { Channel, EncodingItem } from '../../../components/ComponentType';
 import { TestCase, makeField, makeEncodingItem, buildMetadata } from './types';
-import { seededRandom, genDates, genMonths, genCategories } from './generators';
+import { seededRandom, genDates, genMonths, genCategories, genRandomNames } from './generators';
 
 // ------ Heatmap ------
 export function genHeatmapTests(): TestCase[] {
@@ -621,6 +621,547 @@ export function genWaterfallTests(): TestCase[] {
                 y: makeEncodingItem('Amount'),
                 color: makeEncodingItem('Type'),
             },
+        });
+    }
+
+    return tests;
+}
+
+// ------ Bar Table ------
+export function genBarTableTests(): TestCase[] {
+    const tests: TestCase[] = [];
+
+    // 1. Mirrors the Chinese-BI screenshot: top categories contributing to total GMV.
+    {
+        const data = [
+            { Category: '电子产品',     Contribution: 331207.65 },
+            { Category: '自行车',       Contribution: 89774.50 },
+            { Category: '香水和古龙水', Contribution: 57668.30 },
+            { Category: '服装',         Contribution: 48210.10 },
+            { Category: '家具',         Contribution: 32104.55 },
+            { Category: '玩具',         Contribution: 20157.80 },
+            { Category: '其他',         Contribution: 12998.40 },
+        ];
+        tests.push({
+            title: 'GMV Contribution (7 categories)',
+            description: 'Ranked contribution table — bar + value + % share, like Chinese BI dashboards',
+            tags: ['nominal', 'small', 'gradient'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Category'), makeField('Contribution')],
+            metadata: {
+                Category: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Category) },
+                Contribution: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Category'), x: makeEncodingItem('Contribution') },
+        });
+    }
+
+    // 2. Sales by product — larger N, English labels
+    {
+        const products = genCategories('Product', 12);
+        const rand = seededRandom(2024);
+        const data = products.map(p => ({ Product: p, Sales: Math.round(rand() * 9000 + 500) }));
+        tests.push({
+            title: 'Sales by Product (12 rows)',
+            description: 'Medium N — verify row density / band sizing',
+            tags: ['nominal', 'medium', 'gradient'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Product'), makeField('Sales')],
+            metadata: {
+                Product: { type: Type.String, semanticType: 'Category', levels: products },
+                Sales: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Product'), x: makeEncodingItem('Sales') },
+        });
+    }
+
+    // 3. With color grouping override (region) instead of gradient-by-value
+    {
+        const regions = ['North', 'South', 'East', 'West'];
+        const products = genCategories('SKU', 8);
+        const rand = seededRandom(77);
+        const data = products.map((p, i) => ({
+            SKU: p,
+            Revenue: Math.round(rand() * 5000 + 1000),
+            Region: regions[i % regions.length],
+        }));
+        tests.push({
+            title: 'Revenue by SKU, colored by Region',
+            description: 'color channel overrides default gradient — categorical hue per row',
+            tags: ['nominal', 'color', 'small'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('SKU'), makeField('Revenue'), makeField('Region')],
+            metadata: {
+                SKU: { type: Type.String, semanticType: 'Category', levels: products },
+                Revenue: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Region: { type: Type.String, semanticType: 'Category', levels: regions },
+            },
+            encodingMap: {
+                y: makeEncodingItem('SKU'),
+                x: makeEncodingItem('Revenue'),
+                color: makeEncodingItem('Region'),
+            },
+        });
+    }
+
+    // 4. Non-additive measure — % column should be auto-suppressed.
+    //    Field name "Avg Rating" + values that don't represent a share-of-whole.
+    {
+        const data = [
+            { Product: 'Alpha',   'Avg Rating': 4.7 },
+            { Product: 'Beta',    'Avg Rating': 4.4 },
+            { Product: 'Gamma',   'Avg Rating': 4.1 },
+            { Product: 'Delta',   'Avg Rating': 3.9 },
+            { Product: 'Epsilon', 'Avg Rating': 3.6 },
+            { Product: 'Zeta',    'Avg Rating': 3.2 },
+        ];
+        tests.push({
+            title: 'Avg Rating (% auto-hidden)',
+            description: 'Score is intensive (aggRole≠additive) → template auto-suppresses the % column',
+            tags: ['nominal', 'small', 'score'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Product'), makeField('Avg Rating')],
+            metadata: {
+                Product: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Product) },
+                'Avg Rating': { type: Type.Number, semanticType: 'Score', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Product'), x: makeEncodingItem('Avg Rating') },
+        });
+    }
+
+    // 5. Mixed-sign values (budget variance) — % auto-suppressed because
+    //    "share of a whole" is ill-defined when signs mix.
+    //    Profit semantic type → diverging palette anchored at 0.
+    {
+        const data = [
+            { Department: 'Engineering', Variance: 120 },
+            { Department: 'Sales',       Variance: -45 },
+            { Department: 'Marketing',   Variance: -80 },
+            { Department: 'Operations',  Variance: 35 },
+            { Department: 'HR',          Variance: -20 },
+            { Department: 'Finance',     Variance: 15 },
+        ];
+        tests.push({
+            title: 'Budget Variance (mixed signs → diverging palette)',
+            description: 'Profit (signed-additive, diverging:conditional) → palette anchored at 0; % auto-hidden',
+            tags: ['nominal', 'small', 'diverging', 'mixed-sign'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Department'), makeField('Variance')],
+            metadata: {
+                Department: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Department) },
+                Variance: { type: Type.Number, semanticType: 'Profit', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Department'), x: makeEncodingItem('Variance') },
+        });
+    }
+
+    // 6. x is already a Percentage — values shown as-is (0.92, 0.87, …).
+    //    No reformatting unless the framework explicitly resolves a
+    //    format (it only does so when intrinsicDomain disambiguates 0–1
+    //    vs 0–100). The redundant % column is still auto-hidden.
+    {
+        const data = [
+            { Team: 'Alpha',   completion_rate: 0.92 },
+            { Team: 'Beta',    completion_rate: 0.87 },
+            { Team: 'Gamma',   completion_rate: 0.78 },
+            { Team: 'Delta',   completion_rate: 0.65 },
+            { Team: 'Epsilon', completion_rate: 0.54 },
+        ];
+        tests.push({
+            title: 'Completion Rate (raw 0–1 values shown as-is)',
+            description: 'Percentage without intrinsicDomain → raw values preserved; % column auto-hidden (redundant)',
+            tags: ['nominal', 'small', 'percentage'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Team'), makeField('completion_rate')],
+            metadata: {
+                Team: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Team) },
+                completion_rate: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Team'), x: makeEncodingItem('completion_rate') },
+        });
+    }
+
+    // ── Stress tests ────────────────────────────────────────────────
+
+    // 7. Many categories (50 unique rows) — triggers Top-N + "Others"
+    //    rollup (default maxRows=20 → displays top 19 + Others(+31)).
+    {
+        const rand = seededRandom(909);
+        const employees = genRandomNames(50, 909);
+        const data = employees.map(e => ({ Employee: e, Sales: Math.round(rand() * 12000 + 100) }));
+        tests.push({
+            title: 'Many rows (50 employees → Others rollup)',
+            description: '50 unique categories → top 19 kept, remaining 31 rolled into "Others (+31)"',
+            tags: ['nominal', 'large', 'rollup', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Employee'), makeField('Sales')],
+            metadata: {
+                Employee: { type: Type.String, semanticType: 'Name', levels: employees },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Employee'), x: makeEncodingItem('Sales') },
+        });
+    }
+
+    // 7b. Same 50 rows but maxRows=0 — disables rollup, exercises the
+    //     "render all rows" code path (no panel-level data override).
+    {
+        const rand = seededRandom(909);
+        const employees = genRandomNames(50, 909);
+        const data = employees.map(e => ({ Employee: e, Sales: Math.round(rand() * 12000 + 100) }));
+        tests.push({
+            title: 'Many rows (50, rollup disabled)',
+            description: 'maxRows=0 → render all 50 rows; tests row density at scale',
+            tags: ['nominal', 'large', 'no-rollup', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Employee'), makeField('Sales')],
+            metadata: {
+                Employee: { type: Type.String, semanticType: 'Name', levels: employees },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Employee'), x: makeEncodingItem('Sales') },
+            chartProperties: { maxRows: 0 },
+        });
+    }
+
+    // 8. Very long category names — verifies labelLimit + the
+    //    `labelAlign:'left' + labelPadding` trick under truncation.
+    {
+        const longNames = [
+            'Strategic Cloud Infrastructure & Platform Modernization Initiative',
+            'Customer-Facing Conversational AI Assistant Rollout (Phase II)',
+            'Cross-Functional Data Governance and Quality Improvement Program',
+            'Next-Generation Identity & Access Management Migration',
+            'Enterprise-Wide Endpoint Detection and Response Deployment',
+            'Global Privacy Compliance & Regional Data-Residency Project',
+            'Supply Chain Visibility and Real-Time Telemetry Initiative',
+        ];
+        const rand = seededRandom(411);
+        const data = longNames.map(n => ({ Initiative: n, Budget: Math.round(rand() * 800000 + 50000) }));
+        tests.push({
+            title: 'Very long category labels (truncation)',
+            description: 'Long y-axis labels → exercises labelLimit/labelPadding clamp at 220px',
+            tags: ['nominal', 'small', 'long-labels', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Initiative'), makeField('Budget')],
+            metadata: {
+                Initiative: { type: Type.String, semanticType: 'Category', levels: longNames },
+                Budget: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Initiative'), x: makeEncodingItem('Budget') },
+        });
+    }
+
+    // 9. Huge numbers (billions) — exercises width measurement for
+    //    very wide value strings; ensures bar panel doesn't collapse.
+    {
+        const rand = seededRandom(7);
+        const countries = ['United States', 'China', 'Japan', 'Germany', 'India', 'United Kingdom', 'France', 'Italy', 'Brazil', 'Canada'];
+        const data = countries.map((c, i) => ({
+            Country: c,
+            GDP: Math.round((rand() + 0.5) * 5e12) - i * 2e11,
+        }));
+        tests.push({
+            title: 'Huge values (GDP in raw dollars)',
+            description: 'Trillion-scale numbers → wide value column, panel-width budget pressure',
+            tags: ['nominal', 'medium', 'huge-values', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Country'), makeField('GDP')],
+            metadata: {
+                Country: { type: Type.String, semanticType: 'Country', levels: countries },
+                GDP: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Country'), x: makeEncodingItem('GDP') },
+        });
+    }
+
+    // 10. Tiny values (sub-1) — exercises raw-as-is display for small
+    //     decimals; no formatting should kick in.
+    {
+        const data = [
+            { Sensor: 'A', Reading: 0.0023 },
+            { Sensor: 'B', Reading: 0.0019 },
+            { Sensor: 'C', Reading: 0.0017 },
+            { Sensor: 'D', Reading: 0.0011 },
+            { Sensor: 'E', Reading: 0.0008 },
+            { Sensor: 'F', Reading: 0.0005 },
+        ];
+        tests.push({
+            title: 'Tiny decimal values',
+            description: 'Sub-1 measurements → ensure raw values shown, no spurious rounding',
+            tags: ['nominal', 'small', 'tiny-values', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Sensor'), makeField('Reading')],
+            metadata: {
+                Sensor: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Sensor) },
+                Reading: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Sensor'), x: makeEncodingItem('Reading') },
+        });
+    }
+
+    // 11. Single-row edge case — % must auto-hide (always 100%).
+    {
+        const data = [{ Region: 'APAC', Revenue: 4_250_000 }];
+        tests.push({
+            title: 'Single row (% auto-hidden)',
+            description: 'n=1 → "% of total" is always 100%, column should be suppressed',
+            tags: ['nominal', 'edge', 'single-row', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Region'), makeField('Revenue')],
+            metadata: {
+                Region: { type: Type.String, semanticType: 'Region', levels: ['APAC'] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Region'), x: makeEncodingItem('Revenue') },
+        });
+    }
+
+    // 12. All-zero values — total=0 should auto-hide % (divide-by-zero).
+    {
+        const data = [
+            { Quarter: 'Q1', Profit: 0 },
+            { Quarter: 'Q2', Profit: 0 },
+            { Quarter: 'Q3', Profit: 0 },
+            { Quarter: 'Q4', Profit: 0 },
+        ];
+        tests.push({
+            title: 'All zeros (% auto-hidden)',
+            description: 'total=0 → divide-by-zero guard suppresses % column; bar panel collapses to 0-width but spec stays valid',
+            tags: ['nominal', 'edge', 'zero-total', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Quarter'), makeField('Profit')],
+            metadata: {
+                Quarter: { type: Type.String, semanticType: 'Quarter', levels: ['Q1', 'Q2', 'Q3', 'Q4'] },
+                Profit: { type: Type.Number, semanticType: 'Profit', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Quarter'), x: makeEncodingItem('Profit') },
+        });
+    }
+
+    // 13. Mixed CJK + Latin labels — exercises CJK width heuristic.
+    {
+        const data = [
+            { 项目: '人工智能 AI Platform',           收入: 5_420_000 },
+            { 项目: '云计算 Cloud Services',          收入: 3_180_000 },
+            { 项目: '数据分析 Analytics',             收入: 2_650_000 },
+            { 项目: '物联网 IoT Solutions',           收入: 1_840_000 },
+            { 项目: '网络安全 Security',              收入: 1_220_000 },
+            { 项目: '区块链 Blockchain Lab',          收入: 480_000 },
+        ];
+        tests.push({
+            title: 'Mixed CJK + Latin labels',
+            description: 'Bi-script category labels → tests CJK 2× width heuristic in label-column sizing',
+            tags: ['nominal', 'small', 'cjk', 'mixed-script', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('项目'), makeField('收入')],
+            metadata: {
+                '项目': { type: Type.String, semanticType: 'Category', levels: data.map(d => d.项目) },
+                '收入': { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('项目'), x: makeEncodingItem('收入') },
+        });
+    }
+
+    // 14. Power-law (Pareto) distribution — verifies the top-1 bar
+    //     doesn't visually crush the rest into invisibility.
+    {
+        const cats = genCategories('Vendor', 15);
+        const rand = seededRandom(31);
+        const data = cats.map((c, i) => ({
+            Vendor: c,
+            Spend: Math.round(Math.pow(0.55, i) * 1_000_000 + rand() * 1000),
+        }));
+        tests.push({
+            title: 'Power-law distribution (top dominates)',
+            description: 'Top row ~1.8M vs tail rows <1K → bar lengths span 3+ orders of magnitude',
+            tags: ['nominal', 'medium', 'power-law', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Vendor'), makeField('Spend')],
+            metadata: {
+                Vendor: { type: Type.String, semanticType: 'Category', levels: cats },
+                Spend: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Vendor'), x: makeEncodingItem('Spend') },
+        });
+    }
+
+    // 15. Multi-row-per-category with color grouping (stacked bars).
+    //     Regression test: text panels must aggregate per-category, not
+    //     render one mark per input row (which would overlap and show
+    //     per-row ≈0% percents instead of category totals).
+    {
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const channels = ['Music','Games','Entertainment','Education','People','Sports','Film','News','Comedy'];
+        const rand = seededRandom(1234);
+        const data: any[] = [];
+        for (const m of months) {
+            for (const c of channels) {
+                data.push({
+                    created_month: m,
+                    channel_type: c,
+                    views: Math.round(rand() * 5e8 + 1e7),
+                });
+            }
+        }
+        tests.push({
+            title: 'Stacked: views by month × channel_type',
+            description: 'Multi-row per y-category + color partition → text panels must show per-category totals (regression)',
+            tags: ['nominal', 'medium', 'stacked', 'multi-row', 'stress'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('created_month'), makeField('channel_type'), makeField('views')],
+            metadata: {
+                created_month: { type: Type.String, semanticType: 'Month', levels: months },
+                channel_type:  { type: Type.String, semanticType: 'Category', levels: channels },
+                views:         { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: {
+                y: makeEncodingItem('created_month'),
+                x: makeEncodingItem('views'),
+                color: makeEncodingItem('channel_type'),
+            },
+        });
+    }
+
+    // 16. Column-faceted launch leaders with color = facet field and
+    //     % of total enabled. Mirrors the app scenario where hconcat
+    //     Bar Table needs top-level faceting and per-facet denominators.
+    {
+        const agencyTypes = ['private', 'startup', 'state'];
+        const data = [
+            { Agency: 'Arianespace', 'Agency Type': 'private', 'Launch Count': 258 },
+            { Agency: 'ILS-K', 'Agency Type': 'private', 'Launch Count': 97 },
+            { Agency: 'ULA/LMA', 'Agency Type': 'private', 'Launch Count': 70 },
+            { Agency: 'MDSSC', 'Agency Type': 'private', 'Launch Count': 62 },
+            { Agency: 'OSC-Fairfax', 'Agency Type': 'private', 'Launch Count': 60 },
+            { Agency: 'ULA/Boeing', 'Agency Type': 'private', 'Launch Count': 58 },
+            { Agency: 'Boeing', 'Agency Type': 'private', 'Launch Count': 56 },
+            { Agency: 'LMA', 'Agency Type': 'private', 'Launch Count': 43 },
+            { Agency: 'SpaceX', 'Agency Type': 'startup', 'Launch Count': 65 },
+            { Agency: 'Rocket Lab', 'Agency Type': 'startup', 'Launch Count': 2 },
+            { Agency: 'RVSN', 'Agency Type': 'state', 'Launch Count': 1528 },
+            { Agency: 'UNKS', 'Agency Type': 'state', 'Launch Count': 904 },
+            { Agency: 'NASA', 'Agency Type': 'state', 'Launch Count': 469 },
+            { Agency: 'USAF', 'Agency Type': 'state', 'Launch Count': 388 },
+            { Agency: 'AFSC', 'Agency Type': 'state', 'Launch Count': 247 },
+            { Agency: 'VKS RVSN', 'Agency Type': 'state', 'Launch Count': 200 },
+            { Agency: 'CALT', 'Agency Type': 'state', 'Launch Count': 181 },
+            { Agency: 'Roskosmos', 'Agency Type': 'state', 'Launch Count': 128 },
+        ];
+        tests.push({
+            title: 'Faceted launch leaders (% within agency type)',
+            description: 'column + color both use Agency Type; % of total should be computed within each facet',
+            tags: ['nominal', 'facet', 'column', 'color', 'percentage', 'regression'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Agency'), makeField('Agency Type'), makeField('Launch Count')],
+            metadata: {
+                Agency: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Agency) },
+                'Agency Type': { type: Type.String, semanticType: 'Category', levels: agencyTypes },
+                'Launch Count': { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                y: makeEncodingItem('Agency'),
+                x: makeEncodingItem('Launch Count'),
+                color: makeEncodingItem('Agency Type'),
+                column: makeEncodingItem('Agency Type'),
+            },
+            chartProperties: { showPercent: true },
+        });
+    }
+
+    // 17. Many column facets with compact row counts. Exercises column
+    //     wrapping, adaptive subplot height, and facet-aware fonts.
+    {
+        const markets = ['Americas', 'Europe', 'Middle East', 'Africa', 'East Asia', 'Oceania', 'South Asia'];
+        const agencies = ['Atlas', 'Beacon', 'Cosmos', 'Delta'];
+        const rand = seededRandom(8181);
+        const data: any[] = [];
+        for (const market of markets) {
+            for (const agency of agencies) {
+                data.push({
+                    Market: market,
+                    Agency: `${agency} ${market}`,
+                    Launches: Math.round(rand() * 180 + 20),
+                });
+            }
+        }
+        tests.push({
+            title: 'Wrapped market facets (7 panels)',
+            description: 'Seven column facets with four rows each — mini-table height and font size should adapt after wrapping',
+            tags: ['nominal', 'facet', 'wrap', 'small-multiple', 'layout'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Market'), makeField('Agency'), makeField('Launches')],
+            metadata: {
+                Market: { type: Type.String, semanticType: 'Category', levels: markets },
+                Agency: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Agency) },
+                Launches: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                y: makeEncodingItem('Agency'),
+                x: makeEncodingItem('Launches'),
+                column: makeEncodingItem('Market'),
+            },
+            chartProperties: { showPercent: true },
+        });
+    }
+
+    // 18. Row + column faceting. Ensures Bar Table's hconcat spec also
+    //     hoists correctly for two-dimensional facet grids.
+    {
+        const regions = ['US', 'EU'];
+        const eras = ['Historic', 'Recent'];
+        const agencies = ['National', 'Commercial', 'Defense'];
+        const data: any[] = [];
+        for (const era of eras) {
+            for (const region of regions) {
+                for (let i = 0; i < agencies.length; i++) {
+                    data.push({
+                        Era: era,
+                        Region: region,
+                        Agency: `${region} ${agencies[i]}`,
+                        Missions: (era === 'Historic' ? 120 : 70) + i * 35 + (region === 'US' ? 40 : 0),
+                    });
+                }
+            }
+        }
+        tests.push({
+            title: 'Row + column facets (region × era)',
+            description: 'Two-dimensional faceting with percent totals computed per region/era panel',
+            tags: ['nominal', 'facet', 'row', 'column', 'percentage', 'layout'],
+            chartType: 'Bar Table',
+            data,
+            fields: [makeField('Era'), makeField('Region'), makeField('Agency'), makeField('Missions')],
+            metadata: {
+                Era: { type: Type.String, semanticType: 'Category', levels: eras },
+                Region: { type: Type.String, semanticType: 'Region', levels: regions },
+                Agency: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Agency) },
+                Missions: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                y: makeEncodingItem('Agency'),
+                x: makeEncodingItem('Missions'),
+                column: makeEncodingItem('Region'),
+                row: makeEncodingItem('Era'),
+            },
+            chartProperties: { showPercent: true },
         });
     }
 

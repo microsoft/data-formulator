@@ -40,4 +40,4 @@ yield {
 yield {"message": translate_in_python("empty_df", lang)}
 ```
 
-For detailed architecture and anti-pattern explanations, see `dev-guides/6-i18n-language-injection.md`.
+For detailed architecture and anti-pattern explanations, see `docs/dev-guides/6-i18n-language-injection.md`.
