@@ -118,6 +118,41 @@ None in this release.
 - Works with both hardcoded and user-selected template names
 - No breaking changes to request/response format
 
+---
+
+## Version 2.1 - May 28, 2026
+
+### Report PPTX Layout And Readability Update
+
+#### Scope
+
+- File: `src/views/ReportView.tsx`
+- Area: Client-side PowerPoint export (`exportToPowerPoint`)
+
+#### What Changed
+
+- Switched chart slides to fixed 3-zone layout:
+  - Zone 1: chart image (top-left)
+  - Zone 2: narrative text block (top-right)
+  - Zone 3: narrative text block (bottom full-width)
+- Kept chart and its related text on the same slide.
+- Added overflow continuation: if text exceeds zone limits, create next slide for the same chart.
+- Tuned chart size and text-zone coordinates to avoid overlap.
+- Changed text rendering from many small textboxes to one textbox per zone.
+- Added sentence-aware formatting:
+  - Sentence boundaries detected on `.`, `:`, `!`, `?`, `;`
+  - Wrapped lines inside each sentence
+  - Single line break for wrapped lines in the same sentence
+  - Double line break between sentences for readability
+- Removed bold emphasis in content body and reduced font size per prior UI feedback.
+- Kept export build stable (`npm run -s build` passed after updates).
+
+#### Result
+
+- Slides now present chart and explanation together.
+- Text flow is easier to read, with clearer separation by sentence.
+- Layout is consistent with the agreed mock structure.
+
 ### 📈 PERFORMANCE
 
 - Template list loaded once on component mount

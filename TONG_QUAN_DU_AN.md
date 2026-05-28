@@ -1,7 +1,7 @@
 # GDIS AI Agent (Data Formulator) — Tài Liệu Tổng Hợp Dự Án
 
 > **Nguồn gốc:** Microsoft Research (tùy biến nội bộ GDIS)
-> **Phiên bản:** v0.5.2 (đã hoàn thành Chart Recommendation Pipeline M1–M5)
+> **Phiên bản:** v0.6.0 (đã hoàn thành Agent UX Triage M0–M6)
 > **Giấy phép:** MIT
 > **Khẩu hiệu:** _"Vibe with data, in control"_
 
@@ -189,7 +189,7 @@ Redux dispatch action → dfSlice state update
         ↓
 HTTP Request → Flask Route Handler
         ↓
-Prompt Guard Agent kiểm tra (từ chối spam)
+Smart Chat classifier routes prompt to draw/confirm/suggest/info (no semantic hard-block)
         ↓
 AI Agent nhận context + prompt → LLM API (LiteLLM)
         ↓
@@ -273,7 +273,7 @@ data-formulator/
 │   │   ├── agent_code_explanation.py        # Giải thích code
 │   │   ├── agent_query_completion.py        # Gợi ý SQL query
 │   │   ├── agent_report_gen.py              # Sinh báo cáo
-│   │   ├── prompt_guard_agent.py            # Chặn prompt spam
+│   │   ├── prompt_guard_agent.py            # Legacy utility (not used for semantic blocking in chart flow)
 │   │   ├── qc_chart_config.py               # Cấu hình biểu đồ QC + is_qc_data() strict
 │   │   ├── field_metadata.py                # [M1] FieldMeta + compute_field_metadata()
 │   │   ├── chart_compatibility.py           # [M2] CHART_REQUIREMENTS + validate_chart()
@@ -495,7 +495,7 @@ Request → [1] compute_field_metadata (DuckDB query gộp)
 | **JWT Token**         | Phiên làm việc mã hóa JWT                                                                                  |
 | **Session Store**     | Redis cho session phía server                                                                              |
 | **SQL Validator**     | Ngăn SQL injection, file read/write, shell exec                                                            |
-| **Prompt Guard**      | Kiểm tra prompt người dùng nhập tay (agent mode, `prompt_source="user"`), từ chối spam trước khi gọi agent |
+| **Prompt Handling**   | Smart Chat routes prompts into `draw/confirm/suggest/info`; no semantic hard-block |
 | **API Key Isolation** | API key không bao giờ gửi xuống frontend — backend tự resolve từ env var (`{PROVIDER}_API_KEY`)            |
 | **Rate Limiter**      | Giới hạn lượt gọi per-session: 20 req/phút cho `derive-data`, 5 req/phút cho `explore-data`                |
 | **Python Sandbox**    | Code AI chạy trong môi trường cách ly                                                                      |
@@ -523,7 +523,7 @@ Request → [1] compute_field_metadata (DuckDB query gộp)
 | **Code Explanation**      | `agent_code_explanation.py`    | Giải thích code bằng ngôn ngữ tự nhiên                                                          |
 | **Query Completion**      | `agent_query_completion.py`    | Gợi ý và hoàn thiện SQL query                                                                   |
 | **Report Gen**            | `agent_report_gen.py`          | Viết báo cáo phân tích tự động                                                                  |
-| **Prompt Guard**          | `prompt_guard_agent.py`        | Phát hiện và từ chối prompt spam                                                                |
+| **Prompt Handling**       | `agent_smart_chat.py` + `/smart-chat` | Classify intent and always return actionable suggestions/info                                   |
 
 **Module hỗ trợ Chart Recommendation Pipeline (v0.5.2):**
 
@@ -539,8 +539,8 @@ Request → [1] compute_field_metadata (DuckDB query gộp)
 ```
 Request → Rate Limiter (per-session) → [429 nếu vượt hạn]
                        ↓ [Trong giới hạn]
-         Prompt Guard (chỉ khi mode=agent & prompt_source="user")
-                       ↓ [Hợp lệ hoặc bỏ qua guard]
+         Smart Chat classification / fallback routing
+                       ↓ [always continue with actionable route]
               get_lightweight_client() → trả về main_client
               (không có LIGHTWEIGHT_MODEL → dùng cùng một model)
                        ↓
@@ -584,11 +584,10 @@ Request → Rate Limiter (per-session) → [429 nếu vượt hạn]
 | `/clean-data-stream`            | GET/POST | Làm sạch dữ liệu (SSE stream)  |
 | `/sort-data`                    | GET/POST | Sắp xếp dữ liệu                |
 | `/derive-data`                  | GET/POST | Biến đổi dữ liệu               |
-| `/explore-data-streaming`       | GET/POST | Multi-step exploration (SSE)   |
+| `/smart-chat`                   | GET/POST | Unified chart assistant (classify intent + suggest/draw) |
 | `/refine-data`                  | GET/POST | Tinh chỉnh dữ liệu             |
 | `/code-expl`                    | GET/POST | Giải thích code                |
 | `/query-completion`             | POST     | Gợi ý SQL query                |
-| `/get-recommendation-questions` | GET/POST | Gợi ý câu hỏi phân tích        |
 | `/generate-report-stream`       | GET/POST | Sinh báo cáo (SSE stream)      |
 
 ### 7.2 Table Routes (`/api/tables/*`)
@@ -792,7 +791,7 @@ interface Chart {
 1. Người dùng kéo field "month" → trục X, "revenue" → trục Y
 2. Gõ: "Chia theo sản phẩm, hiển thị xu hướng"
 3. Frontend gửi POST /api/agent/derive-data
-4. Prompt Guard kiểm tra (hợp lệ → pass)
+4. Smart Chat classifies prompt and routes to actionable flow (draw/confirm/suggest/info)
 5. SQL/Python Data Rec Agent → chọn "line" chart + GROUP BY product
 6. SQL Transform Agent → sinh SQL: SELECT month, product, SUM(revenue) ...
 7. DuckDB thực thi query → trả về JSON
@@ -902,9 +901,11 @@ MSAL_TENANT_ID=...
 | **v0.2.1**         | 05/2025   | External Data Loader (MySQL, PostgreSQL, Kusto, S3, Azure Blob)                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **v0.2.2**         | 07/2025   | Goal-driven exploration + gợi ý câu hỏi tự động                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **v0.5**           | 11/2025   | Agent mode + Interactive control                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **Custom GDIS**    | 2025–2026 | QC Mode, Auth SSO, Dashboard, Smart Y-axis, Prompt Guard, PPTX Export                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **Custom GDIS**    | 2025–2026 | QC Mode, Auth SSO, Dashboard, Smart Y-axis, Smart Chat routing, PPTX Export                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **v0.5.1**         | 05/2026   | **Security:** API key không gửi frontend, backend resolve từ env var · **Single-model:** bỏ lightweight model tier · **Rate limiter:** 20 req/min cho derive-data, 5 req/min cho explore-data · **QC Ideas:** InteractiveExploreAgent tự nhận diện QC data và gợi ý biểu đồ QC · **IdeaChip:** selector loại biểu đồ, isQcData frontend · **Redux fix:** cache clearing khi reset/load state · **Bug fix:** Flask child process stale state gây mất 4 ideas (fix bằng reload) |
 | **v0.5.2**         | 05/2026   | **Chart Recommendation Pipeline (M1–M5):** thay default cứng `x=INDEX/y=VALUE` bằng FieldMeta semantic · **M1:** `field_metadata.py` (FieldMeta dataclass + DuckDB query gộp) · **M2:** `chart_compatibility.py` (CHART_REQUIREMENTS knowledge base + validate_chart) + `chart_defaults.py` (pick_default_encoding) · **M3:** integrate pipeline 3 tầng vào agent_sql_data_rec (early reject → LLM → post validate), `is_qc_data()` strict yêu cầu signature column · **M4:** prompt slim down ~40% tokens, thay hardcoded defaults bằng FieldMeta hints · **M5:** `ChartIncompatibleModal.tsx` modal blocking + parity cho `agent_py_data_rec.py` · **Reject codes R1–R7:** no_data_fit / qc_chart_non_qc_data / cardinality_explosion / wrong_dimensionality / duplicate_keys / channel_mismatch / control_limit_in_encoding · **Tests:** pytest suite 178 cases tại `py-src/data_formulator/tests/` |
+| **v0.6.0**         | 05/2026   | **Agent UX Triage (M0–M6):** bỏ Agent Mode, chuyển interactive-only; thêm backend `chart_template_registry.py`, `drawable_catalog.py`, `prompt_classifier.py`, endpoint `/api/agent/smart-chat`; enforce template constraints R8/R9; thay `ChartIncompatibleModal` bằng `ChartAssistantModal` 4 mode (REJECT/SUGGESTION/CONFIRM/INFO) + `ChartThumbnail`/`SuggestionGrid`; thêm onboarding one-time theo domain QC/generic; thêm telemetry events `prompt_classified` / `suggestion_clicked` / `modal_closed_no_action`; bổ sung test smart-chat + telemetry endpoint; build/test pass và commit theo mốc M0→M6. |
+| **v0.6.1**         | 05/2026   | **Smart Chat refinement + Prompt Customization UX:** cải thiện nhận diện ý định chart linh hoạt theo biến thể nhập liệu; chuẩn hóa mapping tên chart display/internal để tránh lỗi "unsupported chart" sau khi chọn gợi ý; tăng chất lượng rationale gợi ý theo hướng nêu mục tiêu phân tích; bổ sung ô **Customize your prompt** trong `ChartAssistantModal` và luồng submit custom prompt end-to-end ở `ChartRecBox` (sửa prompt rồi gửi vẽ ngay). |
 
 ---
 
@@ -920,7 +921,7 @@ MSAL_TENANT_ID=...
 | **Dữ liệu lớn**        | Thường lag với dữ liệu lớn            | DuckDB + SQL sampling thông minh       |
 | **QC chuyên biệt**     | Cần công cụ riêng                     | Tích hợp sẵn, tự nhận diện             |
 | **Phân tích nâng cao** | Yêu cầu chuyên môn sâu                | AI tự đề xuất và thực hiện             |
-| **Bảo mật**            | Cơ bản                                | JWT, SSO, SQL validation, Prompt Guard |
+| **Bảo mật**            | Cơ bản                                | JWT, SSO, SQL validation, rate limiting |
 | **Báo cáo**            | Export thủ công                       | AI viết nội dung + xuất PPTX tự động   |
 
 ---
@@ -940,3 +941,67 @@ Nền tảng phân tích dữ liệu thông minh (nguồn gốc Microsoft Resear
 - **Chart Recommendation Pipeline (v0.5.2):** validate dựa trên FieldMeta semantic, reject sớm R1–R7, modal blocking thay vì "fallback im lặng"
 - Streaming responses cho trải nghiệm thời gian thực
 - Hỗ trợ mọi LLM lớn qua LiteLLM (OpenAI, Azure, Claude, Ollama)
+
+## 13. Latest Updates (2026-05-26)
+
+### 13.1 Suggestion-to-Draw Consistency
+
+- Unified ideas/suggestions flow via `/api/agent/smart-chat` (legacy `/get-recommendation-questions` removed).
+- When user clicks a suggestion, frontend now sends:
+  - `user_preferred_chart_type`
+  - `chart_type`
+  - `chart_encodings` (from suggestion, sanitized)
+- This prevents mismatch where suggestion says one chart (e.g., Boxplot) but draw step validates as another chart type.
+
+### 13.2 Template Channel Handling
+
+- For non-QC charts:
+  - Unsupported channels are auto-pruned instead of immediate reject (R9 soft recovery).
+  - Blank channel assignments (e.g., `size: ""`) are removed before validation.
+- For QC special charts (`QC Trend Line`, `QC Histogram`, `QC Trend Bar`):
+  - Channel constraints remain strict (no auto-remap/auto-prune beyond fixed QC rules).
+
+### 13.3 UX Cleanup
+
+- Idea chips:
+  - Removed chart-type dropdown in chip UI.
+  - Clicking an idea uses the predicted/suggested chart type directly.
+  - Idea text color adjusted to reduce visual glare.
+
+### 13.4 Validation Outcome
+
+- Goal: suggestions shown to users should be executable with current chart templates/channels.
+- Recent fixes specifically addressed failures like:
+  - `Boxplot` suggestion failing due to unsupported `size` channel.
+  - `Column '' does not exist in the data` from empty encoding values.
+
+## 14. Latest Updates (2026-05-28)
+
+### 14.1 Data Sample Context — SmartChatAgent nhìn thấy nội dung dữ liệu thực tế
+
+`SmartChatAgent` đã được làm giàu context với 2 lớp thông tin mới:
+
+**`sample_values`** — giá trị thực tế trong cột categorical/temporal cardinality thấp (≤ 12 giá trị):
+```
+- product [categorical] cards=3(low) values=[iPhone, Samsung, Oppo] → ideal for grouping/color
+- QCSHIFT [categorical] cards=3(low) values=[CA1, CA2, CA3] → ideal for grouping/color
+```
+
+**`sample_rows`** — 3 dòng đại diện (đầu + giữa + cuối) dạng markdown table:
+```
+| month   | product | region  | revenue |
+| 2024-01 | iPhone  | Hà Nội  | 120000  |
+| 2024-03 | Samsung | Đà Nẵng | 112000  |
+| 2024-06 | Oppo    | TP.HCM  | 89000   |
+```
+
+**Kết quả:** Agent sinh `message_vi` có ngữ nghĩa cụ thể thay vì canned text chung chung:
+- Trước: *"Dựa trên dữ liệu của bạn, đây là các biểu đồ có thể vẽ ngay."*
+- Sau: *"Data tracks sales of 3 phone brands (iPhone, Samsung, Oppo) over 6 months across 3 regions."*
+
+**Files đã thay đổi:**
+- `field_metadata.py`: `FieldMeta.sample_values` + DuckDB query populate cho categorical & temporal.
+- `agent_routes.py`: `_extract_sample_rows()`, `_truncate_cell()`, `_safe_serialize()` + populate `sample_values` trong pandas path + truyền `sample_rows` vào `agent.run()`.
+- `agent_smart_chat.py`: `_build_column_profile()` hiển thị `values=[...]`, `_build_data_sample_section()` format markdown, `_build_system_prompt()` embed DATA SAMPLE section, `SmartChatAgent.run()` nhận `field_metas` + `sample_rows`.
+
+Chi phí thêm: ~180–320 tokens/request (~15–20% tổng prompt — không đáng kể).
