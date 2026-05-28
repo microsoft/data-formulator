@@ -79,6 +79,7 @@
         "lint": "eslint -c eslint.config.js src/**/*.{ts,tsx} --fix",
         "start": "vite",
         "build": "vite build",
+        "build:azure": "cross-env NODE_OPTIONS=--max-old-space-size=8192 ROLLUP_NATIVE=0 vite build",
         "test": "vitest run",
         "test:watch": "vitest"
     },
@@ -110,6 +111,7 @@
         "@typescript-eslint/eslint-plugin": "^8.16.0",
         "@typescript-eslint/parser": "^8.16.0",
         "@vitejs/plugin-react-swc": "^3.7.0",
+        "cross-env": "^10.1.0",
         "eslint": "^9.15.0",
         "eslint-plugin-jsx-a11y": "^6.10.2",
         "eslint-plugin-react": "^7.37.2",
