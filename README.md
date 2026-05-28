@@ -42,13 +42,17 @@ Data Formulator makes it easy. Connect any data in a few clicks, then explore it
 
 ## News 🔥🔥🔥
 
-[05-28-2026] **Data Formulator 0.7** — a major new release to empower enterprise data analytics:
+[05-28-2026] **Data Formulator 0.7** — turn ANY data into insights in five easy steps:
 
--  🔌 **Data Connectors** — governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Connect once; share with analysts and agents. Need to connect to a custom data source? Let your coding agent check out the [data loader plugin guide](examples/plugins/README.md).
--  🤖 **Context-aware agents** — data-loading agents help you find tables from connected databases or extract data from Excel files, images, websites, and text. Data Agent takes your exploration question, inspects the data, runs sandboxed code, builds charts and produce reports grounded on your exploration contexts.
--  🧵 **Interactive workspace, not just chat** — the **Data Thread** keeps questions, intermediate results, and charts navigable. Revisit earlier steps, branch into alternatives, compare side by side, and edit charts with UI controls or natural language.
--  📊 **30+ chart types** — area, streamgraph, candlestick, radar, maps, KPI, and more, plus a style-refinement agent for presentation-ready visuals.
--  🌐 **Multilingual UI** — Data Formulator now speaks Chinese in addition to English (没错，DF现在会说中文了！). More languages are on the way, and [contributions are welcome](src/i18n/TRANSLATION_GUIDE.md).
+1.  🔌 **Connect.** Governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Need a custom source? Point your coding agent at the [data loader plugin guide](examples/plugins/README.md).
+2.  🤖 **Load.** Ask the **data-loading agent** to find tables from connected databases, or extract data from Excel files, images, websites, and text.
+3.  💬 **Explore.** A unified **Data Agent** with thread memory inspects data, runs sandboxed code, and weaves explanation, exploration, and recommendation into one fluid conversation — grounded in your context. The **Data Thread** keeps questions, intermediate results, and charts navigable: revisit earlier steps, branch into alternatives, and compare side by side.
+4.  🎨 **Refine.** 30+ chart types (area, streamgraph, candlestick, radar, maps, KPI, …) via a new semantic chart engine, plus a **style-refinement agent** that turns rough charts into presentation-ready visuals through natural language.
+5.  📤 **Share.** Build reports and export as image or PDF to tell the story.
+
+➕ 🗂️ **Persistent sessions & workspaces** — identity-isolated, saved across restarts. Data Formulator is your de facto data analysis pane.
+
+🌐 **Multilingual UI** — Data Formulator now speaks Chinese in addition to English (没错，DF现在会说中文了！). More languages on the way — [contributions welcome](src/i18n/TRANSLATION_GUIDE.md).
 
 > Install with `pip install data_formulator` or run instantly with `uvx data_formulator`.
 
