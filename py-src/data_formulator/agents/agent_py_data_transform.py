@@ -56,13 +56,9 @@ Concretely, you should first refine users' goal and then create a python functio
                 - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "chart_encodings" to update A metric with B metric.
         - guide on statistical analysis:
             - when the user asks for forecasting or regression analysis, you should consider the following:
-                - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted" that is a boolean field.
-                - i.e., if the user ask for forecasting based on two columns T and Y, the output should be three columns: T, Y, is_predicted, where
-                    - T, Y columns contain BOTH original values from the data and predicted values from the data.
-                    - is_predicted is a boolean field to indicate whether the x, y pairs are original values from the data or predicted / regression values from the data.
+                - for linear_regression chart type in this app: keep original x,y rows only.
+                - do not create is_predicted/regression/forecasting helper columns unless the user explicitly asks for a dedicated forecast output table.
                 - the recommended chart should be line chart (time series) or scatter plot (quantitative x, y)
-                - if the user asks for forecasting, it's good to include predicted x, y pairs for both x in the original data and future x values (i.e., combine regression and forecasting results)
-                    - in this case, is_predicted should be of three values 'original', 'regression', 'forecasting'
         - when the user asks for clustering:
             - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
             - the recommended chart should be scatter plot (quantitative x, y)
@@ -361,7 +357,7 @@ class PythonDataTransformationAgent(object):
                 
         self.exec_python_in_subprocess = exec_python_in_subprocess
 
-    def process_gpt_response(self, input_tables, messages, response):
+    def process_gpt_response(self, input_tables, messages, response, requested_chart_type: str = ""):
         """process gpt response to handle execution"""
 
         if isinstance(response, Exception):
@@ -378,6 +374,10 @@ class PythonDataTransformationAgent(object):
                 refined_goal = json_blocks[0]
             else:
                 refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
+
+            # Keep user-selected chart type stable when model omits chart_type.
+            if requested_chart_type and not refined_goal.get("chart_type"):
+                refined_goal["chart_type"] = requested_chart_type
 
             # ✅ ENFORCE INDEX REQUIREMENT: Always ensure INDEX is in output_fields
             if 'output_fields' in refined_goal and refined_goal['output_fields']:
@@ -464,7 +464,9 @@ class PythonDataTransformationAgent(object):
         
         response = self.client.get_completion(messages = messages)
 
-        return self.process_gpt_response(input_tables, messages, response)
+        return self.process_gpt_response(
+            input_tables, messages, response, requested_chart_type=chart_type
+        )
         
 
     def followup(self, input_tables, dialog, latest_data_sample, chart_type: str, chart_encodings: dict, new_instruction: str, n=1):
@@ -500,4 +502,6 @@ class PythonDataTransformationAgent(object):
         
         response = self.client.get_completion(messages = messages)
 
-        return self.process_gpt_response(input_tables, messages, response)
+        return self.process_gpt_response(
+            input_tables, messages, response, requested_chart_type=chart_type
+        )

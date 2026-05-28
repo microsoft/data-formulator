@@ -175,7 +175,7 @@ class SQLDataTransformationAgent(object):
                 self.system_prompt = base_prompt
 
 
-    def process_gpt_sql_response(self, response, messages):
+    def process_gpt_sql_response(self, response, messages, requested_chart_type: str = ""):
         """process gpt response to handle execution"""
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
@@ -213,6 +213,10 @@ class SQLDataTransformationAgent(object):
                 refined_goal = json_blocks[0]
             else:
                 refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
+
+            # Keep user-selected chart type stable when model omits chart_type.
+            if requested_chart_type and not refined_goal.get("chart_type"):
+                refined_goal["chart_type"] = requested_chart_type
 
             query_blocks = extract_code_from_gpt_response(content + "\n", "sql")
 
@@ -350,7 +354,9 @@ class SQLDataTransformationAgent(object):
         
         response = self.client.get_completion(messages = messages)
 
-        return self.process_gpt_sql_response(response, messages)
+        return self.process_gpt_sql_response(
+            response, messages, requested_chart_type=chart_type
+        )
         
 
     def followup(self, input_tables, dialog, latest_data_sample, chart_type: str, chart_encodings: dict, new_instruction: str, n=1):
@@ -382,7 +388,9 @@ class SQLDataTransformationAgent(object):
 
         response = self.client.get_completion(messages = messages)
 
-        return self.process_gpt_sql_response(response, messages)
+        return self.process_gpt_sql_response(
+            response, messages, requested_chart_type=chart_type
+        )
         
 
 def get_sql_table_statistics_str(conn, table_name: str, 

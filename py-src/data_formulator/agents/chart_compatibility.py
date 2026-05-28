@@ -85,6 +85,7 @@ class ValidationResult:
 # Internal chart type -> frontend template name.
 INTERNAL_TO_TEMPLATE_CHART: Dict[str, str] = {
     "point": "Scatter Plot",
+    "ranged_dot_plot": "Ranged Dot Plot",
     "linear_regression": "Linear Regression",
     "loess": "Loess Regression",
     "boxplot": "Boxplot",
@@ -92,6 +93,7 @@ INTERNAL_TO_TEMPLATE_CHART: Dict[str, str] = {
     "group_bar": "Grouped Bar Chart",
     "stacked_bar": "Stacked Bar Chart",
     "histogram": "Histogram",
+    "threshold": "Threshold Bar Chart",
     "line": "Line Chart",
     "rolling_average": "Rolling Average",
     "heatmap": "Heat Map",
@@ -104,6 +106,55 @@ INTERNAL_TO_TEMPLATE_CHART: Dict[str, str] = {
     "qc_histogram": "QC Histogram",
     "qc_trend_bar": "QC Trend Bar",
 }
+
+QC_STRICT_TEMPLATE_CHARTS = {"QC Trend Line", "QC Trend Bar", "QC Histogram"}
+
+
+def _normalize_compat_chart_type(chart_type: str) -> str:
+    """Map compatibility aliases to canonical internal chart types."""
+    alias_map = {
+        "ranged_dot_plot": "point",
+    }
+    return alias_map.get(chart_type, chart_type)
+
+
+def _auto_normalize_template_channels(
+    allowed_channels: List[str], chart_encodings: Dict[str, str]
+) -> Dict[str, str]:
+    """Best-effort channel alias normalization for non-QC templates.
+
+    This keeps agent outputs flexible (e.g. `facet`) while preserving template
+    constraints. QC templates are handled strictly elsewhere.
+    """
+    if not chart_encodings:
+        return {}
+
+    normalized = dict(chart_encodings)
+    alias_map: Dict[str, List[str]] = {
+        "facet": ["column", "row"],
+        "facets": ["column", "row"],
+        "col": ["column"],
+        "cols": ["column"],
+        "rows": ["row"],
+    }
+    allowed = set(allowed_channels)
+
+    for src, targets in alias_map.items():
+        if src not in normalized:
+            continue
+        value = normalized.pop(src)
+        placed = False
+        for tgt in targets:
+            if tgt not in allowed:
+                continue
+            if tgt not in normalized:
+                normalized[tgt] = value
+                placed = True
+                break
+        if not placed:
+            # Keep original key for explicit R9 reporting when no valid mapping.
+            normalized[src] = value
+    return normalized
 
 
 def normalize_to_template_chart(chart_type: str) -> Tuple[Optional[str], bool]:
@@ -145,7 +196,7 @@ def validate_template_constraints(chart_type: str, chart_encodings: Dict[str, st
             RejectInfo(
                 code="R8",
                 short="template_not_supported",
-                message_vi=f"Loại biểu đồ '{chart_type}' không nằm trong 25 template hỗ trợ.",
+                message_vi=f"Chart type '{chart_type}' is not in the 25 supported templates.",
             ),
         )
 
@@ -156,26 +207,48 @@ def validate_template_constraints(chart_type: str, chart_encodings: Dict[str, st
             RejectInfo(
                 code="R8",
                 short="template_not_supported",
-                message_vi=f"Loại biểu đồ '{chart_type}' không nằm trong 25 template hỗ trợ.",
+                message_vi=f"Chart type '{chart_type}' is not in the 25 supported templates.",
             ),
         )
+
+    if template_chart not in QC_STRICT_TEMPLATE_CHARTS:
+        normalized_encodings = _auto_normalize_template_channels(spec.channels, chart_encodings)
+        if normalized_encodings != chart_encodings:
+            chart_encodings.clear()
+            chart_encodings.update(normalized_encodings)
+
+    # Drop blank/empty channel assignments from LLM output.
+    # They should be treated as "unset channel", not hard errors downstream.
+    blank_channels = [
+        k for k, v in chart_encodings.items()
+        if v is None or (isinstance(v, str) and v.strip() == "")
+    ]
+    for ch in blank_channels:
+        chart_encodings.pop(ch, None)
 
     encoding_keys = set(chart_encodings.keys())
     allowed = set(spec.channels)
     invalid = sorted(list(encoding_keys - allowed))
     if invalid:
-        return ValidationResult(
-            False,
-            RejectInfo(
-                code="R9",
-                short="template_channel_mismatch",
-                message_vi=(
-                    f"Biểu đồ '{template_chart}' không hỗ trợ channel {invalid}. "
-                    f"Channels hợp lệ: {spec.channels}."
+        # Generic templates are flexible: drop unsupported channels instead of
+        # hard rejecting, so prompts like "boxplot ... size=..." can still draw.
+        # QC templates remain strict and must keep exact channels.
+        if template_chart not in QC_STRICT_TEMPLATE_CHARTS:
+            for ch in invalid:
+                chart_encodings.pop(ch, None)
+        else:
+            return ValidationResult(
+                False,
+                RejectInfo(
+                    code="R9",
+                    short="template_channel_mismatch",
+                    message_vi=(
+                        f"Chart '{template_chart}' does not support channel {invalid}. "
+                        f"Valid channels: {spec.channels}."
+                    ),
+                    context_columns=invalid,
                 ),
-                context_columns=invalid,
-            ),
-        )
+            )
 
     if mapped:
         # Inform caller mapping happened by returning valid result; caller may
@@ -435,6 +508,28 @@ CHART_REQUIREMENTS: Dict[str, ChartSpec] = {
             ),
         },
     ),
+    "loess": ChartSpec(
+        domain=["qc", "generic"],
+        channels={
+            "x": ChannelSpec(
+                required=True,
+                accept_roles=_TREND_X_ACCEPT,
+                reject_roles=_TREND_X_REJECT,
+                soft_priority=["quantitative", "temporal", "sequential"],
+                min_distinct=2,
+            ),
+            "y": ChannelSpec(
+                required=True,
+                accept_roles=_QUANTITATIVE_Y_ACCEPT,
+                reject_roles=_QUANTITATIVE_Y_REJECT,
+            ),
+            "color": ChannelSpec(
+                required=False,
+                accept_roles=_LOW_COLOR_ACCEPT,
+                reject_roles=_LOW_COLOR_REJECT,
+            ),
+        },
+    ),
 
     # ── Group B: compare across categories ─────────────────────────────────
     "bar": ChartSpec(
@@ -508,9 +603,9 @@ CHART_REQUIREMENTS: Dict[str, ChartSpec] = {
         channels={
             "x": ChannelSpec(
                 required=True,
-                accept_roles=["categorical_low", "categorical_mid"],
+                accept_roles=["temporal", "categorical_low", "categorical_mid"],
                 reject_roles=["sequential", "categorical_huge", "quantitative", "control_limit"],
-                soft_priority=["categorical_low", "categorical_mid"],
+                soft_priority=["temporal", "categorical_low", "categorical_mid"],
             ),
             "y": ChannelSpec(
                 required=True,
@@ -584,9 +679,9 @@ CHART_REQUIREMENTS: Dict[str, ChartSpec] = {
         channels={
             "x": ChannelSpec(
                 required=True,
-                accept_roles=_CATEGORICAL_X_ACCEPT,
-                reject_roles=_CATEGORICAL_X_REJECT,
-                soft_priority=["temporal", "categorical_low", "categorical_mid"],
+                accept_roles=["categorical_low", "categorical_mid", "temporal", "quantitative"],
+                reject_roles=["sequential", "categorical_huge", "control_limit"],
+                soft_priority=["temporal", "categorical_low", "categorical_mid", "quantitative"],
                 max_distinct=200,
             ),
             "y": ChannelSpec(
@@ -742,6 +837,11 @@ CHART_REQUIREMENTS: Dict[str, ChartSpec] = {
                 accept_roles=["quantitative"],
                 reject_roles=["sequential", "categorical", "control_limit"],
             ),
+            "threshold": ChannelSpec(
+                required=True,
+                accept_roles=["quantitative"],
+                reject_roles=["sequential", "categorical", "control_limit"],
+            ),
         },
     ),
     "radial_plot": ChartSpec(
@@ -816,6 +916,21 @@ def _has_any_compatible_field(
     return any(_field_matches_channel(m, ch_spec) for m in field_metas.values())
 
 
+def _get_role_candidates(field_metas: Dict[str, FieldMeta]) -> tuple[List[str], List[str]]:
+    """Return (categorical_candidates, quantitative_candidates) for guidance text."""
+    categorical: List[str] = []
+    quantitative: List[str] = []
+    for name, meta in field_metas.items():
+        roles = get_field_roles(meta)
+        if "control_limit" in roles:
+            continue
+        if "categorical_low" in roles or "categorical_mid" in roles:
+            categorical.append(name)
+        if "quantitative" in roles:
+            quantitative.append(name)
+    return categorical, quantitative
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API: suggestions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -859,13 +974,14 @@ def check_chart_data_compatibility(
     Returns None if drawable; otherwise a RejectInfo. The agent should call
     this BEFORE invoking the LLM and short-circuit on reject.
     """
+    chart_type = _normalize_compat_chart_type(chart_type)
     spec = CHART_REQUIREMENTS.get(chart_type)
 
     if spec is None:
         return RejectInfo(
             code="R2",
             short="unknown_chart_type",
-            message_vi=f"Loại biểu đồ '{chart_type}' không được hỗ trợ.",
+            message_vi=f"Chart type '{chart_type}' is not supported.",
             suggested_chart_types=suggest_alternative_charts(field_metas, domain),
         )
 
@@ -876,17 +992,17 @@ def check_chart_data_compatibility(
                 code="R2",
                 short="qc_chart_non_qc_data",
                 message_vi=(
-                    f"{chart_type} chỉ áp dụng cho QC data "
-                    f"(cần TARGET + LL/UL/ARLL/ARUL + cột QCDATE/QCSHIFT/QCSTDPARAMNAME/SLIPNO). "
-                    f"Data hiện tại không phải QC. Dùng chart thường thay thế."
+                    f"{chart_type} only applies to QC data "
+                    f"(requires TARGET + LL/UL/ARLL/ARUL + QCDATE/QCSHIFT/QCSTDPARAMNAME/SLIPNO). "
+                    f"Current data is not QC. Use a standard chart instead."
                 ),
                 suggested_chart_types=suggest_alternative_charts(field_metas, domain, exclude=chart_type),
-                suggested_actions=["Chọn line / bar / histogram thay vì QC chart"],
+                suggested_actions=["Use line / bar / histogram instead of QC charts"],
             )
         return RejectInfo(
             code="R2",
             short="wrong_domain",
-            message_vi=f"{chart_type} không áp dụng cho domain '{domain}'.",
+            message_vi=f"{chart_type} does not apply to domain '{domain}'.",
             suggested_chart_types=suggest_alternative_charts(field_metas, domain, exclude=chart_type),
         )
 
@@ -909,9 +1025,9 @@ def check_chart_data_compatibility(
             code="R4",
             short="wrong_dimensionality",
             message_vi=(
-                f"{chart_type} cần đủ field cho các channel: {channels_str}. "
-                f"Data hiện tại không đáp ứng đủ. "
-                f"Thử chart đơn giản hơn hoặc bổ sung dữ liệu."
+                f"{chart_type} requires fields for channels: {channels_str}. "
+                f"Current data does not satisfy this. "
+                f"Try a simpler chart or add more data."
             ),
             context_columns=list(field_metas.keys()),
             suggested_chart_types=suggest_alternative_charts(field_metas, domain, exclude=chart_type),
@@ -919,12 +1035,36 @@ def check_chart_data_compatibility(
 
     channel_name, ch_spec = missing[0]
     accept_str = ", ".join(ch_spec.accept_roles)
+
+    # Pie/Donut UX guidance: suggest concrete grouping/value columns.
+    if chart_type in {"pie", "donut"}:
+        categorical, quantitative = _get_role_candidates(field_metas)
+        cat_hint = ", ".join(categorical[:6]) if categorical else "no suitable categorical column found"
+        val_hint = ", ".join(quantitative[:6]) if quantitative else "no suitable quantitative column found"
+        actions = [
+            f"Candidate group columns: {cat_hint}",
+            f"Candidate value columns: {val_hint}",
+            "If cardinality is high, try Top-N filtering before drawing Pie/Donut.",
+        ]
+        return RejectInfo(
+            code="R1",
+            short="no_data_fit",
+            message_vi=(
+                f"{'Pie Chart' if chart_type == 'pie' else 'Donut Chart'} requires 1 grouping column (categorical) "
+                f"and 1 value column (quantitative). "
+                f"Channel '{channel_name}' currently has no suitable field."
+            ),
+            context_columns=list(field_metas.keys()),
+            suggested_chart_types=suggest_alternative_charts(field_metas, domain, exclude=chart_type),
+            suggested_actions=actions,
+        )
+
     return RejectInfo(
         code="R1",
         short="no_data_fit",
         message_vi=(
-            f"{chart_type} cần channel '{channel_name}' là kiểu [{accept_str}], "
-            f"nhưng data hiện tại không có field nào phù hợp."
+            f"{chart_type} requires channel '{channel_name}' with type [{accept_str}], "
+            f"but current data has no suitable field."
         ),
         context_columns=list(field_metas.keys()),
         suggested_chart_types=suggest_alternative_charts(field_metas, domain, exclude=chart_type),
@@ -948,6 +1088,7 @@ def validate_chart(
     (control_limit_in_encoding), R4 (required channel missing), and any
     per-channel role mismatch that the early-check missed.
     """
+    chart_type = _normalize_compat_chart_type(chart_type)
     spec = CHART_REQUIREMENTS.get(chart_type)
     if spec is None:
         return ValidationResult(
@@ -955,7 +1096,7 @@ def validate_chart(
             RejectInfo(
                 code="R2",
                 short="unknown_chart_type",
-                message_vi=f"Loại biểu đồ '{chart_type}' không được hỗ trợ.",
+                message_vi=f"Chart type '{chart_type}' is not supported.",
             ),
         )
 
@@ -963,6 +1104,35 @@ def validate_chart(
         return ValidationResult(
             False, check_chart_data_compatibility(chart_type, field_metas, domain)
         )
+
+    # Ignore blank channel assignments (e.g. size: "").
+    # Empty values represent "no field selected" and should not trigger
+    # missing-column errors.
+    encoding = {
+        ch: col
+        for ch, col in encoding.items()
+        if col is not None and (not isinstance(col, str) or col.strip() != "")
+    }
+
+    # Template channels for composition charts differ from internal compatibility
+    # channels:
+    # - template/frontend uses color/theta
+    # - compatibility spec uses label/value
+    # Normalize here so catalog generation and runtime validation are consistent.
+    if chart_type in {"pie", "donut"}:
+        normalized = dict(encoding)
+        if "label" not in normalized and "color" in normalized:
+            normalized["label"] = normalized["color"]
+        if "value" not in normalized and "theta" in normalized:
+            normalized["value"] = normalized["theta"]
+        encoding = normalized
+    elif chart_type == "radial_plot":
+        normalized = dict(encoding)
+        if "x" not in normalized and "theta" in normalized:
+            normalized["x"] = normalized["theta"]
+        if "y" not in normalized and "color" in normalized:
+            normalized["y"] = normalized["color"]
+        encoding = normalized
 
     # R6: forbidden channels (e.g. pie emitting x/y)
     used_forbidden = [c for c in spec.forbidden_channels if c in encoding]
@@ -973,11 +1143,11 @@ def validate_chart(
                 code="R6",
                 short="channel_mismatch",
                 message_vi=(
-                    f"{chart_type} không dùng channel {used_forbidden}. "
-                    f"Hãy dùng các channel: {list(spec.channels.keys())}."
+                    f"{chart_type} does not use channel {used_forbidden}. "
+                    f"Use channels: {list(spec.channels.keys())}."
                 ),
                 context_columns=[encoding[c] for c in used_forbidden],
-                suggested_actions=[f"Đổi sang channel {list(spec.channels.keys())}"],
+                suggested_actions=[f"Switch to channels {list(spec.channels.keys())}"],
             ),
         )
 
@@ -991,9 +1161,9 @@ def validate_chart(
                     code="R7",
                     short="control_limit_in_encoding",
                     message_vi=(
-                        f"Cột '{col_name}' là control limit (TARGET/LL/UL/ARLL/ARUL), "
-                        f"không được dùng làm encoding channel. "
-                        f"Control limit được render thành đường tham chiếu, không phải dimension."
+                        f"Column '{col_name}' is a control limit (TARGET/LL/UL/ARLL/ARUL), "
+                        f"and cannot be used as an encoding channel. "
+                        f"Control limits are rendered as reference lines, not dimensions."
                     ),
                     context_columns=[col_name],
                 ),
@@ -1012,7 +1182,7 @@ def validate_chart(
                 RejectInfo(
                     code="R1",
                     short="missing_column",
-                    message_vi=f"Cột '{col_name}' không tồn tại trong data.",
+                    message_vi=f"Column '{col_name}' does not exist in the data.",
                     context_columns=[col_name],
                 ),
             )
@@ -1029,10 +1199,10 @@ def validate_chart(
                     code="R3",
                     short="cardinality_explosion",
                     message_vi=(
-                        f"{chart_type} với {meta.cardinality} giá trị '{col_name}' sẽ không đọc được "
-                        f"(giới hạn {ch_spec.max_distinct}). "
-                        f"Thử: (1) Lọc top-{ch_spec.max_distinct // 2}, (2) GROUP BY level cao hơn, "
-                        f"(3) đổi sang chart khác như histogram/treemap."
+                        f"{chart_type} with {meta.cardinality} distinct values in '{col_name}' will be unreadable "
+                        f"(limit {ch_spec.max_distinct}). "
+                        f"Try: (1) Top-{ch_spec.max_distinct // 2} filtering, (2) higher-level GROUP BY, "
+                        f"(3) switch to another chart such as histogram/treemap."
                     ),
                     context_columns=[col_name],
                     suggested_chart_types=suggest_alternative_charts(
@@ -1048,9 +1218,9 @@ def validate_chart(
                     code="R1",
                     short="role_mismatch",
                     message_vi=(
-                        f"Cột '{col_name}' (kiểu {sorted(roles)}) không phù hợp với "
-                        f"channel '{channel}' của {chart_type}. "
-                        f"Channel này cần: {ch_spec.accept_roles}."
+                        f"Column '{col_name}' (roles {sorted(roles)}) is not compatible with "
+                        f"channel '{channel}' of {chart_type}. "
+                        f"This channel requires: {ch_spec.accept_roles}."
                     ),
                     context_columns=[col_name],
                     suggested_chart_types=suggest_alternative_charts(
@@ -1066,8 +1236,8 @@ def validate_chart(
                     code="R1",
                     short="role_mismatch",
                     message_vi=(
-                        f"Cột '{col_name}' (kiểu {sorted(roles)}) không thuộc loại "
-                        f"chấp nhận của channel '{channel}': {ch_spec.accept_roles}."
+                        f"Column '{col_name}' (roles {sorted(roles)}) is not in the accepted types "
+                        f"for channel '{channel}': {ch_spec.accept_roles}."
                     ),
                     context_columns=[col_name],
                     suggested_chart_types=suggest_alternative_charts(
@@ -1083,9 +1253,9 @@ def validate_chart(
                     code="R4",
                     short="wrong_dimensionality",
                     message_vi=(
-                        f"Channel '{channel}' của {chart_type} cần ít nhất "
-                        f"{ch_spec.min_distinct} giá trị phân biệt, "
-                        f"'{col_name}' chỉ có {meta.cardinality}."
+                        f"Channel '{channel}' of {chart_type} requires at least "
+                        f"{ch_spec.min_distinct} distinct values, "
+                        f"but '{col_name}' has only {meta.cardinality}."
                     ),
                     context_columns=[col_name],
                 ),
@@ -1102,7 +1272,7 @@ def validate_chart(
                 code="R4",
                 short="missing_required_channel",
                 message_vi=(
-                    f"{chart_type} thiếu channel bắt buộc: {missing_required}."
+                    f"{chart_type} is missing required channels: {missing_required}."
                 ),
             ),
         )

@@ -5,7 +5,7 @@ import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, extract_and_log_user_prompt
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
-from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_all_columns_from_input_tables
+from data_formulator.agents.prompt_guard_agent import extract_all_columns_from_input_tables
 from data_formulator.agents.qc_chart_config import (
     get_full_qc_chart_rules,
     get_compact_qc_chart_info,
@@ -25,6 +25,7 @@ from data_formulator.agents.chart_compatibility import (
     validate_template_constraints,
     normalize_to_template_chart,
 )
+from data_formulator.agents.chart_type_resolver import detect_chart_type, to_internal
 
 import random
 import string
@@ -37,6 +38,11 @@ import logging
 import re
 
 logger = logging.getLogger(__name__)
+QC_TEMPLATE_TO_INTERNAL = {
+    "QC Trend Line": "qc_trend_line",
+    "QC Histogram": "qc_histogram",
+    "QC Trend Bar": "qc_trend_bar",
+}
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to recommend data that will be used for visualization.
@@ -368,7 +374,6 @@ class SQLDataRecAgent(object):
     def __init__(self, client, conn, system_prompt=None, agent_coding_rules="", guard_client=None):
         self.client = client
         self.conn = conn
-        self.guard = PromptGuardAgent(client=guard_client or client)
         
         # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
@@ -537,9 +542,27 @@ class SQLDataRecAgent(object):
                     logger.info("⚠️ INDEX not in output_fields, adding it automatically")
                     refined_goal['output_fields'].insert(0, 'INDEX')
 
+            # Prefer explicit UI-selected chart type before validation.
+            if user_preferred_chart_type and user_preferred_chart_type.strip():
+                refined_goal["chart_type"] = user_preferred_chart_type.strip()
+
             # 🔍 VALIDATE CHART COMPATIBILITY WITH DATA FIELDS
             chart_type = refined_goal.get('chart_type', '')
             chart_encodings = refined_goal.get('chart_encodings', {})
+
+            # Auto-fix QC encodings BEFORE template validation.
+            qc_chart_type = (
+                chart_type
+                if str(chart_type).startswith("qc_")
+                else QC_TEMPLATE_TO_INTERNAL.get(str(chart_type), "")
+            )
+            if qc_chart_type:
+                fixed_encodings = fix_qc_chart_encodings(qc_chart_type, chart_encodings)
+                if fixed_encodings != chart_encodings:
+                    refined_goal["chart_encodings"] = fixed_encodings
+                    chart_encodings = fixed_encodings
+                    logger.info(f"✅ Pre-template auto-corrected QC chart encodings: {fixed_encodings}")
+
             template_validation = validate_template_constraints(chart_type, chart_encodings)
             if not template_validation.is_valid:
                 reject_resp = reject_info_to_response(
@@ -753,30 +776,6 @@ class SQLDataRecAgent(object):
         else:
             data_columns = extract_all_columns_from_input_tables(input_tables)
 
-        # 🛡️ Guard: Validate prompt before processing
-        # Skip guard validation for agent-generated prompts
-        if prompt_source == "user":
-            guard_result = self.guard.validate(description, data_columns=data_columns)
-            if not guard_result["ok"]:
-                logger.info(f"🚫 Prompt blocked by guard: {guard_result['reason']}")
-                return [{
-                    "status": "blocked",
-                    "code": "",
-                    "content": guard_result["user_message"],
-                    "agent": "SQLDataRecAgent",
-                    "refined_goal": {
-                        "mode": "",
-                        "recommendation": guard_result["reason"],
-                        "output_fields": [],
-                        "chart_encodings": {},
-                        "chart_type": ""
-                    },
-                    "guard": guard_result,
-                    "dialog": [*prev_messages, {"role": "user", "content": description}],
-                }]
-        else:
-            logger.info(f"✅ Skipping guard validation for agent-generated prompt: '{description[:50]}...'")
-
         # === NEW (M3): Detect domain (field metadata already computed above) ===
         # Domain selects QC-aware vs generic field-picking rules.
         domain = "qc" if is_qc_data(data_columns) else "generic"
@@ -808,75 +807,18 @@ class SQLDataRecAgent(object):
 
         # Detect if user specified an explicit chart type in the description or in previous messages
         search_text = description + " " + " ".join([msg.get('content','') for msg in prev_messages])
-        logger.info(f"🔍 Searching for explicit chart type in text: '{search_text[:100]}'...")
-        # Robust regex patterns to capture common chart requests (variants, spaces, hyphens, and phrases)
-        # Patterns ordered by specificity (most specific first) to avoid false matches
-        chart_patterns = [
-            (r'\bqc[_\s-]*trend[_\s-]*line\b', 'qc_trend_line'),
-            (r'\bqc[_\s-]*trend[_\s-]*bar\b', 'qc_trend_bar'),
-            (r'\bqc[_\s-]*histogram\b', 'qc_histogram'),
-            (r'\btrend[_\s-]*line\b', 'line'),
-            (r'\btrend[_\s-]*bar\b', 'bar'),
-            (r'\bbar[_\s-]*chart\b', 'bar'),
-            (r'\bline[_\s-]*chart\b', 'line'),
-            (r'\bhistogram\b', 'histogram'),
-            (r'\bscatter[_\s-]*plot\b', 'point'),
-            (r'\bscatter\b', 'point'),
-            (r'\bpoint\b', 'point'),
-            (r'\barea[_\s-]*chart\b', 'area'),
-            (r'\barea\b', 'area'),
-            (r'\bheat[_\s-]*map\b', 'heatmap'),
-            (r'\bgroup[_\s-]*bar\b', 'group_bar'),
-            (r'\bstacked[_\s-]*bar\b', 'stacked_bar'),
-            (r'\bpie[\s-]*chart\b', 'pie'),
-            (r'\bpie\b', 'pie'),
-            (r'\bdonut[\s-]*chart\b', 'donut'),
-            (r'\bdonut\b', 'donut'),
-            (r'\bbubble[\s-]*plot\b', 'bubble'),
-            (r'\bbubble[\s-]*chart\b', 'bubble'),
-            (r'\bbubble\b', 'bubble'),
-            (r'\bradar[\s-]*chart\b', 'radar'),
-            (r'\bradar\b', 'radar'),
-            (r'\bwaterfall[\s-]*chart\b', 'waterfall'),
-            (r'\bwaterfall\b', 'waterfall'),
-            (r'\bfunnel[\s-]*chart\b', 'funnel'),
-            (r'\bfunnel\b', 'funnel'),
-            (r'\bsankey[\s-]*diagram\b', 'sankey'),
-            (r'\bsankey\b', 'sankey'),
-            (r'\btree[\s-]*map\b', 'tree'),
-            (r'\btreemap\b', 'tree'),
-            (r'\btree\b', 'tree'),
-            (r'\bnetwork[\s-]*diagram\b', 'network'),
-            (r'\bnetwork[\s-]*graph\b', 'network'),
-            (r'\bnetwork\b', 'network'),
-            (r'\bboxplot\b', 'boxplot'),
-            (r'\bviolin[\s-]*plot\b', 'violin'),
-            (r'\bviolins\b', 'violin'),
-            (r'\brectangle[\s-]*tree\b', 'rect_tree'),
-            (r'\brect[\s-]*tree\b', 'rect_tree'),
-            (r'\bsunburst\b', 'sunburst'),
-            (r'\brolling[_\s-]*average\b', 'rolling_average'),
-            (r'\blinear[_\s-]*regression\b', 'linear_regression'),
-            (r'\bradial[_\s-]*plot\b', 'radial_plot'),
-            (r'\bpareto[\s-]*chart\b', 'pareto'),
-            (r'\bpareto\b', 'pareto'),
-            (r'\bgauge[\s-]*chart\b', 'gauge'),
-            (r'\bgauge\b', 'gauge'),
-            (r'\btimeline[\s-]*chart\b', 'timeline'),
-            (r'\btimeline\b', 'timeline'),
-            (r'\bpyramid[\s-]*chart\b', 'pyramid'),
-            (r'\bpyramid\b', 'pyramid'),
-            (r'\bthreshold[\s-]*chart\b', 'threshold'),
-            (r'\bthreshold\b', 'threshold')
-        ]
+        logger.info(f"Searching for explicit chart type in text: '{search_text[:100]}'...")
         specified_chart = False
         extracted_chart_type = None
-        for pat, chart_type in chart_patterns:
-            if re.search(pat, search_text, re.I):
-                specified_chart = True
-                extracted_chart_type = chart_type
-                logger.info(f"📊 ✅ Explicitly detected chart type request: '{chart_type}' (matched pattern: {pat})")
-                break
+        detected_display = detect_chart_type(search_text)
+        if detected_display:
+            extracted_chart_type = to_internal(detected_display)
+            specified_chart = bool(extracted_chart_type)
+            logger.info(
+                "Detected explicit chart type from prompt: display='%s' internal='%s'",
+                detected_display,
+                extracted_chart_type,
+            )
 
         for table in input_tables:
             table_name = sanitize_table_name(table['name'])

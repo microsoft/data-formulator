@@ -6,8 +6,12 @@ import re
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response, extract_and_log_user_prompt
-from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_all_columns_from_input_tables
-from data_formulator.agents.qc_chart_config import is_qc_data, QC_SYSTEM_PROMPT_EXTENSION
+from data_formulator.agents.prompt_guard_agent import extract_all_columns_from_input_tables
+from data_formulator.agents.qc_chart_config import (
+    is_qc_data,
+    QC_SYSTEM_PROMPT_EXTENSION,
+    fix_qc_chart_encodings,
+)
 from data_formulator.agents.field_metadata import FieldMeta, QC_ROLE_MAP
 from data_formulator.agents.chart_compatibility import (
     RejectInfo,
@@ -25,6 +29,11 @@ import traceback
 import logging
 
 logger = logging.getLogger(__name__)
+QC_TEMPLATE_TO_INTERNAL = {
+    "QC Trend Line": "qc_trend_line",
+    "QC Histogram": "qc_histogram",
+    "QC Trend Bar": "qc_trend_bar",
+}
 
 _ID_NAME_PATTERN = re.compile(r"(?:^|_)(id|no|code|seq|key|num)(?:_|$)", re.IGNORECASE)
 
@@ -156,7 +165,7 @@ Concretely:
         - histogram: distribution of ONE quantitative field. Bin if needed. Color groups bars.
         - bar / group_bar: compare metric across categories. Multiple rows with same x → stack or facet. Group_bar: keep color cardinality < 5.
         - line / area: trends along an ordered axis. Duplicate (x, color) with different y breaks the line — aggregate or facet.
-        - linear_regression: 2 quantitative variables; output is long-format with is_predicted column (see forecasting guide below).
+        - linear_regression: 2 quantitative variables; keep original rows with x/y only (NO is_predicted column needed).
         - heatmap: 2 categorical axes + quantitative color intensity. Bin quantitative axes if needed.
         - pie / donut: composition (≤ 12 slices). Avoid for many categories.
         - boxplot / violin: distribution of quantitative per categorical group.
@@ -178,14 +187,10 @@ Concretely:
             - when reshaping data to long format, only fields of the same semantic type should be rehaped into the same column.
     - guide on statistical analysis:
         - when the user asks for forecasting or regression analysis, you should consider the following:
-            - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted" that is a boolean field.
-            - i.e., if the user ask for forecasting based on two columns T and Y, the output should be three columns: T, Y, is_predicted, where
-                - T, Y columns contain BOTH original values from the data and predicted values from the data.
-                - is_predicted is a boolean field to indicate whether the x, y pairs are original values from the data or predicted / regression values from the data.
+            - for linear_regression chart type in this app: keep a simple table with original x,y rows only.
+            - DO NOT add helper columns like is_predicted/regression/forecasting unless the user explicitly asks to create a separate forecast dataset.
+            - regression line is computed by visualization layer from x,y directly.
             - the recommended chart should be line chart (time series) or scatter plot (quantitative x, y)
-            - if the user asks for forecasting, it's good to include predicted x, y pairs for both x in the original data and future x values (i.e., combine regression and forecasting results)
-                - in this case, is_predicted should be of three values 'original', 'regression', 'forecasting'
-                - put is_predicted field in 'opacity' channel to distinguish them.
         - when the user asks for clustering:
             - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
             - the recommended chart should be scatter plot (quantitative x, y)
@@ -280,7 +285,6 @@ class PythonDataRecAgent(object):
 
     def __init__(self, client, system_prompt=None, exec_python_in_subprocess=False, agent_coding_rules="", guard_client=None):
         self.client = client
-        self.guard = PromptGuardAgent(client=guard_client or client)
         
         # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
@@ -461,9 +465,26 @@ class PythonDataRecAgent(object):
             else:
                 refined_goal = { 'mode': "", 'recommendation': "", 'output_fields': [], 'chart_encodings': {}, 'chart_type': "" }
 
+            if user_preferred_chart_type and user_preferred_chart_type.strip():
+                refined_goal["chart_type"] = user_preferred_chart_type.strip()
+
             # 🔍 VALIDATE CHART COMPATIBILITY WITH DATA FIELDS
             chart_type = refined_goal.get('chart_type', '')
             chart_encodings = refined_goal.get("chart_encodings", {})
+            qc_chart_type = (
+                chart_type
+                if str(chart_type).startswith("qc_")
+                else QC_TEMPLATE_TO_INTERNAL.get(str(chart_type), "")
+            )
+            if qc_chart_type:
+                fixed_encodings = fix_qc_chart_encodings(qc_chart_type, chart_encodings)
+                if fixed_encodings != chart_encodings:
+                    refined_goal["chart_encodings"] = fixed_encodings
+                    chart_encodings = fixed_encodings
+                    logger.info(
+                        "✅ Pre-template auto-corrected QC chart encodings: %s",
+                        fixed_encodings,
+                    )
             template_validation = validate_template_constraints(chart_type, chart_encodings)
             if not template_validation.is_valid:
                 reject_resp = reject_info_to_response(
@@ -612,30 +633,6 @@ class PythonDataRecAgent(object):
                     agent_name="PythonDataRecAgent",
                     messages=[*prev_messages, {"role": "user", "content": description}],
                 )]
-
-        # 🛡️ Guard: Validate prompt before processing
-        # Skip guard validation for agent-generated prompts
-        if prompt_source == "user":
-            guard_result = self.guard.validate(description, data_columns=data_columns)
-            if not guard_result["ok"]:
-                logger.info(f"🚫 Prompt blocked by guard: {guard_result['reason']}")
-                return [{
-                    "status": "blocked",
-                    "code": "",
-                    "content": guard_result["user_message"],
-                    "agent": "PythonDataRecAgent",
-                    "refined_goal": {
-                        "mode": "",
-                        "recommendation": guard_result["reason"],
-                        "output_fields": [],
-                        "chart_encodings": {},
-                        "chart_type": ""
-                    },
-                    "guard": guard_result,
-                    "dialog": [*prev_messages, {"role": "user", "content": description}],
-                }]
-        else:
-            logger.info(f"✅ Skipping guard validation for agent-generated prompt: '{description[:50]}...'")
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 

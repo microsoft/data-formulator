@@ -4,21 +4,21 @@ from typing import Dict
 
 
 SAMPLE_PROMPT_TEMPLATES_VI: Dict[str, str] = {
-    "Bar Chart": "Vẽ bar chart so sánh {y} theo {x}",
-    "Line Chart": "Vẽ line chart {y} theo {x}",
-    "Histogram": "Phân bố giá trị {x}",
-    "Heat Map": "Heatmap {x} × {y} với màu {color}",
-    "Scatter Plot": "Vẽ scatter {y} theo {x}",
-    "Pie Chart": "Vẽ pie chart tỉ trọng {theta} theo {color}",
-    "QC Trend Line": "Vẽ QC trend line VALUE theo QCDATE / QCSHIFT",
-    "QC Histogram": "Vẽ QC histogram phân bố VALUE",
-    "QC Trend Bar": "Vẽ QC trend bar VALUE theo QCDATE",
+    "Bar Chart": "Draw a Bar Chart comparing {y} by {x}",
+    "Line Chart": "Draw a Line Chart of {y} by {x}",
+    "Histogram": "Show the distribution of {x}",
+    "Heat Map": "Draw a Heat Map with {x} x {y} colored by {color}",
+    "Scatter Plot": "Draw a Scatter Plot of {y} vs {x}",
+    "Pie Chart": "Draw a Pie Chart for {theta} share by {color}",
+    "QC Trend Line": "Draw a QC Trend Line for VALUE by QCDATE / QCSHIFT",
+    "QC Histogram": "Draw a QC Histogram for VALUE distribution",
+    "QC Trend Bar": "Draw a QC Trend Bar for VALUE by QCDATE",
 }
 
 
 def generate_sample_prompt(chart_type: str, encoding: Dict[str, str]) -> str:
     template = SAMPLE_PROMPT_TEMPLATES_VI.get(
-        chart_type, "Vẽ {chart_type} với các trường phù hợp"
+        chart_type, "Draw {chart_type} with suitable fields"
     )
     if "{chart_type}" in template:
         return template.format(chart_type=chart_type)
@@ -29,5 +29,5 @@ def generate_sample_prompt(chart_type: str, encoding: Dict[str, str]) -> str:
     try:
         return template.format(**safe_map)
     except Exception:
-        return f"Vẽ {chart_type} với cấu hình gợi ý"
+        return f"Draw {chart_type} with suggested encodings"
 

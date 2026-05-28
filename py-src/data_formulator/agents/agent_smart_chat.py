@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import difflib
 import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
-import unicodedata
 
+from data_formulator.agents.chart_type_resolver import (
+    detect_chart_type,
+    is_valid_chart_type,
+    to_display,
+)
 from data_formulator.agents.drawable_catalog import DrawableChartEntry
 
 logger = logging.getLogger(__name__)
@@ -27,7 +30,7 @@ class SmartChatResult:
 
 
 def _build_catalog_summary(catalog: List[DrawableChartEntry], max_items: int = 15) -> str:
-    """Tóm tắt drawable catalog — tăng lên 15 entries để LLM thấy đủ biểu đồ."""
+    """Summarize drawable catalog entries for the LLM."""
     if not catalog:
         return "(No drawable chart template found for current data.)"
     lines: List[str] = []
@@ -41,17 +44,12 @@ def _build_catalog_summary(catalog: List[DrawableChartEntry], max_items: int = 1
 
 
 def _build_column_profile(field_metas: Dict[str, Any]) -> str:
-    """Xây dựng column profile ngắn gọn cho LLM — type + cardinality + range.
-
-    Thông tin này giúp LLM hiểu data thực sự thay vì chỉ đoán từ tên cột.
-    Ví dụ: LLM biết QCSHIFT là categorical (3 values) → tốt để group/color.
-            VALUE là quantitative (range 0.5-2.1) → tốt cho trục Y.
-    """
+    """Build a compact column profile for the LLM: type + cardinality + range."""
     if not field_metas:
         return ""
     lines: List[str] = []
     for name, m in field_metas.items():
-        # Xác định type tag
+        # Determine type tag
         if m.is_temporal:
             type_tag = "temporal"
         elif m.is_sequential:
@@ -66,18 +64,26 @@ def _build_column_profile(field_metas: Dict[str, Any]) -> str:
         parts = [f"- {name} [{type_tag}]"]
         parts.append(f"cards={m.cardinality}({m.cardinality_class})")
 
-        # Range cho numeric
+        # Numeric range
         min_v = getattr(m, "min_value", None)
         max_v = getattr(m, "max_value", None)
         if m.is_quantitative and min_v is not None and max_v is not None:
             parts.append(f"range=[{min_v:.2f},{max_v:.2f}]")
+            stddev = getattr(m, "stddev", None)
+            if stddev is not None:
+                parts.append(f"stddev~{stddev:.1f}")
 
-        # QC role (biết cột này dùng để làm gì trong QC chart)
+        # QC role (how this column is used in QC charts)
         qc_role = getattr(m, "qc_role", None)
         if qc_role:
             parts.append(f"qc_role={qc_role}")
 
-        # Gợi ý sử dụng
+        sample_vals = getattr(m, "sample_values", [])
+        if sample_vals and (m.is_categorical or m.is_temporal):
+            vals_str = ", ".join(str(v) for v in sample_vals)
+            parts.append(f"values=[{vals_str}]")
+
+        # Usage hint
         if m.is_categorical and m.cardinality_class == "low":
             parts.append("→ ideal for grouping/color")
         elif m.is_categorical and m.cardinality_class == "mid":
@@ -90,95 +96,31 @@ def _build_column_profile(field_metas: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _build_data_sample_section(sample_rows: List[dict]) -> str:
+    if not sample_rows:
+        return ""
+    cols = list(sample_rows[0].keys())
+    header = "| " + " | ".join(cols) + " |"
+    separator = "| " + " | ".join(["---"] * len(cols)) + " |"
+    rows_md = []
+    for row in sample_rows:
+        rows_md.append("| " + " | ".join(str(row.get(c, "")) for c in cols) + " |")
+    return "\n".join([header, separator] + rows_md)
+
+
 def _extract_qc_intent(prompt: str) -> bool:
     text = (prompt or "").lower()
     hints = [
         "qc",
         "quality control",
-        "kiem soat chat luong",
-        "kiểm soát chất lượng",
         "spc",
     ]
     return any(h in text for h in hints)
 
 
 def _extract_chart_hint(prompt: str, catalog: List[DrawableChartEntry]) -> str:
-    text = (prompt or "")
-    normalized_text = _normalize_text(text)
-    names = [e.chart_type for e in catalog] + list(QC_CHART_NAMES)
-
-    # 1) Exact name match first
-    for name in names:
-        if _normalize_text(name) in normalized_text:
-            return name
-
-    # 2) Alias/abbreviation map
-    aliases = {
-        "bar": "Bar Chart",
-        "bar chart": "Bar Chart",
-        "line": "Line Chart",
-        "lin": "Line Chart",
-        "line chart": "Line Chart",
-        "box": "Boxplot",
-        "boxplot": "Boxplot",
-        "scatter": "Scatter Plot",
-        "scat": "Scatter Plot",
-        "hist": "Histogram",
-        "histogram": "Histogram",
-        "pie": "Pie Chart",
-        "pie chart": "Pie Chart",
-        "area": "Area Chart",
-        "area chart": "Area Chart",
-        "heat": "Heat Map",
-        "heat map": "Heat Map",
-        "waterfall": "Waterfall",
-        "rolling": "Rolling Average",
-        "radial": "Radial Plot",
-        "bubble": "Bubble Plot",
-        "regression": "Linear Regression",
-        "linear regression": "Linear Regression",
-        "loess": "Loess Regression",
-        "loes": "Loess Regression",
-        "qc trend line": "QC Trend Line",
-        "qc histogram": "QC Histogram",
-        "qc trend bar": "QC Trend Bar",
-        "qc chart": "QC Trend Line",
-    }
-    tokens = [t for t in re.split(r"[^a-z0-9_]+", normalized_text) if t]
-    for ngram_len in (3, 2, 1):
-        if len(tokens) < ngram_len:
-            continue
-        for i in range(len(tokens) - ngram_len + 1):
-            key = " ".join(tokens[i : i + ngram_len])
-            if key in aliases:
-                aliased = aliases[key]
-                # Only return charts that are drawable in current catalog
-                if any(c.chart_type == aliased for c in catalog) or aliased in QC_CHART_NAMES:
-                    return aliased
-
-    # 3) Fuzzy match against available chart names
-    normalized_name_map = {_normalize_text(n): n for n in names}
-    close = difflib.get_close_matches(
-        normalized_text, normalized_name_map.keys(), n=1, cutoff=0.58
-    )
-    if close:
-        return normalized_name_map[close[0]]
-
-    for token in tokens:
-        close_token = difflib.get_close_matches(
-            token, normalized_name_map.keys(), n=1, cutoff=0.72
-        )
-        if close_token:
-            return normalized_name_map[close_token[0]]
-
-    return ""
-
-
-def _normalize_text(text: str) -> str:
-    t = (text or "").lower().strip()
-    t = unicodedata.normalize("NFD", t)
-    t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
-    return t
+    _ = catalog
+    return detect_chart_type(prompt)
 
 
 def _fallback_result(
@@ -197,8 +139,8 @@ def _fallback_result(
         return SmartChatResult(
             action="info",
             message_vi=(
-                "Biểu đồ QC cần các cột đặc trưng như TARGET, LL, UL, QCDATE, QCSHIFT. "
-                "Dữ liệu hiện tại không phải QC, bạn có thể chọn biểu đồ thay thế bên dưới."
+                "QC charts require columns such as TARGET, LL, UL, QCDATE, and QCSHIFT. "
+                "The current data is not QC. Please choose an alternative chart below."
             ),
             chart_type_hint=chart_hint,
             detected_fields=[],
@@ -208,7 +150,7 @@ def _fallback_result(
     if domain == "qc" and qc_intent and not has_chart_hint:
         return SmartChatResult(
             action="qc_suggest",
-            message_vi="Bạn muốn vẽ biểu đồ QC, hãy chọn 1 trong 3 mẫu QC phù hợp bên dưới.",
+            message_vi="You requested a QC chart. Please choose 1 of the 3 suitable QC templates below.",
             chart_type_hint="",
             detected_fields=[],
             confidence=0.8,
@@ -217,7 +159,7 @@ def _fallback_result(
     if has_chart_hint and (has_columns or chart_hint in QC_CHART_NAMES):
         return SmartChatResult(
             action="draw",
-            message_vi="Mình sẽ vẽ theo yêu cầu của bạn.",
+            message_vi="I will draw the chart as requested.",
             chart_type_hint=chart_hint,
             detected_fields=[],
             confidence=0.75,
@@ -226,7 +168,7 @@ def _fallback_result(
     if has_chart_hint and not has_columns:
         return SmartChatResult(
             action="confirm",
-            message_vi="Mình đã hiểu loại biểu đồ, bạn chọn một gợi ý cụ thể để xác định metric và nhóm.",
+            message_vi="I understand the chart type. Please choose a specific suggestion to define metric and grouping.",
             chart_type_hint=chart_hint,
             detected_fields=[],
             confidence=0.78,
@@ -235,16 +177,16 @@ def _fallback_result(
     if has_columns:
         return SmartChatResult(
             action="confirm",
-            message_vi="Mình thấy bạn đã nêu các cột chính, hãy chọn kiểu biểu đồ phù hợp nhất.",
+            message_vi="I see the key columns you mentioned. Please choose the most suitable chart type.",
             chart_type_hint=chart_hint,
             detected_fields=[],
             confidence=0.7,
             rationale="fallback: columns found but chart not explicit",
         )
-    if any(k in text.lower() for k in ["chart", "biểu đồ", "ve ", "vẽ", "plot", "visual"]):
+    if any(k in text.lower() for k in ["chart", "plot", "visual"]):
         return SmartChatResult(
             action="suggest",
-            message_vi="Dựa trên dữ liệu hiện có, đây là các biểu đồ có thể vẽ ngay.",
+            message_vi="Based on the current data, here are charts you can draw right away.",
             chart_type_hint="",
             detected_fields=[],
             confidence=0.7,
@@ -252,7 +194,7 @@ def _fallback_result(
         )
     return SmartChatResult(
         action="info",
-        message_vi="Mình hỗ trợ vẽ biểu đồ từ dữ liệu. Bạn có thể mô tả mục tiêu phân tích cụ thể hơn.",
+        message_vi="I can help create charts from your data. Please describe your analysis goal more specifically.",
         chart_type_hint="",
         detected_fields=[],
         confidence=0.65,
@@ -278,6 +220,7 @@ def _build_system_prompt(
     domain: str,
     catalog_summary: str,
     column_profile: str = "",
+    data_sample_md: str = "",
 ) -> str:
     qc_guard = (
         "Domain=qc: QC charts can be used.\n"
@@ -285,11 +228,16 @@ def _build_system_prompt(
         "If requested, you MUST return action='info' with a short explanation."
     )
 
-    # Nếu có column profile, ưu tiên dùng thay vì chỉ liệt kê tên cột
+    # Use column profile when available instead of only column names.
     col_section = (
         f"Column profiles (name [type] cardinality stats):\n{column_profile}"
         if column_profile
         else f"Columns (names only): {columns}"
+    )
+    data_sample_section = (
+        f"\n=== DATA SAMPLE (representative rows) ===\n{data_sample_md}\n"
+        if data_sample_md
+        else ""
     )
 
     return f"""
@@ -297,8 +245,9 @@ You are a chart assistant. Decide one action and return JSON only.
 
 Data domain: {domain}
 {col_section}
+{data_sample_section}
 
-Catalog (drawable charts pre-computed for this data — explore all options):
+Catalog (drawable charts pre-computed for this data):
 {catalog_summary}
 
 Rules:
@@ -306,15 +255,15 @@ Rules:
 2) {qc_guard}
 3) draw: user clearly asks a specific chart and enough fields/context are given.
 4) qc_suggest: domain=qc and user asks QC chart in general (not a specific QC chart).
-5) confirm: user mentions a specific column or metric but chart type is unclear — propose 2-3 fitting charts.
-6) suggest: user is vague but chart-related — show diverse options from catalog.
+5) confirm: user mentions a specific column or metric but chart type is unclear - propose 2-3 fitting charts.
+6) suggest: user is vague but chart-related - show diverse options from catalog.
 7) info: off-topic, or QC chart request on generic domain.
-8) message_vi: natural language, 1-3 sentences, match user language.
-   GOOD: "Tôi thấy VALUE là chỉ số đo lường, QCSHIFT là 3 ca..."
-   BAD: "Prompt của bạn còn thiếu thông tin"
+8) message_vi: natural language in English, 1-3 sentences.
+   GOOD: "VALUE is a measurement metric, and QCSHIFT has only 3 categories."
+   BAD: "Your prompt is missing information."
 9) chart_type_hint: exact chart type name when possible, else empty string.
-10) Use column profile to reason about suitability: categorical(low) → ideal for grouping;
-    quantitative → good for Y-axis; temporal → time series; sequential(index-like) → avoid as axis.
+10) Use column profile to reason about suitability: categorical(low) -> ideal for grouping;
+    quantitative -> good for Y-axis; temporal -> time series; sequential(index-like) -> avoid as axis.
 
 Output JSON schema:
 {{
@@ -339,10 +288,18 @@ class SmartChatAgent:
         domain: str,
         drawable_catalog: List[DrawableChartEntry],
         field_metas: Optional[Dict[str, Any]] = None,
+        sample_rows: Optional[List[dict]] = None,
     ) -> SmartChatResult:
         catalog_summary = _build_catalog_summary(drawable_catalog)
         column_profile = _build_column_profile(field_metas) if field_metas else ""
-        system_prompt = _build_system_prompt(columns, domain, catalog_summary, column_profile)
+        data_sample_md = _build_data_sample_section(sample_rows or [])
+        system_prompt = _build_system_prompt(
+            columns,
+            domain,
+            catalog_summary,
+            column_profile,
+            data_sample_md,
+        )
         try:
             response = self.client.get_completion(
                 messages=[
@@ -356,7 +313,14 @@ class SmartChatAgent:
             if action not in VALID_ACTIONS:
                 action = "suggest"
             inferred_hint = _extract_chart_hint(prompt, drawable_catalog)
-            llm_hint = str(parsed.get("chart_type_hint", "")).strip()
+            llm_hint_raw = str(parsed.get("chart_type_hint", "")).strip()
+            llm_hint = to_display(llm_hint_raw) if llm_hint_raw else ""
+            if llm_hint and not is_valid_chart_type(llm_hint):
+                logger.warning(
+                    "SmartChatAgent: invalid LLM chart_type_hint '%s' ignored",
+                    llm_hint_raw,
+                )
+                llm_hint = ""
             final_hint = llm_hint or inferred_hint
             result = SmartChatResult(
                 action=action,

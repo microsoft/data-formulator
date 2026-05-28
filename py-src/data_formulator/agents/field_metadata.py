@@ -9,6 +9,7 @@ QC-domain roles (control_limit/measurement/time/...), which downstream modules
 Public surface:
     FieldMeta            — dataclass describing one column.
     compute_field_metadata(conn, table_name) -> Dict[str, FieldMeta]
+    compute_from_dataframe(df) -> Dict[str, FieldMeta]
     QC_ROLE_MAP          — fixed mapping from QC column name to role.
 """
 
@@ -17,7 +18,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ QC_ROLE_MAP: Dict[str, str] = {
 CARDINALITY_LOW_MAX = 12
 CARDINALITY_MID_MAX = 50
 CARDINALITY_HIGH_MAX = 500
+MAX_SAMPLE_VALUES = 12
 
 # A column is considered "quantitative" only if it has at least this many
 # distinct values. Below this we treat numeric columns as ordinal/categorical
@@ -109,6 +111,7 @@ class FieldMeta:
     stddev: Optional[float] = None
     min_value: Optional[float] = None
     max_value: Optional[float] = None
+    sample_values: List[Any] = field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -161,6 +164,11 @@ def _quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def _safe_serialize(val: Any, max_len: int = 30) -> str:
+    s = str(val)
+    return s if len(s) <= max_len else (s[:max_len] + "...")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +198,141 @@ def compute_field_metadata(conn, table_name: str) -> Dict[str, FieldMeta]:
     return metas
 
 
+def compute_from_dataframe(df) -> Dict[str, FieldMeta]:
+    """Compute FieldMeta from an in-memory pandas DataFrame.
+
+    This mirrors compute_field_metadata() semantics so callers that only have
+    DataFrame rows (e.g. smart-chat route) can reuse one metadata logic path.
+    """
+    import pandas as pd
+
+    row_count = len(df.index)
+    metas: Dict[str, FieldMeta] = {}
+    if row_count == 0:
+        return metas
+
+    for col_name in df.columns:
+        series = df[col_name]
+        metas[col_name] = _compute_one_from_series(
+            col_name=col_name,
+            series=series,
+            row_count=row_count,
+        )
+    return metas
+
+
+def _compute_one_from_series(col_name: str, series, row_count: int) -> FieldMeta:
+    """Compute FieldMeta for one pandas Series with DuckDB-equivalent rules."""
+    import datetime as dt
+    import pandas as pd
+
+    sql_type = str(series.dtype)
+
+    if row_count == 0:
+        return FieldMeta(
+            name=col_name,
+            sql_type=sql_type,
+            cardinality=0,
+            null_ratio=0.0,
+            cardinality_class="low",
+            is_temporal=False,
+            is_sequential=False,
+            is_quantitative=False,
+            is_categorical=False,
+            qc_role=_detect_qc_role(col_name),
+            looks_like_id=False,
+            row_count=0,
+            sample_values=[],
+        )
+
+    non_null = int(series.notna().sum())
+    cardinality = int(series.nunique(dropna=True))
+    null_ratio = float((row_count - non_null) / row_count)
+    cardinality_class = _classify_cardinality(cardinality)
+
+    is_numeric = bool(pd.api.types.is_numeric_dtype(series))
+    is_integer = bool(pd.api.types.is_integer_dtype(series))
+    is_temporal = bool(pd.api.types.is_datetime64_any_dtype(series))
+
+    # DATE-like objects can arrive as object dtype in pandas.
+    if not is_temporal and non_null > 0:
+        non_null_vals = series.dropna()
+        if len(non_null_vals) > 0:
+            sample = non_null_vals.head(20)
+            is_temporal = bool(
+                sample.map(lambda v: isinstance(v, (pd.Timestamp, dt.date, dt.datetime))).all()
+            )
+
+    stddev_val: Optional[float] = None
+    min_val: Optional[float] = None
+    max_val: Optional[float] = None
+    if is_numeric and non_null > 0:
+        std = series.std()
+        mn = series.min()
+        mx = series.max()
+        stddev_val = float(std) if pd.notna(std) else 0.0
+        min_val = float(mn) if pd.notna(mn) else None
+        max_val = float(mx) if pd.notna(mx) else None
+
+    is_sequential = (
+        is_integer
+        and non_null == row_count
+        and cardinality == row_count
+        and min_val is not None
+        and max_val is not None
+        and int(max_val - min_val + 1) == cardinality
+    )
+
+    is_quantitative = (
+        is_numeric
+        and not is_sequential
+        and (stddev_val is not None and stddev_val > 0)
+        and cardinality >= MIN_DISTINCT_FOR_QUANTITATIVE
+    )
+
+    is_categorical = (
+        cardinality_class in ("low", "mid")
+        and not is_temporal
+        and not is_sequential
+        and not is_quantitative
+    )
+
+    qc_role = _detect_qc_role(col_name)
+    looks_like_id = _looks_like_id_name(col_name) and cardinality_class in ("high", "huge")
+
+    sample_values: List[Any] = []
+    if cardinality_class in ("low", "mid") and cardinality <= MAX_SAMPLE_VALUES:
+        raw_vals = sorted(series.dropna().unique().tolist(), key=lambda v: str(v))
+        sample_values = [_safe_serialize(v) for v in raw_vals[:MAX_SAMPLE_VALUES]]
+    elif is_temporal:
+        sorted_vals = sorted([str(v) for v in series.dropna().unique().tolist()])
+        if sorted_vals:
+            if len(sorted_vals) >= 3:
+                mid_idx = len(sorted_vals) // 2
+                sample_values = [sorted_vals[0], sorted_vals[mid_idx], sorted_vals[-1]]
+            else:
+                sample_values = sorted_vals
+
+    return FieldMeta(
+        name=col_name,
+        sql_type=sql_type,
+        cardinality=cardinality,
+        null_ratio=null_ratio,
+        cardinality_class=cardinality_class,
+        is_temporal=is_temporal,
+        is_sequential=is_sequential,
+        is_quantitative=is_quantitative,
+        is_categorical=is_categorical,
+        qc_role=qc_role,
+        looks_like_id=looks_like_id,
+        row_count=row_count,
+        stddev=stddev_val,
+        min_value=min_val,
+        max_value=max_val,
+        sample_values=sample_values,
+    )
+
+
 def _compute_one(conn, table_q: str, col_name: str, col_type: str, row_count: int) -> FieldMeta:
     """Compute FieldMeta for a single column."""
     col_q = _quote_ident(col_name)
@@ -210,6 +353,7 @@ def _compute_one(conn, table_q: str, col_name: str, col_type: str, row_count: in
             qc_role=_detect_qc_role(col_name),
             looks_like_id=False,
             row_count=0,
+            sample_values=[],
         )
 
     cardinality, non_null = conn.execute(
@@ -272,6 +416,34 @@ def _compute_one(conn, table_q: str, col_name: str, col_type: str, row_count: in
 
     qc_role = _detect_qc_role(col_name)
     looks_like_id = _looks_like_id_name(col_name) and cardinality_class in ("high", "huge")
+    sample_values: List[Any] = []
+
+    if cardinality_class in ("low", "mid") and cardinality <= MAX_SAMPLE_VALUES:
+        try:
+            rows_q = conn.execute(
+                f"SELECT DISTINCT {col_q} FROM {table_q} "
+                f"WHERE {col_q} IS NOT NULL "
+                f"ORDER BY 1 LIMIT {MAX_SAMPLE_VALUES}"
+            ).fetchall()
+            sample_values = [_safe_serialize(r[0]) for r in rows_q]
+        except Exception as e:
+            logger.warning("Failed to collect sample values for %s: %s", col_name, e)
+    elif is_temporal:
+        try:
+            temporal_vals = conn.execute(
+                f"SELECT DISTINCT {col_q}::VARCHAR FROM {table_q} "
+                f"WHERE {col_q} IS NOT NULL "
+                "ORDER BY 1"
+            ).fetchall()
+            sorted_vals = [r[0] for r in temporal_vals]
+            if sorted_vals:
+                if len(sorted_vals) >= 3:
+                    mid_idx = len(sorted_vals) // 2
+                    sample_values = [sorted_vals[0], sorted_vals[mid_idx], sorted_vals[-1]]
+                else:
+                    sample_values = sorted_vals
+        except Exception as e:
+            logger.warning("Failed to collect temporal sample values for %s: %s", col_name, e)
 
     return FieldMeta(
         name=col_name,
@@ -289,4 +461,5 @@ def _compute_one(conn, table_q: str, col_name: str, col_type: str, row_count: in
         stddev=stddev_val,
         min_value=min_val,
         max_value=max_val,
+        sample_values=sample_values,
     )

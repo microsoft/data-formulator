@@ -59,14 +59,28 @@ class ReportGenAgent(object):
         self.conn = conn
 
     def get_data_summary(self, input_tables):
-        if self.conn:
-            data_summary = ""
-            for table in input_tables:
-                table_name = sanitize_table_name(table['name'])
+        # Prefer SQL statistics when a DB session is available, but gracefully
+        # fall back to payload rows when a table is not present in the session.
+        if not self.conn:
+            return generate_data_summary(input_tables)
+
+        data_summary = ""
+        for table in input_tables:
+            table_name = sanitize_table_name(table["name"])
+            try:
                 table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
                 data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
-        else:
-            data_summary = generate_data_summary(input_tables)
+            except Exception as e:
+                logger.warning(
+                    "ReportGenAgent SQL summary fallback for table '%s': %s",
+                    table_name,
+                    e,
+                )
+                fallback_summary = generate_data_summary([table])
+                data_summary += (
+                    f"[TABLE {table_name}] (fallback from request rows)\n\n"
+                    f"{fallback_summary}\n\n"
+                )
         return data_summary
 
     def stream(self, input_tables, charts=[], style="blog post", report_language="en"):

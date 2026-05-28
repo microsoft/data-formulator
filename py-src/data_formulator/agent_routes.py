@@ -35,23 +35,24 @@ from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_query_completion import QueryCompletionAgent
-from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.agent_utils import log_prompt_to_clickhouse
-from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_all_columns_from_input_tables
+from data_formulator.agents.prompt_guard_agent import extract_all_columns_from_input_tables
 from data_formulator.agents.client_utils import Client
 from data_formulator.agents.prompt_classifier import (
     PROMPT_CONCRETE,
 )
 from data_formulator.agents.agent_smart_chat import SmartChatAgent, SmartChatResult
+from data_formulator.agents.chart_type_resolver import to_internal
 from data_formulator.agents.drawable_catalog import build_drawable_catalog
-from data_formulator.agents.field_metadata import FieldMeta
+from data_formulator.agents.field_metadata import compute_from_dataframe
 from data_formulator.agents.qc_chart_config import is_qc_data
 
 from data_formulator.db_manager import db_manager
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
+QC_SPECIAL_CHARTS = {"QC Trend Line", "QC Histogram", "QC Trend Bar"}
 
 
 def _log_telemetry_event(event_name: str, payload: dict):
@@ -213,66 +214,52 @@ def sanitize_model_error(error_message: str) -> str:
     return message
 
 
-def _classify_cardinality(cardinality: int) -> str:
-    if cardinality <= 12:
-        return "low"
-    if cardinality <= 50:
-        return "mid"
-    if cardinality <= 500:
-        return "high"
-    return "huge"
+MAX_SAMPLE_ROWS = 3
+MAX_COLS_IN_SAMPLE = 8
+MAX_CELL_LEN = 25
+
+
+def _truncate_cell(val) -> str:
+    s = str(val) if val is not None else ""
+    return s if len(s) <= MAX_CELL_LEN else (s[:MAX_CELL_LEN] + "...")
 
 
 def _build_field_metas_from_input_tables(input_tables) -> dict:
+    """Build unified FieldMeta map from input tables using shared API."""
     metas = {}
     for table in input_tables:
         rows = table.get("rows", [])
         df = pd.DataFrame.from_records(rows)
-        row_count = len(df.index)
-        if row_count == 0:
-            continue
-        for col in df.columns:
-            if col in metas:
-                continue
-            series = df[col]
-            non_null = int(series.notna().sum())
-            cardinality = int(series.nunique(dropna=True))
-            null_ratio = 0.0 if row_count == 0 else float((row_count - non_null) / row_count)
-            cardinality_class = _classify_cardinality(cardinality)
-            is_temporal = pd.api.types.is_datetime64_any_dtype(series)
-            is_numeric = pd.api.types.is_numeric_dtype(series)
-            is_integer = pd.api.types.is_integer_dtype(series)
-            stddev = float(series.std()) if is_numeric and pd.notna(series.std()) else None
-            min_val = float(series.min()) if is_numeric and pd.notna(series.min()) else None
-            max_val = float(series.max()) if is_numeric and pd.notna(series.max()) else None
-            is_sequential = (
-                bool(is_integer)
-                and non_null == row_count
-                and cardinality == row_count
-                and min_val is not None
-                and max_val is not None
-                and int(max_val - min_val + 1) == cardinality
-            )
-            is_quantitative = bool(is_numeric and (not is_sequential) and stddev is not None and stddev > 0 and cardinality >= 10)
-            is_categorical = cardinality_class in ("low", "mid") and (not is_temporal) and (not is_sequential) and (not is_quantitative)
-            metas[col] = FieldMeta(
-                name=col,
-                sql_type=str(series.dtype),
-                cardinality=cardinality,
-                null_ratio=null_ratio,
-                cardinality_class=cardinality_class,
-                is_temporal=is_temporal,
-                is_sequential=is_sequential,
-                is_quantitative=is_quantitative,
-                is_categorical=is_categorical,
-                qc_role=None,
-                looks_like_id=False,
-                row_count=row_count,
-                stddev=stddev,
-                min_value=min_val,
-                max_value=max_val,
-            )
+        table_metas = compute_from_dataframe(df)
+        for col_name, meta in table_metas.items():
+            metas.setdefault(col_name, meta)
     return metas
+
+
+def _extract_sample_rows(input_tables) -> list[dict]:
+    for table in input_tables:
+        rows = table.get("rows", [])
+        if not rows:
+            continue
+        n = len(rows)
+        if n == 1:
+            idxs = [0]
+        elif n == 2:
+            idxs = [0, 1]
+        else:
+            idxs = [0, n // 2, n - 1]
+
+        all_cols = list(rows[0].keys())
+        qc_limit_cols = {"TARGET", "LL", "UL", "ARLL", "ARUL"}
+        priority_cols = [c for c in all_cols if c.upper() not in qc_limit_cols]
+        display_cols = (priority_cols + [c for c in all_cols if c not in priority_cols])[:MAX_COLS_IN_SAMPLE]
+
+        sample = []
+        for i in idxs[:MAX_SAMPLE_ROWS]:
+            row = rows[i]
+            sample.append({col: _truncate_cell(row.get(col, "")) for col in display_cols})
+        return sample
+    return []
 
 
 def _run_derive_data_core(content):
@@ -324,6 +311,14 @@ def _run_derive_data_core(content):
 
 
 def _entry_to_dict(entry):
+    if entry.chart_type in QC_SPECIAL_CHARTS:
+        return {
+            "chart_type": entry.chart_type,
+            "encoding": entry.encoding,
+            "confidence": entry.confidence,
+            "rationale_vi": "",
+            "sample_prompt_vi": "",
+        }
     rationale_vi, sample_prompt_vi = _build_business_rationale(
         entry.chart_type, entry.encoding, entry.domain
     )
@@ -380,37 +375,7 @@ def _filter_catalog_by_hint(drawable_catalog, hint: str, top_k: int = 3):
 
 
 def _normalize_chart_type_hint(chart_type_hint: str) -> str:
-    if not chart_type_hint:
-        return ""
-    direct = chart_type_hint.strip()
-    if not direct:
-        return ""
-    display_to_internal = {
-        "Scatter Plot": "point",
-        "Linear Regression": "linear_regression",
-        "Loess Regression": "loess",
-        "Ranged Dot Plot": "point",
-        "Boxplot": "boxplot",
-        "Bar Chart": "bar",
-        "Pyramid Chart": "bar",
-        "Grouped Bar Chart": "group_bar",
-        "Stacked Bar Chart": "group_bar",
-        "Histogram": "histogram",
-        "Threshold Bar Chart": "threshold",
-        "Line Chart": "line",
-        "Dotted Line Chart": "line",
-        "Rolling Average": "rolling_average",
-        "Heat Map": "heatmap",
-        "Pie Chart": "pie",
-        "Radial Plot": "radial_plot",
-        "Bubble Plot": "bubble",
-        "Area Chart": "area",
-        "Waterfall": "waterfall",
-        "QC Trend Line": "qc_trend_line",
-        "QC Trend Bar": "qc_trend_bar",
-        "QC Histogram": "qc_histogram",
-    }
-    return display_to_internal.get(direct, direct)
+    return to_internal(chart_type_hint.strip()) if chart_type_hint else ""
 
 
 def _build_business_rationale(chart_type: str, encoding: dict, domain: str) -> tuple[str, str]:
@@ -560,28 +525,94 @@ def _is_prompt_explicit_fields(prompt: str, columns: list[str]) -> bool:
 def _select_balanced_suggestions(drawable_catalog, domain: str, top_k: int = 6):
     if not drawable_catalog:
         return []
-    if domain != "qc":
-        return drawable_catalog[:top_k]
-    qc = [e for e in drawable_catalog if e.chart_type.startswith("QC")]
-    generic = [e for e in drawable_catalog if not e.chart_type.startswith("QC")]
+
+    def family_key(chart_type: str) -> str:
+        c = (chart_type or "").lower()
+        if c.startswith("qc"):
+            return "qc"
+        if "scatter" in c or "regression" in c or "dot" in c:
+            return "relation"
+        if "bar" in c or "box" in c:
+            return "compare"
+        if "line" in c or "area" in c or "rolling" in c:
+            return "trend"
+        if "histogram" in c:
+            return "distribution"
+        if "pie" in c or "radial" in c:
+            return "composition"
+        if "heat" in c:
+            return "matrix"
+        return "other"
+
+    # Group suggestions by family while preserving confidence order.
+    families: dict[str, list] = {}
+    for e in drawable_catalog:
+        k = family_key(getattr(e, "chart_type", ""))
+        families.setdefault(k, []).append(e)
+
+    # Domain-aware family priority: QC keeps QC-first, generic emphasizes diversity.
+    if domain == "qc":
+        family_order = ["qc", "trend", "compare", "distribution", "relation", "composition", "matrix", "other"]
+    else:
+        family_order = ["compare", "trend", "relation", "distribution", "composition", "matrix", "other"]
+
+    # Round-robin across families for diversity, then fall back by confidence order.
     picks = []
-    qi, gi = 0, 0
-    while len(picks) < top_k and (qi < len(qc) or gi < len(generic)):
-        if qi < len(qc):
-            picks.append(qc[qi])
-            qi += 1
+    family_idx = {k: 0 for k in families.keys()}
+    while len(picks) < top_k:
+        made_progress = False
+        for fam in family_order:
+            arr = families.get(fam, [])
+            idx = family_idx.get(fam, 0)
+            if idx < len(arr):
+                picks.append(arr[idx])
+                family_idx[fam] = idx + 1
+                made_progress = True
+                if len(picks) >= top_k:
+                    break
+        if not made_progress:
+            break
+
+    if len(picks) < top_k:
+        seen = {(p.chart_type, tuple(sorted((p.encoding or {}).items()))) for p in picks}
+        for e in drawable_catalog:
+            key = (e.chart_type, tuple(sorted((e.encoding or {}).items())))
+            if key in seen:
+                continue
+            picks.append(e)
+            seen.add(key)
             if len(picks) >= top_k:
                 break
-        if gi < len(generic):
-            picks.append(generic[gi])
-            gi += 1
+
     return picks[:top_k]
 
 
-def _select_chart_family_suggestions(drawable_catalog, chart_type_hint: str, domain: str, top_k: int = 4):
+def _select_chart_family_suggestions(
+    drawable_catalog,
+    chart_type_hint: str,
+    domain: str,
+    top_k: int = 4,
+    user_prompt: str = "",
+):
     if not chart_type_hint:
         return _select_balanced_suggestions(drawable_catalog, domain, top_k=top_k)
-    hint = chart_type_hint.lower()
+    hint_lower = chart_type_hint.lower()
+    prompt_lower = (user_prompt or "").lower()
+    explicit_exact_requested = (
+        hint_lower in prompt_lower
+        or ("bar chart" in prompt_lower and hint_lower == "bar chart")
+        or ("line chart" in prompt_lower and hint_lower == "line chart")
+        or ("pie chart" in prompt_lower and hint_lower == "pie chart")
+    )
+    # If user explicitly names an exact chart type that exists in catalog,
+    # prioritize multiple encoding variants of that exact chart first.
+    exact = [e for e in drawable_catalog if e.chart_type.lower() == hint_lower]
+    if explicit_exact_requested and exact:
+        if len(exact) >= top_k:
+            return exact[:top_k]
+        fill_exact = [e for e in drawable_catalog if e not in exact]
+        return (exact + fill_exact)[:top_k]
+    hint = hint_lower
     family = None
     if "bar" in hint:
         family = "bar"
@@ -617,6 +648,10 @@ def _select_chart_family_suggestions(drawable_catalog, chart_type_hint: str, dom
 def _enrich_suggestions_with_agent(client: Client, prompt: str, domain: str, suggestion_dicts: list[dict]) -> list[dict]:
     if not suggestion_dicts:
         return suggestion_dicts
+    # QC special templates use fixed channel->field mappings.
+    # Do not let LLM rewrite narrative/prompt for these charts.
+    if any(str(s.get("chart_type", "")).strip() in QC_SPECIAL_CHARTS for s in suggestion_dicts):
+        return suggestion_dicts
     payload = []
     for s in suggestion_dicts:
         payload.append({
@@ -648,14 +683,34 @@ def _enrich_suggestions_with_agent(client: Client, prompt: str, domain: str, sug
         parsed = json.loads(raw)
         items = parsed.get("items", []) if isinstance(parsed, dict) else []
         by_type = {str(i.get("chart_type", "")).strip(): i for i in items if isinstance(i, dict)}
+
+        def _looks_like_code_text(text: str) -> bool:
+            t = (text or "").strip().lower()
+            if not t:
+                return False
+            code_markers = [
+                " = ",
+                "data[",
+                ".groupby(",
+                ".reset_index(",
+                ".dropna(",
+                ".describe(",
+                "plt.",
+                "pd.",
+                "df[",
+                "->",
+                "lambda ",
+            ]
+            return any(m in t for m in code_markers)
+
         updated = []
         for s in suggestion_dicts:
             ct = s.get("chart_type", "")
             item = by_type.get(ct, {})
             next_s = dict(s)
-            if item.get("rationale_vi"):
+            if item.get("rationale_vi") and not _looks_like_code_text(str(item.get("rationale_vi", ""))):
                 next_s["rationale_vi"] = item["rationale_vi"]
-            if item.get("sample_prompt_vi"):
+            if item.get("sample_prompt_vi") and not _looks_like_code_text(str(item.get("sample_prompt_vi", ""))):
                 next_s["sample_prompt_vi"] = item["sample_prompt_vi"]
             updated.append(next_s)
         return updated
@@ -986,6 +1041,7 @@ def smart_chat():
     data_columns = extract_all_columns_from_input_tables(input_tables)
     domain = "qc" if is_qc_data(data_columns) else "generic"
     field_metas = _build_field_metas_from_input_tables(input_tables)
+    sample_rows = _extract_sample_rows(input_tables)
     # Build full drawable catalog first; action-specific branches will slice later.
     # This prevents early truncation from hiding relevant family variants
     # (e.g., Line Chart / Dotted Line Chart when user asks for line).
@@ -998,7 +1054,7 @@ def smart_chat():
             "status": "ok",
             "category": "VAGUE",
             "action": "suggest",
-            "message_vi": "Chọn một biểu đồ phù hợp với dữ liệu hiện tại của bạn.",
+            "message_vi": "Choose a chart suitable for your current data.",
             "suggestions": [_entry_to_dict(e) for e in drawable_catalog[:6]],
             "sample_prompts": [e.sample_prompt_vi for e in drawable_catalog[:5]],
         })
@@ -1006,9 +1062,34 @@ def smart_chat():
         return response
 
     main_client = get_client(model_config)
+
+    # Fast path: when UI already selected a chart type (e.g., suggestion click),
+    # skip intent classification and go straight to derive-data.
+    selected_chart_type = str(content.get("user_preferred_chart_type", "")).strip()
+    if selected_chart_type:
+        payload, status_code = _run_derive_data_core(content)
+        payload["category"] = PROMPT_CONCRETE
+        payload["action"] = "draw"
+        payload["message_vi"] = ""
+        payload["classifier_hints"] = {
+            "chart_type_hint": selected_chart_type,
+            "detected_fields": [],
+        }
+        response = flask.jsonify(payload)
+        response.status_code = status_code
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
     lw_client = get_lightweight_client(main_client)
     agent = SmartChatAgent(client=lw_client)
-    result = agent.run(instruction, data_columns, domain, drawable_catalog, field_metas=field_metas)
+    result = agent.run(
+        instruction,
+        data_columns,
+        domain,
+        drawable_catalog,
+        field_metas=field_metas,
+        sample_rows=sample_rows,
+    )
 
     qc_chart_names = {"QC Trend Line", "QC Histogram", "QC Trend Bar"}
     if (
@@ -1019,8 +1100,8 @@ def smart_chat():
         result = SmartChatResult(
             action="info",
             message_vi=(
-                "Biểu đồ QC cần các cột đặc trưng như TARGET, LL, UL, QCDATE, QCSHIFT "
-                "mà dữ liệu hiện tại không có. Bạn có thể chọn các biểu đồ thay thế bên dưới."
+                "QC charts require columns such as TARGET, LL, UL, QCDATE, and QCSHIFT, "
+                "which are missing in the current data. You can choose alternative charts below."
             ),
             chart_type_hint=result.chart_type_hint,
             detected_fields=result.detected_fields,
@@ -1050,17 +1131,23 @@ def smart_chat():
     )
 
     if result.action == "draw":
-        # Guard: chart type only (e.g. "vẽ bar chart") should trigger guided confirm,
+        # Guard: chart type only (e.g. "draw bar chart") should trigger guided confirm,
         # not immediate draw, unless prompt contains explicit fields.
         # Exception: QC chart names on QC domain can draw directly — their templates
         # have fixed field mappings so the user doesn't need to spell out column names.
         is_qc_chart_direct = result.chart_type_hint in qc_chart_names and domain == "qc"
-        if result.chart_type_hint and not is_qc_chart_direct and not _is_prompt_explicit_fields(instruction, data_columns):
+        has_user_selected_chart = bool(str(content.get("user_preferred_chart_type", "")).strip())
+        if (
+            result.chart_type_hint
+            and not is_qc_chart_direct
+            and not has_user_selected_chart
+            and not _is_prompt_explicit_fields(instruction, data_columns)
+        ):
             result = SmartChatResult(
                 action="confirm",
                 message_vi=(
-                    "Mình đã hiểu loại biểu đồ bạn muốn. "
-                    "Chọn một gợi ý bên dưới để xác định metric và trường dữ liệu cụ thể."
+                    "I understand the chart type you want. "
+                    "Choose a suggestion below to specify metric and fields."
                 ),
                 chart_type_hint=result.chart_type_hint,
                 detected_fields=result.detected_fields,
@@ -1103,7 +1190,7 @@ def smart_chat():
 
     if result.action == "confirm":
         suggestions_entries = _select_chart_family_suggestions(
-            drawable_catalog, result.chart_type_hint, domain, top_k=4
+            drawable_catalog, result.chart_type_hint, domain, top_k=4, user_prompt=instruction
         )
         suggestions = [_entry_to_dict(s) for s in suggestions_entries]
         if not suggestions:
@@ -1274,78 +1361,6 @@ def query_completion():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
-@agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
-def get_recommendation_questions():
-    def generate():
-        if request.is_json:
-            logger.info("# get recommendation questions request")
-            content = request.get_json()
-            token = content.get("token", "")
-
-            client = get_client(content['model'])
-
-            language = content.get("language", "python")
-            if language == "sql":
-                db_conn = db_manager.get_connection(session['session_id'])
-            else:
-                db_conn = None
-
-            agent_exploration_rules = content.get("agent_exploration_rules", "")
-            _lw = get_lightweight_client(client)
-            agent = InteractiveExploreAgent(client=_lw, agent_exploration_rules=agent_exploration_rules, db_conn=db_conn)
-
-            # Get input tables from the request
-            input_tables = content.get("input_tables", [])
-            
-            # Get exploration thread if provided (for context from previous explorations)
-            mode = content.get("mode", "interactive")
-            start_question = content.get("start_question", None)
-            exploration_thread = content.get("exploration_thread", None)
-            current_chart = content.get("current_chart", None)
-            current_data_sample = content.get("current_data_sample", None)
-
-            # 🛡️ Guard: validate user-typed input in agent mode to prevent token waste
-            raw_user_input = content.get("raw_user_input", None)
-            prompt_source = content.get("prompt_source", "system")
-            if mode == "agent" and raw_user_input and prompt_source == "user":
-                data_columns = extract_all_columns_from_input_tables(input_tables)
-                guard = PromptGuardAgent(client=_lw)
-                guard_result = guard.validate(raw_user_input, data_columns=data_columns)
-                if not guard_result["ok"]:
-                    logger.info(f"🚫 [Agent mode] Prompt blocked: {guard_result['reason']}")
-                    blocked_data = {
-                        "type": "guard_blocked",
-                        "user_message": guard_result.get("user_message", "Please enter a data visualization request."),
-                        "reason": guard_result.get("reason", ""),
-                    }
-                    yield 'data: ' + json.dumps(blocked_data) + '\n'
-                    return
-
-            try:
-                for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
-                    yield chunk
-            except Exception as e:
-                import traceback
-                logger.error(f"[get_recommendation_questions] Exception: {type(e).__name__}: {e}")
-                logger.error(traceback.format_exc())
-                error_data = { 
-                    "content": "unable to process recommendation questions request" 
-                }
-                yield 'error: ' + json.dumps(error_data) + '\n'
-        else:
-            error_data = { 
-                "content": "Invalid request format" 
-            }
-            yield 'error: ' + json.dumps(error_data) + '\n'
-
-    response = Response(
-        stream_with_context(generate()),
-        mimetype='application/json',
-        headers={ 'Access-Control-Allow-Origin': '*',  }
-    )
-    return response
-
-
 @agent_bp.route('/log-user-prompt', methods=['POST'])
 def log_user_prompt_endpoint():
     """
@@ -1396,8 +1411,8 @@ def generate_report_stream():
             logger.info("# generate report stream request")
             content = request.get_json()
             token = content.get("token", "")
-
-            client = get_client(content['model'])
+            model_cfg = content.get("model", {})
+            client = get_client(model_cfg)
 
             language = content.get("language", "python")
             if language == "sql":
@@ -1413,13 +1428,56 @@ def generate_report_stream():
             style = content.get("style", "blog post")
             report_language = content.get("report_language", "en")
 
+            # Debug metadata for failure analysis
+            chart_url_stats = []
+            for c in charts:
+                url = c.get("chart_url") or ""
+                if not url:
+                    kind = "empty"
+                    length = 0
+                elif isinstance(url, str) and url.startswith("data:image/"):
+                    kind = "data_url_image"
+                    length = len(url)
+                elif isinstance(url, str) and url.startswith("blob:"):
+                    kind = "blob_url"
+                    length = len(url)
+                elif isinstance(url, str) and url.startswith("http"):
+                    kind = "http_url"
+                    length = len(url)
+                else:
+                    kind = "other"
+                    length = len(url) if isinstance(url, str) else 0
+                chart_url_stats.append({
+                    "chart_id": c.get("chart_id", ""),
+                    "url_kind": kind,
+                    "url_len": length,
+                })
+
+            logger.info(
+                "report_stream meta endpoint=%s model=%s input_tables=%d charts=%d style=%s report_language=%s chart_url_stats=%s",
+                model_cfg.get("endpoint", ""),
+                model_cfg.get("model", ""),
+                len(input_tables),
+                len(charts),
+                style,
+                report_language,
+                json.dumps(chart_url_stats, ensure_ascii=False),
+            )
+
             try:
                 for chunk in agent.stream(input_tables, charts, style, report_language):
                     yield chunk
             except Exception as e:
-                logger.error(e)
+                logger.exception(
+                    "generate_report_stream failed endpoint=%s model=%s style=%s report_language=%s",
+                    model_cfg.get("endpoint", ""),
+                    model_cfg.get("model", ""),
+                    style,
+                    report_language,
+                )
                 error_data = { 
-                    "content": "unable to process report generation request" 
+                    "content": "unable to process report generation request",
+                    "debug_hint": str(e)[:500],
                 }
                 yield 'error: ' + json.dumps(error_data) + '\n'
         else:

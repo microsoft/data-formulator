@@ -298,6 +298,11 @@ def fix_qc_chart_encodings(chart_type, chart_encodings):
         if "y" in fixed:
             fixed.pop("y")
             made_changes = True
+        # Remove channels not defined by qc_trend_bar template.
+        for ch in list(fixed.keys()):
+            if ch not in {"VALUE", "QCDATE", "QCSHIFT"}:
+                fixed.pop(ch)
+                made_changes = True
         
         # ⚠️ Ensure ALL required channels for qc_trend_bar are present
         required_channels = ["VALUE", "QCDATE", "QCSHIFT"]
