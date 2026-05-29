@@ -97,6 +97,7 @@ import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor 
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, ResolvedConversationCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
+import { CARD_WIDTH, CARD_GAP, PANEL_PADDING, fittableThreadColumns } from './threadLayout';
 
 /** Pick the icon component for a step line based on known prefixes. */
 // Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
@@ -3120,16 +3121,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // only one column fits, splitting a long thread into segments adds visual
     // overhead (continuation headers + ghost parents) without any layout
     // benefit, since the segments would just stack in the same single column.
-    const CARD_GAP = 12; // padding + spacing between cards in a column
-    const PANEL_PADDING = 16;
-    // 220 visual card width + 14px right gutter (CARD_CONTENT_PR) so cards
-    // keep their original size while gaining a right margin that balances
-    // the left timeline gutter.
-    const CARD_WIDTH = 234;
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
-    // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
-    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
+    // Column geometry (CARD_WIDTH / CARD_GAP / PANEL_PADDING) is defined once
+    // in ./threadLayout and shared with DataFormulator's pane snapping.
+    const fittableColumns = fittableThreadColumns(containerWidth);
 
     // Adaptively split long derivation chains so the resulting segments fill
     // the available columns evenly.  See `computeSplitExtraLeaves` for the

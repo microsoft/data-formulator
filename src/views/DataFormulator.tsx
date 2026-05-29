@@ -40,6 +40,7 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
+import { threadPaneWidth } from './threadLayout';
 
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
@@ -443,12 +444,9 @@ export const DataFormulatorFC = ({ }) => {
         //boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
-    // Discrete column snapping for DataThread
-    const CARD_WIDTH = 220;
-    const CARD_GAP = 12;
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    const PANE_PADDING = 48;
-    const columnSize = (n: number) => n * COLUMN_WIDTH + PANE_PADDING;
+    // Discrete column snapping for DataThread.
+    // Column geometry is defined once in ./threadLayout and shared with
+    // DataThread so the pane snap points line up with the rendered columns.
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -459,13 +457,13 @@ export const DataFormulatorFC = ({ }) => {
         let bestCols = 1;
         let bestDist = Infinity;
         for (let n = 1; n <= 3; n++) {
-            const dist = Math.abs(raw - columnSize(n));
+            const dist = Math.abs(raw - threadPaneWidth(n));
             if (dist < bestDist) {
                 bestDist = dist;
                 bestCols = n;
             }
         }
-        const snapped = columnSize(bestCols);
+        const snapped = threadPaneWidth(bestCols);
         if (Math.abs(raw - snapped) > 2) {
             const totalWidth = sizes.reduce((a, b) => a + b, 0);
             allotmentRef.current.resize([snapped, totalWidth - snapped]);
@@ -545,10 +543,10 @@ export const DataFormulatorFC = ({ }) => {
         let newSize: number | null = null;
         if (prev <= 1 && threadCount > 1) {
             // Case 1: was 1 thread, now 2+ → expand to 2 columns
-            newSize = columnSize(2);
+            newSize = threadPaneWidth(2);
         } else if (prev > 1 && threadCount <= 1) {
             // Case 2: was 2+ threads, now 1 → shrink to 1 column
-            newSize = columnSize(1);
+            newSize = threadPaneWidth(1);
         }
         // Case 3: was 2+ threads and still 2+ → don't change (respect user's manual setting)
 
@@ -581,7 +579,9 @@ export const DataFormulatorFC = ({ }) => {
                     position: 'relative'}}>
                 <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
                     {tables.length > 0 ? (
-                        <Allotment.Pane minSize={columnSize(1)} preferredSize={columnSize(preferredColumns)} maxSize={columnSize(3)} snap={false}>
+                        <Allotment.Pane minSize={threadPaneWidth(1)} 
+                                preferredSize={threadPaneWidth(preferredColumns)} 
+                                maxSize={threadPaneWidth(3)} snap={false}>
                             <DataThread sx={{
                                 display: 'flex', 
                                 flexDirection: 'column',

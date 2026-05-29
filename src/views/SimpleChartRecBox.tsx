@@ -40,7 +40,7 @@ import StopIcon from '@mui/icons-material/Stop';
 
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import { borderColor, transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
@@ -151,7 +151,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
     const [selectedAgent, setSelectedAgent] = useState<'explore' | 'report'>('explore');
     const [attachedImages, setAttachedImages] = useState<string[]>([]);
-    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
     const lastAutoFocusedChartIdRef = useRef<string | null>(null);
@@ -296,6 +297,31 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, []);
 
+    // Attach files as conversation context. Images become reference images
+    // (sent to the model as attachments); text-like files are read as text
+    // and folded into the agent prompt as context.
+    const handleAttachFiles = React.useCallback((fileList: FileList | null) => {
+        if (!fileList) return;
+        const MAX_TEXT_CHARS = 50000;
+        Array.from(fileList).forEach(file => {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = () => setAttachedImages(prev => [...prev, reader.result as string]);
+                reader.readAsDataURL(file);
+            } else {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    let content = (reader.result as string) || '';
+                    if (content.length > MAX_TEXT_CHARS) {
+                        content = content.slice(0, MAX_TEXT_CHARS) + '\n…[truncated]';
+                    }
+                    setAttachedFiles(prev => [...prev, { name: file.name, content }]);
+                };
+                reader.readAsText(file);
+            }
+        });
+    }, []);
+
     // Collect table IDs from root up to (and including) the focused table for agent action matching
     const threadTableIds = React.useMemo(() => {
         if (!focusedTableId) return new Set<string>();
@@ -373,6 +399,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, displayPrompt?: string) => {
         if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
+        // Fold attached reference files into the prompt the agent sees, while
+        // keeping the timeline bubble (displayContent) clean for the user.
+        const fileContext = attachedFiles.length > 0
+            ? '\n\n' + attachedFiles.map(f => `[Attached file: ${f.name}]\n${f.content}`).join('\n\n')
+            : '';
+        const agentPrompt = prompt + fileContext;
+        const cleanDisplay = displayPrompt ?? (fileContext ? prompt : undefined);
+
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
         const currentTable = tables.find(t => t.id === focusedTableId);
         const priorityIds = (currentTable?.derive && !currentTable.anchored)
@@ -404,8 +438,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // 'clarifying' status and pendingClarification storage.
         if (isResume && pendingClarification?.draftId) {
             dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
-                from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
-                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
+                ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
                 timestamp: Date.now()
             }}));
             dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
@@ -552,10 +586,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // backend appends it to the trajectory as a normal user message.
             // No special clarification payload needed.
             requestBody.trajectory = clarificationContext!.trajectory;
-            requestBody.user_question = prompt;
+            requestBody.user_question = agentPrompt;
             requestBody.completed_step_count = clarificationContext!.completedStepCount;
         } else {
-            requestBody.user_question = prompt;
+            requestBody.user_question = agentPrompt;
             if (focusedThread) requestBody.focused_thread = focusedThread;
             if (otherThreads) requestBody.other_threads = otherThreads;
         }
@@ -603,13 +637,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             currentDraftParentTableId = existingDraft?.derive?.trigger?.tableId || null;
             currentDraftInteraction = [...(existingDraft?.derive?.trigger?.interaction || [])];
             // The user reply was already appended above, add to local accumulator too
-            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
-                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
+                ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
                 timestamp: Date.now() });
         } else {
             const initialEntries: InteractionEntry[] = [
-                { from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
-                    ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                { from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
+                    ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
                     timestamp: Date.now() }
             ];
             createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
@@ -940,6 +974,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 clearTimeout(timeoutId);
                 setChatPrompt("");
                 setAttachedImages([]);
+                setAttachedFiles([]);
                 isCompleted = true;
             }
 
@@ -988,6 +1023,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 clearTimeout(timeoutId);
                 setChatPrompt("");
                 setAttachedImages([]);
+                setAttachedFiles([]);
                 isCompleted = true;
             }
 
@@ -1028,6 +1064,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (completionResult) {
                 setChatPrompt("");
                 setAttachedImages([]);
+                setAttachedFiles([]);
             }
         };
 
@@ -1110,7 +1147,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
             }
         })();
-    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t]);
+    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t, attachedImages, attachedFiles]);
 
     // ── Report generation via report agent ──────────────────────────
 
@@ -1473,7 +1510,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             {/* @-mention table chips and image attachments.
                 Skip the table-chip row entirely when there's only one root table —
                 there's nothing else the user could @-mention, so the chip is noise. */}
-            {((primaryTableIds.length > 0 && rootTables.length > 1) || attachedImages.length > 0) && !isChatFormulating && (
+            {((primaryTableIds.length > 0 && rootTables.length > 1) || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
                     {rootTables.length > 1 && primaryTableIds.map(id => {
                         const tbl = tables.find(t => t.id === id);
@@ -1512,6 +1549,27 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 border: 'none',
                                 borderRadius: '4px',
                                 '& .MuiChip-label': { px: '4px' },
+                                '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
+                                '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
+                            }}
+                        />
+                    ))}
+                    {attachedFiles.map((file, idx) => (
+                        <Chip
+                            key={`file-${idx}`}
+                            size="small"
+                            icon={<InsertDriveFileOutlinedIcon sx={{ fontSize: 14 }} />}
+                            label={file.name}
+                            onDelete={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))}
+                            sx={{
+                                height: 20,
+                                fontSize: 10,
+                                maxWidth: 160,
+                                color: theme.palette.text.secondary,
+                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                border: 'none',
+                                borderRadius: '4px',
+                                '& .MuiChip-label': { px: '4px', overflow: 'hidden', textOverflow: 'ellipsis' },
                                 '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
                                 '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
                             }}
@@ -1645,10 +1703,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.5, overflow: 'hidden', flex: 1 }}>
-                    <Tooltip title={t('chartRec.addMoreData')}>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => { handleAttachFiles(e.target.files); if (e.target) e.target.value = ''; }}
+                    />
+                    <Tooltip title={t('chartRec.attachContext', { defaultValue: 'Attach context (image or file)' })}>
                         <IconButton
                             size="small"
-                            onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
+                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
                             sx={{
                                 p: 0.5,
                                 color: theme.palette.text.secondary,
@@ -1762,11 +1827,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         <Box>
             {/* The input box */}
             {inputBox}
-            <UnifiedDataUploadDialog
-                open={uploadDialogOpen}
-                onClose={() => setUploadDialogOpen(false)}
-                initialTab="menu"
-            />
         </Box>
     );
 };
