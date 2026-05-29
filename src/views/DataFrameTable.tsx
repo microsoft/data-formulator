@@ -127,17 +127,24 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                         )}
                         {displayCols.map((col, i) => {
                             const desc = col !== '\u2026' ? columnDescriptions?.[col] : undefined;
+                            if (desc) {
+                                return (
+                                    <Tooltip key={i} title={desc} placement="top" enterDelay={400}>
+                                        <Typography component="th" variant="caption"
+                                            sx={{ fontWeight: 600, fontSize: headerFontSize,
+                                                cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 2,
+                                            }}>
+                                            {col}
+                                        </Typography>
+                                    </Tooltip>
+                                );
+                            }
                             return (
-                                <Tooltip key={i} title={desc || ''} placement="top"
-                                    enterDelay={400} disableHoverListener={!desc}>
-                                    <Typography component="th" variant="caption"
-                                        title={desc ? undefined : col}
-                                        sx={{ fontWeight: 600, fontSize: headerFontSize,
-                                            ...(desc ? { cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 2 } : {}),
-                                        }}>
-                                        {col}
-                                    </Typography>
-                                </Tooltip>
+                                <Typography component="th" key={i} variant="caption"
+                                    title={col}
+                                    sx={{ fontWeight: 600, fontSize: headerFontSize }}>
+                                    {col}
+                                </Typography>
                             );
                         })}
                     </tr>

@@ -56,7 +56,7 @@ AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
     # ── Light: single-turn extractors / classifiers / formatters ────────────
     "data_load":           "minimal",  # one-shot type inference
     "data_clean":          "minimal",  # extract tables from text
-    "experience_distill":  "minimal",  # summarise an analysis context
+    "workflow_distill":  "minimal",  # summarise an analysis context
     "chart_insight":       "minimal",  # title + 1–3 takeaways from a chart
     "chart_restyle":       "minimal",  # apply style edits to a Vega-Lite spec
     "code_explanation":    "minimal",  # describe derived fields

@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 
 /**
- * experienceContext — pure helpers that turn DataFormulator state into
- * the timeline payload sent to `/api/knowledge/distill-experience`.
+ * workflowContext — pure helpers that turn DataFormulator state into
+ * the timeline payload sent to `/api/knowledge/distill-workflow`.
  *
  * No React, no Redux. Used by:
  *   - SessionDistill.collectSessionThreads (live distillation)

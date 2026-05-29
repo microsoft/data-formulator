@@ -1,10 +1,10 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Knowledge store — manages user knowledge files (rules, experiences).
+"""Knowledge store — manages user knowledge files (rules, workflows).
 
 Each user has a ``knowledge/`` directory under their home with two
-sub-directories: ``rules`` and ``experiences``.  Every knowledge entry is a
+sub-directories: ``rules`` and ``workflows``.  Every knowledge entry is a
 Markdown file with YAML front matter.
 
 All file I/O is routed through :class:`ConfinedDir` for path safety.
@@ -12,7 +12,7 @@ All file I/O is routed through :class:`ConfinedDir` for path safety.
 Directory depth constraints:
 
 - ``rules``: flat — only files directly under ``rules/`` (1 path part)
-- ``experiences``: one level of sub-directories (up to 2 path parts)
+- ``workflows``: one level of sub-directories (up to 2 path parts)
 """
 
 from __future__ import annotations
@@ -27,18 +27,26 @@ from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
 
-VALID_CATEGORIES = frozenset({"rules", "experiences"})
+VALID_CATEGORIES = frozenset({"rules", "workflows"})
 
 _MAX_DEPTH = {
     "rules": 1,
-    "experiences": 2,   # one sub-dir: "category/file.md"
+    "workflows": 2,   # one sub-dir: "category/file.md"
 }
 
 KNOWLEDGE_LIMITS: dict[str, int] = {
     "rule_description_max": 100,
     "rules": 350,
-    "experiences": 2000,
+    # Soft length guidance for distilled workflows: the target the distill
+    # agent aims for, NOT a hard cap. Workflows may exceed it when an
+    # analysis genuinely needs the room (e.g. multiple abstraction levels).
+    # Writes are only rejected past WORKFLOW_HARD_MAX below.
+    "workflows": 6000,
 }
+
+# Absolute safety ceiling for a workflow body. Guards against runaway LLM
+# output while still letting rich, multi-section workflows through.
+WORKFLOW_HARD_MAX: int = 24000
 
 # ---------------------------------------------------------------------------
 # Tokenization helpers for improved search scoring
@@ -151,14 +159,13 @@ class KnowledgeItemMeta:
     """
 
     __slots__ = (
-        "title", "tags", "source", "created", "description", "always_apply",
+        "title", "source", "created", "description", "always_apply",
         "source_workspace_id", "source_workspace_name",
     )
 
     def __init__(
         self,
         title: str,
-        tags: list[str],
         source: str,
         created: str,
         description: str,
@@ -167,7 +174,6 @@ class KnowledgeItemMeta:
         source_workspace_name: str = "",
     ):
         self.title = title
-        self.tags = tags
         self.source = source
         self.created = created
         self.description = description
@@ -181,14 +187,6 @@ class KnowledgeItemMeta:
         title = meta.get("title", fallback_stem)
         title = str(title) if title is not None else fallback_stem
 
-        raw_tags = meta.get("tags", [])
-        if isinstance(raw_tags, list):
-            tags = [str(t) for t in raw_tags]
-        elif raw_tags is None:
-            tags = []
-        else:
-            tags = [str(raw_tags)]
-
         source = str(meta.get("source", "manual") or "manual")
         created = str(meta.get("created", "") or "")
         description = str(meta.get("description", "") or "")
@@ -198,7 +196,6 @@ class KnowledgeItemMeta:
 
         return cls(
             title=title,
-            tags=tags,
             source=source,
             created=created,
             description=description,
@@ -246,26 +243,64 @@ class KnowledgeStore:
 
         store = KnowledgeStore(user_home)
         items = store.list_all("rules")
-        content = store.read("experiences", "data-cleaning/handle-missing.md")
+        content = store.read("workflows", "data-cleaning/handle-missing.md")
         store.write("rules", "date-format.md", md_content)
         store.delete("rules", "date-format.md")
-        results = store.search("ROI", categories=["rules", "experiences"])
+        results = store.search("ROI", categories=["rules", "workflows"])
     """
 
     def __init__(self, user_home: Path | str) -> None:
         user_home = Path(user_home)
         self._root = ConfinedDir(user_home / "knowledge", mkdir=True)
+        self._migrate_experiences_to_workflows()
         self._jails: dict[str, ConfinedDir] = {
             "rules": ConfinedDir(self._root.root / "rules", mkdir=True),
-            "experiences": ConfinedDir(self._root.root / "experiences", mkdir=True),
+            "workflows": ConfinedDir(self._root.root / "workflows", mkdir=True),
         }
         self._migrate_flat()
 
     # -- migration ---------------------------------------------------------
 
+    def _migrate_experiences_to_workflows(self) -> None:
+        """Move legacy ``experiences/`` files into ``workflows/`` (one-time).
+
+        The feature was renamed from "experiences" to "workflows"; existing
+        users have files under ``knowledge/experiences/``.  Move them so the
+        rename is transparent.
+        """
+        old_root = self._root.root / "experiences"
+        if not old_root.is_dir():
+            return
+        new_root = self._root.root / "workflows"
+        new_root.mkdir(parents=True, exist_ok=True)
+        for md_file in list(old_root.rglob("*.md")):
+            rel = md_file.relative_to(old_root)
+            dest = new_root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                stem = rel.stem
+                suffix_n = 1
+                while dest.exists():
+                    dest = dest.parent / f"{stem}-{suffix_n}.md"
+                    suffix_n += 1
+            try:
+                md_file.rename(dest)
+                logger.info("Migrated experiences/%s → workflows/%s", rel, dest.name)
+            except Exception:
+                logger.warning("Failed to migrate experience file %s", md_file, exc_info=True)
+        # Remove the now-empty legacy tree (best effort)
+        try:
+            for sub in sorted(old_root.rglob("*"), reverse=True):
+                if sub.is_dir() and not any(sub.iterdir()):
+                    sub.rmdir()
+            if not any(old_root.iterdir()):
+                old_root.rmdir()
+        except Exception:
+            logger.warning("Failed to clean up legacy experiences dir", exc_info=True)
+
     def _migrate_flat(self) -> None:
-        """Move any experiences/subdir/file.md → experiences/file.md (one-time migration)."""
-        exp_root = self._jails["experiences"].root
+        """Move any workflows/subdir/file.md → workflows/file.md (one-time migration)."""
+        exp_root = self._jails["workflows"].root
         for md_file in list(exp_root.rglob("*.md")):
             rel = md_file.relative_to(exp_root)
             if len(rel.parts) <= 1:
@@ -285,9 +320,9 @@ class KnowledgeStore:
                 parent = md_file.parent
                 if parent != exp_root and not any(parent.iterdir()):
                     parent.rmdir()
-                logger.info("Migrated knowledge experience %s → %s", rel, dest.name)
+                logger.info("Migrated knowledge workflow %s → %s", rel, dest.name)
             except Exception:
-                logger.warning("Failed to migrate experience file %s", md_file, exc_info=True)
+                logger.warning("Failed to migrate workflow file %s", md_file, exc_info=True)
 
     # -- path validation ---------------------------------------------------
 
@@ -326,7 +361,7 @@ class KnowledgeStore:
     def list_all(self, category: str) -> list[dict[str, Any]]:
         """List all knowledge entries in *category*.
 
-        Returns a list of dicts with ``title``, ``tags``, ``path``,
+        Returns a list of dicts with ``title``, ``path``,
         ``source``, and ``created`` parsed from front matter.
         For rules, also includes ``description`` and ``alwaysApply``.
         """
@@ -345,7 +380,6 @@ class KnowledgeStore:
             rel = str(md_file.relative_to(jail.root)).replace("\\", "/")
             item: dict[str, Any] = {
                 "title": km.title,
-                "tags": km.tags,
                 "path": rel,
                 "source": km.source,
                 "created": km.created,
@@ -353,9 +387,9 @@ class KnowledgeStore:
             if category == "rules":
                 item["description"] = km.description
                 item["alwaysApply"] = km.always_apply
-            if category == "experiences":
+            if category == "workflows":
                 # Surface session-distillation provenance so the frontend can
-                # find an existing session experience by workspace id
+                # find an existing session workflow by workspace id
                 # without re-reading every file. See design-docs/24.
                 if km.source_workspace_id:
                     item["sourceWorkspaceId"] = km.source_workspace_id
@@ -394,7 +428,15 @@ class KnowledgeStore:
         body_limit = KNOWLEDGE_LIMITS.get(category)
         if body_limit is not None:
             body_len = len(body.strip())
-            if body_len > body_limit:
+            if category == "workflows":
+                # Soft guidance: the body_limit is a target the distill agent
+                # aims for, not a hard cap. Only reject far past the ceiling.
+                if body_len > WORKFLOW_HARD_MAX:
+                    raise ValueError(
+                        f"workflows body exceeds {WORKFLOW_HARD_MAX} characters "
+                        f"(got {body_len})"
+                    )
+            elif body_len > body_limit:
                 raise ValueError(
                     f"{category} body exceeds {body_limit} characters "
                     f"(got {body_len})"
@@ -407,12 +449,12 @@ class KnowledgeStore:
         self.validate_path(category, path)
         self._jail(category).unlink(path)
 
-    # -- session experience helpers ----------------------------------------
+    # -- session workflow helpers ----------------------------------------
 
-    def find_experience_by_workspace_id(
+    def find_workflow_by_workspace_id(
         self, workspace_id: str,
     ) -> dict[str, Any] | None:
-        """Return the experience entry whose front matter records this workspace id.
+        """Return the workflow entry whose front matter records this workspace id.
 
         Used by the session-scoped distillation flow (design-docs/24) to
         upsert: when re-distilling the same session, overwrite the same
@@ -421,11 +463,11 @@ class KnowledgeStore:
         if not workspace_id or not workspace_id.strip():
             return None
         try:
-            for item in self.list_all("experiences"):
+            for item in self.list_all("workflows"):
                 if item.get("sourceWorkspaceId") == workspace_id:
                     return item
         except Exception:
-            logger.warning("find_experience_by_workspace_id failed", exc_info=True)
+            logger.warning("find_workflow_by_workspace_id failed", exc_info=True)
         return None
 
     # -- alwaysApply rules helper ------------------------------------------
@@ -511,12 +553,13 @@ class KnowledgeStore:
         """Search across knowledge categories.
 
         Tokenizes *query* into keywords and scores each entry using
-        multi-field weighted matching (title > tags > filename > body).
-        Whole-string exact matches and table-name / tag overlaps receive
+        multi-field weighted matching (title > filename > body).
+        Whole-string exact matches and table-name overlaps receive
         additional bonuses.  Non-manual sources are slightly discounted.
 
         *table_names* (optional) are table names from the current session;
-        when a table name appears in an entry's tags the entry is boosted.
+        when a table name appears in an entry's title or body the entry is
+        boosted.
         """
         if not query or not query.strip():
             return []
@@ -542,7 +585,7 @@ class KnowledgeStore:
                     continue
 
                 score = self._match_score(
-                    q, km.title, km.tags, md_file.stem, body[:200],
+                    q, km.title, md_file.stem, body[:200],
                     source=km.source, table_names=table_names,
                 )
                 if score <= 0:
@@ -552,7 +595,6 @@ class KnowledgeStore:
                 scored.append((score, {
                     "category": cat,
                     "title": km.title,
-                    "tags": km.tags,
                     "path": rel,
                     "snippet": body[:500].strip(),
                     "source": km.source,
@@ -565,7 +607,6 @@ class KnowledgeStore:
     def _match_score(
         query: str,
         title: str,
-        tags: list[str],
         stem: str,
         body_prefix: str,
         *,
@@ -589,13 +630,10 @@ class KnowledgeStore:
             title_l = title.lower()
             stem_l = stem.lower()
             body_l = body_prefix.lower()
-            tags_l = [t.lower() for t in tags]
 
             for token in tokens:
                 if token in title_l:
                     score += 100 / n
-                if any(token in tl for tl in tags_l):
-                    score += 50 / n
                 if token in stem_l:
                     score += 30 / n
                 if token in body_l:
@@ -604,14 +642,14 @@ class KnowledgeStore:
         # Whole-string bonus (handles short queries like "ROI")
         if q and q in title.lower():
             score += 50
-        if q and any(q in t.lower() for t in tags):
-            score += 50
 
-        # Table-name → tag overlap bonus
+        # Table-name overlap bonus (title / body)
         if table_names:
-            tags_l_set = {t.lower() for t in tags}
+            title_l = title.lower()
+            body_l = body_prefix.lower()
             for tn in table_names:
-                if any(tn.lower() in tl for tl in tags_l_set):
+                tnl = tn.lower()
+                if tnl in title_l or tnl in body_l:
                     score += 30
 
         # Non-manual source slight discount

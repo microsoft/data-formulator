@@ -219,7 +219,7 @@ def _register_blueprints():
     from data_formulator.routes.credentials import credential_bp
     app.register_blueprint(credential_bp)
 
-    # Register knowledge management API (rules, skills, experiences)
+    # Register knowledge management API (rules, skills, workflows)
     from data_formulator.routes.knowledge import knowledge_bp
     app.register_blueprint(knowledge_bp)
 

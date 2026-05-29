@@ -64,7 +64,7 @@ class ChartInsightAgent(object):
                 search_query = " ".join([chart_type] + field_names[:5]).strip()
                 if search_query:
                     relevant = self._knowledge_store.search(
-                        search_query, categories=["experiences"], max_results=3,
+                        search_query, categories=["workflows"], max_results=3,
                     )
                     if relevant:
                         kb_parts = ["Relevant analysis knowledge:"]
@@ -72,7 +72,7 @@ class ChartInsightAgent(object):
                             kb_parts.append(f"- {item['title']}: {item['snippet'][:200]}")
                         context_parts.append("\n".join(kb_parts))
             except Exception:
-                logger.warning("Failed to search knowledge experiences", exc_info=True)
+                logger.warning("Failed to search knowledge workflows", exc_info=True)
 
         context = "\n".join(context_parts)
 

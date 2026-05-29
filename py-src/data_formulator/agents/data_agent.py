@@ -153,7 +153,7 @@ TOOLS = [
         "function": {
             "name": "search_knowledge",
             "description": (
-                "Search the user's knowledge base (rules, experiences) "
+                "Search the user's knowledge base (rules, workflows) "
                 "for relevant entries. Returns title, category, snippet, and "
                 "path for each match. Use read_knowledge to get full content."
             ),
@@ -168,7 +168,7 @@ TOOLS = [
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["rules", "experiences"],
+                            "enum": ["rules", "workflows"],
                         },
                         "description": "Optional: limit search to specific categories.",
                     },
@@ -190,7 +190,7 @@ TOOLS = [
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["rules", "experiences"],
+                        "enum": ["rules", "workflows"],
                         "description": "Knowledge category.",
                     },
                     "path": {
@@ -224,7 +224,7 @@ You have tools you can call to gather data:
 - **inspect_source_data(table_names)** — get schema, stats, and sample rows
   for source tables (cheaper than explore for basic inspection).
 - **search_knowledge(query, categories?)** — search the user's knowledge base
-  (rules, experiences) for relevant entries.
+  (rules, workflows) for relevant entries.
 - **read_knowledge(category, path)** — read the full content of a knowledge entry.
 
 You analyse data that is **already in the workspace**.  If the user's
@@ -1379,14 +1379,14 @@ class DataAgent:
         if peripheral_block:
             user_content += f"{peripheral_block}\n\n"
 
-        # Search and inject relevant knowledge (experiences + non-alwaysApply rules)
+        # Search and inject relevant knowledge (workflows + non-alwaysApply rules)
         table_names = [t.get("name", "") for t in input_tables if t.get("name")]
         relevant_knowledge = self._search_relevant_knowledge(user_question, table_names)
 
-        # Always include the experience distilled from the active workspace
+        # Always include the workflow distilled from the active workspace
         # (design-docs/24 §3.6) so the session has stable working memory
         # across turns regardless of search relevance.
-        session_exp = self._load_active_session_experience()
+        session_exp = self._load_active_session_workflow()
         if session_exp:
             existing_paths = {
                 (item["category"], item["path"]) for item in relevant_knowledge
@@ -1891,7 +1891,7 @@ class DataAgent:
         table_names: list[str],
         max_items: int = 5,
     ) -> list[dict[str, Any]]:
-        """Search experiences and non-alwaysApply rules relevant to the current session.
+        """Search workflows and non-alwaysApply rules relevant to the current session.
 
         Uses the user question as the search query and passes table names
         separately for tag-overlap boosting.  alwaysApply rules are
@@ -1904,7 +1904,7 @@ class DataAgent:
         try:
             results = self._knowledge_store.search(
                 user_question,
-                categories=["rules", "experiences"],
+                categories=["rules", "workflows"],
                 max_results=max_items,
                 table_names=table_names[:5],
             )
@@ -1913,11 +1913,11 @@ class DataAgent:
             logger.warning("Failed to search knowledge", exc_info=True)
             return []
 
-    def _load_active_session_experience(self) -> dict[str, Any] | None:
-        """Return the experience distilled from the active workspace, if any.
+    def _load_active_session_workflow(self) -> dict[str, Any] | None:
+        """Return the workflow distilled from the active workspace, if any.
 
         The session-scoped distillation flow (design-docs/24) writes one
-        experience per workspace, stamped with ``source_workspace_id``.
+        workflow per workspace, stamped with ``source_workspace_id``.
         We always inject that file into the agent's context so the agent
         has stable working memory for the active session in addition to
         whatever the relevance search picked.
@@ -1932,14 +1932,14 @@ class DataAgent:
         if not ws_id:
             return None
         try:
-            entry = self._knowledge_store.find_experience_by_workspace_id(ws_id)
+            entry = self._knowledge_store.find_workflow_by_workspace_id(ws_id)
         except Exception:
-            logger.warning("find_experience_by_workspace_id failed", exc_info=True)
+            logger.warning("find_workflow_by_workspace_id failed", exc_info=True)
             return None
         if not entry:
             return None
         try:
-            content = self._knowledge_store.read("experiences", entry["path"])
+            content = self._knowledge_store.read("workflows", entry["path"])
         except Exception:
             return None
         from data_formulator.knowledge.store import parse_front_matter
@@ -1948,9 +1948,8 @@ class DataAgent:
         if not snippet:
             return None
         return {
-            "category": "experiences",
+            "category": "workflows",
             "title": entry.get("title", entry.get("path", "")),
-            "tags": entry.get("tags", []),
             "path": entry["path"],
             "snippet": snippet,
             "source": entry.get("source", "distill"),

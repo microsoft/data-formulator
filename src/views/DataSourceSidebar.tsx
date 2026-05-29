@@ -157,7 +157,7 @@ export const DataSourceSidebar: React.FC<{
     // appears when they try to add a new connector or link a folder.
     const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
 
-    // External callers (e.g. SaveExperienceButton on success) can ask the
+    // External callers (e.g. workflow distill on success) can ask the
     // sidebar to open and switch to a specific tab.
     useEffect(() => {
         const handler = (e: Event) => {

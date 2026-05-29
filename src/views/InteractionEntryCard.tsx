@@ -242,6 +242,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 // so they should read stronger than the agent's bubbles.
                 backgroundColor: palette.bgcolor,
                 border: `1px solid ${borderColor.component}`,
+                // Cap very long instructions (e.g. a replayed workflow) so the
+                // card stays compact; the full text scrolls within the cap.
+                maxHeight: 160,
+                overflowY: 'auto',
+                overscrollBehavior: 'contain',
                 ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
                 ...clickSx,
             }}>

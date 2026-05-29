@@ -162,7 +162,7 @@ class InteractiveExploreAgent(object):
         if start_question:
             context += f"\n\n[START QUESTION]\n\n{start_question}"
 
-        # ── Inject relevant experiences from knowledge store ──────────
+        # ── Inject relevant workflows from knowledge store ──────────
         if self._knowledge_store:
             try:
                 query = start_question or ""
@@ -170,7 +170,7 @@ class InteractiveExploreAgent(object):
                 search_query = " ".join([query] + table_names[:5]).strip()
                 if search_query:
                     relevant = self._knowledge_store.search(
-                        search_query, categories=["experiences"], max_results=3,
+                        search_query, categories=["workflows"], max_results=3,
                     )
                     if relevant:
                         knowledge_block = "[RELEVANT KNOWLEDGE]\n"

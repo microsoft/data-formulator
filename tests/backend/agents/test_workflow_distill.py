@@ -1,13 +1,13 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Tests for ExperienceDistillAgent and the /api/knowledge/distill-experience endpoint.
+"""Tests for WorkflowDistillAgent and the /api/knowledge/distill-workflow endpoint.
 
 Covers:
-- _extract_context_summary correctly extracts experience context
+- _extract_context_summary correctly extracts workflow context
 - Output Markdown includes valid YAML front matter
 - front matter contains source: distill and source metadata
-- Generated experience file written to correct directory
+- Generated workflow file written to correct directory
 - category_hint controls sub-directory
 """
 
@@ -18,8 +18,14 @@ from unittest.mock import MagicMock, patch
 import flask
 import pytest
 
-from data_formulator.agents.agent_experience_distill import ExperienceDistillAgent
-from data_formulator.knowledge.store import parse_front_matter
+from data_formulator.agents.agent_workflow_distill import WorkflowDistillAgent
+from data_formulator.knowledge.store import (
+    KNOWLEDGE_LIMITS,
+    WORKFLOW_HARD_MAX,
+    parse_front_matter,
+)
+
+WORKFLOW_SOFT_LIMIT = KNOWLEDGE_LIMITS["workflows"]
 
 pytestmark = [pytest.mark.backend]
 
@@ -73,7 +79,7 @@ SAMPLE_EVENTS = [
     },
 ]
 
-SAMPLE_EXPERIENCE_CONTEXT = {
+SAMPLE_WORKFLOW_CONTEXT = {
     "context_id": "ws-1",
     "workspace_id": "ws-1",
     "workspace_name": "Sales Region Analysis",
@@ -86,7 +92,7 @@ SAMPLE_EXPERIENCE_CONTEXT = {
 
 class TestExtractContextSummary:
     def test_renders_each_event_type(self):
-        summary = ExperienceDistillAgent._extract_context_summary(SAMPLE_EXPERIENCE_CONTEXT)
+        summary = WorkflowDistillAgent._extract_context_summary(SAMPLE_WORKFLOW_CONTEXT)
         # message events
         assert "[user→data-agent/prompt]" in summary
         assert "Show sales by region" in summary
@@ -113,7 +119,7 @@ class TestExtractContextSummary:
         assert "encoding: x=region(nominal)" in summary
 
     def test_empty_events_returns_marker(self):
-        summary = ExperienceDistillAgent._extract_context_summary({})
+        summary = WorkflowDistillAgent._extract_context_summary({})
         assert summary == "(empty context)"
 
     def test_user_content_is_not_displaycontent(self):
@@ -131,7 +137,7 @@ class TestExtractContextSummary:
                 }],
             }],
         }
-        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        summary = WorkflowDistillAgent._extract_context_summary(ctx)
         assert "raw text" in summary
 
     def test_skips_non_dict_events(self):
@@ -140,7 +146,7 @@ class TestExtractContextSummary:
             {"type": "message", "from": "user", "to": "data-agent",
              "role": "prompt", "content": "ok"},
         ]}]}
-        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        summary = WorkflowDistillAgent._extract_context_summary(ctx)
         assert "[user→data-agent/prompt]" in summary
         # No crashes; the bogus entries are silently dropped.
 
@@ -154,7 +160,7 @@ class TestExtractContextSummary:
             "sample_rows": [{"a": 1}],
             "code": "x = 1",
         }]}]}
-        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        summary = WorkflowDistillAgent._extract_context_summary(ctx)
         assert "[create_table] t1" in summary
 
     def test_create_chart_without_encoding(self):
@@ -163,7 +169,7 @@ class TestExtractContextSummary:
             "related_table_id": "t1",
             "mark_or_type": "line",
         }]}]}
-        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        summary = WorkflowDistillAgent._extract_context_summary(ctx)
         assert "[create_chart] line on t1" in summary
         assert "encoding:" not in summary
 
@@ -187,7 +193,7 @@ class TestExtractContextSummary:
                 },
             ],
         }
-        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        summary = WorkflowDistillAgent._extract_context_summary(ctx)
         assert "### Thread 1 (id=leaf-a)" in summary
         assert "### Thread 2 (id=leaf-b)" in summary
         assert "load gas prices" in summary
@@ -236,10 +242,10 @@ class TestRunWithMockedLLM:
 
     def test_produces_valid_markdown(self):
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
+        agent = WorkflowDistillAgent(client=client)
 
         with patch.object(agent, "_call_llm", return_value=MOCK_CONTEXT_RESPONSE):
-            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            result = agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         assert result.startswith("---")
         meta, body = parse_front_matter(result)
@@ -249,11 +255,11 @@ class TestRunWithMockedLLM:
 
     def test_fallback_front_matter_added(self):
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
+        agent = WorkflowDistillAgent(client=client)
 
         no_fm_response = "# Sales Analysis\n\nJust some content."
         with patch.object(agent, "_call_llm", return_value=no_fm_response):
-            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            result = agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         assert result.startswith("---")
         meta, _ = parse_front_matter(result)
@@ -261,11 +267,11 @@ class TestRunWithMockedLLM:
         assert meta["source_context"] == "ws-1"
 
     def test_retries_once_when_body_too_long(self):
-        """If first LLM call produces body > limit, agent retries with condensation prompt."""
+        """If first LLM call produces body over the soft target, agent retries with condensation prompt."""
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
+        agent = WorkflowDistillAgent(client=client)
 
-        long_body = "x" * 3000
+        long_body = "x" * (WORKFLOW_SOFT_LIMIT + 1000)
         long_response = (
             "---\ntitle: Long\ntags: []\ncreated: 2026-01-01\n"
             "updated: 2026-01-01\nsource: distill\nsource_context: t1\n---\n\n"
@@ -283,18 +289,18 @@ class TestRunWithMockedLLM:
             return short_response
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            result = agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         assert call_count == 2
         _, body = parse_front_matter(result)
-        assert len(body.strip()) <= 2000
+        assert len(body.strip()) <= WORKFLOW_SOFT_LIMIT
 
     def test_retry_asks_for_slack_under_limit(self):
-        """The retry prompt asks the model for less than the hard limit."""
+        """The retry prompt asks the model for less than the soft target."""
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
+        agent = WorkflowDistillAgent(client=client)
 
-        long_body = "x" * 3000
+        long_body = "x" * (WORKFLOW_SOFT_LIMIT + 1000)
         long_response = (
             "---\ntitle: L\ntags: []\ncreated: 2026-01-01\n"
             "updated: 2026-01-01\nsource: distill\nsource_context: t1\n---\n\n"
@@ -309,21 +315,21 @@ class TestRunWithMockedLLM:
             return long_response if len(captured) == 1 else MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         assert len(captured) == 2
         retry_prompt = captured[1][-1]["content"]
-        # Must mention the slacked target (limit minus margin), not the raw limit.
-        expected_target = 2000 - agent.RETRY_MARGIN
-        assert f"within {expected_target} characters" in retry_prompt
+        # Must mention the slacked target (soft limit minus margin).
+        expected_target = WORKFLOW_SOFT_LIMIT - agent.RETRY_MARGIN
+        assert f"around {expected_target} characters" in retry_prompt
 
     def test_hard_trims_when_retry_still_over_limit(self):
-        """If the retry still overshoots, body is hard-trimmed to fit the limit."""
+        """If the retry still blows past the hard ceiling, body is hard-trimmed to fit it."""
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
+        agent = WorkflowDistillAgent(client=client)
 
-        first_body = "x" * 3000
-        retry_body = "y" * 2014  # mimics the real-world failure: 14 over
+        first_body = "x" * (WORKFLOW_SOFT_LIMIT + 1000)
+        retry_body = "y" * (WORKFLOW_HARD_MAX + 14)  # mimics retry still over the ceiling
         front_matter = (
             "---\ntitle: T\ntags: []\ncreated: 2026-01-01\n"
             "updated: 2026-01-01\nsource: distill\nsource_context: t1\n---\n\n"
@@ -339,13 +345,13 @@ class TestRunWithMockedLLM:
             return resp
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            result = agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         # Both LLM calls happened.
         assert call_count == 2
-        # Final body fits the hard limit (no save failure).
+        # Final body fits the hard ceiling (no save failure).
         _, body = parse_front_matter(result)
-        assert len(body.strip()) <= 2000
+        assert len(body.strip()) <= WORKFLOW_HARD_MAX
         # Truncation marker is present so the user can see it was trimmed.
         assert "truncated" in body
         # Front matter preserved.
@@ -355,7 +361,7 @@ class TestRunWithMockedLLM:
     def test_no_retry_when_body_within_limit(self):
         """If first LLM call is within limit, no retry happens."""
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
+        agent = WorkflowDistillAgent(client=client)
 
         call_count = 0
 
@@ -365,14 +371,14 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         assert call_count == 1
 
     def test_language_instruction_injected_into_system_prompt(self):
         client = self._mock_client()
         zh_instruction = "[LANGUAGE INSTRUCTION]\nWrite in Simplified Chinese."
-        agent = ExperienceDistillAgent(client=client, language_instruction=zh_instruction)
+        agent = WorkflowDistillAgent(client=client, language_instruction=zh_instruction)
 
         captured_messages = []
 
@@ -381,7 +387,7 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         system_content = captured_messages[0]["content"]
         assert "[LANGUAGE INSTRUCTION]" in system_content
@@ -389,7 +395,7 @@ class TestRunWithMockedLLM:
 
     def test_language_code_zh_injects_chinese_instruction(self):
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client, language_code="zh")
+        agent = WorkflowDistillAgent(client=client, language_code="zh")
 
         captured_messages = []
 
@@ -398,7 +404,7 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         system_content = captured_messages[0]["content"]
         assert "Simplified Chinese" in system_content
@@ -406,7 +412,7 @@ class TestRunWithMockedLLM:
 
     def test_language_code_en_no_extra_instruction(self):
         client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client, language_code="en")
+        agent = WorkflowDistillAgent(client=client, language_code="en")
 
         captured_messages = []
 
@@ -415,27 +421,45 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_WORKFLOW_CONTEXT)
 
         system_content = captured_messages[0]["content"]
         assert "in English" in system_content
         assert "[LANGUAGE INSTRUCTION]" not in system_content
 
 
-# ── _experience_filename ──────────────────────────────────────────────────
+# ── _workflow_filename ──────────────────────────────────────────────────
 
 
-class TestExperienceFilename:
-    def test_derives_from_workspace_name(self):
-        from data_formulator.routes.knowledge import _experience_filename
-        name = _experience_filename("Sales Analysis Pattern")
+class TestWorkflowFilename:
+    def test_derives_from_title(self):
+        from data_formulator.routes.knowledge import _workflow_filename
+        name = _workflow_filename("Sales Analysis Pattern")
         assert name.endswith(".md")
         assert "sales-analysis-pattern" in name.lower()
 
-    def test_fallback_when_workspace_name_blank(self):
-        from data_formulator.routes.knowledge import _experience_filename
-        name = _experience_filename("   ")
-        assert name == "session-experience.md"
+    def test_fallback_when_title_blank(self):
+        from data_formulator.routes.knowledge import _workflow_filename
+        name = _workflow_filename("   ")
+        assert name == "session-workflow.md"
+
+    def test_rejects_path_traversal(self):
+        from data_formulator.routes.knowledge import _workflow_filename
+        # An LLM-supplied name must never escape the workflows directory.
+        for evil in ("../../etc/passwd", "..\\..\\win", "/etc/shadow", "a/b/c"):
+            name = _workflow_filename(evil)
+            assert "/" not in name
+            assert "\\" not in name
+            assert ".." not in name
+            assert name.endswith(".md")
+
+    def test_strips_reserved_and_control_chars(self):
+        from data_formulator.routes.knowledge import _workflow_filename
+        name = _workflow_filename('sales:report*?"<>|\x00 v1')
+        assert name.endswith(".md")
+        for ch in ':*?"<>|\x00':
+            assert ch not in name
+        assert name == "sales-report-v1.md"
 
 
 # ── API endpoint ──────────────────────────────────────────────────────────
@@ -453,7 +477,7 @@ class TestDistillEndpoint:
         _app.register_blueprint(knowledge_bp)
         register_error_handlers(_app)
 
-        (tmp_path / "knowledge" / "experiences").mkdir(parents=True)
+        (tmp_path / "knowledge" / "workflows").mkdir(parents=True)
 
         with patch("data_formulator.routes.knowledge.get_identity_id", return_value="test-user"), \
              patch("data_formulator.routes.knowledge.get_user_home", return_value=tmp_path):
@@ -464,14 +488,14 @@ class TestDistillEndpoint:
         return app.test_client()
 
     def test_missing_context_returns_error(self, client):
-        resp = client.post("/api/knowledge/distill-experience",
+        resp = client.post("/api/knowledge/distill-workflow",
                            json={"model": {"endpoint": "openai", "model": "gpt-4o"}})
         data = resp.get_json()
         assert data["status"] == "error"
 
     def test_missing_model_returns_error(self, client):
-        resp = client.post("/api/knowledge/distill-experience",
-                           json={"experience_context": SAMPLE_EXPERIENCE_CONTEXT})
+        resp = client.post("/api/knowledge/distill-workflow",
+                           json={"workflow_context": SAMPLE_WORKFLOW_CONTEXT})
         data = resp.get_json()
         assert data["status"] == "error"
 
@@ -483,9 +507,9 @@ class TestDistillEndpoint:
             "workspace_name": "Demo",
             "threads": [],
         }
-        resp = client.post("/api/knowledge/distill-experience",
+        resp = client.post("/api/knowledge/distill-workflow",
                            json={
-                               "experience_context": bad_context,
+                               "workflow_context": bad_context,
                                "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                            })
         data = resp.get_json()
@@ -497,9 +521,9 @@ class TestDistillEndpoint:
             "workspace_id": "ws-1",
             "workspace_name": "Demo",
         }  # no 'threads' key
-        resp = client.post("/api/knowledge/distill-experience",
+        resp = client.post("/api/knowledge/distill-workflow",
                            json={
-                               "experience_context": bad_context,
+                               "workflow_context": bad_context,
                                "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                            })
         data = resp.get_json()
@@ -508,22 +532,22 @@ class TestDistillEndpoint:
     def test_successful_distill(self, client, tmp_path):
         with patch("data_formulator.routes.agents.get_client") as mock_gc, \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
-             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run",
+             patch("data_formulator.agents.agent_workflow_distill.WorkflowDistillAgent.run",
                    return_value=MOCK_CONTEXT_RESPONSE):
 
             mock_gc.return_value = MagicMock()
-            resp = client.post("/api/knowledge/distill-experience",
+            resp = client.post("/api/knowledge/distill-workflow",
                                json={
-                                   "experience_context": SAMPLE_EXPERIENCE_CONTEXT,
+                                   "workflow_context": SAMPLE_WORKFLOW_CONTEXT,
                                    "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                                })
             data = resp.get_json()
             assert data["status"] == "success"
-            assert data["data"]["category"] == "experiences"
+            assert data["data"]["category"] == "workflows"
             assert data["data"]["path"].endswith(".md")
 
             # Verify file was written
-            exp_dir = tmp_path / "knowledge" / "experiences"
+            exp_dir = tmp_path / "knowledge" / "workflows"
             md_files = list(exp_dir.rglob("*.md"))
             assert len(md_files) >= 1
             assert not (tmp_path / "agent-logs").exists()
@@ -531,13 +555,13 @@ class TestDistillEndpoint:
     def test_category_hint_creates_subdir(self, client, tmp_path):
         with patch("data_formulator.routes.agents.get_client") as mock_gc, \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
-             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run",
+             patch("data_formulator.agents.agent_workflow_distill.WorkflowDistillAgent.run",
                    return_value=MOCK_CONTEXT_RESPONSE):
 
             mock_gc.return_value = MagicMock()
-            resp = client.post("/api/knowledge/distill-experience",
+            resp = client.post("/api/knowledge/distill-workflow",
                                json={
-                                   "experience_context": SAMPLE_EXPERIENCE_CONTEXT,
+                                   "workflow_context": SAMPLE_WORKFLOW_CONTEXT,
                                    "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                                    "category_hint": "sales",
                                })

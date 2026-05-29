@@ -38,8 +38,6 @@ import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import StopIcon from '@mui/icons-material/Stop';
 
-import AutoGraphIcon from '@mui/icons-material/AutoGraph';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import { borderColor, transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
@@ -70,7 +68,7 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
         }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
                 <WritingPencil size={12} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, fontSize: 12, lineHeight: 1.5 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 11.5, lineHeight: 1.4 }}>
                     {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
@@ -96,13 +94,13 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             )}
             <Typography variant="body2" sx={{
                 color: 'text.disabled',
-                fontSize: 12,
+                fontSize: 11,
                 textAlign: 'center',
                 display: '-webkit-box',
                 WebkitLineClamp: 3,
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                lineHeight: 1.35,
+                lineHeight: 1.45,
                 wordBreak: 'break-word',
             }}>
                 {latestMessage}{elapsedSuffix}
@@ -1354,6 +1352,39 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         exploreFromChat(prompt, undefined, displayPrompt);
     }, [reportFromChat, exploreFromChat, selectedAgent, clarificationQuestions, clarifyAnswers]);
 
+    // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
+    // with a prompt describing the captured workflow; we hand it straight to
+    // the data agent on the currently focused dataset. v1 is deliberately
+    // simple — one request, let the agent reproduce the analysis on its own.
+    // See discussion/replayable-experience-workflow.md.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const prompt = (e as CustomEvent).detail?.prompt as string | undefined;
+            if (!prompt) return;
+            if (isChatFormulating) {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data-agent', value: t('knowledge.replayBusy'),
+                }));
+                return;
+            }
+            if (!focusedTableId) {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data-agent', value: t('knowledge.replayNoData'),
+                }));
+                return;
+            }
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'info',
+                component: 'data-agent', value: t('knowledge.replayStarted'),
+            }));
+            exploreFromChat(prompt);
+        };
+        window.addEventListener('df-replay-workflow', handler);
+        return () => window.removeEventListener('df-replay-workflow', handler);
+    }, [exploreFromChat, isChatFormulating, focusedTableId, dispatch, t]);
+
     const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
         if (!pendingClarification) return;
         // Pass the formatted display string as `prompt` — it powers both the
@@ -1744,9 +1775,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 '&:hover': { backgroundColor: alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.08) },
                             }}
                         >
-                            {selectedAgent === 'explore'
-                                ? <AutoGraphIcon sx={{ fontSize: '14px !important' }} />
-                                : <DescriptionOutlinedIcon sx={{ fontSize: '14px !important' }} />}
                             {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
                         </Button>
                     </Tooltip>
@@ -1761,7 +1789,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             <span>
                                 <IconButton
                                     size="small"
-                                    sx={{ p: 0.5, color: theme.palette.secondary.main }}
+                                    sx={{ p: 0.5, color: theme.palette.primary.main }}
                                     disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
                                     onClick={() => submitChat(t('chartRec.exploreIdeasPrompt'), undefined, t('chartRec.askedForRecommendations'))}
                                 >

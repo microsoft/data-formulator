@@ -1292,7 +1292,7 @@ class DataLoadingAgent:
         """Build the system prompt with current workspace context.
 
         *last_user_text* is used to search the knowledge store for
-        experiences relevant to the user's current request.  Falls back
+        workflows relevant to the user's current request.  Falls back
         to a generic query when empty.
         """
         table_names = "none"
@@ -1324,7 +1324,7 @@ class DataLoadingAgent:
         if self._knowledge_store:
             prompt += self._knowledge_store.format_rules_block()
 
-        # Inject relevant experiences from knowledge store
+        # Inject relevant workflows from knowledge store
         if self._knowledge_store:
             try:
                 search_query = (
@@ -1334,7 +1334,7 @@ class DataLoadingAgent:
                 )
                 relevant = self._knowledge_store.search(
                     search_query,
-                    categories=["experiences"],
+                    categories=["workflows"],
                     max_results=3,
                 )
                 if relevant:
@@ -1343,7 +1343,7 @@ class DataLoadingAgent:
                         knowledge_block += f"\n### {item['title']}\n{item['snippet']}\n"
                     prompt += "\n\n" + knowledge_block
             except Exception:
-                logger.warning("Failed to search knowledge experiences", exc_info=True)
+                logger.warning("Failed to search knowledge workflows", exc_info=True)
 
         if self.language_instruction:
             prompt += "\n\n" + self.language_instruction

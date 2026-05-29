@@ -1,17 +1,17 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Experience distillation agent — extracts reusable knowledge from analysis context.
+"""Workflow distillation agent — extracts a replayable workflow from analysis context.
 
 Given a user-visible analysis context (timeline of events) plus an optional
 user instruction, this agent calls an LLM to produce a structured Markdown
-experience document with YAML front matter suitable for storage in the
+workflow document with YAML front matter suitable for storage in the
 knowledge base.
 
 Usage::
 
-    agent = ExperienceDistillAgent(client)
-    md_content = agent.run(experience_context, user_instruction="...")
+    agent = WorkflowDistillAgent(client)
+    md_content = agent.run(workflow_context, user_instruction="...")
 """
 
 from __future__ import annotations
@@ -25,18 +25,19 @@ from data_formulator.agents.client_utils import Client
 
 logger = logging.getLogger(__name__)
 
-_AGENT_ID = "experience_distill"
+_AGENT_ID = "workflow_distill"
 
 
 SYSTEM_PROMPT = """\
-You are a knowledge distiller. Given the chronological events of a data
-analysis session plus an optional user instruction, write a short reusable
-Markdown note that will help with similar future tasks.
+You are a workflow distiller. Given the chronological events of a data
+analysis session plus an optional user instruction, extract a short,
+**replayable workflow** that captures *what the user wanted and got* — so
+the same analysis can be reproduced later on a similarly-shaped dataset.
 
 The session contains one or more threads (separate analysis branches in
 the same session) each rendered under a `### Thread N` header. When
-multiple threads are provided, synthesise lessons that hold across them
-— do NOT enumerate per-thread.
+multiple threads are provided, merge them into one coherent ordered
+workflow — do NOT enumerate per-thread.
 
 The events use three types:
 - `message` — directed speech, formatted as `[<from>→<to>/<role>] <content>`.
@@ -46,56 +47,136 @@ The events use three types:
   (followed by columns, row count, sample, and code).
 - `create_chart` — a chart emitted on a table (mark + encoding summary).
 
-If a user instruction is provided, focus the note on that instruction.
-Otherwise, distill the most transferable methodology from the events.
+Your job is to recover the **ordered list of requests** the user actually
+wanted, and the outputs (tables/charts) they ended up keeping. Beyond the
+concrete steps, also distill the analysis at TWO levels of abstraction so
+it can be reused later:
+- **Adapting to similar data** (concrete) — how to rerun essentially the
+  same analysis on a near-identical dataset, e.g. the business report for
+  a different month, region, or product line. Same shape and intent, only
+  the specific inputs/filters change.
+- **Generalizing to other data** (abstract, dataset-agnostic) — the
+  underlying analytical pattern, independent of this domain: the kinds of
+  questions, computations, and charts involved, phrased so they transfer
+  to a different domain or a differently-shaped dataset.
+
+CRITICAL extraction rules — keep only what the user wanted and got:
+- Each step = one user request, written in plain language. Say BOTH the
+  question being explored AND what was produced to answer it — including
+  the chart that was created and the key fields it uses (e.g. "Ask how
+  sales trend over time, and plot monthly total sales as a line chart";
+  "Compare regions by breaking revenue down per region as a sorted bar
+  chart"). Order them as the analysis progressed.
+- DROP corrective back-and-forth. If the user changed their mind
+  ("no, it should be…", "actually use median instead"), keep ONLY the
+  final resolved intent — not the wrong first attempt or the correction.
+- DROP abandoned work. If a chart or table was created and then deleted
+  or never kept, leave it out entirely.
+- DROP mechanics. Do NOT include error-repair loops, dtype fixes, tool
+  call noise, or low-level code. Describe intent, not implementation.
+- Do NOT lean on code or exact column names unless a name is essential to
+  the request's meaning. Keep steps dataset-agnostic where possible so
+  they replay on a new slice of similar data.
+- Capture genuine gotchas separately as short notes (advisory warnings to
+  carry forward), NOT as steps to re-perform.
+
+If a user instruction is provided, let it steer what to keep or emphasise.
 
 Output format (Markdown with YAML front matter, nothing else):
 
 ```
 ---
-subtitle: <short, scannable noun phrase, 3-8 words; no colons, dashes, or run-on lists>
-tags: [<broad search keywords: domain, chart type, key operations, technique>]
+subtitle: <plain-language description of what this workflow is about, up to ~25 words; a full sentence is fine; start with an action verb; no jargon, no colons, dashes, or run-on lists>
+filename: <short 2-5 word lowercase name for the file, e.g. "monthly sales trend"; no dates, no extension>
 created: <today YYYY-MM-DD>
 updated: <today YYYY-MM-DD>
 source: distill
 source_context: <context_id>
 ---
 
-## When to Use
-<general conditions where this method applies>
+## Goal
+<one or two sentences: the overall question(s) this analysis answers and
+what it produces>
 
-## Method
-<concrete steps, abstracted; use generic placeholders like "the target column"
-instead of actual column names when names aren't universally meaningful>
+## Steps
+1. <first question explored, and the table/chart created to answer it>
+2. <next question, and what was produced>
+3. <…>
 
-## Pitfalls & Tips
-<gotchas, workarounds, and things to watch out for — the most valuable section.
-If a repair was needed, explain *why* it failed and the general fix.>
+## Adapting to similar data
+<how to rerun essentially the same analysis on a near-identical dataset —
+e.g. the same kind of report for a different month, region, or product
+line. Keep the structure and outputs the same; call out which inputs,
+filters, or columns would change. 1-4 short sentences or bullets.>
+
+## Generalizing to other data
+<the dataset-agnostic analytical pattern behind this workflow: the kinds
+of questions, computations, and charts it represents, described in
+domain-neutral terms so it can transfer to a different domain or a
+differently-shaped dataset. Focus on the reasoning and technique, not the
+specific fields or values. 1-4 short sentences or bullets.>
+
+## Notes
+<optional short bullets: caveats/gotchas to watch for when reproducing this
+analysis on new data — e.g. "sort by time before computing deltas". Omit
+this section entirely if there is nothing worth warning about.>
 ```
 
 Rules:
-- Subtitle must be a short, scannable noun phrase (3-8 words) that captures
-  the technique or pattern. The hosting application prefixes it with the
-  session name to form the full title (e.g. "Experience from <session>: <subtitle>"),
-  so do NOT include the session name in the subtitle. Do NOT pack scenario,
-  takeaway, and steps into the subtitle — leave details for `## When to Use`
-  and `## Method`.
-  Good: "Year-over-year volatility comparison". "Repairing pandas dtype mismatches".
-  Bad:  "Time series analysis workflow: aggregate, visualize trends, quantify YoY spikes, and compare volatility across periods".
-- Focus on *transferable* methods and caveats, not case-specific details.
-- Keep the body under 500 words.
-- No raw data, PII, secrets, or specific values unless they show a universal pattern.
-- Write the subtitle, headings, body, and tags in {output_language}.
+- Subtitle must DESCRIBE what the workflow is about in PLAIN LANGUAGE that
+  a non-expert can fully understand at a glance, so they can decide
+  whether to replay it on new data. Favor clarity over brevity: it can be
+  a full sentence (up to ~25 words) if that makes the analysis genuinely
+  understandable. Write it like you would explain the analysis to a
+  colleague in one breath, covering the subject and the main thing you do
+  with it. The hosting application uses this subtitle directly as the
+  workflow's display title, so make it self-contained and do NOT prefix it
+  with the session name.
+  - Start with a concrete action verb (Plot, Compare, Break down, Rank,
+    Track, Summarize, Find…).
+  - Name the real-world subject in everyday words (sales, revenue,
+    customers, events), NOT the internal mechanics or derived-column
+    names you happened to create.
+  - AVOID abstract or technical jargon and invented noun-phrases
+    ("deltas", "composition", "window", "distribution shift"). If a
+    technique matters, phrase it plainly ("change from one period to the
+    next" instead of "deltas").
+  Good: "Plot monthly sales over time and compare each year against the
+         previous one to spot volatile periods".
+        "Break revenue down by region and show how each region
+         contributes to the total as a stacked area chart".
+        "Track how many events happen in each time window and what kinds
+         of events make up each window".
+  Bad:  "Time series analysis". "Data workflow". "Chart exploration".
+        "Event window deltas with composition". "Distribution shift inspection".
+- Filename must be a SHORT (2-5 word) lowercase name for the file — just
+  the core subject and action, e.g. "monthly sales trend", "region revenue
+  breakdown". No dates, no file extension, no session name. It is only
+  used to name the file on disk; the descriptive subtitle is what users see.
+- Steps must be ordered and reproducible. Each step should make clear the
+  question being explored and the chart/output produced to answer it.
+- "Adapting to similar data" stays close to this analysis (same domain,
+  same shape) — only the concrete inputs change. "Generalizing to other
+  data" must be domain-neutral: strip out this dataset's subject matter and
+  describe only the transferable analytical pattern (question types,
+  computations, chart kinds). Do NOT just repeat the steps in either
+  section; add genuine reuse guidance. Keep each section brief.
+- Be as long as the analysis needs — do not omit meaningful steps,
+  questions, or charts just to stay short. Stay focused, but completeness
+  matters more than brevity.
+- No raw data, PII, secrets, or specific values unless essential to a request.
+- Write the subtitle, headings, and body in {output_language}.
   YAML front-matter keys stay in English.
 
 {language_instruction}
 """
 
 
-class ExperienceDistillAgent:
-    """Distills analysis context into a reusable experience document."""
 
-    # Language display names for experience-specific prompts
+class WorkflowDistillAgent:
+    """Distills analysis context into a reusable workflow document."""
+
+    # Language display names for workflow-specific prompts
     _LANG_NAMES: dict[str, str] = {
         "zh": "Simplified Chinese (简体中文)",
         "ja": "Japanese (日本語)",
@@ -121,7 +202,7 @@ class ExperienceDistillAgent:
         self.timeout_seconds = int(timeout_seconds) if timeout_seconds else self.DEFAULT_TIMEOUT
 
     def run(self, context: dict[str, Any], user_instruction: str = "") -> str:
-        """Distill an experience document from user-visible session context."""
+        """Distill a workflow document from user-visible session context."""
         summary = self._extract_context_summary(context)
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         context_id = str(context.get("context_id", "") or "")
@@ -130,7 +211,7 @@ class ExperienceDistillAgent:
 
         instruction_block = (
             f"\n[USER INSTRUCTION]\n{user_instruction.strip()}\n"
-            f"Focus the distilled experience on the above instruction.\n"
+            f"Focus the distilled workflow on the above instruction.\n"
         ) if user_instruction and user_instruction.strip() else ""
 
         workspace_block = (
@@ -158,9 +239,11 @@ class ExperienceDistillAgent:
             {"role": "user", "content": user_msg},
         ]
 
-        from data_formulator.knowledge.store import KNOWLEDGE_LIMITS
+        from data_formulator.knowledge.store import KNOWLEDGE_LIMITS, WORKFLOW_HARD_MAX
         content = self._call_with_length_retry(
-            messages, KNOWLEDGE_LIMITS.get("experiences", 2000),
+            messages,
+            KNOWLEDGE_LIMITS.get("workflows", 6000),
+            WORKFLOW_HARD_MAX,
         )
 
         if not content.strip().startswith("---"):
@@ -182,7 +265,7 @@ class ExperienceDistillAgent:
             lang_block = (
                 f"[LANGUAGE INSTRUCTION]\n"
                 f"The user's language is **{display_name}**.\n"
-                f"Write the title, all section headings, all body text, and tags "
+                f"Write the title, all section headings, and all body text "
                 f"in {display_name}. YAML front-matter keys stay in English."
             )
         return {
@@ -199,39 +282,43 @@ class ExperienceDistillAgent:
     def _call_with_length_retry(
         self,
         messages: list[dict],
-        body_limit: int,
+        soft_limit: int,
+        hard_limit: int,
     ) -> str:
-        """Call LLM and retry once if the body exceeds *body_limit* characters.
+        """Call the LLM, nudging it to stay near *soft_limit* characters.
 
-        If the retry *still* overshoots, hard-truncate the body so the
-        document is saved instead of the entire distillation being lost.
+        ``soft_limit`` is advisory guidance: if the first response overshoots
+        it we retry once asking the model to condense. We only ever
+        hard-truncate at ``hard_limit`` — a much larger safety ceiling — so
+        rich, multi-section workflows are kept intact while runaway output
+        is still bounded.
         """
         from data_formulator.knowledge.store import parse_front_matter
 
         content = self._call_llm(messages)
         _, body = parse_front_matter(content)
-        if len(body.strip()) <= body_limit:
+        if len(body.strip()) <= soft_limit:
             return content
 
-        retry_target = max(body_limit - self.RETRY_MARGIN, 1)
+        retry_target = max(soft_limit - self.RETRY_MARGIN, 1)
         logger.info(
-            "Distilled content too long (%d > %d), retrying with condensation prompt (target ≤ %d)",
-            len(body.strip()), body_limit, retry_target,
+            "Distilled content over soft target (%d > %d), retrying with condensation prompt (target ≤ %d)",
+            len(body.strip()), soft_limit, retry_target,
         )
         messages = messages + [
             {"role": "assistant", "content": content},
             {"role": "user", "content": (
-                f"Your output body is {len(body.strip())} characters, which exceeds "
-                f"the limit of {body_limit}. Please condense the document to fit "
-                f"within {retry_target} characters while keeping the most important "
-                f"insights. Output ONLY the revised Markdown document."
+                f"Your output body is {len(body.strip())} characters, which is "
+                f"longer than ideal. Please tighten the document to around "
+                f"{retry_target} characters while keeping the most important "
+                f"insights and all sections. Output ONLY the revised Markdown document."
             )},
         ]
         retried = self._call_llm(messages)
 
-        # Hard-trim if the retry still overshoots — better a slightly
-        # truncated experience than a save failure.
-        return self._truncate_body_to_limit(retried, body_limit)
+        # Hard-trim only if the retry blows past the absolute ceiling —
+        # better a slightly truncated workflow than a save failure.
+        return self._truncate_body_to_limit(retried, hard_limit)
 
     @classmethod
     def _truncate_body_to_limit(cls, content: str, body_limit: int) -> str:
@@ -385,7 +472,7 @@ class ExperienceDistillAgent:
         return "\n".join(parts) if parts else "(empty context)"
 
     def _call_llm(self, messages: list[dict]) -> str:
-        """Single LLM call to generate the experience document."""
+        """Single LLM call to generate the workflow document."""
         resp = self.client.get_completion(
             messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model), timeout=self.timeout_seconds,
         )
@@ -401,7 +488,6 @@ class ExperienceDistillAgent:
 
         header = (
             f"---\ntitle: {title}\n"
-            f"tags: []\n"
             f"created: {today}\n"
             f"updated: {today}\n"
             f"source: distill\n"

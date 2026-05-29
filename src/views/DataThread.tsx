@@ -1333,17 +1333,6 @@ let SingleThreadGroupView: FC<{
             const mergeIds = derivedTable?.derive?.source as string[] | undefined;
             if (entry.role === 'instruction' && mergeNames && mergeNames.length > 0 && mergeIds && mergeIds.length > 0) {
                 const nextKey = sourceSetKey(mergeIds);
-                // eslint-disable-next-line no-console
-                console.log('[merge-node check]', {
-                    tableId,
-                    parentTableId: parentTable?.id,
-                    initialSourceIds,
-                    prevSourceKey,
-                    mergeIds,
-                    mergeNames,
-                    nextKey,
-                    fires: nextKey !== prevSourceKey,
-                });
                 if (nextKey !== prevSourceKey) {
                     const mergeColor = highlighted ? theme.palette.primary.main : theme.palette.text.secondary;
                     timelineItems.push({

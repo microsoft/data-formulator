@@ -62,7 +62,7 @@ def user_home(tmp_path):
     rules_dir.mkdir(parents=True)
     (rules_dir / "roi.md").write_text(RULE_MD, encoding="utf-8")
 
-    exp_dir = tmp_path / "knowledge" / "experiences" / "cleaning"
+    exp_dir = tmp_path / "knowledge" / "workflows" / "cleaning"
     exp_dir.mkdir(parents=True)
     (exp_dir / "missing.md").write_text(SKILL_MD, encoding="utf-8")
 
@@ -170,11 +170,11 @@ class TestKnowledgeSearchInjection:
     def test_max_five_items(self, mock_client, mock_workspace, tmp_path):
         rules_dir = tmp_path / "knowledge" / "rules"
         rules_dir.mkdir(parents=True)
-        exp_dir = tmp_path / "knowledge" / "experiences" / "common"
+        exp_dir = tmp_path / "knowledge" / "workflows" / "common"
         exp_dir.mkdir(parents=True)
         for i in range(10):
             (exp_dir / f"exp-{i}.md").write_text(
-                f"---\ntitle: Common Experience {i}\ntags: [common]\n"
+                f"---\ntitle: Common Workflow {i}\ntags: [common]\n"
                 f"created: 2026-04-26\nupdated: 2026-04-26\n---\n"
                 f"Content about common topic {i}.\n",
                 encoding="utf-8",
@@ -247,7 +247,7 @@ class TestGracefulDegradation:
     def test_empty_knowledge_dir(self, mock_client, mock_workspace, tmp_path):
         """Agent with empty knowledge dir works normally."""
         (tmp_path / "knowledge" / "rules").mkdir(parents=True)
-        (tmp_path / "knowledge" / "experiences").mkdir(parents=True)
+        (tmp_path / "knowledge" / "workflows").mkdir(parents=True)
         agent = _make_agent(mock_client, mock_workspace, tmp_path)
         prompt = agent._build_system_prompt()
         assert "User Rules" not in prompt

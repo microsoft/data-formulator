@@ -2,19 +2,19 @@
 // Licensed under the MIT License.
 
 /**
- * SessionDistill — session-scoped experience distillation.
+ * SessionDistill — session-scoped workflow distillation.
  *
  * Replaces the old per-result distillation flow with a single
  * session-bound entry. See design-docs/24-session-scoped-distillation.md.
  *
  * Exports:
- *   - buildSessionExperienceContext(workspace, threads): state-independent
+ *   - buildSessionWorkflowContext(workspace, threads): state-independent
  *     payload builder (with size budgeting, see §3.5 of the design doc).
  *   - collectSessionThreads(tables, charts, fields): leaf discovery + per-leaf
  *     event walk against live DataFormulator state.
  *   - SessionDistillDialog: the dialog used by KnowledgePanel for both
  *     create and update modes.
- *   - findSessionExperience: lookup an existing session experience by
+ *   - findSessionWorkflow: lookup an existing session workflow by
  *     workspace id.
  */
 
@@ -51,16 +51,16 @@ import {
 import { store, type AppDispatch } from '../app/store';
 import { handleApiError } from '../app/errorHandler';
 import {
-    distillSessionExperience,
+    distillSessionWorkflow,
     type KnowledgeItem,
-    type SessionExperienceContext,
+    type SessionWorkflowContext,
 } from '../api/knowledgeApi';
 import {
     buildLeafEvents,
     buildDistillModelConfig,
     isLeafDerivedTable,
     TOOL_USES_CODE_FONT,
-} from './experienceContext';
+} from './workflowContext';
 
 // ---------------------------------------------------------------------------
 // Payload size budget (design-docs/24 §3.5)
@@ -81,7 +81,7 @@ const SESSION_EVENT_BUDGET = 60_000;  // bytes of JSON-serialized events
 // ---------------------------------------------------------------------------
 
 /**
- * One pre-built thread, ready for `buildSessionExperienceContext`.
+ * One pre-built thread, ready for `buildSessionWorkflowContext`.
  *
  * Callers produce these by walking their own tables (see
  * `collectSessionThreads` for the in-app implementation) or with hand-built
@@ -97,7 +97,7 @@ export interface SessionThread {
 
 export interface BuildSessionResult {
     /** Payload as it will be sent (after trimming). */
-    payload: SessionExperienceContext;
+    payload: SessionWorkflowContext;
     /** Display threads with labels for the preview UI (post-trim). */
     threads: SessionThread[];
     /** Aggregate stats for the preview (post-trim). */
@@ -107,14 +107,14 @@ export interface BuildSessionResult {
 }
 
 // ---------------------------------------------------------------------------
-// findSessionExperience
+// findSessionWorkflow
 // ---------------------------------------------------------------------------
 
 /**
- * Find the experience entry distilled from the given workspace, if any.
+ * Find the workflow entry distilled from the given workspace, if any.
  * Returns the first match; the backend ensures at most one per workspace.
  */
-export function findSessionExperience(
+export function findSessionWorkflow(
     items: KnowledgeItem[] | undefined,
     workspaceId: string | undefined,
 ): KnowledgeItem | undefined {
@@ -132,7 +132,7 @@ export function findSessionExperience(
  *
  * Threads with no user message are filtered out. Returns `[]` when the
  * session has no distillable thread. Not used in tests — tests construct
- * `SessionThread[]` directly and call `buildSessionExperienceContext`.
+ * `SessionThread[]` directly and call `buildSessionWorkflowContext`.
  */
 export function collectSessionThreads(
     tables: DictTable[],
@@ -162,16 +162,16 @@ export function collectSessionThreads(
 }
 
 // ---------------------------------------------------------------------------
-// buildSessionExperienceContext — pure (workspace, threads) → payload
+// buildSessionWorkflowContext — pure (workspace, threads) → payload
 // ---------------------------------------------------------------------------
 
 /**
- * Assemble the multi-thread payload sent to `/api/knowledge/distill-experience`.
+ * Assemble the multi-thread payload sent to `/api/knowledge/distill-workflow`.
  *
  * State-independent: takes pre-built threads and a workspace identity.
  * Returns `null` when `threads` is empty.
  */
-export function buildSessionExperienceContext(
+export function buildSessionWorkflowContext(
     workspace: { id: string; displayName: string },
     threads: SessionThread[],
 ): BuildSessionResult | null {
@@ -179,7 +179,7 @@ export function buildSessionExperienceContext(
 
     const { trimmedThreads, notes } = trimToBudget(threads, SESSION_EVENT_BUDGET);
 
-    const payload: SessionExperienceContext = {
+    const payload: SessionWorkflowContext = {
         context_id: workspace.id,
         workspace_id: workspace.id,
         workspace_name: workspace.displayName,
@@ -308,7 +308,7 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
     const built = useMemo(() => {
         if (!open || !activeWorkspace) return null;
         const threads = collectSessionThreads(tables, charts, conceptShelfItems);
-        return buildSessionExperienceContext(activeWorkspace, threads);
+        return buildSessionWorkflowContext(activeWorkspace, threads);
     }, [open, activeWorkspace, tables, charts, conceptShelfItems]);
 
     const [userInstruction, setUserInstruction] = useState('');
@@ -330,6 +330,10 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
         setStatus('running');
         onRunningChange?.(true);
         const instruction = userInstruction.trim() || undefined;
+        // Close the dialog right away — distillation continues in the
+        // background and surfaces its result via the events/toast below.
+        setUserInstruction('');
+        onClose();
 
         try {
             const modelConfig = buildDistillModelConfig(selectedModel as ModelConfig);
@@ -338,7 +342,7 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
             const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
             let result;
             try {
-                result = await distillSessionExperience(
+                result = await distillSessionWorkflow(
                     built.payload, modelConfig, instruction, timeoutSeconds, controller.signal,
                 );
             } finally {
@@ -351,14 +355,12 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
                 value: t('knowledge.distilled'),
             }));
             window.dispatchEvent(new CustomEvent('knowledge-changed', {
-                detail: { category: 'experiences' },
+                detail: { category: 'workflows' },
             }));
             window.dispatchEvent(new CustomEvent('open-knowledge-panel', {
-                detail: { category: 'experiences', path: result.path },
+                detail: { category: 'workflows', path: result.path },
             }));
             setStatus('idle');
-            setUserInstruction('');
-            onClose();
         } catch (e: unknown) {
             setStatus('failed');
             handleApiError(e, 'knowledge');
@@ -375,8 +377,8 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
         <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
             <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
                 {updateMode
-                    ? t('knowledge.updateSessionTitle', { defaultValue: 'Update Session Experience' })
-                    : t('knowledge.distillSessionTitle', { defaultValue: 'Distill Session Experience' })}
+                    ? t('knowledge.updateSessionTitle', { defaultValue: 'Update Session Workflow' })
+                    : t('knowledge.distillSessionTitle', { defaultValue: 'Distill Session Workflow' })}
             </DialogTitle>
             <DialogContent sx={{
                 display: 'flex', flexDirection: 'column', gap: 1.5,
@@ -387,10 +389,10 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
                     <Typography sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.4 }}>
                         {updateMode
                             ? t('knowledge.distillSessionUpdateHint', {
-                                defaultValue: 'Re-distill lessons from this analysis into the existing knowledge document.',
+                                defaultValue: 'Re-distill this analysis into the existing workflow document.',
                             })
                             : t('knowledge.distillSessionHint', {
-                                defaultValue: 'Distill lessons from this analysis into a reusable knowledge document.',
+                                defaultValue: 'Distill this analysis into a reusable workflow document that agents can replay.',
                             })}
                     </Typography>
                 </Box>
@@ -479,7 +481,7 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
                         ? t('knowledge.distilling')
                         : updateMode
                             ? t('knowledge.updateSession', { defaultValue: 'Update' })
-                            : t('knowledge.distillExperience')}
+                            : t('knowledge.distillWorkflow')}
                 </Button>
             </DialogActions>
         </Dialog>
