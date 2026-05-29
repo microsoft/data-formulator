@@ -571,7 +571,7 @@ export const DataFormulatorFC = ({ }) => {
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
             <DataSourceSidebar
-                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)}
+                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                 connectorRefreshKey={connectorRefreshKey}
             />
             <Box ref={containerRef} className="outer-allotment" sx={{
@@ -936,7 +936,7 @@ export const DataFormulatorFC = ({ }) => {
                 {tables.length > 0 ? fixedSplitPane : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
-                            onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)}
+                            onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                             connectorRefreshKey={connectorRefreshKey}
                         />
                         {dataUploadRequestBox}

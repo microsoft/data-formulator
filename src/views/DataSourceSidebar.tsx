@@ -42,7 +42,6 @@ import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 import StorageIcon from '@mui/icons-material/Storage';
 import AddIcon from '@mui/icons-material/Add';
-import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -51,9 +50,6 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -159,7 +155,7 @@ export const DataSourceSidebar: React.FC<{
     // built-in sample_datasets connector is shown there, giving users
     // something useful to explore immediately. The upgrade message only
     // appears when they try to add a new connector or link a folder.
-    const [initialTab, setInitialTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>('sources');
+    const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
 
     // External callers (e.g. SaveExperienceButton on success) can ask the
     // sidebar to open and switch to a specific tab.
@@ -277,6 +273,18 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
+                {/* Primary action — adding data is the main task. Styled like
+                    the view-switcher icons but kept in primary color as a
+                    subtle cue; opens the upload dialog (landing menu). */}
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
+                    <IconButton size="small" onClick={() => onOpenUploadDialog?.()} sx={{
+                        color: 'primary.main',
+                        borderRadius: 1,
+                        '&:hover': { bgcolor: 'action.hover' },
+                    }}>
+                        <AddIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
                 <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('sessions'); if (!isOpen) toggle(); else if (initialTab !== 'sessions') setInitialTab('sessions'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'sessions' ? 'primary.main' : 'text.secondary',
@@ -293,15 +301,6 @@ export const DataSourceSidebar: React.FC<{
                         borderRadius: 1,
                     }}>
                         <RelationalDBIcon fontSize="small" />
-                    </IconButton>
-                </Tooltip>
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
-                    <IconButton size="small" onClick={() => { setInitialTab('upload'); if (!isOpen) toggle(); else if (initialTab !== 'upload') setInitialTab('upload'); else toggle(); }} sx={{
-                        color: isOpen && initialTab === 'upload' ? 'primary.main' : 'text.secondary',
-                        bgcolor: isOpen && initialTab === 'upload' ? 'action.selected' : 'transparent',
-                        borderRadius: 1,
-                    }}>
-                        <FileUploadOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Agent knowledge' })} placement="right">
@@ -347,7 +346,7 @@ const DataSourceSidebarPanel: React.FC<{
     panelWidth: number;
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
-    initialTab?: 'upload' | 'sources' | 'sessions' | 'knowledge';
+    initialTab?: 'sources' | 'sessions' | 'knowledge';
     connectorRefreshKey?: number;
     disableConnectors?: boolean;
 }> = ({ panelWidth, onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0, disableConnectors = false }) => {
@@ -419,7 +418,7 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
     // Sidebar tab: 'sources' or 'sessions' or 'knowledge'
-    const [activeTab, setActiveTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>(initialTab);
+    const [activeTab, setActiveTab] = useState<'sources' | 'sessions' | 'knowledge'>(initialTab);
 
     // Sync tab when rail icon switches it
     useEffect(() => {
@@ -1291,39 +1290,6 @@ const DataSourceSidebarPanel: React.FC<{
             borderLeft: `1px solid ${borderColor.view}`,
             overflow: 'hidden',
         }}>
-
-            {/* ── Upload Data tab ── */}
-            {activeTab === 'upload' && (
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}>
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
-                        {t('sidebar.uploadData', { defaultValue: 'Upload Data' })}
-                    </Typography>
-                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-                <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', py: 0.5 }}>
-                    {[
-                        { icon: <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.uploadFile', { defaultValue: 'Upload file' }), tab: 'upload' },
-                        { icon: <ContentPasteOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.pasteData', { defaultValue: 'Paste data' }), tab: 'paste' },
-                        { icon: <SmartToyOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.extractData', { defaultValue: 'Data Assistant' }), tab: 'extract' },
-                        { icon: <LinkOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.loadFromUrl', { defaultValue: 'Load from URL' }), tab: 'url' },
-                    ].map((item, i) => (
-                        <Box
-                            key={i}
-                            onClick={() => onOpenUploadDialog?.(item.tab)}
-                            sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, cursor: 'pointer', color: 'text.primary', '&:hover': { bgcolor: 'action.hover' }, userSelect: 'none' }}
-                        >
-                            {item.icon}
-                            <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>{item.label}</Typography>
-                        </Box>
-                    ))}
-                </Box>
-            </Box>
-            )}
 
             {/* ── Data Connectors tab ──
                 Sample datasets remain available even when external
