@@ -932,11 +932,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                             return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
                         }, ROW_ID_COL_WIDTH);
                         const SCROLLBAR_WIDTH = 17;
-                        const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+                        // +34px gutter so the maximize button can sit just outside the table on the right.
+                        const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
 
                         return (
-                            <Box sx={{ ...panelBoxSx, padding: 0, height: adaptiveHeight, width: adaptiveWidth, overflow: 'hidden', flexShrink: 0 }}>
-                                <FreeDataViewFC />
+                            <Box sx={{ margin: '8px auto 24px auto', padding: 0, height: adaptiveHeight, width: adaptiveWidth, overflow: 'hidden', flexShrink: 0 }}>
+                                <FreeDataViewFC maximizable />
                             </Box>
                         );
                     })()}
@@ -1096,7 +1097,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Tooltip>
     </Stack>, [localScaleFactor, t]);
 
-    return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
+    return <Box ref={componentRef} id="vis-view-canvas" sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
         {synthesisRunning ? <Box sx={{
                 position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
                 backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
@@ -1210,7 +1211,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
             }
         </Box>
         return (
-            <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+            <Box id="vis-view-canvas" sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row", position: 'relative' }}>
                 <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
                     <Box className="vis-scroll" sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', flex: 1 }}>
                         <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -1281,18 +1282,15 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                 return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
                             }, ROW_ID_COL_WIDTH);
                             const SCROLLBAR_WIDTH = 17;
-                            const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+                            // +34px gutter so the maximize button can sit just outside the table on the right.
+                            const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
                             return (
                                 <Box sx={{
                                     margin: '8px auto 24px auto', padding: 0,
                                     height: adaptiveHeight, width: adaptiveWidth,
-                                    borderRadius: '8px',
-                                    border: `1px solid ${borderColor.divider}`,
-                                    transition: 'box-shadow 0.2s ease',
-                                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
                                     overflow: 'hidden', flexShrink: 0,
                                 }}>
-                                    <FreeDataViewFC />
+                                    <FreeDataViewFC maximizable />
                                 </Box>
                             );
                         })()}
