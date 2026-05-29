@@ -41,7 +41,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
-import { transition } from '../app/tokens';
+import { borderColor, transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
@@ -1380,12 +1380,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [pendingClarification, dispatch, t]);
 
     const isReportMode = selectedAgent === 'report';
-    const gradientBorder = isReportMode
-        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.6)}, ${alpha(theme.palette.warning.dark, 0.5)})`
-        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
-    const workingBorder = isReportMode
-        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.3)}, ${alpha(theme.palette.warning.dark, 0.25)})`
-        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
 
     // Landing / "no thread yet" highlight: when the user has loaded data
     // but hasn't started an exploration on the focused table (no real
@@ -1419,12 +1413,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             mx: 1, mb: 1, mt: 0.5,
             px: 1.25, pt: 1, pb: 0.5,
             borderRadius: '12px',
-            // The 2-tone border is drawn by the `::before` gradient
-            // overlay below (works through border-radius + masks). We
-            // intentionally leave the Card's own border off so the two
-            // don't fight; focus state uses a shadow halo instead of a
-            // border-color shift.
-            border: 'none',
+            // Standard single-tone input style (matches AgentChatInput): a
+            // solid divider border that turns the accent color on focus.
+            border: `1px solid ${borderColor.divider}`,
             outline: 'none',
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
@@ -1454,23 +1445,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             } : {}),
             '&:focus-within': {
                 animation: 'none',
+                borderColor: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
                 boxShadow: `0 0 0 2px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
-            },
-            // Gradient border via pseudo-element (works with border-radius)
-            '&::before': {
-                content: '""',
-                position: 'absolute',
-                inset: 0,
-                borderRadius: 'inherit',
-                padding: '1.5px',
-                background: isChatFormulating 
-                    ? workingBorder 
-                    : gradientBorder,
-                WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                WebkitMaskComposite: 'xor',
-                maskComposite: 'exclude',
-                pointerEvents: 'none',
-                zIndex: 3,
             },
         }}
         >

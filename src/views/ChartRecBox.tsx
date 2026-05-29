@@ -292,10 +292,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         type={current ? undefined : 'button'}
                         onClick={current ? undefined : () => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
                         sx={{
-                            display: 'inline-flex', alignItems: 'center', gap: current ? '6px' : '3px',
+                            display: 'inline-flex', alignItems: 'center', gap: '3px',
                             border: 'none', background: 'transparent', p: 0,
                             fontFamily: theme.typography.fontFamily,
-                            fontSize: current ? 16 : 11, lineHeight: 1.4,
+                            fontSize: 11, lineHeight: 1.4,
                             color: current ? 'primary.main' : 'text.secondary',
                             fontWeight: current ? 600 : 400,
                             cursor: current ? 'default' : 'pointer',
@@ -304,7 +304,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             '&:hover': current ? undefined : { color: 'primary.main' },
                         }}
                     >
-                        <TableIcon sx={{ fontSize: current ? 16 : 12, color: 'inherit' }} />
+                        <TableIcon sx={{ fontSize: 12, color: 'inherit' }} />
                         {table.displayId}
                     </Box>
                 );
@@ -682,10 +682,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     );
                 };
 
-                // Center cluster auto-scales with chart count; neighbour
-                // clusters are halved and dimmed to read as context.
-                const centerN = Math.min(chartsForTable(currentTable.id).length, 8);
-                const centerScale = centerN <= 3 ? 1 : centerN <= 5 ? 0.82 : 0.66;
+                // All clusters render at the same scale; the current
+                // cluster is only distinguished by not being dimmed and by
+                // showing more thumbnails.
+                const centerScale = 0.5;
                 const sideScale = 0.5;
 
                 return (
