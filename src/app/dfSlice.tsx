@@ -211,6 +211,17 @@ export interface DataFormulatorState {
      */
     dataLoadingChatResetCounter: number;
     /**
+     * Pending submission queued for the data-loading chat. Set by any
+     * surface that wants to hand a prompt off to the chat (the menu
+     * agent input box, suggestion auto-run, external dialog callers).
+     * `DataLoadingChat` consumes it on render: it clears the slot and
+     * sends the carried payload as a fresh user message. Using a single
+     * redux slot (instead of props + a reset counter) eliminates the
+     * cross-tick race where the parent's pre-clear would otherwise
+     * cancel the auto-send for the new prompt. Transient — not persisted.
+     */
+    dataLoadingChatPending: { text: string; images: string[]; attachments: string[] } | null;
+    /**
      * Pending hand-off from the Data Agent to a peer agent. Set by the
      * Data Agent's `delegate` action card; consumed by `DataFormulator`
      * (for `data_loading` → opens the upload dialog) or
@@ -299,6 +310,7 @@ const initialState: DataFormulatorState = {
     dataLoadingChatMessages: [],
     dataLoadingChatInProgress: false,
     dataLoadingChatResetCounter: 0,
+    dataLoadingChatPending: null,
     agentHandoffRequest: null,
 
     generatedReports: [],
@@ -720,6 +732,7 @@ export const dataFormulatorSlice = createSlice({
             state.dataLoadingChatMessages = [];
             state.dataLoadingChatInProgress = false;
             state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
+            state.dataLoadingChatPending = null;
 
             state.generatedReports = [];
 
@@ -837,6 +850,7 @@ export const dataFormulatorSlice = createSlice({
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
+                dataLoadingChatPending: null,
                 generatedReports: saved.generatedReports || [],
 
                 // Reset transient fields
@@ -1665,6 +1679,20 @@ export const dataFormulatorSlice = createSlice({
             state.dataLoadingChatMessages = [];
             state.dataLoadingChatInProgress = false;
             state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
+            // Note: `dataLoadingChatPending` is intentionally left
+            // alone. Callers that want "fresh slate + auto-send the
+            // new prompt" dispatch `clearChatMessages` followed by
+            // `setDataLoadingChatPending` in the same tick — clearing
+            // pending here would race with that ordering.
+        },
+        setDataLoadingChatPending: (
+            state,
+            action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
+        ) => {
+            state.dataLoadingChatPending = action.payload;
+        },
+        clearDataLoadingChatPending: (state) => {
+            state.dataLoadingChatPending = null;
         },
         confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
             const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);

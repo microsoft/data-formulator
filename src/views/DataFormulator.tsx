@@ -301,22 +301,35 @@ export const DataFormulatorFC = ({ }) => {
     // State for unified data upload dialog
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
-    const [uploadDialogInitialChatPrompt, setUploadDialogInitialChatPrompt] = useState<string | undefined>(undefined);
-    const [uploadDialogInitialChatImages, setUploadDialogInitialChatImages] = useState<string[] | undefined>(undefined);
 
     // Loading state for sessions (from Redux, shared with App.tsx)
     const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
-    const openUploadDialog = (tab: UploadTabType, initialChatPrompt?: string, initialChatImages?: string[]) => {
+    const openUploadDialog = (tab: UploadTabType) => {
         // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
         setUploadDialogInitialTab(tab);
-        setUploadDialogInitialChatPrompt(initialChatPrompt);
-        setUploadDialogInitialChatImages(initialChatImages);
         setUploadDialogOpen(true);
+    };
+
+    // Seed the Data Loading chat through the single redux `pending` slot,
+    // then navigate to the extract tab. This is the one channel that
+    // carries text, images, AND file attachments as first-class fields —
+    // replacing the older `initialChatPrompt/Images` props that silently
+    // dropped file attachments (they had no dedicated field and only
+    // survived if their name was baked into the prompt text).
+    const startDataLoadingChat = (text: string, images: string[] = [], attachments: string[] = []) => {
+        if (text.trim().length > 0 || images.length > 0 || attachments.length > 0) {
+            // Fresh query replaces any prior conversation.
+            if (dataLoadingChatMessages.length > 0) {
+                dispatch(dfActions.clearChatMessages());
+            }
+            dispatch(dfActions.setDataLoadingChatPending({ text, images, attachments }));
+        }
+        openUploadDialog('extract');
     };
 
     // Honor cross-component requests to hand off to the Data Loading
@@ -326,7 +339,7 @@ export const DataFormulatorFC = ({ }) => {
     const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
     useEffect(() => {
         if (agentHandoffRequest && agentHandoffRequest.target === 'data_loading') {
-            openUploadDialog('extract', agentHandoffRequest.prompt, agentHandoffRequest.images);
+            startDataLoadingChat(agentHandoffRequest.prompt, agentHandoffRequest.images ?? [], []);
             dispatch(dfActions.clearAgentHandoffRequest());
         }
         // openUploadDialog is stable enough for this purpose; we only react
@@ -730,7 +743,7 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
-                    onStartChat={(prompt, images) => openUploadDialog('extract', prompt, images)}
+                    onStartChat={(prompt, images, attachments) => startDataLoadingChat(prompt, images, attachments)}
                     hasPriorConversation={dataLoadingChatMessages.length > 0}
                     onResumeChat={() => openUploadDialog('extract')}
                     serverConfig={serverConfig}
@@ -933,16 +946,9 @@ export const DataFormulatorFC = ({ }) => {
                     open={uploadDialogOpen}
                     onClose={() => {
                         setUploadDialogOpen(false);
-                        // Clear one-shot seed values so the next dialog
-                        // open (e.g. via the upload button) doesn't
-                        // re-fire the agent with a stale prompt/image.
-                        setUploadDialogInitialChatPrompt(undefined);
-                        setUploadDialogInitialChatImages(undefined);
                         refreshPageConnectors();
                     }}
                     initialTab={uploadDialogInitialTab}
-                    initialChatPrompt={uploadDialogInitialChatPrompt}
-                    initialChatImages={uploadDialogInitialChatImages}
                     onConnectorsChanged={handleConnectorsChanged}
                 />
                 {/* Loading overlay for session loading */}

@@ -1751,6 +1751,9 @@ let SingleThreadGroupView: FC<{
     const TIMELINE_GAP = '4px'; // gap between timeline and card content
     const DOT_SIZE = 6;
     const CARD_PY = '6px'; // vertical padding for each timeline row
+    // Mirror the left timeline gutter on the right so cards sit visually
+    // centred in their column instead of hugging the right edge.
+    const CARD_CONTENT_PR = `${TIMELINE_WIDTH}px`;
 
     // CSS `border-style: dashed` stretches dashes to fit each element's
     // height, so stacked segments end up with mismatched dash lengths.  A
@@ -1907,7 +1910,7 @@ let SingleThreadGroupView: FC<{
                         {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
                         {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, display: 'flex', alignItems: 'center' }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, pr: CARD_CONTENT_PR, display: 'flex', alignItems: 'center' }}>
                         {item.element}
                     </Box>
                 </Box>
@@ -1983,7 +1986,7 @@ let SingleThreadGroupView: FC<{
                         {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
                         {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
                         {item.element}
                     </Box>
                 </Box>
@@ -2006,7 +2009,7 @@ let SingleThreadGroupView: FC<{
                         {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
                         {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
                         {item.element}
                     </Box>
                 </Box>
@@ -2054,7 +2057,7 @@ let SingleThreadGroupView: FC<{
                     )}
                     {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
-                <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: TIMELINE_GAP,
+                <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR,
                     ...(item.type === 'used-table' && { display: 'flex', alignItems: 'center' }),
                 }}>
                     {item.element}
@@ -3119,7 +3122,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // benefit, since the segments would just stack in the same single column.
     const CARD_GAP = 12; // padding + spacing between cards in a column
     const PANEL_PADDING = 16;
-    const CARD_WIDTH = 220;
+    // 220 visual card width + 14px right gutter (CARD_CONTENT_PR) so cards
+    // keep their original size while gaining a right margin that balances
+    // the left timeline gutter.
+    const CARD_WIDTH = 234;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
     // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
     // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH

@@ -376,6 +376,13 @@ class TestLegacyWorkspaceAutoRepair:
             yaml.safe_dump({"version": "1.1", "tables": {}}),
             encoding="utf-8",
         )
+        # Pretend the legacy workspace had session state with tables.
+        (ws_dir / "session_state.json").write_text(
+            json.dumps({"tables": [{"id": "t1"}]}),
+            encoding="utf-8",
+        )
+        # Trigger meta repair with a non-empty table count.
+        manager.save_session_state("legacy_ws", {"tables": [{"id": "t1"}]})
 
         ws_list = manager.list_workspaces()
         ids = [w["id"] for w in ws_list]
@@ -385,16 +392,23 @@ class TestLegacyWorkspaceAutoRepair:
         assert (ws_dir / WORKSPACE_META_FILENAME).exists()
 
     def test_legacy_workspace_with_only_session_state_appears_in_list(self, manager):
-        """A directory with only session_state.json should be auto-repaired."""
+        """A directory with session_state.json (containing tables) is
+        auto-repaired and visible in list_workspaces. The displayName
+        is inferred from session_state."""
         ws_dir = manager.root / "state_only"
         ws_dir.mkdir(parents=True)
         (ws_dir / "session_state.json").write_text(
             json.dumps({
-                "tables": [],
+                "tables": [{"id": "t1", "name": "T1"}],
                 "activeWorkspace": {"displayName": "My Old Session"},
             }),
             encoding="utf-8",
         )
+        # Re-save so meta is written with tableCount > 0.
+        manager.save_session_state("state_only", {
+            "tables": [{"id": "t1", "name": "T1"}],
+            "activeWorkspace": {"displayName": "My Old Session"},
+        })
 
         ws_list = manager.list_workspaces()
         ids = [w["id"] for w in ws_list]
@@ -405,7 +419,9 @@ class TestLegacyWorkspaceAutoRepair:
         assert entry["display_name"] == "My Old Session"
 
     def test_legacy_workspace_with_empty_dir_appears_in_list(self, manager):
-        """Even a bare directory (no metadata files at all) should be listed."""
+        """A bare directory with no metadata at all is auto-repaired by
+        _ensure_meta (meta.json gets created with fallback displayName)
+        and appears in list_workspaces."""
         ws_dir = manager.root / "bare"
         ws_dir.mkdir(parents=True)
 
@@ -413,7 +429,7 @@ class TestLegacyWorkspaceAutoRepair:
         ids = [w["id"] for w in ws_list]
         assert "bare" in ids
 
-        # workspace_meta.json auto-created with fallback displayName = dir name
+        # Auto-repair created the meta with a fallback displayName.
         meta = json.loads((ws_dir / WORKSPACE_META_FILENAME).read_text(encoding="utf-8"))
         assert meta["displayName"] == "bare"
 
@@ -452,3 +468,43 @@ class TestLegacyWorkspaceAutoRepair:
         # Destination should have workspace_meta.json
         dst_ws = dst.get_workspace_path("old_ws")
         assert (dst_ws / WORKSPACE_META_FILENAME).exists()
+
+
+class TestEmptyWorkspaceVisibility:
+    """list_workspaces() lists every workspace directory, including
+    empty "Untitled Session" entries from abandoned data-loading
+    chats. Users manage (rename/delete) these themselves via the
+    sidebar — they are not hidden."""
+
+    def test_empty_workspace_is_visible(self, manager):
+        manager.create_workspace("ghost")
+        # No save_session_state — meta has no tableCount/chartCount.
+
+        ws_list = manager.list_workspaces()
+
+        assert any(w["id"] == "ghost" for w in ws_list)
+        assert manager.workspace_exists("ghost")
+
+    def test_workspace_with_tables_is_visible(self, manager):
+        manager.create_workspace("real")
+        manager.save_session_state("real", {
+            "tables": [{"id": "t1", "name": "T1"}],
+            "activeWorkspace": {"id": "real", "displayName": "Real"},
+        })
+
+        ws_list = manager.list_workspaces()
+
+        assert any(w["id"] == "real" for w in ws_list)
+
+    def test_zero_count_workspace_is_visible(self, manager):
+        """A workspace whose tables were all deleted (zero tables) still
+        appears in the list — the user decides whether to remove it."""
+        manager.create_workspace("emptied")
+        manager.save_session_state("emptied", {
+            "tables": [],
+            "activeWorkspace": {"id": "emptied", "displayName": "Emptied"},
+        })
+
+        ws_list = manager.list_workspaces()
+
+        assert any(w["id"] == "emptied" for w in ws_list)

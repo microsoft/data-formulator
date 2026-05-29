@@ -60,7 +60,11 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
 // Modern monospace font stack for code blocks
 const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
 
-const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+// Memoized so typing in the chat input (which re-renders the parent
+// `DataLoadingChat` on every keystroke) doesn't re-parse every assistant
+// message through react-markdown. `content` is a stable string per
+// committed message, so the default shallow equality is sufficient.
+const MarkdownContent = React.memo(({ content }: { content: string }) => {
     return (
         <Box sx={{ wordBreak: 'break-word' }}>
             <Markdown
@@ -168,7 +172,7 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
             </Markdown>
         </Box>
     );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Inline table preview — compact notebook-style
@@ -317,10 +321,16 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
 // Single chat message bubble
 // ---------------------------------------------------------------------------
 
-const ChatBubble: React.FC<{
+// Memoized so typing in the chat input doesn't re-render every prior
+// bubble (each one renders MarkdownContent + potentially code blocks /
+// table previews, which is expensive on long threads). The parent
+// stabilises `existingNames` via useMemo so memo equality holds across
+// keystrokes.
+const ChatBubble = React.memo<{
     message: ChatMessage;
     existingNames: Set<string>;
-}> = ({ message, existingNames }) => {
+    onTableLoaded?: () => void;
+}>(({ message, existingNames, onTableLoaded }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
@@ -340,6 +350,9 @@ const ChatBubble: React.FC<{
                 if (table) {
                     dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } }));
                     dispatch(dfActions.confirmTableLoad({ messageId: message.id, tableName: pending.name }));
+                    // Loading data is a deliberate commit — return the
+                    // user to the canvas (the dialog closes via this hook).
+                    onTableLoaded?.();
                 }
             }
         } catch (err) {
@@ -468,6 +481,11 @@ const ChatBubble: React.FC<{
                                 }));
                             }
                             dispatch(dfActions.markLoadPlanConfirmed({ messageId: message.id }));
+                            if (selected.length > 0) {
+                                // Return the user to the canvas after a
+                                // deliberate batch load.
+                                onTableLoaded?.();
+                            }
                         }}
                     />
                 )}
@@ -493,7 +511,7 @@ const ChatBubble: React.FC<{
             </Box>
         </Box>
     );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Tool call label mapping
@@ -517,7 +535,10 @@ interface ToolStep {
     label: string;
 }
 
-const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> = ({ content, toolSteps }) => {
+// Memoized so an unrelated parent re-render (e.g. typing) doesn't
+// reflow the shimmer animation. Props are state values that only change
+// during an active stream.
+const StreamingIndicator = React.memo<{ content: string; toolSteps: ToolStep[] }>(({ content, toolSteps }) => {
     const theme = useTheme();
     return (
         <Box sx={{ mb: 2 }}>
@@ -579,55 +600,56 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
             )}
         </Box>
     );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Main chat component
 // ---------------------------------------------------------------------------
 
-export interface DataLoadingChatProps {
-    /**
-     * Optional initial text to pre-fill the chat input when the component
-     * mounts (or when the value changes). Used by external entry points
-     * (e.g. landing page quick-chat box) that want to hand off a prompt
-     * to the agent.
-     */
-    initialPrompt?: string;
-    /**
-     * Optional images (data URLs) to seed alongside `initialPrompt` —
-     * used when an external surface (e.g. landing-page agent box) has
-     * already collected pasted/attached images and is handing them off.
-     */
-    initialImages?: string[];
-    /**
-     * If true, automatically send the `initialPrompt` once on mount/change.
-     * Otherwise the prompt is only pre-filled and the user presses Enter.
-     */
-    autoSendInitialPrompt?: boolean;
+interface DataLoadingChatProps {
+    /** Called after a table is successfully loaded into the app. The
+     *  upload dialog wires this to its close handler so loading data
+     *  returns the user to the canvas. */
+    onTableLoaded?: () => void;
 }
 
-export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
-    initialPrompt,
-    initialImages,
-    autoSendInitialPrompt,
-}) => {
+export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
+    // Keep the latest callback in a ref so the stable `handleTableLoaded`
+    // identity below doesn't bust `ChatBubble`'s memoization even when the
+    // parent passes a fresh closure each render.
+    const onTableLoadedRef = useRef(onTableLoaded);
+    onTableLoadedRef.current = onTableLoaded;
+    const handleTableLoaded = useCallback(() => {
+        onTableLoadedRef.current?.();
+    }, []);
+
     const chatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const chatInProgress = useSelector((state: DataFormulatorState) => state.dataLoadingChatInProgress);
-    // External reset signal — bumped by `clearChatMessages` (manual reset
-    // button, new menu-level query, full session reset). When it changes
-    // we abort any in-flight stream, drop partial UI state, and re-seed
-    // from props if the parent provided a new prompt/images. Without
-    // this, an in-flight stream's eventual dispatches would leak into
-    // the freshly-cleared thread.
+    // External reset signal — bumped by `clearChatMessages` (manual
+    // reset button, fresh menu submission, full session reset). Used
+    // here only to abort an in-flight stream and invalidate any
+    // late-arriving dispatches from that stream via `sessionRef`.
     const chatResetCounter = useSelector((state: DataFormulatorState) => state.dataLoadingChatResetCounter ?? 0);
+    // Pending submission queued by an external surface (menu agent
+    // box, suggestion auto-run, external dialog caller). When set, we
+    // consume it in a useEffect: clear the slot first, then send the
+    // carried payload as a fresh user message via `sendMessage`.
+    // Single redux signal = no prop race.
+    const pendingSubmission = useSelector((state: DataFormulatorState) => state.dataLoadingChatPending);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
-    const existingNames = new Set(existingTables.map(tbl => tbl.id));
+    // Stable reference across renders that don't actually change the
+    // table list — without this, every keystroke in the chat input
+    // would rebuild the Set and bust `ChatBubble`'s memo equality.
+    const existingNames = React.useMemo(
+        () => new Set(existingTables.map(tbl => tbl.id)),
+        [existingTables],
+    );
 
     const [prompt, setPrompt] = useState('');
     const [userImages, setUserImages] = useState<string[]>([]);
@@ -654,95 +676,44 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
     // Auto-focus input
     useEffect(() => { inputRef.current?.focus(); }, []);
 
-    // ---- External initial prompt handling -------------------------------
-    // Pre-fill the input (and optionally auto-send) when `initialPrompt`
-    // is provided. Used by external surfaces (e.g. landing-page quick chat
-    // box) to hand off text to the agent. Auto-send only fires for a
-    // fresh conversation — we never auto-resend on remount mid-chat.
-    const hasExistingMessages = chatMessages.length > 0;
-    const [pendingAutoSend, setPendingAutoSend] = useState(false);
+    // ---- Reset handling -------------------------------------------------
+    // On external reset (counter bump from `clearChatMessages`): abort
+    // any in-flight stream, invalidate the current session token, and
+    // clear local input/streaming UI state. We deliberately do NOT
+    // re-seed anything here — a reset means "clean slate"; any new
+    // submission arrives separately via `pendingSubmission`.
     useEffect(() => {
-        // Detect external reset: abort, invalidate in-flight session,
-        // and clear all local UI state before re-seeding. Including
-        // `chatResetCounter` in the dep list also guarantees that an
-        // identical-prompt re-submission (same `initialPrompt` string)
-        // still triggers a fresh auto-send — otherwise the deps would
-        // be unchanged and the effect would skip.
-        const isReset = chatResetCounter !== lastResetRef.current;
-        if (isReset) {
-            lastResetRef.current = chatResetCounter;
-            sessionRef.current += 1;
-            abortControllerRef.current?.abort();
-            abortControllerRef.current = null;
-            setStreamingContent('');
-            setStreamingToolSteps([]);
-            setPrompt('');
-            setUserImages([]);
-            setUserAttachments([]);
-            setPendingAutoSend(false);
-        }
-
-        // Extract `[Uploaded: name]` mentions from the seeded prompt and
-        // surface them as chips. The mention template is locale-aware,
-        // so we build the regex from the current i18n value rather than
-        // hard-coding the English form.
-        const mentionTemplate = t('dataLoading.uploaded', { name: '__DF_NAME__' });
-        const mentionPattern = mentionTemplate
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            .replace('__DF_NAME__', '(.+?)');
-        const mentionRegex = new RegExp(mentionPattern, 'g');
-        let seededPrompt = initialPrompt || '';
-        const extractedNames: string[] = [];
-        if (seededPrompt) {
-            let match: RegExpExecArray | null;
-            while ((match = mentionRegex.exec(seededPrompt)) !== null) {
-                extractedNames.push(match[1]);
-            }
-            if (extractedNames.length > 0) {
-                seededPrompt = seededPrompt
-                    .replace(new RegExp(`\\n?${mentionPattern}`, 'g'), '')
-                    .trim();
-            }
-        }
-
-        const hasText = seededPrompt.trim().length > 0;
-        const hasImages = !!initialImages && initialImages.length > 0;
-        const hasAttachments = extractedNames.length > 0;
-        // Skip re-seeding the input on a user-initiated reset — the
-        // reset is meant to restore a clean slate, not re-populate the
-        // input with the prompt the user just cleared.
-        if (!isReset) {
-            if (hasText) setPrompt(seededPrompt);
-            if (hasAttachments) setUserAttachments(extractedNames);
-            if (hasImages) {
-                // Always replace, never append. The prop is a "seed" — each
-                // change represents a fresh handoff from the parent, not an
-                // additive update. Appending caused the same image to stack
-                // up every time the parent re-rendered with a new array ref.
-                setUserImages([...initialImages!]);
-            }
-        }
-        // Auto-send only on a genuinely fresh open (no prior messages,
-        // and not a user-initiated reset). Resetting means the user wants
-        // a clean slate — re-running the seeded prompt against their will
-        // would defeat the purpose of the reset button.
-        if (autoSendInitialPrompt && !isReset && (hasText || hasImages || hasAttachments) && !hasExistingMessages) {
-            setPendingAutoSend(true);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialPrompt, initialImages, autoSendInitialPrompt, chatResetCounter]);
+        if (chatResetCounter === lastResetRef.current) return;
+        lastResetRef.current = chatResetCounter;
+        sessionRef.current += 1;
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        setStreamingContent('');
+        setStreamingToolSteps([]);
+        setPrompt('');
+        setUserImages([]);
+        setUserAttachments([]);
+    }, [chatResetCounter]);
 
     const stopGeneration = () => { abortControllerRef.current?.abort(); };
 
     // ---- Send message ----
-    const sendMessage = useCallback(() => {
-        const text = prompt.trim();
-        if (!text && userImages.length === 0 && userAttachments.length === 0) return;
+    // Accepts an optional explicit payload so callers (suggestion
+    // auto-run, pending-submission consume) can submit the exact
+    // values they just chose without waiting for React state to flush.
+    // Reading via the `prompt`/`userImages`/`userAttachments` closures
+    // alone would be racy with batching and could submit the previous
+    // round's values on a fresh handoff.
+    const sendMessage = useCallback((explicit?: { text: string; images: string[]; attachments: string[] }) => {
+        const text = (explicit?.text ?? prompt).trim();
+        const imgs = explicit?.images ?? userImages;
+        const atts = explicit?.attachments ?? userAttachments;
+        if (!text && imgs.length === 0 && atts.length === 0) return;
         if (chatInProgress) return;
-        const imageAttachments: ChatAttachment[] = userImages.map((url, i) => ({
+        const imageAttachments: ChatAttachment[] = imgs.map((url, i) => ({
             type: 'image' as const, name: `image-${i + 1}`, url,
         }));
-        const fileAttachments: ChatAttachment[] = userAttachments.map(name => ({
+        const fileAttachments: ChatAttachment[] = atts.map(name => ({
             type: 'file' as const, name,
         }));
         const attachments: ChatAttachment[] = [...imageAttachments, ...fileAttachments];
@@ -751,7 +722,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
         // chips (rendered from `attachments`). The agent payload below
         // re-injects `[Uploaded: name]` mentions so the backend still
         // sees the file references inline.
-        const displayText = text || (userImages.length > 0 ? t('dataLoading.defaultImageMessage') : '');
+        const displayText = text || (imgs.length > 0 ? t('dataLoading.defaultImageMessage') : '');
 
         const userMsg: ChatMessage = {
             id: `msg-${Date.now()}-user`, role: 'user',
@@ -967,25 +938,48 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                 }
             }
         })();
-    }, [prompt, userImages, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent, t]);
+    }, [prompt, userImages, userAttachments, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent, t]);
 
-    // Auto-send the initial prompt once it has been applied to state.
+    // Consume a queued submission from any external surface (menu
+    // agent input, suggestion auto-run, or a cross-component handoff
+    // routed through `startDataLoadingChat`). Single redux signal,
+    // single consumer — no prop race.
+    //
+    // Idempotency note: under React.StrictMode (dev), effects are
+    // intentionally double-invoked on mount with the *same* closure,
+    // so the `clearDataLoadingChatPending` dispatch in the first run
+    // isn't visible to the second run. `lastConsumedRef` tracks the
+    // exact payload object we've already sent, so the second
+    // invocation short-circuits before calling `sendMessage` again.
+    const lastConsumedRef = useRef<typeof pendingSubmission>(null);
     useEffect(() => {
-        if (!pendingAutoSend) return;
+        if (!pendingSubmission) return;
+        if (pendingSubmission === lastConsumedRef.current) return;
         if (chatInProgress) return;
-        if (prompt.trim().length === 0 && userImages.length === 0) return;
-        setPendingAutoSend(false);
-        sendMessage();
-    }, [pendingAutoSend, prompt, userImages, chatInProgress, sendMessage]);
+        lastConsumedRef.current = pendingSubmission;
+        const payload = pendingSubmission;
+        dispatch(dfActions.clearDataLoadingChatPending());
+        sendMessage(payload);
+    }, [pendingSubmission, chatInProgress, sendMessage, dispatch]);
 
     // Reuse the shared sample-task list so this in-session panel stays in
     // sync with the upload-dialog entry point (`UnifiedDataUploadDialog`).
+    // Auto-run is wired through the redux pending slot so the click —
+    // even on a chat with prior history — atomically clears the thread
+    // and queues the new submission.
     const focusSuggestions = React.useMemo(() => buildDataLoadingSuggestions({
         t,
         setInput: setPrompt,
         setImages: setUserImages,
         setAttachments: setUserAttachments,
-    }), [t]);
+        requestAutoSend: (payload) => {
+            if (chatMessages.length > 0) {
+                dispatch(dfActions.clearChatMessages());
+            }
+            dispatch(dfActions.setDataLoadingChatPending(payload));
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, dispatch]);
 
     const isEmpty = chatMessages.length === 0 && !streamingContent;
 
@@ -1047,7 +1041,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                 ) : (
                     <>
                         {chatMessages.map((msg) => (
-                            <ChatBubble key={msg.id} message={msg} existingNames={existingNames} />
+                            <ChatBubble key={msg.id} message={msg} existingNames={existingNames} onTableLoaded={handleTableLoaded} />
                         ))}
                         {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
                         {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}
@@ -1065,7 +1059,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                         onChange={setPrompt}
                         images={userImages}
                         onImagesChange={setUserImages}
-                        onSend={sendMessage}
+                        onSend={() => sendMessage()}
                         onStop={stopGeneration}
                         inProgress={chatInProgress}
                         placeholder={t('dataLoading.placeholder')}
@@ -1076,8 +1070,13 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                             formData.append('file', file);
                             apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
                                 method: 'POST', body: formData,
-                            }).then(() => {
-                                setUserAttachments(prev => [...prev, file.name]);
+                            }).then(({ data }) => {
+                                // The backend hash-suffixes the filename
+                                // (e.g. `name_a1b2c3d4.xlsx`). Store the
+                                // server-assigned name so the `[Uploaded:]`
+                                // mention points to the real scratch file.
+                                const scratchName = (data?.path || `scratch/${file.name}`).replace(/^scratch\//, '');
+                                setUserAttachments(prev => [...prev, scratchName]);
                             }).catch(err => console.error('Upload failed:', err));
                         }}
                         attachments={userAttachments}

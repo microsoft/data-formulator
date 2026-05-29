@@ -448,12 +448,14 @@ export interface DataLoadMenuProps {
     onSelectConnector?: (connector: ConnectorInstance) => void;
     /**
      * Called when the user submits a prompt from the top-level Data Loading
-     * Agent chat box. Implementations should open the agent chat surface
-     * with the prompt (and optional pasted/attached images) pre-filled —
-     * typically auto-sent. If not provided, the chat box falls back to
-     * `onSelectTab('extract')`.
+     * Agent chat box. Implementations should hand the payload off to the
+     * agent chat surface, which will auto-send it as a fresh user
+     * message. Attachments are file names (already uploaded to the
+     * session scratch space) — the chat surface re-injects them as
+     * `[Uploaded: name]` mentions when building the backend payload.
+     * If not provided, the chat box falls back to `onSelectTab('extract')`.
      */
-    onStartChat?: (prompt: string, images?: string[]) => void;
+    onStartChat?: (prompt: string, images: string[], attachments: string[]) => void;
     /**
      * True when a prior data-loading agent conversation exists in
      * state. When set together with `onResumeChat`, the menu renders
@@ -605,22 +607,17 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     const submitAgentChat = () => {
         const text = agentInput.trim();
         if (text.length === 0 && agentImages.length === 0 && agentAttachments.length === 0) {
-            // Empty submission — just open the chat surface.
-            if (onStartChat) onStartChat('', []);
+            // Empty submission — just surface the chat.
+            if (onStartChat) onStartChat('', [], []);
             else onSelectTab('extract');
             return;
         }
-        // Augment the outgoing prompt with `[Uploaded: name]` lines so the
-        // agent sees attachments as text references, without polluting
-        // the editable input the user sees.
-        const mentions = agentAttachments
-            .map(name => t('dataLoading.uploaded', { name }))
-            .join('\n');
-        const finalText = mentions
-            ? (text ? `${text}\n${mentions}` : mentions)
-            : text;
+        // Pass payload pieces unchanged — the chat surface builds the
+        // backend mentions itself. We deliberately do NOT pre-inject
+        // `[Uploaded: name]` into `text` here, so the visible message
+        // bubble stays clean and the file chips render uniformly.
         if (onStartChat) {
-            onStartChat(finalText, agentImages);
+            onStartChat(text, agentImages, agentAttachments);
         } else {
             onSelectTab('extract');
         }
@@ -631,14 +628,26 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 
     // Suggestions surfaced as a focus-time dropdown — sourced from a shared
     // factory so the in-session `DataLoadingChat` panel renders the exact
-    // same list. See `dataLoadingSuggestions.ts`.
+    // same list. See `dataLoadingSuggestions.ts`. Auto-run is routed
+    // through `onStartChat` so the parent dialog can dispatch its
+    // `clearChatMessages` + `setDataLoadingChatPending` sequence
+    // atomically — same path as a manual submit.
     const agentChatSuggestions = useMemo(() => buildDataLoadingSuggestions({
         t,
         setInput: setAgentInput,
         setImages: setAgentImages,
         setAttachments: setAgentAttachments,
         ensureActiveWorkspace,
-    }), [t]);
+        requestAutoSend: onStartChat
+            ? (payload) => {
+                  onStartChat(payload.text, payload.images, payload.attachments);
+                  setAgentInput('');
+                  setAgentImages([]);
+                  setAgentAttachments([]);
+              }
+            : undefined,
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, onStartChat]);
     const agentChatBox = (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 640 }}>
             <Box
@@ -708,8 +717,12 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     formData.append('file', file);
                     apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
                         method: 'POST', body: formData,
-                    }).then(() => {
-                        setAgentAttachments(prev => [...prev, file.name]);
+                    }).then(({ data }) => {
+                        // The backend hash-suffixes the filename; store the
+                        // server-assigned name so the `[Uploaded:]` mention
+                        // resolves to the real scratch file.
+                        const scratchName = (data?.path || `scratch/${file.name}`).replace(/^scratch\//, '');
+                        setAgentAttachments(prev => [...prev, scratchName]);
                     }).catch(err => console.error('Upload failed:', err));
                 }}
                 attachments={agentAttachments}
@@ -1112,14 +1125,6 @@ export interface UnifiedDataUploadDialogProps {
     open: boolean;
     onClose: () => void;
     initialTab?: UploadTabType;
-    /**
-     * Optional initial prompt to hand off to the Data Loading Agent. When
-     * non-empty and `initialTab === 'extract'`, the prompt is pre-filled
-     * and auto-sent in the chat panel.
-     */
-    initialChatPrompt?: string;
-    /** Optional images (data URLs) to seed the chat alongside `initialChatPrompt`. */
-    initialChatImages?: string[];
     onConnectorsChanged?: () => void;
 }
 
@@ -1127,8 +1132,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     open,
     onClose,
     initialTab = 'menu',
-    initialChatPrompt,
-    initialChatImages,
     onConnectorsChanged,
 }) => {
     const theme = useTheme();
@@ -1143,21 +1146,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
-    // Prompt to seed the agent chat with. Sourced from the `initialChatPrompt`
-    // prop when the dialog opens directly on 'extract', or set internally
-    // when the user submits the in-menu agent chat box.
-    const [seededChatPrompt, setSeededChatPrompt] = useState<string | undefined>(
-        initialTab === 'extract' ? initialChatPrompt : undefined,
-    );
-    const [seededChatImages, setSeededChatImages] = useState<string[] | undefined>(
-        initialTab === 'extract' ? initialChatImages : undefined,
-    );
-    const [autoSendSeededPrompt, setAutoSendSeededPrompt] = useState<boolean>(
-        initialTab === 'extract' && (
-            (!!initialChatPrompt && initialChatPrompt.trim().length > 0)
-            || (!!initialChatImages && initialChatImages.length > 0)
-        ),
-    );
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
 
@@ -1175,27 +1163,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (open) {
             setConnectorInstances([]);
             refreshConnectors();
-            // Re-seed chat prompt/images from props each time the dialog opens.
-            if (initialTab === 'extract') {
-                setSeededChatPrompt(initialChatPrompt);
-                setSeededChatImages(initialChatImages);
-                const hasText = !!initialChatPrompt && initialChatPrompt.trim().length > 0;
-                const hasImages = !!initialChatImages && initialChatImages.length > 0;
-                setAutoSendSeededPrompt(hasText || hasImages);
-                // Opening the dialog with a fresh prompt/images means the
-                // user wants a new data-loading conversation; clear any
-                // stale messages from a previous session so the new query
-                // isn't appended to an unrelated thread.
-                if ((hasText || hasImages) && dataLoadingChatMessages.length > 0) {
-                    dispatch(dfActions.clearChatMessages());
-                }
-            } else {
-                setSeededChatPrompt(undefined);
-                setSeededChatImages(undefined);
-                setAutoSendSeededPrompt(false);
-            }
         }
-    }, [open, refreshConnectors, identityKey, initialTab, initialChatPrompt, initialChatImages]);
+    }, [open, refreshConnectors, identityKey]);
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
@@ -1848,29 +1817,32 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     setActiveTab(`connector:${conn.id}` as UploadTabType);
                                 }
                             }}
-                            onStartChat={(prompt, images) => {
+                            onStartChat={(prompt, images, attachments) => {
                                 const hasText = prompt.trim().length > 0;
-                                const hasImages = !!images && images.length > 0;
-                                // If a prior conversation exists, treat a
-                                // new query from the menu as a fresh data
-                                // reload and reset the chat. Without this
-                                // the new prompt would be appended onto an
-                                // unrelated thread, confusing the agent.
-                                if ((hasText || hasImages) && dataLoadingChatMessages.length > 0) {
-                                    dispatch(dfActions.clearChatMessages());
+                                const hasImages = images.length > 0;
+                                const hasAttachments = attachments.length > 0;
+                                // Always surface the chat. If the user
+                                // is starting a fresh query, clear any
+                                // prior conversation and enqueue the new
+                                // submission as a redux `pending` slot
+                                // — `DataLoadingChat` consumes it on
+                                // render and auto-sends. Doing both
+                                // dispatches in the same tick keeps the
+                                // handoff atomic; there's no prop race.
+                                if (hasText || hasImages || hasAttachments) {
+                                    if (dataLoadingChatMessages.length > 0) {
+                                        dispatch(dfActions.clearChatMessages());
+                                    }
+                                    dispatch(dfActions.setDataLoadingChatPending({
+                                        text: prompt, images, attachments,
+                                    }));
                                 }
-                                setSeededChatPrompt(prompt);
-                                setSeededChatImages(images);
-                                setAutoSendSeededPrompt(hasText || hasImages);
                                 setActiveTab('extract');
                             }}
                             hasPriorConversation={dataLoadingChatMessages.length > 0}
                             onResumeChat={() => {
                                 // Reopen the existing thread without
                                 // clearing messages or auto-sending.
-                                setSeededChatPrompt(undefined);
-                                setSeededChatImages(undefined);
-                                setAutoSendSeededPrompt(false);
                                 setActiveTab('extract');
                             }}
                             serverConfig={serverConfig}
@@ -2403,11 +2375,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 {/* Extract Data Tab */}
                 <TabPanel value={activeTab} index="extract">
-                    <DataLoadingChat
-                        initialPrompt={seededChatPrompt}
-                        initialImages={seededChatImages}
-                        autoSendInitialPrompt={autoSendSeededPrompt}
-                    />
+                    <DataLoadingChat onTableLoaded={handleClose} />
                 </TabPanel>
 
                 {/* Local Folder Tab */}
