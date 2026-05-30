@@ -1253,7 +1253,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             {configLoaded && authChecked ? (
                 <RouterProvider router={router} />
             ) : (
-                <AnvilLoader />
+                <AnvilLoader label="loading data formulator..." />
             )}
             {migrationBrowserId && (
                 <IdentityMigrationDialog

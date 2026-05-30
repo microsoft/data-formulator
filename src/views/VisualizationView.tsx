@@ -15,7 +15,6 @@ import {
     ListItemIcon,
     ListItemText,
     MenuItem,
-    LinearProgress,
     Card,
     ListSubheader,
     Menu,
@@ -37,6 +36,7 @@ import _ from 'lodash';
 
 import { borderColor, transition } from '../app/tokens';
 import { WritingIndicator } from '../components/FunComponents';
+import { AnvilLoader } from '../components/AnvilLoader';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
@@ -1099,10 +1099,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     return <Box ref={componentRef} id="vis-view-canvas" sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
         {synthesisRunning ? <Box sx={{
-                position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
-                backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
+                position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1001, 
+                backgroundColor: "rgba(255, 255, 255, 0.82)",
+                backdropFilter: 'blur(2px)',
+                display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-                <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+                <AnvilLoader height="auto" />
             </Box> : ''}
         {chartUnavailable ? "" : chartResizer}
         {content}
