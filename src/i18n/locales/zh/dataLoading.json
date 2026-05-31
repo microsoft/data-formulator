@@ -39,6 +39,7 @@
       "rowLimit": "行数限制",
       "loadSelected": "加载选中的表",
       "loadedCount": "✓ 已加载 {{count}} 张表",
+      "loadedCount_plural": "✓ 已加载 {{count}} 张表",
       "preview": "预览",
       "hidePreview": "收起",
       "previewing": "正在预览...",
