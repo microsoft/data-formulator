@@ -36,7 +36,6 @@ import _ from 'lodash';
 
 import { borderColor, transition } from '../app/tokens';
 import { WritingIndicator } from '../components/FunComponents';
-import { AnvilLoader } from '../components/AnvilLoader';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
@@ -51,9 +50,7 @@ import { buildEmbeddedDataForChart } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
-import { DictTable } from "../components/ComponentType";
 
-import AddchartIcon from '@mui/icons-material/Addchart';
 import DeleteIcon from '@mui/icons-material/Delete';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
@@ -431,7 +428,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
 
-    let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
     let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
 
     // Track the assembled Vega-Lite spec from the renderer so we can open it in the Vega Editor
@@ -1098,14 +1094,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     </Stack>, [localScaleFactor, t]);
 
     return <Box ref={componentRef} id="vis-view-canvas" sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
-        {synthesisRunning ? <Box sx={{
-                position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1001, 
-                backgroundColor: "rgba(255, 255, 255, 0.82)",
-                backdropFilter: 'blur(2px)',
-                display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-                <AnvilLoader height="auto" />
-            </Box> : ''}
+        {/* No full-screen block while the agent works: the previous chart
+            stays visible, and progress is signaled non-intrusively on the
+            chat box + encoding shelf (see EncodingShelfCard). */}
         {chartUnavailable ? "" : chartResizer}
         {content}
     </Box>

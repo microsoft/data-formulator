@@ -38,6 +38,8 @@
       "filters": "Filters",
       "rowLimit": "Row limit",
       "loadSelected": "Load selected",
+      "loadInNewWorkspace": "Load in new workspace",
+      "addToCurrent": "Add to current workspace",
       "loadedCount": "✓ Loaded {{count}} table",
       "loadedCount_plural": "✓ Loaded {{count}} tables",
       "preview": "Preview",

@@ -38,6 +38,18 @@ import { loadTable } from '../app/tableThunks';
 import { LoadPlanCard, PendingLoadsCard } from '../components/LoadPlanCard';
 import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
 import { AgentChatInput } from './AgentChatInput';
+import { generateUUID } from '../app/identity';
+
+// ---------------------------------------------------------------------------
+// Helper: fresh workspace session id (mirrors DataSourceSidebar's scheme)
+// ---------------------------------------------------------------------------
+
+const newWorkspaceSessionId = (): string => {
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    return `session_${date}_${time}_${generateUUID().slice(0, 4)}`;
+};
 
 // ---------------------------------------------------------------------------
 // Helper: generate table name
@@ -448,7 +460,17 @@ const ChatBubble = React.memo<{
                     <LoadPlanCard
                         plan={message.loadPlan}
                         confirmed={message.loadPlan.candidates.every(c => c.selected === false)}
-                        onConfirm={async (selected: LoadPlanCandidate[]) => {
+                        canLoadInNewWorkspace={existingNames.size > 0}
+                        onConfirm={async (selected: LoadPlanCandidate[], opts?: { newWorkspace?: boolean }) => {
+                            // When data already exists, the user may choose to
+                            // start a fresh workspace instead of appending. We
+                            // reset *before* loading so the X-Workspace-Id
+                            // header (read live from the store at fetch time)
+                            // targets the new session.
+                            if (opts?.newWorkspace) {
+                                const displayName = selected[0]?.displayName || 'Untitled Session';
+                                dispatch(dfActions.resetForNewWorkspace({ id: newWorkspaceSessionId(), displayName }));
+                            }
                             for (const item of selected) {
                                 const sourceTableName = item.sourceTableName || item.displayName;
                                 const table = {

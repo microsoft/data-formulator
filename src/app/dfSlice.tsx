@@ -245,6 +245,9 @@ export interface DataFormulatorState {
     /** Whether the data source sidebar is expanded (true) or collapsed to rail (false) */
     dataSourceSidebarOpen: boolean;
 
+    /** Which data source sidebar tab is active. Persisted so it survives session refresh. */
+    dataSourceSidebarTab: 'sources' | 'sessions' | 'knowledge';
+
     /**
      * One-shot signal asking the sidebar to focus a specific connector
      * (open the sidebar, switch to sources tab, expand + scroll-into-view
@@ -321,6 +324,8 @@ const initialState: DataFormulatorState = {
     activeWorkspace: null,
 
     dataSourceSidebarOpen: false,
+
+    dataSourceSidebarTab: 'sources',
 
     focusedConnectorId: undefined,
 }
@@ -762,11 +767,15 @@ export const dataFormulatorSlice = createSlice({
                 viewMode: state.viewMode,
                 dataLoaderConnectParams: state.dataLoaderConnectParams,
                 dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+                dataSourceSidebarTab: state.dataSourceSidebarTab,
                 activeWorkspace: action.payload,
             };
         },
         setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
             state.dataSourceSidebarOpen = action.payload;
+        },
+        setDataSourceSidebarTab: (state, action: PayloadAction<'sources' | 'sessions' | 'knowledge'>) => {
+            state.dataSourceSidebarTab = action.payload;
         },
         /**
          * Ask the data-source sidebar to focus a specific connector.
@@ -870,6 +879,7 @@ export const dataFormulatorSlice = createSlice({
                 activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
 
                 dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+                dataSourceSidebarTab: state.dataSourceSidebarTab,
 
                 // Reset display-rows tick so dependent components re-fetch.
                 displayRowsTick: 0,

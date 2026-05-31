@@ -16,8 +16,14 @@ import type { LoadPlan, LoadPlanCandidate, PendingTableLoad } from './ComponentT
 
 interface LoadPlanCardProps {
     plan: LoadPlan;
-    onConfirm: (selected: LoadPlanCandidate[]) => void;
+    onConfirm: (selected: LoadPlanCandidate[], opts?: { newWorkspace?: boolean }) => void;
     confirmed?: boolean;
+    /** When true, a workspace with existing data is already open, so the
+     *  destination of the load is ambiguous. We then offer two explicit
+     *  actions: add to the current workspace, or load into a fresh one.
+     *  When false (empty/new workspace), a single "Load selected" button
+     *  loads directly with no ambiguity. */
+    canLoadInNewWorkspace?: boolean;
 }
 
 // Plans this small auto-expand each row's preview on first render so the
@@ -48,7 +54,7 @@ const formatFilterValue = (value: any) => {
     return Array.isArray(value) ? value.join(', ') : String(value);
 };
 
-export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed }) => {
+export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed, canLoadInNewWorkspace }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const [selection, setSelection] = useState<Record<number, boolean>>(
@@ -143,12 +149,12 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         fetchPreview(candidate, idx);
     };
 
-    const handleConfirm = async () => {
+    const handleConfirm = async (newWorkspace = false) => {
         const selected = plan.candidates.filter((c, i) => selection[i] && !c.resolutionError);
         if (selected.length === 0) return;
         setLoading(true);
         try {
-            await onConfirm(selected);
+            await onConfirm(selected, { newWorkspace });
         } finally {
             setLoading(false);
         }
@@ -257,12 +263,47 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             defaultValue: '✓ Loaded',
                         })}
                     </Typography>
+                ) : canLoadInNewWorkspace ? (
+                    // A workspace with data is already open — make the load
+                    // destination explicit rather than silently appending.
+                    <>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            disabled={selectedCount === 0 || loading}
+                            onClick={() => handleConfirm(true)}
+                            sx={{
+                                textTransform: 'none', fontSize: 12,
+                                py: 0.5, px: 1.5, minHeight: 0,
+                                borderRadius: 1.5,
+                            }}
+                        >
+                            {loading
+                                ? '...'
+                                : t('dataLoading.loadPlan.loadInNewWorkspace', { defaultValue: 'Load in new workspace' })}
+                        </Button>
+                        <Button
+                            size="small"
+                            variant="contained"
+                            disabled={selectedCount === 0 || loading}
+                            onClick={() => handleConfirm(false)}
+                            sx={{
+                                textTransform: 'none', fontSize: 12,
+                                py: 0.5, px: 2, minHeight: 0,
+                                borderRadius: 1.5, boxShadow: 'none',
+                            }}
+                        >
+                            {loading
+                                ? '...'
+                                : `${t('dataLoading.loadPlan.addToCurrent', { defaultValue: 'Add to current workspace' })} (${selectedCount})`}
+                        </Button>
+                    </>
                 ) : (
                     <Button
                         size="small"
                         variant="contained"
                         disabled={selectedCount === 0 || loading}
-                        onClick={handleConfirm}
+                        onClick={() => handleConfirm(false)}
                         sx={{
                             textTransform: 'none', fontSize: 12,
                             py: 0.5, px: 2, minHeight: 0,

@@ -38,6 +38,8 @@
       "filters": "筛选条件",
       "rowLimit": "行数限制",
       "loadSelected": "加载选中的表",
+      "loadInNewWorkspace": "载入新工作区",
+      "addToCurrent": "添加到当前工作区",
       "loadedCount": "✓ 已加载 {{count}} 张表",
       "preview": "预览",
       "hidePreview": "收起",

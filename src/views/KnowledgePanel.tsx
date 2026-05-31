@@ -288,7 +288,7 @@ export const KnowledgePanel: React.FC = () => {
                         <SmartToyOutlinedIcon sx={{ fontSize: 13, color: 'text.secondary', mt: 0.25 }} />
                     </Tooltip>
                 )}
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'stretch', flexShrink: 0 }}>
                     {category === 'workflows' && (
                         <Tooltip title={t('knowledge.replayTooltip')}>
                             <IconButton
@@ -300,7 +300,7 @@ export const KnowledgePanel: React.FC = () => {
                                     '&:hover': { bgcolor: theme => alpha(theme.palette.primary.main, 0.08) },
                                 }}
                             >
-                                <PlayArrowIcon sx={{ fontSize: 17 }} />
+                                <PlayArrowIcon sx={{ fontSize: 18 }} />
                             </IconButton>
                         </Tooltip>
                     )}
@@ -308,7 +308,7 @@ export const KnowledgePanel: React.FC = () => {
                         className="item-actions"
                         size="small"
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget({ category, path: item.path, title: item.title }); }}
-                        sx={{ p: 0.25, display: 'none', color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+                        sx={{ p: 0.25, mt: 'auto', display: 'none', color: 'text.secondary', '&:hover': { color: 'error.main' } }}
                     >
                         <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                     </IconButton>

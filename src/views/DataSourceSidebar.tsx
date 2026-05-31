@@ -155,7 +155,13 @@ export const DataSourceSidebar: React.FC<{
     // built-in sample_datasets connector is shown there, giving users
     // something useful to explore immediately. The upgrade message only
     // appears when they try to add a new connector or link a folder.
-    const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
+    // Stored in Redux so the active tab survives a session refresh.
+    // Fall back to 'sources' for older persisted state that predates this field.
+    const initialTab = useSelector((state: DataFormulatorState) => state.dataSourceSidebarTab ?? 'sources');
+    const setInitialTab = useCallback(
+        (tab: 'sources' | 'sessions' | 'knowledge') => dispatch(dfActions.setDataSourceSidebarTab(tab)),
+        [dispatch],
+    );
 
     // External callers (e.g. workflow distill on success) can ask the
     // sidebar to open and switch to a specific tab.
@@ -322,7 +328,6 @@ export const DataSourceSidebar: React.FC<{
                     panelWidth={panelWidth}
                     onOpenUploadDialog={onOpenUploadDialog}
                     onCollapse={toggle}
-                    initialTab={initialTab}
                     connectorRefreshKey={connectorRefreshKey}
                     disableConnectors={disableConnectors}
                 />
@@ -346,10 +351,9 @@ const DataSourceSidebarPanel: React.FC<{
     panelWidth: number;
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
-    initialTab?: 'sources' | 'sessions' | 'knowledge';
     connectorRefreshKey?: number;
     disableConnectors?: boolean;
-}> = ({ panelWidth, onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0, disableConnectors = false }) => {
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, connectorRefreshKey = 0, disableConnectors = false }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -417,13 +421,15 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Sidebar tab: 'sources' or 'sessions' or 'knowledge'
-    const [activeTab, setActiveTab] = useState<'sources' | 'sessions' | 'knowledge'>(initialTab);
-
-    // Sync tab when rail icon switches it
-    useEffect(() => {
-        setActiveTab(initialTab);
-    }, [initialTab]);
+    // Sidebar tab: 'sources' or 'sessions' or 'knowledge'.
+    // Stored in Redux so the active tab survives a session refresh; the
+    // `initialTab` prop is derived from the same Redux value upstream.
+    // Fall back to 'sources' for older persisted state that predates this field.
+    const activeTab = useSelector((state: DataFormulatorState) => state.dataSourceSidebarTab ?? 'sources');
+    const setActiveTab = useCallback(
+        (tab: 'sources' | 'sessions' | 'knowledge') => dispatch(dfActions.setDataSourceSidebarTab(tab)),
+        [dispatch],
+    );
 
     // ── Sessions ─────────────────────────────────────────────────────────────
 

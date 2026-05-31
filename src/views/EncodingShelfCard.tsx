@@ -32,6 +32,7 @@ import {
     Theme,
     Slider,
     CircularProgress,
+    LinearProgress,
     Button,
     Collapse,
     Dialog,
@@ -43,7 +44,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import React from 'react';
 import { useDragLayer } from 'react-dnd';
-import { ThinkingBufferEffect } from '../components/FunComponents';
+import { ThinkingBufferEffect, WritingPencil } from '../components/FunComponents';
 import { Channel, Chart, FieldItem, Trigger, duplicateChart, ChartStyleVariant, computeEncodingFingerprint, isVariantStale } from "../components/ComponentType";
 
 import _ from 'lodash';
@@ -1658,31 +1659,56 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             </Box>
             {variantChipStrip}
             {formulateInputBox}
-            {/* Inline status banner — shown right under the input bubble so
-                the user always knows what stage the agent is in. Covers the
-                three submit phases (classify → restyle/formulate). The data
-                agent has its own progress indicators elsewhere (running spinner
-                on the chart, status messages in the data thread); we keep this
-                line short and focused on telling the user *which* path was
-                chosen so the routing decision feels visible. */}
-            {submitPhase !== 'idle' && (
-                <Box sx={{ px: 1, py: 0.25, ml: '8px' }}>
-                    {ThinkingBanner(
-                        submitPhase === 'classifying' ? 'thinking…'
-                          : submitPhase === 'restyling' ? 'updating the chart…'
-                          : 'preparing data for the chart…'
-                    )}
-                </Box>
-            )}
         </Box>);
+
+    // Whether any agent work is in flight (intent classify, restyle, or the
+    // data agent) and the matching status line shown in the overlay below.
+    const isAgentWorking = submitPhase !== 'idle' || isDataAgentRunning;
+    const agentStatusText =
+        submitPhase === 'classifying' ? 'thinking…'
+          : submitPhase === 'restyling' ? 'updating the chart…'
+          : (submitPhase === 'formulating' || isDataAgentRunning) ? 'preparing data for the chart…'
+          : 'thinking…';
 
     const encodingShelfCard = (
         <Box sx={{ 
+            position: 'relative',
             padding: '4px 6px', 
             maxWidth: "400px", 
             display: 'flex', 
             flexDirection: 'column', 
         }}>
+            {/* Opaque agent-working overlay — blocks the encoding shelf +
+                chat box while any agent phase runs (intent classify, restyle,
+                or the data agent), showing the live status text, instead of
+                dimming the chart canvas. */}
+            {isAgentWorking && (
+                <Box sx={{
+                    position: 'absolute',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: alpha(theme.palette.background.paper, 0.88),
+                    backdropFilter: 'blur(3px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 0.5,
+                    zIndex: 2,
+                    px: 2,
+                }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
+                        <WritingPencil size={12} />
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 11.5, lineHeight: 1.4 }}>
+                            {agentStatusText}
+                        </Typography>
+                    </Box>
+                    <LinearProgress sx={{
+                        position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
+                        backgroundColor: alpha(theme.palette.primary.main, 0.15),
+                        '& .MuiLinearProgress-bar': { backgroundColor: theme.palette.primary.main },
+                    }} />
+                </Box>
+            )}
             <Box sx={{ padding: '4px 0px' }}>
                 {channelComponent}
             </Box>

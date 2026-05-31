@@ -25,7 +25,10 @@ import pandas as pd
 import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader
-from data_formulator.datalake.parquet_utils import df_to_safe_records
+from data_formulator.datalake.parquet_utils import (
+    df_to_safe_records,
+    sanitize_dataframe_for_arrow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +234,13 @@ class SampleDatasetsLoader(ExternalDataLoader):
 
         logger.info("Returning %d / %d rows from sample dataset: %s",
                     len(df), self._last_total_rows, source_table)
-        return pa.Table.from_pandas(df, preserve_index=False)
+        # Public sample JSON/CSV files frequently contain mixed-type object
+        # columns (e.g. movies.json's ``Title`` holds both strings and
+        # numeric values), which makes ``pa.Table.from_pandas`` raise
+        # ArrowTypeError. Coerce such columns to a consistent type first.
+        return pa.Table.from_pandas(
+            sanitize_dataframe_for_arrow(df), preserve_index=False
+        )
 
     # ------------------------------------------------------------------
     # Internal: cached full-dataset fetch
