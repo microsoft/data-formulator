@@ -70,6 +70,17 @@ class SampleDatasetsLoader(ExternalDataLoader):
         return "none"
 
     @staticmethod
+    def auth_config() -> dict:
+        # Mirror :meth:`auth_mode` for the modern auth interface. The base
+        # class defaults ``auth_config`` to ``{"mode": "credentials"}``
+        # independently of ``auth_mode``, and ``_loader_auth_mode`` prefers
+        # ``auth_config``. Without this override the no-auth loader would be
+        # mis-classified as credential-based, breaking catalog/preview/import
+        # (which require a connection) whenever no loader was eagerly cached
+        # — e.g. in ephemeral / ``--disable-data-connectors`` deployments.
+        return {"mode": "none"}
+
+    @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:
         return [
             {"key": "dataset", "label": "Dataset"},

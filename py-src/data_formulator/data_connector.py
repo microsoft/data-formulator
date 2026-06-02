@@ -657,6 +657,16 @@ class DataConnector:
         loader = self._loaders.get(identity)
         if loader is not None:
             return loader
+        # No-auth connectors (e.g. built-in example datasets) are always
+        # available — there's nothing to connect, so lazily instantiate and
+        # cache the loader on first use. This mirrors the ``auth_mode == "none"``
+        # special-casing in the connect/get-status/preview/import endpoints and
+        # keeps no-auth sources working for catalog/preview/import even when
+        # external data connectors are disabled (e.g. ephemeral/demo mode).
+        if _loader_auth_mode(self._loader_class) == "none":
+            loader = self._loader_class()
+            self._loaders[identity] = loader
+            return loader
         # Try auto-reconnect from vault
         loader = self._try_auto_reconnect(identity)
         if loader is not None:
