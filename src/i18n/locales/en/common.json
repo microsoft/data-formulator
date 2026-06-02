@@ -950,7 +950,7 @@
     "replay": "Replay",
     "replayTooltip": "Replay this analysis on the current data",
     "replayBusy": "The agent is busy — wait for it to finish before replaying.",
-    "replayNoData": "Load and focus a dataset before replaying a workflow.",
+    "replayNoData": "Load a dataset before replaying a workflow.",
     "replayStarted": "Replaying workflow on the current data…",
     "replayPrompt": "Reproduce the following analysis workflow on the currently loaded data. Follow the steps in order, adapting any column references to the columns available in the current dataset. It's fine if the result isn't identical — reproduce the same overall analysis.\n\nBefore making large assumptions, check whether the current data can actually support the workflow. If there is a major discrepancy — e.g. a required field or measure is missing, the granularity or shape is very different, or a step has no sensible equivalent on this data — pause and ask me to confirm how to proceed (or briefly explain the mismatch and your proposed adaptation) instead of guessing. Minor differences (renamed columns, extra columns) can be adapted silently.\n\n{{content}}"
   }

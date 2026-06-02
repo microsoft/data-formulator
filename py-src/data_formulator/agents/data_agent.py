@@ -148,60 +148,11 @@ TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_knowledge",
-            "description": (
-                "Search the user's knowledge base (rules, workflows) "
-                "for relevant entries. Returns title, category, snippet, and "
-                "path for each match. Use read_knowledge to get full content."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search keywords.",
-                    },
-                    "categories": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": ["rules", "workflows"],
-                        },
-                        "description": "Optional: limit search to specific categories.",
-                    },
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_knowledge",
-            "description": (
-                "Read the full content of a knowledge entry. Use the category "
-                "and path from search_knowledge results."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "category": {
-                        "type": "string",
-                        "enum": ["rules", "workflows"],
-                        "description": "Knowledge category.",
-                    },
-                    "path": {
-                        "type": "string",
-                        "description": "Relative path to the knowledge file (from search_knowledge).",
-                    },
-                },
-                "required": ["category", "path"],
-            },
-        },
-    },
+    # TODO(knowledge): The agent-callable knowledge tools (`search_knowledge`,
+    # `read_knowledge`) were removed along with the automatic up-front
+    # injection (see _build_initial_messages). Reintroduce a single, unified
+    # knowledge-access design here when we revisit it — see the TODO block in
+    # _build_initial_messages for the intended shape.
 ]
 
 
@@ -223,9 +174,6 @@ You have tools you can call to gather data:
   transforming, printing) into a single explore() call.
 - **inspect_source_data(table_names)** — get schema, stats, and sample rows
   for source tables (cheaper than explore for basic inspection).
-- **search_knowledge(query, categories?)** — search the user's knowledge base
-  (rules, workflows) for relevant entries.
-- **read_knowledge(category, path)** — read the full content of a knowledge entry.
 
 You analyse data that is **already in the workspace**.  If the user's
 question requires data that isn't present, do NOT try to find it yourself —
@@ -247,8 +195,7 @@ are shown to the user and end the current turn.
 `delegate` are **actions**, NOT tools.  Never call them via
 function/tool calling — they MUST appear as a JSON object in your **text
 reply**.  Only the items listed in the Tools section above (`explore`,
-`inspect_source_data`, `search_knowledge`, `read_knowledge`) may be
-invoked as tool calls.
+`inspect_source_data`) may be invoked as tool calls.
 
 ### `visualize`
 ```json
@@ -1380,48 +1327,29 @@ class DataAgent:
             user_content += f"{peripheral_block}\n\n"
 
         # Search and inject relevant knowledge (workflows + non-alwaysApply rules)
-        table_names = [t.get("name", "") for t in input_tables if t.get("name")]
-        relevant_knowledge = self._search_relevant_knowledge(user_question, table_names)
-
-        # Always include the workflow distilled from the active workspace
-        # (design-docs/24 §3.6) so the session has stable working memory
-        # across turns regardless of search relevance.
-        session_exp = self._load_active_session_workflow()
-        if session_exp:
-            existing_paths = {
-                (item["category"], item["path"]) for item in relevant_knowledge
-            }
-            if (session_exp["category"], session_exp["path"]) not in existing_paths:
-                relevant_knowledge = [session_exp] + relevant_knowledge
-
-        if relevant_knowledge:
-            knowledge_block = "[RELEVANT KNOWLEDGE]\n"
-            for item in relevant_knowledge:
-                label = "rule" if item["category"] == "rules" else "knowledge"
-                knowledge_block += (
-                    f"\n### [{label}] {item['title']}\n"
-                    f"{item['snippet']}\n"
-                )
-            user_content += f"{knowledge_block}\n\n"
-            self._injected_knowledge = [
-                {"category": item["category"], "title": item["title"], "path": item["path"]}
-                for item in relevant_knowledge
-            ]
-        else:
-            self._injected_knowledge = []
-
-        self._reasoning_log.log(
-            "knowledge_search",
-            source="auto_inject",
-            query=user_question,
-            table_names=table_names,
-            results_count=len(relevant_knowledge),
-            results=[
-                {"category": item["category"], "title": item["title"]}
-                for item in relevant_knowledge
-            ],
-        )
-
+        #
+        # TODO(knowledge): Both knowledge-access paths are intentionally
+        # disabled for now:
+        #   1. (controlled) the automatic up-front injection that used to run
+        #      `self._search_relevant_knowledge(user_question, table_names)`
+        #      here and append a `[RELEVANT KNOWLEDGE]` block to the user msg.
+        #   2. (uncontrolled) the agent-callable `search_knowledge` /
+        #      `read_knowledge` tools (definitions + dispatch + handlers).
+        # Reason: lexical keyword search over rules/workflows injected unclear,
+        # often-irrelevant context and added agent burden without a clear win.
+        #
+        # When we revisit this, design ONE coherent retrieval path rather than
+        # two competing ones. Open questions to settle first:
+        #   - relevance: replace the keyword `_match_score` with semantic /
+        #     embedding search (or a hybrid) so matches are actually on-topic;
+        #   - trigger: decide controlled (deterministic pre-inject, bounded)
+        #     vs. tool-driven (agent asks on demand) — pick one, not both;
+        #   - budget: hard cap how many entries + tokens land in the prompt;
+        #   - scope: keep alwaysApply rules (injected below) separate — those
+        #     are an explicit user opt-in, not search.
+        # `_injected_knowledge` stays an empty list so the reasoning log and
+        # context_info payloads keep their shape.
+        self._injected_knowledge = []
         # Inject alwaysApply rules into user message for better visibility
         # (rules in system prompt are often ignored; rules in user message have higher impact)
         if self._knowledge_store:
@@ -1644,7 +1572,6 @@ class DataAgent:
                         "purpose": tool_args.get("purpose") if tool_name == "explore" else None,
                         "code": tool_args.get("code") if tool_name == "explore" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
-                        "query": tool_args.get("query") if tool_name == "search_knowledge" else None,
                     }
 
                     tool_t0 = time.time()
@@ -1671,25 +1598,6 @@ class DataAgent:
                         tool_content = handle_inspect_source_data(
                             table_names, input_tables or [], self.workspace,
                         )
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "status": "ok",
-                            "stdout": tool_content,
-                        }
-                    elif tool_name == "search_knowledge":
-                        tool_content = self._handle_search_knowledge(tool_args)
-                        rlog.log("knowledge_search",
-                                 query=tool_args.get("query", ""),
-                                 results_count=tool_content.count("- [") if tool_content else 0)
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "status": "ok",
-                            "stdout": tool_content,
-                        }
-                    elif tool_name == "read_knowledge":
-                        tool_content = self._handle_read_knowledge(tool_args)
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
@@ -1884,115 +1792,17 @@ class DataAgent:
     # ------------------------------------------------------------------
     # Knowledge helpers
     # ------------------------------------------------------------------
-
-    def _search_relevant_knowledge(
-        self,
-        user_question: str,
-        table_names: list[str],
-        max_items: int = 5,
-    ) -> list[dict[str, Any]]:
-        """Search workflows and non-alwaysApply rules relevant to the current session.
-
-        Uses the user question as the search query and passes table names
-        separately for tag-overlap boosting.  alwaysApply rules are
-        excluded by KnowledgeStore.search() since they are already
-        injected via system prompt.
-        Graceful degradation: returns empty list on failure.
-        """
-        if not self._knowledge_store:
-            return []
-        try:
-            results = self._knowledge_store.search(
-                user_question,
-                categories=["rules", "workflows"],
-                max_results=max_items,
-                table_names=table_names[:5],
-            )
-            return results
-        except Exception:
-            logger.warning("Failed to search knowledge", exc_info=True)
-            return []
-
-    def _load_active_session_workflow(self) -> dict[str, Any] | None:
-        """Return the workflow distilled from the active workspace, if any.
-
-        The session-scoped distillation flow (design-docs/24) writes one
-        workflow per workspace, stamped with ``source_workspace_id``.
-        We always inject that file into the agent's context so the agent
-        has stable working memory for the active session in addition to
-        whatever the relevance search picked.
-        """
-        if not self._knowledge_store:
-            return None
-        try:
-            from data_formulator.workspace_factory import get_active_workspace_id
-            ws_id = get_active_workspace_id()
-        except Exception:
-            ws_id = None
-        if not ws_id:
-            return None
-        try:
-            entry = self._knowledge_store.find_workflow_by_workspace_id(ws_id)
-        except Exception:
-            logger.warning("find_workflow_by_workspace_id failed", exc_info=True)
-            return None
-        if not entry:
-            return None
-        try:
-            content = self._knowledge_store.read("workflows", entry["path"])
-        except Exception:
-            return None
-        from data_formulator.knowledge.store import parse_front_matter
-        _, body = parse_front_matter(content)
-        snippet = body[:500].strip()
-        if not snippet:
-            return None
-        return {
-            "category": "workflows",
-            "title": entry.get("title", entry.get("path", "")),
-            "path": entry["path"],
-            "snippet": snippet,
-            "source": entry.get("source", "distill"),
-        }
-
-    def _handle_search_knowledge(self, tool_args: dict) -> str:
-        """Handle the ``search_knowledge`` tool call."""
-        if not self._knowledge_store:
-            return "Knowledge base is not available."
-
-        query = tool_args.get("query", "")
-        categories = tool_args.get("categories")
-        try:
-            results = self._knowledge_store.search(query, categories=categories)
-            if not results:
-                return "No matching knowledge entries found."
-            lines = []
-            for r in results:
-                lines.append(
-                    f"- [{r['category']}] **{r['title']}** ({r['path']})\n"
-                    f"  {r['snippet'][:200]}"
-                )
-            return "\n".join(lines)
-        except Exception as exc:
-            logger.warning("search_knowledge tool error: %s", type(exc).__name__)
-            return f"Error searching knowledge: {type(exc).__name__}"
-
-    def _handle_read_knowledge(self, tool_args: dict) -> str:
-        """Handle the ``read_knowledge`` tool call."""
-        if not self._knowledge_store:
-            return "Knowledge base is not available."
-
-        category = tool_args.get("category", "")
-        path = tool_args.get("path", "")
-        try:
-            return self._knowledge_store.read(category, path)
-        except ValueError as exc:
-            return f"Invalid path: {exc}"
-        except FileNotFoundError:
-            return "Knowledge file not found."
-        except Exception as exc:
-            logger.warning("read_knowledge tool error: %s", type(exc).__name__)
-            return f"Error reading knowledge: {type(exc).__name__}"
+    #
+    # TODO(knowledge): The data agent's knowledge access is disabled for now.
+    # Removed together:
+    #   - _search_relevant_knowledge()  (controlled up-front auto-injection)
+    #   - _handle_search_knowledge()    (uncontrolled `search_knowledge` tool)
+    #   - _handle_read_knowledge()      (uncontrolled `read_knowledge` tool)
+    # KnowledgeStore.search()/read() still exist and are used elsewhere
+    # (e.g. the Knowledge panel + alwaysApply rule injection). When we bring
+    # agent knowledge back, add a single unified retrieval entry point here
+    # rather than re-adding both competing paths. See the TODO block in
+    # _build_initial_messages for the design questions to settle first.
 
     # ------------------------------------------------------------------
     # Helpers

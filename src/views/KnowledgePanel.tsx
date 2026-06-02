@@ -105,6 +105,9 @@ export const KnowledgePanel: React.FC = () => {
 
     // For the "distill from this session" placeholder under WORKFLOWS.
     const tables = useSelector((s: DataFormulatorState) => s.tables);
+    // Workflow replay needs data to run on — disable replay when the
+    // workspace has no tables loaded.
+    const hasTables = tables.length > 0;
     const charts = useSelector((s: DataFormulatorState) => s.charts);
     const conceptShelfItems = useSelector((s: DataFormulatorState) => s.conceptShelfItems);
     const selectedModelId = useSelector((s: DataFormulatorState) => s.selectedModelId);
@@ -290,18 +293,21 @@ export const KnowledgePanel: React.FC = () => {
                 )}
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'stretch', flexShrink: 0 }}>
                     {category === 'workflows' && (
-                        <Tooltip title={t('knowledge.replayTooltip')}>
-                            <IconButton
-                                size="small"
-                                onClick={(e) => { e.stopPropagation(); handleReplay(item); }}
-                                sx={{
-                                    p: 0.25,
-                                    color: 'primary.main',
-                                    '&:hover': { bgcolor: theme => alpha(theme.palette.primary.main, 0.08) },
-                                }}
-                            >
-                                <PlayArrowIcon sx={{ fontSize: 18 }} />
-                            </IconButton>
+                        <Tooltip title={hasTables ? t('knowledge.replayTooltip') : t('knowledge.replayNoData')}>
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    disabled={!hasTables}
+                                    onClick={(e) => { e.stopPropagation(); handleReplay(item); }}
+                                    sx={{
+                                        p: 0.25,
+                                        color: 'primary.main',
+                                        '&:hover': { bgcolor: theme => alpha(theme.palette.primary.main, 0.08) },
+                                    }}
+                                >
+                                    <PlayArrowIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </span>
                         </Tooltip>
                     )}
                     <IconButton
@@ -315,7 +321,7 @@ export const KnowledgePanel: React.FC = () => {
                 </Box>
             </Box>
         );
-    }, [openEditDialog, t, handleReplay]);
+    }, [openEditDialog, t, handleReplay, hasTables]);
 
     const renderCategorySection = useCallback((
         category: KnowledgeCategory,
