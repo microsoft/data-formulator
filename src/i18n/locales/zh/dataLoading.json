@@ -41,6 +41,7 @@
       "loadInNewWorkspace": "载入新工作区",
       "addToCurrent": "添加到当前工作区",
       "loadedCount": "✓ 已加载 {{count}} 张表",
+      "loadedCount_plural": "✓ 已加载 {{count}} 张表",
       "preview": "预览",
       "hidePreview": "收起",
       "previewing": "正在预览...",
