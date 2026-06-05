@@ -62,6 +62,25 @@ import { computeLayout, computeChannelBudgets, computeMinSubplotDimensions } fro
 import { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Escape characters that Vega-Lite interprets as field-access path syntax.
+ *
+ * In Vega-Lite a `field` string like `"a.b"` is parsed as a nested accessor
+ * (`datum.a.b`), and `"a[0]"` as array indexing. Column names that literally
+ * contain `.`, `[`, or `]` (e.g. `"Oranges, Navel, per lb."`) must therefore be
+ * escaped with a backslash so the renderer resolves the flat key instead of an
+ * undefined nested path (which silently produces empty marks).
+ *
+ * Only the `field` accessor string needs escaping — direct JS data access via
+ * `row[fieldName]` continues to use the raw, unescaped name.
+ */
+const escapeVlFieldName = (name: string): string =>
+    name.replace(/[.[\]]/g, (ch) => `\\${ch}`);
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -490,7 +509,13 @@ function buildVLEncodings(
         }
 
         if (fieldName) {
-            encodingObj.field = fieldName;
+            const escapedFieldName = escapeVlFieldName(fieldName);
+            encodingObj.field = escapedFieldName;
+            // Preserve a readable axis/legend title when the raw name had to be
+            // escaped (VL would otherwise display the backslash-escaped string).
+            if (escapedFieldName !== fieldName) {
+                encodingObj.title = fieldName;
+            }
 
             // Use Phase 0's resolved type
             encodingObj.type = cs?.type || 'nominal';
@@ -511,7 +536,7 @@ function buildVLEncodings(
                     encodingObj.title = "Count";
                     encodingObj.type = "quantitative";
                 } else {
-                    encodingObj.field = `${fieldName}_${encoding.aggregate}`;
+                    encodingObj.field = escapeVlFieldName(`${fieldName}_${encoding.aggregate}`);
                     encodingObj.type = "quantitative";
                 }
             }

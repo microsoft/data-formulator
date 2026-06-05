@@ -104,14 +104,32 @@ to what the user actually asks for; do not force a fixed template.
 
 The user message contains context about the workspace:
 - **[PRIMARY TABLE(S)]** / **[OTHER AVAILABLE TABLES]**: Lightweight schema of datasets.
-- **[FOCUSED THREAD]** (optional): The exploration thread the user is continuing.
-- **[OTHER THREADS]** (optional): Brief summaries of other exploration threads.
+- **[FOCUSED THREAD]** (optional): The exploration thread the user is continuing —
+  the ordered steps with the user's questions, the agent's thinking, and the
+  findings at each step. This is the spine of the story you are telling.
+- **[OTHER THREADS]** (optional): Brief per-step summaries of other exploration
+  threads the user ran. These are additional findings worth weaving in.
 - **[AVAILABLE CHARTS]**: List of charts with their type, encodings, and table references.
 
+## Ground the report in the exploration
+The thread context is your most important input. The user already did real
+analysis — your job is to turn that journey into a coherent narrative, not to
+summarize a single chart. Before writing:
+- Read the FOCUSED THREAD and OTHER THREADS to understand the full set of
+  questions asked and findings reached.
+- Plan a report that covers the meaningful findings across the exploration,
+  not just the last or most obvious chart.
+
 ## Phase 1 — Inspect
-Before writing, use `inspect_chart` and `inspect_source_data` to gather information
-about the charts and data you want to include. Inspect only what you actually need
-to ground your narrative — don't fetch everything.
+Use `inspect_chart` and `inspect_source_data` to gather what you need before
+writing. `inspect_chart` returns the chart's rendered image, a data sample, and
+the transformation code — so you can see exactly what each chart shows and write
+accurate captions and insights.
+- Inspect the charts that correspond to the key findings you plan to present.
+  For a multi-section report or dashboard, that usually means several charts.
+- You can inspect multiple charts in one call (pass several chart_ids).
+- Don't fetch charts you have no intention of discussing, but don't under-inspect
+  either — a report that ignores most of the exploration is a poor report.
 
 ## Phase 2 — Write the report
 
@@ -133,7 +151,7 @@ For data tables, write standard markdown tables directly:
 
 ### Style & structure — adapt to the user's request
 The user may ask for any of:
-- a short note or social-style summary (a few sentences, maybe one chart),
+- a short note or social-style summary (a few sentences, one or two charts),
 - a blog post / narrative report (intro → findings → takeaway),
 - an executive summary (key numbers up top, then context),
 - a KPI dashboard / multi-section overview (headings per topic, multiple charts
@@ -141,10 +159,14 @@ The user may ask for any of:
 - a slide-style brief (compact sections with bullet points and embedded charts),
 - a deeper analytical report with sub-sections, methodology notes, and caveats.
 
-Pick the structure that fits the request and the available material. Reasonable
-defaults if the user is vague:
+Pick the structure that fits the request and the available material. Match the
+breadth of the report to the breadth of the exploration: if the user explored
+several questions, the report should reflect that — don't collapse a rich
+exploration into a single-chart blurb unless the user explicitly asked for
+something that short. Reasonable defaults if the user is vague:
 - Start with a `# Title` that reflects the topic.
-- Group related findings under `##` (and `###` if useful) headings.
+- Group related findings under `##` (and `###` if useful) headings, typically
+  one section per key finding / thread.
 - Around each embedded chart, briefly explain what it shows and the key insight.
 - Use bullets / short paragraphs / tables where they help; don't pad.
 - Close with a brief takeaway or summary section if the report is more than a
@@ -284,7 +306,10 @@ class ReportGenAgent:
             attach_reasoning_content(assistant_msg, choice.message)
             messages.append(assistant_msg)
 
-            # Execute each tool
+            # Execute each tool. Chart images can't ride along in tool-result
+            # messages on most providers, so we collect them and attach them as
+            # a single follow-up vision message after all tool results.
+            pending_images: list[str] = []
             for tc in tool_calls:
                 tool_name = tc.function.name
                 try:
@@ -293,9 +318,10 @@ class ReportGenAgent:
                     tool_args = {}
 
                 if tool_name == "inspect_chart":
-                    tool_content = self._handle_inspect_chart(
+                    tool_content, image_urls = self._handle_inspect_chart(
                         tool_args.get("chart_ids", []), charts
                     )
+                    pending_images.extend(image_urls)
                 elif tool_name == "inspect_source_data":
                     tool_content = handle_inspect_source_data(
                         tool_args.get("table_names", []),
@@ -310,6 +336,23 @@ class ReportGenAgent:
                     "tool_call_id": tc.id,
                     "content": tool_content,
                 })
+
+            # Attach rendered chart images so the agent can visually inspect
+            # them before deciding what to embed.
+            if pending_images:
+                image_blocks: list[dict[str, Any]] = [{
+                    "type": "text",
+                    "text": (
+                        "[INSPECTED CHART IMAGE(S)] Rendered images for the "
+                        "charts you just inspected, in request order:"
+                    ),
+                }]
+                for url in pending_images:
+                    image_blocks.append({
+                        "type": "image_url",
+                        "image_url": {"url": url, "detail": "high"},
+                    })
+                messages.append({"role": "user", "content": image_blocks})
 
             logger.info(f"[ReportAgent] Inspect phase: executed {len(tool_calls)} tool call(s)")
 
@@ -331,8 +374,12 @@ class ReportGenAgent:
         messages.append({
             "role": "user",
             "content": (
-                "Now write the report in markdown. "
-                "Use ![caption](chart://chart_id) to embed charts."
+                "Now write the report in markdown, grounded in the exploration "
+                "threads and the charts/data you inspected. Cover the key "
+                "findings across the exploration — don't reduce it to a single "
+                "chart unless the request explicitly calls for something that "
+                "brief. Embed each chart you discuss with "
+                "![caption](chart://chart_id)."
             ),
         })
 
@@ -358,9 +405,17 @@ class ReportGenAgent:
         self,
         chart_ids: list[str],
         charts: list[dict[str, Any]],
-    ) -> str:
-        """Return chart details as text + image content for inspection."""
+    ) -> tuple[str, list[str]]:
+        """Inspect charts: return a text summary plus rendered chart images.
+
+        Returns ``(text_summary, image_urls)`` where ``image_urls`` is a list of
+        base64 PNG data URLs (one per chart that could be rendered). Images are
+        returned separately so the caller can attach them as a follow-up vision
+        message — tool-result messages cannot carry image content on most
+        providers.
+        """
         results = []
+        image_urls: list[str] = []
         for chart_id in chart_ids:
             chart = next((c for c in charts if c["chart_id"] == chart_id), None)
             if not chart:
@@ -386,13 +441,55 @@ class ReportGenAgent:
                 parts.append(f"  Columns: {', '.join(df.columns.tolist())}")
                 parts.append(f"  Sample:\n{df.head(5).to_string()}")
 
-            # Chart image — return as base64 reference
-            if chart.get("chart_image"):
-                parts.append("  [Chart image available — shown below]")
+            # Render the chart image server-side, on demand. We prefer a
+            # frontend-supplied thumbnail; otherwise we render from the chart
+            # data + encodings so the agent can actually see what it embeds.
+            image = chart.get("chart_image") or self._render_chart_image(chart)
+            if image:
+                image_urls.append(image)
+                parts.append("  [Chart image attached below for visual inspection]")
+            else:
+                parts.append("  [Chart image unavailable — reason about it from data + encodings]")
 
             results.append("\n".join(parts))
 
-        return "\n\n".join(results)
+        return "\n\n".join(results), image_urls
+
+    def _render_chart_image(self, chart: dict[str, Any]) -> str | None:
+        """Render a chart to a base64 PNG data URL from its data + encodings.
+
+        Mirrors the DataAgent thumbnail path: resolve field types from the
+        chart's sample data, assemble a Vega-Lite spec, and rasterize it.
+        Returns ``None`` if there is not enough information to render.
+        """
+        chart_data = chart.get("chart_data") or {}
+        rows = chart_data.get("rows")
+        if not rows:
+            return None
+
+        chart_type = chart.get("chart_type", "Bar Chart")
+        raw_encodings = chart.get("encodings", {}) or {}
+        try:
+            df = pd.DataFrame(rows)
+            if df.empty:
+                return None
+
+            encodings: dict[str, dict[str, str]] = {}
+            for channel, field in raw_encodings.items():
+                if field and field in df.columns:
+                    field_type = resolve_field_type(df[field], field)
+                    field_type = coerce_field_type(chart_type, channel, field_type)
+                    encodings[channel] = {"field": field, "type": field_type}
+
+            if not encodings:
+                return None
+
+            spec = assemble_vegailte_chart(df, chart_type, encodings)
+            return spec_to_base64(spec) if spec else None
+        except Exception as e:
+            logger.warning(f"[ReportAgent] Chart render error for {chart.get('chart_id')}: {e}")
+            return None
+
 
     def _resolve_table_data(
         self,

@@ -1686,14 +1686,15 @@ let SingleThreadGroupView: FC<{
         // Add table card and its charts
         pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
 
-        // Add report cards anchored to charts of this table
-        pushReportItems(tableId, isHighlighted);
-
         // After-table entries (e.g. summary)
         const afterTable = afterTableMap.get(tableId);
         if (afterTable && afterTable.length > 0) {
             pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
         }
+
+        // Add report cards anchored to charts of this table — placed after the
+        // summary block so the report/chat node follows the agent's summary.
+        pushReportItems(tableId, isHighlighted);
 
         // Running or clarifying agent state
         pushAgentDraftItems(tableId, 'trigger', isHighlighted);
@@ -1723,14 +1724,15 @@ let SingleThreadGroupView: FC<{
 
         pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
 
-        // Add report cards anchored to charts of this leaf table
-        pushReportItems(lt.id, isHL);
-
         // After-table entries (e.g. summary)
         const leafAfterEntries = leafAfterTableMap.get(lt.id);
         if (leafAfterEntries && leafAfterEntries.length > 0) {
             pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
         }
+
+        // Add report cards anchored to charts of this leaf table — placed after
+        // the summary block so the report/chat node follows the agent's summary.
+        pushReportItems(lt.id, isHL);
 
         // Running or clarifying agent state
         pushAgentDraftItems(lt.id, 'leaf-trigger', isHL);

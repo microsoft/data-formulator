@@ -9,6 +9,7 @@ import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../compon
 import { getUrls, getTriggers, translateBackend } from './utils';
 import { apiRequest, streamRequest } from './apiClient';
 import { getErrorMessage } from './errorCodes';
+import { persistEphemeralDerivedTable } from './tableThunks';
 
 export type IdeaItem = {
     text: string;
@@ -84,6 +85,8 @@ export function useFormulateData() {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const charts = useSelector(dfSelectors.getAllCharts);
     const activeModel = useSelector(dfSelectors.getActiveModel);
+    const workspaceBackend = useSelector((state: DataFormulatorState) => state.serverConfig.WORKSPACE_BACKEND);
+    const activeWorkspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
 
     /**
      * Resolve the actual chart that's rendered for a derived table. The
@@ -413,7 +416,7 @@ export function useFormulateData() {
             body: JSON.stringify(messageBody),
             signal: controller.signal,
         })
-        .then(({ data }) => {
+        .then(async ({ data }) => {
             if (!data.results || data.results.length === 0) {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -541,15 +544,21 @@ export function useFormulateData() {
                 }
             }
 
+            // Ephemeral mode: persist full rows to IndexedDB (keeps only a
+            // sample + virtual marker in Redux). Other backends store on the server.
+            const persistedTable = (workspaceBackend === 'ephemeral' && activeWorkspaceId)
+                ? await persistEphemeralDerivedTable(activeWorkspaceId, candidateTable)
+                : candidateTable;
+
             // Insert or override table
             if (overrideTableId) {
-                dispatch(dfActions.overrideDerivedTables(candidateTable));
+                dispatch(dfActions.overrideDerivedTables(persistedTable));
             } else {
-                dispatch(dfActions.insertDerivedTables(candidateTable));
+                dispatch(dfActions.insertDerivedTables(persistedTable));
             }
 
             // Add missing concepts
-            const names = candidateTable.names;
+            const names = persistedTable.names;
             const missingNames = names.filter((name: string) => !conceptShelfItems.some(field => field.name === name));
             const conceptsToAdd = missingNames.map((name: string) => ({
                 id: `concept-${name}-${Date.now()}`,
@@ -559,20 +568,20 @@ export function useFormulateData() {
             } as FieldItem));
 
             dispatch(dfActions.addConceptItems(conceptsToAdd));
-            dispatch(fetchFieldSemanticType(candidateTable));
-            dispatch(fetchCodeExpl(candidateTable));
+            dispatch(fetchFieldSemanticType(persistedTable));
+            dispatch(fetchCodeExpl(persistedTable));
 
             // Compute current concepts for chart creation
             const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
 
             // Delegate chart creation to the caller
-            const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
+            const focusedChartId = createChart({ candidateTable: persistedTable, refinedGoal, currentConcepts });
 
             if (focusedChartId) {
-                dispatch(fetchChartInsight({ chartId: focusedChartId, tableId: candidateTable.id }) as any);
+                dispatch(fetchChartInsight({ chartId: focusedChartId, tableId: persistedTable.id }) as any);
             }
 
-            onSuccess?.({ displayInstruction, candidateTable, focusedChartId });
+            onSuccess?.({ displayInstruction, candidateTable: persistedTable, focusedChartId });
         })
         .catch((error) => {
             if (error.name === 'AbortError') {

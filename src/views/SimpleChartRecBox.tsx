@@ -27,6 +27,7 @@ import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
+import { persistEphemeralDerivedTable } from '../app/tableThunks';
 import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 
@@ -122,6 +123,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const activeModel = useSelector(dfSelectors.getActiveModel);
+    const workspaceBackend = useSelector((state: DataFormulatorState) => state.serverConfig.WORKSPACE_BACKEND);
+    const activeWorkspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
 
@@ -389,6 +392,132 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return null;
     }, [pendingClarification, draftNodes]);
 
+    // ── Shared structured thread context builder (Tier 2 + Tier 3) ──
+    // Produces the same focused/peripheral thread context used by both the
+    // data agent (exploreFromChat) and the report agent (reportFromChat), so
+    // the report has the actual exploration narrative — user questions, agent
+    // thinking, findings — instead of just a flat list of charts.
+    const buildThreadContext = useCallback((targetTableId: string): {
+        focusedThread: any[] | undefined;
+        otherThreads: any[] | undefined;
+    } => {
+        // Tier 2: Focused thread — detailed per-step info
+        const focusedSteps: any[] = [];
+        let walkTable = tables.find(t => t.id === targetTableId);
+        const visited = new Set<string>();
+        const focusedChainIds = new Set<string>();
+        while (walkTable?.derive?.trigger) {
+            if (visited.has(walkTable.id)) break;
+            visited.add(walkTable.id);
+            focusedChainIds.add(walkTable.id);
+            const trigger = walkTable.derive.trigger;
+            const interaction = trigger.interaction || [];
+            const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
+            const instruction = interaction.find(e => e.role === 'instruction');
+            const summary = interaction.find(e => e.role === 'summary');
+
+            // Find the actual resolved chart (not the trigger's "Auto" stub)
+            const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
+                || charts.find(c => c.tableRef === walkTable!.id);
+            const chartType = resolvedChart?.chartType || '';
+            // Map field IDs to field names for readable context
+            const encodings = resolvedChart?.encodingMap
+                ? Object.fromEntries(
+                    Object.entries(resolvedChart.encodingMap)
+                        .filter(([, v]: [string, any]) => v?.fieldID)
+                        .map(([k, v]: [string, any]) => {
+                            const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                            return [k, field?.name || v.fieldID];
+                        })
+                  )
+                : {};
+
+            const step: any = {
+                table_name: walkTable.virtual?.tableId || walkTable.id,
+                columns: walkTable.names,
+                row_count: walkTable.virtual?.rowCount ?? walkTable.rows.length,
+                user_question: userPrompt || '',
+                agent_thinking: instruction?.plan || '',
+                display_instruction: instruction?.displayContent || instruction?.content || '',
+                chart_type: chartType,
+                encodings,
+                agent_summary: summary?.content || '',
+            };
+
+            // Include chart thumbnail for the focused leaf table (the one the user is looking at)
+            if (walkTable.id === targetTableId && resolvedChart && chartThumbnails[resolvedChart.id]) {
+                step.chart_thumbnail = chartThumbnails[resolvedChart.id];
+            }
+
+            focusedSteps.unshift(step);
+
+            walkTable = tables.find(t => t.id === trigger.tableId);
+        }
+        const focusedThread = focusedSteps.length > 0 ? focusedSteps : undefined;
+
+        // Tier 3: Peripheral threads — one-line summary per step
+        // Find all leaf tables (no children or all children are anchored)
+        const leafTables = tables.filter(t => {
+            const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
+            return children.length === 0 || children.every(c => c.anchored);
+        });
+
+        const peripheralThreads: any[] = [];
+        for (const leaf of leafTables) {
+            // Skip the focused thread's leaf
+            if (focusedChainIds.has(leaf.id)) continue;
+            // Skip root/source tables
+            if (!leaf.derive) continue;
+
+            const triggers = getTriggers(leaf, tables);
+            if (triggers.length === 0) continue;
+
+            const STEP_FINDING_CHAR_LIMIT = 200;
+            const steps: string[] = [];
+            for (const trig of triggers) {
+                const instr = trig.interaction?.find((e: InteractionEntry) => e.role === 'instruction');
+                const label = instr?.displayContent || instr?.content || '';
+                // Look up the actual resolved chart from state, not the trigger's "Auto" stub
+                const chartForStep = charts.find(c => c.tableRef === trig.resultTableId && c.source === 'trigger')
+                    || charts.find(c => c.tableRef === trig.resultTableId);
+                const chartType = chartForStep?.chartType || '';
+                const encStr = chartForStep?.encodingMap
+                    ? Object.entries(chartForStep.encodingMap)
+                        .filter(([, v]: [string, any]) => v?.fieldID)
+                        .map(([k, v]: [string, any]) => {
+                            const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                            return `${k}: ${field?.name || v.fieldID}`;
+                        })
+                        .join(', ')
+                    : '';
+                // Per-step agent commentary: the `summary` entry that the
+                // visualize action emits after running this step.
+                let finding = trig.interaction?.find(
+                    (e: InteractionEntry) => e.role === 'summary',
+                )?.content?.trim() || '';
+                if (finding.length > STEP_FINDING_CHAR_LIMIT) {
+                    finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
+                }
+                const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
+                steps.push(finding ? `${head} — finding: ${finding}` : head);
+            }
+
+            if (steps.length > 0) {
+                const sourceTableId = triggers[0].tableId;
+                const sourceTable = tables.find(t => t.id === sourceTableId);
+                peripheralThreads.push({
+                    source_table: sourceTable?.virtual?.tableId || sourceTableId,
+                    leaf_table: leaf.virtual?.tableId || leaf.id,
+                    step_count: steps.length,
+                    steps,
+                });
+            }
+        }
+        const otherThreads = peripheralThreads.length > 0 ? peripheralThreads : undefined;
+
+        return { focusedThread, otherThreads };
+    }, [tables, charts, conceptShelfItems, chartThumbnails]);
+
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
         completedStepCount: number;
@@ -445,124 +574,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
 
         // ── Build structured thread context (Tier 2 + Tier 3) ──
-        let focusedThread: any[] | undefined = undefined;
-        let otherThreads: any[] | undefined = undefined;
-        if (!isResume) {
-            // Tier 2: Focused thread — detailed per-step info
-            const focusedSteps: any[] = [];
-            let walkTable = tables.find(t => t.id === focusedTableId);
-            const visited = new Set<string>();
-            const focusedChainIds = new Set<string>();
-            while (walkTable?.derive?.trigger) {
-                if (visited.has(walkTable.id)) break;
-                visited.add(walkTable.id);
-                focusedChainIds.add(walkTable.id);
-                const trigger = walkTable.derive.trigger;
-                const interaction = trigger.interaction || [];
-                const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
-                const instruction = interaction.find(e => e.role === 'instruction');
-                const summary = interaction.find(e => e.role === 'summary');
-
-                // Find the actual resolved chart (not the trigger's "Auto" stub)
-                const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
-                    || charts.find(c => c.tableRef === walkTable!.id);
-                const chartType = resolvedChart?.chartType || '';
-                // Map field IDs to field names for readable context
-                const encodings = resolvedChart?.encodingMap
-                    ? Object.fromEntries(
-                        Object.entries(resolvedChart.encodingMap)
-                            .filter(([, v]: [string, any]) => v?.fieldID)
-                            .map(([k, v]: [string, any]) => {
-                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
-                                return [k, field?.name || v.fieldID];
-                            })
-                      )
-                    : {};
-
-                const step: any = {
-                    table_name: walkTable.virtual?.tableId || walkTable.id,
-                    columns: walkTable.names,
-                    row_count: walkTable.virtual?.rowCount ?? walkTable.rows.length,
-                    user_question: userPrompt || '',
-                    agent_thinking: instruction?.plan || '',
-                    display_instruction: instruction?.displayContent || instruction?.content || '',
-                    chart_type: chartType,
-                    encodings,
-                    agent_summary: summary?.content || '',
-                };
-
-                // Include chart thumbnail for the focused leaf table (the one the user is looking at)
-                if (walkTable.id === focusedTableId && resolvedChart && chartThumbnails[resolvedChart.id]) {
-                    step.chart_thumbnail = chartThumbnails[resolvedChart.id];
-                }
-
-                focusedSteps.unshift(step);
-
-                walkTable = tables.find(t => t.id === trigger.tableId);
-            }
-            if (focusedSteps.length > 0) focusedThread = focusedSteps;
-
-            // Tier 3: Peripheral threads — one-line summary per step
-            // Find all leaf tables (no children or all children are anchored)
-            const leafTables = tables.filter(t => {
-                const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
-                return children.length === 0 || children.every(c => c.anchored);
-            });
-
-            const peripheralThreads: any[] = [];
-            for (const leaf of leafTables) {
-                // Skip the focused thread's leaf
-                if (focusedChainIds.has(leaf.id)) continue;
-                // Skip root/source tables
-                if (!leaf.derive) continue;
-
-                const triggers = getTriggers(leaf, tables);
-                if (triggers.length === 0) continue;
-
-                const STEP_FINDING_CHAR_LIMIT = 200;
-                const steps: string[] = [];
-                for (const trig of triggers) {
-                    const tt = tables.find(t2 => t2.id === trig.resultTableId);
-                    const instr = trig.interaction?.find((e: InteractionEntry) => e.role === 'instruction');
-                    const label = instr?.displayContent || instr?.content || '';
-                    // Look up the actual resolved chart from state, not the trigger's "Auto" stub
-                    const chartForStep = charts.find(c => c.tableRef === trig.resultTableId && c.source === 'trigger')
-                        || charts.find(c => c.tableRef === trig.resultTableId);
-                    const chartType = chartForStep?.chartType || '';
-                    const encStr = chartForStep?.encodingMap
-                        ? Object.entries(chartForStep.encodingMap)
-                            .filter(([, v]: [string, any]) => v?.fieldID)
-                            .map(([k, v]: [string, any]) => {
-                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
-                                return `${k}: ${field?.name || v.fieldID}`;
-                            })
-                            .join(', ')
-                        : '';
-                    // Per-step agent commentary: the `summary` entry that the
-                    // visualize action emits after running this step.
-                    let finding = trig.interaction?.find(
-                        (e: InteractionEntry) => e.role === 'summary',
-                    )?.content?.trim() || '';
-                    if (finding.length > STEP_FINDING_CHAR_LIMIT) {
-                        finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
-                    }
-                    const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
-                    steps.push(finding ? `${head} — finding: ${finding}` : head);
-                }
-
-                if (steps.length > 0) {
-                    const sourceTableId = triggers[0].tableId;
-                    const sourceTable = tables.find(t => t.id === sourceTableId);
-                    peripheralThreads.push({
-                        source_table: sourceTable?.virtual?.tableId || sourceTableId,
-                        leaf_table: leaf.virtual?.tableId || leaf.id,
-                        step_count: steps.length,
-                        steps,
-                    });
-                }
-            }
-            if (peripheralThreads.length > 0) otherThreads = peripheralThreads;
-        }
+        // Skip on resume — the trajectory already carries the prior context.
+        const { focusedThread, otherThreads } = isResume
+            ? { focusedThread: undefined, otherThreads: undefined }
+            : buildThreadContext(focusedTableId);
 
         // Resolve primary table names from primaryTableIds (includes defaults + @-mentioned)
         const primaryTableNames = primaryTableIds.map(id => {
@@ -668,7 +683,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let thinkingSteps: string[] = [];
         let pendingThought: string = '';
 
-        const processStreamingResult = (result: any) => {
+        const processStreamingResult = async (result: any) => {
             // ── context_info: show injected rules/knowledge at the top ──
             // Rendered as already-completed tool-style steps (✓ prefix) so they
             // visually match the rest of the agent's tool-call timeline.
@@ -862,6 +877,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                 createdTables.push(candidateTable);
                 lastCreatedTableId = candidateTableId;
+
+                // Ephemeral mode: persist full rows to IndexedDB (keeps only a
+                // sample + virtual marker in Redux). Other backends store on the server.
+                if (workspaceBackend === 'ephemeral' && activeWorkspaceId) {
+                    const persisted = await persistEphemeralDerivedTable(activeWorkspaceId, candidateTable);
+                    candidateTable.rows = persisted.rows;
+                    candidateTable.virtual = persisted.virtual;
+                }
 
                 const names = candidateTable.names;
                 const missingNames = names.filter(name =>
@@ -1106,7 +1129,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
 
                     allResults.push(data);
-                    processStreamingResult(data);
+                    await processStreamingResult(data);
                     if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "delegate") {
                         handleCompletion();
                         return;
@@ -1204,6 +1227,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable).filter(Boolean);
 
+        // Send the same structured exploration narrative the data agent gets,
+        // so the report is grounded in the actual thread (user questions, agent
+        // thinking, findings) rather than a flat list of charts.
+        const { focusedThread, otherThreads } = buildThreadContext(focusedTableId);
+
         const body = JSON.stringify({
             model: activeModel,
             input_tables: actionTables.map(t => ({
@@ -1215,6 +1243,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }),
             charts: availableCharts,
             user_prompt: cleanPrompt,
+            ...(focusedThread ? { focused_thread: focusedThread } : {}),
+            ...(otherThreads ? { other_threads: otherThreads } : {}),
         });
 
         const controller = new AbortController();
@@ -1302,7 +1332,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             agentAbortRef.current = null;
             setIsChatFormulating(false);
         }
-    }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch]);
+    }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch, buildThreadContext]);
 
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').

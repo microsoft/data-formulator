@@ -58,6 +58,27 @@ export const ReportView: FC = () => {
         }));
     };
 
+    // The report content column is capped at 816px (see render below); leave a
+    // little breathing room so embedded charts never butt against the edge.
+    const REPORT_MAX_CHART_WIDTH = 720;
+
+    // Derive the embed dimensions for a chart from the size the rendering engine
+    // actually chose (stored on the cache entry). We preserve that aspect ratio
+    // and only scale down to fit the report column — never up — so a wide time
+    // series stays wide and a tall chart stays tall, instead of being forced
+    // into a fixed square. Falls back to the configured default when the engine
+    // size isn't available yet (e.g. transient thumbnail-only state on reload).
+    const embedDimsFor = (chartId: string): { width: number; height: number } => {
+        const cached = getCachedChart(chartId);
+        const natW = cached?.naturalWidth;
+        const natH = cached?.naturalHeight;
+        if (natW && natH) {
+            const scale = Math.min(REPORT_MAX_CHART_WIDTH / natW, 1);
+            return { width: Math.round(natW * scale), height: Math.round(natH * scale) };
+        }
+        return { width: config.defaultChartWidth, height: config.defaultChartHeight };
+    };
+
     // Helper function to show messages using dfSlice
     const showMessage = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
         const msg: Message = {
@@ -463,10 +484,12 @@ ${styles}
                 if (cached?.svg) {
                     const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
                     const blobUrl = URL.createObjectURL(blob);
-                    updateCachedReportImages(chartId, blobUrl, config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chartId);
+                    updateCachedReportImages(chartId, blobUrl, width, height);
                 } else if (chartThumbnails[chartId]) {
                     // Fall back to thumbnail
-                    updateCachedReportImages(chartId, chartThumbnails[chartId], config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chartId);
+                    updateCachedReportImages(chartId, chartThumbnails[chartId], width, height);
                 }
             });
         }
@@ -562,9 +585,11 @@ ${styles}
                 const cached = getCachedChart(chart.id);
                 if (cached?.svg) {
                     const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
-                    updateCachedReportImages(chart.id, URL.createObjectURL(blob), config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chart.id);
+                    updateCachedReportImages(chart.id, URL.createObjectURL(blob), width, height);
                 } else if (chartThumbnails[chart.id]) {
-                    updateCachedReportImages(chart.id, chartThumbnails[chart.id], config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chart.id);
+                    updateCachedReportImages(chart.id, chartThumbnails[chart.id], width, height);
                 }
             });
         }
