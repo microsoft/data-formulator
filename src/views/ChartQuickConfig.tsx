@@ -172,13 +172,14 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId }
                                 const idx = event.target.value as number;
                                 commit(propDef, options[idx].value);
                             }}
-                            disableUnderline
                             sx={{
                                 fontSize: 11, height: '22px', minWidth: 60,
-                                backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: '6px',
-                                '&:hover': { backgroundColor: 'rgba(0,0,0,0.08)' },
-                                '& .MuiSelect-select': { padding: '1px 20px 1px 6px !important', fontSize: 11 },
-                                '& .MuiSvgIcon-root': { fontSize: 14, right: 2 },
+                                color: 'text.secondary',
+                                '&:before': { borderBottomColor: 'rgba(0,0,0,0.2)' },
+                                '&:hover:not(.Mui-disabled):before': { borderBottomColor: 'rgba(0,0,0,0.42)' },
+                                '&:after': { borderBottomColor: 'rgba(0,0,0,0.42)' },
+                                '& .MuiSelect-select': { padding: '1px 18px 1px 2px !important', fontSize: 11 },
+                                '& .MuiSvgIcon-root': { fontSize: 14, right: 0, color: 'rgba(0,0,0,0.4)' },
                             }}
                             renderValue={(idx: number) => <span style={{ fontSize: 11 }}>{options[idx]?.label || 'Default'}</span>}
                         >

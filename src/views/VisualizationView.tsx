@@ -243,7 +243,9 @@ export let SampleSizeEditor: FC<{
  * Recursively scale every width/height in a Vega-Lite spec by `factor`.
  * Used to apply the zoom resizer to style-variant specs, which bypass the
  * compiler's canvas sizing. Handles numeric sizes, `{step: N}` band sizes,
- * and nested view-composition specs (spec / layer / concat / facet).
+ * `config.view.continuousWidth/Height` (how continuous-scale charts encode
+ * their plot size), and nested view-composition specs (spec / layer /
+ * concat / facet).
  */
 const scaleSpecSize = (node: any, factor: number): void => {
     if (!node || typeof node !== 'object') return;
@@ -253,6 +255,18 @@ const scaleSpecSize = (node: any, factor: number): void => {
             node[dim] = Math.round(v * factor);
         } else if (v && typeof v === 'object' && typeof v.step === 'number') {
             node[dim] = { ...v, step: Math.round(v.step * factor) };
+        }
+    }
+    // Continuous-scale charts (e.g. line/area with quantitative or temporal
+    // axes) carry no top-level numeric width/height; their plot size lives in
+    // config.view.continuousWidth / continuousHeight. Scale those too so the
+    // zoom resizer affects continuous variant charts, not just discrete ones.
+    const view = node.config?.view;
+    if (view && typeof view === 'object') {
+        for (const dim of ['continuousWidth', 'continuousHeight'] as const) {
+            if (typeof view[dim] === 'number') {
+                view[dim] = Math.round(view[dim] * factor);
+            }
         }
     }
     for (const key of ['spec', 'layer', 'concat', 'hconcat', 'vconcat', 'facet'] as const) {

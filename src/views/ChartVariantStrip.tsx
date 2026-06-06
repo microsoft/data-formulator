@@ -16,7 +16,7 @@ import { FC, useState } from 'react';
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 
-import { Box, Typography, CircularProgress, alpha, useTheme, IconButton, Tooltip, Popover, TextField, Card, Divider } from '@mui/material';
+import { Box, Typography, CircularProgress, alpha, useTheme, IconButton, Tooltip, Popover, TextField, Card, Divider, Button } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SendIcon from '@mui/icons-material/Send';
@@ -43,12 +43,14 @@ export interface ChartVariantStripProps {
 // subsections (restyle / annotate) under a single "Quick actions" heading.
 interface QuickAction { key: string; label: string; description: string; instruction: string }
 
-const RESTYLE_ACTIONS: QuickAction[] = STYLE_PRESETS.map(p => ({
-    key: p.key,
-    label: p.label,
-    description: p.description,
-    instruction: p.instruction,
-}));
+const RESTYLE_ACTIONS: QuickAction[] = STYLE_PRESETS
+    .filter(p => ['nyt', 'economist', 'comic'].includes(p.key))
+    .map(p => ({
+        key: p.key,
+        label: p.label,
+        description: p.description,
+        instruction: p.instruction,
+    }));
 
 const ANNOTATE_ACTIONS: QuickAction[] = [
     {
@@ -261,7 +263,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
         onClick: () => void,
         onDelete?: () => void,
     }) => {
-        const accent = theme.palette.text.primary;
+        const accent = opts.active ? theme.palette.primary.main : theme.palette.text.primary;
         return (
             <Box
                 key={label}
@@ -272,22 +274,22 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    height: 20,
-                    px: '6px',
+                    height: 22,
+                    px: '7px',
                     fontSize: 11,
-                    fontWeight: 400,
+                    fontWeight: opts.active ? 500 : 400,
                     lineHeight: 1.4,
                     color: accent,
                     fontFamily: theme.typography.fontFamily,
                     borderRadius: '6px',
-                    border: `1px solid ${alpha(accent, opts.active ? 0.45 : 0.12)}`,
+                    border: `1px solid ${alpha(accent, opts.active ? 0.5 : 0.2)}`,
                     borderStyle: opts.stale ? 'dashed' : 'solid',
-                    backgroundColor: opts.active ? alpha(accent, 0.1) : theme.palette.background.paper,
+                    backgroundColor: opts.active ? alpha(accent, 0.08) : theme.palette.background.paper,
                     cursor: 'pointer',
                     opacity: opts.stale ? 0.65 : 1,
                     transition: transition.fast,
                     '&:hover': {
-                        backgroundColor: alpha(accent, opts.active ? 0.13 : 0.04),
+                        backgroundColor: alpha(accent, opts.active ? 0.12 : 0.04),
                     },
                 }}
             >
@@ -334,7 +336,10 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
             minHeight: 34,
         }}>
             <Divider orientation="vertical" flexItem sx={{ my: 0.5, mr: 1, borderColor: alpha(theme.palette.text.primary, 0.12) }} />
-            {variants.length > 0 && renderVariantChip('default', {
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mr: 0.25 }}>
+                style:
+            </Typography>
+            {renderVariantChip('default', {
                 active: !activeVariantId,
                 tooltip: 'Render the chart from its current encoding (no style refinement applied).',
                 onClick: () => dispatch(dfActions.setActiveVariant({ chartId, variantId: undefined })),
@@ -386,32 +391,17 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                 </Box>
             )}
             <Tooltip title="Restyle chart…">
-                <Box
-                    component="button"
+                <IconButton
+                    color="primary"
+                    size="small"
                     onClick={(e: React.MouseEvent<HTMLElement>) => setRestyleAnchor(e.currentTarget)}
                     sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        height: 20,
-                        ml: 0.5,
-                        px: '6px',
-                        cursor: 'pointer',
-                        fontSize: 11,
-                        fontWeight: 400,
-                        lineHeight: 1.4,
-                        fontFamily: theme.typography.fontFamily,
-                        borderRadius: '6px',
-                        border: `1px solid ${alpha(theme.palette.primary.main, restyleAnchor ? 0.45 : 0.25)}`,
-                        color: theme.palette.primary.main,
-                        backgroundColor: restyleAnchor ? alpha(theme.palette.primary.main, 0.1) : theme.palette.background.paper,
-                        transition: transition.fast,
-                        '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.06) },
+                        ml: 0.25,
+                        backgroundColor: restyleAnchor ? alpha(theme.palette.primary.main, 0.1) : 'transparent',
                     }}
                 >
-                    <PaletteOutlinedIcon sx={{ fontSize: 13 }} />
-                    Design
-                </Box>
+                    <PaletteOutlinedIcon fontSize="small" />
+                </IconButton>
             </Tooltip>
             <Popover
                 open={Boolean(restyleAnchor)}
@@ -419,17 +409,17 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                 onClose={() => setRestyleAnchor(null)}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                slotProps={{ paper: { sx: { width: 320, p: 1.25, borderRadius: 2 } } }}
+                slotProps={{ paper: { sx: { width: 340, p: 2, borderRadius: 2 } } }}
             >
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1.25 }}>
                     Quick actions
                 </Typography>
                 {[
                     { label: 'restyle', actions: RESTYLE_ACTIONS },
                     { label: 'annotate', actions: ANNOTATE_ACTIONS },
                 ].map(group => (
-                    <Box key={group.label} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, mb: 0.75 }}>
-                        <Typography sx={{ fontSize: 11, color: 'text.disabled', lineHeight: '22px', flexShrink: 0, width: 48 }}>
+                    <Box key={group.label} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', rowGap: 0.5, columnGap: 0.5, mb: 1.5 }}>
+                        <Typography sx={{ fontSize: 11, color: 'text.disabled', height: 20, display: 'flex', alignItems: 'center', flexShrink: 0, width: 44 }}>
                             {group.label}
                         </Typography>
                         {group.actions.map(action => (
@@ -440,7 +430,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                                     sx={{
                                         display: 'inline-flex',
                                         alignItems: 'center',
-                                        height: 22,
+                                        height: 20,
                                         px: '8px',
                                         fontSize: 11,
                                         fontFamily: theme.typography.fontFamily,
@@ -450,7 +440,10 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                                         cursor: isRestyling ? 'default' : 'pointer',
                                         opacity: isRestyling ? 0.5 : 1,
                                         transition: transition.fast,
-                                        '&:hover': { backgroundColor: alpha(theme.palette.text.primary, 0.06) },
+                                        '&:hover': {
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                                            borderColor: alpha(theme.palette.primary.main, 0.4),
+                                        },
                                     }}
                                 >
                                     {action.label}
@@ -459,7 +452,8 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                         ))}
                     </Box>
                 ))}
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>
+                <Divider sx={{ my: 1.5 }} />
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1 }}>
                     Design yourself
                 </Typography>
                 <Card
