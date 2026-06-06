@@ -334,10 +334,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
             minHeight: 34,
         }}>
             <Divider orientation="vertical" flexItem sx={{ my: 0.5, mr: 1, borderColor: alpha(theme.palette.text.primary, 0.12) }} />
-            <Typography sx={{ fontSize: 12, color: 'text.secondary', mr: 0.25 }}>
-                style:
-            </Typography>
-            {renderVariantChip('default', {
+            {variants.length > 0 && renderVariantChip('default', {
                 active: !activeVariantId,
                 tooltip: 'Render the chart from its current encoding (no style refinement applied).',
                 onClick: () => dispatch(dfActions.setActiveVariant({ chartId, variantId: undefined })),
@@ -395,23 +392,24 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                     sx={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 0.5,
-                        height: 24,
+                        gap: '4px',
+                        height: 20,
                         ml: 0.5,
-                        px: 1,
+                        px: '6px',
                         cursor: 'pointer',
-                        border: 'none',
-                        borderRadius: '7px',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        lineHeight: 1,
+                        fontSize: 11,
+                        fontWeight: 400,
+                        lineHeight: 1.4,
+                        fontFamily: theme.typography.fontFamily,
+                        borderRadius: '6px',
+                        border: `1px solid ${alpha(theme.palette.primary.main, restyleAnchor ? 0.45 : 0.25)}`,
                         color: theme.palette.primary.main,
-                        backgroundColor: alpha(theme.palette.primary.main, restyleAnchor ? 0.22 : 0.12),
-                        transition: 'background-color 0.15s',
-                        '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.22) },
+                        backgroundColor: restyleAnchor ? alpha(theme.palette.primary.main, 0.1) : theme.palette.background.paper,
+                        transition: transition.fast,
+                        '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.06) },
                     }}
                 >
-                    <PaletteOutlinedIcon sx={{ fontSize: 15 }} />
+                    <PaletteOutlinedIcon sx={{ fontSize: 13 }} />
                     Design
                 </Box>
             </Tooltip>

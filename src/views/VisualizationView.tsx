@@ -1009,7 +1009,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
 
                         return (
-                            <Box sx={{ margin: '8px auto 24px auto', padding: 0, height: adaptiveHeight, width: '100%', maxWidth: adaptiveWidth, minWidth: 0, overflow: 'hidden' }}>
+                            <Box sx={{ margin: '8px auto 24px auto', padding: 0, height: adaptiveHeight, width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, overflow: 'hidden' }}>
                                 <FreeDataViewFC maximizable />
                             </Box>
                         );
