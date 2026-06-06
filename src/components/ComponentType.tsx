@@ -359,7 +359,44 @@ export interface ChartStyleVariant {
     encodingFingerprint: string,  // see computeEncodingFingerprint(); used to detect staleness
     createdAt: number,
     rationale?: string,           // optional one-line explanation from the agent
+    // Generative UI: a few simple knobs the restyle agent attaches to the
+    // variant so the user can keep tweaking the agent-authored spec without
+    // re-prompting. While a variant is active these replace the chart-template
+    // config. See VariantConfigControl and applyVariantConfigUI in app/restyle.ts.
+    configUI?: VariantConfigControl[],
+    // Current value for each control, keyed by control.key. Missing key → use
+    // the control's defaultValue.
+    configValues?: Record<string, any>,
 }
+
+/**
+ * A single generative-UI control authored by the restyle agent for a style
+ * variant. Mirrors the shape of ChartPropertyDef (so it can reuse the same
+ * renderers) but instead of arbitrary code it carries a `path`: the location
+ * inside the Vega-Lite spec to write the chosen value to.
+ *
+ * Applying a control is a pure, declarative "set value at path" operation
+ * (see applyVariantConfigUI / setAtPath). There is NO code execution — the
+ * agent only chooses which knob, where it writes, and the allowed values.
+ * The written value may be a scalar OR a whole object (e.g. a full mark/axis
+ * sub-spec), which keeps the door open for richer restyle edits while staying
+ * safe.
+ */
+export type VariantConfigControl = {
+    key: string;
+    label: string;
+    /**
+     * Path into the vlSpec where the chosen value is written, as an array of
+     * object keys / array indices, e.g. ["mark","opacity"] or
+     * ["encoding","x","axis","labelAngle"]. Intermediate objects are created
+     * as needed. Prototype-polluting segments are rejected at apply time.
+     */
+    path: (string | number)[];
+} & (
+    | { type: 'continuous'; min: number; max: number; step?: number; defaultValue: number }
+    | { type: 'discrete';  options: { value: any; label: string }[]; defaultValue: any }
+    | { type: 'binary';    defaultValue: boolean }
+);
 
 export type Chart = { 
     id: string, 
@@ -371,6 +408,7 @@ export type Chart = {
     insight?: ChartInsight,  // AI-generated insight about the visualization
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
+    scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)
     unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
 
@@ -409,6 +447,7 @@ export let duplicateChart = (chart: Chart) : Chart => {
         tableRef: chart.tableRef,
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
+        scaleFactor: chart.scaleFactor,
         // styleVariants are intentionally NOT copied: they are user-authored
         // refinements tied to the chart they were created on. A duplicate is a
         // fresh canvas. (See design-docs/28-chart-style-refinement-agent.md.)

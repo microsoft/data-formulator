@@ -316,12 +316,29 @@ export function vlApplyLayoutToSpec(
     const facetRows = layout.facet?.rows ?? 1;
     const facetCols = layout.facet?.columns ?? 1;
     if (facetRows > 1 || facetCols > 1) {
-        const limit = Math.max(80, layout.subplotWidth + 20);
-        const headerCfg: Record<string, any> = { labelLimit: limit };
-        if (totalFacets > 6) {
-            headerCfg.labelFontSize = 9;
+        // Constrain each header's labels to the subplot it belongs to:
+        //   • column / wrap-facet headers run horizontally on top → bound by WIDTH
+        //   • row headers run rotated down the side → bound by HEIGHT
+        // Only inject the configs for the facet channels that actually exist.
+        const enc = vgObj.encoding || vgObj.spec?.encoding;
+        const facetDef = vgObj.facet || {};
+        const hasRow = !!(enc?.row || facetDef.row);
+        const hasColumn = !!(enc?.column || facetDef.column);
+        const hasWrap = !!(enc?.facet || (vgObj.facet && !facetDef.row && !facetDef.column));
+
+        const fontCfg: Record<string, any> = totalFacets > 6 ? { labelFontSize: 9 } : {};
+        const colLimit = Math.max(80, layout.subplotWidth + 20);
+        const rowLimit = Math.max(30, layout.subplotHeight);
+
+        if (hasColumn) {
+            vgObj.config.headerColumn = { ...(vgObj.config.headerColumn || {}), ...fontCfg, labelLimit: colLimit };
         }
-        vgObj.config.header = { ...(vgObj.config.header || {}), ...headerCfg };
+        if (hasRow) {
+            vgObj.config.headerRow = { ...(vgObj.config.headerRow || {}), ...fontCfg, labelLimit: rowLimit };
+        }
+        if (hasWrap) {
+            vgObj.config.headerFacet = { ...(vgObj.config.headerFacet || {}), ...fontCfg, labelLimit: colLimit };
+        }
     }
     const encTarget = vgObj.spec?.encoding || vgObj.encoding;
 
@@ -332,14 +349,50 @@ export function vlApplyLayoutToSpec(
         vgObj.config.axisY = { ...(vgObj.config.axisY || {}), ...lightTitle };
     }
 
-    // When row faceting is used, use lighter y axis title styling;
-    // hide it entirely if y is nominal (the labels speak for themselves).
-    if (encTarget?.row || (facetRows > 1 && encTarget?.y)) {
-        if (encTarget?.y?.type === 'nominal') {
+    // Row-faceted y-axis title handling.
+    // Vega-Lite draws the y-axis title once PER facet row, so on a stack of
+    // short subplots the same label repeats down the left edge until it
+    // collapses into an unreadable vertical smear right next to the row header.
+    //
+    //   • Nominal y — the category labels are self-describing, so just drop the
+    //     repeated title.
+    //   • Quantitative/temporal y on a SHARED scale — the measure is identical
+    //     in every subplot, so fold it into the row header title (e.g. the
+    //     rotated left label becomes "Product: Price Index (Start = 100)") and
+    //     suppress the per-subplot title. With an INDEPENDENT y scale each
+    //     subplot can differ, so we leave the per-subplot titles in place.
+    const rowEnc = encTarget?.row || vgObj.facet?.row;
+    const yEnc = encTarget?.y;
+    if (yEnc && (rowEnc || (facetRows > 1 && encTarget?.y))) {
+        if (yEnc.type === 'nominal') {
             if (!vgObj.config) vgObj.config = {};
             vgObj.config.axisY = { ...(vgObj.config.axisY || {}), title: null };
-            if (!encTarget.y.axis) encTarget.y.axis = {};
-            encTarget.y.axis.title = null;
+            if (!yEnc.axis) yEnc.axis = {};
+            yEnc.axis.title = null;
+        } else if (rowEnc && vgObj.resolve?.scale?.y !== 'independent') {
+            const yTitle = (yEnc.axis && yEnc.axis.title) || yEnc.title || yEnc.field;
+            const rowTitle = (rowEnc.header && rowEnc.header.title) || rowEnc.title || rowEnc.field;
+            if (yTitle && rowTitle) {
+                if (!rowEnc.header) rowEnc.header = {};
+                rowEnc.header.title = `${rowTitle}: ${yTitle}`;
+                if (!vgObj.config) vgObj.config = {};
+                vgObj.config.axisY = { ...(vgObj.config.axisY || {}), title: null };
+                if (!yEnc.axis) yEnc.axis = {};
+                yEnc.axis.title = null;
+            }
+        } else {
+            // Wrap-facet (single facet field, no shared side band) — the y-axis
+            // title repeats once per wrap-row down the left edge. There's no row
+            // header to fold it into, so keep it but stop it smearing: pull it
+            // off the tick labels with titlePadding, shrink the font, and cap its
+            // length to the subplot height so it can't overrun a short subplot.
+            if (!vgObj.config) vgObj.config = {};
+            vgObj.config.axisY = {
+                ...(vgObj.config.axisY || {}),
+                titlePadding: 8,
+                titleFontSize: 10,
+                titleLimit: Math.max(30, layout.subplotHeight),
+            };
         }
     }
 

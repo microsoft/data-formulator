@@ -47,6 +47,8 @@
     "log": "log",
     "insight": "insight",
     "openInVegaEditor": "Open in Vega Editor",
+    "viewChartSpec": "View chart spec",
+    "editChart": "Edit chart",
     "chartInsight": "Chart insight",
     "analyzingChart": "Analyzing chart...",
     "regenerate": "regenerate",

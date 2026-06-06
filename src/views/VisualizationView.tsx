@@ -46,7 +46,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
-import { buildEmbeddedDataForChart } from '../app/restyle';
+import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
@@ -54,6 +54,7 @@ import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '
 import DeleteIcon from '@mui/icons-material/Delete';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
+import TuneIcon from '@mui/icons-material/Tune';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
@@ -76,7 +77,9 @@ import { useTranslation } from 'react-i18next';
 
 import { ChatDialog } from './ChatDialog';
 import { PlanStepsView } from './InteractionEntryCard';
-import { EncodingShelfThread } from './EncodingShelfThread';
+import { EncodingShelfCard } from './EncodingShelfCard';
+import { ChartQuickConfig } from './ChartQuickConfig';
+import { ChartVariantStrip } from './ChartVariantStrip';
 import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
@@ -236,6 +239,32 @@ export let SampleSizeEditor: FC<{
     </Box>
 }
 
+/**
+ * Recursively scale every width/height in a Vega-Lite spec by `factor`.
+ * Used to apply the zoom resizer to style-variant specs, which bypass the
+ * compiler's canvas sizing. Handles numeric sizes, `{step: N}` band sizes,
+ * and nested view-composition specs (spec / layer / concat / facet).
+ */
+const scaleSpecSize = (node: any, factor: number): void => {
+    if (!node || typeof node !== 'object') return;
+    for (const dim of ['width', 'height'] as const) {
+        const v = node[dim];
+        if (typeof v === 'number') {
+            node[dim] = Math.round(v * factor);
+        } else if (v && typeof v === 'object' && typeof v.step === 'number') {
+            node[dim] = { ...v, step: Math.round(v.step * factor) };
+        }
+    }
+    for (const key of ['spec', 'layer', 'concat', 'hconcat', 'vconcat', 'facet'] as const) {
+        const child = node[key];
+        if (Array.isArray(child)) {
+            child.forEach(c => scaleSpecSize(c, factor));
+        } else if (child && typeof child === 'object') {
+            scaleSpecSize(child, factor);
+        }
+    }
+};
+
 /** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
@@ -287,6 +316,22 @@ const VegaChartRenderer: FC<{
                 chart, visTableRows, tableMetadata, conceptShelfItems,
             );
             spec.data = { values: variantValues };
+
+            // Apply the variant's generative-UI controls (agent-authored simple
+            // knobs) onto the spec using the user's current values. This is a
+            // pure "set value at path" transform (no code execution) and runs
+            // before size scaling so a control that touches width/height is
+            // still scaled by the resizer. See applyVariantConfigUI.
+            spec = applyVariantConfigUI(spec, activeVariant.configUI, activeVariant.configValues);
+
+            // Variants bypass assembleVegaChart, so the zoom resizer's
+            // scaleFactor (which normally flows through the compiler's canvas
+            // sizing) wouldn't affect them. Apply it directly by scaling every
+            // width/height in the stored spec — numeric sizes and {step: N}
+            // band sizes alike — so the resizer works on restyled charts too.
+            if (scaleFactor !== 1) {
+                scaleSpecSize(spec, scaleFactor);
+            }
 
         } else {
             spec = assembleVegaChart(
@@ -348,7 +393,7 @@ const VegaChartRenderer: FC<{
         const embedResult: { current?: Awaited<ReturnType<typeof embed>> } = {};
 
         el.innerHTML = '';
-        embed(el, { ...spec }, { actions: true, renderer: 'canvas' })
+        embed(el, { ...spec }, { actions: false, renderer: 'canvas' })
             .then((result) => {
                 if (cancelled) {
                     result.finalize();
@@ -402,8 +447,19 @@ const VegaChartRenderer: FC<{
                 id={elementId}
                 sx={{
                     maxWidth: '100%',
-                    overflow: 'visible',
-                    '& .vega-embed': { margin: 'auto', overflow: 'visible' },
+                    overflow: 'hidden',
+                    // vega-embed adds its `.vega-embed` class to THIS element (the
+                    // div we pass to embed()) and renders the <canvas>/<svg> as a
+                    // direct child. Vega writes explicit inline width/height (in CSS
+                    // px) on that canvas/svg, so we must override them with
+                    // !important to let the chart shrink to the panel width while
+                    // keeping its aspect ratio (height: auto). A descendant
+                    // `.vega-embed` selector would NOT match — the class is on this
+                    // element itself, not a child.
+                    '& > canvas, & > svg': {
+                        maxWidth: '100%',
+                        height: 'auto !important',
+                    },
                 }}
             />
         </Box>
@@ -469,12 +525,21 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [bottomTab, setBottomTab] = useState<string>('data');
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
+    // Floating encoding-shelf popover. The button lives in the stable outer
+    // panel (not inside the chart's <Fade>), so it never remounts or shifts
+    // when the chart re-renders. We anchor the popover to that button via a ref.
+    const [encodingOpen, setEncodingOpen] = useState<boolean>(false);
+    const editButtonRef = useRef<HTMLButtonElement | null>(null);
 
     // Reset local UI state when focused chart changes
     useEffect(() => {
         setBottomTab('data');
-        setLocalScaleFactor(1);
+        // Restore the persisted zoom for the newly focused chart (stored on
+        // the Chart object so it survives switching charts and session
+        // save/load). Falls back to 1 for charts that have never been zoomed.
+        setLocalScaleFactor(focusedChart?.scaleFactor ?? 1);
         setChatDialogOpen(false);
+        setEncodingOpen(false);
     }, [focusedChartId]);
 
 
@@ -804,7 +869,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     } else if (table.derive) {
         chartMessage = t('chart.msgWarning');
     }
-
     let chartActionItems = isDataStale ? [] : (
         <Box sx={{display: "flex", flexDirection: "column", flex: 1, my: 1}}>
             {(table.virtual ? activeVisTableTotalRowCount > serverConfig.MAX_DISPLAY_ROWS : table.rows.length > serverConfig.MAX_DISPLAY_ROWS) && !(chartUnavailable || encodingShelfEmpty) ? (
@@ -840,8 +904,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     
     let focusedComponent = [];
 
-    let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
-                            in={!isDataStale} timeout={600}>    
+    let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`}
+                            in={!isDataStale} timeout={600}>
                             <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
                                 {/*
                                   Chart container chrome
@@ -850,12 +914,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                     positioned zoom-slider overlay (chartResizer, ~32px tall
                                     anchored top-left) never covers chart content. Without this,
                                     full-width charts like KPI grids run right up under the slider.
-                                  - pr: 28  → reserves a strip on the right for vega-embed's
-                                    actions menu ("..."), which floats at the top-right of the
-                                    Vega canvas and can otherwise hug / extend past the panel edge.
-                                  - minHeight: 280 → guarantees the Vega actions menu and its
-                                    dropdown have vertical room to render even when a chart's
-                                    intrinsic height is very small (e.g. one row of compact cards).
+                                  - pr: 28  → reserves a strip on the right for the floating
+                                    "edit chart" button overlay (see the focused-box in `content`).
+                                  - minHeight: 280 → guarantees the chart has vertical room to
+                                    render even when a chart's intrinsic height is very small
+                                    (e.g. one row of compact cards).
                                   These are view-level concerns and intentionally NOT solved per
                                   chart template.
                                 */}
@@ -875,12 +938,26 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         onSpecReady={handleSpecReady}
                                     />
                                 </Box>
+                                {/* Quick chart-config controls (toggles/sliders/selects) for
+                                    fast in-place tweaks without opening the full encoding
+                                    popover. Kept INSIDE the chart-box so it reads as part of
+                                    the same chart component rather than drifting down toward
+                                    the data panel below. Placed ABOVE the action items so the
+                                    options sit directly under the chart, before the AI hint.
+                                    Hidden while synthesis is running — the chart is being
+                                    regenerated, so config controls would be premature. */}
+                                {!chartUnavailable && !chartSynthesisInProgress.includes(focusedChart.id) && focusedChart.chartType !== "Table" && focusedChart.chartType !== "Auto" && (
+                                    <ChartQuickConfig chartId={focusedChart.id} />
+                                )}
                                 {chartActionItems}
-                            </Box>                        
+                            </Box>
                         </Fade>;
 
     focusedComponent = [
         <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: 'min(75vh, 800px)', width: "100%", display: "flex", flexDirection: "column", flexShrink: 0}}>
+            {/* Style-variant switcher now lives in the floating top toolbar
+                (see vis-view-canvas return) so it stays pinned alongside the
+                zoom resizer instead of scrolling with the chart content. */}
             <Box sx={{ my: 'auto' }}>
                 {focusedElement}
             </Box>
@@ -932,7 +1009,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
 
                         return (
-                            <Box sx={{ margin: '8px auto 24px auto', padding: 0, height: adaptiveHeight, width: adaptiveWidth, overflow: 'hidden', flexShrink: 0 }}>
+                            <Box sx={{ margin: '8px auto 24px auto', padding: 0, height: adaptiveHeight, width: '100%', maxWidth: adaptiveWidth, minWidth: 0, overflow: 'hidden' }}>
                                 <FreeDataViewFC maximizable />
                             </Box>
                         );
@@ -1040,64 +1117,128 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             dialog={triggerTable?.derive?.dialog || table.derive?.dialog as any[]} /> : null,
     ]
     
-    const ENCODING_SHELF_WIDTH = 240;
-
     let content = [
-        <Box key='focused-box' className="vega-focused vis-scroll" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
+        <Box key='focused-box' className="vega-focused vis-scroll" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', position: 'relative', flex: 1 }}>
             {focusedComponent}
         </Box>,
-        /* Floating encoding shelf panel */
-        <Box key='encoding-shelf' sx={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            zIndex: 10,
-            height: '100%',
-            pointerEvents: 'none',
-        }}>
-            <Box sx={{ pointerEvents: 'auto' }}>
-                <EncodingShelfThread chartId={focusedChart.id} />
+        /* Encoding shelf popover, anchored to the floating "edit chart" button. */
+        <Popover
+            key='encoding-popover'
+            open={encodingOpen && Boolean(editButtonRef.current)}
+            anchorEl={editButtonRef.current}
+            onClose={() => setEncodingOpen(false)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{ paper: { sx: { width: 320, maxHeight: '78vh', overflowY: 'auto', mt: 0.5, borderRadius: '10px', overflowX: 'visible' } } }}
+        >
+            <EncodingShelfCard chartId={focusedChart.id} />
+            {/* Small, low-emphasis footer for advanced users to inspect the
+                assembled Vega-Lite spec in the external Vega editor. */}
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: 1.5, pt: 0.5, pb: 1 }}>
+                <Button
+                    size="small"
+                    startIcon={<OpenInNewIcon sx={{ fontSize: 13 }} />}
+                    disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
+                    onClick={handleOpenInVegaEditor}
+                    sx={{ textTransform: 'none', fontSize: '0.65rem', color: 'text.disabled', minWidth: 'auto', py: 0, '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' } }}
+                >
+                    {t('chart.openInVegaEditor')}
+                </Button>
             </Box>
-        </Box>
+        </Popover>
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]
 
+    // Persist the zoom onto the chart so it survives switching charts.
+    // Called on commit (button click / slider release) rather than on every
+    // drag tick, to avoid churning the charts array ref mid-drag.
+    const persistScaleFactor = React.useCallback((value: number) => {
+        if (!focusedChartId) return;
+        dispatch(dfActions.updateChartScaleFactor({
+            chartId: focusedChartId,
+            scaleFactor: value,
+        }));
+    }, [dispatch, focusedChartId]);
+
     // Memoize chart resizer to avoid re-creating Material-UI components on every render
     let chartResizer = useMemo(() => <Stack spacing={1} direction="row" sx={{ 
-        margin: 1, width: 160, position: "absolute", zIndex: 10, 
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: '4px',
+        width: 160, flexShrink: 0,
     }} alignItems="center">
         <Tooltip key="zoom-out-tooltip" title={t('chart.zoomOut')}>
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
-                    setLocalScaleFactor(s => Math.max(scaleMin, Math.round((s - 0.1) * 10) / 10));
+                    const next = Math.max(scaleMin, Math.round((localScaleFactor - 0.1) * 10) / 10);
+                    setLocalScaleFactor(next);
+                    persistScaleFactor(next);
                 }}>
                     <ZoomOutIcon fontSize="small" />
                 </IconButton>
             </span>
         </Tooltip>
         <Slider aria-label={t('chart.resizeSliderAria')} size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
-                value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
-            setLocalScaleFactor(newValue as number);
-        }} />
+                value={localScaleFactor}
+                onChange={(event: Event, newValue: number | number[]) => {
+                    setLocalScaleFactor(newValue as number);
+                }}
+                onChangeCommitted={(event, newValue) => {
+                    persistScaleFactor(newValue as number);
+                }} />
         <Tooltip key="zoom-in-tooltip" title={t('chart.zoomIn')}>
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
-                    setLocalScaleFactor(s => Math.min(scaleMax, Math.round((s + 0.1) * 10) / 10));
+                    const next = Math.min(scaleMax, Math.round((localScaleFactor + 0.1) * 10) / 10);
+                    setLocalScaleFactor(next);
+                    persistScaleFactor(next);
                 }}>
                     <ZoomInIcon fontSize="small" />
                 </IconButton>
             </span>
         </Tooltip>
-    </Stack>, [localScaleFactor, t]);
+    </Stack>, [localScaleFactor, t, persistScaleFactor]);
 
     return <Box ref={componentRef} id="vis-view-canvas" sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
         {/* No full-screen block while the agent works: the previous chart
             stays visible, and progress is signaled non-intrusively on the
             chat box + encoding shelf (see EncodingShelfCard). */}
-        {chartUnavailable ? "" : chartResizer}
+        {/* Floating top toolbar: zoom resizer + style-variant strip live
+            together here (NOT inside the scrolling chart content), so every
+            control stays pinned to the top of the panel instead of some
+            floating and some scrolling away. pointerEvents are disabled on the
+            empty bar area so it never blocks chart interaction underneath. */}
+        <Box sx={{
+            position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: '8px',
+            backgroundColor: '#fff',
+            pointerEvents: 'none', '& > *': { pointerEvents: 'auto' },
+        }}>
+            {chartResizer}
+            {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
+                <ChartVariantStrip chartId={focusedChart.id} />
+            )}
+            {/* Edit-chart (encoding shelf) button — right-aligned in the same
+                floating toolbar so all top controls sit on one pinned row.
+                Opens the encoding shelf popover; stays available even when the
+                chart can't render yet, so users can fix the encoding. */}
+            {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
+                <Tooltip title={t('chart.editChart')} placement="left">
+                    <IconButton
+                        ref={editButtonRef}
+                        size="small"
+                        onClick={() => setEncodingOpen(o => !o)}
+                        sx={{
+                            ml: 'auto', mr: '8px',
+                            backgroundColor: encodingOpen ? 'primary.main' : 'rgba(255,255,255,0.92)',
+                            color: encodingOpen ? 'primary.contrastText' : 'text.secondary',
+                            border: '1px solid', borderColor: 'divider',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                            '&:hover': { backgroundColor: encodingOpen ? 'primary.dark' : 'rgba(255,255,255,1)' },
+                        }}>
+                        <TuneIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                </Tooltip>
+            )}
+        </Box>
         {content}
     </Box>
 }

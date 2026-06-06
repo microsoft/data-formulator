@@ -1275,6 +1275,15 @@ export const dataFormulatorSlice = createSlice({
                 chart.insight = action.payload.insight;
             }
         },
+        // Zoom level applied by the resizer. Stored on the Chart (not in
+        // config, which is for template-defined properties) so it persists
+        // with the chart across focus changes and session save/load.
+        updateChartScaleFactor: (state, action: PayloadAction<{chartId: string, scaleFactor: number}>) => {
+            let chart = collectAllCharts(state).find(c => c.id == action.payload.chartId);
+            if (chart) {
+                chart.scaleFactor = action.payload.scaleFactor === 1 ? undefined : action.payload.scaleFactor;
+            }
+        },
         // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
         // Variants are user-authored "skins" of a chart's Vega-Lite spec. They live
         // on Chart, persist with the session, and drive both the focused canvas
@@ -1317,14 +1326,35 @@ export const dataFormulatorSlice = createSlice({
         // Replace a variant's spec in place — used by the "refresh stale variant"
         // flow (overlay in VisualizationView). The variant id stays the same so
         // the chip doesn't visibly disappear and re-appear.
-        updateStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, vlSpec: any, rationale?: string, encodingFingerprint?: string}>) => {
-            const { chartId, variantId, vlSpec, rationale, encodingFingerprint } = action.payload;
+        updateStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, vlSpec: any, rationale?: string, encodingFingerprint?: string, configUI?: ChartStyleVariant['configUI']}>) => {
+            const { chartId, variantId, vlSpec, rationale, encodingFingerprint, configUI } = action.payload;
             const chart = collectAllCharts(state).find(c => c.id === chartId);
             const v = chart?.styleVariants?.find(v => v.id === variantId);
             if (!v) return;
             v.vlSpec = vlSpec;
             if (rationale !== undefined) v.rationale = rationale;
             if (encodingFingerprint !== undefined) v.encodingFingerprint = encodingFingerprint;
+            // The agent re-authored the controls; replace them and reset values
+            // so stale keys don't linger.
+            if (configUI !== undefined) {
+                v.configUI = configUI && configUI.length > 0 ? configUI : undefined;
+                v.configValues = undefined;
+            }
+        },
+        // Set the value of a single generative-UI control on a style variant.
+        // value === undefined removes the override (falls back to the control's
+        // defaultValue at render time).
+        updateVariantConfigValue: (state, action: PayloadAction<{chartId: string, variantId: string, key: string, value: any}>) => {
+            const { chartId, variantId, key, value } = action.payload;
+            const chart = collectAllCharts(state).find(c => c.id === chartId);
+            const v = chart?.styleVariants?.find(v => v.id === variantId);
+            if (!v) return;
+            if (value === undefined) {
+                if (v.configValues) delete v.configValues[key];
+            } else {
+                if (!v.configValues) v.configValues = {};
+                v.configValues[key] = value;
+            }
         },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;

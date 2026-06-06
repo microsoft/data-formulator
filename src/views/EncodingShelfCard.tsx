@@ -49,7 +49,7 @@ import { Channel, Chart, FieldItem, Trigger, duplicateChart, ChartStyleVariant, 
 
 import _ from 'lodash';
 
-const ConfigSlider: FC<{
+export const ConfigSlider: FC<{
     value: number;
     propDef: { label: string; min?: number; max?: number; step?: number };
     onCommit: (value: number) => void;
@@ -143,6 +143,12 @@ export interface EncodingShelfCardProps {
     chartId: string;
     trigger?: Trigger;
     noBorder?: boolean;
+    // Render only the chat / follow-up box (+ ideas). Used by the floating
+    // chat FAB so the chat lives off-canvas.
+    chatOnly?: boolean;
+    // Render the encoding shelf without the chat box (+ no ideas). Used by the
+    // floating encoding popover at the top-right of the chart.
+    hideChat?: boolean;
 }
 
 
@@ -306,14 +312,14 @@ export const TriggerCard: FC<{
  * them to specific Vega-Lite config blocks (typography, color, gridlines,
  * background, title alignment, etc.).
  */
-interface StylePreset {
+export interface StylePreset {
     key: string;
     label: string;
     description: string;
     instruction: string;
 }
 
-const STYLE_PRESETS: StylePreset[] = [
+export const STYLE_PRESETS: StylePreset[] = [
     {
         key: 'nyt',
         label: 'New York Times',
@@ -336,13 +342,6 @@ const STYLE_PRESETS: StylePreset[] = [
             'Restyle this chart in the FiveThirtyEight (538) blog style.',
     },
     {
-        key: 'dark',
-        label: 'Dark Mode',
-        description: 'Dark theme',
-        instruction:
-            'Restyle this chart for a dark theme.',
-    },
-    {
         key: 'presentation',
         label: 'Presentation',
         description: 'Optimized for slides',
@@ -359,7 +358,7 @@ const STYLE_PRESETS: StylePreset[] = [
 ];
 
 
-export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
+export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId, chatOnly, hideChat }) {
     const { t } = useTranslation();
     const theme = useTheme();
 
@@ -436,7 +435,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const { streamIdeas, formulateData } = useFormulateData();
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
-    const [encodingHovered, setEncodingHovered] = useState<boolean>(false);
 
     // Anchor for the bottom-left "style presets" menu in the follow-up
     // speech bubble. A preset click sends a detailed style instruction
@@ -444,17 +442,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // these are guaranteed style-only changes by construction).
     const [stylePresetAnchor, setStylePresetAnchor] = useState<HTMLElement | null>(null);
 
-    // Auto-expand encoding shelf when dragging a concept or operator card
-    const { isDraggingField } = useDragLayer((monitor) => ({
-        isDraggingField: monitor.isDragging() && 
-            (monitor.getItemType() === 'concept-card' || monitor.getItemType() === 'operator-card'),
-    }));
-
-    const shouldExpand = encodingHovered || isDraggingField;
-
-    // When no fields are assigned to any channel, show all channels expanded
-    const hasAnyField = Object.values(encodingMap).some(enc => enc?.fieldID);
-    const shouldExpandAll = !hasAnyField || shouldExpand;
+    // Encoding channels are always shown (no auto hide/expand on hover/drag).
+    const shouldExpandAll = true;
     
 
     let handleUpdateChartType = (newChartType: string) => {
@@ -1423,7 +1412,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
 
     let channelComponent = (
-        <Box sx={{ width: "100%", minWidth: "256px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
+        <Box sx={{ width: "100%", minWidth: "220px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
+            {!chatOnly && (<>
             <Box key='mark-selector-box' sx={{ ml: 1, flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, flex: 1, margin: "0px 0"}} size="small">
                     <Select
@@ -1525,9 +1515,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             <Box key='encoding-and-config' sx={{
                     ml: 1,
                     flex: '1 1 auto',
-                }} style={{ height: "calc(100% - 100px)" }} className="encoding-list"
-                onMouseEnter={() => setEncodingHovered(true)}
-                onMouseLeave={() => setEncodingHovered(false)}>
+                }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
             {(() => {
                     const template = getChartTemplate(chart.chartType);
                     const configProps = template?.properties;
@@ -1657,8 +1645,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 })()}
                 {encodingBoxGroups}
             </Box>
-            {variantChipStrip}
-            {formulateInputBox}
+            </>)}
         </Box>);
 
     // Whether any agent work is in flight (intent classify, restyle, or the
@@ -1712,46 +1699,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             <Box sx={{ padding: '4px 0px' }}>
                 {channelComponent}
             </Box>
-            {/* Ideas chips shown inline below the formulate box */}
-            {(currentChartIdeas.length > 0 || (isLoadingIdeas && thinkingBuffer)) && (
-                <Box sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 0.5,
-                    pt: 0.5,
-                }}>
-                    {currentChartIdeas.length > 0 && (
-                        <Typography sx={{
-                            fontSize: 11,
-                            color: 'text.secondary',
-                        }}>
-                            {t('encoding.ideasHeading')}
-                        </Typography>
-                    )}
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {currentChartIdeas.map((idea, index) => (
-                            <IdeaChip
-                                mini={true}
-                                key={index}
-                                idea={idea}
-                                theme={theme}
-                                onClick={() => handleIdeaClick(idea.text)}
-                            />
-                        ))}
-                        {isLoadingIdeas && thinkingBuffer && <ThinkingBufferEffect text={thinkingBuffer.slice(-40)} sx={{ width: '100%' }} />}
-                    </Box>
-                </Box>
-            )}
-            {isLoadingIdeas && !thinkingBuffer && (
-                <Box sx={{ padding: '2px 0' }}>
-                    {ThinkingBanner(
-                        (ideaPhase === 'building_context' ? t('chartRec.progressBuildingContext')
-                           : ideaPhase === 'generating' ? t('chartRec.progressGenerating')
-                           : t('encoding.ideating'))
-                        + (ideaElapsed > 0 ? ` (${ideaElapsed}s)` : '')
-                    )}
-                </Box>
-            )}
         </Box>
     );
 

@@ -543,26 +543,26 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let normalizedDisplay = "";
     
     let handleSelectOption = (option: string) => {
-        if (conceptShelfItems.map(f => f.name).includes(option)) {
-            //console.log(`yah-haha: ${option}`);
-            updateEncProp("fieldID", (conceptShelfItems.find(f => f.name == option) as FieldItem).id);
-        } else {
-            if (option == "") {
-                console.log("nothing happens")
-            } else {
-                let newConept = {
-                    id: `concept-${Date.now()}`, name: option,
-                    source: "custom", tableRef: "custom",
-                } as FieldItem;
-                dispatch(dfActions.updateConceptItems(newConept));
-                updateEncProp("fieldID", newConept.id);
-            }
-            
+        // The encoding shelf only accepts fields that already exist in the
+        // current table. Selecting anything else (a stale concept from another
+        // table, or a typed-but-nonexistent name) is ignored — creating new
+        // fields here is not allowed, since that would require re-deriving data.
+        const fieldItem = conceptShelfItems.find(f => f.name == option);
+        const isAvailable = !!fieldItem && (!activeTable || activeTable.names.includes(option));
+        if (isAvailable) {
+            updateEncProp("fieldID", (fieldItem as FieldItem).id);
         }
     }
 
 
     let conceptGroups = groupConceptItems(conceptShelfItems, tables);
+
+    // Field names selectable in this encoding shelf: only fields that exist in
+    // the current table. Anything else cannot be assigned here.
+    let availableFieldNames = conceptGroups
+        .filter(g => activeTable ? activeTable.names.includes(g.field.name) : true)
+        .map(g => g.field.name)
+        .filter(name => name != "");
 
     let groupNames = [...new Set(conceptGroups.map(g => g.group))];
     conceptGroups.sort((a, b) => {
@@ -623,15 +623,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }}
         // value={tempValue}
         filterOptions={(options, params) => {
-            const filtered = filter(options, params);
-            const { inputValue } = params;
-            // Suggest the creation of a new value
-            const isExisting = options.some((option) => inputValue === option);
-            if (!isExisting) {
-                return [`${inputValue}`, ...filtered,  ]
-            } else {
-                return [...filtered];
-            }
+            // The encoding shelf only accepts fields that already exist in the
+            // current table — creating brand-new fields (which would require
+            // re-deriving data) is not allowed here.
+            return filter(options, params);
         }}
         sx={{ 
             flexGrow: 1, 
@@ -647,7 +642,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         handleHomeEndKeys
         autoHighlight
         id={`autocomplete-${chartId}-${channel}`}
-        options={conceptGroups.map(g => g.field.name).filter(name => name != "")}
+        options={availableFieldNames}
         getOptionLabel={(option) => {
             // Value selected with enter, right from the input
             return option;
@@ -776,9 +771,24 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 );
             }
         }}
-        freeSolo
         renderInput={(params) => (
             <TextField {...params} variant="standard" autoComplete='off' placeholder={t('encoding.fieldPlaceholder')}
+                onKeyDownCapture={(event) => {
+                    // The MUI Autocomplete handles Enter on the input itself,
+                    // and `autoHighlight` makes it auto-select the first option
+                    // even when the typed text doesn't match. Intercept Enter in
+                    // the capture phase: only let it through when the current
+                    // input is an exact available field; otherwise neutralize it
+                    // so a stray Enter never assigns a field or bubbles up to
+                    // trigger an unrelated refresh/formulate.
+                    if (event.key === 'Enter') {
+                        const value = (event.target as HTMLInputElement).value?.trim();
+                        if (!value || !availableFieldNames.includes(value)) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    }
+                }}
                 sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
         )}
         slotProps={{
@@ -788,6 +798,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     maxWidth: '300px',
                     '& .MuiAutocomplete-listbox': {
                         maxHeight: '600px !important'
+                    },
+                    '& .MuiAutocomplete-noOptions': {
+                        fontSize: '11px',
+                        padding: '6px 12px',
                     },
                 }
             }

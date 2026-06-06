@@ -47,6 +47,8 @@
     "log": "日志",
     "insight": "洞察",
     "openInVegaEditor": "在 Vega 编辑器中打开",
+    "viewChartSpec": "查看图表规格",
+    "editChart": "编辑图表",
     "chartInsight": "图表洞察",
     "analyzingChart": "分析图表中...",
     "regenerate": "重新生成",
