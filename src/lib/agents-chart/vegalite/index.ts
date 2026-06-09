@@ -11,7 +11,7 @@
  */
 
 // VL assembly function
-export { assembleVegaLite } from './assemble';
+export { assembleVegaLite, getChartOptions } from './assemble';
 
 // VL spec instantiation (Phase 2)
 export { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';

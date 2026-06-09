@@ -1015,7 +1015,30 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     .filter((s: string) => s.length > 0)
                     .slice(0, 2);
                 const target = (result.target === 'report_gen' ? 'report_gen' : 'data_loading') as 'data_loading' | 'report_gen';
-                if (currentDraftId) {
+
+                if (target === 'report_gen') {
+                    // Auto-delegate to the report agent — no user approval gate.
+                    // When the user asks for a report, jumping straight into
+                    // report generation is the expected behavior, so we pick the
+                    // agent's first seed prompt (falling back to its message) and
+                    // hand off directly. The report_gen handoff useEffect picks
+                    // this up and starts reportFromChat. The placeholder draft
+                    // has no role in the report view, so we drop it like a normal
+                    // completion would.
+                    if (currentDraftId) {
+                        thinkingSteps = [];
+                        pendingThought = '';
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+                        dispatch(dfActions.removeDraftNode(currentDraftId));
+                        currentDraftId = null;
+                    }
+                    const seedPrompt = options[0] || message;
+                    if (seedPrompt) {
+                        dispatch(dfActions.requestAgentHandoff({ target: 'report_gen', prompt: seedPrompt }));
+                    }
+                } else if (currentDraftId) {
+                    // data_loading: keep the one-click approval panel — that's a
+                    // different agent / context the user should confirm.
                     const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
                     thinkingSteps = [];
                     pendingThought = '';
@@ -1289,6 +1312,53 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (event.type === 'text_delta') {
                     accumulatedMarkdown += (event as any).content;
                     scheduleFlush();
+                } else if (event.type === 'tool_start') {
+                    // Mirror the data agent: surface what the agent is inspecting.
+                    const ev = event as any;
+                    let label = t('dataThread.thinking');
+                    let doneLabel: string | undefined;
+                    let chartDescs: { chartType: string; name: string }[] | undefined;
+                    if (ev.tool === 'inspect_chart') {
+                        // Resolve chart ids to descriptors: chart type (for the
+                        // icon) plus a display name — the insight title when we
+                        // have one, otherwise the encoded fields ("a × b × c").
+                        const ids: string[] = ev.chart_ids || [];
+                        chartDescs = ids
+                            .map(id => {
+                                const c = charts.find(cc => cc.id === id);
+                                if (!c) return undefined;
+                                let name = c.insight?.title;
+                                if (!name) {
+                                    const fields = Object.values(c.encodingMap)
+                                        .map(enc => enc.fieldID)
+                                        .filter((fid): fid is string => !!fid)
+                                        .map(fid => conceptShelfItems.find(f => f.id === fid)?.name)
+                                        .filter((n): n is string => !!n);
+                                    name = fields.length ? fields.join(' × ') : c.chartType;
+                                }
+                                return { chartType: c.chartType, name };
+                            })
+                            .filter((d): d is { chartType: string; name: string } => !!d);
+                        label = t('report.inspectingCharts');
+                        doneLabel = t('report.inspectedCharts');
+                    } else if (ev.tool === 'inspect_source_data') {
+                        const names = ev.table_names?.join(', ') || '';
+                        label = t('dataThread.inspectingData') + (names ? ` ${names}` : '');
+                        doneLabel = t('dataThread.inspectedData') + (names ? ` ${names}` : '');
+                    }
+                    dispatch(dfActions.updateGeneratedReportProgress({
+                        id: reportId,
+                        kind: 'start',
+                        label,
+                        doneLabel,
+                        charts: chartDescs,
+                    }));
+                } else if (event.type === 'tool_result') {
+                    // Flip the matching pending inspect step to done.
+                    dispatch(dfActions.updateGeneratedReportProgress({
+                        id: reportId,
+                        kind: 'end',
+                    }));
                 } else if (event.type === 'error') {
                     const errMsg = event.error ? getErrorMessage(event.error) : t('messages.error');
                     accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;

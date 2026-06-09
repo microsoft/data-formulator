@@ -194,6 +194,8 @@
   "report": {
     "deleteReport": "Delete report",
     "backToEditor": "Back to editor",
+    "editReport": "Edit report",
+    "doneEditing": "Done editing",
     "createChartifactReport": "Create Chartifact report",
     "shareReportAsImage": "Share report as image",
     "couldNotFindContent": "Could not find report content to capture",
@@ -235,6 +237,12 @@
     "createChartifact": "Create Chartifact",
     "copied": "Copied!",
     "copyContent": "Copy content",
+    "contentCopied": "Report content copied to clipboard.",
+    "inspectingCharts": "inspecting charts...",
+    "inspectedCharts": "inspected charts",
+    "downloadAndShare": "Download & share",
+    "saveAsImage": "Save as image",
+    "downloadPdf": "Download PDF",
     "imageActions": "Image",
     "copyImage": "Copy image to clipboard",
     "downloadPng": "Download PNG",
@@ -425,6 +433,7 @@
     "runningCode": "running code...",
     "creatingChart": "creating chart...",
     "inspectingData": "inspecting source data...",
+    "inspectedData": "inspected source data",
     "rulesLoaded": "Reading rules: {{rules}}",
     "knowledgeLoaded": "Reading knowledge: {{knowledge}}",
     "searching": "searching...",
@@ -781,7 +790,8 @@
     "numberedList": "Numbered List",
     "quote": "Quote",
     "generating": "Generating…",
-    "writingReport": "Writing your report…"
+    "writingReport": "Writing your report…",
+    "workingTitle": "Working on your report"
   },
   "sidebar": {
     "openDataSources": "Data Sources",

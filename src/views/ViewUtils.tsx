@@ -143,7 +143,14 @@ const formatTemporalValue = (value: any, dataType: Type): string => {
 };
 
 const formatDuration = (value: any): string => {
-    if (typeof value === 'number') {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        // The h/m/s format assumes the value is in milliseconds. When the value
+        // isn't a whole number of seconds (e.g. seconds-based columns like
+        // 0.083), flooring would collapse everything to "0s" and destroy the
+        // data — so fall back to the plain number instead of over-formatting.
+        if (value === 0 || !Number.isInteger(value / 1_000)) {
+            return value.toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
         const h = Math.floor(value / 3_600_000);
         const m = Math.floor((value % 3_600_000) / 60_000);
         const s = Math.floor((value % 60_000) / 1_000);

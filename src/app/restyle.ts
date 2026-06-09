@@ -95,7 +95,7 @@ export function buildSpecForRestyle(
         spec = JSON.parse(JSON.stringify(basedOnVariant.vlSpec));
     } else {
         spec = JSON.parse(JSON.stringify(fullSpec));
-        delete spec._computedConfig;
+        delete spec._options;
     }
     delete spec.data;
     return { spec, basedOnVariantId: basedOnVariant?.id, embeddedData };

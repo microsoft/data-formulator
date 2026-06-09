@@ -19,6 +19,7 @@
     "saveCopy": "save a copy",
     "duplicate": "duplicate the chart",
     "delete": "delete",
+    "deleteChart": "delete chart",
     "sampleSize": "Sample size",
     "sampleSizeAria": "Sample size",
     "sampleAgain": "sample again!",

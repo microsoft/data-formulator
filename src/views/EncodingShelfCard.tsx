@@ -1426,6 +1426,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         onOpen={() => setChartTypeMenuOpen(true)}
                         onClose={() => setChartTypeMenuOpen(false)}
                         MenuProps={{
+                            // Use a plain "menu" rather than the default
+                            // "selectedMenu": the latter shifts the popup up so
+                            // the selected item overlaps the trigger (and
+                            // auto-scrolls to it), which makes the dropdown feel
+                            // like it jumps. "menu" simply opens straight below.
+                            variant: 'menu',
                             anchorOrigin: {
                                 vertical: 'bottom',
                                 horizontal: 'left',
@@ -1436,6 +1442,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             },
                             PaperProps: {
                                 sx: {
+                                    mt: 1,
+                                    maxHeight: '60vh',
                                     '& .MuiList-root': {
                                         display: 'grid',
                                         gridTemplateColumns: '1fr 1fr',
@@ -1520,15 +1528,23 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     const template = getChartTemplate(chart.chartType);
                     const configProps = template?.properties;
                     if (!configProps || configProps.length === 0) return null;
+                    // Minimal encodings view for a property's own `check`. This
+                    // static popover has no live data/semantics, so a data-aware
+                    // property's check returns `applicable: false` here and the
+                    // property self-hides — surfacing only in the quick-config bar.
+                    const shelfEncodings: Record<string, { field: any }> = {};
+                    for (const ch of Object.keys(chart.encodingMap)) {
+                        const fieldID = chart.encodingMap[ch as Channel]?.fieldID;
+                        if (fieldID != null) shelfEncodings[ch] = { field: fieldID };
+                    }
                     return (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px', mb: '6px' }}>
                             {configProps.map((propDef) => {
-                                // App-level visibility: hide properties whose visibleWhen channels aren't assigned
-                                if (propDef.visibleWhen?.channels) {
-                                    const hasAny = propDef.visibleWhen.channels.some(
-                                        ch => chart.encodingMap[ch as Channel]?.fieldID != null
-                                    );
-                                    if (!hasAny) return null;
+                                // A property gates itself via its own applicability
+                                // check. Without one it is always shown.
+                                if (propDef.check &&
+                                    !propDef.check({ encodings: shelfEncodings as any }).applicable) {
+                                    return null;
                                 }
                                 if (propDef.type === 'continuous') {
                                     const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue ?? propDef.min ?? 0;

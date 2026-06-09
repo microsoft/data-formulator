@@ -3,25 +3,28 @@
 
 """Report generation agent with tool-calling for inspect + embed.
 
-Two-phase architecture:
-  - **Phase 1 (Inspect)**: Non-streaming LLM call with inspection tools.
-    Agent calls inspect_chart / inspect_source_data to gather information.
-    Results are fed back as context. Invisible to the user.
-  - **Phase 2 (Generate)**: Streaming LLM call with embedding tools.
-    Agent writes the report narrative token-by-token.
-    embed_chart / embed_table tool calls produce structured blocks
-    in the output stream — rendered by the frontend as inline content.
+Single agentic loop:
+  - Each round is a streaming LLM call with the inspection tools available.
+    The agent calls inspect_chart / inspect_source_data to gather information
+    whenever it needs it; the results (and rendered chart images) are fed back
+    as context and the loop continues.
+  - When the agent stops calling tools and starts writing prose, that prose IS
+    the report — it streams token-by-token to the user, with charts embedded
+    inline via ![caption](chart://chart_id) markdown links.
+  - Because the tool channel stays available throughout, the agent uses real
+    tool calls instead of leaking tool-call syntax into the report text.
 """
 
 import json
 import logging
+import re
 from typing import Any, Generator
 
 import pandas as pd
 
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import (
-    attach_reasoning_content,
+    accumulate_reasoning_content,
     generate_data_summary,
 )
 from data_formulator.agents.agent_language import inject_language_instruction
@@ -120,18 +123,16 @@ summarize a single chart. Before writing:
 - Plan a report that covers the meaningful findings across the exploration,
   not just the last or most obvious chart.
 
-## Phase 1 — Inspect
-Use `inspect_chart` and `inspect_source_data` to gather what you need before
-writing. `inspect_chart` returns the chart's rendered image, a data sample, and
-the transformation code — so you can see exactly what each chart shows and write
-accurate captions and insights.
-- Inspect the charts that correspond to the key findings you plan to present.
-  For a multi-section report or dashboard, that usually means several charts.
-- You can inspect multiple charts in one call (pass several chart_ids).
-- Don't fetch charts you have no intention of discussing, but don't under-inspect
-  either — a report that ignores most of the exploration is a poor report.
+## Inspecting charts and data
+You have two tools available the whole time: `inspect_chart` and
+`inspect_source_data`. Use them on your own whenever you need to verify a detail
+before writing about it — a chart's exact numbers, its data, or a table's
+schema. `inspect_chart` returns the chart's rendered image, a data sample, and
+the code that produced it. Check the charts behind the key findings you present.
 
-## Phase 2 — Write the report
+## Write the report
+Write the report directly in markdown — your prose streams straight to the
+reader. Inspect whatever you need as you go.
 
 ### Embedding charts (REQUIRED FORMAT — do not change this)
 To embed a chart image, use markdown image syntax with a `chart://` URL:
@@ -182,8 +183,30 @@ something that short. Reasonable defaults if the user is vague:
 """
 
 
+# Defense-in-depth: keeping the tool channel available across the whole loop
+# means the model normally uses real tool calls instead of writing tool-call
+# syntax as text. But some harmony / gpt-oss style models still occasionally leak
+# their tool-call channel into the text stream (e.g. "to=functions.inspect_chart
+# ... json {\"chart_ids\": [...]}"), sometimes with degenerate spam tokens. As a
+# cheap last line of defense we strip the obvious leak markers out of each
+# streamed delta before it reaches the report.
+_LEAK_SPECIAL_TOKEN = re.compile(r"<\|[^|>]*\|>")
+_LEAK_TOOLCALL = re.compile(
+    r"(?:\bcommentary\b\s*)?\bto\s*=\s*functions\.[A-Za-z0-9_]+"
+    r"[\s\S]*?\{[\s\S]*?\}",
+)
+
+
+def _strip_leaked_tool_syntax(text: str) -> str:
+    """Remove leaked harmony special tokens and tool-call headers (with their
+    trailing JSON args) from a streamed report delta. Clean prose is untouched."""
+    text = _LEAK_TOOLCALL.sub("", text)
+    text = _LEAK_SPECIAL_TOKEN.sub("", text)
+    return text
+
+
 class ReportGenAgent:
-    """Tool-calling report generation agent with two-phase streaming."""
+    """Tool-calling report generation agent with a single streaming loop."""
 
     def __init__(self, client, workspace, language_instruction=""):
         self.client = client
@@ -199,7 +222,7 @@ class ReportGenAgent:
         other_threads: list[dict[str, Any]] | None = None,
         primary_tables: list[str] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
-        """Generate a report via two-phase tool-calling.
+        """Generate a report via a single tool-calling loop.
 
         Yields SSE-style dicts:
             {"type": "text_delta", "content": "..."}
@@ -238,84 +261,135 @@ class ReportGenAgent:
         system_prompt = SYSTEM_PROMPT
         system_prompt = inject_language_instruction(system_prompt, self.language_instruction)
 
+        write_instruction = (
+            "Write a report in markdown that covers the key findings across the "
+            "exploration — don't reduce it to a single chart unless the request "
+            "explicitly asks for something that brief. Pull up whatever charts or "
+            "data you need to look at as you go (this happens automatically and "
+            "is invisible to the reader), and embed each chart you discuss with "
+            "![caption](chart://chart_id)."
+        )
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"{context}\n\n[USER REQUEST]\n\n{user_prompt}"},
+            {
+                "role": "user",
+                "content": f"{context}\n\n[USER REQUEST]\n\n{user_prompt}\n\n{write_instruction}",
+            },
         ]
 
-        # ── Phase 1: Inspect (non-streaming) ──────────────────────────
-        messages = self._run_inspect_phase(messages, input_tables, charts)
-
-        # ── Phase 2: Generate (streaming with embed tools) ────────────
-        yield from self._run_generate_phase(messages, charts, input_tables)
+        # Single agentic loop: the model inspects via tool calls as needed, then
+        # streams the report. Tools stay available throughout, so it uses the
+        # real tool channel instead of leaking tool-call syntax as text.
+        yield from self._run_agent_loop(messages, charts, input_tables)
 
     # ------------------------------------------------------------------
-    # Phase 1: Inspection loop
+    # Agentic loop: inspect-as-needed, then stream the report
     # ------------------------------------------------------------------
 
-    def _run_inspect_phase(
+    def _run_agent_loop(
         self,
         messages: list[dict],
-        input_tables: list[dict[str, Any]],
         charts: list[dict[str, Any]],
-    ) -> list[dict]:
-        """Run non-streaming inspect calls. Returns updated messages."""
-        max_rounds = 5
+        input_tables: list[dict[str, Any]],
+    ) -> Generator[dict[str, Any], None, None]:
+        """Single streaming tool-calling loop.
 
-        for _ in range(max_rounds):
+        Each round is a streaming LLM call with the inspect tools available. If
+        the model emits tool calls, we execute them (attaching rendered chart
+        images) and loop. When the model stops calling tools and just writes
+        prose, that prose IS the report and streams straight to the user.
+        Because the tool channel stays available the whole time, the model never
+        has to fall back to writing tool-call syntax as text.
+        """
+        max_rounds = 6
+
+        for round_idx in range(max_rounds):
             try:
-                response = self._call_llm(messages, tools=INSPECT_TOOLS)
+                stream = self._call_llm_streaming(messages, tools=INSPECT_TOOLS)
             except Exception as e:
-                logger.warning(f"[ReportAgent] Inspect phase error: {e}")
-                from data_formulator.error_handler import collect_stream_warning
-                collect_stream_warning(
-                    "Report data inspection failed — report may be incomplete",
-                    detail=str(e),
-                    message_code="INSPECT_PHASE_FAILED",
-                )
-                break
+                logger.error(f"[ReportAgent] LLM call failed: {e}")
+                yield {"type": "text_delta", "content": f"Error generating report: {e}"}
+                return
 
-            if not response or not response.choices:
-                break
+            text_parts: list[str] = []
+            reasoning_acc: str | None = None
+            tool_calls_acc: dict[int, dict[str, Any]] = {}
 
-            choice = response.choices[0]
-            content = choice.message.content or ""
-            tool_calls = getattr(choice.message, "tool_calls", None)
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                reasoning_acc = accumulate_reasoning_content(reasoning_acc, delta)
 
-            if not tool_calls:
-                # Agent is ready to write — don't append its text yet,
-                # Phase 2 will re-prompt with embed tools
-                break
+                content = getattr(delta, "content", None)
+                if content:
+                    text_parts.append(content)
+                    cleaned = _strip_leaked_tool_syntax(content)
+                    if cleaned:
+                        yield {"type": "text_delta", "content": cleaned}
 
-            # Append assistant message
+                for tcd in getattr(delta, "tool_calls", None) or []:
+                    idx = getattr(tcd, "index", 0) or 0
+                    slot = tool_calls_acc.setdefault(
+                        idx, {"id": None, "name": "", "arguments": ""}
+                    )
+                    if getattr(tcd, "id", None):
+                        slot["id"] = tcd.id
+                    fn = getattr(tcd, "function", None)
+                    if fn is not None:
+                        if getattr(fn, "name", None):
+                            slot["name"] = fn.name
+                        if getattr(fn, "arguments", None):
+                            slot["arguments"] += fn.arguments
+
+            # No tool calls this round → the model wrote the report. Done.
+            if not tool_calls_acc:
+                return
+
+            # Inspection round: record the tool calls, execute them, then loop.
+            ordered = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+            for i, tc in enumerate(ordered):
+                if not tc["id"]:
+                    tc["id"] = f"call_{round_idx}_{i}"
+
             assistant_msg: dict[str, Any] = {
                 "role": "assistant",
-                "content": content or None,
+                "content": "".join(text_parts) or None,
                 "tool_calls": [
                     {
-                        "id": tc.id,
+                        "id": tc["id"],
                         "type": "function",
                         "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
+                            "name": tc["name"],
+                            "arguments": tc["arguments"] or "{}",
                         },
                     }
-                    for tc in tool_calls
+                    for tc in ordered
                 ],
             }
-            attach_reasoning_content(assistant_msg, choice.message)
+            if reasoning_acc:
+                assistant_msg["reasoning_content"] = reasoning_acc
             messages.append(assistant_msg)
 
-            # Execute each tool. Chart images can't ride along in tool-result
-            # messages on most providers, so we collect them and attach them as
-            # a single follow-up vision message after all tool results.
+            # Chart images can't ride along in tool-result messages on most
+            # providers, so we collect them and attach them as a single
+            # follow-up vision message after all tool results.
             pending_images: list[str] = []
-            for tc in tool_calls:
-                tool_name = tc.function.name
+            for tc in ordered:
+                tool_name = tc["name"]
                 try:
-                    tool_args = json.loads(tc.function.arguments)
+                    tool_args = json.loads(tc["arguments"] or "{}")
                 except json.JSONDecodeError:
                     tool_args = {}
+
+                # Tell the frontend what the agent is doing (start/end), the
+                # same way the data agent streams tool_start / tool_result.
+                yield {
+                    "type": "tool_start",
+                    "tool": tool_name,
+                    "chart_ids": tool_args.get("chart_ids") if tool_name == "inspect_chart" else None,
+                    "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
+                }
 
                 if tool_name == "inspect_chart":
                     tool_content, image_urls = self._handle_inspect_chart(
@@ -331,9 +405,11 @@ class ReportGenAgent:
                 else:
                     tool_content = f"Unknown tool: {tool_name}"
 
+                yield {"type": "tool_result", "tool": tool_name, "status": "ok"}
+
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tc.id,
+                    "tool_call_id": tc["id"],
                     "content": tool_content,
                 })
 
@@ -354,48 +430,12 @@ class ReportGenAgent:
                     })
                 messages.append({"role": "user", "content": image_blocks})
 
-            logger.info(f"[ReportAgent] Inspect phase: executed {len(tool_calls)} tool call(s)")
+            logger.info(
+                f"[ReportAgent] Round {round_idx + 1}: executed "
+                f"{len(ordered)} tool call(s)"
+            )
 
-        return messages
-
-    # ------------------------------------------------------------------
-    # Phase 2: Streaming generation with embed tools
-    # ------------------------------------------------------------------
-
-    def _run_generate_phase(
-        self,
-        messages: list[dict],
-        charts: list[dict[str, Any]],
-        input_tables: list[dict[str, Any]],
-    ) -> Generator[dict[str, Any], None, None]:
-        """Stream the report as plain text with [IMAGE()] placeholders."""
-
-        # Add a nudge to start writing
-        messages.append({
-            "role": "user",
-            "content": (
-                "Now write the report in markdown, grounded in the exploration "
-                "threads and the charts/data you inspected. Cover the key "
-                "findings across the exploration — don't reduce it to a single "
-                "chart unless the request explicitly calls for something that "
-                "brief. Embed each chart you discuss with "
-                "![caption](chart://chart_id)."
-            ),
-        })
-
-        try:
-            stream = self._call_llm_streaming(messages, tools=None)
-        except Exception as e:
-            logger.error(f"[ReportAgent] Generate phase error: {e}")
-            yield {"type": "text_delta", "content": f"Error generating report: {e}"}
-            return
-
-        for chunk in stream:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            if hasattr(delta, "content") and delta.content:
-                yield {"type": "text_delta", "content": delta.content}
+        logger.warning("[ReportAgent] Tool-call rounds exhausted without a report")
 
     # ------------------------------------------------------------------
     # Tool handlers
@@ -535,14 +575,6 @@ class ReportGenAgent:
     # ------------------------------------------------------------------
     # LLM call helpers
     # ------------------------------------------------------------------
-
-    def _call_llm(self, messages: list[dict], tools: list[dict] | None = None):
-        """Non-streaming LLM call with optional tool definitions."""
-        if tools:
-            return self.client.get_completion_with_tools(
-                messages, tools=tools, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
-            )
-        return self.client.get_completion(messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
     def _call_llm_streaming(self, messages: list[dict], tools: list[dict] | None = None):
         """Streaming LLM call with optional tool definitions."""

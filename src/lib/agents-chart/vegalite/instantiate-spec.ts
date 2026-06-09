@@ -23,19 +23,7 @@ import type {
     ChartWarning,
 } from '../core/types';
 import type { FormatSpec } from '../core/field-semantics';
-import {
-    looksLikeDateString,
-    analyzeTemporalField,
-    computeDataVotes,
-    pickBestLevel,
-    levelToFormat,
-    SEMANTIC_LEVEL,
-} from '../core/resolve-semantics';
-import {
-    getVisCategory,
-    inferVisCategory,
-} from '../core/semantic-types';
-import { toTypeString, snapToBoundHeuristic } from '../core/field-semantics';
+import { snapToBoundHeuristic } from '../core/field-semantics';
 
 const DEFAULT_QUANTITATIVE_AXIS_FORMAT = ',.12~g';
 
@@ -148,54 +136,19 @@ export function vlApplyLayoutToSpec(
         }
     };
 
-    const applyOrdinalTemporalFormat = (enc: any, channel: string, cs: ChannelSemantics | undefined) => {
-        if (!enc || !enc.field) return;
-        if (enc.type !== 'ordinal' && enc.type !== 'nominal') return;
-        if (!cs) return;
-
-        const semanticType = toTypeString(context.semanticTypes[enc.field]);
-        const stCategory = semanticType ? getVisCategory(semanticType) : null;
-        if (stCategory !== 'temporal') return;
-
-        const fieldVals = context.table.map((r: any) => r[enc.field]).filter((v: any) => v != null);
-
-        // Single unique value → no temporal formatting (would lose precision, e.g. "2007-12" → "2007")
-        const uniqueVals = new Set(fieldVals.map(String));
-        if (uniqueVals.size <= 1) return;
-
-        const datelikeCnt = fieldVals.filter((v: any) =>
-            typeof v !== 'string' || looksLikeDateString(String(v))
-        ).length;
-        if (datelikeCnt < fieldVals.length * 0.5) return;
-
-        const analysis = analyzeTemporalField(fieldVals);
-        if (!analysis) return;
-
-        const votes = computeDataVotes(analysis.same);
-        const semLevel = SEMANTIC_LEVEL[semanticType];
-        if (semLevel !== undefined) votes[semLevel] += 3;
-        const { level, score } = pickBestLevel(votes);
-        if (score < 5) return;
-
-        const fmt = levelToFormat(level, analysis);
-        if (!fmt) return;
-
-        const expr = `isValid(toDate(datum.label)) ? timeFormat(toDate(datum.label), '${fmt}') : datum.label`;
-        if (channel === 'x' || channel === 'y') {
-            if (enc.axis === null) return; // preserve axis suppression
-            if (!enc.axis) enc.axis = {};
-            enc.axis.labelExpr = expr;
-        } else if (channel === 'color') {
-            if (!enc.legend) enc.legend = {};
-            enc.legend.labelExpr = expr;
-        }
-    };
+    // Discrete (ordinal/nominal) temporal axes and legends render the raw
+    // string value as-is. A discrete axis treats values as opaque categories,
+    // so the label should match what's in the table (e.g. "2010-01"). We avoid
+    // toDate/timeFormat reformatting here: it added no value for already-string
+    // data and risked timezone-shifted labels ("2010-01" → "Dec 2009"). If a
+    // column genuinely needs date parsing/formatting (e.g. numeric timestamps),
+    // the user can switch that axis to temporal (continuous), where Vega-Lite
+    // handles parsing and multi-level labels natively.
 
     // Iterate all encoding locations (top-level, spec, layers)
     const applyTemporalToEncoding = (encoding: Record<string, any>) => {
         for (const [ch, enc] of Object.entries(encoding)) {
             applyTemporalFormat(enc, ch, channelSemantics[ch]);
-            applyOrdinalTemporalFormat(enc, ch, channelSemantics[ch]);
         }
     };
 
@@ -380,19 +333,6 @@ export function vlApplyLayoutToSpec(
                 if (!yEnc.axis) yEnc.axis = {};
                 yEnc.axis.title = null;
             }
-        } else {
-            // Wrap-facet (single facet field, no shared side band) — the y-axis
-            // title repeats once per wrap-row down the left edge. There's no row
-            // header to fold it into, so keep it but stop it smearing: pull it
-            // off the tick labels with titlePadding, shrink the font, and cap its
-            // length to the subplot height so it can't overrun a short subplot.
-            if (!vgObj.config) vgObj.config = {};
-            vgObj.config.axisY = {
-                ...(vgObj.config.axisY || {}),
-                titlePadding: 8,
-                titleFontSize: 10,
-                titleLimit: Math.max(30, layout.subplotHeight),
-            };
         }
     }
 
@@ -591,23 +531,26 @@ function formatSpecToLabelExpr(fmt: FormatSpec): string | null {
 }
 
 /**
- * Compute the maximum stacked (group) total for a quantitative field.
+ * Compute the positive and negative stacked extremes for a quantitative field.
  *
  * For a stacked bar chart with:
  *   x = category (grouping), y = value (stacked), color = series
  *
- * This computes sum(value) for each category group and returns the max.
- * Used to check whether stacked totals exceed an intrinsic domain bound
- * (e.g., percentages summing to >100%).
+ * Vega-Lite stacks positive and negative contributions *separately* (positives
+ * grow up from 0, negatives down from 0), so we track each side independently —
+ * summing signed values together would let a mix of +0.9 and −0.2 cancel and
+ * hide a tall positive stack. Returns the largest positive group sum and the
+ * most-negative group sum, used to check whether either side overflows an
+ * intrinsic domain bound (e.g., correlations summing past 1).
  *
  * Returns undefined if the grouping field can't be determined.
  */
-function computeMaxStackedTotal(
+function computeStackedExtremes(
     table: any[],
     measureField: string,
     measureChannel: string,
     channelSemantics: Record<string, ChannelSemantics>,
-): number | undefined {
+): { maxPos: number; minNeg: number } | undefined {
     if (!table || table.length === 0) return undefined;
 
     // The grouping axis is the *other* positional channel
@@ -624,8 +567,9 @@ function computeMaxStackedTotal(
         if (fcs?.field) facetFields.push(fcs.field);
     }
 
-    // Group rows and sum the measure field per group
-    const totals = new Map<string, number>();
+    // Group rows and sum positive / negative contributions per group separately
+    const posTotals = new Map<string, number>();
+    const negTotals = new Map<string, number>();
     for (const row of table) {
         const val = row[measureField];
         if (typeof val !== 'number' || isNaN(val)) continue;
@@ -636,11 +580,40 @@ function computeMaxStackedTotal(
             keyParts.push(String(row[ff]));
         }
         const key = keyParts.join('|||');
-        totals.set(key, (totals.get(key) ?? 0) + val);
+        if (val >= 0) {
+            posTotals.set(key, (posTotals.get(key) ?? 0) + val);
+        } else {
+            negTotals.set(key, (negTotals.get(key) ?? 0) + val);
+        }
     }
 
-    if (totals.size === 0) return undefined;
-    return Math.max(...totals.values());
+    if (posTotals.size === 0 && negTotals.size === 0) return undefined;
+    const maxPos = posTotals.size > 0 ? Math.max(...posTotals.values()) : 0;
+    const minNeg = negTotals.size > 0 ? Math.min(...negTotals.values()) : 0;
+    return { maxPos, minNeg };
+}
+
+/**
+ * Detect whether a discrete category repeats across rows — i.e., multiple rows
+ * share the same category value, which makes Vega-Lite stack the measure even
+ * with no color encoding. Used to recognise implicit no-color stacking so the
+ * intrinsic-domain check runs against the stacked total, not individual values.
+ */
+function hasRepeatedCategory(
+    table: any[],
+    categoryField: string | undefined,
+    measureField: string,
+): boolean {
+    if (!table || table.length === 0 || !categoryField) return false;
+    const seen = new Set<string>();
+    for (const row of table) {
+        const val = row[measureField];
+        if (typeof val !== 'number' || isNaN(val)) continue;
+        const key = String(row[categoryField]);
+        if (seen.has(key)) return true;
+        seen.add(key);
+    }
+    return false;
 }
 
 /**
@@ -789,8 +762,12 @@ function vlApplyFieldContext(
             //   Layered / no stack (stack: null/false): each bar is
             //   independent. → Apply domain constraints as normal.
             //
-            // VL auto-stacks bar/area marks when a color encoding is present
-            // (unless stack: null/false).
+            // VL auto-stacks bar/area marks whenever multiple rows share the
+            // same discrete position — most obviously with a color series, but
+            // ALSO with no color at all when a category repeats (several rows
+            // per x). Both cases sum on the measure axis, so the intrinsic
+            // domain must be checked against the stacked total, not individual
+            // values.
             //
             // Without this: Rating gets auto-fitted to data range (e.g., 2-4.5)
             // instead of showing the full 1-5 scale.
@@ -803,7 +780,13 @@ function vlApplyFieldContext(
                 || (Array.isArray(vgObj.layer) && vgObj.layer.some((l: any) => l.encoding?.color?.field))
                 || vgObj.spec?.encoding?.color?.field
             );
-            const isImplicitlyStacked = isBarLike && hasColorEncoding && enc.stack !== null;
+            // The other positional channel; bar-like charts stack the measure
+            // when this axis is discrete and a category repeats across rows.
+            const otherChannel = ch === 'y' ? 'x' : 'y';
+            const otherCS = channelSemantics[otherChannel];
+            const otherIsDiscrete = otherCS?.type === 'nominal' || otherCS?.type === 'ordinal';
+            const isImplicitlyStacked = isBarLike && otherIsDiscrete && enc.stack !== null
+                && (hasColorEncoding || hasRepeatedCategory(context.table, otherCS?.field, enc.field));
             const isStacked = isExplicitlyStacked || isImplicitlyStacked;
             const isNormalizeStacked = enc.stack === 'normalize';
             const isSumStacked = isStacked && !isNormalizeStacked;
@@ -827,28 +810,41 @@ function vlApplyFieldContext(
                 // can't find the intrinsic bounds to snap totals against.
                 const intrinsic = getEffectiveIntrinsicDomain(cs, context.table, enc.field);
                 if (intrinsic) {
-                    const maxTotal = computeMaxStackedTotal(
+                    const extremes = computeStackedExtremes(
                         context.table, enc.field, ch, channelSemantics,
                     );
 
-                    if (maxTotal !== undefined && maxTotal > intrinsic[1]) {
-                        // Stacked totals exceed the intrinsic bound →
-                        // skip domain constraint to avoid clipping.
-                        // Use a small epsilon tolerance for floating-point
-                        // imprecision (e.g., shares summing to 1.0000000001
-                        // instead of exactly 1.0 should still be treated as
-                        // within bounds). Scale epsilon to the domain range.
+                    if (extremes !== undefined) {
+                        // VL stacks positive and negative contributions
+                        // separately, so either side can overflow its bound.
+                        const { maxPos, minNeg } = extremes;
                         const range = intrinsic[1] - intrinsic[0];
+                        // Small epsilon tolerance for floating-point imprecision
+                        // (e.g., shares summing to 1.0000000001 should still be
+                        // treated as within bounds). Scaled to the domain range.
                         const epsilon = range * 1e-6;
-                        if (maxTotal > intrinsic[1] + epsilon) {
+                        const overflowsTop = maxPos > intrinsic[1] + epsilon;
+                        const overflowsBottom = minNeg < intrinsic[0] - epsilon;
+
+                        if (overflowsTop || overflowsBottom) {
+                            // Stacked totals exceed the intrinsic bound on at
+                            // least one side → skip the domain constraint so
+                            // bars aren't clipped (e.g., correlations summing
+                            // past 1, or percentages past 100%).
                             if (cs.domainConstraint) {
                                 skipDomain = true;
                             }
                         } else {
-                            // Within epsilon — treat as equal to the bound.
-                            // Re-run snap so the bound gets applied.
-                            const stackedSnap = snapToBoundHeuristic(intrinsic, [intrinsic[1]]);
+                            // Stacked extremes are within intrinsic bounds.
+                            // Re-run snap on the stacked extremes to pick up
+                            // bounds that individual values missed (e.g.,
+                            // individual shares of 20–40% don't snap to 100%,
+                            // but stacked totals of ~100% should).
+                            const stackedSnap = snapToBoundHeuristic(intrinsic, [maxPos, minNeg]);
                             if (stackedSnap) {
+                                // Merge with existing constraint: keep any bound
+                                // already snapped from individual values, add any
+                                // new bound from stacked totals.
                                 if (cs.domainConstraint) {
                                     effectiveDomainConstraint = {
                                         min: cs.domainConstraint.min ?? stackedSnap.min,
@@ -860,27 +856,6 @@ function vlApplyFieldContext(
                                 }
                             }
                         }
-                    } else if (maxTotal !== undefined) {
-                        // Stacked totals are within intrinsic bounds.
-                        // Re-run snap on stacked totals to pick up bounds
-                        // that individual values missed (e.g., individual
-                        // shares of 20–40% don't snap to 100%, but stacked
-                        // totals of ~100% should).
-                        const stackedSnap = snapToBoundHeuristic(intrinsic, [maxTotal]);
-                        if (stackedSnap) {
-                            // Merge with existing constraint: keep any bound
-                            // already snapped from individual values, add any
-                            // new bound from stacked totals.
-                            if (cs.domainConstraint) {
-                                effectiveDomainConstraint = {
-                                    min: cs.domainConstraint.min ?? stackedSnap.min,
-                                    max: cs.domainConstraint.max ?? stackedSnap.max,
-                                    clamp: cs.domainConstraint.clamp || stackedSnap.clamp,
-                                };
-                            } else {
-                                effectiveDomainConstraint = stackedSnap;
-                            }
-                        }
                     }
                 } else if (cs.domainConstraint) {
                     // No intrinsic domain to compare against → skip to be safe
@@ -890,7 +865,16 @@ function vlApplyFieldContext(
 
             if (effectiveDomainConstraint && enc.type === 'quantitative' && (ch === 'x' || ch === 'y') && !enc.bin && !skipDomain) {
                 if (!enc.scale) enc.scale = {};
-                const { min, max, clamp } = effectiveDomainConstraint;
+                let { min } = effectiveDomainConstraint;
+                const { max, clamp } = effectiveDomainConstraint;
+                // The resolved zero decision (engine default, or the host's
+                // includeZero_x/_y override) is authoritative. When it says "no
+                // zero", a lower bound of exactly 0 in the semantic domain is
+                // merely a non-negativity floor, not a real semantic minimum —
+                // drop it so the axis fits the data instead of being re-pinned
+                // to zero. Length marks (bar/area/rect) always keep zero.
+                const wantsNoZero = cs.zero?.zero === false;
+                if (!isBarLike && wantsNoZero && min === 0) min = undefined;
                 if (min !== undefined && max !== undefined) {
                     enc.scale.domain = [min, max];
                     // For non-bar marks (scatter, line, etc.), the explicit
@@ -901,11 +885,13 @@ function vlApplyFieldContext(
                     // zero with correct proportional lengths — VL extends
                     // the domain to include 0, and the upper bound is still
                     // capped by the domain constraint (e.g., [0,5] not [0,6]).
-                    if (!isBarLike && enc.scale.zero !== undefined) {
+                    // Never clobber a decided zero:false.
+                    if (!isBarLike && enc.scale.zero !== undefined && !wantsNoZero) {
                         delete enc.scale.zero;
                     }
                 } else {
-                    // Partial constraint — snap one end while auto-fitting the other.
+                    // Partial constraint (or the zero-floor dropped above) — snap
+                    // the bounded end while auto-fitting the other.
                     // E.g., Percentage data at 97% → domainMax = 100, domainMin auto-fits.
                     if (min !== undefined) enc.scale.domainMin = min;
                     if (max !== undefined) enc.scale.domainMax = max;

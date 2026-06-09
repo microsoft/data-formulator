@@ -371,6 +371,33 @@ export interface ZeroDecision {
     domainPadFraction: number;
     /** The zero class that drove this decision */
     zeroClass: ZeroClass | 'unknown';
+    /**
+     * Whether this is a *forced* (non-debatable) decision:
+     *   - `true`  → mandatory: a length/area mark, data that crosses zero, or a
+     *     zero-meaningful type on a length mark. Including zero is structural.
+     *   - `false` → the engine still has a recommended `zero`, but anchoring at
+     *     zero is at least conceptually a choice.
+     * `forced` records the structural side of the decision; it is NOT the gate
+     * for the UI toggle — see `uncertain` below.
+     */
+    forced: boolean;
+    /**
+     * Whether the zero-vs-fit choice is a *genuine toss-up worth surfacing* to
+     * the user. Hosts read this (via the property `check`) to decide whether to
+     * show the "Zero X/Y" toggle at all.
+     *
+     * We deliberately keep this narrow to avoid UI clutter: it is `true` ONLY
+     * for a zero-meaningful field on a position mark whose data sits far enough
+     * from zero that anchoring at zero would noticeably compress the view (a
+     * real zoom-in-vs-anchor tradeoff). Every other case — arbitrary types
+     * (zero is meaningless, just fit the data), contextual types (the engine's
+     * data-range call is confident enough), meaningful types whose data already
+     * spans most of the way to zero (the choice barely changes anything), and
+     * all forced/unknown cases — is `false`, so no toggle is shown and the
+     * engine's `zero` value simply applies. The engine's `zero` remains the
+     * recommended default when the toggle is shown.
+     */
+    uncertain: boolean;
 }
 
 // zeroMeaningfulTypes, zeroArbitraryTypes, zeroContextualTypes, zeroPadMap:
@@ -400,6 +427,30 @@ export function getZeroClass(semanticType: string): ZeroClass | 'unknown' {
  * @param markType      The mark type ('bar', 'line', 'point', etc.)
  * @param values        Optional numeric data values for data-range analysis
  */
+/**
+ * Above this ratio of dataMin/dataMax, the data band sits far enough above
+ * zero that anchoring the axis at zero would leave at least half the axis
+ * empty — a big enough gap that "zoom into the data" vs "keep the zero
+ * reference" is a genuine toss-up worth offering as a toggle. Below it, the
+ * data already spans most of the way to zero, so including zero barely changes
+ * the view and we keep it on silently.
+ */
+const ZERO_BASELINE_GAP_THRESHOLD = 0.5;
+
+/**
+ * True when strictly-positive data sits far enough from zero that anchoring at
+ * zero would noticeably compress the view (see ZERO_BASELINE_GAP_THRESHOLD).
+ * Returns false for empty data or any data that touches/crosses zero (there the
+ * baseline is inside the data range, so it is not a debatable gap).
+ */
+function dataFarFromZero(values?: number[]): boolean {
+    if (!values || values.length === 0) return false;
+    const dataMin = Math.min(...values);
+    const dataMax = Math.max(...values);
+    if (dataMin <= 0 || dataMax <= 0) return false;
+    return dataMin / dataMax >= ZERO_BASELINE_GAP_THRESHOLD;
+}
+
 export function computeZeroDecision(
     semanticType: string,
     channel: string,
@@ -411,24 +462,47 @@ export function computeZeroDecision(
     const entry = getRegistryEntry(semanticType);
     const zeroClass = getZeroClass(semanticType);
 
-    // --- Zero-meaningful types: always zero ---
+    // --- Zero-meaningful types: zero is the conventional baseline ---
     if (zeroClass === 'meaningful') {
-        return { zero: true, domainPadFraction: 0, zeroClass };
+        // Length marks (bar/area/rect): the baseline is structurally required —
+        // a bar's length is meaningless without zero. Not debatable.
+        if (isBarLike) {
+            return { zero: true, domainPadFraction: 0, zeroClass, forced: true, uncertain: false };
+        }
+        // Position marks (line/point/strip): zero is the conventional reference,
+        // so the recommended default is ON. We only *offer* the toggle when the
+        // data sits far enough from zero that anchoring at zero would noticeably
+        // compress the view — a genuine zoom-in-vs-keep-the-reference toss-up.
+        // When the data already spans most of the way to zero, the choice barely
+        // changes anything, so we keep zero on silently and hide the toggle.
+        return {
+            zero: true,
+            domainPadFraction: 0,
+            zeroClass,
+            forced: false,
+            uncertain: dataFarFromZero(values),
+        };
     }
 
     // --- Zero-arbitrary types: never zero, apply padding ---
     if (zeroClass === 'arbitrary') {
-        // Exception: bar/area marks with data that touches/crosses zero
+        // Exception: bar/area marks with data that touches/crosses zero —
+        // the baseline is structurally required, so this is forced.
         if (isBarLike && values && values.length > 0) {
             const dataMin = Math.min(...values);
             if (dataMin <= 0) {
-                return { zero: true, domainPadFraction: 0, zeroClass };
+                return { zero: true, domainPadFraction: 0, zeroClass, forced: true, uncertain: false };
             }
         }
+        // Strictly away from zero on an arbitrary scale: zero is meaningless
+        // here, so data-fit is simply the right answer — there is nothing to
+        // debate and no toggle is offered.
         return {
             zero: false,
             domainPadFraction: entry.zeroPad || 0.05,
             zeroClass,
+            forced: false,
+            uncertain: false,
         };
     }
 
@@ -437,33 +511,36 @@ export function computeZeroDecision(
         const dataMin = Math.min(...values);
         const dataMax = Math.max(...values);
 
-        // Data touches/crosses zero → include it
+        // Data touches/crosses zero → include it (forced: the baseline is
+        // inside the data range).
         if (dataMin <= 0) {
-            return { zero: true, domainPadFraction: 0, zeroClass };
+            return { zero: true, domainPadFraction: 0, zeroClass, forced: true, uncertain: false };
         }
 
         // How far is data from zero?
         const proximity = dataMax > 0 ? dataMin / dataMax : 0;
 
-        // Close to zero → include it
+        // Close to zero → include it. The engine's data-range call is confident
+        // enough here, so no toggle is offered.
         if (proximity < 0.3) {
-            return { zero: true, domainPadFraction: 0, zeroClass };
+            return { zero: true, domainPadFraction: 0, zeroClass, forced: false, uncertain: false };
         }
 
-        // Far from zero + bar/area → still include (bar length integrity)
+        // Far from zero + bar/area → still include (bar length integrity, forced).
         if (isBarLike) {
-            return { zero: true, domainPadFraction: 0, zeroClass };
+            return { zero: true, domainPadFraction: 0, zeroClass, forced: true, uncertain: false };
         }
 
-        // Far from zero + non-bar → data-fit with padding
-        return { zero: false, domainPadFraction: 0.05, zeroClass };
+        // Far from zero + non-bar → data-fit with padding (engine's call, no toggle).
+        return { zero: false, domainPadFraction: 0.05, zeroClass, forced: false, uncertain: false };
     }
 
     // --- No semantic type or unrecognized → no opinion, let VL decide ---
+    // Unknown class is never debatable: we have no basis for a toggle.
     if (isBarLike && isPositional) {
-        return { zero: true, domainPadFraction: 0, zeroClass: 'unknown' };
+        return { zero: true, domainPadFraction: 0, zeroClass: 'unknown', forced: true, uncertain: false };
     }
-    return { zero: false, domainPadFraction: 0.05, zeroClass: 'unknown' };
+    return { zero: false, domainPadFraction: 0.05, zeroClass: 'unknown', forced: true, uncertain: false };
 }
 
 /**

@@ -73,6 +73,24 @@ export const transition = {
     slow: 'all 0.3s ease',
 } as const;
 
+// ── Floating overlay controls ──────────────────────────────────────────
+
+/**
+ * Floating icon-button pill for canvas overlays (chart visualization toolbar,
+ * report action buttons). A semi-transparent "glass" fill with a defined
+ * border so the control stays legible over busy, colorful canvases as well as
+ * plain document backgrounds. Resting state is neutral; spread this and
+ * override `color` / `&:hover` for destructive or active variants.
+ */
+export const floatingPillSx: SxProps = {
+    backgroundColor: 'background.paper',
+    border: `1px solid ${borderColor.divider}`,
+    boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+    color: 'text.secondary',
+    transition: transition.normal,
+    '&:hover': { backgroundColor: 'action.hover', color: 'primary.main' },
+};
+
 // ── Border radius ──────────────────────────────────────────────────────
 // Values are MUI spacing units (1 unit = 4px via theme.spacing)
 

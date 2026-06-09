@@ -194,6 +194,8 @@
   "report": {
     "deleteReport": "删除报告",
     "backToEditor": "返回编辑器",
+    "editReport": "编辑报告",
+    "doneEditing": "完成编辑",
     "createChartifactReport": "创建 Chartifact 报告",
     "shareReportAsImage": "以图片分享报告",
     "couldNotFindContent": "无法找到要截取的报告内容",
@@ -235,6 +237,12 @@
     "createChartifact": "创建 Chartifact",
     "copied": "已复制！",
     "copyContent": "复制内容",
+    "contentCopied": "报告内容已复制到剪贴板。",
+    "inspectingCharts": "检查图表中...",
+    "inspectedCharts": "已检查图表",
+    "downloadAndShare": "下载与分享",
+    "saveAsImage": "保存为图片",
+    "downloadPdf": "下载 PDF",
     "imageActions": "图片",
     "copyImage": "复制图片到剪贴板",
     "downloadPng": "下载 PNG",
@@ -425,6 +433,7 @@
     "runningCode": "运行代码中...",
     "creatingChart": "生成图表中...",
     "inspectingData": "检查数据源中...",
+    "inspectedData": "已检查数据源",
     "rulesLoaded": "读取规则：{{rules}}",
     "knowledgeLoaded": "读取知识：{{knowledge}}",
     "searching": "搜索中...",
@@ -781,7 +790,8 @@
     "numberedList": "有序列表",
     "quote": "引用",
     "generating": "生成中…",
-    "writingReport": "正在撰写报告…"
+    "writingReport": "正在撰写报告…",
+    "workingTitle": "正在处理你的报告"
   },
   "sidebar": {
     "openDataSources": "数据源",

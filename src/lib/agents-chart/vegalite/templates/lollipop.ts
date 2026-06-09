@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
+import { ChartTemplateDef, ChartPropertyDef, EncodingActionDef } from '../../core/types';
+import { makeSortAction } from '../../core/encoding-actions';
 import { detectBandedAxisFromSemantics, setMarkProp } from './utils';
 
 export const lollipopChartDef: ChartTemplateDef = {
@@ -128,4 +129,5 @@ export const lollipopChartDef: ChartTemplateDef = {
     properties: [
         { key: "dotSize", label: "Dot Size", type: "continuous", min: 20, max: 300, step: 10, defaultValue: 80 },
     ] as ChartPropertyDef[],
+    encodingActions: [makeSortAction()] as EncodingActionDef[],
 };

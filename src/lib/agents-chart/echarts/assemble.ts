@@ -59,6 +59,7 @@ import {
     InstantiateContext,
 } from '../core/types';
 import type { ChartWarning } from '../core/types';
+import { applyEncodingOverrides } from '../core/encoding-overrides';
 import { ecGetTemplateDef } from './templates';
 import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { toTypeString, type SemanticAnnotation } from '../core/field-semantics';
@@ -91,7 +92,7 @@ import { getPaletteForScheme } from './colormap';
  */
 export function assembleECharts(input: ChartAssemblyInput): any {
     const chartType = input.chart_spec.chartType;
-    const encodings = input.chart_spec.encodings;
+    const rawEncodings = input.chart_spec.encodings;
     const data = input.data.values ?? [];
     const semanticTypes = input.semantic_types ?? {};
     const canvasSize = input.chart_spec.canvasSize ?? { width: 400, height: 320 };
@@ -101,6 +102,12 @@ export function assembleECharts(input: ChartAssemblyInput): any {
     if (!chartTemplate) {
         throw new Error(`Unknown ECharts chart type: ${chartType}. Use ecAllTemplateDefs to see available types.`);
     }
+
+    // Compose Category-B encoding-action overrides (stored by the host in
+    // chartProperties, keyed by action key) onto the base encodings before any
+    // pipeline phase runs. Flint owns the transform; the host only stores the
+    // override value. See applyEncodingOverrides / EncodingActionDef.
+    const encodings = applyEncodingOverrides(chartTemplate, rawEncodings, chartProperties);
 
     const warnings: ChartWarning[] = [];
 

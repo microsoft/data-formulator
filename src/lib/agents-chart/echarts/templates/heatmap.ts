@@ -10,7 +10,7 @@
  *       and a visualMap component for the color scale.
  */
 
-import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
+import { ChartTemplateDef, EncodingActionDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS } from './utils';
 import { getPaletteForScheme } from '../colormap';
 
@@ -55,7 +55,7 @@ export const ecHeatmapDef: ChartTemplateDef = {
         // (defaultBandSize=20, minStep=6), matching VL heatmap sizing.
     }),
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
+        const { channelSemantics, table, colorDecisions, encodings } = ctx;
         const xCS = channelSemantics.x;
         const yCS = channelSemantics.y;
         const colorCS = channelSemantics.color;
@@ -101,7 +101,14 @@ export const ecHeatmapDef: ChartTemplateDef = {
         if (maxVal === -Infinity) maxVal = 1;
 
         // Color scheme
-        const schemeName = chartProperties?.colorScheme || 'viridis';
+        // Category-B encoding override: the compiler already composed
+        // chartProperties.colorScheme onto encoding.color.scheme before assembly
+        // (see applyEncodingOverrides), so we just read it here. This also covers
+        // charts saved before the migration, whose value lived in
+        // chartProperties.colorScheme.
+        const encScheme = encodings?.color?.scheme;
+        const userScheme = (encScheme && encScheme !== 'default') ? encScheme : undefined;
+        const schemeName = userScheme || 'viridis';
         const decision = colorDecisions?.color ?? colorDecisions?.group;
         const isDivergingScale =
             decision?.schemeType === 'diverging'
@@ -238,24 +245,32 @@ export const ecHeatmapDef: ChartTemplateDef = {
             }
         }
     },
-    properties: [
+    encodingActions: [
         {
-            key: 'colorScheme', label: 'Scheme', type: 'discrete', options: [
-                { value: undefined, label: 'Default (Viridis)' },
-                { value: 'viridis', label: 'Viridis' },
-                { value: 'inferno', label: 'Inferno' },
-                { value: 'magma', label: 'Magma' },
-                { value: 'plasma', label: 'Plasma' },
-                { value: 'turbo', label: 'Turbo' },
-                { value: 'blues', label: 'Blues' },
-                { value: 'reds', label: 'Reds' },
-                { value: 'greens', label: 'Greens' },
-                { value: 'oranges', label: 'Oranges' },
-                { value: 'purples', label: 'Purples' },
-                { value: 'greys', label: 'Greys' },
-                { value: 'blueorange', label: 'Blue-Orange (diverging)' },
-                { value: 'redblue', label: 'Red-Blue (diverging)' },
-            ],
-        } as ChartPropertyDef,
-    ],
+            key: 'colorScheme',
+            label: 'Scheme',
+            isApplicable: (ctx) => !!ctx.encodings.color?.field,
+            dependencies: ['color'],
+            control: {
+                type: 'discrete', options: [
+                    { value: undefined, label: 'Default (Viridis)' },
+                    { value: 'viridis', label: 'Viridis' },
+                    { value: 'inferno', label: 'Inferno' },
+                    { value: 'magma', label: 'Magma' },
+                    { value: 'plasma', label: 'Plasma' },
+                    { value: 'turbo', label: 'Turbo' },
+                    { value: 'blues', label: 'Blues' },
+                    { value: 'reds', label: 'Reds' },
+                    { value: 'greens', label: 'Greens' },
+                    { value: 'oranges', label: 'Oranges' },
+                    { value: 'purples', label: 'Purples' },
+                    { value: 'greys', label: 'Greys' },
+                    { value: 'blueorange', label: 'Blue-Orange (diverging)' },
+                    { value: 'redblue', label: 'Red-Blue (diverging)' },
+                ],
+            },
+            get: (enc) => enc.color?.scheme,
+            set: (enc, value) => ({ ...enc, color: { ...enc.color, scheme: value } }),
+        },
+    ] as EncodingActionDef[],
 };

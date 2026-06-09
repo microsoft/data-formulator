@@ -19,6 +19,7 @@
     "saveCopy": "保存副本",
     "duplicate": "复制图表",
     "delete": "删除",
+    "deleteChart": "删除图表",
     "sampleSize": "样本大小",
     "sampleSizeAria": "样本大小",
     "sampleAgain": "重新采样！",

@@ -52,7 +52,8 @@ import {
     LayoutDeclaration,
     InstantiateContext,
 } from '../core/types';
-import type { ChartWarning } from '../core/types';
+import type { ChartWarning, ChartOption, OptionEvalContext } from '../core/types';
+import { applyEncodingOverrides } from '../core/encoding-overrides';
 import { vlGetTemplateDef } from './templates';
 import { inferVisCategory, computeZeroDecision } from '../core/semantic-types';
 import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-semantics';
@@ -102,7 +103,7 @@ const escapeVlFieldName = (name: string): string =>
  */
 export function assembleVegaLite(input: ChartAssemblyInput): any {
     const chartType = input.chart_spec.chartType;
-    const encodings = input.chart_spec.encodings;
+    const rawEncodings = input.chart_spec.encodings;
     const data = input.data.values ?? [];
     const semanticTypes = input.semantic_types ?? {};
     const canvasSize = input.chart_spec.canvasSize ?? { width: 400, height: 320 };
@@ -113,6 +114,45 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         throw new Error(`Unknown chart type: ${chartType}`);
     }
 
+    // Compose Category-B encoding-action overrides (stored by the host in
+    // chartProperties, keyed by action key) onto the base encodings before any
+    // pipeline phase runs. Flint owns the transform; the host only stores the
+    // override value. See applyEncodingOverrides / EncodingActionDef.
+    //
+    // Some actions (e.g. Sort) must know each channel's resolved encoding TYPE
+    // to decide which position axis is the discrete category and which is the
+    // measure. The host leaves `type` unset ("auto") for most encodings, so we
+    // run a preliminary semantics pass to fill in the inferred types, compose
+    // the overrides onto the type-enriched encodings, then re-resolve semantics
+    // on the result below (so that, e.g., a value-sort correctly suppresses the
+    // field's canonical ordinal ordering).
+    const convertedData = convertTemporalData(data, semanticTypes);
+    const prelimSemantics = resolveChannelSemantics(
+        rawEncodings, data, semanticTypes, convertedData,
+    );
+    const typedRawEncodings: Record<string, ChartEncoding> = {};
+    for (const [ch, enc] of Object.entries(rawEncodings)) {
+        typedRawEncodings[ch] = enc.type
+            ? enc
+            : { ...enc, type: prelimSemantics[ch]?.type };
+    }
+    // Axis dtype override (`xAxisType` / `yAxisType` properties): the user can
+    // force a position channel's interpretation between a continuous time scale
+    // ('temporal') and discrete bands ('nominal') for date-like fields that
+    // carry a dual interpretation. Applies to either axis — x on a vertical
+    // bar/line, y on a horizontal (transposed) bar/lollipop. Applied at the
+    // encoding level so the whole pipeline (sorting, layout, formatting) honors
+    // it — resolveChannelSemantics treats an explicit encoding.type as
+    // authoritative. Whether each control is *offered* is decided by the
+    // property's own `check` (see AXIS_DTYPE_PROPERTIES).
+    for (const axis of ['x', 'y'] as const) {
+        const choice = chartProperties?.[`${axis}AxisType`];
+        if ((choice === 'temporal' || choice === 'nominal') && typedRawEncodings[axis]?.field) {
+            typedRawEncodings[axis] = { ...typedRawEncodings[axis], type: choice };
+        }
+    }
+    const encodings = applyEncodingOverrides(chartTemplate, typedRawEncodings, chartProperties);
+
     const warnings: ChartWarning[] = [];
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -121,9 +161,6 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
 
     const tplMark = chartTemplate.template?.mark;
     const templateMarkType = typeof tplMark === 'string' ? tplMark : tplMark?.type;
-
-    // Convert temporal data once — feeds semantic resolution and all downstream stages
-    const convertedData = convertTemporalData(data, semanticTypes);
 
     const channelSemantics = resolveChannelSemantics(
         encodings, data, semanticTypes, convertedData,
@@ -139,6 +176,66 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
             cs.zero = computeZeroDecision(
                 cs.semanticAnnotation.semanticType, channel, effectiveMarkType, numericValues,
             );
+        }
+    }
+
+    // ── Zero-baseline override (position-cognitive axes) ──
+    // computeZeroDecision (above) is the single authority on whether an axis
+    // includes zero. For axes where that call is a genuine toss-up worth
+    // surfacing (see makeZeroBaselineCheck / ZeroDecision.uncertain), the host
+    // may override it via the stored config `includeZero_x`/`includeZero_y` (a boolean on/off
+    // toggle). We honor it by overwriting `cs.zero.zero`, leaving the rest of
+    // the decision intact, so every downstream consumer — the spec applier
+    // (instantiate-spec) AND banking layout (compute-layout reads cs.zero) —
+    // renders the user's choice consistently. Placed before the log-scale
+    // override and the layout phase so banking is zero-aware of the override.
+    if (chartTemplate.markCognitiveChannel === 'position') {
+        for (const axis of ['x', 'y'] as const) {
+            const cs = channelSemantics[axis];
+            if (!cs?.field || cs.type !== 'quantitative' || !cs.zero) continue;
+            const choice = chartProperties?.[`includeZero_${axis}`];
+            if (choice === undefined) continue; // keep the engine's decision
+            cs.zero = { ...cs.zero, zero: choice };
+        }
+    }
+
+    // ── Log-scale override (position-cognitive axes) ──
+    // A log/symlog scale only makes sense on a continuous quantitative POSITION
+    // axis (scatter/line/strip) — never on length/area marks, where bars encode
+    // magnitude as length from a zero baseline (log destroys the baseline and
+    // log(0) is undefined). The engine recommends log conservatively in
+    // resolveScaleType (→ cs.scaleType). Here we apply the user's per-axis
+    // override of that recommendation via the stored config `logScale_x`/
+    // `logScale_y` (a boolean on/off toggle). Whether the control is *offered*
+    // and its recommended default are decided by the property's own `check`
+    // (see LOG_SCALE_PROPERTIES) and surfaced through `getChartOptions`.
+    // On non-position marks we additionally strip any recommended log/symlog
+    // scale so length/area encodings always render linearly from their baseline.
+    if (chartTemplate.markCognitiveChannel === 'position') {
+        for (const axis of ['x', 'y'] as const) {
+            const cs = channelSemantics[axis];
+            if (!cs?.field || cs.type !== 'quantitative') continue;
+            // Binned axes use VL's linear bin computation — log conflicts.
+            if (chartTemplate.template?.encoding?.[axis]?.bin) continue;
+
+            const choice = chartProperties?.[`logScale_${axis}`];
+            if (choice === undefined) continue; // keep the engine's recommendation
+
+            // The control is a simple on/off toggle: `true` forces log (symlog
+            // when zeros are present), `false` forces linear.
+            const hasZero = data.some(row => row[cs.field] === 0);
+            cs.scaleType = choice === false
+                ? undefined                       // force linear
+                : (hasZero ? 'symlog' : 'log');   // force log (symlog if zeros)
+        }
+    } else {
+        // Non-position mark (length/area): never apply a log/symlog scale —
+        // these encodings read magnitude from a zero baseline that log destroys.
+        for (const axis of ['x', 'y'] as const) {
+            const cs = channelSemantics[axis];
+            if (cs?.scaleType === 'log' || cs?.scaleType === 'symlog') {
+                cs.scaleType = undefined;
+            }
         }
     }
 
@@ -451,14 +548,62 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     }
     result._width = layoutResult.subplotWidth;
     result._height = layoutResult.subplotHeight;
-    // Expose computed config so the UI can seed toggle defaults from heuristic results.
-    // Only include keys when the corresponding property is relevant (e.g. faceted).
-    const computedConfig: Record<string, any> = {};
-    if (hasFacetedQuant) {
-        computedConfig.independentYAxis = computedIndependentYAxis;
-    }
-    result._computedConfig = computedConfig;
+    // Annotated option catalog: every configurable property this template
+    // exposes, tagged with whether it is *applicable* for this spec + data and
+    // the *value* the compiler will use (host choice if set, else the engine's
+    // recommended default). This is the single contract a host (DF, an AI agent,
+    // another renderer) reads to know which controls to surface and how to seed
+    // them — see ChartOption / getChartOptions. Passing a non-applicable
+    // property back to the compiler is accepted but silently ignored.
+    //
+    // Each property decides its own applicability through its pure `check(ctx)`
+    // (the single source of truth, co-located with the property). The one piece
+    // that can't live there is `independentYAxis`'s *recommended default* —
+    // whether to turn it on automatically — which is layout-coupled (it needs the
+    // resolved facet grid and the assembled spec's facet/y structure, differing
+    // for 1-D vs 2-D facets); that value is computed above and threaded in here.
+    const evalCtx: OptionEvalContext = {
+        encodings,
+        channelSemantics,
+        data,
+        chartProperties,
+    };
+    const layoutCoupledRecommendation: Record<string, any> = {
+        independentYAxis: computedIndependentYAxis,
+    };
+
+    result._options = (chartTemplate.properties ?? []).map((def): ChartOption => {
+        const ev = def.check?.(evalCtx);
+        const applicable = ev ? ev.applicable : true;
+        const recommended = layoutCoupledRecommendation[def.key] ?? ev?.recommendedValue;
+        const value = chartProperties?.[def.key] ?? recommended ?? def.defaultValue;
+        // Strip the `check` rule — a ChartOption is the resolved, serializable
+        // answer (`applicable`/`value`), not the predicate that produced it.
+        const { check, ...rest } = def;
+        return { ...rest, applicable, value };
+    });
     return result;
+}
+
+/**
+ * Inspect a chart spec + dataset and report the configurable options Flint
+ * exposes for it, each annotated with whether it is *applicable* and the *value*
+ * the compiler will use (see ChartOption).
+ *
+ * This is the "ask Flint what knobs are available" entry point. A host calls it
+ * with the same input it would pass to `assembleVegaLite`, renders a control for
+ * each applicable option seeded from `value`, and feeds the user's choices back
+ * via `chart_spec.chartProperties`. Because applicability is derived from the
+ * data (not from the chosen values), the set is stable across that loop.
+ *
+ * It runs the same analysis pipeline as `assembleVegaLite` (the options are a
+ * by-product of assembly), so applicability can never drift from what the
+ * compiler actually does — a property reported applicable is exactly one the
+ * compiler will honor.
+ */
+export function getChartOptions(input: ChartAssemblyInput): ChartOption[] {
+    const spec = assembleVegaLite(input);
+    return spec && Array.isArray(spec._options) ? spec._options : [];
 }
 
 // ===========================================================================

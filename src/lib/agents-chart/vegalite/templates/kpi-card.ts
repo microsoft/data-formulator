@@ -516,7 +516,7 @@ export const kpiCardDef: ChartTemplateDef = {
             max: 1,
             step: 0.05,
             defaultValue: 0.5,
-            visibleWhen: { channels: ['goal'] },
+            check: (ctx) => ({ applicable: !!ctx.encodings.goal?.field }),
         },
     ] as ChartPropertyDef[],
 };

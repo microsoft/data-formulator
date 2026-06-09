@@ -445,19 +445,188 @@ export interface InstantiateContext {
 // ---------------------------------------------------------------------------
 
 /**
+ * The minimal, render-time context an option's applicability check reads.
+ *
+ * Shared by both option families so they use one predicate convention:
+ *   - `ChartPropertyDef.check` (Category A, data-aware properties)
+ *   - `EncodingActionDef.isApplicable` (Category B, encoding actions)
+ *
+ * `encodings` is always present (it's all a host needs to gate an encoding
+ * action). The remaining fields are populated by the compiler during assembly
+ * and let data-aware *properties* inspect the actual values + resolved
+ * semantics; a predicate that only reads `encodings` (e.g. "is color bound?")
+ * works with the bare `{ encodings }` a host can build on its own.
+ */
+export interface OptionEvalContext {
+    /** User-level encodings (channel → field binding). Always present. */
+    encodings: Record<string, ChartEncoding>;
+    /** Per-channel semantic decisions (Phase 0). Present during assembly. */
+    channelSemantics?: Record<string, ChannelSemantics>;
+    /** Full (pre-overflow) data rows, for data-aware preconditions. */
+    data?: any[];
+    /** Current user-set chart property overrides. */
+    chartProperties?: Record<string, any>;
+}
+
+/**
  * Defines a configurable property for a chart template.
  * Describes the value domain; the app decides how to render it.
  */
-export type ChartPropertyDef = {
-    key: string;
-    label: string;
-    /** Optional predicate: show this property only when certain encoding channels are assigned. */
-    visibleWhen?: { channels: string[] };
-} & (
+
+/** The value-domain variants a property can take (the discriminated arm). */
+export type ChartPropertyVariant =
     | { type: 'continuous'; min: number; max: number; step?: number; defaultValue?: number }
     | { type: 'discrete';  options: { value: any; label: string }[]; defaultValue?: any }
-    | { type: 'binary';    defaultValue?: boolean }
-);
+    | { type: 'binary';    defaultValue?: boolean };
+
+/**
+ * The renderable descriptor of a property: its identity, label, and value
+ * domain. This is the part a host needs to draw a control, and it is shared
+ * verbatim by both sides of the Flint↔host boundary:
+ *
+ *   - `ChartPropertyDef`  = `ChartProperty` + the applicability *rule* (`check`)
+ *   - `ChartOption`       = `ChartProperty` + the resolved *answer* (`applicable`/`value`)
+ *
+ * Keeping the descriptor common means the template definition and the resolved
+ * option never drift in shape; they differ only by rule-vs-answer.
+ */
+export type ChartProperty = {
+    key: string;
+    label: string;
+} & ChartPropertyVariant;
+
+export type ChartPropertyDef = ChartProperty & {
+    /**
+     * The single applicability check for this property, co-located with it so a
+     * reader sees *why* an option is offered without digging into the compiler.
+     * Pure — reads only `OptionEvalContext` — and returns:
+     *   - `applicable`: is this property worth offering for the current spec +
+     *     data? It subsumes both structural gates (a channel is bound, e.g.
+     *     `!!ctx.encodings.color?.field`) and data-aware ones (a wide-range axis,
+     *     an additive single-sign measure, …). A property with no `check`
+     *     is always offered.
+     *   - `recommendedValue` (optional): the engine's suggested default, used to
+     *     seed the control when the host hasn't set an explicit value.
+     *
+     * Because it requires no live data to answer a structural check, a static
+     * host (the encoding-shelf popover) can call it with just `{ encodings }`;
+     * a data-aware property then reports `applicable: false` there — surfacing
+     * only in the data-aware quick-config bar — without needing a separate flag.
+     */
+    check?: (ctx: OptionEvalContext) => { applicable: boolean; recommendedValue?: any };
+};
+
+/**
+ * A chart property descriptor annotated with its applicability and resolved
+ * value for a *specific* spec + dataset. Produced by `getChartOptions` (and
+ * carried on the assembled spec under `_options`).
+ *
+ * This is the contract between Flint and any host (Data Formulator, an AI agent,
+ * another renderer):
+ *
+ *   - `applicable` — did this property pass its precondition for this render?
+ *     Each property answers via its own `check`: structural ones (e.g. stack
+ *     mode) are applicable when their channel is bound; data-aware ones (e.g.
+ *     per-axis log scale, faceted independent y) only when the data warrants it
+ *     (wide-range continuous axis, faceted quantitative y, …). A host should
+ *     surface a control only when it is applicable; passing a non-applicable
+ *     property to the compiler is accepted but silently ignored.
+ *   - `value` — the value Flint will actually use: the host's explicit choice
+ *     (from `chart_spec.chartProperties[key]`) when set, otherwise the engine's
+ *     recommended default. Hosts seed their control from this so an "auto"
+ *     recommendation (e.g. log on a 10⁶× axis) is reflected without the host
+ *     having to recompute it.
+ *
+ * A `ChartOption` shares the renderable `ChartProperty` descriptor with the
+ * template def but carries the *answer* (`applicable`/`value`) instead of the
+ * *rule* (`check`). That keeps it a resolved, serializable view a host consumes
+ * across the spec/JSON boundary (Python path included), where the rule function
+ * wouldn't survive anyway.
+ */
+export type ChartOption = ChartProperty & {
+    /** Did this property pass its precondition for the current spec + data? */
+    applicable: boolean;
+    /** Explicit host choice if set, otherwise the engine's recommended default. */
+    value: any;
+};
+
+
+/**
+ * Defines a "quick action" whose effect is an **encoding transform** (Category B):
+ * sort, color scheme, aggregate, type, orientation (x↔y swap), etc.
+ *
+ * These operate at a different pipeline stage than ChartPropertyDef:
+ *
+ *   Category B (this type):  (encoding + override) ──► transformed encoding ──► assemble ──► spec
+ *                                         └──── set() ────┘
+ *   Category A (properties): encoding ──► assemble ──► spec ──► (props tweak spec in instantiate)
+ *
+ * An encoding action transforms the *input* to assembly, so the full pipeline
+ * (semantic resolution → overflow → layout → assembly) re-runs on the result.
+ * That is exactly why structural options must live here: sort changes which
+ * categories survive overflow, aggregate changes the data values, orientation
+ * changes which axis is banded — none of which can be faked by patching the
+ * assembled spec afterwards. ChartPropertyDef, by contrast, only overrides the
+ * already-assembled spec and is limited to visual decoration (cornerRadius,
+ * opacity, curve, donut hole).
+ *
+ * Storage = override, not encoding state. The action's value is stored by the
+ * host as a *configuration override* (exactly like a chart property), keyed by
+ * `key` inside `chart_spec.chartProperties`. The encoding map (the encoding
+ * shelf's state) is left untouched. The compiler — not the host — applies the
+ * override at assemble time:
+ *
+ *   transformedEncodings = set(currentEncodings, chartProperties[key])
+ *
+ * So Flint always sees just "override value + current encoding" and composes
+ * them; it never mutates persistent encoding state. (See applyEncodingOverrides.)
+ *
+ *   get(encodings)        → derive the control's displayed value from the base
+ *                           encodings when no override is set
+ *   set(encodings, value) → compose: return the encodings with the override applied
+ *
+ * `set` is declarative: it returns what the encodings should be after the
+ * override, not a list of imperative operations. Any transform — changing one
+ * property, swapping two channels, clearing a channel — is just "produce a new
+ * map", so there is no operation taxonomy to grow.
+ *
+ * `dependencies` declares which encoding channels the override is computed
+ * against. It is a pure declaration consumed by the *host*: when the user edits
+ * one of these channels in the encoding shelf, the host clears (resets) the
+ * override so a stale value can't linger. Flint never resets — reset is host
+ * logic; Flint only ever composes override + current encoding.
+ *
+ * The control shape mirrors ChartPropertyDef so the host can reuse the same
+ * renderers; only the pipeline stage differs (encoding transform vs spec tweak).
+ */
+export type EncodingActionDef = {
+    key: string;
+    label: string;
+    /**
+     * Channels this override is computed against. When the host detects an edit
+     * to any of these channels in the encoding shelf, it resets this override to
+     * default. Pure declaration — Flint itself never reads this for composition.
+     */
+    dependencies?: string[];
+    /** How to render the control (same value domains as ChartPropertyDef). */
+    control:
+        | { type: 'continuous'; min: number; max: number; step?: number }
+        | { type: 'discrete';  options: { value: any; label: string }[] }
+        | { type: 'binary' };
+    /**
+     * Optional applicability predicate — the single gate for whether this action
+     * is offered. It reads the shared `OptionEvalContext`; in practice an action
+     * only needs `ctx.encodings`, so it subsumes both channel-assignment checks
+     * (is a channel bound? e.g. `!!ctx.encodings.color?.field`) and type checks
+     * (e.g. Sort needs a discrete category axis, so it must not appear on a
+     * purely temporal/quantitative chart). Pure. Defaults to always-applicable.
+     */
+    isApplicable?: (ctx: OptionEvalContext) => boolean;
+    /** Derive the displayed control value from the base encodings map (pure). */
+    get: (encodings: Record<string, ChartEncoding>) => any;
+    /** Compose: return the encodings with this override value applied (pure). */
+    set: (encodings: Record<string, ChartEncoding>, value: any) => Record<string, ChartEncoding>;
+};
 
 /**
  * Chart template definition — pure data, no UI/icon dependencies.
@@ -522,6 +691,13 @@ export interface ChartTemplateDef {
 
     /** Optional configurable properties for the chart type */
     properties?: ChartPropertyDef[];
+
+    /**
+     * Optional encoding-level quick actions (Category B). Clicking one of these
+     * mutates the encodings map (the same state the encoding shelf edits),
+     * rather than chart-native config. See EncodingActionDef.
+     */
+    encodingActions?: EncodingActionDef[];
 
     /**
      * Optional post-processing hook.

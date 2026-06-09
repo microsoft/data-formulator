@@ -796,7 +796,28 @@ export const barTableDef: ChartTemplateDef = {
         { key: 'maxRows', label: 'Max Rows', type: 'continuous', min: 5, max: 100, step: 1, defaultValue: 20 },
         // Off by default — safer for arbitrary measures. The agent (or
         // the user) can flip it on when a "% of total" share is
-        // meaningful (additive, single-sign, non-zero total).
-        { key: 'showPercent', label: 'Show % of Total', type: 'binary', defaultValue: false },
+        // meaningful (additive, single-sign, non-zero total). Its `check`
+        // reports applicability per render from the measure's data.
+        {
+            key: 'showPercent', label: 'Show % of Total', type: 'binary', defaultValue: false,
+            check: (ctx) => {
+                // A "% of total" share only reads sensibly for an additive,
+                // single-sign measure with a non-zero total — a share of a
+                // mixed-sign or intensive (mean-aggregated) measure is misleading.
+                const mcs = ctx.channelSemantics?.x;
+                if (!mcs?.field || mcs.type !== 'quantitative' || mcs.aggregationDefault === 'average') {
+                    return { applicable: false };
+                }
+                let sum = 0, hasNeg = false, hasPos = false, count = 0;
+                for (const row of ctx.data ?? []) {
+                    const v = row[mcs.field];
+                    if (typeof v !== 'number' || !isFinite(v)) continue;
+                    count++;
+                    if (v < 0) hasNeg = true; else if (v > 0) hasPos = true;
+                    sum += v;
+                }
+                return { applicable: count > 0 && !(hasNeg && hasPos) && Math.abs(sum) > 0 };
+            },
+        },
     ] as ChartPropertyDef[],
 };

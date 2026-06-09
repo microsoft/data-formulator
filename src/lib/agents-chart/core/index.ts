@@ -28,11 +28,20 @@ export {
     type LayoutResult,
     type InstantiateContext,
     type ChartPropertyDef,
+    type ChartOption,
+    type OptionEvalContext,
+    type EncodingActionDef,
     type OverflowStrategy,
     type OverflowStrategyContext,
     type OverflowResult,
     type ChannelBudgets,
 } from './types';
+
+// Encoding-action override composition
+export { applyEncodingOverrides } from './encoding-overrides';
+
+// Reusable encoding-action factories
+export { makeSortAction, type SortChoice } from './encoding-actions';
 
 // Semantic type system
 export {

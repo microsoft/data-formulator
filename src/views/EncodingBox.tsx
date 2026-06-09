@@ -48,7 +48,7 @@ import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
-import { getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
+import { getIconFromDtype, getIconFromType } from './ViewUtils';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { Type } from '../data/types';
@@ -555,25 +555,12 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     }
 
 
-    let conceptGroups = groupConceptItems(conceptShelfItems, tables);
-
-    // Field names selectable in this encoding shelf: only fields that exist in
-    // the current table. Anything else cannot be assigned here.
-    let availableFieldNames = conceptGroups
-        .filter(g => activeTable ? activeTable.names.includes(g.field.name) : true)
-        .map(g => g.field.name)
+    // Field names selectable in this encoding shelf, listed in the same order as
+    // the columns of the current table. Only fields that exist in the table can
+    // be assigned here, so the table's column list is the source of truth — no
+    // need to derive or group them from the concept shelf.
+    let availableFieldNames = (activeTable ? activeTable.names : conceptShelfItems.map(f => f.name))
         .filter(name => name != "");
-
-    let groupNames = [...new Set(conceptGroups.map(g => g.group))];
-    conceptGroups.sort((a, b) => {
-        if (groupNames.indexOf(a.group) < groupNames.indexOf(b.group)) {
-            return -1;
-        } else if (groupNames.indexOf(a.group) > groupNames.indexOf(b.group)) {
-            return 1;
-        } else {
-            return activeTable && activeTable.names.includes(a.field.name) && !activeTable.names.includes(b.field.name) ? -1 : 1;
-        }
-    })
 
     // Smart Popper component that switches between bottom-end and top-end
     const CustomPopper = (props: any) => {
@@ -647,129 +634,30 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             // Value selected with enter, right from the input
             return option;
         }}
-        groupBy={(option) => {
-            let groupItem = conceptGroups.find(item => item.field.name == option);
-            if (groupItem && groupItem.field.name != "") {
-                return `${groupItem.group}`;
-            } else {
-                return t('encoding.createNewFieldGroup')
-            }         
-        }}
-        renderGroup={(params) => (
-            <Box key={params.key}>
-              <Box className="GroupHeader">{params.group}</Box>
-              <Box className="GroupItems" sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(2, 1fr)', 
-                padding: '4px'
-              }}>
-                {params.children}
-              </Box>
-            </Box>
-        )}
         renderOption={(props, option) => {
-            let renderOption = (conceptShelfItems.map(f => f.name).includes(option)) ? option : `${option}`;
-            let otherStyle = option == `` ? {color: "darkgray", fontStyle: "italic"} : {}
-
-            // Find the field item for this option
-            const fieldItem = conceptShelfItems.find(f => f.name === option);
-            
-            if (fieldItem) {
-                // Create a mini concept card
-                let backgroundColor = theme.palette.primary.main;
-                if (fieldItem.source == "original") {
-                    backgroundColor = theme.palette.primary.light;
-                } else if (fieldItem.source == "custom") {
-                    backgroundColor = theme.palette.custom.main;
-                }
-
-                // Add overlay logic similar to ConceptCard - make fields not in focused table more transparent
-                let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.9)';
-                
-                // Add subtle tint for non-focused fields
-                if (activeTable && !activeTable.names.includes(fieldItem.name)) {
-                    draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 1)';
-                }
-
-                // Extract only the compatible props for Card
-                const { key, ...cardProps } = props;
-
-                return (
-                    <Card 
-                        key={key}
-                        onClick={() => handleSelectOption(option)}
-                        sx={{ 
-                            minWidth: 80, 
-                            backgroundColor, 
-                            position: "relative",
-                            border: "none",
-                            cursor: "pointer",
-                            margin: '2px 4px',
-                            "&:hover": {
-                                boxShadow: "0 2px 4px 0 rgb(0 0 0 / 20%)"
-                            }
-                        }}
-                        variant="outlined"
-                        className={`data-field-list-item draggable-card`}
-                    >
-                        <Box sx={{ 
-                                cursor: "pointer", 
-                                background: draggleCardHeaderBgOverlay,
-                                display: 'flex',
-                                alignItems: 'center',
-                                minHeight: '20px',
-                                ml: 0.5
-                            }}
-                            className={`draggable-card-inner ${fieldItem.source}`}
-                        >
-                            <Typography sx={{
-                                margin: '0px 4px',
-                                fontSize: 10, 
-                                width: "100%",
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                            }} component={'span'}>
-                                {getIconFromType(activeTable?.metadata[fieldItem.name]?.type || Type.Auto)}
-                                <span style={{
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden", 
-                                    textOverflow: "ellipsis",
-                                    flexShrink: 1
-                                }}>
-                                    {fieldItem.name}
-                                </span>
-                            </Typography>
-                        </Box>
-                    </Card>
-                );
-            } else {
-                // For non-existing options (like new field creation)
-                return (
-                    <Typography 
-                        {...props} 
-                        onClick={() => handleSelectOption(option)}
-                        sx={{
-                            fontSize: "10px", 
-                            padding: '4px 6px',
-                            margin: '2px 4px',
-                            cursor: 'pointer',
-                            border: '1px dashed #ccc',
-                            borderRadius: '4px',
-                            backgroundColor: 'rgba(0,0,0,0.02)',
-                            height: '24px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            "&:hover": {
-                                backgroundColor: 'rgba(0,0,0,0.05)'
-                            },
-                            ...otherStyle
-                        }}
-                    >
-                        {renderOption || t('encoding.newFieldNamePlaceholder')}
-                    </Typography>
-                );
-            }
+            const { key, ...liProps } = props as any;
+            const dtype = activeTable?.metadata[option]?.type || Type.Auto;
+            return (
+                <Box
+                    key={key}
+                    {...liProps}
+                    onClick={() => handleSelectOption(option)}
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: 11,
+                        padding: '4px 8px !important',
+                        cursor: 'pointer',
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.05)' },
+                    }}
+                >
+                    {getIconFromType(dtype)}
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {option}
+                    </span>
+                </Box>
+            );
         }}
         renderInput={(params) => (
             <TextField {...params} variant="standard" autoComplete='off' placeholder={t('encoding.fieldPlaceholder')}

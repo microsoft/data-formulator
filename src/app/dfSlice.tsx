@@ -131,6 +131,19 @@ export interface GeneratedReport {
     contentSnapshotHash?: string;
     prompt?: string;
     status?: 'generating' | 'completed' | 'error';
+    generatingPhase?: 'inspecting' | 'writing';  // transient: which phase the agent is in while generating
+    // transient: accumulated inspect steps, flipped to done on completion.
+    // `charts` carries lightweight descriptors (chartType for the icon + a
+    // display name) so the editor can render a chart-type icon next to a title
+    // or field list. Kept serializable (no React nodes) for redux-persist.
+    inspectionSteps?: {
+        label: string;
+        doneLabel?: string;   // past-tense label shown once the step completes
+        done: boolean;
+        charts?: { chartType: string; name: string }[];
+        startedAt?: number;   // epoch ms when the tool call started
+        durationMs?: number;  // wall time once the step is done
+    }[];
 }
 
 export interface DataFormulatorState {
@@ -343,6 +356,27 @@ const collectAllCharts = (state: DataFormulatorState): Chart[] => {
         .filter(t => t.derive?.trigger?.chart)
         .map(t => t.derive?.trigger?.chart) as Chart[];
     return [...state.charts, ...triggerCharts];
+};
+
+// Category-B encoding-action overrides (e.g. heatmap color scheme) are stored in
+// chart.config keyed by the action key, and composed onto the encoding by the
+// Flint compiler at assemble time (applyEncodingOverrides). When the user
+// re-binds, clears, or swaps a channel that an override declares as a
+// `dependency`, the stored value is stale, so we drop it here. This reset is
+// host-side policy only; Flint never resets — it just composes
+// "override + current encoding". The action's declared dependencies live in the
+// template's EncodingActionDef.
+const resetDependentEncodingOverrides = (chart: Chart, ...changedChannels: Channel[]) => {
+    if (!chart.config) return;
+    const actions = getChartTemplate(chart.chartType)?.encodingActions;
+    if (!actions || actions.length === 0) return;
+    for (const action of actions) {
+        const deps = action.dependencies;
+        if (!deps) continue;
+        if (changedChannels.some(ch => deps.includes(ch)) && chart.config[action.key] !== undefined) {
+            delete chart.config[action.key];
+        }
+    }
 };
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -1363,6 +1397,9 @@ export const dataFormulatorSlice = createSlice({
             let chart = collectAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 chart.encodingMap[channel] = encoding;
+                // The channel's binding changed — drop any Category-B override
+                // that depended on it (see resetDependentEncodingOverrides).
+                resetDependentEncodingOverrides(chart, channel);
                 // Auto-revert to default whenever the user edits the encoding so
                 // the canvas reflects what they're editing. Existing variants
                 // stay in the chip strip (now stale). See
@@ -1416,6 +1453,11 @@ export const dataFormulatorSlice = createSlice({
                     if (encoding.dtype !== value) changed = true;
                     encoding.dtype = value;
                 }
+                // When the user actually edits a channel in the shelf, drop any
+                // Category-B override computed against it (declared via the
+                // action's `dependencies`) so a stale override can't keep
+                // winning over the shelf edit. See resetDependentEncodingOverrides.
+                if (changed) resetDependentEncodingOverrides(chart, channel);
                 // Auto-revert to default when the encoding actually changes
                 // (see above). No-op updates must NOT clear the variant.
                 if (changed && chart.activeVariantId) chart.activeVariantId = undefined;
@@ -1433,6 +1475,8 @@ export const dataFormulatorSlice = createSlice({
 
                 chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy, sortOrder: enc2.sortOrder };
                 chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy, sortOrder: enc1.sortOrder };
+                // Both channels' bindings changed — drop dependent overrides.
+                resetDependentEncodingOverrides(chart, channel1, channel2);
                 // Auto-revert to default when the encoding changes (see above).
                 if (chart.activeVariantId) chart.activeVariantId = undefined;
             }
@@ -1816,8 +1860,35 @@ export const dataFormulatorSlice = createSlice({
                 report.content = content;
                 if (title) report.title = title;
                 if (status) report.status = status;
+                // Once real report text starts streaming, switch the indicator to
+                // the "writing" phase. When generation ends, clear transient state.
+                if (content) report.generatingPhase = 'writing';
+                if (status === 'completed' || status === 'error') {
+                    report.generatingPhase = undefined;
+                    report.inspectionSteps = undefined;
+                }
                 report.updatedAt = Date.now();
             }
+        },
+        updateGeneratedReportProgress: (state, action: PayloadAction<{ id: string; kind: 'start' | 'end'; label?: string; doneLabel?: string; charts?: { chartType: string; name: string }[] }>) => {
+            const { id, kind, label, doneLabel, charts } = action.payload;
+            const report = state.generatedReports.find(r => r.id === id);
+            if (!report) return;
+            report.generatingPhase = 'inspecting';
+            const steps = report.inspectionSteps ?? [];
+            if (kind === 'start' && label) {
+                steps.push({ label, doneLabel, done: false, charts, startedAt: Date.now() });
+            } else if (kind === 'end') {
+                // Flip the first still-pending step to done (FIFO matches the
+                // order the backend emits start/end), so concurrent tool calls
+                // each resolve independently rather than adding a new message.
+                const pending = steps.find(s => !s.done);
+                if (pending) {
+                    pending.done = true;
+                    if (pending.startedAt) pending.durationMs = Date.now() - pending.startedAt;
+                }
+            }
+            report.inspectionSteps = steps;
         },
         clearGeneratedReports: (state) => {
             state.generatedReports = [];

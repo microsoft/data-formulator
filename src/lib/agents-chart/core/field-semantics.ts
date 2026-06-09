@@ -501,12 +501,15 @@ export function resolveZeroClassFromAnnotation(
  * Recommend a scale type based on semantic type and data distribution.
  *
  * Conservative policy — only triggers when ALL of these hold:
- *   1. The semantic type is in the ALLOW-list (Population, GDP, etc.)
- *   2. Data spans ≥ 4 orders of magnitude (10 000×)
- *   3. At least 10 data points
+ *   1. The semantic type is an additive measure with an open domain and is
+ *      not a generic fallback (i.e. Amount, Quantity, Duration — types whose
+ *      magnitude is meaningful and can legitimately span many decades).
+ *   2. Data spans ≥ 6 orders of magnitude (1,000,000×).
+ *   3. At least 10 data points, all non-negative.
  *
- * This avoids surprising users on normal datasets while still helping
- * with genuinely wide-range data like city populations or GDP figures.
+ * This intentionally almost never fires on everyday data; it only helps with
+ * genuinely wide-range additive measures. When it does not fire the axis stays
+ * linear, and the user can still opt into log via the per-axis quick control.
  */
 export function resolveScaleType(
     semanticType: string,

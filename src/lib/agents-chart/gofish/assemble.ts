@@ -41,6 +41,7 @@ import {
     InstantiateContext,
 } from '../core/types';
 import type { ChartWarning } from '../core/types';
+import { applyEncodingOverrides } from '../core/encoding-overrides';
 import { gfGetTemplateDef } from './templates';
 import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { computeZeroDecision } from '../core/semantic-types';
@@ -321,7 +322,7 @@ function buildSpecDescription(gfDesc: any): string {
  */
 export function assembleGoFish(input: ChartAssemblyInput): GoFishSpec {
     const chartType = input.chart_spec.chartType;
-    const encodings = input.chart_spec.encodings;
+    const rawEncodings = input.chart_spec.encodings;
     const data = input.data.values ?? [];
     const semanticTypes = input.semantic_types ?? {};
     const canvasSize = input.chart_spec.canvasSize ?? { width: 400, height: 320 };
@@ -331,6 +332,12 @@ export function assembleGoFish(input: ChartAssemblyInput): GoFishSpec {
     if (!chartTemplate) {
         throw new Error(`Unknown GoFish chart type: ${chartType}. Use gfAllTemplateDefs to see available types.`);
     }
+
+    // Compose Category-B encoding-action overrides (stored by the host in
+    // chartProperties, keyed by action key) onto the base encodings before any
+    // pipeline phase runs. Flint owns the transform; the host only stores the
+    // override value. See applyEncodingOverrides / EncodingActionDef.
+    const encodings = applyEncodingOverrides(chartTemplate, rawEncodings, chartProperties);
 
     const warnings: ChartWarning[] = [];
 
