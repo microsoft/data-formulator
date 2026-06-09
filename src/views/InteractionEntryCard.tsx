@@ -299,7 +299,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 break;
             }
             case 'summary':
-                color = theme.palette.text.primary;
+                // Chrome-less prose trailing the turn — recede into ambient
+                // text (matching `instruction`); the gutter icon carries the
+                // "finding" cue, not a heavier text color.
+                color = theme.palette.text.secondary;
                 break;
             case 'error':
                 color = theme.palette.error.main;
@@ -385,9 +388,12 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         const bubbleHover = bubbleAccent
             ? alpha(bubbleAccent, 0.09)
             : alpha(theme.palette.text.primary, 0.05);
-        // Conversational bubbles get card chrome, except resolved pauses
-        // which render as a chrome-less compact trace.
-        const bubbleSx = (isConversational && !isResolvedPause) ? {
+        // Conversational bubbles get card chrome, except resolved pauses and
+        // summaries — both render chrome-less. A summary is the agent's
+        // closing remark on a turn; reading it as plain prose (no box, no
+        // fill) keeps the timeline foregrounding charts/data rather than
+        // persisting the remark as a card.
+        const bubbleSx = (isConversational && !isResolvedPause && !isSummary) ? {
             py: 0.5, px: 1,
             borderRadius: radius.sm,
             backgroundColor: bubbleBg,
@@ -397,6 +403,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             // the gutter icon and adjacent bubbles. No bg, no border.
             py: '2px', px: '4px',
             opacity: 0.7,
+        } : isSummary ? {
+            // Summary as flowing prose: no card chrome, just inline padding
+            // so it aligns with the gutter icon and adjacent bubbles.
+            py: '2px', px: '4px',
         } : {};
 
         return (
@@ -414,7 +424,12 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         mx: '-2px',
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
                     } : {}),
-                    ...(isCollapsible && isConversational ? {
+                    ...(isCollapsible && isSummary ? {
+                        // Gentle hover that doesn't reintroduce a card fill.
+                        borderRadius: '4px',
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
+                    } : {}),
+                    ...(isCollapsible && isConversational && !isSummary ? {
                         '&:hover': { backgroundColor: bubbleHover },
                     } : {}),
                 }}
