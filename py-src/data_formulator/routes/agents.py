@@ -39,6 +39,7 @@ from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
 
 from data_formulator.agents.data_agent import DataAgent
+from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.agents.agent_language import build_language_instruction
 from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 from data_formulator.error_handler import json_ok, stream_preflight_error, classify_and_wrap_llm_error
@@ -521,6 +522,119 @@ def data_agent_streaming():
 
         except Exception as e:
             logger.error("Error in data-agent-streaming", exc_info=e)
+            yield stream_error_event(classify_and_wrap_llm_error(e))
+
+        logger.setLevel(logging.WARNING)
+
+    return Response(
+        stream_with_context(_with_warnings(generate())),
+        mimetype='application/x-ndjson',
+    )
+
+
+@agent_bp.route('/analyst-streaming', methods=['GET', 'POST'])
+def analyst_streaming():
+    """Unified AnalystAgent streaming endpoint (design-docs/35 + /36).
+
+    Parallel to ``/data-agent-streaming`` while the unified agent is validated
+    end-to-end; the legacy data-agent and report routes stay live and untouched.
+    The single ``AnalystAgent`` subsumes both data exploration and report
+    writing: it gathers with inspection tools, commits one action per turn
+    (``visualize`` / ``interact`` / ``delegate`` / ``write_report``), and streams
+    the report live on the ``report`` channel (same ``text_delta`` event the
+    frontend already routes).
+
+    Streams newline-delimited JSON. Terminal events: ``completion`` (the run
+    finished or hit its budget), ``interact`` (a question widget pauses the run),
+    and ``error``. To resume after ``interact`` the client sends ``trajectory``
+    (from the event) plus ``user_question`` (the assembled reply).
+    """
+    from data_formulator.error_handler import stream_error_event
+
+    if not request.is_json:
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
+
+    content = request.get_json()
+
+    identity_id = get_identity_id()
+    if not identity_id:
+        return stream_preflight_error(AppError(ErrorCode.AUTH_REQUIRED, "Identity ID required"))
+
+    client = get_client(content['model'])
+    workspace = get_workspace(identity_id)
+
+    input_tables = content["input_tables"]
+    user_question = content.get("user_question", "")
+    max_iterations = content.get("max_iterations", 5)
+    max_repair_attempts = content.get("max_repair_attempts", 1)
+    agent_exploration_rules = content.get("agent_exploration_rules", "")
+    agent_coding_rules = content.get("agent_coding_rules", "")
+    focused_thread = content.get("focused_thread", None)
+    other_threads = content.get("other_threads", None)
+    primary_tables = content.get("primary_tables", None)
+    attached_images = content.get("attached_images", None)
+    charts = content.get("charts", None)
+    resume_trajectory = content.get("trajectory", None)
+    completed_step_count = content.get("completed_step_count", 0)
+
+    if resume_trajectory is not None and not str(user_question or "").strip():
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "user_question is required to resume after interaction"))
+
+    logger.setLevel(logging.INFO)
+    logger.info("# analyst-streaming request")
+    logger.debug("== input tables ===>")
+    for table in input_tables:
+        logger.debug(f"===> Table: {table['name']}")
+    logger.debug(f"== user question ===> {user_question}")
+    if attached_images:
+        logger.info(f"== attached_images ===> {len(attached_images)} image(s), sizes: {[len(img) for img in attached_images]}")
+
+    language_instruction = get_language_instruction(mode="full")
+
+    def generate():
+        try:
+            agent = AnalystAgent(
+                client=client,
+                workspace=workspace,
+                agent_exploration_rules=agent_exploration_rules,
+                agent_coding_rules=agent_coding_rules,
+                language_instruction=language_instruction,
+                max_iterations=max_iterations,
+                max_repair_attempts=max_repair_attempts,
+                identity_id=identity_id,
+            )
+
+            trajectory = None
+            if resume_trajectory:
+                # Append the user's reply (already assembled by the frontend
+                # from option clicks + any typed instructions) as a normal user
+                # message; the LLM correlates the selections back to the
+                # questions in the immediately preceding assistant turn.
+                trajectory = list(resume_trajectory)
+                trajectory.append({
+                    "role": "user",
+                    "content": user_question,
+                })
+                logger.debug("== resuming after interaction ===>")
+
+            for event in agent.run(
+                input_tables=input_tables,
+                user_question=user_question,
+                focused_thread=focused_thread,
+                other_threads=other_threads,
+                trajectory=trajectory,
+                completed_step_count=completed_step_count,
+                primary_tables=primary_tables,
+                attached_images=attached_images,
+                charts=charts,
+            ):
+                yield json.dumps(event, ensure_ascii=False) + '\n'
+
+                if event.get("type") in ("completion", "interact"):
+                    break
+
+        except Exception as e:
+            logger.error("Error in analyst-streaming", exc_info=e)
             yield stream_error_event(classify_and_wrap_llm_error(e))
 
         logger.setLevel(logging.WARNING)

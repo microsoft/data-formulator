@@ -177,6 +177,11 @@ export interface DataFormulatorState {
 
     focusedId: FocusedId;
 
+    // Draft id of a completed plain-text answer surfaced as an explanation card
+    // above the chat box. Auto-set when a Q&A run completes, cleared when the
+    // user focuses another item or sends a followup (see `setFocused`).
+    focusedAnswerDraftId: string | undefined;
+
     viewMode: 'editor' | 'report';
 
     chartSynthesisInProgress: string[];
@@ -290,6 +295,7 @@ const initialState: DataFormulatorState = {
 
     focusedDataCleanBlockId: undefined,
     focusedId: undefined,
+    focusedAnswerDraftId: undefined,
 
     viewMode: 'editor',
 
@@ -890,6 +896,7 @@ export const dataFormulatorSlice = createSlice({
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
                 focusedId: saved.focusedId || undefined,
+                focusedAnswerDraftId: undefined,
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
@@ -1669,6 +1676,8 @@ export const dataFormulatorSlice = createSlice({
         setFocused: (state, action: PayloadAction<FocusedId>) => {
             const payload = action.payload;
             state.focusedId = payload;
+            // Focusing any concrete item dismisses a lingering answer card.
+            state.focusedAnswerDraftId = undefined;
 
             if (payload?.type === 'chart' && state.viewMode == 'report') {
                 state.viewMode = 'editor';
@@ -1686,6 +1695,9 @@ export const dataFormulatorSlice = createSlice({
         },
         setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
             state.focusedDataCleanBlockId = action.payload;
+        },
+        setFocusedAnswer: (state, action: PayloadAction<string | undefined>) => {
+            state.focusedAnswerDraftId = action.payload;
         },
         changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {
             if (action.payload.status) {
@@ -1853,13 +1865,16 @@ export const dataFormulatorSlice = createSlice({
                 state.viewMode = 'editor';
             }
         },
-        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string }>) => {
-            const { id, content, status, title } = action.payload;
+        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string; triggerTableId?: string }>) => {
+            const { id, content, status, title, triggerTableId } = action.payload;
             const report = state.generatedReports.find(r => r.id === id);
             if (report) {
                 report.content = content;
                 if (title) report.title = title;
                 if (status) report.status = status;
+                // Re-anchor the report to the latest table produced during the
+                // run so it renders against the newest thread item (like charts).
+                if (triggerTableId) report.triggerTableId = triggerTableId;
                 // Once real report text starts streaming, switch the indicator to
                 // the "writing" phase. When generation ends, clear transient state.
                 if (content) report.generatingPhase = 'writing';

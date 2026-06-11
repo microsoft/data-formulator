@@ -83,8 +83,8 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { AgentToyIcon } from './AgentToyIcon';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ArticleIcon from '@mui/icons-material/Article';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
@@ -150,13 +150,13 @@ const LiveStatus: React.FC<{ startTime?: number; resetKey?: string }> = ({ start
  *  ThinkingBanner — rather than right-flushed in a separate column.
  *  The timer resets whenever the active step changes so it shows the time
  *  spent on the **current** action, not the cumulative wait. */
-export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number) => {
+export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number, active: boolean = true) => {
     const activeStep = steps.length > 0 ? steps[steps.length - 1] : '';
     return (
         <Box sx={{ ...sx }}>
             <PlanStepsView
                 steps={steps}
-                activeLastStep
+                activeLastStep={active}
                 trailing={startTime != null ? <LiveStatus startTime={startTime} resetKey={activeStep} /> : undefined}
             />
         </Box>
@@ -1178,7 +1178,7 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string; gutterIcon?: React.ReactNode };
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string; gutterIcon?: React.ReactNode };
     let timelineItems: TimelineItem[] = [];
 
     // Each running/clarifying draft should produce at most ONE banner per
@@ -1413,7 +1413,7 @@ let SingleThreadGroupView: FC<{
                     type: triggerType,
                     highlighted,
                     isRunning,
-                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, isRunning ? lastUserTs : undefined),
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, isRunning ? lastUserTs : undefined, isRunning),
                 });
                 return;
             }
@@ -1437,7 +1437,7 @@ let SingleThreadGroupView: FC<{
                         type: triggerType,
                         highlighted,
                         isRunning: false,
-                        element: ThinkingStepsBanner(priorLines, { px: 1, py: 0.5 }),
+                        element: ThinkingStepsBanner(priorLines, { px: 1, py: 0.5 }, undefined, false),
                     });
                 }
             }
@@ -1474,13 +1474,21 @@ let SingleThreadGroupView: FC<{
                 );
             } else {
                 const runningAction = runningAgentTableIds.get(tableId);
-                const message = runningAction?.description || t('dataThread.working');
+                // `description` is the running plan: steps joined by STEP_SEP
+                // ('\x1E'), which renders invisibly. Split it back into discrete
+                // steps and render through the per-step banner (icons + ✓), the
+                // same way the interaction-present path does — otherwise the
+                // steps collapse into one run-on blob.
+                const planLines = (runningAction?.description || '')
+                    .split('\x1E').map(s => s.trim()).filter(Boolean);
                 timelineItems.push({
                     key: `agent-running-${tableId}`,
                     type: 'chart',
                     highlighted,
                     isRunning: true,
-                    element: ThinkingBanner(message, { px: 1, py: 0.5 }, true, true),
+                    element: planLines.length > 0
+                        ? ThinkingStepsBanner(planLines, { px: 1, py: 0.5 })
+                        : ThinkingBanner(t('dataThread.working'), { px: 1, py: 0.5 }, true, true),
                 });
             }
         } else if (clarifyAgentTableIds.has(tableId)) {
@@ -1545,80 +1553,65 @@ let SingleThreadGroupView: FC<{
             });
         }
     };
-
-    // Push report cards triggered from the given table
+    // Push report artifacts triggered from the given table. A report is just
+    // another *output card* of the run — treated exactly like a table/chart
+    // card: the run's question (the triggering instruction) and the agent's
+    // closing summary are rendered ONCE by the thread machinery (trigger entry
+    // above, after-table summary below), so the report card never re-renders
+    // them (that would duplicate the run's opening instruction).
     const pushReportItems = (tableId: string, highlighted: boolean) => {
         const reports = reportsByTriggerTable.get(tableId);
         if (!reports) return;
         for (const report of reports) {
-                const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
-                const isGenerating = report.status === 'generating';
-                const selectedClassName = isFocused ? 'selected-report-card' : '';
-                timelineItems.push({
-                    key: `report-${report.id}`,
-                    type: 'report',
-                    reportId: report.id,
-                    highlighted: highlighted || isFocused,
-                    element: (
-                        <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
-                            sx={{
-                                width: '100%',
-                                backgroundColor: theme.palette.secondary.bgcolor,
-                                ...ComponentBorderStyle,
-                                ...(highlighted ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                            }}
-                            onClick={() => {
-                                dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
-                            }}
-                        >
-                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
-                                '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                                '&:hover .report-delete-btn': { opacity: 1 },
+            const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
+            const rowHL = highlighted || isFocused;
+            const isGenerating = report.status === 'generating';
+            const gutterIcon = isGenerating
+                ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />
+                : <ArticleIcon sx={{ width: 14, height: 14, color: rowHL ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+            const card = (
+                <Card className={`data-thread-card ${isFocused ? 'selected-report-card' : ''}`} elevation={0}
+                    sx={{
+                        width: '100%', backgroundColor: theme.palette.secondary.bgcolor,
+                        ...ComponentBorderStyle,
+                        ...(rowHL ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
+                        borderRadius: '6px', cursor: 'pointer',
+                    }}
+                    onClick={() => dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }))}
+                >
+                    <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
+                        '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                        '&:hover .report-delete-btn': { opacity: 1 },
+                    }}>
+                        <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
+                            <Typography sx={{
+                                fontSize: 11, fontWeight: 500, color: 'text.primary',
+                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden', wordBreak: 'break-all',
                             }}>
-                                <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
-                                    <Typography sx={{
-                                        fontSize: 11,
-                                        fontWeight: 500,
-                                        color: 'text.primary',
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: 'vertical',
-                                        overflow: 'hidden',
-                                        wordBreak: 'break-all',
-                                    }}>
-                                        {report.title || t('report.untitled')}
-                                    </Typography>
-                                    {isGenerating && (
-                                        <Typography sx={{
-                                            fontSize: 9,
-                                            color: 'text.disabled',
-                                            lineHeight: 1.3,
-                                            mt: 0.25,
-                                        }}>
-                                            {t('report.composing')}
-                                        </Typography>
-                                    )}
-                                </Box>
-                                <Tooltip title={t('dataThread.deleteReport')}>
-                                    <IconButton
-                                        className="report-delete-btn"
-                                        size="small"
-                                        color="error"
-                                        sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            dispatch(dfActions.deleteGeneratedReport(report.id));
-                                        }}
-                                    >
-                                        <DeleteIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                </Tooltip>
-                            </Box>
-                        </Card>
-                    ),
-                });
+                                {report.title || t('report.untitled')}
+                            </Typography>
+                            {isGenerating && (
+                                <Typography sx={{ fontSize: 9, color: 'text.disabled', lineHeight: 1.3, mt: 0.25 }}>
+                                    {t('report.composing')}
+                                </Typography>
+                            )}
+                        </Box>
+                        <Tooltip title={t('dataThread.deleteReport')}>
+                            <IconButton className="report-delete-btn" size="small" color="error"
+                                sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
+                                onClick={(e) => { e.stopPropagation(); dispatch(dfActions.deleteGeneratedReport(report.id)); }}
+                            >
+                                <DeleteIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                </Card>
+            );
+            timelineItems.push({
+                key: `report-${report.id}`, type: 'artifact', highlighted: rowHL,
+                reportId: report.id, gutterIcon, element: card,
+            });
         }
     };
 
@@ -1686,15 +1679,18 @@ let SingleThreadGroupView: FC<{
         // Add table card and its charts
         pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
 
-        // After-table entries (e.g. summary)
+        // Add report cards anchored to this table. Reports are output cards of
+        // the run (like charts), so they sit with the other outputs, BEFORE the
+        // run's closing summary.
+        pushReportItems(tableId, isHighlighted);
+
+        // After-table entries (e.g. summary). The run's closing summary is the
+        // final word and must follow the LAST artifact (table, chart, or
+        // report), so it is pushed after pushReportItems.
         const afterTable = afterTableMap.get(tableId);
         if (afterTable && afterTable.length > 0) {
             pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
         }
-
-        // Add report cards anchored to charts of this table — placed after the
-        // summary block so the report/chat node follows the agent's summary.
-        pushReportItems(tableId, isHighlighted);
 
         // Running or clarifying agent state
         pushAgentDraftItems(tableId, 'trigger', isHighlighted);
@@ -1724,15 +1720,18 @@ let SingleThreadGroupView: FC<{
 
         pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
 
-        // After-table entries (e.g. summary)
+        // Add report cards anchored to this leaf table. Reports are output cards
+        // of the run (like charts), so they sit with the other outputs, BEFORE
+        // the run's closing summary.
+        pushReportItems(lt.id, isHL);
+
+        // After-table entries (e.g. summary). The run's closing summary is the
+        // final word and must follow the LAST artifact (table, chart, or
+        // report), so it is pushed after pushReportItems.
         const leafAfterEntries = leafAfterTableMap.get(lt.id);
         if (leafAfterEntries && leafAfterEntries.length > 0) {
             pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
         }
-
-        // Add report cards anchored to charts of this leaf table — placed after
-        // the summary block so the report/chat node follows the agent's summary.
-        pushReportItems(lt.id, isHL);
 
         // Running or clarifying agent state
         pushAgentDraftItems(lt.id, 'leaf-trigger', isHL);
@@ -1786,13 +1785,10 @@ let SingleThreadGroupView: FC<{
             ? theme.palette.primary.main
             : 'rgba(0,0,0,0.15)';
 
-        // For report items, show an article icon or spinner if generating
-        if (item.type === 'report') {
-            const report = item.reportId ? generatedReports.find(r => r.id === item.reportId) : undefined;
-            if (report?.status === 'generating') {
-                return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />;
-            }
-            return <ArticleIcon sx={{ width: 14, height: 14, color: item.highlighted ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+        // Artifact output rows (reports today, future skill outputs) carry
+        // their own precomputed gutter dot from the artifact factory.
+        if (item.type === 'artifact') {
+            return item.gutterIcon ?? <Box sx={{ width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', backgroundColor: color }} />;
         }
 
         // For running agent items, show a spinner instead of a dot

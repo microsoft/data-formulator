@@ -34,6 +34,7 @@ export function getUrls() {
         DERIVE_DATA: `/api/agent/derive-data`,
         REFINE_DATA: `/api/agent/refine-data`,
         DATA_AGENT_STREAMING: `/api/agent/data-agent-streaming`,
+        ANALYST_STREAMING: `/api/agent/analyst-streaming`,
 
         // these functions involves database
         UPLOAD_DB_FILE: `/api/tables/upload-db-file`,

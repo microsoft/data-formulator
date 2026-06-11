@@ -1,0 +1,37 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "inspect_chart",
+      "description": "Read one or more charts. Returns each chart's encodings, a sample of its data, and the transformation code that created it so you can reason about what it shows (use execute_python_script on the backing table for the full data). A rendered PNG is included only when one is available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chart_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of chart IDs from [AVAILABLE CHARTS] to inspect."
+          }
+        },
+        "required": ["chart_ids"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "write_report",
+      "description": "Deliver a Markdown report and end the run. `report` is the full report text (embed charts with ![caption](chart://chart_id)).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report": {
+            "type": "string",
+            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) referencing IDs from [AVAILABLE CHARTS]."
+          }
+        },
+        "required": ["report"]
+      }
+    }
+  }
+]

@@ -3,6 +3,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef, EncodingActionDef } from '../../core/types';
 import { makeSortAction } from '../../core/encoding-actions';
+import { snapToBoundHeuristic } from '../../core/field-semantics';
 import {
     defaultBuildEncodings, setMarkProp, adjustBarMarks, adjustRectTiling,
     detectBandedAxisFromSemantics, detectBandedAxisForceDiscrete,
@@ -375,6 +376,17 @@ export const heatmapDef: ChartTemplateDef = {
                 spec.encoding.color.scale.domain = [-sym, sym];
                 spec.encoding.color.scale.domainMid = 0;
             } else if (intrinsicDomain) {
+                // Sequential color with a known intrinsic domain (e.g. a
+                // Percentage field with [0, 100]). Don't force the full
+                // theoretical range — that washes out the scale when every
+                // value is concentrated low (all cells look pale because the
+                // legend stretches to 100%). Snap to an intrinsic bound only
+                // when the data actually approaches it; otherwise fit the
+                // color domain to the observed data range. Mirrors the
+                // snap-to-bound behaviour already used on the x/y axes.
+                const snapped = snapToBoundHeuristic(intrinsicDomain, colorVals);
+                effectiveMin = snapped?.min ?? observedMin;
+                effectiveMax = snapped?.max ?? observedMax;
                 spec.encoding.color.scale.domain = [effectiveMin, effectiveMax];
             }
         }

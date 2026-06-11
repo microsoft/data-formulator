@@ -28,6 +28,7 @@ import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from 
 import { streamRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
 import { persistEphemeralDerivedTable } from '../app/tableThunks';
+import { getCachedChart } from '../app/chartCache';
 import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 
@@ -44,11 +45,20 @@ import { borderColor, transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
-import { ClarificationPanel, DelegatePanel } from './AgentPausePanel';
+import { ClarificationPanel, DelegatePanel, ExplanationPanel } from './AgentPausePanel';
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
     const { t } = useTranslation();
-    const latestMessage = message || t('dataThread.thinking');
+    // `message` is the running plan: steps joined by the STEP_SEP control char
+    // ('\x1E'), which renders invisibly and would otherwise collapse every step
+    // into one run-on blob. This overlay is a compact status, so show only the
+    // latest (active) step rather than the whole accumulated trace.
+    const latestStep = (message ?? '')
+        .split('\x1E')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .pop();
+    const latestMessage = latestStep || t('dataThread.thinking');
     const elapsedSuffix = elapsed != null && elapsed > 0 ? ` (${elapsed}s)` : '';
     const progressColor = color === 'warning' ? theme.palette.warning.main : theme.palette.primary.main;
     return (
@@ -386,6 +396,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     kind: 'clarification' as const,
                     questions: entry.clarificationQuestions || null,
                     variant: entry.role === 'explain' ? 'explain' as const : 'clarify' as const,
+                    content: entry.content || '',
                 };
             }
         }
@@ -594,6 +605,45 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             max_iterations: 10,
         };
 
+        // ── Dev toggle: route through the unified AnalystAgent (design-35/36) ──
+        // Set localStorage `df_useAnalystAgent` = '1' to opt in. The unified
+        // agent can also write reports inside the same run, so we ship the
+        // available charts (same shape the report agent gets) for the report
+        // skill's inspect_chart. Additive: the legacy data agent ignores them.
+        const useAnalyst = localStorage.getItem('df_useAnalystAgent') === '1';
+        const streamUrl = useAnalyst ? getUrls().ANALYST_STREAMING : getUrls().DATA_AGENT_STREAMING;
+        const availableCharts = useAnalyst
+            ? charts
+                .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
+                .filter(c => tables.some(t => t.id === c.tableRef))
+                .map(c => {
+                    const tbl = tables.find(t => t.id === c.tableRef);
+                    const encodings: Record<string, string> = {};
+                    if (c.encodingMap) {
+                        for (const [ch, enc] of Object.entries(c.encodingMap)) {
+                            if ((enc as any)?.fieldID) {
+                                const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
+                                if (field) encodings[ch] = field.name;
+                            }
+                        }
+                    }
+                    return {
+                        chart_id: c.id,
+                        chart_type: c.chartType,
+                        encodings,
+                        table_ref: tbl?.virtual?.tableId || c.tableRef,
+                        code: tbl?.derive?.code || '',
+                        chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
+                        // Optional rendered image: the agent reads charts from
+                        // data + encodings, but a cached PNG (when available)
+                        // lets it visually confirm a pre-existing chart. Prefer
+                        // the downscaled thumbnail to keep the request lean.
+                        chart_image: chartThumbnails[c.id] || getCachedChart(c.id)?.thumbnailDataUrl || undefined,
+                    };
+                })
+            : [];
+        if (useAnalyst) requestBody.charts = availableCharts;
+
         if (isResume) {
             // Resume: just send the assembled prompt as user_question. The
             // backend appends it to the trajectory as a normal user message.
@@ -683,7 +733,91 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let thinkingSteps: string[] = [];
         let pendingThought: string = '';
 
+        // ── Live report streaming (AnalystAgent only) ──
+        // The unified agent can write a report inside the same run: it emits an
+        // `action`(write_report) commitment followed by `text_delta` events on
+        // channel "report". We create a GeneratedReport on first signal, switch
+        // to the report view, and stream the markdown in — mirroring the
+        // standalone reportFromChat coalescing (90ms flush so Tiptap re-parses
+        // ~10×/sec instead of per-token).
+        let reportId: string | null = null;
+        let accumulatedReportMarkdown = '';
+        let reportLastDispatched = '';
+        let reportFlushTimer: ReturnType<typeof setTimeout> | null = null;
+        // Ids of charts created during THIS run, adopted from the backend's
+        // forwarded chart_id. Merged into the report's selectedChartIds so a
+        // same-run report can embed them via chart://<id>.
+        const runCreatedChartIds: string[] = [];
+        const reportFlushNow = () => {
+            if (reportFlushTimer) { clearTimeout(reportFlushTimer); reportFlushTimer = null; }
+            if (!reportId || accumulatedReportMarkdown === reportLastDispatched) return;
+            reportLastDispatched = accumulatedReportMarkdown;
+            const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
+            dispatch(dfActions.updateGeneratedReportContent({
+                id: reportId,
+                content: accumulatedReportMarkdown,
+                title: titleMatch ? titleMatch[1].trim() : undefined,
+            }));
+        };
+        const reportScheduleFlush = () => {
+            if (reportFlushTimer) return;
+            reportFlushTimer = setTimeout(() => { reportFlushTimer = null; reportFlushNow(); }, 90);
+        };
+        const ensureReport = () => {
+            if (reportId) return reportId;
+            const newId = `report-${Date.now()}`;
+            const inProgressReport: GeneratedReport = {
+                id: newId,
+                content: '',
+                selectedChartIds: Array.from(new Set([
+                    ...availableCharts.map(c => c.chart_id),
+                    ...runCreatedChartIds,
+                ])),
+                createdAt: Date.now(),
+                status: 'generating',
+                prompt: agentPrompt,
+                triggerTableId: focusedTableId,
+            };
+            dispatch(dfActions.saveGeneratedReport(inProgressReport));
+            dispatch(dfActions.setFocused({ type: 'report', reportId: newId }));
+            dispatch(dfActions.setViewMode('report'));
+            reportId = newId;
+            return newId;
+        };
+
         const processStreamingResult = async (result: any) => {
+            // ── interact: the unified agent's clarify/explain pause ──
+            // Alias to the legacy clarify path (same questions[] shape + the
+            // backend now stamps trajectory/completed_step_count for resume).
+            if (result.type === "interact") {
+                result = { ...result, type: "clarify" };
+            }
+
+            // ── report streaming (AnalystAgent only) ──
+            // write_report commitment → create the report + switch view.
+            if (result.type === "action" && result.action === "write_report") {
+                ensureReport();
+                // Flush any buffered agent reasoning as its own step first, so
+                // it reads as a discrete prior step rather than running into the
+                // "outputting write_report" line (mirrors the tool_start flush).
+                if (pendingThought) {
+                    thinkingSteps.push(pendingThought);
+                    pendingThought = '';
+                }
+                thinkingSteps.push(t('dataThread.producingAction', { action: 'write_report' }));
+                if (currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                }
+                return;
+            }
+            // report-channel markdown deltas → stream into the report content.
+            if (result.type === "text_delta" && result.channel === "report") {
+                ensureReport();
+                accumulatedReportMarkdown += result.content || '';
+                reportScheduleFlush();
+                return;
+            }
+
             // ── context_info: show injected rules/knowledge at the top ──
             // Rendered as already-completed tool-style steps (✓ prefix) so they
             // visually match the rest of the agent's tool-call timeline.
@@ -725,7 +859,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     thinkingSteps.push(pendingThought);
                     pendingThought = '';
                 }
-                if (result.tool === "explore") {
+                if (result.tool === "explore" || result.tool === "execute_python_script") {
                     const purpose = result.purpose || '';
                     if (purpose) {
                         thinkingSteps.push(t('dataThread.runningCode') + ' ' + purpose);
@@ -737,6 +871,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 } else if (result.tool === "inspect_source_data") {
                     const tableNames = result.table_names?.join(', ') || '';
                     thinkingSteps.push(t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : ''));
+                } else if (result.tool === "inspect_chart") {
+                    thinkingSteps.push(t('dataThread.inspectingChart'));
+                } else if (result.tool === "load_skill") {
+                    thinkingSteps.push(t('dataThread.loadingSkill', { skill: result.skill || '' }));
                 } else if (result.tool === "search_data_tables" || result.tool === "search_knowledge") {
                     const query = result.query || '';
                     thinkingSteps.push(t('dataThread.searching') + (query ? ` "${query}"` : ''));
@@ -907,6 +1045,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                 const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
                 let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                // Adopt the backend's forwarded chart_id so the agent and the
+                // frontend share one id (it can embed/inspect this chart in the
+                // same run). Guard against an id that somehow already exists.
+                const forwardedChartId = transformResult.chart_id;
+                if (forwardedChartId
+                    && !charts.some(c => c.id === forwardedChartId)
+                    && !createdCharts.some(c => c.id === forwardedChartId)) {
+                    newChart.id = forwardedChartId;
+                }
+                runCreatedChartIds.push(newChart.id);
                 // Mark as unread by default; cleared below if we auto-focus it
                 // (i.e. it's the first artifact this run) or by setFocused when
                 // the user clicks the card.
@@ -1073,11 +1221,28 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
             // ── completion: final summary ──
             if (result.type === "completion") {
+                const rawSummary = result.content?.summary || "";
+                const summary = result.status === "max_iterations"
+                    ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
+                    : rawSummary;
+                // Finalize any report streamed during this run.
+                if (reportId) {
+                    reportFlushNow();
+                    const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
+                    dispatch(dfActions.updateGeneratedReportContent({
+                        id: reportId,
+                        content: accumulatedReportMarkdown,
+                        status: 'completed',
+                        title: titleMatch ? titleMatch[1].trim() : undefined,
+                        // Anchor the report to the latest table created this run
+                        // so it attaches to the newest thread item, like charts.
+                        triggerTableId: lastCreatedTableId || undefined,
+                    }));
+                }
                 if (lastCreatedTableId) {
-                    const rawSummary = result.content?.summary || "";
-                    const summary = result.status === "max_iterations"
-                        ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
-                        : rawSummary;
+                    // The run produced an artifact (table / chart / report). Its
+                    // closing answer renders once as that table's after-summary
+                    // entry — exactly like a chart's summary.
                     if (summary) {
                         const entry: InteractionEntry = {
                             from: 'data-agent', to: 'user', role: 'summary',
@@ -1087,6 +1252,34 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         };
                         dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries: [entry] }));
                     }
+                } else if (summary && currentDraftId) {
+                    // Pure Q&A run — the agent committed no action and answered in
+                    // plain text (e.g. the user just asked a question). There's no
+                    // table to anchor to. Treat the closing answer as an `explain`
+                    // pause: the draft enters the pause phase with the answer text,
+                    // so it surfaces in the explanation panel above the chat box
+                    // and the user can reply to continue the conversation (resume).
+                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    thinkingSteps = [];
+                    pendingThought = '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+
+                    const pauseEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user', role: 'explain',
+                        plan: priorSteps || result.content?.thought || undefined,
+                        content: summary,
+                        timestamp: Date.now(),
+                    };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
+                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
+                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
+                        trajectory: result.trajectory || result.content?.trajectory || [],
+                        completedStepCount: result.completed_step_count || result.content?.completed_step_count || 0,
+                        lastCreatedTableId,
+                    }}));
+                    // Keep the node; clear the handle so handleCompletion's draft
+                    // cleanup doesn't remove the pause we just persisted.
+                    currentDraftId = null;
                 }
             }
         };
@@ -1097,6 +1290,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             setIsChatFormulating(false);
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
+            if (reportFlushTimer) { clearTimeout(reportFlushTimer); reportFlushTimer = null; }
 
             // Clean up any remaining draft (the last step created a new draft that was never filled)
             if (currentDraftId) {
@@ -1114,7 +1308,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         (async () => {
             try {
-                for await (const data of streamRequest(getUrls().DATA_AGENT_STREAMING, {
+                for await (const data of streamRequest(streamUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: messageBody,
@@ -1153,7 +1347,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                     allResults.push(data);
                     await processStreamingResult(data);
-                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "delegate") {
+                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "interact" || data.type === "delegate") {
                         handleCompletion();
                         return;
                     }
@@ -1191,7 +1385,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
             }
         })();
-    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t, attachedImages, attachedFiles]);
+    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles]);
 
     // ── Report generation via report agent ──────────────────────────
 
@@ -1511,11 +1705,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return chatPrompt.trim().length > 0;
     }, [chatPrompt, focusedTableId]);
 
-    // Handle a single clicked option (or free-text Enter) inside the
-    // ClarificationPanel. We just record the selection by question index
-    // — the chat box is NOT mutated. Auto-submit fires only when EVERY
-    // question is answered.
-    const handleSelectAnswer = useCallback((questionIndex: number, response: ClarificationResponse) => {
+    // Handle a single clicked option (or confirmed free-text) inside the
+    // ClarificationPanel. We record the selection by question index — the
+    // chat box is NOT mutated. `autoSubmit` (default true) lets an explicit
+    // confirm (option click / check button / Enter) fire the whole panel once
+    // every question is answered; an implicit confirm (blur auto-record)
+    // passes false so it records but never submits.
+    const handleSelectAnswer = useCallback((questionIndex: number, response: ClarificationResponse, autoSubmit: boolean = true) => {
         const questions = clarificationQuestions?.questions;
         if (!questions || !pendingClarification) return;
         if (clarifySubmittedRef.current === pendingClarification.draftId) return;
@@ -1523,15 +1719,30 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const newAnswers = { ...clarifyAnswers, [questionIndex]: response };
         setClarifyAnswers(newAnswers);
 
-        // Auto-submit only when ALL questions are answered. Otherwise we
-        // wait for the user to either answer the rest or hit Send manually.
+        // Auto-submit only when EVERY question is answered by a clicked option
+        // AND this was an explicit confirm. If any answer is typed text, we
+        // never auto-fire — the user submits via the shared panel button — so a
+        // stray option click can't sweep up an unfinished typed answer.
         const allAnswered = questions.every((_q, idx) => !!newAnswers[idx]);
-        if (allAnswered) {
+        const allOptions = questions.every((_q, idx) => newAnswers[idx]?.source === 'option');
+        if (allAnswered && allOptions && autoSubmit) {
             clarifySubmittedRef.current = pendingClarification.draftId;
             const responses: ClarificationResponse[] = questions.map((_q, idx) => newAnswers[idx]);
             resumeFromClarification(responses);
         }
     }, [clarificationQuestions, pendingClarification, clarifyAnswers, resumeFromClarification]);
+
+    // Clear a question's recorded answer (the user started editing its field,
+    // which invalidates a prior option pick or confirmed free-text reply).
+    const handleClearAnswer = useCallback((questionIndex: number) => {
+        setClarifyAnswers(prev => {
+            if (!(questionIndex in prev)) return prev;
+            const next = { ...prev };
+            delete next[questionIndex];
+            return next;
+        });
+    }, []);
+
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
@@ -1624,7 +1835,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     variant={clarificationQuestions.variant}
                     selectedAnswers={clarifyAnswers}
                     onSelectAnswer={handleSelectAnswer}
+                    onClearAnswer={handleClearAnswer}
                     onSubmit={resumeFromClarification}
+                    onCancel={cancelAgent}
+                />
+            )}
+            {clarificationQuestions?.kind === 'clarification' && !clarificationQuestions.questions && clarificationQuestions.variant === 'explain' && clarificationQuestions.content && pendingClarification && !isChatFormulating && (
+                // Plain-text closing answer surfaced as an explanation pause:
+                // read-only, no questions. The user can still type a followup
+                // in the chat box below (which resumes the conversation).
+                <ExplanationPanel
+                    content={clarificationQuestions.content}
                     onCancel={cancelAgent}
                 />
             )}

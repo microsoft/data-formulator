@@ -1,0 +1,163 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "execute_python_script",
+      "description": "Execute a general-purpose Python script in the sandbox. Here you use it to inspect data, compute statistics, transform tables, or verify assumptions before you act — write results to stdout with print() and that output is returned to you (it is NOT shown to the user). The script is for your own analysis, not for producing the final visualization. pandas, numpy, duckdb, sklearn, scipy are available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "description": "One-sentence description of what this script does and why (shown to user as progress)."
+          },
+          "code": {
+            "type": "string",
+            "description": "Python script to execute. Use print() to surface output."
+          }
+        },
+        "required": ["purpose", "code"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "inspect_source_data",
+      "description": "Get a detailed summary of one or more source tables — schema, field-level statistics, and sample rows.  Cheaper than execute_python_script for basic data inspection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_names": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of table names from [SOURCE TABLES] to inspect."
+          }
+        },
+        "required": ["table_names"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "visualize",
+      "description": "Commit a data transform + chart: run code producing a DataFrame and render it. The agent observes the result and continues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thought": {
+            "type": "string",
+            "description": "Brief rationale for this visualization (not shown to the user)."
+          },
+          "display_instruction": {
+            "type": "string",
+            "description": "≤12 words. State the question or hypothesis the chart investigates — don't recap the chart spec (x/y/color/split are already visible). Wrap a **column** in ** ** if it anchors the question."
+          },
+          "input_tables": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Table names from [SOURCE TABLES] that the code reads."
+          },
+          "code": {
+            "type": "string",
+            "description": "Python code producing a DataFrame assigned to output_variable."
+          },
+          "output_variable": {
+            "type": "string",
+            "description": "snake_case name of the DataFrame variable the code assigns."
+          },
+          "chart": {
+            "type": "object",
+            "description": "Chart spec: {chart_type, encodings:{x,y,...}, config:{}}. chart_type from the chart type reference."
+          },
+          "field_metadata": {
+            "type": "object",
+            "description": "Map of field name -> SemanticType for the output columns."
+          },
+          "field_display_names": {
+            "type": "object",
+            "description": "Map of field name -> human-readable display name for chart axes and table headers."
+          }
+        },
+        "required": ["code", "output_variable", "chart"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "ask_user",
+      "description": "Ask the user something and pause for their reply — the run resumes in the same turn with their answer in context. Use this for ANY turn where you want the user to respond: a freeform question, a clarification you need before acting, or an explanation you want them to react to. Freeform is fine (no clickable options required). Prefer this over ending your turn with a plain-text question: plain text ends the run and the user's next message starts a fresh turn without this context, whereas ask_user keeps the conversation going. Reserve plain text (no action) for your final answer when you expect nothing further.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thought": {
+            "type": "string",
+            "description": "Brief rationale (not shown to the user)."
+          },
+          "questions": {
+            "type": "array",
+            "description": "One or more things to put to the user. Each is either a question that awaits an answer (clarification) or a statement the user need not answer (explanation). A question with no required answer and no options renders as a plain explanation. Ask at most 3.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "The question or explanation. For an explanation, keep it to 1–3 grounded sentences. Wrap a **column** in ** ** to highlight it."
+                },
+                "responseType": {
+                  "type": "string",
+                  "enum": ["single_choice", "free_text"],
+                  "description": "single_choice when options are offered; free_text when the user types a custom answer."
+                },
+                "required": {
+                  "type": "boolean",
+                  "description": "false for an explanation / optional follow-up; true for a clarification the run depends on."
+                },
+                "options": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Plain-text choices, at most 3. Keep them to the few most likely answers — the user can always type a freeform reply, so don't try to enumerate every case. For a clarification these are answers; for an explanation these are short chart-producing follow-up prompts the user might click next (≤8 words each, phrased as the user would say them)."
+                }
+              },
+              "required": ["text"]
+            }
+          }
+        },
+        "required": ["questions"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delegate",
+      "description": "Hand off to a peer agent (e.g. data loading) when the question needs work outside this agent's scope, then end the run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thought": {
+            "type": "string",
+            "description": "Brief rationale (not shown to the user)."
+          },
+          "target": {
+            "type": "string",
+            "enum": ["data_loading"],
+            "description": "The peer agent to hand off to."
+          },
+          "message": {
+            "type": "string",
+            "description": "Short note to the user that you're handing off, e.g. 'I'll hand this to the data loading agent — pick a search:'."
+          },
+          "options": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "1–2 seed prompts for the target agent. Each becomes a one-click button (label == seed prompt); if two, make them meaningfully distinct."
+          }
+        },
+        "required": ["target", "options"]
+      }
+    }
+  }
+]

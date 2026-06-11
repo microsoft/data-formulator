@@ -516,7 +516,7 @@ ${styles}
             const timer = setTimeout(() => loadReport(focusedReportId), 800);
             return () => clearTimeout(timer);
         }
-    }, [focusedReportId, charts, tables]);
+    }, [focusedReportId, charts, tables, chartThumbnails]);
 
     // Keep local content in sync with Redux during streaming (status === 'generating')
     useEffect(() => {
