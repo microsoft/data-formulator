@@ -21,14 +21,13 @@ import {
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
 import { persistEphemeralDerivedTable } from '../app/tableThunks';
-import { getCachedChart } from '../app/chartCache';
-import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
+import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 
 import { alpha } from '@mui/material/styles';
@@ -141,7 +140,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const workspaceBackend = useSelector((state: DataFormulatorState) => state.serverConfig.WORKSPACE_BACKEND);
     const activeWorkspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
-    const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -459,11 +457,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 agent_summary: summary?.content || '',
             };
 
-            // Include chart thumbnail for the focused leaf table (the one the user is looking at)
-            if (walkTable.id === targetTableId && resolvedChart && chartThumbnails[resolvedChart.id]) {
-                step.chart_thumbnail = chartThumbnails[resolvedChart.id];
-            }
-
             focusedSteps.unshift(step);
 
             walkTable = tables.find(t => t.id === trigger.tableId);
@@ -531,7 +524,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const otherThreads = peripheralThreads.length > 0 ? peripheralThreads : undefined;
 
         return { focusedThread, otherThreads };
-    }, [tables, charts, conceptShelfItems, chartThumbnails]);
+    }, [tables, charts, conceptShelfItems]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
@@ -635,11 +628,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     table_ref: tbl?.virtual?.tableId || c.tableRef,
                     code: tbl?.derive?.code || '',
                     chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
-                    // Optional rendered image: the agent reads charts from
-                    // data + encodings, but a cached PNG (when available)
-                    // lets it visually confirm a pre-existing chart. Prefer
-                    // the downscaled thumbnail to keep the request lean.
-                    chart_image: chartThumbnails[c.id] || getCachedChart(c.id)?.thumbnailDataUrl || undefined,
                 };
             });
         requestBody.charts = availableCharts;
@@ -712,8 +700,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
         }
 
-        // Track the last agent thought and display_instruction (from "action" events)
-        let lastAgentThought: string | null = null;
+        // Track the last agent display_instruction (from "action" events)
         let lastAgentDisplayInstruction: string | null = null;
         let lastAgentInputTables: string[] = [];
 
@@ -911,7 +898,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
             // ── action: agent chose what to do ──
             if (result.type === "action") {
-                lastAgentThought = result.thought || null;
                 lastAgentInputTables = result.input_tables || [];
                 if (result.action === "visualize") {
                     lastAgentDisplayInstruction = result.display_instruction || null;
@@ -974,7 +960,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             ...currentDraftInteraction,
                             {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
-                                plan: [lastAgentThought, pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\x1E') || undefined,
+                                plan: [pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\x1E') || undefined,
                                 content: question || displayInstruction,
                                 displayContent: displayInstruction,
                                 inputTableNames: resolvedSourceNames,
@@ -983,7 +969,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         ],
                     }
                 };
-                lastAgentThought = null;
                 lastAgentDisplayInstruction = null;
                 lastAgentInputTables = [];
                 thinkingSteps = []; // reset for next chart
@@ -1059,6 +1044,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     && !createdCharts.some(c => c.id === forwardedChartId)) {
                     newChart.id = forwardedChartId;
                 }
+                // Title comes from the analyst's visualize action (read from the
+                // chart data + spec). Stored on the chart so the canvas renders
+                // it as the chart heading; keyed for staleness on edit.
+                const insightTitle = refinedGoal?.title;
+                if (typeof insightTitle === 'string' && insightTitle.trim()) {
+                    newChart.title = insightTitle.trim();
+                    newChart.titleKey = computeInsightKey(newChart);
+                }
                 runCreatedChartIds.push(newChart.id);
                 // Mark as unread by default; cleared below if we auto-focus it
                 // (i.e. it's the first artifact this run) or by setFocused when
@@ -1084,11 +1077,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     currentDraftId = null;
                 }
                 createNextDraft(candidateTableId, []);
-
-                if (createdCharts.length > 0) {
-                    const lastChart = createdCharts[createdCharts.length - 1];
-                    dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
-                }
             }
 
             // ── clarify / explain: pause and let user respond ──

@@ -15,7 +15,7 @@ const EXCLUDED_FIELDS = new Set([
     'models', 'selectedModelId', 'testedModels',
     'dataLoaderConnectParams', 'identity', 'serverConfig',
     // Transient fields that shouldn't trigger or be included in saves
-    'chartSynthesisInProgress', 'chartInsightInProgress',
+    'chartSynthesisInProgress',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
     // Thumbnails are derived from chart specs + table data; re-rendered
     // from the module cache on reload, so don't waste bandwidth saving them.

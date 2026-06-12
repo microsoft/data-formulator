@@ -98,8 +98,8 @@ class ReportWritingSkill:
         if name != "inspect_chart":
             return ToolResult(text=f"report has no tool '{name}'.")
         charts: list[dict[str, Any]] = (ctx.payload or {}).get("charts") or []
-        text, images = self._handle_inspect_chart(args.get("chart_ids", []), charts)
-        return ToolResult(text=text, images=tuple(images))
+        text = self._handle_inspect_chart(args.get("chart_ids", []), charts)
+        return ToolResult(text=text)
 
     # ------------------------------------------------------------------
     # Action handler (buffered fallback — delivers the finished report)
@@ -157,23 +157,19 @@ class ReportWritingSkill:
         self,
         chart_ids: list[str],
         charts: list[dict[str, Any]],
-    ) -> tuple[str, list[str]]:
+    ) -> str:
         """Inspect charts by *reading their data*, not by rendering them.
 
         The agent "reads" a chart from its encodings + sample rows (+ the code
         that produced it), which it can further interrogate with
         ``execute_python_script``. This avoids fragile server-side rasterization
-        and the multi-modal round-trip. A rendered image is attached **only when
-        one is already supplied** (``chart_image`` — e.g. a pre-existing chart's
-        cached PNG forwarded by the frontend); run-created charts carry none.
+        and the multi-modal round-trip — rendered chart images are no longer fed
+        to the agent (experiments showed they don't improve narration over
+        reading the data + spec directly).
 
-        Returns ``(text_summary, image_urls)`` where ``image_urls`` is the list
-        of optional base64 PNG data URLs. Images are returned separately so the
-        caller can attach them as a follow-up vision message — tool-result
-        messages cannot carry image content on most providers.
+        Returns the text summary of the inspected charts.
         """
         results = []
-        image_urls: list[str] = []
         for chart_id in chart_ids:
             chart = next((c for c in charts if c["chart_id"] == chart_id), None)
             if not chart:
@@ -203,17 +199,11 @@ class ReportWritingSkill:
                         f"against table '{chart_data['name']}'."
                     )
 
-            # Image is strictly optional: only a frontend-supplied render is used.
-            image = chart.get("chart_image")
-            if image:
-                image_urls.append(image)
-                parts.append("  [Chart image attached below for visual confirmation]")
-            else:
-                parts.append("  [No image — read the chart from its encodings + data above]")
+            parts.append("  [Read the chart from its encodings + data above]")
 
             results.append("\n".join(parts))
 
-        return "\n\n".join(results), image_urls
+        return "\n\n".join(results)
 
 
 def get_skill() -> ReportWritingSkill:

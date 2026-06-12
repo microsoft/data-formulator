@@ -335,12 +335,6 @@ export function createDictTable(
     }
 }
 
-export interface ChartInsight {
-    title: string;
-    takeaways: string[];
-    key: string;  // "chartType|sortedFieldIds" — used to detect staleness
-}
-
 /**
  * A user-authored "skin" of a chart: a Vega-Lite spec edited via the
  * style/restyle agent. Variants share the chart's encoding and data — they
@@ -405,14 +399,15 @@ export type Chart = {
     tableRef: string, 
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
-    insight?: ChartInsight,  // AI-generated insight about the visualization
+    title?: string,  // AI-generated chart title (from the analyst's visualize action)
+    titleKey?: string,  // "chartType|sortedFieldIds" snapshot when title was set; used to detect staleness
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
     scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)
     unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
 
-/** Compute a string key for insight invalidation: chartType|sortedFieldIds */
+/** Compute a string key for title-staleness invalidation: chartType|sortedFieldIds */
 export function computeInsightKey(chart: Chart): string {
     const fieldIds = Object.values(chart.encodingMap)
         .map(enc => enc.fieldID)

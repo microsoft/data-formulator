@@ -126,12 +126,12 @@ class CoreSkill:
         field_metadata = action.get("field_metadata", {})
         field_display_names = action.get("field_display_names", {})
         display_instruction = action.get("display_instruction", "")
+        title = action.get("title", "")
         step_index = int((ctx.payload or {}).get("completed_step_count", 0)) + 1
 
         yield {
             "type": "action",
             "action": "visualize",
-            "thought": action.get("thought", ""),
             "display_instruction": display_instruction,
             "input_tables": action.get("input_tables", []),
         }
@@ -143,6 +143,7 @@ class CoreSkill:
             field_metadata=field_metadata,
             field_display_names=field_display_names,
             display_instruction=display_instruction,
+            title=title,
             messages=ctx.trajectory,
         )
 
@@ -179,7 +180,6 @@ class CoreSkill:
         observation = self._format_observation(
             step_index=step_index,
             display_instruction=display_instruction,
-            thought=action.get("thought", ""),
             code=transform_result.get("code", ""),
             data=transformed_data,
             chart_id=transform_result.get("chart_id"),
@@ -255,7 +255,6 @@ class CoreSkill:
     def _format_observation(
         step_index: int,
         display_instruction: str,
-        thought: str,
         code: str,
         data: dict[str, Any],
         workspace: Any,

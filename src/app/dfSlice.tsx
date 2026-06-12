@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -12,7 +12,6 @@ import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash } from './utils';
 import { apiRequest } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
-import { getChartPngDataUrl } from './chartCache';
 import i18n from '../i18n';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporalType } from '../data/utils';
@@ -186,7 +185,6 @@ export interface DataFormulatorState {
     viewMode: 'editor' | 'report';
 
     chartSynthesisInProgress: string[];
-    chartInsightInProgress: string[];
 
     /**
      * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
@@ -300,7 +298,6 @@ const initialState: DataFormulatorState = {
     viewMode: 'editor',
 
     chartSynthesisInProgress: [],
-    chartInsightInProgress: [],
     chartThumbnails: {},
     displayRowsTick: 0,
 
@@ -613,97 +610,6 @@ export const fetchCodeExpl = createAsyncThunk(
     }
 );
 
-export const fetchChartInsight = createAsyncThunk(
-    "dataFormulatorSlice/fetchChartInsight",
-    async (args: { chartId: string; tableId: string }, { getState }) => {
-        console.log(">>> call agent to generate chart insight <<<");
-
-        const state = getState() as DataFormulatorState;
-        const chart = collectAllCharts(state).find(c => c.id === args.chartId);
-        if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
-
-        // Wait for chart image to be available in cache (replaces fixed 1.5s delay at call site)
-        const chartImage = await waitForChartImage(args.chartId);
-        if (!chartImage) {
-            throw new DOMException('Chart image not ready after waiting', 'ChartImageNotReady');
-        }
-
-        // Strip the data:image/png;base64, prefix for the backend
-        const base64Prefix = 'data:image/png;base64,';
-        const imagePayload = chartImage.startsWith(base64Prefix)
-            ? chartImage.substring(base64Prefix.length)
-            : chartImage;
-
-        // Collect field names from the encoding map
-        const fieldNames = Object.values(chart.encodingMap)
-            .map(enc => enc.fieldID)
-            .filter((id): id is string => !!id)
-            .map(id => {
-                const field = state.conceptShelfItems.find(f => f.id === id);
-                return field?.name || id;
-            });
-
-        // Collect input table info (include source tables for derived tables)
-        const table = state.tables.find(t => t.id === args.tableId);
-        const tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
-        const inputTables = [...new Set(tableIds)]
-            .map(tId => state.tables.find(t => t.id === tId))
-            .filter((t): t is DictTable => !!t)
-            .map(t => ({
-                name: t.id,
-                rows: t.rows,
-            }));
-
-        // Use unified timeout from user config
-        const timeoutSeconds = state.config.formulateTimeoutSeconds;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-            controller.abort(new DOMException(
-                `Chart insight timed out after ${timeoutSeconds}s`,
-                'TimeoutError',
-            ));
-        }, timeoutSeconds * 1000);
-
-        try {
-            const { data } = await apiRequest(getUrls().CHART_INSIGHT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chart_image: imagePayload,
-                    chart_type: chart.chartType,
-                    field_names: fieldNames,
-                    input_tables: inputTables,
-                    model: dfSelectors.getActiveModel(state),
-                }),
-                signal: controller.signal,
-            });
-
-            return { title: data.title, takeaways: data.takeaways,
-                     chartId: args.chartId, insightKey: computeInsightKey(chart) };
-        } finally {
-            clearTimeout(timeoutId);
-        }
-    }
-);
-
-/**
- * Wait for a chart image to appear in chartCache.
- * Polls at short intervals up to a maximum timeout.
- */
-async function waitForChartImage(
-    chartId: string,
-    timeoutMs: number = 8000,
-    intervalMs: number = 250,
-): Promise<string | undefined> {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-        const image = await getChartPngDataUrl(chartId);
-        if (image) return image;
-        await new Promise(r => setTimeout(r, intervalMs));
-    }
-    return undefined;
-}
-
 /** Fast fetch: returns the list of server-configured models instantly (no
  *  connectivity check).  The UI renders them immediately with a "testing"
  *  spinner so the admin can see every configured model right away. */
@@ -767,7 +673,6 @@ export const dataFormulatorSlice = createSlice({
             state.viewMode = 'editor';
 
             state.chartSynthesisInProgress = [];
-            state.chartInsightInProgress = [];
 
             // Preserve serverConfig ??it reflects the actual server state, not user state
 
@@ -907,7 +812,6 @@ export const dataFormulatorSlice = createSlice({
                 displayedMessageIdx: -1,
                 viewMode: saved.viewMode || 'editor',
                 chartSynthesisInProgress: [],
-                chartInsightInProgress: [],
                 cleanInProgress: false,
                 dataLoadingChatInProgress: false,
                 dataLoadingChatResetCounter: 0,
@@ -1308,12 +1212,6 @@ export const dataFormulatorSlice = createSlice({
         },
         bumpDisplayRowsTick: (state) => {
             state.displayRowsTick = (state.displayRowsTick || 0) + 1;
-        },
-        updateChartInsight: (state, action: PayloadAction<{chartId: string, insight: ChartInsight}>) => {
-            let chart = collectAllCharts(state).find(c => c.id == action.payload.chartId);
-            if (chart) {
-                chart.insight = action.payload.insight;
-            }
         },
         // Zoom level applied by the resizer. Stored on the Chart (not in
         // config, which is for template-defined properties) so it persists
@@ -1951,8 +1849,8 @@ export const dataFormulatorSlice = createSlice({
                 });
             }
             // Reset other transient in-progress flags that snuck into the
-            // persisted blob (chartSynthesisInProgress / chartInsightInProgress
-            // are already blacklisted in store.ts).
+            // persisted blob (chartSynthesisInProgress is already blacklisted
+            // in store.ts).
             incoming.cleanInProgress = false;
             incoming.dataLoadingChatInProgress = false;
             incoming.sessionLoading = false;
@@ -2124,58 +2022,6 @@ export const dataFormulatorSlice = createSlice({
                     value: 'Failed to infer field semantic types',
                 });
             }
-        })
-        .addCase(fetchChartInsight.pending, (state, action) => {
-            let chartId = action.meta.arg.chartId;
-            if (!state.chartInsightInProgress.includes(chartId)) {
-                state.chartInsightInProgress.push(chartId);
-            }
-        })
-        .addCase(fetchChartInsight.fulfilled, (state, action) => {
-            let { chartId, insightKey, title, takeaways } = action.payload;
-            let chart = collectAllCharts(state).find(c => c.id === chartId);
-            if (chart && (title || (takeaways && takeaways.length > 0))) {
-                chart.insight = { title, takeaways: takeaways || [], key: insightKey };
-            }
-            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
-            console.log("fetched chart insight", action.payload);
-        })
-        .addCase(fetchChartInsight.rejected, (state, action) => {
-            const chartId = action.meta.arg.chartId;
-            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
-
-            const errorName = action.error?.name;
-
-            if (errorName === 'AbortError') {
-                // User cancelled — no feedback needed
-                return;
-            }
-
-            if (errorName === 'TimeoutError') {
-                state.messages.push({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'chart insight',
-                    value: i18n.t('messages.chartInsightTimedOut', {
-                        seconds: state.config.formulateTimeoutSeconds,
-                    }),
-                });
-                return;
-            }
-
-            if (errorName === 'ChartImageNotReady') {
-                state.messages.push({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'chart insight',
-                    value: i18n.t('messages.chartInsightImageNotReady'),
-                });
-                return;
-            }
-
-            state.messages.push({
-                timestamp: Date.now(), type: 'warning',
-                component: 'chart insight',
-                value: action.error?.message || i18n.t('messages.chartInsightFailed'),
-            });
         })
     },
 })

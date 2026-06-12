@@ -46,9 +46,9 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "thought": {
+          "title": {
             "type": "string",
-            "description": "Brief rationale for this visualization (not shown to the user)."
+            "description": "A short, descriptive title for the chart (5-10 words, title case). Summarize what the chart shows — the subject, the dimensions compared, and the scope. Do NOT include the chart type. Shown as the chart's heading."
           },
           "display_instruction": {
             "type": "string",

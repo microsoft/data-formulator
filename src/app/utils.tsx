@@ -28,7 +28,6 @@ export function getUrls() {
         SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,
         
         CODE_EXPL_URL: `/api/agent/code-expl`,
-        CHART_INSIGHT_URL: `/api/agent/chart-insight`,
         SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
 
         ANALYST_STREAMING: `/api/agent/analyst-streaming`,

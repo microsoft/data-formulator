@@ -16,7 +16,7 @@ const persistConfig = {
     // globalModels are always fetched fresh from the server on each app start,
     // so there is no need (and it would cause stale-data issues) to persist them.
     // In-progress flags are transient and should not survive page refreshes.
-    blacklist: ['serverConfig', 'globalModels', 'chartSynthesisInProgress', 'chartInsightInProgress'],
+    blacklist: ['serverConfig', 'globalModels', 'chartSynthesisInProgress'],
 }
 
 const persistedReducer = persistReducer(persistConfig, dataFormulatorReducer)

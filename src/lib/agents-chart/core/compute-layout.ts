@@ -825,13 +825,39 @@ export function computeLayout(
                 && stats.maxLen <= VL_SHORT_DISCRETE_LABEL_MAX_LEN;
 
             if (fewShortStrings || (numericLike && fitsHorizontally)) {
-                // Must be explicit: omitting labelAngle leaves VL defaults (e.g. -45° on ordinal).
-                xLabel = {
-                    ...xLabel,
-                    labelAngle: 0,
-                    labelAlign: 'center',
-                    labelBaseline: 'top',
-                };
+                // Horizontal labels need a band at least as wide as the widest
+                // label, or they overlap (e.g. "midgrade"/"premium" in a few-
+                // category box plot whose default band step is narrow). For
+                // string categories that don't yet fit, widen the step to fit —
+                // bounded by the stretch budget. If even the budget can't fit
+                // them, fall back to angled labels instead of overlapping.
+                let keepHorizontal = true;
+                if (!numericLike && !fitsHorizontally) {
+                    const desiredStep = Math.ceil(labelPx) + 6;  // +6px inter-label gap
+                    const cap = Math.max(minStepVal, Math.floor(maxSubplotW / xTotalNominalCount));
+                    const widenedStep = Math.min(desiredStep, cap);
+                    if (widenedStep >= desiredStep) {
+                        if (widenedStep > xStepSize) xStepSize = widenedStep;
+                    } else {
+                        keepHorizontal = false;
+                    }
+                }
+                if (keepHorizontal) {
+                    // Must be explicit: omitting labelAngle leaves VL defaults (e.g. -45° on ordinal).
+                    xLabel = {
+                        ...xLabel,
+                        labelAngle: 0,
+                        labelAlign: 'center',
+                        labelBaseline: 'top',
+                    };
+                } else {
+                    xLabel = {
+                        ...xLabel,
+                        labelAngle: -45,
+                        labelAlign: 'right',
+                        labelBaseline: 'top',
+                    };
+                }
             } else if (numericLike && !fitsHorizontally && xLabel.labelAngle === undefined) {
                 // Numeric labels that don't fit horizontally and weren't already
                 // rotated by step-based sizing (which only rotates at narrow

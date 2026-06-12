@@ -887,10 +887,9 @@ class AnalystAgent:
 
         The entry mirrors the shape the frontend forwards for pre-existing charts
         (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref`` / ``code`` /
-        ``chart_data``) **minus** the optional ``chart_image`` — run-created charts
-        are read by the agent from their encodings + sample data (and code), not a
-        rendered image. The mutation lands on ``self._run_payload['charts']`` so the
-        next dispatched skill ctx sees it.
+        ``chart_data``). Charts are read by the agent from their encodings + sample
+        data (and code), not a rendered image. The mutation lands on
+        ``self._run_payload['charts']`` so the next dispatched skill ctx sees it.
         """
         chart_id = transform_result.get("chart_id")
         if not chart_id:
@@ -989,6 +988,7 @@ class AnalystAgent:
         field_metadata: dict,
         field_display_names: dict,
         display_instruction: str,
+        title: str = "",
         messages: list[dict] | None = None,
     ) -> dict[str, Any]:
         """Run visualize code in sandbox and assemble chart."""
@@ -1062,6 +1062,7 @@ class AnalystAgent:
 
             refined_goal = {
                 "display_instruction": display_instruction,
+                "title": title,
                 "output_variable": output_variable,
                 "output_fields": list(query_output.columns),
                 "chart": chart_spec,
@@ -1256,12 +1257,6 @@ class AnalystAgent:
 
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
-        chart_thumbnail = None
-        if focused_thread:
-            for step in focused_thread:
-                if step.get("chart_thumbnail"):
-                    chart_thumbnail = step["chart_thumbnail"]
-
         system_prompt = self._build_system_prompt(
             has_primary_tables=bool(primary_tables),
             has_focused_thread=bool(focused_thread),
@@ -1270,19 +1265,15 @@ class AnalystAgent:
             has_charts=bool(charts_block),
         )
 
-        has_images = (chart_thumbnail and chart_thumbnail.startswith("data:")) or (attached_images and len(attached_images) > 0)
+        has_images = bool(attached_images) and len(attached_images) > 0
 
         if has_images:
             content_parts: list[dict] = [{"type": "text", "text": user_content}]
-            if chart_thumbnail and chart_thumbnail.startswith("data:"):
-                content_parts.append({"type": "text", "text": "\n[CURRENT CHART] (the chart the user is currently viewing):"})
-                content_parts.append({"type": "image_url", "image_url": {"url": chart_thumbnail, "detail": "low"}})
-            if attached_images:
-                label = "[USER ATTACHMENT]" if len(attached_images) == 1 else "[USER ATTACHMENTS]"
-                content_parts.append({"type": "text", "text": f"\n{label} (image(s) provided by the user):"})
-                for img in attached_images:
-                    if img.startswith("data:"):
-                        content_parts.append({"type": "image_url", "image_url": {"url": img, "detail": "low"}})
+            label = "[USER ATTACHMENT]" if len(attached_images) == 1 else "[USER ATTACHMENTS]"
+            content_parts.append({"type": "text", "text": f"\n{label} (image(s) provided by the user):"})
+            for img in attached_images:
+                if img.startswith("data:"):
+                    content_parts.append({"type": "image_url", "image_url": {"url": img, "detail": "low"}})
             return [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content_parts},

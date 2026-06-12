@@ -77,6 +77,9 @@ result and decide your next move.
 - `display_instruction` — ≤12 words; the question/hypothesis the chart
   investigates (don't recap x/y/color — those are visible). Wrap a **column** in
   `**…**` if it anchors the question.
+- `title` — short descriptive chart heading (5–10 words, title case): the
+  subject, the dimensions compared, and the scope. Do NOT include the chart
+  type. This is shown as the chart's title.
 - `code` — Python producing a DataFrame assigned to `output_variable`.
 - `output_variable` — snake_case name the code assigns.
 - `chart` — `{chart_type, encodings:{x,y,…}, config:{}}` (chart_type from the

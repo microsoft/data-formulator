@@ -41,6 +41,7 @@ const PlanStepItem: React.FC<{
     showShimmer: boolean;
     trailing?: React.ReactNode;
 }> = ({ step, showShimmer, trailing }) => {
+    const theme = useTheme();
     const [expanded, setExpanded] = useState(false);
     const isChecked = step.startsWith('✓');
     const isFailed = step.startsWith('✗');
@@ -49,8 +50,14 @@ const PlanStepItem: React.FC<{
     const displayLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
     const IconComp = getStepIconComponent(step);
 
-    const stepColor = isFailed ? 'error.main' : isWarning ? 'warning.main' : isInfo ? 'info.main'
-        : showShimmer ? 'text.secondary' : 'text.disabled';
+    // Text stays in the normal muted color even for failed/warning steps — the
+    // icon already signals the state, so loud red/orange body text is overkill.
+    const textColor = showShimmer ? 'text.secondary' : 'text.disabled';
+    // The icon carries the state hint, lightly tinted (not full-strength).
+    const iconColor = isFailed ? alpha(theme.palette.error.main, 0.7)
+        : isWarning ? alpha(theme.palette.warning.main, 0.7)
+        : isInfo ? alpha(theme.palette.info.main, 0.7)
+        : textColor;
 
     return (
         <Box sx={{
@@ -74,10 +81,10 @@ const PlanStepItem: React.FC<{
         }}
         onClick={() => setExpanded(prev => !prev)}
         >
-            <IconComp sx={{ width: 10, height: 10, color: stepColor, flexShrink: 0, mt: '2px' }} />
+            <IconComp sx={{ width: 10, height: 10, color: iconColor, flexShrink: 0, mt: '2px' }} />
             <Typography component="span" sx={{
                 fontSize: '10px',
-                color: stepColor,
+                color: textColor,
                 fontStyle: 'italic',
                 lineHeight: 1.4,
                 ...(!expanded ? {

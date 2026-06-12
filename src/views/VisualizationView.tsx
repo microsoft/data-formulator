@@ -720,11 +720,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let triggerTable = tables.find(t => t.derive?.trigger?.chart?.id == focusedChart?.id);
 
-    // Chart insight: the generation UI was removed, but a chart that already
-    // carries an insight still surfaces its title on the rendered chart, so we
-    // keep the freshness check used by `insightTitle` below.
-    const currentInsightKey = computeInsightKey(focusedChart);
-    const insightFresh = focusedChart.insight?.key === currentInsightKey;
+    // Chart title: surfaced as the rendered chart heading. The title is kept
+    // only while its key matches the chart's current encoded fields (chartType
+    // + field ids), so it stays through property edits (e.g. sort order) but is
+    // dropped once the encoded fields change.
+    const titleFresh = !!focusedChart.title && focusedChart.titleKey === computeInsightKey(focusedChart);
     
     const actionBtnSx = {
         padding: '4px',
@@ -841,7 +841,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         scaleFactor={localScaleFactor}
                                         maxStretchFactor={config.maxStretchFactor}
                                         chartUnavailable={chartUnavailable}
-                                        insightTitle={insightFresh && focusedChart.insight?.title ? focusedChart.insight.title : undefined}
+                                        insightTitle={titleFresh ? focusedChart.title : undefined}
                                         onSpecReady={handleSpecReady}
                                     />
                                 </Box>
