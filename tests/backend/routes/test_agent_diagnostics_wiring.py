@@ -69,7 +69,7 @@ LLM_CONTENT_WITH_JSON_AND_CODE = (
 class TestDataRecAgentWiring:
 
     def _make_agent(self):
-        from data_formulator.agents.agent_data_rec import DataRecAgent
+        from eval_rec_ts.agent_data_rec import DataRecAgent
         client = MagicMock()
         workspace = MagicMock()
         workspace.get_fresh_name.return_value = "d-result_df"
@@ -78,7 +78,7 @@ class TestDataRecAgentWiring:
             model_info={"provider": "test", "model": "mock"},
         )
 
-    @patch("data_formulator.agents.agent_data_rec.supplement_missing_block")
+    @patch("eval_rec_ts.agent_data_rec.supplement_missing_block")
     @patch("data_formulator.sandbox.create_sandbox")
     def test_normal_response_has_diagnostics(self, mock_sandbox_factory, mock_supplement) -> None:
         mock_supplement.return_value = (
@@ -122,7 +122,7 @@ class TestDataRecAgentWiring:
         assert diag["agent"] == "DataRecAgent"
         assert diag["error"] == "rate limit"
 
-    @patch("data_formulator.agents.agent_data_rec.supplement_missing_block")
+    @patch("eval_rec_ts.agent_data_rec.supplement_missing_block")
     @patch("data_formulator.sandbox.create_sandbox")
     def test_execution_exception_diagnostics_are_sanitized(self, mock_sandbox_factory, mock_supplement) -> None:
         mock_supplement.return_value = (
@@ -163,7 +163,7 @@ class TestDataRecAgentWiring:
 class TestDataTransformAgentWiring:
 
     def _make_agent(self):
-        from data_formulator.agents.agent_data_transform import DataTransformationAgent
+        from eval_rec_ts.agent_data_transform import DataTransformationAgent
         client = MagicMock()
         workspace = MagicMock()
         workspace.get_fresh_name.return_value = "d-result_df"
@@ -172,7 +172,7 @@ class TestDataTransformAgentWiring:
             model_info={"provider": "test", "model": "mock"},
         )
 
-    @patch("data_formulator.agents.agent_data_transform.supplement_missing_block")
+    @patch("eval_rec_ts.agent_data_transform.supplement_missing_block")
     @patch("data_formulator.sandbox.create_sandbox")
     def test_normal_response_has_diagnostics(self, mock_sandbox_factory, mock_supplement) -> None:
         mock_supplement.return_value = (
@@ -215,7 +215,7 @@ class TestDataTransformAgentWiring:
         assert diag["agent"] == "DataTransformationAgent"
         assert diag["error"] == "server error"
 
-    @patch("data_formulator.agents.agent_data_transform.supplement_missing_block")
+    @patch("eval_rec_ts.agent_data_transform.supplement_missing_block")
     @patch("data_formulator.sandbox.create_sandbox")
     def test_execution_exception_diagnostics_are_sanitized(self, mock_sandbox_factory, mock_supplement) -> None:
         mock_supplement.return_value = (

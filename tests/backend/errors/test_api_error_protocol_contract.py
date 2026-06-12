@@ -86,7 +86,7 @@ class TestStreamingErrorProtocol:
 
     def test_stream_preflight_error_uses_json_error_envelope(self, agents_client):
         resp = agents_client.post(
-            "/api/agent/data-agent-streaming",
+            "/api/agent/analyst-streaming",
             data="not json",
             content_type="text/plain",
         )
@@ -95,7 +95,7 @@ class TestStreamingErrorProtocol:
         assert body["status"] == "error"
         assert body["error"]["code"] == ErrorCode.INVALID_REQUEST
 
-    def test_data_agent_streaming_emits_top_level_type_events(self, agents_client):
+    def test_analyst_streaming_emits_top_level_type_events(self, agents_client):
         agent_instance = MagicMock()
         agent_instance.run.return_value = [
             {"type": "text_delta", "content": "hello"},
@@ -107,10 +107,10 @@ class TestStreamingErrorProtocol:
             patch("data_formulator.routes.agents.get_client", return_value=object()),
             patch("data_formulator.routes.agents.get_workspace", return_value=object()),
             patch("data_formulator.datalake.workspace.get_user_home", return_value=object()),
-            patch("data_formulator.routes.agents.DataAgent", return_value=agent_instance),
+            patch("data_formulator.routes.agents.AnalystAgent", return_value=agent_instance),
         ):
             resp = agents_client.post(
-                "/api/agent/data-agent-streaming",
+                "/api/agent/analyst-streaming",
                 json={
                     "model": {},
                     "input_tables": [],

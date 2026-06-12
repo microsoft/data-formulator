@@ -13,7 +13,6 @@ import {
     CircularProgress,
     Card,
     LinearProgress,
-    Button,
     Chip,
     Popper,
     Paper,
@@ -38,6 +37,7 @@ import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -46,6 +46,11 @@ import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ClarificationPanel, DelegatePanel, ExplanationPanel } from './AgentPausePanel';
+
+// Seed prompt used when the user invokes "report" mode (or a report hand-off)
+// without typing an explicit instruction. The unified analyst loads its
+// `report` skill and emits `write_report` within a normal explore run.
+const REPORT_SEED_PROMPT = 'Write a report summarizing the exploration.';
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
     const { t } = useTranslation();
@@ -160,7 +165,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
     const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
     const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
-    const [selectedAgent, setSelectedAgent] = useState<'explore' | 'report'>('explore');
     const [attachedImages, setAttachedImages] = useState<string[]>([]);
     const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -404,10 +408,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [pendingClarification, draftNodes]);
 
     // ── Shared structured thread context builder (Tier 2 + Tier 3) ──
-    // Produces the same focused/peripheral thread context used by both the
-    // data agent (exploreFromChat) and the report agent (reportFromChat), so
-    // the report has the actual exploration narrative — user questions, agent
-    // thinking, findings — instead of just a flat list of charts.
+    // Produces the focused/peripheral thread context used by the analyst
+    // (exploreFromChat), so the report has the actual exploration narrative —
+    // user questions, agent thinking, findings — instead of just a flat list
+    // of charts.
     const buildThreadContext = useCallback((targetTableId: string): {
         focusedThread: any[] | undefined;
         otherThreads: any[] | undefined;
@@ -605,44 +609,40 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             max_iterations: 10,
         };
 
-        // ── Dev toggle: route through the unified AnalystAgent (design-35/36) ──
-        // Set localStorage `df_useAnalystAgent` = '1' to opt in. The unified
-        // agent can also write reports inside the same run, so we ship the
-        // available charts (same shape the report agent gets) for the report
-        // skill's inspect_chart. Additive: the legacy data agent ignores them.
-        const useAnalyst = localStorage.getItem('df_useAnalystAgent') === '1';
-        const streamUrl = useAnalyst ? getUrls().ANALYST_STREAMING : getUrls().DATA_AGENT_STREAMING;
-        const availableCharts = useAnalyst
-            ? charts
-                .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
-                .filter(c => tables.some(t => t.id === c.tableRef))
-                .map(c => {
-                    const tbl = tables.find(t => t.id === c.tableRef);
-                    const encodings: Record<string, string> = {};
-                    if (c.encodingMap) {
-                        for (const [ch, enc] of Object.entries(c.encodingMap)) {
-                            if ((enc as any)?.fieldID) {
-                                const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
-                                if (field) encodings[ch] = field.name;
-                            }
+        // ── Route through the unified AnalystAgent (design-35/36) ──
+        // The unified agent can also write reports inside the same run, so we
+        // ship the available charts (same shape the report flow gets) for the
+        // report skill's inspect_chart.
+        const streamUrl = getUrls().ANALYST_STREAMING;
+        const availableCharts = charts
+            .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
+            .filter(c => tables.some(t => t.id === c.tableRef))
+            .map(c => {
+                const tbl = tables.find(t => t.id === c.tableRef);
+                const encodings: Record<string, string> = {};
+                if (c.encodingMap) {
+                    for (const [ch, enc] of Object.entries(c.encodingMap)) {
+                        if ((enc as any)?.fieldID) {
+                            const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
+                            if (field) encodings[ch] = field.name;
                         }
                     }
-                    return {
-                        chart_id: c.id,
-                        chart_type: c.chartType,
-                        encodings,
-                        table_ref: tbl?.virtual?.tableId || c.tableRef,
-                        code: tbl?.derive?.code || '',
-                        chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
-                        // Optional rendered image: the agent reads charts from
-                        // data + encodings, but a cached PNG (when available)
-                        // lets it visually confirm a pre-existing chart. Prefer
-                        // the downscaled thumbnail to keep the request lean.
-                        chart_image: chartThumbnails[c.id] || getCachedChart(c.id)?.thumbnailDataUrl || undefined,
-                    };
-                })
-            : [];
-        if (useAnalyst) requestBody.charts = availableCharts;
+                }
+                return {
+                    chart_id: c.id,
+                    chart_type: c.chartType,
+                    encodings,
+                    table_ref: tbl?.virtual?.tableId || c.tableRef,
+                    code: tbl?.derive?.code || '',
+                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
+                    // Optional rendered image: the agent reads charts from
+                    // data + encodings, but a cached PNG (when available)
+                    // lets it visually confirm a pre-existing chart. Prefer
+                    // the downscaled thumbnail to keep the request lean.
+                    chart_image: chartThumbnails[c.id] || getCachedChart(c.id)?.thumbnailDataUrl || undefined,
+                };
+            });
+        requestBody.charts = availableCharts;
 
         if (isResume) {
             // Resume: just send the assembled prompt as user_question. The
@@ -737,9 +737,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // The unified agent can write a report inside the same run: it emits an
         // `action`(write_report) commitment followed by `text_delta` events on
         // channel "report". We create a GeneratedReport on first signal, switch
-        // to the report view, and stream the markdown in — mirroring the
-        // standalone reportFromChat coalescing (90ms flush so Tiptap re-parses
-        // ~10×/sec instead of per-token).
+        // to the report view, and stream the markdown in — coalescing (90ms
+        // flush so Tiptap re-parses ~10×/sec instead of per-token).
         let reportId: string | null = null;
         let accumulatedReportMarkdown = '';
         let reportLastDispatched = '';
@@ -776,7 +775,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 createdAt: Date.now(),
                 status: 'generating',
                 prompt: agentPrompt,
-                triggerTableId: focusedTableId,
+                // Anchor to the run's current table (the draft's table) so the
+                // thread can render the generating card. While streaming, the
+                // card is rendered INSIDE the draft block (after the thinking
+                // steps) — never via pushReportItems — so it sits below the
+                // prompt, not above it. On completion it flips to 'completed'
+                // and pushReportItems renders it in the artifact slot.
+                triggerTableId: lastCreatedTableId || focusedTableId,
             };
             dispatch(dfActions.saveGeneratedReport(inProgressReport));
             dispatch(dfActions.setFocused({ type: 'report', reportId: newId }));
@@ -797,16 +802,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // write_report commitment → create the report + switch view.
             if (result.type === "action" && result.action === "write_report") {
                 ensureReport();
-                // Flush any buffered agent reasoning as its own step first, so
-                // it reads as a discrete prior step rather than running into the
-                // "outputting write_report" line (mirrors the tool_start flush).
+                // Flush any buffered agent reasoning as its own step. We do NOT
+                // add an "outputting write_report" step — the live generating
+                // report card already indicates that the report is being
+                // written, so the explicit step would be redundant.
                 if (pendingThought) {
                     thinkingSteps.push(pendingThought);
                     pendingThought = '';
-                }
-                thinkingSteps.push(t('dataThread.producingAction', { action: 'write_report' }));
-                if (currentDraftId) {
-                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                    }
                 }
                 return;
             }
@@ -1165,14 +1170,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 const target = (result.target === 'report_gen' ? 'report_gen' : 'data_loading') as 'data_loading' | 'report_gen';
 
                 if (target === 'report_gen') {
-                    // Auto-delegate to the report agent — no user approval gate.
+                    // Auto-delegate to the report flow — no user approval gate.
                     // When the user asks for a report, jumping straight into
                     // report generation is the expected behavior, so we pick the
                     // agent's first seed prompt (falling back to its message) and
                     // hand off directly. The report_gen handoff useEffect picks
-                    // this up and starts reportFromChat. The placeholder draft
-                    // has no role in the report view, so we drop it like a normal
-                    // completion would.
+                    // this up and re-runs the analyst with the seeded prompt. The
+                    // placeholder draft has no role in the report view, so we
+                    // drop it like a normal completion would.
                     if (currentDraftId) {
                         thinkingSteps = [];
                         pendingThought = '';
@@ -1225,7 +1230,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 const summary = result.status === "max_iterations"
                     ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
                     : rawSummary;
-                // Finalize any report streamed during this run.
+                // Finalize any report streamed during this run. A report is an
+                // artifact that OWNS its closing summary: it anchors to the
+                // newest table created this run, or falls back to the focused
+                // table when the run only summarized existing exploration (no
+                // new table) — never detached.
+                const reportAnchorTableId = reportId ? (lastCreatedTableId || focusedTableId) : null;
                 if (reportId) {
                     reportFlushNow();
                     const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
@@ -1234,15 +1244,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         content: accumulatedReportMarkdown,
                         status: 'completed',
                         title: titleMatch ? titleMatch[1].trim() : undefined,
-                        // Anchor the report to the latest table created this run
-                        // so it attaches to the newest thread item, like charts.
-                        triggerTableId: lastCreatedTableId || undefined,
+                        triggerTableId: reportAnchorTableId || undefined,
+                        // The closing answer lives on the report (rendered below
+                        // its card, deleted with it) — not on a table.
+                        summary: summary || undefined,
+                        summaryThought: result.content?.thought || undefined,
                     }));
                 }
-                if (lastCreatedTableId) {
-                    // The run produced an artifact (table / chart / report). Its
-                    // closing answer renders once as that table's after-summary
-                    // entry — exactly like a chart's summary.
+                // For a NON-report run, the closing answer renders once as the
+                // created table's after-summary entry — exactly like a chart's
+                // summary. (Report runs own their summary; see above.)
+                const summaryAnchorTableId = reportId ? null : lastCreatedTableId;
+                if (summaryAnchorTableId) {
                     if (summary) {
                         const entry: InteractionEntry = {
                             from: 'data-agent', to: 'user', role: 'summary',
@@ -1250,9 +1263,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             content: summary,
                             timestamp: Date.now(),
                         };
-                        dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries: [entry] }));
+                        dispatch(dfActions.appendTriggerInteraction({ tableId: summaryAnchorTableId, entries: [entry] }));
                     }
-                } else if (summary && currentDraftId) {
+                } else if (!reportId && summary && currentDraftId) {
                     // Pure Q&A run — the agent committed no action and answered in
                     // plain text (e.g. the user just asked a question). There's no
                     // table to anchor to. Treat the closing answer as an `explain`
@@ -1325,6 +1338,20 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             timestamp: Date.now(), type: 'error',
                             component: 'data-agent', value: errMsg,
                         }));
+                        // Finalize and anchor any report streamed so far so a
+                        // partial report isn't left unanchored (invisible in the
+                        // thread) and stuck in the 'generating' state.
+                        if (reportId) {
+                            reportFlushNow();
+                            const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
+                            dispatch(dfActions.updateGeneratedReportContent({
+                                id: reportId,
+                                content: accumulatedReportMarkdown,
+                                status: 'completed',
+                                title: titleMatch ? titleMatch[1].trim() : undefined,
+                                triggerTableId: lastCreatedTableId || focusedTableId || undefined,
+                            }));
+                        }
                         if (currentDraftId) {
                             dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                                 from: 'data-agent', to: 'user', role: 'error',
@@ -1387,217 +1414,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         })();
     }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles]);
 
-    // ── Report generation via report agent ──────────────────────────
-
-    const reportFromChat = useCallback(async (prompt: string) => {
-        if (!focusedTableId) return;
-
-        const cleanPrompt = prompt.trim() || 'Create a report summarizing the exploration.';
-
-        setChatPrompt('');
-        lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
-        firstFocusedThisRunRef.current = false;
-        userChartFocusLockedRef.current = false;
-        setIsChatFormulating(true);
-
-        // Build available charts list
-        const availableCharts = charts
-            .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
-            .filter(c => tables.some(t => t.id === c.tableRef))
-            .map(c => {
-                const tbl = tables.find(t => t.id === c.tableRef);
-                const encodings: Record<string, string> = {};
-                if (c.encodingMap) {
-                    for (const [ch, enc] of Object.entries(c.encodingMap)) {
-                        if ((enc as any)?.fieldID) {
-                            const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
-                            if (field) encodings[ch] = field.name;
-                        }
-                    }
-                }
-                return {
-                    chart_id: c.id,
-                    chart_type: c.chartType,
-                    encodings,
-                    table_ref: tbl?.virtual?.tableId || c.tableRef,
-                    code: tbl?.derive?.code || '',
-                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
-                };
-            });
-
-        const selectedChartIds = availableCharts.map(c => c.chart_id);
-
-        // Create a report entry and switch to report view
-        const reportId = `report-${Date.now()}`;
-        const inProgressReport: GeneratedReport = {
-            id: reportId,
-            content: '',
-            selectedChartIds,
-            createdAt: Date.now(),
-            status: 'generating',
-            prompt: cleanPrompt,
-            triggerTableId: focusedTableId,
-        };
-        dispatch(dfActions.saveGeneratedReport(inProgressReport));
-        dispatch(dfActions.setFocused({ type: 'report', reportId }));
-        dispatch(dfActions.setViewMode('report'));
-
-        const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable).filter(Boolean);
-
-        // Send the same structured exploration narrative the data agent gets,
-        // so the report is grounded in the actual thread (user questions, agent
-        // thinking, findings) rather than a flat list of charts.
-        const { focusedThread, otherThreads } = buildThreadContext(focusedTableId);
-
-        const body = JSON.stringify({
-            model: activeModel,
-            input_tables: actionTables.map(t => ({
-                name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ''),
-            })),
-            primary_tables: primaryTableIds.map(id => {
-                const t = tables.find(tbl => tbl.id === id);
-                return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, '');
-            }),
-            charts: availableCharts,
-            user_prompt: cleanPrompt,
-            ...(focusedThread ? { focused_thread: focusedThread } : {}),
-            ...(otherThreads ? { other_threads: otherThreads } : {}),
-        });
-
-        const controller = new AbortController();
-        agentAbortRef.current = controller;
-        let accumulatedMarkdown = '';
-
-        // Coalesce per-token updates: dispatching on every text_delta forces the
-        // Tiptap editor to re-parse the entire document each time, which makes
-        // the stream feel chunky / non-streaming. Batch updates on a short
-        // timer so the editor refreshes ~10×/sec while the wire still streams.
-        const FLUSH_INTERVAL_MS = 90;
-        let lastDispatched = '';
-        let flushTimer: ReturnType<typeof setTimeout> | null = null;
-        const flushNow = () => {
-            if (flushTimer) {
-                clearTimeout(flushTimer);
-                flushTimer = null;
-            }
-            if (accumulatedMarkdown === lastDispatched) return;
-            lastDispatched = accumulatedMarkdown;
-            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
-            dispatch(dfActions.updateGeneratedReportContent({
-                id: reportId,
-                content: accumulatedMarkdown,
-                title: titleMatch ? titleMatch[1].trim() : undefined,
-            }));
-        };
-        const scheduleFlush = () => {
-            if (flushTimer) return;
-            flushTimer = setTimeout(() => {
-                flushTimer = null;
-                flushNow();
-            }, FLUSH_INTERVAL_MS);
-        };
-
-        try {
-            for await (const event of streamRequest(getUrls().GENERATE_REPORT_CHAT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body,
-            }, controller.signal)) {
-                if (event.type === 'text_delta') {
-                    accumulatedMarkdown += (event as any).content;
-                    scheduleFlush();
-                } else if (event.type === 'tool_start') {
-                    // Mirror the data agent: surface what the agent is inspecting.
-                    const ev = event as any;
-                    let label = t('dataThread.thinking');
-                    let doneLabel: string | undefined;
-                    let chartDescs: { chartType: string; name: string }[] | undefined;
-                    if (ev.tool === 'inspect_chart') {
-                        // Resolve chart ids to descriptors: chart type (for the
-                        // icon) plus a display name — the insight title when we
-                        // have one, otherwise the encoded fields ("a × b × c").
-                        const ids: string[] = ev.chart_ids || [];
-                        chartDescs = ids
-                            .map(id => {
-                                const c = charts.find(cc => cc.id === id);
-                                if (!c) return undefined;
-                                let name = c.insight?.title;
-                                if (!name) {
-                                    const fields = Object.values(c.encodingMap)
-                                        .map(enc => enc.fieldID)
-                                        .filter((fid): fid is string => !!fid)
-                                        .map(fid => conceptShelfItems.find(f => f.id === fid)?.name)
-                                        .filter((n): n is string => !!n);
-                                    name = fields.length ? fields.join(' × ') : c.chartType;
-                                }
-                                return { chartType: c.chartType, name };
-                            })
-                            .filter((d): d is { chartType: string; name: string } => !!d);
-                        label = t('report.inspectingCharts');
-                        doneLabel = t('report.inspectedCharts');
-                    } else if (ev.tool === 'inspect_source_data') {
-                        const names = ev.table_names?.join(', ') || '';
-                        label = t('dataThread.inspectingData') + (names ? ` ${names}` : '');
-                        doneLabel = t('dataThread.inspectedData') + (names ? ` ${names}` : '');
-                    }
-                    dispatch(dfActions.updateGeneratedReportProgress({
-                        id: reportId,
-                        kind: 'start',
-                        label,
-                        doneLabel,
-                        charts: chartDescs,
-                    }));
-                } else if (event.type === 'tool_result') {
-                    // Flip the matching pending inspect step to done.
-                    dispatch(dfActions.updateGeneratedReportProgress({
-                        id: reportId,
-                        kind: 'end',
-                    }));
-                } else if (event.type === 'error') {
-                    const errMsg = event.error ? getErrorMessage(event.error) : t('messages.error');
-                    accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'error',
-                        component: 'report-agent', value: errMsg,
-                    }));
-                    flushNow();
-                } else if (event.type === 'warning') {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'warning',
-                        component: 'report-agent',
-                        value: (event as any).warning?.message ?? 'Warning from server',
-                    }));
-                }
-            }
-
-            // Final update with completed status — make sure the latest content
-            // is in state before we mark it complete.
-            flushNow();
-            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
-            dispatch(dfActions.updateGeneratedReportContent({
-                id: reportId,
-                content: accumulatedMarkdown,
-                status: 'completed',
-                title: titleMatch ? titleMatch[1].trim() : undefined,
-            }));
-        } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                dispatch(dfActions.updateGeneratedReportContent({
-                    id: reportId,
-                    content: accumulatedMarkdown + `\n\n**Error:** ${error.message}`,
-                    status: 'error',
-                }));
-            }
-        } finally {
-            if (flushTimer) {
-                clearTimeout(flushTimer);
-                flushTimer = null;
-            }
-            agentAbortRef.current = null;
-            setIsChatFormulating(false);
-        }
-    }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch, buildThreadContext]);
-
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').
     // Hand-offs targeting other agents (e.g. `data_loading`) are consumed
@@ -1607,19 +1423,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (agentHandoffRequest && agentHandoffRequest.target === 'report_gen') {
             const promptText = agentHandoffRequest.prompt;
             dispatch(dfActions.clearAgentHandoffRequest());
-            // Fire-and-forget: reportFromChat manages its own streaming
-            // state via Redux dispatches.
-            reportFromChat(promptText);
+            // The unified analyst writes reports in-run via its `report`
+            // skill, so a report hand-off is just an explore run seeded with
+            // a report instruction.
+            exploreFromChat(promptText.trim() || REPORT_SEED_PROMPT);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [agentHandoffRequest]);
 
     // ── Unified submit handler ───────────────────────────────────────
     const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string) => {
-        if (selectedAgent === 'report') {
-            reportFromChat(prompt);
-            return;
-        }
         if (clarificationCtx) {
             // Build the structured response payload. The backend assembles
             // the final LLM-facing text ("Selected answers: 1. xxx; 2. yyy\n
@@ -1644,7 +1457,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return;
         }
         exploreFromChat(prompt, undefined, displayPrompt);
-    }, [reportFromChat, exploreFromChat, selectedAgent, clarificationQuestions, clarifyAnswers]);
+    }, [exploreFromChat, clarificationQuestions, clarifyAnswers]);
 
     // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
     // with a prompt describing the captured workflow; we hand it straight to
@@ -1758,8 +1571,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, [pendingClarification, dispatch, t]);
 
-    const isReportMode = selectedAgent === 'report';
-
     // Landing / "no thread yet" highlight: when the user has loaded data
     // but hasn't started an exploration on the focused table (no real
     // charts AND the table isn't part of a derivation chain), gently pulse
@@ -1802,9 +1613,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             transition: transition.fast,
             backgroundColor: isChatFormulating
                 ? alpha(theme.palette.action.disabledBackground, 0.06)
-                : isReportMode
-                    ? alpha(theme.palette.warning.main, 0.04)
-                    : theme.palette.background.paper,
+                : theme.palette.background.paper,
             // Neutral elevation shadow recipe shared with AgentChatInput;
             // hover lifts the card a touch without shifting any colors.
             boxShadow: '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
@@ -1824,8 +1633,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             } : {}),
             '&:focus-within': {
                 animation: 'none',
-                borderColor: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
-                boxShadow: `0 0 0 2px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
+                borderColor: theme.palette.primary.main,
+                boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
             },
         }}
         >
@@ -2015,7 +1824,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
                     if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
                         event.preventDefault();
-                        setChatPrompt(isReportMode ? t('chartRec.threadReportPrompt') : t('chartRec.threadExplorePrompt'));
+                        setChatPrompt(t('chartRec.threadExplorePrompt'));
                     }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -2043,9 +1852,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 placeholder={
                     pendingClarification
                         ? t('chartRec.replyPlaceholder')
-                        : isReportMode
-                            ? t(rootTables.length <= 1 ? 'chartRec.reportPlaceholderSingleTable' : 'chartRec.reportPlaceholder')
-                            : t(rootTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
+                        : t(rootTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
                 }
                 fullWidth
                 multiline
@@ -2076,36 +1883,24 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             <AddIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                     </Tooltip>
-                    {/* Agent mode toggle */}
-                    <Tooltip title={selectedAgent === 'explore' ? t('chartRec.switchToReport') : t('chartRec.switchToExplore')}>
-                        <Button
-                            size="small"
-                            onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
-                            sx={{
-                                textTransform: 'none',
-                                fontSize: 11,
-                                minWidth: 0,
-                                px: 0.875,
-                                py: 0,
-                                height: 26,
-                                color: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                '&:hover': { backgroundColor: alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.08) },
-                            }}
-                        >
-                            {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
-                        </Button>
-                    </Tooltip>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                 {isChatFormulating ? (
                     <CircularProgress size={18} sx={{ m: 0.5 }} />
                 ) : (
                     <>
-                        {!isReportMode && (
+                        <Tooltip title={t('chartRec.generateReport')}>
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    sx={{ p: 0.5, color: theme.palette.text.secondary }}
+                                    disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
+                                    onClick={() => submitChat(t('chartRec.reportPrompt'), undefined, t('chartRec.askedForReport'))}
+                                >
+                                    <EditOutlinedIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                         <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>
                                 <IconButton
@@ -2118,7 +1913,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        )}
                         <Tooltip title={t('chartRec.explore')}>
                             <span>
                                 <IconButton
@@ -2165,7 +1959,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     message={draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
                             ?.derive?.runningPlan}
                     theme={theme}
-                    color={isReportMode ? 'warning' : 'primary'}
+                    color={'primary'}
                     onCancel={cancelAgent}
                 />
             )}

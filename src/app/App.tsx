@@ -51,8 +51,6 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
-    Switch,
-    FormControlLabel,
 } from '@mui/material';
 
 
@@ -161,32 +159,6 @@ const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to
         {label}
     </Button>
 );
-
-// Dev-only toggle to route the data-agent chat through the unified
-// AnalystAgent (design-docs/35/36). Source of truth is localStorage
-// (`df_useAnalystAgent`), which `exploreFromChat` reads fresh per run, so the
-// switch stays in sync without any shared store wiring.
-const AnalystAgentToggle: FC = () => {
-    const [on, setOn] = useState(() => localStorage.getItem('df_useAnalystAgent') === '1');
-    return (
-        <FormControlLabel
-            sx={{ ml: 0.5, mr: 0.5 }}
-            control={
-                <Switch
-                    size="small"
-                    checked={on}
-                    onChange={(e) => {
-                        const next = e.target.checked;
-                        setOn(next);
-                        if (next) localStorage.setItem('df_useAnalystAgent', '1');
-                        else localStorage.removeItem('df_useAnalystAgent');
-                    }}
-                />
-            }
-            label={<Typography sx={{ fontSize: '0.7rem', color: 'text.secondary' }}>Analyst</Typography>}
-        />
-    );
-};
 
 declare module '@mui/material/styles' {
     interface PaletteColor {
@@ -864,7 +836,6 @@ const AppShell: FC = () => {
                         )}
                         {isAppPage && (
                             <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, alignItems: 'center' }}>
-                                <AnalystAgentToggle />
                                 <LanguageSwitcher />
                                 <ConfigDialog />
                                 <Divider orientation="vertical" variant="middle" flexItem />

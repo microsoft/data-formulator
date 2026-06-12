@@ -1465,14 +1465,26 @@ let SingleThreadGroupView: FC<{
             }
             if (runningDraft) renderedDraftIds.add(runningDraft.id);
             const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            // Once a report is streaming for this table, the generating report
+            // card (with its own spinner + "composing…" text) is the live
+            // indicator — so we drop the thinking banner entirely to avoid a
+            // second running state. We still render the prompt entries.
+            const generatingReports = (reportsByTriggerTable.get(tableId) || [])
+                .filter(r => r.status === 'generating');
+            const hasGeneratingReport = generatingReports.length > 0;
             if (draftInteraction && draftInteraction.length > 0) {
-                renderSplitByClarity(
-                    draftInteraction,
-                    runningDraft?.derive?.runningPlan,
-                    true,
-                    'agent-running-entry',
-                );
-            } else {
+                if (hasGeneratingReport) {
+                    // Just the prompt/clarity entries — no thinking banner.
+                    pushInteractionEntries(draftInteraction, tableId, triggerType, highlighted, 'agent-running-entry');
+                } else {
+                    renderSplitByClarity(
+                        draftInteraction,
+                        runningDraft?.derive?.runningPlan,
+                        true,
+                        'agent-running-entry',
+                    );
+                }
+            } else if (!hasGeneratingReport) {
                 const runningAction = runningAgentTableIds.get(tableId);
                 // `description` is the running plan: steps joined by STEP_SEP
                 // ('\x1E'), which renders invisibly. Split it back into discrete
@@ -1490,6 +1502,13 @@ let SingleThreadGroupView: FC<{
                         ? ThinkingStepsBanner(planLines, { px: 1, py: 0.5 })
                         : ThinkingBanner(t('dataThread.working'), { px: 1, py: 0.5 }, true, true),
                 });
+            }
+            // Live generating report card: rendered here (after the prompt,
+            // inside the running draft block) so it appears below the prompt
+            // while the report streams in — never above it. Completed reports
+            // render in the artifact slot via pushReportItems.
+            for (const report of generatingReports) {
+                timelineItems.push(buildReportTimelineItem(report, highlighted));
             }
         } else if (clarifyAgentTableIds.has(tableId)) {
             const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
@@ -1553,65 +1572,92 @@ let SingleThreadGroupView: FC<{
             });
         }
     };
-    // Push report artifacts triggered from the given table. A report is just
-    // another *output card* of the run — treated exactly like a table/chart
-    // card: the run's question (the triggering instruction) and the agent's
-    // closing summary are rendered ONCE by the thread machinery (trigger entry
-    // above, after-table summary below), so the report card never re-renders
-    // them (that would duplicate the run's opening instruction).
-    const pushReportItems = (tableId: string, highlighted: boolean) => {
+    // Build a single report's timeline item. Shared by pushReportItems
+    // (completed reports, in the artifact slot) and pushAgentDraftItems (the
+    // live generating card, rendered inside the running draft block so it sits
+    // below the prompt + thinking steps rather than above them).
+    const buildReportTimelineItem = (report: GeneratedReport, highlighted: boolean) => {
+        const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
+        const rowHL = highlighted || isFocused;
+        const isGenerating = report.status === 'generating';
+        const gutterIcon = isGenerating
+            ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />
+            : <ArticleIcon sx={{ width: 14, height: 14, color: rowHL ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+        const card = (
+            <Card className={`data-thread-card ${isFocused ? 'selected-report-card' : ''}`} elevation={0}
+                sx={{
+                    width: '100%', backgroundColor: theme.palette.secondary.bgcolor,
+                    ...ComponentBorderStyle,
+                    ...(rowHL ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
+                    borderRadius: '6px', cursor: 'pointer',
+                }}
+                onClick={() => dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }))}
+            >
+                <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
+                    '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                    '&:hover .report-delete-btn': { opacity: 1 },
+                }}>
+                    <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
+                        <Typography sx={{
+                            fontSize: 11, fontWeight: 500, color: 'text.primary',
+                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden', wordBreak: 'break-all',
+                        }}>
+                            {report.title || t('report.untitled')}
+                        </Typography>
+                        {isGenerating && (
+                            <Typography sx={{ fontSize: 9, color: 'text.disabled', lineHeight: 1.3, mt: 0.25 }}>
+                                {t('report.composing')}
+                            </Typography>
+                        )}
+                    </Box>
+                    <Tooltip title={t('dataThread.deleteReport')}>
+                        <IconButton className="report-delete-btn" size="small" color="error"
+                            sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
+                            onClick={(e) => { e.stopPropagation(); dispatch(dfActions.deleteGeneratedReport(report.id)); }}
+                        >
+                            <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+            </Card>
+        );
+        return {
+            key: `report-${report.id}`, type: 'artifact' as const, highlighted: rowHL,
+            reportId: report.id, gutterIcon, element: card,
+        };
+    };
+    // Push report artifacts triggered from the given table. A report is an
+    // *output card* of the run (like a chart) that OWNS its closing summary:
+    // the card renders, then the report's own summary renders right below it
+    // (from `report.summary`, not a table-anchored interaction entry), so the
+    // report and its summary live and die together.
+    //
+    // Only COMPLETED (non-generating) reports render here. A still-generating
+    // report is rendered live inside the running draft block (see
+    // pushAgentDraftItems) so it appears below the prompt, not above it.
+    const pushReportItems = (
+        tableId: string,
+        highlighted: boolean,
+        triggerType: 'trigger' | 'leaf-trigger',
+    ) => {
         const reports = reportsByTriggerTable.get(tableId);
         if (!reports) return;
         for (const report of reports) {
-            const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
-            const rowHL = highlighted || isFocused;
-            const isGenerating = report.status === 'generating';
-            const gutterIcon = isGenerating
-                ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />
-                : <ArticleIcon sx={{ width: 14, height: 14, color: rowHL ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
-            const card = (
-                <Card className={`data-thread-card ${isFocused ? 'selected-report-card' : ''}`} elevation={0}
-                    sx={{
-                        width: '100%', backgroundColor: theme.palette.secondary.bgcolor,
-                        ...ComponentBorderStyle,
-                        ...(rowHL ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
-                        borderRadius: '6px', cursor: 'pointer',
-                    }}
-                    onClick={() => dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }))}
-                >
-                    <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
-                        '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                        '&:hover .report-delete-btn': { opacity: 1 },
-                    }}>
-                        <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
-                            <Typography sx={{
-                                fontSize: 11, fontWeight: 500, color: 'text.primary',
-                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden', wordBreak: 'break-all',
-                            }}>
-                                {report.title || t('report.untitled')}
-                            </Typography>
-                            {isGenerating && (
-                                <Typography sx={{ fontSize: 9, color: 'text.disabled', lineHeight: 1.3, mt: 0.25 }}>
-                                    {t('report.composing')}
-                                </Typography>
-                            )}
-                        </Box>
-                        <Tooltip title={t('dataThread.deleteReport')}>
-                            <IconButton className="report-delete-btn" size="small" color="error"
-                                sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
-                                onClick={(e) => { e.stopPropagation(); dispatch(dfActions.deleteGeneratedReport(report.id)); }}
-                            >
-                                <DeleteIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                </Card>
-            );
-            timelineItems.push({
-                key: `report-${report.id}`, type: 'artifact', highlighted: rowHL,
-                reportId: report.id, gutterIcon, element: card,
-            });
+            if (report.status === 'generating') continue;
+            timelineItems.push(buildReportTimelineItem(report, highlighted));
+            if (report.summary) {
+                const summaryEntry: InteractionEntry = {
+                    from: 'data-agent', to: 'user', role: 'summary',
+                    plan: report.summaryThought,
+                    content: report.summary,
+                    timestamp: report.updatedAt,
+                };
+                pushInteractionEntries(
+                    [summaryEntry], tableId, triggerType, highlighted,
+                    `report-summary-${report.id}`,
+                );
+            }
         }
     };
 
@@ -1682,7 +1728,7 @@ let SingleThreadGroupView: FC<{
         // Add report cards anchored to this table. Reports are output cards of
         // the run (like charts), so they sit with the other outputs, BEFORE the
         // run's closing summary.
-        pushReportItems(tableId, isHighlighted);
+        pushReportItems(tableId, isHighlighted, 'trigger');
 
         // After-table entries (e.g. summary). The run's closing summary is the
         // final word and must follow the LAST artifact (table, chart, or
@@ -1723,7 +1769,7 @@ let SingleThreadGroupView: FC<{
         // Add report cards anchored to this leaf table. Reports are output cards
         // of the run (like charts), so they sit with the other outputs, BEFORE
         // the run's closing summary.
-        pushReportItems(lt.id, isHL);
+        pushReportItems(lt.id, isHL, 'leaf-trigger');
 
         // After-table entries (e.g. summary). The run's closing summary is the
         // final word and must follow the LAST artifact (table, chart, or

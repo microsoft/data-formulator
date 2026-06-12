@@ -31,9 +31,6 @@ export function getUrls() {
         CHART_INSIGHT_URL: `/api/agent/chart-insight`,
         SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
 
-        DERIVE_DATA: `/api/agent/derive-data`,
-        REFINE_DATA: `/api/agent/refine-data`,
-        DATA_AGENT_STREAMING: `/api/agent/data-agent-streaming`,
         ANALYST_STREAMING: `/api/agent/analyst-streaming`,
 
         // these functions involves database
@@ -52,7 +49,6 @@ export function getUrls() {
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
-        GENERATE_REPORT_CHAT: `/api/agent/generate-report-chat`,
 
         // Workspace display name (auto-naming)
         WORKSPACE_NAME: `/api/agent/workspace-name`,

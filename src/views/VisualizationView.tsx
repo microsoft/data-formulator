@@ -86,7 +86,6 @@ import { formatCellValue } from './ViewUtils';
 
 
 import { dfSelectors } from '../app/dfSlice';
-import { ChartRecBox } from './ChartRecBox';
 import { CodeExplanationCard, ConceptExplCards, extractConceptExplanations } from './ExplComponents';
 import CodeIcon from '@mui/icons-material/Code';
 
@@ -1261,17 +1260,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                     const hasThread = hasRealCharts || hasDerivation;
 
                                     if (hasThread) {
-                                        return (
-                                            <>
-                                                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
-                                                <Divider sx={{my: 4, width: '100%', maxWidth: 720}} textAlign='left'>
-                                                    <Typography sx={{fontSize: 11, color: "text.secondary"}}>
-                                                        {t('chart.orStartWithChartType')}
-                                                    </Typography>
-                                                </Divider>
-                                                {chartSelectionBox}
-                                            </>
-                                        );
+                                        return chartSelectionBox;
                                     }
                                     return <EmptyStateHero chartSelectionBox={chartSelectionBox} />;
                                 })()}

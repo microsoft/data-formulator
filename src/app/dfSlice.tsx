@@ -131,6 +131,12 @@ export interface GeneratedReport {
     contentSnapshotHash?: string;
     prompt?: string;
     status?: 'generating' | 'completed' | 'error';
+    // The run's closing answer (the agent's summary of what the report covers).
+    // Owned by the report — not borrowed onto a table's interaction log — so it
+    // is rendered and deleted together with the report (no cross-collection
+    // tagging). `summaryThought` is the agent's reasoning behind that summary.
+    summary?: string;
+    summaryThought?: string;
     generatingPhase?: 'inspecting' | 'writing';  // transient: which phase the agent is in while generating
     // transient: accumulated inspect steps, flipped to done on completion.
     // `charts` carries lightweight descriptors (chartType for the icon + a
@@ -1853,13 +1859,17 @@ export const dataFormulatorSlice = createSlice({
                 state.viewMode = 'editor';
             }
         },
-        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string; triggerTableId?: string }>) => {
-            const { id, content, status, title, triggerTableId } = action.payload;
+        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string; triggerTableId?: string; summary?: string; summaryThought?: string }>) => {
+            const { id, content, status, title, triggerTableId, summary, summaryThought } = action.payload;
             const report = state.generatedReports.find(r => r.id === id);
             if (report) {
                 report.content = content;
                 if (title) report.title = title;
                 if (status) report.status = status;
+                // The run's closing answer is owned by the report (rendered and
+                // deleted with it), not appended to a table's interaction log.
+                if (summary !== undefined) report.summary = summary;
+                if (summaryThought !== undefined) report.summaryThought = summaryThought;
                 // Re-anchor the report to the latest table produced during the
                 // run so it renders against the newest thread item (like charts).
                 if (triggerTableId) report.triggerTableId = triggerTableId;

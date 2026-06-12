@@ -52,7 +52,6 @@ from data_formulator.agents.context import (
     handle_inspect_source_data,
 )
 from data_formulator.agents.client_utils import Client
-from data_formulator.agents.chart_creation_guide import CHART_CREATION_GUIDE
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 from data_formulator.analyst.skills import (
@@ -810,6 +809,15 @@ class AnalystAgent:
         *buffered* re-emission of the same content — its ``action`` event and the
         ``text_delta`` on that channel — is dropped here so the frontend sees the
         content exactly once (design-docs/36 §5).
+
+        Recoverable errors: every ``error`` event a skill yields is paired with a
+        returned observation string (e.g. visualize's "chart fields not found",
+        a malformed ``ask_user`` payload). That observation is fed back to the
+        agent as the action's tool-call result, so the agent sees the failure and
+        self-corrects on the next iteration. These are *internal* retry signals,
+        not user-facing failures, so they are dropped here and never streamed to
+        the frontend. Only fatal, run-ending errors (LLM API failures) are
+        emitted directly by ``run`` outside this router and do reach the client.
         """
         suppress_channel = self._suppress_stream_channel
         try:
@@ -817,9 +825,12 @@ class AnalystAgent:
             while True:
                 ev.setdefault("iteration", iteration)
                 etype = ev.get("type")
-                drop = bool(suppress_channel) and (
-                    etype == "action"
-                    or (etype == "text_delta" and ev.get("channel") == suppress_channel)
+                drop = (
+                    etype == "error"
+                    or (bool(suppress_channel) and (
+                        etype == "action"
+                        or (etype == "text_delta" and ev.get("channel") == suppress_channel)
+                    ))
                 )
                 if not drop:
                     if etype == "result":
@@ -1188,7 +1199,6 @@ class AnalystAgent:
         else:
             self._injected_rules = []
 
-        prompt += "\n\n" + CHART_CREATION_GUIDE
         if self.agent_coding_rules and self.agent_coding_rules.strip():
             prompt += (
                 "\n\n## Agent Coding Rules\n\n"

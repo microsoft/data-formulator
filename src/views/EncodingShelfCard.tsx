@@ -135,8 +135,6 @@ import CloseIcon from '@mui/icons-material/Close';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
-import { IdeaChip } from './ChartRecBox';
-import { useFormulateData } from '../app/useFormulateData';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfCardProps { 
@@ -398,32 +396,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const [isRestyling, setIsRestyling] = useState<boolean>(false);
     // Per-variant refresh in progress (variantId being refreshed, or null).
     const [refreshingVariantId, setRefreshingVariantId] = useState<string | null>(null);
-    // Intent-classifier round-trip in progress. Distinct from isRestyling so
-    // the UI can show a single "thinking" state on the submit button covering
-    // classify → route → execute. See submitPrompt() and the discussion in
-    // chat about routing on Enter.
-    const [isClassifying, setIsClassifying] = useState<boolean>(false);
-    // Phase shown in the inline status banner below the prompt input. Covers
-    // the whole submit pipeline so the user always knows what's happening:
-    //   classifying → restyling | formulating → idle.
-    // Set explicitly inside submitPrompt() and cleared by the effect below
-    // that watches chartSynthesisInProgress for the data-agent path.
-    const [submitPhase, setSubmitPhase] = useState<
-        'idle' | 'classifying' | 'restyling' | 'formulating'
-    >('idle');
     const chartSynthesisInProgress = useSelector(
         (state: DataFormulatorState) => state.chartSynthesisInProgress,
     );
     const isDataAgentRunning = chartSynthesisInProgress.includes(chartId);
-    // While we're in 'formulating' phase, watch the redux flag and clear the
-    // banner once the data agent finishes (success or error). The data agent
-    // is fire-and-forget from this card's perspective, so we can't rely on
-    // an explicit callback to mark completion.
-    useEffect(() => {
-        if (submitPhase === 'formulating' && !isDataAgentRunning) {
-            setSubmitPhase('idle');
-        }
-    }, [submitPhase, isDataAgentRunning]);
 
     useEffect(() => {
         setPrompt(triggerPrompt);
@@ -432,15 +408,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let encodingMap = chart?.encodingMap;
 
     const dispatch = useDispatch<AppDispatch>();
-    const { streamIdeas, formulateData } = useFormulateData();
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
-
-    // Anchor for the bottom-left "style presets" menu in the follow-up
-    // speech bubble. A preset click sends a detailed style instruction
-    // straight to the restyle agent (no intent classification needed —
-    // these are guaranteed style-only changes by construction).
-    const [stylePresetAnchor, setStylePresetAnchor] = useState<HTMLElement | null>(null);
 
     // Encoding channels are always shown (no auto hide/expand on hover/drag).
     const shouldExpandAll = true;
@@ -461,62 +430,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let isChartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
 
 
-    // Consolidated chart state - maps chartId to its ideas, thinkingBuffer, and loading state
-    const [chartState, setChartState] = useState<Record<string, {
-        ideas: {text: string, goal: string, tag: string}[],
-        thinkingBuffer: string,
-        isLoading: boolean,
-        phase: string,
-    }>>({});
-    const [ideaElapsed, setIdeaElapsed] = useState(0);
-
-    // Get current chart's state
-    const currentState = chartState[chartId] || { ideas: [], thinkingBuffer: "", isLoading: false, phase: "" };
-    const currentChartIdeas = currentState.ideas;
-    const thinkingBuffer = currentState.thinkingBuffer;
-    const isLoadingIdeas = currentState.isLoading;
-    const ideaPhase = currentState.phase;
-
-    useEffect(() => {
-        if (!isLoadingIdeas) { setIdeaElapsed(0); return; }
-        // Tick once per second — fast enough to read as live, slow enough to
-        // stay readable; the loading indicator carries the liveness cue.
-        // Anchor to a start timestamp to avoid float drift.
-        const t0 = Date.now();
-        const timer = setInterval(() => setIdeaElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
-        return () => clearInterval(timer);
-    }, [isLoadingIdeas]);
-    
-    const defaultChartState = { ideas: [] as any[], thinkingBuffer: "", isLoading: false, phase: "" };
-
-    const setIdeas = (ideas: {text: string, goal: string, tag: string}[]) => {
-        setChartState(prev => ({
-            ...prev,
-            [chartId]: { ...defaultChartState, ...prev[chartId], ideas }
-        }));
-    };
-
-    const setThinkingBuffer = (thinkingBuffer: string) => {
-        setChartState(prev => ({
-            ...prev,
-            [chartId]: { ...defaultChartState, ...prev[chartId], thinkingBuffer }
-        }));
-    };
-
-    const setIsLoadingIdeas = (isLoading: boolean) => {
-        setChartState(prev => ({
-            ...prev,
-            [chartId]: { ...defaultChartState, ...prev[chartId], isLoading }
-        }));
-    };
-
-    const setIdeaPhase = (phase: string) => {
-        setChartState(prev => ({
-            ...prev,
-            [chartId]: { ...defaultChartState, ...prev[chartId], phase }
-        }));
-    };
-    
     let encodingBoxGroups = Object.entries(channelGroups)
         .filter(([group, channelList]) => channelList.some(ch => Object.keys(encodingMap).includes(ch)))
         .map(([group, channelList]) => {
@@ -565,177 +478,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
     ];
 
-    let getIdeasForVisualization = async () => {
-        if (!currentTable || isLoadingIdeas) return;
-
-        let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
-        let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(
-            chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
-            currentTable.metadata, 100, 80, false, chart.config)) : undefined;
-        if (currentChartPng) {
-            currentChartPng = await downscaleImageForAgent(currentChartPng);
-        }
-
-        await streamIdeas({
-            actionTableIds,
-            currentTable,
-            onIdeas: setIdeas,
-            onThinkingBuffer: setThinkingBuffer,
-            onLoadingChange: setIsLoadingIdeas,
-            onProgress: setIdeaPhase,
-            currentChartImage: currentChartPng,
-            currentDataSample: currentTable.rows.slice(0, 10),
-        });
-    }
-
-    // Function to handle idea chip click
-    const handleIdeaClick = (ideaText: string) => {
-        setPrompt(ideaText);
-        // Automatically start the data formulation process
-        deriveNewData(ideaText, 'ideate');
-    };
-
-
-    let deriveNewData = async (
-        instruction: string, 
-        mode: 'formulate' | 'ideate' = 'formulate', 
-        overrideTableId?: string,
-    ) => {
-
-        if (actionTableIds.length == 0) return;
-
-        // Short-circuit: if all fields exist in source table, just reference it
-        if (currentTable.derive == undefined && instruction == "" && 
-                (activeFields.length > 0 && activeCustomFields.length == 0) && 
-                tables.some(t => t.derive == undefined && 
-                activeFields.every(f => currentTable.names.includes(f.name)))) {
-            let tempTable = getDataTable(chart, tables, allCharts, conceptShelfItems, true);
-            dispatch(dfActions.updateTableRef({chartId: chartId, tableRef: tempTable.id}));
-            dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
-            setTimeout(function(){
-                dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
-                dispatch(dfActions.clearUnReferencedTables());
-            }, 400);
-            return;
-        }
-
-        dispatch(dfActions.clearUnReferencedTables());
-
-        let fieldNamesStr = activeFields.map(f => f.name).reduce(
-            (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "");
-
-        const actionId = `deriveNewData_${String(Date.now())}`;
-        const originTableId = focusedTableId || currentTable.id;
-        const actionDescription = instruction || `Derive ${fieldNamesStr}`;
-
-        // Build chart visualization context
-        let chartComplete = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
-        let chartSpec = (mode == 'formulate' && Object.keys(activeSimpleEncodings).length > 0) ? {
-            chart_type: chart.chartType,
-            encodings: activeSimpleEncodings,
-            ...(chart.config ? { config: chart.config } : {})
-        } : undefined;
-
-        let currentChartImage: string | null | undefined = undefined;
-        if (chartComplete && chartSpec) {
-            currentChartImage = await vegaLiteSpecToPng(assembleVegaChart(
-                chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
-                currentTable.metadata, 100, 80, false, chart.config
-            ));
-            if (currentChartImage) {
-                currentChartImage = await downscaleImageForAgent(currentChartImage);
-            }
-        }
-
-        let currentVisualization = (chartComplete && chartSpec) ? {
-            chart_spec: chartSpec,
-            ...(currentChartImage ? { chart_image: currentChartImage } : {})
-        } : undefined;
-        let expectedVisualization = (!chartComplete && chartSpec) ? { chart_spec: chartSpec } : undefined;
-
-        let triggerChartSpec = duplicateChart(chart);
-        triggerChartSpec.source = "trigger";
-
-        formulateData({
-            instruction,
-            mode,
-            actionTableIds,
-            currentTable,
-            overrideTableId,
-            currentVisualization,
-            expectedVisualization,
-            triggerChart: triggerChartSpec,
-            createChart: ({ candidateTable, refinedGoal, currentConcepts }) => {
-                let needToCreateNewChart = true;
-                let focusedChartId: string | undefined;
-                
-                if (mode != "ideate" && chart.chartType != "Auto" && overrideTableId != undefined && 
-                    allCharts.filter(c => c.source == "user").find(c => c.tableRef == overrideTableId)) {
-                    let chartsFromOverrideTable = allCharts.filter(c => c.source == "user" && c.tableRef == overrideTableId);
-                    let chartsWithSameEncoding = chartsFromOverrideTable.filter(c => {
-                        let getSimpliedChartEnc = (ch: Chart) => {
-                            return ch.chartType + ":" + Object.entries(ch.encodingMap)
-                                .filter(([channel, enc]) => enc.fieldID != undefined)
-                                .map(([channel, enc]) => `${channel}:${enc.fieldID}:${enc.aggregate}:${enc.sortOrder}:${enc.sortBy}:${enc.scheme}`)
-                                .join(";");
-                        }
-                        return getSimpliedChartEnc(c) == getSimpliedChartEnc(triggerChartSpec);
-                    });
-                    if (chartsWithSameEncoding.length > 0) {
-                        focusedChartId = chartsWithSameEncoding[0].id;
-                        dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId }));
-                        needToCreateNewChart = false;
-                    }
-                }
-                
-                if (needToCreateNewChart) {
-                    let newChart: Chart;
-                    if (mode == "ideate" || chart.chartType == "Auto") {
-                        newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
-                    } else if (chart.chartType == "Table") {
-                        newChart = generateFreshChart(candidateTable.id, 'Table');
-                    } else {
-                        newChart = structuredClone(chart) as Chart;
-                        newChart.source = "user";
-                        newChart.id = `chart-${Date.now() - Math.floor(Math.random() * 10000)}`;
-                        newChart.tableRef = candidateTable.id;
-                        // Style variants belong to the chart they were authored
-                        // against — don't carry them over to a follow-up chart.
-                        // (See design-docs/28-chart-style-refinement-agent.md.)
-                        newChart.styleVariants = undefined;
-                        newChart.activeVariantId = undefined;
-                        let chartEncodings = refinedGoal['chart']?.['encodings'] || refinedGoal['chart_encodings'] || {};
-                        newChart = resolveChartFields(newChart, currentConcepts, chartEncodings, candidateTable);
-                    }
-                    focusedChartId = newChart.id;
-                    dispatch(dfActions.addAndFocusChart(newChart));
-                }
-                return focusedChartId;
-            },
-            onStarted: () => {
-                dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
-            },
-            onSuccess: ({ displayInstruction, candidateTable, focusedChartId }) => {
-                if (chart.chartType == "Table" || chart.chartType == "Auto" || (existsWorkingTable == false)) {
-                    dispatch(dfActions.deleteChartById(chartId));
-                }
-                dispatch(dfActions.clearUnReferencedTables());
-                dispatch(dfActions.clearUnReferencedCustomConcepts());
-                dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId as string }));
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "success",
-                    "value": t('encoding.formulationSucceeded', { fields: fieldNamesStr })
-                }));
-            },
-            onError: () => {
-            },
-            onFinally: () => {
-                dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
-            },
-        });
-    }
 
     // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
     // Chip strip for navigating user-authored "skins" of the current chart's
@@ -897,77 +639,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }
     };
 
-    /**
-     * Single entry point for the input bubble's primary submit (Enter or the
-     * primary button). Routes the prompt to either the chart restyle agent
-     * (visual changes) or the data agent (data shape / chart-type changes)
-     * via a tiny LLM intent classifier.
-     *
-     * Style → data fallback: if the restyle agent comes back with
-     * out_of_scope (i.e. it decided this was actually a data change), we
-     * automatically retry with the data agent so the user doesn't have to
-     * re-press anything. The original out_of_scope toast is suppressed in
-     * that case to avoid the misleading "click formulate instead" hint.
-     *
-     * Heuristics-free: see src/app/intentClassifier.ts for the rationale
-     * behind a tiny LLM call vs. a keyword list (multilingual support).
-     */
-    const submitPrompt = async () => {
-        const text = prompt.trim();
-        if (!text) return;
-        if (isRestyling || isClassifying) return;
-        if (!activeModel) {
-            // Both agents need a model; the data agent path will surface its
-            // own error too, but failing fast here saves a classifier call.
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                component: 'chart builder',
-                type: 'error',
-                value: 'No model is configured. Please select a model before submitting.',
-            }));
-            return;
-        }
-
-        // If the chart isn't rendered yet there's nothing for the style
-        // agent to refine; just go straight to the data agent.
-        if (!isChartAvailable) {
-            setSubmitPhase('formulating');
-            deriveNewData(text, 'formulate');
-            return;
-        }
-
-        setIsClassifying(true);
-        setSubmitPhase('classifying');
-        let intent: 'style' | 'data' = 'data';
-        try {
-            intent = await classifyChartIntent(text, activeModel);
-        } finally {
-            setIsClassifying(false);
-        }
-
-        if (intent === 'data') {
-            setSubmitPhase('formulating');
-            deriveNewData(text, 'formulate');
-            return;
-        }
-
-        // intent === 'style' — try restyle first, fall back to data on out_of_scope
-        setSubmitPhase('restyling');
-        const result = await handleRestyleSubmit({ suppressOutOfScopeMessage: true });
-        if (result === 'out_of_scope') {
-            // The restyle agent decided this was actually a data change.
-            // Hand off to the data agent. The banner switches from
-            // "restyling…" to "formulating data…" so the user sees the route
-            // change without an extra click.
-            setSubmitPhase('formulating');
-            deriveNewData(text, 'formulate');
-            // submitPhase will flip to 'idle' once the data agent finishes
-            // (see the chartSynthesisInProgress effect above).
-        } else {
-            // success or error — restyle path is fully done, clear banner.
-            setSubmitPhase('idle');
-        }
-    };
 
     /**
      * Refresh a stale variant: re-run its stored prompt against the
@@ -1172,242 +843,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     ) : null;
 
 
-    // zip multiple components together
-    const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
-
-    let formulateInputBox = <Card key='text-input-boxes' variant='outlined' sx={{
-        position: 'relative',
-        display: 'flex', flexDirection: 'column',
-        px: 1, pt: 0.5, pb: 0.25,
-        ml: '8px', // leave room for the speech-bubble tail on the left
-        borderWidth: 1,
-        borderColor: alpha(theme.palette.text.primary, 0.2),
-        borderRadius: '8px',
-        overflow: 'visible',
-        flexShrink: 0,
-        transition: transition.fast,
-        // Speech-bubble tail: outer triangle (border)
-        '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 12,
-            left: -8,
-            width: 0,
-            height: 0,
-            borderTop: '7px solid transparent',
-            borderBottom: '7px solid transparent',
-            borderRight: `8px solid ${alpha(theme.palette.text.primary, 0.2)}`,
-            transition: transition.fast,
-            pointerEvents: 'none',
-        },
-        // Speech-bubble tail: inner triangle (fill, masks the border edge)
-        '&::after': {
-            content: '""',
-            position: 'absolute',
-            top: 13,
-            left: -6,
-            width: 0,
-            height: 0,
-            borderTop: '6px solid transparent',
-            borderBottom: '6px solid transparent',
-            borderRight: `7px solid ${theme.palette.background.paper}`,
-            transition: transition.fast,
-            pointerEvents: 'none',
-        },
-        '&:hover': {
-            borderWidth: 1,
-            borderColor: alpha(theme.palette.primary.main, 0.6),
-        },
-        '&:hover::before': {
-            borderRightColor: alpha(theme.palette.primary.main, 0.6),
-        },
-        '&:focus-within': {
-            borderWidth: 1,
-            borderColor: alpha(theme.palette.primary.main, 0.8),
-        },
-        '&:focus-within::before': {
-            borderRightColor: alpha(theme.palette.primary.main, 0.8),
-        },
-    }}>
-        <TextField
-            variant="standard"
-            sx={{
-                flex: 1,
-                "& .MuiInput-input": { fontSize: '12px', lineHeight: 1.5 },
-                "& .MuiInput-underline:before": { borderBottom: 'none' },
-                "& .MuiInput-underline:hover:not(.Mui-disabled):before": { borderBottom: 'none' },
-                "& .MuiInput-underline:after": { borderBottom: 'none' },
-            }}
-            onChange={(event: any) => {
-                setPrompt(event.target.value);
-            }}
-            onKeyDown={(event: any) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    if (prompt.trim().length > 0) {
-                        // submitPrompt routes via the intent classifier:
-                        // style requests go to the restyle agent; data /
-                        // chart-type requests go to deriveNewData.
-                        submitPrompt();
-                    }
-                }
-            }}
-            slotProps={{
-                inputLabel: { shrink: true },
-            }}
-            value={prompt}
-            placeholder={t('encoding.followUpChartPlaceholder')}
-            fullWidth
-            multiline
-            minRows={2}
-            maxRows={5}
-        />
-        <Box sx={{
-            display: 'flex', flexDirection: 'row', alignItems: 'center',
-            justifyContent: 'space-between',
-        }}>
-            {/* Left group: one-click style presets. Clicking the palette
-                icon opens a menu of curated "style sheets" (NYT, Economist,
-                FiveThirtyEight, minimal, dark mode, presentation, comic).
-                Each preset sends a detailed style instruction straight to the
-                restyle agent — bypassing the intent classifier since these
-                are guaranteed style-only changes. The user can still type
-                freeform instructions in the textbox above; the menu's
-                footer hint reminds them of that. */}
-            <Tooltip title={t('encoding.stylePresetsTooltip')}>
-                <span>
-                    <IconButton
-                        size="small"
-                        disabled={!isChartAvailable || isClassifying || isRestyling}
-                        sx={{
-                            p: 0.5,
-                            color: alpha(theme.palette.text.primary, 0.55),
-                            '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.08) },
-                        }}
-                        onClick={(e) => setStylePresetAnchor(e.currentTarget)}
-                    >
-                        <PaletteOutlinedIcon sx={{ fontSize: 18 }} />
-                    </IconButton>
-                </span>
-            </Tooltip>
-            <Menu
-                anchorEl={stylePresetAnchor}
-                open={Boolean(stylePresetAnchor)}
-                onClose={() => setStylePresetAnchor(null)}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                slotProps={{
-                    paper: {
-                        sx: { minWidth: 220, maxWidth: 260, mt: 0.5 },
-                    },
-                }}
-            >
-                <Box sx={{ px: 1.5, pt: 0.75, pb: 0.25 }}>
-                    <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                        {t('encoding.stylePresetsHeader')}
-                    </Typography>
-                </Box>
-                {STYLE_PRESETS.map((preset) => (
-                    <MenuItem
-                        key={preset.key}
-                        dense
-                        onClick={() => {
-                            setStylePresetAnchor(null);
-                            // Style presets are unambiguous style changes —
-                            // skip the intent classifier and send the
-                            // detailed instruction straight to the restyle
-                            // agent. We also drive submitPhase so the inline
-                            // status banner above shows "restyling…".
-                            setSubmitPhase('restyling');
-                            handleRestyleSubmit({ instructionOverride: preset.instruction })
-                                .finally(() => setSubmitPhase('idle'));
-                        }}
-                        sx={{ py: 0.5 }}
-                    >
-                        <Typography sx={{ fontSize: 12, lineHeight: 1.3 }}>
-                            {preset.label}
-                        </Typography>
-                    </MenuItem>
-                ))}
-                <Box sx={{ px: 1.5, py: 0.75, mt: 0.25 }}>
-                    <Typography sx={{ fontSize: 10.5, color: alpha(theme.palette.text.primary, 0.4), fontStyle: 'italic', lineHeight: 1.4, whiteSpace: 'normal' }}>
-                        {t('encoding.stylePresetsHint')}
-                    </Typography>
-                </Box>
-            </Menu>
-
-            {/* Right group: tips/ideas + primary submit. */}
-            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-            <Tooltip title={currentChartIdeas.length > 0 ? t('encoding.refreshIdeas') : t('encoding.getIdeas')}>
-                <span>
-                    <IconButton size="small"
-                        disabled={isLoadingIdeas}
-                        sx={{ p: 0.5, color: theme.palette.custom.textColor || theme.palette.custom.main,
-                            '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.08) } }}
-                        onClick={() => getIdeasForVisualization()}>
-                        {isLoadingIdeas 
-                            ? <CircularProgress size={20} sx={{ color: theme.palette.custom.main }} />
-                            : <TipsAndUpdatesIcon sx={{ fontSize: 20 }} />}
-                    </IconButton>
-                </span>
-            </Tooltip>
-            {/* Primary submit. The Enter key and this button both go through
-                submitPrompt(), which uses an LLM intent classifier to route
-                between the restyle agent and the data agent. The brush /
-                style-only button was removed in favor of this unified entry
-                point — if the classifier (or the user) is wrong, the restyle
-                agent's out_of_scope signal triggers an automatic data-agent
-                fallback. The trigger-override button below is kept because
-                it does something neither path does (re-derive into the same
-                table). See src/app/intentClassifier.ts. */}
-            {trigger ? (() => {
-                const overrideTableId = tables.find(t => t.derive?.trigger === trigger)?.id;
-                return overrideTableId ? (
-                <Tooltip title={<Typography sx={{fontSize: 11}}>{t('encoding.formulateAndOverride')} <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{overrideTableId}</Typography>}>
-                    <span>
-                        <IconButton size="small" color={"warning"} sx={{ p: 0.5 }} onClick={() => { 
-                            deriveNewData(trigger!.interaction?.find(e => e.role === 'instruction')?.content || '', 'formulate', overrideTableId); 
-                        }}>
-                            <ChangeCircleOutlinedIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
-                    </span>
-                </Tooltip>) : null;
-            })()
-                : 
-                <Tooltip title={t('encoding.formulate')}>
-                    <span>
-                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }}
-                            disabled={(!prompt.trim() && activeCustomFields.length === 0) || isClassifying || isRestyling}
-                            onClick={() => {
-                                if (prompt.trim()) {
-                                    submitPrompt();
-                                } else {
-                                    // No text — only the field shelf has
-                                    // changes. Skip the classifier and run
-                                    // the data agent directly.
-                                    deriveNewData(prompt, 'formulate');
-                                }
-                            }}>
-                            {(isClassifying || isRestyling)
-                                ? <CircularProgress size={18} sx={{ color: theme.palette.primary.main }} />
-                                : <PrecisionManufacturing sx={{
-                                    fontSize: 20,
-                                    ...(isChartAvailable ? {} : {
-                                        animation: 'pulseAttention 3s ease-in-out infinite',
-                                        '@keyframes pulseAttention': {
-                                            '0%, 90%': { scale: 1 },
-                                            '95%': { scale: 1.2 },
-                                            '100%': { scale: 1 },
-                                        },
-                                    }),
-                                }} />}
-                        </IconButton>
-                    </span>
-                </Tooltip>
-            }           
-            </Box>
-        </Box>
-    </Card>
 
 
 
@@ -1664,14 +1099,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             </>)}
         </Box>);
 
-    // Whether any agent work is in flight (intent classify, restyle, or the
-    // data agent) and the matching status line shown in the overlay below.
-    const isAgentWorking = submitPhase !== 'idle' || isDataAgentRunning;
-    const agentStatusText =
-        submitPhase === 'classifying' ? 'thinking…'
-          : submitPhase === 'restyling' ? 'updating the chart…'
-          : (submitPhase === 'formulating' || isDataAgentRunning) ? 'preparing data for the chart…'
-          : 'thinking…';
+    // Whether the data agent is synthesizing this chart; drives the overlay
+    // status line shown below.
+    const isAgentWorking = isDataAgentRunning;
+    const agentStatusText = 'preparing data for the chart…';
 
     const encodingShelfCard = (
         <Box sx={{ 

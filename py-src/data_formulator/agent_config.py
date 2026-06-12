@@ -48,8 +48,7 @@ AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
     # ── Heavy: code-gen, multi-step, tool-using ─────────────────────────────
     "data_transform":      "low",      # generates Python transform scripts
     "data_rec":            "low",      # chart / transformation recommendation
-    "data_agent":          "low",      # multi-step exploration agent
-    "report_gen":          "low",      # narrative + inspect/embed tools
+    "analyst":             "low",      # unified multi-step exploration + report agent
     "interactive_explore": "low",      # exploration idea agent
     "data_loading_chat":   "low",      # conversational data loading w/ tools
 
