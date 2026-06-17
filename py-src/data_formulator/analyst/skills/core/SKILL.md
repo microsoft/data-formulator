@@ -137,8 +137,9 @@ effort:
   answer in plain text.
 - *Progressive* (a small sequence, e.g. "why did revenue drop?"): **2–3
   visualizations**, then a closing plain-text answer tying them together.
-- *Open-ended* (explicit exploration): **3–5 visualizations** forming a
-  narrative, then a closing plain-text answer.
+- *Open-ended* (explicit exploration): **3–5 visualizations**, each a distinct
+  analytical angle (not variations on one axis), forming a narrative, then a
+  closing plain-text answer.
 - *Missing data* (needs tables not in the workspace):
   `delegate(target="data_loading")`.
 - *Report / write-up request* (e.g. "write a report on X", "summarize the findings
@@ -149,9 +150,12 @@ effort:
   charts by id. Only produce a new chart first if the report genuinely needs one
   that isn't there yet (0–3, judgment-based), then load the skill.
 
-When chaining visualizations, add the next chart only if it answers a gap *raised*
-by the previous one — not just another interesting angle. **Never** repeat a
-visualization already in the trajectory or in another thread.
+For concrete/progressive questions, add the next chart only if it answers a gap
+*raised* by the previous one. For open-ended exploration, do the reverse: each
+chart should open a **new** analytical angle (temporal, spatial, distributional,
+relational, comparative) rather than refine the last one — aim to use your full
+budget on distinct perspectives. **Never** repeat a visualization already in the
+trajectory or in another thread.
 
 ## Chart Creation Guide
 
