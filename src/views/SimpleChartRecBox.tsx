@@ -600,6 +600,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             model: activeModel,
             max_iterations: 10,
+            agent_mode: config.miniMode ? 'mini' : 'standard',
         };
 
         // ── Route through the unified AnalystAgent (design-35/36) ──

@@ -1,5 +1,218 @@
+import json
 import litellm
+from types import SimpleNamespace
+
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+
+def _synthesize_stream(response):
+    """Yield LiteLLM-style streaming chunks reconstructed from a *buffered*
+    response, so a caller that consumes a stream sees the same data.
+
+    Used for Ollama: LiteLLM's Ollama streaming path does not parse native
+    tool calls (it leaks the call as raw JSON ``content`` with
+    ``finish_reason='stop'``), whereas the buffered path parses them correctly.
+    We therefore call Ollama non-streaming and replay the result as a stream.
+    """
+    try:
+        choice0 = response.choices[0]
+        message = choice0.message
+        finish_reason = getattr(choice0, "finish_reason", "stop") or "stop"
+    except (AttributeError, IndexError):
+        return
+
+    reasoning = getattr(message, "reasoning_content", None)
+    if reasoning:
+        yield SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content=None, tool_calls=None,
+                                  reasoning_content=reasoning),
+            finish_reason=None)])
+
+    content = getattr(message, "content", None)
+    if content:
+        yield SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content=content, tool_calls=None,
+                                  reasoning_content=None),
+            finish_reason=None)])
+
+    for idx, tc in enumerate(getattr(message, "tool_calls", None) or []):
+        fn = getattr(tc, "function", None)
+        yield SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(
+                content=None, reasoning_content=None,
+                tool_calls=[SimpleNamespace(
+                    index=idx, id=getattr(tc, "id", None) or f"call_{idx}",
+                    function=SimpleNamespace(
+                        name=getattr(fn, "name", None),
+                        arguments=getattr(fn, "arguments", "") or ""))]),
+            finish_reason=None)])
+
+    yield SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=None, tool_calls=None,
+                              reasoning_content=None),
+        finish_reason=finish_reason)])
+
+
+def _extract_json_objects(text):
+    """Return top-level brace-balanced JSON object substrings found in ``text``.
+
+    String-aware (ignores braces inside quoted strings) so it survives code
+    payloads that contain ``{`` / ``}``. Used to recover an action that a weak
+    model emitted as plain content instead of a native tool call.
+    """
+    objs = []
+    depth = 0
+    start = -1
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    objs.append(text[start:i + 1])
+                    start = -1
+    return objs
+
+
+def _match_tool_from_obj(obj, tools, _depth=0):
+    """Map a parsed JSON object to ``(tool_name, arguments_dict)`` if it matches
+    one of ``tools``' schemas, else ``None``.
+
+    Handles three shapes weak models emit instead of a native tool call:
+      * nested wrapper — ``{"thought": ..., "action": {"name": "visualize",
+        "arguments": {...}}}`` (a key points to an object describing the call);
+      * flat explicit wrapper — ``{"name"/"tool"/"action": "visualize",
+        "arguments": {...}}`` (the object names the tool directly);
+      * bare arguments — ``{"code": ..., "output_variable": ..., "chart": ...}``
+        (no tool named; keys matched against each tool's ``required`` params,
+        most specific tool wins).
+    """
+    if not isinstance(obj, dict) or _depth > 4:
+        return None
+
+    tool_by_name = {}
+    for t in tools or []:
+        fn = (t or {}).get("function") or {}
+        name = fn.get("name")
+        if name:
+            tool_by_name[name] = fn
+
+    # Nested wrapper: a key points to an object that itself describes the call
+    # (e.g. {"action": {"name": "visualize", "arguments": {...}}}). Recurse.
+    for wrap_key in ("action", "tool", "function", "tool_call", "call",
+                     "function_call"):
+        inner = obj.get(wrap_key)
+        if isinstance(inner, dict):
+            got = _match_tool_from_obj(inner, tools, _depth + 1)
+            if got is not None:
+                return got
+
+    # OpenAI tool-call wire format echoed as content: {"tool_calls": [{...}]}.
+    tc_list = obj.get("tool_calls")
+    if isinstance(tc_list, list) and tc_list:
+        got = _match_tool_from_obj(tc_list[0], tools, _depth + 1)
+        if got is not None:
+            return got
+
+    # Flat explicit wrapper: the object names the tool as a string.
+    for name_key in ("name", "tool", "action", "function", "tool_name"):
+        cand = obj.get(name_key)
+        if isinstance(cand, str) and cand in tool_by_name:
+            args = obj.get("arguments")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (ValueError, TypeError):
+                    args = None
+            if not isinstance(args, dict):
+                args = obj.get("parameters") if isinstance(obj.get("parameters"), dict) else None
+            if not isinstance(args, dict):
+                args = obj.get("args") if isinstance(obj.get("args"), dict) else None
+            if not isinstance(args, dict):
+                args = {k: v for k, v in obj.items()
+                        if k not in (name_key, "arguments", "parameters", "args")}
+            return cand, args
+
+    # Bare arguments: match by required-key coverage, most specific tool wins.
+    keys = set(obj.keys())
+    best = None
+    best_score = None
+    for name, fn in tool_by_name.items():
+        params = fn.get("parameters") or {}
+        required = set(params.get("required") or [])
+        props = set((params.get("properties") or {}).keys())
+        if not required or not required.issubset(keys):
+            continue
+        score = (len(required), len(keys & props), -len(keys - props))
+        if best_score is None or score > best_score:
+            best_score, best = score, name
+    if best is not None:
+        return best, dict(obj)
+    return None
+
+
+def _salvage_tool_calls_from_content(response, tools):
+    """If ``response`` carries an action as JSON *content* but no native
+    ``tool_calls``, rewrite it into a proper tool call in place.
+
+    Weak / open models under a long system prompt frequently emit the action
+    (e.g. ``visualize``/``ask_user``) as a JSON object in the assistant content
+    channel rather than as a native function call. This recovers that action so
+    the agent — which only consumes native ``tool_calls`` — can proceed."""
+    if not tools:
+        return response
+    try:
+        choice0 = response.choices[0]
+        message = choice0.message
+    except (AttributeError, IndexError):
+        return response
+    if getattr(message, "tool_calls", None):
+        return response
+    content = getattr(message, "content", None)
+    if not isinstance(content, str) or "{" not in content:
+        return response
+
+    for blob in _extract_json_objects(content):
+        try:
+            obj = json.loads(blob)
+        except (ValueError, TypeError):
+            continue
+        matched = _match_tool_from_obj(obj, tools)
+        if matched is None:
+            continue
+        name, args = matched
+        try:
+            from litellm.types.utils import ChatCompletionMessageToolCall, Function
+            tc = ChatCompletionMessageToolCall(
+                function=Function(name=name, arguments=json.dumps(args)),
+                id="call_salvage_0", type="function")
+        except Exception:
+            tc = SimpleNamespace(
+                id="call_salvage_0", type="function",
+                function=SimpleNamespace(name=name, arguments=json.dumps(args)))
+        message.tool_calls = [tc]
+        message.content = None
+        try:
+            choice0.finish_reason = "tool_calls"
+        except (AttributeError, TypeError):
+            pass
+        break
+    return response
 
 
 class Client(object):
@@ -91,8 +304,14 @@ class Client(object):
         """Detect provider errors caused by an unsupported ``reasoning_effort``
         value (e.g. ``"minimal"`` on a model that only accepts
         ``none/low/medium/high/xhigh``). The provider message reliably
-        mentions the parameter name."""
-        return "reasoning_effort" in error_text.lower()
+        mentions the parameter name.
+
+        Also covers Ollama models that lack reasoning support: LiteLLM maps
+        ``reasoning_effort`` to Ollama's ``think`` flag, and such models reject
+        it with ``"<model> does not support thinking"``. Retrying without
+        ``reasoning_effort`` (which drops ``think``) lets these models run."""
+        lowered = error_text.lower()
+        return "reasoning_effort" in lowered or "does not support thinking" in lowered
 
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
@@ -129,6 +348,27 @@ class Client(object):
             max_tokens=3, drop_params=True, **params,
         )
 
+    def _dispatch(self, *, messages, stream, params, tools=None, extra=None):
+        """Issue the LiteLLM call, transparently handling Ollama streaming.
+
+        Ollama's streaming path in LiteLLM fails to parse native tool calls, so
+        for Ollama we always call non-streaming and, when the caller asked for a
+        stream, replay the buffered response as streaming chunks via
+        ``_synthesize_stream``. All other providers stream natively."""
+        is_ollama = self.endpoint == "ollama"
+        effective_stream = stream and not is_ollama
+        call_kwargs = dict(model=self.model, messages=messages,
+                           drop_params=True, stream=effective_stream,
+                           **params, **(extra or {}))
+        if tools is not None:
+            call_kwargs["tools"] = tools
+        resp = litellm.completion(**call_kwargs)
+        if is_ollama and tools:
+            resp = _salvage_tool_calls_from_content(resp, tools)
+        if is_ollama and stream:
+            return _synthesize_stream(resp)
+        return resp
+
     def get_completion(self, messages, stream=False, reasoning_effort="low",
                        **kwargs):
         """Send a chat completion request via LiteLLM.
@@ -142,24 +382,15 @@ class Client(object):
         params["reasoning_effort"] = reasoning_effort
         params.update(kwargs)
         try:
-            return litellm.completion(
-                model=self.model, messages=messages,
-                drop_params=True, stream=stream, **params,
-            )
+            return self._dispatch(messages=messages, stream=stream, params=params)
         except Exception as e:
             err = str(e)
             if self._is_reasoning_effort_error(err):
                 params.pop("reasoning_effort", None)
-                return litellm.completion(
-                    model=self.model, messages=messages,
-                    drop_params=True, stream=stream, **params,
-                )
+                return self._dispatch(messages=messages, stream=stream, params=params)
             if self._is_image_deserialize_error(err):
                 sanitized = self._strip_images_from_messages(messages)
-                return litellm.completion(
-                    model=self.model, messages=sanitized,
-                    drop_params=True, stream=stream, **params,
-                )
+                return self._dispatch(messages=sanitized, stream=stream, params=params)
             raise
 
     def get_completion_with_tools(self, messages, tools, stream=False,
@@ -172,22 +403,16 @@ class Client(object):
         params = self.params.copy()
         params["reasoning_effort"] = reasoning_effort
         try:
-            return litellm.completion(
-                model=self.model, messages=messages, tools=tools,
-                drop_params=True, stream=stream, **params, **kwargs,
-            )
+            return self._dispatch(messages=messages, stream=stream,
+                                  params=params, tools=tools, extra=kwargs)
         except Exception as e:
             err = str(e)
             if self._is_reasoning_effort_error(err):
                 params.pop("reasoning_effort", None)
-                return litellm.completion(
-                    model=self.model, messages=messages, tools=tools,
-                    drop_params=True, stream=stream, **params, **kwargs,
-                )
+                return self._dispatch(messages=messages, stream=stream,
+                                      params=params, tools=tools, extra=kwargs)
             if self._is_image_deserialize_error(err):
                 sanitized = self._strip_images_from_messages(messages)
-                return litellm.completion(
-                    model=self.model, messages=sanitized, tools=tools,
-                    drop_params=True, stream=stream, **params, **kwargs,
-                )
+                return self._dispatch(messages=sanitized, stream=stream,
+                                      params=params, tools=tools, extra=kwargs)
             raise

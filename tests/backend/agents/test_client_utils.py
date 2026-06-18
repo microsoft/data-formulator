@@ -233,3 +233,169 @@ class TestFromConfig:
         cfg = {"endpoint": "gemini", "model": "gemini-pro", "api_key": "k"}
         c = Client.from_config(cfg)
         assert c.model.startswith("gemini/")
+
+
+# ---------------------------------------------------------------------------
+# Ollama content-JSON -> tool_call salvage
+# ---------------------------------------------------------------------------
+
+import json as _json
+from types import SimpleNamespace
+
+from data_formulator.agents.client_utils import (
+    _extract_json_objects,
+    _match_tool_from_obj,
+    _salvage_tool_calls_from_content,
+)
+
+
+def _core_action_tools():
+    """The visualize / ask_user / delegate / execute_python_script schemas the
+    matcher disambiguates between."""
+    return [
+        {"type": "function", "function": {
+            "name": "execute_python_script",
+            "parameters": {"type": "object",
+                           "properties": {"purpose": {"type": "string"},
+                                          "code": {"type": "string"}},
+                           "required": ["purpose", "code"]}}},
+        {"type": "function", "function": {
+            "name": "visualize",
+            "parameters": {"type": "object",
+                           "properties": {"code": {"type": "string"},
+                                          "output_variable": {"type": "string"},
+                                          "chart": {"type": "object"},
+                                          "title": {"type": "string"}},
+                           "required": ["code", "output_variable", "chart"]}}},
+        {"type": "function", "function": {
+            "name": "ask_user",
+            "parameters": {"type": "object",
+                           "properties": {"thought": {"type": "string"},
+                                          "questions": {"type": "array"}},
+                           "required": ["questions"]}}},
+        {"type": "function", "function": {
+            "name": "delegate",
+            "parameters": {"type": "object",
+                           "properties": {"target": {"type": "string"},
+                                          "options": {"type": "array"}},
+                           "required": ["target", "options"]}}},
+    ]
+
+
+class TestExtractJsonObjects:
+    def test_extracts_single_object(self):
+        assert _extract_json_objects('{"a": 1}') == ['{"a": 1}']
+
+    def test_ignores_braces_inside_strings(self):
+        text = '{"code": "x = {1: 2}; y = \\"}\\""}'
+        objs = _extract_json_objects(text)
+        assert len(objs) == 1
+        assert _json.loads(objs[0])["code"] == 'x = {1: 2}; y = "}"'
+
+    def test_extracts_object_from_markdown_fence(self):
+        text = 'Sure:\n```json\n{"tool": "visualize"}\n```\n'
+        objs = _extract_json_objects(text)
+        assert objs == ['{"tool": "visualize"}']
+
+    def test_no_object_returns_empty(self):
+        assert _extract_json_objects("just prose, no json") == []
+
+
+class TestMatchToolFromObj:
+    def test_explicit_wrapper_name_and_arguments(self):
+        obj = {"tool": "visualize",
+               "arguments": {"code": "df=1", "output_variable": "df",
+                             "chart": {}}}
+        name, args = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "visualize"
+        assert args["output_variable"] == "df"
+
+    def test_bare_visualize_args_match_visualize_not_execute(self):
+        obj = {"output_variable": "t", "code": "df=1", "chart": {}}
+        name, _ = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "visualize"
+
+    def test_bare_execute_args_match_execute(self):
+        obj = {"purpose": "peek", "code": "print(1)"}
+        name, _ = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "execute_python_script"
+
+    def test_ask_user_shape(self):
+        obj = {"thought": "clarify", "questions": [{"text": "which?"}]}
+        name, _ = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "ask_user"
+
+    def test_nested_action_wrapper_shape(self):
+        # qwen2.5-coder emits this under the long agent prompt.
+        obj = {"thought": "show it",
+               "action": {"name": "visualize",
+                          "arguments": {"code": "df=1", "output_variable": "df",
+                                        "chart": {"chart_type": "Bar Chart"}}}}
+        name, args = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "visualize"
+        assert args["output_variable"] == "df"
+
+    def test_nested_tool_wrapper_shape(self):
+        obj = {"tool": {"name": "ask_user",
+                        "arguments": {"questions": [{"text": "?"}]}}}
+        name, _ = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "ask_user"
+
+    def test_non_matching_object_returns_none(self):
+        assert _match_tool_from_obj({"answer": "42"}, _core_action_tools()) is None
+
+
+class TestSalvageToolCallsFromContent:
+    def _resp(self, content, tool_calls=None):
+        msg = SimpleNamespace(content=content, tool_calls=tool_calls)
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg,
+                                                        finish_reason="stop")])
+
+    def test_salvages_visualize_action_from_content(self):
+        content = _json.dumps({"output_variable": "t", "code": "df=1",
+                               "chart": {"chart_type": "Bar Chart"}})
+        resp = self._resp(content)
+        out = _salvage_tool_calls_from_content(resp, _core_action_tools())
+        msg = out.choices[0].message
+        assert msg.tool_calls and msg.tool_calls[0].function.name == "visualize"
+        assert msg.content is None
+        assert out.choices[0].finish_reason == "tool_calls"
+        assert _json.loads(msg.tool_calls[0].function.arguments)["output_variable"] == "t"
+
+    def test_does_not_touch_response_with_native_tool_calls(self):
+        existing = [SimpleNamespace(function=SimpleNamespace(name="visualize",
+                                                             arguments="{}"))]
+        resp = self._resp(None, tool_calls=existing)
+        out = _salvage_tool_calls_from_content(resp, _core_action_tools())
+        assert out.choices[0].message.tool_calls is existing
+
+    def test_plain_text_answer_left_untouched(self):
+        resp = self._resp("The dataset has 14 languages.")
+        out = _salvage_tool_calls_from_content(resp, _core_action_tools())
+        assert not getattr(out.choices[0].message, "tool_calls", None)
+        assert out.choices[0].message.content == "The dataset has 14 languages."
+
+    def test_no_tools_is_noop(self):
+        content = _json.dumps({"output_variable": "t", "code": "df=1", "chart": {}})
+        resp = self._resp(content)
+        out = _salvage_tool_calls_from_content(resp, [])
+        assert not getattr(out.choices[0].message, "tool_calls", None)
+
+
+class TestMatchToolWireFormats:
+    def test_openai_tool_calls_array_in_content(self):
+        obj = {"tool_calls": [{"id": "x", "type": "function",
+                               "function": {"name": "visualize",
+                                            "arguments": {"code": "df=1",
+                                                          "output_variable": "df",
+                                                          "chart": {}}}}]}
+        name, args = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "visualize"
+        assert args["output_variable"] == "df"
+
+    def test_stringified_arguments_are_parsed(self):
+        obj = {"name": "execute_python_script",
+               "arguments": '{"purpose": "peek", "code": "print(1)"}'}
+        name, args = _match_tool_from_obj(obj, _core_action_tools())
+        assert name == "execute_python_script"
+        assert args["code"] == "print(1)"

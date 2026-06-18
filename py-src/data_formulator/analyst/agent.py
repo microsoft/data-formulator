@@ -1025,10 +1025,26 @@ class AnalystAgent:
             row_count = len(full_df)
 
             chart_encodings = chart_spec.get("encodings", {})
+
+            def _missing_encoding(field: Any) -> bool:
+                # field is normally a column-name string. Weak models sometimes
+                # emit a dict ({"field": "col"}), a list, or other non-string;
+                # turn those into a clean, repairable "not found" instead of an
+                # unhashable-type crash on the membership test below.
+                if not field:
+                    return False  # empty / None -> optional channel, skip
+                if isinstance(field, dict):
+                    field = field.get("field")
+                    if not field:
+                        return False
+                if not isinstance(field, str):
+                    return True  # list / number / etc. -> invalid single column
+                return field not in full_df.columns
+
             missing_fields = [
                 f"{channel}: '{field}'"
                 for channel, field in chart_encodings.items()
-                if field and field not in full_df.columns
+                if _missing_encoding(field)
             ]
             if missing_fields:
                 available = list(full_df.columns)
