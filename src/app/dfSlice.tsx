@@ -117,6 +117,7 @@ export interface ClientConfig {
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 2.0)
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
     paletteKey: string; // active color palette key from tokens.ts
+    miniMode: boolean; // when true, run the single-turn MiniAnalystAgent (for small/local models)
 }
 
 export interface GeneratedReport {
@@ -319,6 +320,7 @@ const initialState: DataFormulatorState = {
         maxStretchFactor: 2.0,
         frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
+        miniMode: false,
     },
 
     dataLoaderConnectParams: {},

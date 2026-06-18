@@ -51,6 +51,8 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
+    Switch,
+    FormControlLabel,
 } from '@mui/material';
 
 
@@ -493,12 +495,14 @@ const ConfigDialog: React.FC = () => {
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
+    const [miniMode, setMiniMode] = useState(config.miniMode ?? false);
 
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
                       maxStretchFactor !== config.maxStretchFactor ||
                       frontendRowLimit !== config.frontendRowLimit ||
+                      miniMode !== (config.miniMode ?? false) ||
                       paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey);
 
     return (
@@ -687,6 +691,16 @@ const ConfigDialog: React.FC = () => {
                                 </Typography>
                             </Box>
                         </Box>
+                        <Divider><Typography variant="caption">{t('config.agent', { defaultValue: 'Agent' })}</Typography></Divider>
+                        <Box>
+                            <FormControlLabel
+                                control={<Switch checked={miniMode} onChange={(e) => setMiniMode(e.target.checked)} size="small" />}
+                                label={t('config.miniMode', { defaultValue: 'Mini mode' })}
+                            />
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {t('config.miniModeHint', { defaultValue: 'Run the single-turn mini analyst: one visualize or explain per request, with one optional data inspection. Recommended for smaller or local models.' })}
+                            </Typography>
+                        </Box>
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
@@ -697,6 +711,7 @@ const ConfigDialog: React.FC = () => {
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
+                        setMiniMode(false);
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
                     <Button 
@@ -707,7 +722,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey, miniMode}));
                             setOpen(false);
                         }}
                     >
