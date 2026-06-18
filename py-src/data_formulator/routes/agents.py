@@ -353,7 +353,7 @@ def analyst_streaming():
         try:
             if agent_mode == "mini":
                 # Single-decision agent; it forces max_iterations=1 internally and
-                # may run one optional inspection (allow_inspection defaults True).
+                # may run one optional data inspection before answering.
                 agent = MiniAnalystAgent(
                     client=client,
                     workspace=workspace,

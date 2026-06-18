@@ -14,16 +14,10 @@ data context it returns ONE of two things:
 * **explain** — a short free-text answer (only when the user is clearly *not*
   asking for a chart, e.g. a yes/no or factual question).
 
-By default the agent may look at the data once before deciding
-(``allow_inspection=True``), and this is the configuration the project uses: it ties
-the no-tool path on the strongest models and is more reliable on mid-tier models that
-need to check a join before writing it (see ``loops/model-evaluation`` Section 9).
-
-* ``allow_inspection=True`` (default, recommended) — the model MAY run a single
-  ``execute_python_script`` inspection to look at the data, then must produce its
-  visualize/explain. The inspection budget is one call, so it never becomes a loop.
-* ``allow_inspection=False`` — an evaluation-only ablation: no tools at all, the model
-  must produce its visualize/explain directly in one shot.
+Before deciding, the agent may look at the data once: the model MAY run a single
+``execute_python_script`` inspection (e.g. to check a join or a column's exact
+values), then must produce its visualize/explain. The inspection budget is one
+call, so it never becomes a loop (see ``loops/model-evaluation`` Section 9).
 
 The chart-type set is deliberately **reduced** to a handful of common types, and
 the prompt is tightly scoped, so small open-weight models reliably emit a
@@ -196,23 +190,16 @@ class MiniAnalystAgent(AnalystAgent):
     (``_call_model`` / ``_parse_action`` / ``_run_inspection_tool``) so models
     with weak or absent function-calling still work, and dispatches the committed
     ``visualize`` through the base core skill, so the emitted ``result`` /
-    ``completion`` events are identical to the loop-based agent.
-
-    Parameters
-    ----------
-    allow_inspection:
-        Defaults to ``True``, the recommended project-default *mini* behaviour: the
-        model may run a single ``execute_python_script`` inspection before producing
-        its answer. ``False`` is an evaluation-only ablation in which the model must
-        answer in one shot with no tools at all.
+    ``completion`` events are identical to the loop-based agent. Before committing,
+    the model may run a single ``execute_python_script`` inspection (a budget of
+    one, so it never loops).
     """
 
-    def __init__(self, *args: Any, allow_inspection: bool = True, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         # One committing action per run; the base machinery is never asked to
         # take a second analytic step.
         kwargs.setdefault("max_iterations", 1)
         super().__init__(*args, **kwargs)
-        self.allow_inspection = allow_inspection
 
     # ------------------------------------------------------------------
     # Prompt: a tightly scoped, single-decision system prompt
@@ -228,18 +215,17 @@ class MiniAnalystAgent(AnalystAgent):
         **kwargs: Any,
     ) -> str:
         """Assemble the mini prompt: one visualize/explain decision, a reduced
-        chart-type reference, and (only for the inspection variation) a short note
-        describing the single optional ``execute_python_script`` call."""
+        chart-type reference, and a short note describing the single optional
+        ``execute_python_script`` inspection call."""
         prompt = _MINI_PROMPT_TEMPLATE
         prompt = prompt.replace("{chart_types}", _MINI_CHART_REFERENCE)
-        prompt = prompt.replace(
-            "{inspect_note}", _INSPECT_NOTE if self.allow_inspection else "")
+        prompt = prompt.replace("{inspect_note}", _INSPECT_NOTE)
         if self.language_instruction:
             prompt = prompt + "\n\n" + self.language_instruction
         return prompt
 
     # ------------------------------------------------------------------
-    # Tool set: only visualize + explain (+ one inspection in the tool variant)
+    # Tool set: only visualize + explain (+ the one inspection, until spent)
     # ------------------------------------------------------------------
 
     def _mini_tools(self, allow_inspect: bool) -> list[dict[str, Any]]:
@@ -487,7 +473,7 @@ class MiniAnalystAgent(AnalystAgent):
                 self._explore_session = explore_session
                 kind, payload = yield from self._decide(
                     messages, input_tables, iteration,
-                    allow_inspect=self.allow_inspection,
+                    allow_inspect=True,
                 )
                 self._explore_session = None
 

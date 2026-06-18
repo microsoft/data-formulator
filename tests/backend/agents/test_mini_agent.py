@@ -70,7 +70,9 @@ class _FakeRlog:
 
 def _bare_mini(allow_inspection=True):
     """A MiniAnalystAgent with just the seams its decision logic touches stubbed
-    — no real LLM / sandbox / registry tool building."""
+    — no real LLM / sandbox / registry tool building. ``allow_inspection`` only
+    seeds the per-turn ``_decide(allow_inspect=...)`` input used by the ``_decide``
+    helper below."""
     agent = MiniAnalystAgent.__new__(MiniAnalystAgent)
     agent.allow_inspection = allow_inspection
     agent.language_instruction = ""
@@ -122,21 +124,15 @@ class TestSystemPrompt:
         assert "Waterfall" not in ma._MINI_CHART_REFERENCE
         assert len(ma._MINI_CHART_TYPES) == 7
 
-    def test_inspection_note_present_only_for_tool_variant(self):
-        agent = _bare_mini(allow_inspection=True)
+    def test_inspection_note_present(self):
+        agent = _bare_mini()
         out = agent._build_system_prompt()
         assert "execute_python_script" in out
         assert all(c in out for c in ma._MINI_CHART_TYPES)
 
-    def test_no_tool_variant_omits_inspection(self):
-        agent = _bare_mini(allow_inspection=False)
-        out = agent._build_system_prompt()
-        assert "execute_python_script" not in out
-        assert '"tool": "visualize"' in out
-
 
 class TestMiniTools:
-    def test_tool_variant_offers_visualize_explain_and_inspection(self):
+    def test_mini_tools_offer_visualize_explain_and_inspection(self):
         from data_formulator.analyst.skills import build_registry
         agent = MiniAnalystAgent.__new__(MiniAnalystAgent)
         agent.registry = build_registry()
@@ -147,7 +143,7 @@ class TestMiniTools:
         assert "explain" in names
         assert "execute_python_script" in names
 
-    def test_no_tool_variant_drops_inspection(self):
+    def test_mini_tools_drop_inspection_when_unavailable(self):
         from data_formulator.analyst.skills import build_registry
         agent = MiniAnalystAgent.__new__(MiniAnalystAgent)
         agent.registry = build_registry()
