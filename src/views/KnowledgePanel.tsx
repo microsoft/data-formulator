@@ -313,6 +313,7 @@ export const KnowledgePanel: React.FC = () => {
                     <IconButton
                         className="item-actions"
                         size="small"
+                        aria-label={t('knowledge.deleteItem')}
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget({ category, path: item.path, title: item.title }); }}
                         sx={{ p: 0.25, mt: 'auto', display: 'none', color: 'text.secondary', '&:hover': { color: 'error.main' } }}
                     >

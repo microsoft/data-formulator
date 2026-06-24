@@ -536,7 +536,7 @@ const SessionDistillFromPanel: React.FC<{
                                     '&:hover': { bgcolor: 'action.hover' },
                                 }}
                             >
-                                <IconButton size="small" sx={{ p: 0.125 }} tabIndex={-1}>
+                                <IconButton size="small" sx={{ p: 0.125 }} tabIndex={-1} aria-label={isOpen ? t('knowledge.threadCollapse') : t('knowledge.threadExpand')}>
                                     {isOpen
                                         ? <ExpandLessIcon sx={{ fontSize: 14 }} />
                                         : <ExpandMoreIcon sx={{ fontSize: 14 }} />}

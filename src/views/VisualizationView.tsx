@@ -940,7 +940,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 <DialogContent sx={{ overflowY: 'auto', overflowX: 'hidden' }} dividers>
                     {hasConcepts && (
                         <Box sx={{ pb: 1.5, mb: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                            <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.disabled', mb: 0.75 }}>
+                            <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 }}>
                                 {t('chart.derivedConcepts')}
                             </Typography>
                             <ConceptExplCards

@@ -324,7 +324,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 {t('workspace.sessions')}
                 <Tooltip title={t('workspace.refreshList')}>
-                    <IconButton size="small" onClick={fetchWsList} disabled={listLoading} aria-label={t('workspace.refreshList')} sx={{ color: 'text.secondary' }}>
+                    <IconButton size="small" onClick={fetchWsList} disabled={listLoading} sx={{ color: 'text.secondary' }}>
                         {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
                     </IconButton>
                 </Tooltip>
