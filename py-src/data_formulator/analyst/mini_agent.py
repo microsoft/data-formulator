@@ -16,8 +16,11 @@ data context it returns ONE of two things:
 
 Before deciding, the agent may look at the data once: the model MAY run a single
 ``execute_python_script`` inspection (e.g. to check a join or a column's exact
-values), then must produce its visualize/explain. The inspection budget is one
-call, so it never becomes a loop (see ``loops/model-evaluation`` Section 9).
+values), then must produce its visualize/explain. If the committed chart then
+fails, each in-place repair attempt may likewise run one inspection to diagnose
+the failure before re-emitting the chart. Inspection is one call per decision and
+the repair budget is bounded, so the run stays finite rather than an open loop
+(see ``loops/model-evaluation`` Section 9).
 
 The chart-type set is deliberately **reduced** to a handful of common types, and
 the prompt is tightly scoped, so small open-weight models reliably emit a
@@ -64,6 +67,17 @@ _EXPLAIN_TEXT_KEYS = ("text", "explanation", "answer", "summary", "content", "me
 # surfaced as a thinking_text event (mirrors how the native loop surfaces the
 # assistant content that accompanies a tool call).
 _THOUGHT_KEYS = ("thought", "thoughts", "reasoning", "thinking", "rationale")
+
+
+# Shown when a run finishes without anything user-visible: the model returned an
+# empty reply, or it burned its protocol budget (e.g. a small model that kept
+# asking to inspect) without ever committing a chart. A mini run must never end
+# silently — the frontend drops an empty summary, so we surface this instead so
+# the user can retry or switch to a more capable model rather than seeing nothing.
+_NO_OUTPUT_FALLBACK = (
+    "I couldn't produce a chart or a clear answer for this request. Try "
+    "rephrasing it, or switch to a more capable model for mini mode."
+)
 
 
 # The reduced chart-type set. Every name here is a valid Data Formulator
@@ -191,15 +205,25 @@ class MiniAnalystAgent(AnalystAgent):
     with weak or absent function-calling still work, and dispatches the committed
     ``visualize`` through the base core skill, so the emitted ``result`` /
     ``completion`` events are identical to the loop-based agent. Before committing,
-    the model may run a single ``execute_python_script`` inspection (a budget of
-    one, so it never loops).
+    the model may run a single ``execute_python_script`` inspection; if the chart
+    then fails, a bounded auto-revision loop lets it inspect again and fix the
+    SAME chart (capped by ``max_repair_attempts``), so the run stays finite.
     """
+
+    # Auto-revision floor: small/local models often need a few tries — inspect
+    # the data, read the error, fix the code — before a chart succeeds, so a
+    # single blind retry isn't enough. A higher caller-provided value is kept.
+    _AUTO_REVISION_ATTEMPTS = 3
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         # One committing action per run; the base machinery is never asked to
         # take a second analytic step.
         kwargs.setdefault("max_iterations", 1)
         super().__init__(*args, **kwargs)
+        # Give the in-place repair loop room to revise (inspect -> fix -> retry)
+        # instead of giving up after one attempt.
+        self.max_repair_attempts = max(
+            int(self.max_repair_attempts), self._AUTO_REVISION_ATTEMPTS)
 
     # ------------------------------------------------------------------
     # Prompt: a tightly scoped, single-decision system prompt
@@ -478,19 +502,35 @@ class MiniAnalystAgent(AnalystAgent):
                 self._explore_session = None
 
             if kind == "explain":
+                summary = payload.strip() if isinstance(payload, str) else ""
                 yield {
                     "type": "completion",
                     "iteration": iteration,
                     "status": "success",
-                    "content": {"summary": payload, "total_steps": 0},
+                    "content": {"summary": summary or _NO_OUTPUT_FALLBACK,
+                                "total_steps": 0},
                 }
                 self._log_session_end(rlog, "success", iteration, 0, session_start)
                 return
 
             if kind == "visualize":
-                produced = yield from self._visualize_with_repair(
+                produced, viz_error = yield from self._visualize_with_repair(
                     payload, messages, input_tables, iteration, completed_steps)
                 status = "success" if produced else "completed_no_viz"
+                if not produced:
+                    # A failed chart would otherwise end the run silently: the
+                    # skill's error events are internal retry signals the shell
+                    # router drops. Surface the failure (with the reason, when we
+                    # have it) so the user sees why nothing rendered.
+                    detail = f" ({viz_error})" if viz_error else ""
+                    yield self._error_event(
+                        iteration,
+                        "I couldn't build a working chart for this request"
+                        f"{detail}. Try rephrasing it, or switch to a more capable "
+                        "model for mini mode.",
+                        message_code="agent.miniNoChart",
+                        message_params={"error": detail},
+                    )
                 yield {
                     "type": "completion",
                     "iteration": iteration,
@@ -503,13 +543,20 @@ class MiniAnalystAgent(AnalystAgent):
             # kind == "none": an LLM error or an exhausted protocol; payload is
             # the status string.
             if payload == "llm_error":
+                # The error event is this path's user-visible feedback.
                 yield self._error_event(
                     iteration, "LLM API error", message_code="agent.llmApiError")
+                summary = ""
+            else:
+                # Exhausted the protocol without committing (e.g. a small model
+                # that kept asking to inspect): surface a message so the run is
+                # never silent.
+                summary = _NO_OUTPUT_FALLBACK
             yield {
                 "type": "completion",
                 "iteration": iteration,
                 "status": payload,
-                "content": {"summary": "", "total_steps": 0},
+                "content": {"summary": summary, "total_steps": 0},
             }
             self._log_session_end(rlog, payload, iteration, 0, session_start)
             return
@@ -574,10 +621,22 @@ class MiniAnalystAgent(AnalystAgent):
 
             # --- plain text -> the explain answer ---------------------------
             if parsed is None:
+                stripped = content.strip()
+                # An empty reply is a failure, not a deliberate answer: nudge
+                # once for a real answer rather than ending the run with nothing.
+                if not stripped and corrections_left > 0:
+                    corrections_left -= 1
+                    messages.append({"role": "assistant", "content": content or None})
+                    messages.append({"role": "user", "content": (
+                        "[OBSERVATION] Your reply was empty. Emit your visualize "
+                        "JSON object now, or an explain object with your answer.")})
+                    rlog.log("llm_response", iteration=iteration,
+                             latency_ms=latency, finish_reason="empty_reply")
+                    continue
                 rlog.log("llm_response", iteration=iteration,
                          latency_ms=latency, finish_reason="final_text")
                 messages.append({"role": "assistant", "content": content or None})
-                return ("explain", content.strip())
+                return ("explain", stripped)
 
             thought, name, args = parsed
             messages.append({"role": "assistant", "content": content})
@@ -658,6 +717,22 @@ class MiniAnalystAgent(AnalystAgent):
     # Visualize: dispatch through the core skill, repair the SAME chart on failure
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _extract_viz_error(observation: str | None) -> str | None:
+        """Pull a one-line error summary out of a failed-visualize observation.
+
+        The visualize skill reports a failure as
+        ``"[OBSERVATION – Step N FAILED]\\n\\nError: <msg>"`` and the shell router
+        drops the matching ``error`` event (an internal retry signal), so this
+        observation string is the only place the reason survives. Returns the
+        first non-empty line of ``<msg>`` (truncated) or ``None`` when there's
+        nothing useful to show."""
+        if not observation:
+            return None
+        text = observation.split("Error:", 1)[1] if "Error:" in observation else observation
+        first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+        return first_line[:200] or None
+
     def _visualize_with_repair(
         self,
         args: dict[str, Any],
@@ -665,13 +740,17 @@ class MiniAnalystAgent(AnalystAgent):
         input_tables: list[dict[str, Any]] | None,
         iteration: int,
         completed_steps: list[dict[str, Any]],
-    ) -> Generator[dict, None, bool]:
+    ) -> Generator[dict, None, tuple[bool, str | None]]:
         """Execute the committed ``visualize`` via the base core-skill dispatch,
-        re-yielding its ``action`` / ``result`` / ``error`` events. If the code or
-        encodings fail, show the model the error and let it fix the SAME chart, up
-        to ``max_repair_attempts`` times. Returns ``True`` once a chart is
-        produced, ``False`` if every attempt failed."""
+        re-yielding its ``action`` / ``result`` events. If the code or encodings
+        fail, show the model the error and let it fix the SAME chart, up to
+        ``max_repair_attempts`` times; each retry may run one inspection first to
+        diagnose the failure. Returns ``(True, None)`` once a chart is produced,
+        or ``(False, last_error)`` if every attempt failed — the skill's ``error``
+        events are dropped by the shell router, so ``last_error`` carries the
+        reason out for the run to surface."""
         repairs_left = max(0, int(self.max_repair_attempts))
+        last_error: str | None = None
 
         while True:
             action = dict(args)
@@ -695,17 +774,24 @@ class MiniAnalystAgent(AnalystAgent):
             self._set_action_observation(messages, None, observation)
 
             if produced:
-                return True
+                return True, None
+            # The skill's error EVENT was dropped by the router; the observation
+            # string is the only carrier of why the chart failed.
+            last_error = self._extract_viz_error(observation) or last_error
             if repairs_left <= 0:
-                return False
+                return False, last_error
 
             repairs_left -= 1
             messages.append({"role": "user", "content": (
-                "[SYSTEM] The visualize above FAILED. Fix the SAME chart: read the "
-                "error in the observation, correct your code and/or encodings, and "
-                "emit ONE corrected visualize JSON object (no other text).")})
+                "[SYSTEM] The visualize above FAILED. Read the error in the "
+                "observation and fix the SAME chart. If the error looks like the "
+                "data isn't what you assumed (a missing column, a wrong dtype, or "
+                "values that need parsing/splitting), FIRST run ONE "
+                "execute_python_script inspection to print the real columns and a "
+                "few values, then emit ONE corrected visualize JSON object. If the "
+                "fix is obvious, emit the corrected visualize directly.")})
             kind, new_args = yield from self._decide(
-                messages, input_tables, iteration, allow_inspect=False)
+                messages, input_tables, iteration, allow_inspect=True)
             if kind != "visualize":
-                return False
+                return False, last_error
             args = new_args

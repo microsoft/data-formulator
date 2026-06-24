@@ -54,6 +54,9 @@
     "userManagedSection": "我添加的模型",
     "testing": "测试中…",
     "configured": "已配置",
-    "configuredMessage": "服务端已配置，点击可验证连通性"
+    "configuredMessage": "服务端已配置，点击可验证连通性",
+    "miniMode": "迷你智能体模式",
+    "miniModeBadge": "迷你模式",
+    "miniModeHint": "如果所选模型能力较弱（例如本地或轻量级模型），请启用迷你智能体模式以获得更可靠的体验。该模式运行单轮分析：每次请求仅执行一次可视化或解释，并可选地进行一次数据检查。"
   }
 }

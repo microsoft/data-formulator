@@ -250,7 +250,13 @@ class LocalFolderDataLoader(ExternalDataLoader):
         if ext == ".parquet":
             table = pq.read_table(str(resolved))
         elif ext in (".csv", ".tsv"):
-            table = pa_csv.read_csv(str(resolved))
+            # ``.tsv`` is tab-separated; pyarrow's read_csv defaults to a comma
+            # delimiter, so without this a TSV collapses into a single column
+            # (e.g. "id\trate" stays one field). Keep comma for ``.csv``.
+            parse_options = (
+                pa_csv.ParseOptions(delimiter="\t") if ext == ".tsv" else None
+            )
+            table = pa_csv.read_csv(str(resolved), parse_options=parse_options)
         elif ext in (".json", ".jsonl"):
             import pyarrow.json as pa_json
             table = pa_json.read_json(str(resolved))

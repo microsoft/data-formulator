@@ -1375,13 +1375,14 @@ const DataSourceSidebarPanel: React.FC<{
                                             size="small"
                                             onClick={runCatalogSearch}
                                             disabled={anyCatalogSearchLoading}
+                                            aria-label={t('sidebar.runCatalogSearch')}
                                             sx={{ p: 0.25 }}
                                         >
                                             {anyCatalogSearchLoading
                                                 ? <CircularProgress size={12} />
                                                 : <SearchIcon sx={{ fontSize: 14, color: 'text.disabled' }} />}
                                         </IconButton>
-                                        <IconButton size="small" onClick={clearCatalogSearch} sx={{ p: 0.25 }}>
+                                        <IconButton size="small" onClick={clearCatalogSearch} aria-label={t('sidebar.clearCatalogSearch')} sx={{ p: 0.25 }}>
                                             <ClearIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
                                         </IconButton>
                                     </InputAdornment>
@@ -1698,6 +1699,7 @@ const DataSourceSidebarPanel: React.FC<{
                         value={sessionSort}
                         onChange={(e) => setSessionSort(e.target.value as SessionSortKey)}
                         disableUnderline
+                        inputProps={{ 'aria-label': t('sidebar.sortSessions') }}
                         IconComponent={(props) => (
                             <ExpandMoreIcon {...props} sx={{ fontSize: 14, color: 'text.disabled', right: 0 }} />
                         )}

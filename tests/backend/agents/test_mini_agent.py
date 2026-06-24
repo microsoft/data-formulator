@@ -325,6 +325,41 @@ class TestRun:
         comp = [e for e in events if e["type"] == "completion"]
         assert comp and comp[0]["status"] == "success"
 
+    def test_repair_can_inspect_before_refixing(self, monkeypatch):
+        # The auto-revision loop may inspect the data to diagnose a failure
+        # (e.g. discover the real columns) before emitting a corrected chart.
+        agent = _bare_mini(allow_inspection=True)
+        agent.max_repair_attempts = 1
+        viz_bad = json.dumps({"tool": "visualize", "arguments": {
+            "code": "out=df['rate']", "output_variable": "out",
+            "chart": {"chart_type": "Bar Chart"}}})
+        inspect = json.dumps({"tool": "execute_python_script",
+                              "arguments": {"code": "print(df.columns)"}})
+        viz_good = json.dumps({"tool": "visualize", "arguments": {
+            "code": "out=df", "output_variable": "out",
+            "chart": {"chart_type": "Bar Chart"}}})
+        # initial viz (fails) -> repair decides to inspect, then corrected viz
+        _prep_run(agent, [viz_bad, inspect, viz_good], monkeypatch)
+
+        calls = {"n": 0}
+
+        def _viz_dispatch(*a, **k):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                yield {"type": "error", "message": "KeyError rate"}
+                return "[OBSERVATION – Step 1 FAILED]\n\nError: KeyError - 'rate'"
+            yield _viz_result_event()
+            return "[OBSERVATION] Chart created."
+        agent._dispatch_skill_action = _viz_dispatch
+
+        events = list(agent.run([{"name": "t"}], "show rate"))
+        # the repair turn ran an inspection before the corrected visualize
+        assert any(e["type"] == "tool_start"
+                   and e.get("tool") == "execute_python_script" for e in events)
+        assert any(e["type"] == "result" for e in events)
+        comp = [e for e in events if e["type"] == "completion"]
+        assert comp and comp[0]["status"] == "success"
+
     def test_unrepairable_visualize_completes_without_chart(self, monkeypatch):
         agent = _bare_mini(allow_inspection=False)
         agent.max_repair_attempts = 0  # no repair budget
@@ -342,6 +377,23 @@ class TestRun:
         assert not any(e["type"] == "result" for e in events)
         comp = [e for e in events if e["type"] == "completion"]
         assert comp and comp[0]["status"] == "completed_no_viz"
+        # The run must not end silently: a failed chart surfaces an error event
+        # carrying the reason. In production the skill's own error event is
+        # dropped by the shell router, so run() re-surfaces it from the
+        # observation; here the message must reach the user with the cause.
+        errs = [e for e in events if e["type"] == "error"
+                and e.get("message_code") == "agent.miniNoChart"]
+        assert errs and "boom" in errs[0]["message"]
+
+    def test_empty_reply_is_not_a_silent_explain(self, monkeypatch):
+        # A small model that returns nothing must not end the run with an empty
+        # completion; the summary falls back to a user-visible message.
+        agent = _bare_mini(allow_inspection=False)
+        _prep_run(agent, ["", ""], monkeypatch)  # empty reply, then empty again
+        events = list(agent.run([{"name": "t"}], "is it growing?"))
+        comp = [e for e in events if e["type"] == "completion"]
+        assert comp and comp[0]["content"]["summary"].strip()
+
 
 
 # --------------------------------------------------------------------------

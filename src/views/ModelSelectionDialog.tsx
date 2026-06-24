@@ -90,6 +90,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const testedModels = useSelector((state: DataFormulatorState) => state.testedModels);
+    const config = useSelector((state: DataFormulatorState) => state.config);
 
     const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(false);
     const [showKeys, setShowKeys] = useState<boolean>(false);
@@ -552,6 +553,16 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         <Tooltip title={t('model.selectModel')}>
             <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color={selectedReady ? "primary" : 'warning'} onClick={()=>{setModelDialogOpen(true)}}>
                 {selectedReady ? selectedModelName : t('model.selectModels')}
+                {selectedReady && (config.miniMode ?? false) && (
+                    <Tooltip title={t('model.miniModeHint')}>
+                        <Box
+                            component="span"
+                            sx={{ ml: 0.5, fontSize: '0.8em', fontWeight: 400, color: 'text.disabled', textTransform: 'none' }}
+                        >
+                            ({t('model.miniModeBadge')})
+                        </Box>
+                    </Tooltip>
+                )}
             </Button>
         </Tooltip>
         <Dialog 
@@ -585,7 +596,33 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     </Box>
                 </Box>
                 {modelTable}
-                
+
+                <Box sx={{
+                    mt: 2,
+                    pt: 2,
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                }}>
+                    <FormControlLabel
+                        sx={{ ml: 0 }}
+                        control={
+                            <Switch
+                                size="small"
+                                checked={config.miniMode ?? false}
+                                onChange={(e) => dispatch(dfActions.setConfig({ ...config, miniMode: e.target.checked }))}
+                            />
+                        }
+                        label={
+                            <Typography variant="body2" sx={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                                {t('model.miniMode')}
+                            </Typography>
+                        }
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        {t('model.miniModeHint')}
+                    </Typography>
+                </Box>
+
             </DialogContent>
             <DialogActions>
                 {!serverConfig.DISABLE_DISPLAY_KEYS && (
