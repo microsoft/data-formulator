@@ -728,7 +728,8 @@
     "sortNewestFirst": "最新优先",
     "sortOldestFirst": "最早优先",
     "sortRecentlyModifiedFirst": "最近修改优先",
-    "sortNameAsc": "名称 (a–z)"
+    "sortNameAsc": "名称 (a–z)",
+    "sortSessions": "排序会话"
   },
   "supersetCatalog": {
     "title": "Superset 数据集",

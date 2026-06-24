@@ -791,6 +791,7 @@ export const DataFormulatorFC = ({ }) => {
                         value={wsSort}
                         onChange={(e) => setWsSort(e.target.value as typeof wsSort)}
                         disableUnderline
+                        inputProps={{ 'aria-label': t('workspace.sortSessions') }}
                         IconComponent={(props) => (
                             <ExpandMoreIcon {...props} sx={{ fontSize: 16, color: 'text.disabled', right: 0 }} />
                         )}

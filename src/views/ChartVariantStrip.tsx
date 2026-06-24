@@ -508,6 +508,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                                     size="small"
                                     color="primary"
                                     sx={{ p: 0.5 }}
+                                    aria-label="Restyle"
                                     disabled={isRestyling || !restylePrompt.trim()}
                                     onClick={() => handleRestyleSubmit(restylePrompt)}
                                 >

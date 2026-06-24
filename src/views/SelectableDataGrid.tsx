@@ -696,6 +696,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                             <IconButton 
                                 size="small" 
                                 color="primary" 
+                                aria-label={t('dataGrid.downloadAsCsv')}
                                 disabled={isDownloading}
                                 onClick={() => handleDownload('csv')}
                             >

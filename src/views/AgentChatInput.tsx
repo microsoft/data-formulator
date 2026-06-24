@@ -236,6 +236,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         <Tooltip title={sendTooltip ?? t('dataLoading.sendTooltip')} placement="top">
             <span>
                 <IconButton size="small" onClick={onSend} disabled={!canSend}
+                    aria-label={sendTooltip ?? t('dataLoading.sendTooltip')}
                     sx={{
                         width: 28, height: 28,
                         bgcolor: canSend ? 'primary.main' : 'transparent',

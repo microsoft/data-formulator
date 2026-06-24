@@ -332,6 +332,7 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
                 <span>
                     <IconButton
                         size="small"
+                        aria-label={t('deleteChart')}
                         disabled={deleteDisabled}
                         onClick={() => dispatch(dfActions.deleteChartById(chartId))}
                         sx={{ color: 'text.disabled','&:hover': { color: 'error.main', backgroundColor: 'rgba(211, 47, 47, 0.08)' } }}

@@ -269,6 +269,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <Tooltip title={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}>
                 <span>  
                     <IconButton color={modelExists ? 'error' : 'primary'}
+                        aria-label={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}
                         disabled={!readyToTest}
                         size="small"
                         sx={{ cursor: modelExists ? 'help' : 'pointer', p: 0.25 }}

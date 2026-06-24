@@ -728,7 +728,8 @@
     "sortNewestFirst": "newest first",
     "sortOldestFirst": "oldest first",
     "sortRecentlyModifiedFirst": "recently modified",
-    "sortNameAsc": "name (a–z)"
+    "sortNameAsc": "name (a–z)",
+    "sortSessions": "Sort sessions"
   },
   "supersetCatalog": {
     "title": "Superset Datasets",

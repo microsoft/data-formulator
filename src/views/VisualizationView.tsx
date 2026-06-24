@@ -754,6 +754,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Tooltip key="vega-editor-tooltip" title={t('chart.openInVegaEditor')}>
             <span>
                 <IconButton key="vega-editor-btn" size="small" sx={actionBtnSx}
+                    aria-label={t('chart.openInVegaEditor')}
                     disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
                     onClick={handleOpenInVegaEditor}>
                     <OpenInNewIcon sx={{ fontSize: 18 }} />
@@ -1026,7 +1027,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }} alignItems="center">
         <Tooltip key="zoom-out-tooltip" title={t('chart.zoomOut')}>
             <span>
-                <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
+                <IconButton color="primary" size='small' aria-label={t('chart.zoomOut')} disabled={localScaleFactor <= scaleMin} onClick={() => {
                     const next = Math.max(scaleMin, Math.round((localScaleFactor - 0.1) * 10) / 10);
                     setLocalScaleFactor(next);
                     persistScaleFactor(next);
@@ -1045,7 +1046,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 }} />
         <Tooltip key="zoom-in-tooltip" title={t('chart.zoomIn')}>
             <span>
-                <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
+                <IconButton color="primary" size='small' aria-label={t('chart.zoomIn')} disabled={localScaleFactor >= scaleMax} onClick={() => {
                     const next = Math.min(scaleMax, Math.round((localScaleFactor + 0.1) * 10) / 10);
                     setLocalScaleFactor(next);
                     persistScaleFactor(next);

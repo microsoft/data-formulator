@@ -1883,6 +1883,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 <IconButton
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.text.secondary }}
+                                    aria-label={t('chartRec.generateReport')}
                                     disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
                                     onClick={() => submitChat(t('chartRec.reportPrompt'), undefined, t('chartRec.askedForReport'))}
                                 >
@@ -1895,6 +1896,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 <IconButton
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.primary.main }}
+                                    aria-label={t('chartRec.getIdeaSuggestions')}
                                     disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
                                     onClick={() => submitChat(t('chartRec.exploreIdeasPrompt'), undefined, t('chartRec.askedForRecommendations'))}
                                 >
@@ -1906,6 +1908,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             <span>
                                 <IconButton
                                     size="small"
+                                    aria-label={t('chartRec.explore')}
                                     disabled={!canSend}
                                     onClick={() => {
                                         if (pendingClarification) {

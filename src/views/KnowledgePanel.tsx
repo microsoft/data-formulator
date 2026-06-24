@@ -297,6 +297,7 @@ export const KnowledgePanel: React.FC = () => {
                             <span>
                                 <IconButton
                                     size="small"
+                                    aria-label={hasTables ? t('knowledge.replayTooltip') : t('knowledge.replayNoData')}
                                     disabled={!hasTables}
                                     onClick={(e) => { e.stopPropagation(); handleReplay(item); }}
                                     sx={{

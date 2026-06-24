@@ -423,6 +423,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
             <span>
                 <IconButton
                     size="small"
+                    aria-label={t('chartRec.submitClarification')}
                     disabled={!canSubmit}
                     onClick={handlePanelSubmit}
                     sx={{
@@ -618,6 +619,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         <span>
                             <IconButton
                                 size="small"
+                                aria-label={t('chartRec.submitClarification')}
                                 disabled={!canSubmit}
                                 onClick={handlePanelSubmit}
                                 sx={{
