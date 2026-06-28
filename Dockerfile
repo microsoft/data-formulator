@@ -8,9 +8,23 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
 
+# Install system dependencies required to compile native modules (e.g. canvas).
+# node:20-slim lacks the build toolchain and Cairo development headers that
+# node-gyp needs when building the "canvas" package during yarn install.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 make g++ pkg-config \
+        libcairo2-dev libjpeg-dev libpango1.0-dev libgif-dev librsvg2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile
+
+# Raise the Node.js heap limit to avoid "JavaScript heap out of memory"
+# failures during the Vite production build. Node defaults to ~2 GB regardless
+# of the memory allocated to Docker. Override with --build-arg NODE_HEAP_MB=...
+ARG NODE_HEAP_MB=8192
+ENV NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
 
 # Copy source and build
 COPY index.html tsconfig.json vite.config.ts eslint.config.js ./

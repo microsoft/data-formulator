@@ -13,6 +13,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Node.js heap limit (in MB) used during the frontend build to avoid
+        # "JavaScript heap out of memory" failures. Increase if the build OOMs.
+        NODE_HEAP_MB: "8192"
     image: data-formulator:latest
     ports:
       - "5567:5567"
