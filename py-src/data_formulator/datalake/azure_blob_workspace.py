@@ -24,6 +24,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import shutil
 import tempfile
 import threading
@@ -54,7 +55,8 @@ from data_formulator.datalake.parquet_utils import (
     sanitize_dataframe_for_arrow,
     DEFAULT_COMPRESSION,
 )
-from data_formulator.datalake.workspace import Workspace
+from data_formulator.datalake.workspace import Workspace, get_data_formulator_home
+from data_formulator.security.path_safety import ConfinedDir
 
 if TYPE_CHECKING:
     from azure.storage.blob import ContainerClient
@@ -124,6 +126,21 @@ class AzureBlobWorkspace(Workspace):
         # than leaving them undefined.
         self._root = None  # type: ignore[assignment]
         self._path = None  # type: ignore[assignment]
+
+        # --- local scratch directory ----------------------------------------
+        # Blob storage has no local filesystem path, but agents (the
+        # skill-based analyst agent and the data-loading chat sandbox) need a
+        # real ``scratch/`` directory on disk for sandboxed code execution,
+        # cross-turn namespace serialization, and user file uploads. We back
+        # it with a stable per-workspace directory under the Data Formulator
+        # home so it survives across requests handled by this instance.
+        # ``confined_scratch`` (inherited from :class:`Workspace`) returns this
+        # jail, so callers work identically to the local backend.
+        safe_scratch_rel = self._prefix.strip("/").replace("/", os.sep) or self._safe_id
+        scratch_base = get_data_formulator_home() / "scratch" / safe_scratch_rel
+        scratch_base.mkdir(parents=True, exist_ok=True)
+        self._scratch_dir = scratch_base
+        self._confined_scratch = ConfinedDir(scratch_base, mkdir=False)
 
         # --- in-memory metadata cache ----------------------------------------
         # Avoids re-downloading workspace.yaml on every method call.
@@ -231,6 +248,12 @@ class AzureBlobWorkspace(Workspace):
             path.unlink(missing_ok=True)
         if hasattr(self, "_temp_file_cache"):
             self._temp_file_cache.clear()
+
+    def _cleanup_scratch(self) -> None:
+        """Remove the local scratch directory (sandbox working files)."""
+        scratch_dir = getattr(self, "_scratch_dir", None)
+        if scratch_dir and scratch_dir.exists():
+            shutil.rmtree(scratch_dir, ignore_errors=True)
 
     def __del__(self) -> None:
         self._cleanup_temp_files()
@@ -366,6 +389,7 @@ class AzureBlobWorkspace(Workspace):
         self._metadata_cache = None
         self._blob_data_cache.clear()
         self._cleanup_temp_files()
+        self._cleanup_scratch()
         logger.info("Cleaned up blob workspace %s", self._safe_id)
 
     # ------------------------------------------------------------------

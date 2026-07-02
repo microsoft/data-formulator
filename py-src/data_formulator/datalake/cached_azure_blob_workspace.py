@@ -731,6 +731,7 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
         self._metadata_cache = None
         self._blob_data_cache.clear()
         self._cleanup_temp_files()
+        self._cleanup_scratch()
 
         # 3. Delete Azure blobs in background
         prefix = self._prefix
