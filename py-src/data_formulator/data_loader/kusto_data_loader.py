@@ -28,9 +28,31 @@ class KustoDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return """**Option 1 — Azure Default Identity (easiest):** Leave auth fields empty. DF will automatically use your Azure CLI login (`az login`), Managed Identity, VS Code credentials, or environment variables — whichever is available.
+        return """**Option 1 — Sign in with Microsoft (recommended):** If the app is configured with Microsoft (Entra) sign-in, just sign in and connect — DF exchanges your login for cluster access automatically (no fields needed).
 
-**Option 2 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access."""
+**Option 2 — Azure Default Identity:** Leave auth fields empty. DF will automatically use your Azure CLI login (`az login`), Managed Identity, VS Code credentials, or environment variables — whichever is available.
+
+**Option 3 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access."""
+
+    @staticmethod
+    def auth_config() -> dict[str, Any]:
+        """Declare that Kusto can use the app-level Microsoft SSO token.
+
+        Mode ``sso_exchange`` (without an ``exchange_url``) signals the
+        framework to inject the user's DF SSO access token as
+        ``sso_access_token``. The loader then performs the Microsoft Entra
+        On-Behalf-Of (OBO) exchange in-process (see :meth:`_build_kcsb`),
+        because the target Kusto scope is cluster-specific and cannot be
+        expressed by a generic exchange endpoint.
+
+        Service-principal / Azure Default Identity remain available as
+        fallbacks when no SSO token is present.
+        """
+        return {
+            "mode": "sso_exchange",
+            "display_name": "Kusto",
+            "supports_refresh": True,
+        }
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -41,27 +63,175 @@ class KustoDataLoader(ExternalDataLoader):
         self.client_secret = params.get("client_secret", None)
         self.tenant_id = params.get("tenant_id", None)
 
+        # Delegated-token inputs (populated by the auth framework):
+        #   access_token     — a Kusto-audience token (e.g. from a popup login)
+        #   sso_access_token — the app-level DF SSO token, exchanged via OBO
+        self.access_token = params.get("access_token", None)
+        self.sso_access_token = params.get("sso_access_token", None)
+
         try:
-            if self.client_id and self.client_secret and self.tenant_id:
-                # Service principal auth
-                self.client = KustoClient(KustoConnectionStringBuilder.with_aad_application_key_authentication(
-                    self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id))
-                logger.info("Using service principal authentication for Kusto client.")
-            else:
-                # DefaultAzureCredential: tries az login, Managed Identity, VS Code, env vars, etc.
-                from azure.identity import DefaultAzureCredential
-                credential = DefaultAzureCredential()
-                kcsb = KustoConnectionStringBuilder.with_azure_token_credential(
-                    self.kusto_cluster, credential)
-                self.client = KustoClient(kcsb)
-                logger.info("Using DefaultAzureCredential for Kusto client (az login / Managed Identity / etc.).")
+            self.client = KustoClient(self._build_kcsb())
         except Exception as e:
             logger.error(f"Error creating Kusto client: {e}")
             raise RuntimeError(
                 f"Error creating Kusto client: {e}. "
-                "If running locally, run 'az login' or provide service principal credentials. "
-                "If running on Azure, ensure a Managed Identity is assigned to the host."
+                "Sign in with Microsoft, run 'az login', or provide service "
+                "principal credentials. If running on Azure, ensure a Managed "
+                "Identity is assigned to the host."
             ) from e
+
+    @staticmethod
+    def _resolve_obo_tenant_id(explicit: str | None) -> str | None:
+        """Resolve the tenant used for the OBO exchange.
+
+        Priority: explicit param → ``AZURE_OBO_TENANT_ID`` env → tenant
+        segment parsed from ``OIDC_ISSUER_URL``.
+        """
+        import os
+        import re
+
+        if explicit:
+            return explicit
+        env_tenant = os.environ.get("AZURE_OBO_TENANT_ID", "").strip()
+        if env_tenant:
+            return env_tenant
+        issuer = os.environ.get("OIDC_ISSUER_URL", "").strip()
+        # e.g. https://login.microsoftonline.com/<tenant>/v2.0
+        match = re.search(
+            r"login\.microsoftonline\.com/([^/]+)", issuer
+        )
+        if match:
+            return match.group(1)
+        return None
+
+    @staticmethod
+    def discover_clusters(sso_access_token: str) -> list[dict[str, Any]]:
+        """Discover Kusto clusters visible to the signed-in user via Azure
+        Resource Manager (ARM).
+
+        Uses the On-Behalf-Of flow to obtain an ARM-scoped token, lists the
+        user's subscriptions, then enumerates ``Microsoft.Kusto/clusters`` in
+        each. Each returned entry includes the cluster query ``uri``.
+
+        Note: ARM lists clusters the user can *see* (control-plane RBAC). It
+        does NOT guarantee data-plane query access, and clusters granted only
+        at the Kusto data plane will not appear here. Treat the result as a
+        best-effort discovery aid, validated on connect.
+        """
+        import os
+        import requests
+
+        client_id = os.environ.get("OIDC_CLIENT_ID", "").strip()
+        client_secret = os.environ.get("OIDC_CLIENT_SECRET", "").strip()
+        tenant_id = KustoDataLoader._resolve_obo_tenant_id(None)
+        if not (client_id and client_secret and tenant_id):
+            raise RuntimeError(
+                "Microsoft SSO is not configured for cluster discovery "
+                "(OIDC_CLIENT_ID / OIDC_CLIENT_SECRET / tenant missing).")
+
+        from azure.identity import OnBehalfOfCredential
+        credential = OnBehalfOfCredential(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+            user_assertion=sso_access_token,
+        )
+        arm_token = credential.get_token(
+            "https://management.azure.com/.default").token
+        headers = {"Authorization": f"Bearer {arm_token}"}
+
+        subs_resp = requests.get(
+            "https://management.azure.com/subscriptions?api-version=2022-12-01",
+            headers=headers, timeout=30)
+        subs_resp.raise_for_status()
+        subscriptions = subs_resp.json().get("value", [])
+
+        clusters: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for sub in subscriptions:
+            sub_id = sub.get("subscriptionId")
+            if not sub_id:
+                continue
+            url = (
+                f"https://management.azure.com/subscriptions/{sub_id}"
+                "/providers/Microsoft.Kusto/clusters?api-version=2023-08-15")
+            try:
+                resp = requests.get(url, headers=headers, timeout=30)
+                if resp.status_code != 200:
+                    continue
+                for c in resp.json().get("value", []):
+                    uri = (c.get("properties") or {}).get("uri")
+                    if not uri or uri in seen:
+                        continue
+                    seen.add(uri)
+                    clusters.append({
+                        "name": c.get("name"),
+                        "uri": uri,
+                        "location": c.get("location"),
+                        "subscription_id": sub_id,
+                        "subscription_name": sub.get("displayName"),
+                    })
+            except Exception as exc:
+                logger.debug("Cluster listing failed for subscription %s: %s",
+                             sub_id, exc)
+                continue
+
+        clusters.sort(key=lambda x: (x.get("name") or "").lower())
+        return clusters
+
+    def _build_kcsb(self) -> KustoConnectionStringBuilder:
+        """Build the Kusto connection string builder using the best available
+        credential, in priority order.
+
+        1. Explicit Kusto-audience ``access_token`` (delegated user token)
+        2. App-level SSO token → Microsoft Entra On-Behalf-Of exchange
+        3. Service principal (``client_id`` / ``client_secret`` / ``tenant_id``)
+        4. ``DefaultAzureCredential`` (``az login`` / Managed Identity / etc.)
+        """
+        import os
+
+        # 1. Explicit Kusto user token (already scoped for the cluster).
+        if self.access_token:
+            logger.info("Using delegated user token for Kusto client.")
+            return KustoConnectionStringBuilder.with_aad_user_token_authentication(
+                self.kusto_cluster, self.access_token)
+
+        # 2. App-level Microsoft SSO token → OBO exchange for a Kusto token.
+        if self.sso_access_token:
+            client_id = os.environ.get("OIDC_CLIENT_ID", "").strip()
+            client_secret = os.environ.get("OIDC_CLIENT_SECRET", "").strip()
+            tenant_id = self._resolve_obo_tenant_id(self.tenant_id)
+            if client_id and client_secret and tenant_id:
+                from azure.identity import OnBehalfOfCredential
+                credential = OnBehalfOfCredential(
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    user_assertion=self.sso_access_token,
+                )
+                logger.info(
+                    "Using On-Behalf-Of Microsoft SSO exchange for Kusto client.")
+                return KustoConnectionStringBuilder.with_azure_token_credential(
+                    self.kusto_cluster, credential)
+            logger.warning(
+                "SSO token present but OBO not configured "
+                "(OIDC_CLIENT_ID / OIDC_CLIENT_SECRET / tenant missing); "
+                "falling back to other credentials.")
+
+        # 3. Service principal.
+        if self.client_id and self.client_secret and self.tenant_id:
+            logger.info("Using service principal authentication for Kusto client.")
+            return KustoConnectionStringBuilder.with_aad_application_key_authentication(
+                self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id)
+
+        # 4. DefaultAzureCredential: az login, Managed Identity, VS Code, env vars, etc.
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        logger.info(
+            "Using DefaultAzureCredential for Kusto client "
+            "(az login / Managed Identity / etc.).")
+        return KustoConnectionStringBuilder.with_azure_token_credential(
+            self.kusto_cluster, credential)
 
     def _convert_kusto_datetime_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert Kusto datetime columns to proper pandas datetime format"""

@@ -1300,6 +1300,41 @@ def connector_connect():
         classify_and_raise_connector_error(e, operation="connect")
 
 
+@connectors_bp.route("/api/connectors/discover-clusters", methods=["POST"])
+def connector_discover_clusters():
+    """Discover data sources (e.g. Kusto clusters) the signed-in user can see.
+
+    Requires an active Microsoft SSO session. Dispatches to the loader
+    class's ``discover_clusters`` static method (currently Kusto), which
+    performs an On-Behalf-Of exchange for Azure Resource Manager and
+    enumerates clusters across the user's subscriptions.
+    """
+    data = request.get_json() or {}
+    loader_type = data.get("loader_type", "kusto")
+
+    from data_formulator.data_loader import DATA_LOADERS
+    loader_class = DATA_LOADERS.get(loader_type)
+    if loader_class is None or not hasattr(loader_class, "discover_clusters"):
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            f"Cluster discovery is not supported for '{loader_type}'.")
+
+    from data_formulator.auth.token_store import TokenStore
+    sso_token = TokenStore().get_sso_token()
+    if not sso_token:
+        raise AppError(
+            ErrorCode.ACCESS_DENIED,
+            "Sign in with Microsoft first to discover clusters.")
+
+    try:
+        clusters = loader_class.discover_clusters(sso_token)
+    except AppError:
+        raise
+    except Exception as e:
+        classify_and_raise_connector_error(e, operation="discover")
+    return json_ok({"clusters": clusters})
+
+
 @connectors_bp.route("/api/connectors/disconnect", methods=["POST"])
 def connector_disconnect():
     """Disconnect a connector for the current identity.

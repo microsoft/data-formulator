@@ -9,7 +9,11 @@ import {
   CircularProgress,
   Checkbox,
   FormControlLabel,
+  Autocomplete,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest, type ApiError } from '../app/apiClient';
@@ -100,6 +104,11 @@ export const DataLoaderForm: React.FC<{
     );
     const [sensitiveParams, setSensitiveParams] = useState<Record<string, string>>({});
 
+    // Cluster discovery (Kusto): populated after the user signs in with Microsoft.
+    type DiscoveredCluster = { name: string; uri: string; subscription_name?: string; location?: string };
+    const [discoveredClusters, setDiscoveredClusters] = useState<DiscoveredCluster[]>([]);
+    const [isDiscovering, setIsDiscovering] = useState(false);
+
     // Merged params: Redux (non-sensitive) + component state (sensitive)
     const mergedParams = useMemo(
         () => ({ ...params, ...sensitiveParams }),
@@ -145,6 +154,29 @@ export const DataLoaderForm: React.FC<{
             setIsConnecting(false);
         }
     }, [mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+
+    // Discover Kusto clusters the signed-in user can see (via Microsoft SSO + ARM).
+    const handleDiscoverClusters = useCallback(async () => {
+        setIsDiscovering(true);
+        try {
+            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.DISCOVER_CLUSTERS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ loader_type: dataLoaderType }),
+            });
+            const clusters = (data?.clusters ?? []) as DiscoveredCluster[];
+            setDiscoveredClusters(clusters);
+            if (clusters.length === 0) {
+                onFinish('warning', t('db.noClustersFound', {
+                    defaultValue: 'No clusters found in your subscriptions. You can still enter a cluster URL manually.',
+                }));
+            }
+        } catch (error: any) {
+            onFinish('error', error.message || 'Failed to discover clusters. Sign in with Microsoft first.');
+        } finally {
+            setIsDiscovering(false);
+        }
+    }, [dataLoaderType, onFinish, t]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -355,9 +387,69 @@ export const DataLoaderForm: React.FC<{
 
                         const renderParamGrid = (tierParams: typeof paramDefs) => {
                             const cols = balancedCols(tierParams.length);
+                            // Kusto cluster field: render as a discoverable autocomplete.
+                            const isDiscoverableCluster = (name: string) =>
+                                dataLoaderType === 'kusto' && name === 'kusto_cluster';
                             return (
                             <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 350px))`, gap: 2 }}>
                                 {tierParams.map((paramDef) => (
+                                    isDiscoverableCluster(paramDef.name) ? (
+                                        <Autocomplete
+                                            key={paramDef.name}
+                                            freeSolo
+                                            options={discoveredClusters}
+                                            loading={isDiscovering}
+                                            getOptionLabel={(o) => typeof o === 'string' ? o : o.uri}
+                                            isOptionEqualToValue={(o, v) =>
+                                                (typeof o === 'string' ? o : o.uri) === (typeof v === 'string' ? v : v.uri)}
+                                            value={params[paramDef.name] ?? ''}
+                                            onChange={(_e, val) => {
+                                                const uri = val == null ? '' : (typeof val === 'string' ? val : val.uri);
+                                                dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: uri }));
+                                            }}
+                                            onInputChange={(_e, val, reason) => {
+                                                if (reason === 'input') {
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: val ?? '' }));
+                                                }
+                                            }}
+                                            renderOption={(optProps, option) => {
+                                                const o = option as DiscoveredCluster;
+                                                return (
+                                                    <li {...optProps} key={o.uri}>
+                                                        <Box>
+                                                            <Typography sx={{ fontSize: 12 }}>{o.name}</Typography>
+                                                            <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>
+                                                                {o.uri}{o.subscription_name ? ` · ${o.subscription_name}` : ''}
+                                                            </Typography>
+                                                        </Box>
+                                                    </li>
+                                                );
+                                            }}
+                                            renderInput={(inputParams) => (
+                                                <TextField
+                                                    {...inputParams}
+                                                    sx={inputSx}
+                                                    variant="standard" size="small" fullWidth
+                                                    slotProps={labelShrinkSlotProps}
+                                                    label={paramDef.name}
+                                                    required={paramDef.required}
+                                                    placeholder={getParamPlaceholder(paramDef)}
+                                                    InputProps={{
+                                                        ...inputParams.InputProps,
+                                                        endAdornment: (
+                                                            <Tooltip title={t('db.discoverClusters', { defaultValue: 'Discover clusters you can access (requires Microsoft sign-in)' })}>
+                                                                <span>
+                                                                    <IconButton size="small" onClick={handleDiscoverClusters} disabled={isDiscovering}>
+                                                                        {isDiscovering ? <CircularProgress size={14} /> : <TravelExploreIcon sx={{ fontSize: 16 }} />}
+                                                                    </IconButton>
+                                                                </span>
+                                                            </Tooltip>
+                                                        ),
+                                                    }}
+                                                />
+                                            )}
+                                        />
+                                    ) : (
                                     <TextField
                                         key={paramDef.name}
                                         sx={inputSx}
@@ -376,6 +468,7 @@ export const DataLoaderForm: React.FC<{
                                             }
                                         }}
                                     />
+                                    )
                                 ))}
                             </Box>
                             );

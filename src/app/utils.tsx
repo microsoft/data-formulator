@@ -97,6 +97,7 @@ export const CONNECTOR_ACTION_URLS = {
     CONNECT: '/api/connectors/connect',
     DISCONNECT: '/api/connectors/disconnect',
     GET_STATUS: '/api/connectors/get-status',
+    DISCOVER_CLUSTERS: '/api/connectors/discover-clusters',
     GET_CATALOG: '/api/connectors/get-catalog',
     GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
     SEARCH_CATALOG: '/api/connectors/search-catalog',
