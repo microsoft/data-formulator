@@ -58,13 +58,11 @@ import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { KnowledgePanel } from './KnowledgePanel';
-import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
 
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
-import { extractErrorMessage } from '../app/errorHandler';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
@@ -91,6 +89,32 @@ const MIN_PANEL_WIDTH = 240;
 const MAX_PANEL_WIDTH = 450;
 
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
+
+// Above this many rows or this much uncompressed data, importing a table
+// wholesale is slow/unwieldy (and can hit backend result-size limits). Tables
+// past these thresholds are handed off to the conversational data-loading chat
+// instead, where the user can filter, sample, or aggregate before loading.
+const RECOMMENDED_MAX_IMPORT_ROWS = 1_000_000;
+const RECOMMENDED_MAX_IMPORT_BYTES = 512 * 1024 * 1024; // 512 MB uncompressed
+
+// Human-readable byte size ("1.2 GB", "340 MB"). Returns '' when unknown.
+function formatBytes(bytes: number | null | undefined): string {
+    if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    let value = bytes;
+    let i = 0;
+    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+    return `${value >= 100 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
+}
+
+// Whether a catalog table is large enough that a direct full import is
+// discouraged in favor of the conversational loader.
+function isTableTooLarge(node: CatalogTreeNode): boolean {
+    const rows = node.metadata?.row_count;
+    const bytes = node.metadata?.original_size_bytes;
+    return (typeof rows === 'number' && rows > RECOMMENDED_MAX_IMPORT_ROWS)
+        || (typeof bytes === 'number' && bytes > RECOMMENDED_MAX_IMPORT_BYTES);
+}
 
 // Compact relative time for sidebar rows: "2m", "3h", "yesterday",
 // "May 5", "May 5, 24". Designed to stay <= ~10 chars so it fits in
@@ -141,7 +165,9 @@ interface PreviewState {
 export const DataSourceSidebar: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
     connectorRefreshKey?: number;
-}> = ({ onOpenUploadDialog, connectorRefreshKey = 0 }) => {
+    onConnectorsChanged?: () => void;
+    onStartDataLoadingChat?: (text: string) => void;
+}> = ({ onOpenUploadDialog, connectorRefreshKey = 0, onConnectorsChanged, onStartDataLoadingChat }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -329,7 +355,9 @@ export const DataSourceSidebar: React.FC<{
                     onOpenUploadDialog={onOpenUploadDialog}
                     onCollapse={toggle}
                     connectorRefreshKey={connectorRefreshKey}
+                    onConnectorsChanged={onConnectorsChanged}
                     disableConnectors={disableConnectors}
+                    onStartDataLoadingChat={onStartDataLoadingChat}
                 />
             )}
 
@@ -352,8 +380,10 @@ const DataSourceSidebarPanel: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
     connectorRefreshKey?: number;
+    onConnectorsChanged?: () => void;
     disableConnectors?: boolean;
-}> = ({ panelWidth, onOpenUploadDialog, onCollapse, connectorRefreshKey = 0, disableConnectors = false }) => {
+    onStartDataLoadingChat?: (text: string) => void;
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onStartDataLoadingChat }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -361,6 +391,9 @@ const DataSourceSidebarPanel: React.FC<{
     const identityKey = useSelector(
         (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
     );
+    // Tracks the identity across renders so the refresh effect can tell a real
+    // identity switch apart from a plain connector-list refresh.
+    const prevIdentityKeyRef = useRef(identityKey);
 
     // Lightweight selector: only extract the fields we need from tables to avoid
     // re-rendering the entire sidebar when table row data changes.
@@ -403,10 +436,30 @@ const DataSourceSidebarPanel: React.FC<{
     // Tree expanded items per connector
     const [treeExpanded, setTreeExpanded] = useState<Record<string, string[]>>({});
 
+    // High-level progress message per connector while a live catalog listing
+    // is in flight (e.g. Kusto reporting which database it's querying). Shown
+    // beside the loading spinner; cleared when the fetch resolves.
+    const [catalogProgress, setCatalogProgress] = useState<Record<string, string>>({});
+
+    // Multi-select for batch loading. Scoped to a single connector at a time —
+    // selecting in a different connector replaces the selection, since a batch
+    // load targets one source. Value maps a table's path-key to its node.
+    const [selection, setSelection] = useState<{ connectorId: string; nodes: Record<string, CatalogTreeNode> } | null>(null);
+    // Latest selection, mirrored into a ref so the mount/refresh effect can
+    // decide whether to preserve the expanded view without re-subscribing to
+    // selection changes.
+    const selectionRef = useRef(selection);
+    selectionRef.current = selection;
+    // Sequential batch-load progress (current/total + table name), or null.
+    const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; name: string } | null>(null);
+
     // Preview popover state
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [importing, setImporting] = useState(false);
+    // Cache of fetched sample previews, keyed by `${connectorId}:${pathKey}`,
+    // so re-opening a table's preview is instant and costs no extra query.
+    const previewCacheRef = useRef<Record<string, PreviewState>>({});
 
     // Delete connector confirmation
     const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
@@ -651,16 +704,30 @@ const DataSourceSidebarPanel: React.FC<{
     }, []);
 
     // Fetch on mount and whenever identity changes.
+    //
+    // A refresh (connectorRefreshKey bump) normally collapses the tree and
+    // clears the catalog. But if the user has a pending multi-select, wiping
+    // their expanded view mid-selection is disorienting — the selection bar
+    // stays but the tree they picked from vanishes. So when a selection is
+    // active and this is *not* an identity change, we preserve the view and
+    // just refresh the connector list in place. An identity change still fully
+    // resets (the selection belongs to the previous user).
     useEffect(() => {
-        setConnectors([]);
-        setCatalogByConnector({});
-        setSearchCatalogCache({});
-        setServerSearchActive(false);
-        setSearchingCatalog({});
-        setExpandedConnectorId(null);
-        setTreeExpanded({});
-        setPreview(null);
-        setPreviewAnchor(null);
+        const identityChanged = prevIdentityKeyRef.current !== identityKey;
+        prevIdentityKeyRef.current = identityKey;
+        const preserveView = !identityChanged && !!selectionRef.current;
+
+        if (!preserveView) {
+            setConnectors([]);
+            setCatalogByConnector({});
+            setSearchCatalogCache({});
+            setServerSearchActive(false);
+            setSearchingCatalog({});
+            setExpandedConnectorId(null);
+            setTreeExpanded({});
+            setPreview(null);
+            setPreviewAnchor(null);
+        }
         fetchConnectors();
     }, [fetchConnectors, identityKey, connectorRefreshKey]);
 
@@ -686,6 +753,24 @@ const DataSourceSidebarPanel: React.FC<{
             ...prev,
             [connectorId]: loadingLoadable(prev[connectorId]),
         }));
+        // Poll the backend for high-level progress (e.g. which database is
+        // being queried) while the listing runs, so the spinner isn't silent
+        // on slow multi-database sources like Kusto.
+        let cancelled = false;
+        const poll = async () => {
+            if (cancelled) return;
+            try {
+                const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CATALOG_PROGRESS, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connector_id: connectorId }),
+                });
+                if (!cancelled && data?.message) {
+                    setCatalogProgress(prev => ({ ...prev, [connectorId]: data.message }));
+                }
+            } catch { /* progress is best-effort */ }
+        };
+        const progressTimer = window.setInterval(poll, 700);
         try {
             const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
                 method: 'POST',
@@ -722,6 +807,14 @@ const DataSourceSidebarPanel: React.FC<{
                 value: e?.apiError?.message || t('dataLoading.syncPartial'),
             }));
         } finally {
+            cancelled = true;
+            window.clearInterval(progressTimer);
+            setCatalogProgress(prev => {
+                if (!(connectorId in prev)) return prev;
+                const next = { ...prev };
+                delete next[connectorId];
+                return next;
+            });
             fetchingRef.current.delete(fetchKey);
         }
     }, [dispatch, t]);
@@ -992,6 +1085,16 @@ const DataSourceSidebarPanel: React.FC<{
 
         const ref = buildSourceTableRef(node);
         const nodeMeta = node.metadata || {};
+        const pathKey = node.path.join('/');
+        const cacheKey = `${connectorId}:${pathKey}`;
+
+        // Cache hit: re-open instantly, no query. Repeats are free.
+        const cached = previewCacheRef.current[cacheKey];
+        if (cached && !cached.loading) {
+            setPreview({ ...cached, connectorId, node });
+            setPreviewAnchor(anchorEl);
+            return;
+        }
 
         // Fast path: when the catalog node already carries an embedded
         // preview (columns + sample_rows in metadata, as the sample-datasets
@@ -1003,7 +1106,7 @@ const DataSourceSidebarPanel: React.FC<{
         const embeddedSampleRows = Array.isArray(nodeMeta.sample_rows) ? nodeMeta.sample_rows : null;
         const embeddedColumns = Array.isArray(nodeMeta.columns) ? nodeMeta.columns : null;
         if (embeddedSampleRows && embeddedSampleRows.length > 0 && embeddedColumns && embeddedColumns.length > 0) {
-            setPreview({
+            const embedded: PreviewState = {
                 connectorId,
                 node,
                 columns: embeddedColumns as any,
@@ -1011,7 +1114,9 @@ const DataSourceSidebarPanel: React.FC<{
                 rowCount: nodeMeta.row_count ?? null,
                 tableDescription: nodeMeta.source_description || nodeMeta.description,
                 loading: false,
-            });
+            };
+            previewCacheRef.current[cacheKey] = embedded;
+            setPreview(embedded);
             setPreviewAnchor(anchorEl);
             return;
         }
@@ -1038,29 +1143,30 @@ const DataSourceSidebarPanel: React.FC<{
         })
             .then(({ data }) => {
                 if (data.columns) {
-                    setPreview(prev => {
-                        if (!prev) return null;
-                        const newCols = (data.columns as typeof prev.columns);
-                        const sampleLen = (data.rows || []).length;
-                        // Only treat `total_row_count` as authoritative when
-                        // it's strictly greater than the returned sample, or
-                        // when the sample is short of the preview cap (10) —
-                        // both indicate the loader actually knows the total
-                        // rather than falling back to `len(rows)`. Otherwise
-                        // keep whatever the catalog metadata already gave us.
-                        const total = data.total_row_count;
-                        const totalReliable =
-                            total != null &&
-                            (total > sampleLen || sampleLen < 10);
-                        return {
-                            ...prev,
-                            columns: newCols.length > 0 ? newCols : prev.columns,
-                            sampleRows: data.rows || [],
-                            rowCount: totalReliable ? total : prev.rowCount,
-                            tableDescription: data.description ?? prev.tableDescription,
-                            loading: false,
-                        };
-                    });
+                    const newCols = (data.columns as ColumnMeta[]);
+                    const sampleLen = (data.rows || []).length;
+                    // Only treat `total_row_count` as authoritative when
+                    // it's strictly greater than the returned sample, or
+                    // when the sample is short of the preview cap (10) —
+                    // both indicate the loader actually knows the total
+                    // rather than falling back to `len(rows)`. Otherwise
+                    // keep whatever the catalog metadata already gave us.
+                    const total = data.total_row_count;
+                    const baseRowCount = node.metadata?.row_count ?? null;
+                    const totalReliable = total != null && (total > sampleLen || sampleLen < 10);
+                    const resolved: PreviewState = {
+                        connectorId,
+                        node,
+                        columns: newCols.length > 0 ? newCols : [],
+                        sampleRows: data.rows || [],
+                        rowCount: totalReliable ? total : baseRowCount,
+                        tableDescription: data.description ?? (nodeMeta.source_description || nodeMeta.description),
+                        loading: false,
+                    };
+                    previewCacheRef.current[cacheKey] = resolved;
+                    setPreview(prev => (prev && prev.connectorId === connectorId && prev.node.path.join('/') === pathKey)
+                        ? resolved
+                        : prev);
                 } else {
                     setPreview(prev => prev ? { ...prev, loading: false } : null);
                 }
@@ -1068,32 +1174,87 @@ const DataSourceSidebarPanel: React.FC<{
             .catch(() => {
                 setPreview(prev => prev ? { ...prev, loading: false } : null);
             });
-    }, []);
+    }, [buildSourceTableRef]);
 
     const closePreview = useCallback(() => {
         setPreview(null);
         setPreviewAnchor(null);
     }, []);
 
+    // Lightweight hover card — basic metadata built entirely from data already
+    // in the catalog node, so hovering costs no network query. Clicking the row
+    // opens the full sample preview and selects the table.
+    const renderTableHoverCard = useCallback((node: CatalogTreeNode) => {
+        const meta = node.metadata || {};
+        const desc = (meta.source_description || meta.description || '').toString().trim();
+        const rowCount = meta.row_count;
+        const sizeLabel = formatBytes(meta.original_size_bytes);
+        const cols: any[] = Array.isArray(meta.columns) ? meta.columns : [];
+        return (
+            <Box sx={{ p: 1.25, maxWidth: 300 }}>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'text.primary', wordBreak: 'break-word' }}>
+                    {node.name}
+                </Typography>
+                {(rowCount != null || cols.length > 0 || sizeLabel) && (
+                    <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.5 }}>
+                        {[
+                            rowCount != null ? t('sidebar.hoverRowCount', { count: Number(rowCount).toLocaleString(), defaultValue: `${Number(rowCount).toLocaleString()} rows` }) : null,
+                            cols.length > 0 ? t('sidebar.hoverColumns', { count: cols.length, defaultValue: `${cols.length} columns` }) : null,
+                            sizeLabel || null,
+                        ].filter(Boolean).join(' · ')}
+                    </Typography>
+                )}
+                {desc && (
+                    <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {desc}
+                    </Typography>
+                )}
+                {cols.length > 0 && (
+                    <Box sx={{ mt: 0.75, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {cols.slice(0, 24).map((c: any, i: number) => (
+                            <Box
+                                key={c?.name ?? i}
+                                component="span"
+                                sx={{
+                                    fontSize: 10, lineHeight: 1.5, px: 0.5, borderRadius: 0.5,
+                                    bgcolor: 'action.hover', color: 'text.secondary',
+                                    maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                }}
+                            >
+                                {c?.name}
+                                {c?.type && <Box component="span" sx={{ color: 'text.disabled', ml: 0.5 }}>{String(c.type)}</Box>}
+                            </Box>
+                        ))}
+                        {cols.length > 24 && (
+                            <Box component="span" sx={{ fontSize: 10, lineHeight: 1.5, px: 0.5, color: 'text.disabled' }}>
+                                +{cols.length - 24}
+                            </Box>
+                        )}
+                    </Box>
+                )}
+            </Box>
+        );
+    }, [t]);
+
     // ── Import table (from preview "Load" button) ────────────────────────────
 
-    const handleImportTable = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
-        if (node.node_type !== 'table') return;
+    // Create a fresh workspace session (used when there's no active workspace
+    // or when the user explicitly wants a clean session for the import).
+    const createNewSession = useCallback((displayName: string) => {
+        const now = new Date();
+        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const short = generateUUID().slice(0, 4);
+        const wsId = `session_${date}_${time}_${short}`;
+        dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName }));
+    }, [dispatch]);
 
-        // Empty/home state has no active workspace; the backend requires one,
-        // so spin up a fresh session before loading.
-        if (!activeWorkspace) {
-            const now = new Date();
-            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            const short = generateUUID().slice(0, 4);
-            const wsId = `session_${date}_${time}_${short}`;
-            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
-        }
-
+    // Core single-table load: builds the DictTable and dispatches the load
+    // thunk. No session creation, no user messaging — callers own that so this
+    // can be reused for both single imports and sequential batch loads.
+    const loadTableNode = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
         const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
-
         const tableObj: DictTable = {
             kind: 'table' as const,
             id: node.name,
@@ -1112,58 +1273,138 @@ const DataSourceSidebarPanel: React.FC<{
                 connectorId,
             },
         };
-
-        setImporting(true);
-        dispatch(loadTable({
+        return dispatch(loadTable({
             table: tableObj,
             connectorId,
             sourceTableRef: ref,
             importOptions: importOptions || {},
-        })).unwrap()
-            .then((result) => {
-                if (result.truncated) {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(),
-                        type: 'warning',
-                        component: 'data source sidebar',
-                        value: t('sidebar.loadedTableTruncated', {
-                            name: ref.name,
-                            count: (result.originalRowCount ?? 0).toLocaleString(),
-                        }),
-                    }));
-                } else {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(),
-                        type: 'success',
-                        component: 'data source sidebar',
-                        value: t('sidebar.loadedTable', { name: ref.name }),
-                    }));
-                }
-                closePreview();
-            })
-            .catch((error) => {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data source sidebar',
-                    value: t('sidebar.failedLoadTable', { name: ref.name, error: extractErrorMessage(error) }),
-                }));
-            })
-            .finally(() => setImporting(false));
-    }, [dispatch, closePreview, buildSourceTableRef, activeWorkspace]);
+        })).unwrap();
+    }, [dispatch, buildSourceTableRef]);
 
-    // Import a table into a fresh workspace session. Reuses the same load
-    // path; the only difference is we reset workspace state first so the
-    // user lands in a clean session with just this table.
-    const handleImportTableInNewSession = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
-        const now = new Date();
-        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-        const short = generateUUID().slice(0, 4);
-        const wsId = `session_${date}_${time}_${short}`;
-        dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
-        handleImportTable(connectorId, node, importOptions);
-    }, [dispatch, handleImportTable]);
+    // ── Selection helpers (multi-select) ─────────────────────────────────────
+
+    const clearSelection = useCallback(() => setSelection(null), []);
+
+    const toggleSelectTable = useCallback((connectorId: string, node: CatalogTreeNode, checked: boolean) => {
+        const key = node.path.join('/');
+        setSelection(prev => {
+            const base = prev && prev.connectorId === connectorId ? prev.nodes : {};
+            const nodes = { ...base };
+            if (checked) nodes[key] = node; else delete nodes[key];
+            if (Object.keys(nodes).length === 0) return null;
+            return { connectorId, nodes };
+        });
+    }, []);
+
+    const toggleSelectNamespace = useCallback((connectorId: string, tables: CatalogTreeNode[], checked: boolean) => {
+        setSelection(prev => {
+            const base = prev && prev.connectorId === connectorId ? prev.nodes : {};
+            const nodes = { ...base };
+            for (const tn of tables) {
+                const key = tn.path.join('/');
+                if (checked) nodes[key] = tn; else delete nodes[key];
+            }
+            if (Object.keys(nodes).length === 0) return null;
+            return { connectorId, nodes };
+        });
+    }, []);
+
+    // ── Batch import (sequential) ────────────────────────────────────────────
+    // Kusto's client mutates connection state per query, so tables must load
+    // one at a time. We report per-table progress and a final summary.
+    const handleImportTables = useCallback(async (
+        connectorId: string,
+        nodes: CatalogTreeNode[],
+        opts?: { newSession?: boolean },
+    ) => {
+        const tables = nodes.filter(n => n.node_type === 'table');
+        if (tables.length === 0) return;
+
+        // Tables past the recommended size are impractical to import wholesale
+        // (slow, memory-heavy, and can exceed backend result limits). When the
+        // selection contains any such table, hand the whole selection off to
+        // the conversational data-loading chat so the user can filter, sample,
+        // or aggregate before loading — instead of a direct bulk import.
+        const oversized = tables.filter(isTableTooLarge);
+        if (oversized.length > 0 && onStartDataLoadingChat) {
+            const connector = connectors.find(c => c.id === connectorId);
+            const connectorName = connector?.display_name || connectorId;
+            const describe = (n: CatalogTreeNode) => {
+                const rows = n.metadata?.row_count;
+                const bytes = n.metadata?.original_size_bytes;
+                const parts = [
+                    typeof rows === 'number' ? `${Number(rows).toLocaleString()} rows` : null,
+                    formatBytes(typeof bytes === 'number' ? bytes : null) || null,
+                ].filter(Boolean);
+                return parts.length > 0 ? `${n.name} (${parts.join(', ')})` : n.name;
+            };
+            const allNames = tables.map(n => n.name).join(', ');
+            const largeList = oversized.map(describe).join('; ');
+            const promptText = t('sidebar.largeTableChatPrompt', {
+                connector: connectorName,
+                tables: allNames,
+                large: largeList,
+                defaultValue:
+                    `I want to load the following table(s) from "${connectorName}": ${allNames}. ` +
+                    `These are too large to import in full: ${largeList}. ` +
+                    `Help me load a filtered, sampled, or aggregated subset instead of the entire table.`,
+            });
+            clearSelection();
+            closePreview();
+            onStartDataLoadingChat(promptText);
+            return;
+        }
+
+        if (opts?.newSession || !activeWorkspace) {
+            createNewSession(t('sidebar.batchSessionName', { count: tables.length, defaultValue: `${tables.length} tables` }));
+        }
+
+        setImporting(true);
+        setBatchProgress({ current: 0, total: tables.length, name: '' });
+        let ok = 0;
+        let truncated = 0;
+        const failed: string[] = [];
+        for (let i = 0; i < tables.length; i++) {
+            const node = tables[i];
+            setBatchProgress({ current: i + 1, total: tables.length, name: node.name });
+            try {
+                const result = await loadTableNode(connectorId, node);
+                ok++;
+                if (result?.truncated) truncated++;
+            } catch {
+                failed.push(node.name);
+            }
+        }
+        setBatchProgress(null);
+        setImporting(false);
+
+        if (ok > 0) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: failed.length > 0 ? 'warning' : 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.loadedTablesBatch', {
+                    ok,
+                    total: tables.length,
+                    defaultValue: `Loaded ${ok} of ${tables.length} tables${truncated > 0 ? ` (${truncated} truncated)` : ''}.`,
+                }),
+            }));
+        }
+        if (failed.length > 0) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: t('sidebar.failedLoadTablesBatch', {
+                    count: failed.length,
+                    names: failed.slice(0, 5).join(', '),
+                    defaultValue: `Failed to load ${failed.length} table(s): ${failed.slice(0, 5).join(', ')}`,
+                }),
+            }));
+        }
+        closePreview();
+        clearSelection();
+    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, connectors, onStartDataLoadingChat, t]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
@@ -1226,6 +1467,7 @@ const DataSourceSidebarPanel: React.FC<{
             await apiRequest(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
             setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
             clearConnectorUiState(deleteTarget.id);
+            onConnectorsChanged?.();
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',
@@ -1243,7 +1485,7 @@ const DataSourceSidebarPanel: React.FC<{
             setDeleting(false);
             setDeleteTarget(null);
         }
-    }, [clearConnectorUiState, deleteTarget, dispatch, t]);
+    }, [clearConnectorUiState, deleteTarget, dispatch, onConnectorsChanged, t]);
 
     // ── Disconnect connector ──────────────────────────────────────────────
     // For admin (non-deletable) connectors the user can't remove the
@@ -1606,8 +1848,17 @@ const DataSourceSidebarPanel: React.FC<{
                             <Collapse in={isExpanded} timeout={100}>
                                 <Box sx={{ pl: '6px', pr: 0.5, pb: 1 }}>
                                     {!displayCache && isLoading && (
-                                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, py: 1.5 }}>
                                             <CircularProgress size={16} />
+                                            {catalogProgress[connector.id] && (
+                                                <Typography
+                                                    variant="caption"
+                                                    color="text.secondary"
+                                                    sx={{ fontSize: 11, textAlign: 'center', px: 1, wordBreak: 'break-word' }}
+                                                >
+                                                    {catalogProgress[connector.id]}
+                                                </Typography>
+                                            )}
                                         </Box>
                                     )}
                                     {displayCache && displayCache.tree.length > 0 && (
@@ -1615,15 +1866,26 @@ const DataSourceSidebarPanel: React.FC<{
                                             nodes={displayCache.tree}
                                             loadedMap={loadedTablesMap}
                                             expandedIds={expanded}
+                                            selectionEnabled
+                                            selectedIds={selection?.connectorId === connector.id
+                                                ? new Set(Object.keys(selection.nodes))
+                                                : undefined}
+                                            onToggleSelectTable={(node, checked) => toggleSelectTable(connector.id, node, checked)}
+                                            onToggleSelectNamespace={(node, tables, checked) => toggleSelectNamespace(connector.id, tables, checked)}
                                             onExpandedChange={(newIds) => {
                                                 setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
                                             }}
                                             onLazyExpand={undefined}
                                             onItemClick={(node, e) => {
                                                 if (node.node_type === 'table') {
+                                                    // Row/name click: open the preview and add the
+                                                    // table to the selection. Unselecting is done via
+                                                    // the row's checkbox.
+                                                    toggleSelectTable(connector.id, node, true);
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
                                                 }
                                             }}
+                                            renderHoverCard={renderTableHoverCard}
                                             onDragStart={(node, event) => {
                                                 const dsId = node.metadata?.dataset_id;
                                                 const sourceName = node.metadata?._source_name || node.name;
@@ -1677,6 +1939,70 @@ const DataSourceSidebarPanel: React.FC<{
                 })}
 
             </Box>
+            {/* ── Sticky batch-load action bar ──
+                Appears when one or more tables are selected via checkboxes.
+                Loads sequentially (Kusto's client isn't parallel-safe). */}
+            {selection && Object.keys(selection.nodes).length > 0 && (
+                <Box sx={{ flexShrink: 0, borderTop: `1px solid ${borderColor.view}`, px: 1.5, py: 1, display: 'flex', flexDirection: 'column', gap: 0.75, backgroundColor: 'background.paper' }}>
+                    {batchProgress ? (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CircularProgress size={14} thickness={5} />
+                            <Typography sx={{ fontSize: 12, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {t('sidebar.batchLoading', {
+                                    current: batchProgress.current,
+                                    total: batchProgress.total,
+                                    name: batchProgress.name,
+                                    defaultValue: `Loading ${batchProgress.current}/${batchProgress.total}: ${batchProgress.name}`,
+                                })}
+                            </Typography>
+                        </Box>
+                    ) : (
+                        <>
+                            <Typography sx={{ fontSize: 11.5, color: 'text.secondary', fontWeight: 500 }}>
+                                {t('sidebar.selectedCount', {
+                                    count: Object.keys(selection.nodes).length,
+                                    defaultValue: `${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'} selected`,
+                                })}
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <Button
+                                    size="small"
+                                    variant="contained"
+                                    disableElevation
+                                    onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
+                                    sx={{ fontSize: 11.5, textTransform: 'none', py: 0.25, minWidth: 0 }}
+                                >
+                                    {t('sidebar.loadNTables', {
+                                        count: Object.keys(selection.nodes).length,
+                                        defaultValue: `Load ${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'}`,
+                                    })}
+                                </Button>
+                                {activeWorkspace && (
+                                    <Tooltip title={t('sidebar.loadInNewSessionTooltip', { defaultValue: 'Load in new session' })}>
+                                        <Button
+                                            size="small"
+                                            variant="text"
+                                            onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes), { newSession: true })}
+                                            sx={{ fontSize: 11.5, textTransform: 'none', py: 0.25, minWidth: 0 }}
+                                        >
+                                            {t('sidebar.loadInNewSession', { defaultValue: 'New session' })}
+                                        </Button>
+                                    </Tooltip>
+                                )}
+                                <Button
+                                    size="small"
+                                    variant="text"
+                                    color="inherit"
+                                    onClick={clearSelection}
+                                    sx={{ fontSize: 11.5, textTransform: 'none', py: 0.25, minWidth: 0, color: 'text.disabled' }}
+                                >
+                                    {t('sidebar.clear', { defaultValue: 'Clear' })}
+                                </Button>
+                            </Box>
+                        </>
+                    )}
+                </Box>
+            )}
             </Box>
             )}
 
@@ -1983,9 +2309,8 @@ const DataSourceSidebarPanel: React.FC<{
                                 rowCount={preview.rowCount}
                                 loading={preview.loading || importing}
                                 alreadyLoaded={alreadyLoaded}
-                                enableFilters
-                                onLoad={(opts) => handleImportTable(preview.connectorId, preview.node, opts)}
-                                onLoadInNewSession={activeWorkspace ? (opts) => handleImportTableInNewSession(preview.connectorId, preview.node, opts) : undefined}
+                                enableFilters={false}
+                                hideLoadActions
                                 onRefreshPreview={(rows, cols, rc) => {
                                     setPreview(prev => {
                                         if (!prev) return null;

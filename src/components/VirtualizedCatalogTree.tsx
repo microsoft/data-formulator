@@ -15,6 +15,9 @@ import { useTranslation } from 'react-i18next';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
 import { Box, Tooltip, Typography, useTheme } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -36,8 +39,7 @@ function flattenTree(
     nodes: CatalogTreeNode[],
     expandedSet: Set<string>,
     depth: number = 0,
-): FlatRow[] {
-    const rows: FlatRow[] = [];
+): FlatRow[] {    const rows: FlatRow[] = [];
     for (const node of nodes) {
         const itemId = node.path.join('/');
         const isExpandable = node.node_type === 'namespace' || node.node_type === 'table_group';
@@ -74,7 +76,18 @@ export interface VirtualizedCatalogTreeProps {
     onLoadMore?: (node: CatalogTreeNode) => void;
     onDragStart?: (node: CatalogTreeNode, event: React.DragEvent) => void;
     renderTableActions?: (node: CatalogTreeNode) => React.ReactNode;
+    /** Rich hover card (metadata glance) shown as the row tooltip for tables.
+     *  Built from data already in the node — no network fetch. */
+    renderHoverCard?: (node: CatalogTreeNode) => React.ReactNode;
     selectedItemId?: string | null;
+    /** Enable multi-select checkboxes on table + namespace rows. */
+    selectionEnabled?: boolean;
+    /** Path-keys (path.join('/')) of currently selected table rows. */
+    selectedIds?: Set<string>;
+    /** Toggle a single table's selection. */
+    onToggleSelectTable?: (node: CatalogTreeNode, checked: boolean) => void;
+    /** Toggle all tables under a namespace (tri-state select-all). */
+    onToggleSelectNamespace?: (node: CatalogTreeNode, tables: CatalogTreeNode[], checked: boolean) => void;
     /** Max height when auto-sizing (default 600). Pass "none" for unconstrained. */
     maxHeight?: number | 'none';
     rowHeight?: number;
@@ -91,7 +104,23 @@ interface RowContext {
     onLoadMore?: (node: CatalogTreeNode) => void;
     onDragStart?: (node: CatalogTreeNode, event: React.DragEvent) => void;
     renderTableActions?: (node: CatalogTreeNode) => React.ReactNode;
+    renderHoverCard?: (node: CatalogTreeNode) => React.ReactNode;
     selectedItemId?: string | null;
+    selectionEnabled?: boolean;
+    selectedIds?: Set<string>;
+    onToggleSelectTable?: (node: CatalogTreeNode, checked: boolean) => void;
+    onToggleSelectNamespace?: (node: CatalogTreeNode, tables: CatalogTreeNode[], checked: boolean) => void;
+}
+
+// Recursively collect all table leaves under a node (for namespace select-all).
+function collectDescendantTables(node: CatalogTreeNode): CatalogTreeNode[] {
+    const out: CatalogTreeNode[] = [];
+    const walk = (n: CatalogTreeNode) => {
+        if (n.node_type === 'table') { out.push(n); return; }
+        for (const c of n.children ?? []) walk(c);
+    };
+    for (const c of node.children ?? []) walk(c);
+    return out;
 }
 
 // ─── Row component (react-window v1 API) ────────────────────────────────────
@@ -118,7 +147,8 @@ const ITEM_LABEL_GAP = 4;
 const rowPadLeft = (depth: number) => depth * INDENT_PER_LEVEL;
 
 function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>) {
-    const { rows, loadedMap, onToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId } = data;
+    const { rows, loadedMap, onToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId,
+        selectionEnabled, selectedIds, onToggleSelectTable, onToggleSelectNamespace, renderHoverCard } = data;
     const row = rows[index];
     const { node, depth, isExpanded, isLazyPlaceholder } = row;
     const theme = useTheme();
@@ -174,6 +204,36 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
     const metaStatus = node.metadata?.source_metadata_status;
     const isSelected = selectedItemId === itemId;
 
+    // Rich hover card (metadata glance) for tables — no network fetch.
+    const hoverCard = (isTable && renderHoverCard) ? renderHoverCard(node) : null;
+
+    // ── Multi-select checkbox state ──────────────────────────────────────
+    // Tables select individually; namespaces are tri-state over their table
+    // descendants. The leading glyph slot doubles as the checkbox on hover /
+    // when selected, so there's no layout shift.
+    const selSet = selectedIds;
+    const tableChecked = isTable && !!selSet?.has(itemId);
+    const nsTables = (selectionEnabled && isNamespace) ? collectDescendantTables(node) : [];
+    const nsSelectedCount = nsTables.reduce((n, tn) => n + (selSet?.has(tn.path.join('/')) ? 1 : 0), 0);
+    const nsChecked = nsTables.length > 0 && nsSelectedCount === nsTables.length;
+    const nsIndeterminate = nsSelectedCount > 0 && nsSelectedCount < nsTables.length;
+    const rowSelectable = !!selectionEnabled && (isTable || (isNamespace && nsTables.length > 0));
+    const showAsChecked = isTable ? tableChecked : (nsChecked || nsIndeterminate);
+
+    // Tables show their checkbox persistently so multi-select is obviously
+    // available (a checklist). Namespaces keep the type/chevron glyph and only
+    // reveal the tri-state select-all box on hover or when (partly) selected.
+    const alwaysCheckbox = !!selectionEnabled && isTable;
+
+    const handleCheckboxClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (isTable) {
+            onToggleSelectTable?.(node, !tableChecked);
+        } else if (isNamespace) {
+            onToggleSelectNamespace?.(node, nsTables, !nsChecked);
+        }
+    };
+
     const dragProps = isTable && onDragStart
         ? {
             draggable: true,
@@ -193,10 +253,22 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
     return (
         <div style={style} {...dragProps}>
             <Tooltip
-                title={nodeDescription}
+                title={hoverCard ?? nodeDescription}
                 placement="right"
-                enterDelay={400}
-                disableHoverListener={!nodeDescription}
+                enterDelay={hoverCard ? 450 : 400}
+                disableHoverListener={hoverCard ? false : !nodeDescription}
+                slotProps={hoverCard ? {
+                    tooltip: {
+                        sx: {
+                            maxWidth: 'none', p: 0,
+                            bgcolor: 'background.paper',
+                            color: 'text.primary',
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            boxShadow: 4,
+                        },
+                    },
+                } : undefined}
             >
                 <Box
                     onClick={handleClick}
@@ -212,27 +284,59 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                         '&:hover': { backgroundColor: theme.palette.action.hover },
                         '& .catalog-hover-action': { visibility: 'hidden' },
                         '&:hover .catalog-hover-action': { visibility: 'visible' },
+                        ...(rowSelectable ? {
+                            '&:hover .cat-slot-glyph': { display: 'none' },
+                            '&:hover .cat-slot-check': { display: 'flex' },
+                        } : {}),
                         ...(isSelected ? { backgroundColor: theme.palette.action.selected, fontWeight: 500 } : {}),
                     }}
                 >
                     {/* Single leading glyph (slot) — chevron for namespaces,
-                        type icon for tables/groups. */}
+                        type icon for tables/groups. When selection is enabled
+                        the slot doubles as a checkbox on hover / when checked. */}
                     <Box
                         sx={{
                             width: ITEM_SLOT, minWidth: ITEM_SLOT, height: ITEM_SLOT,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0,
+                            flexShrink: 0, position: 'relative',
                         }}
                     >
-                        {isNamespace
-                            ? (isExpanded
-                                ? <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-                                : <ChevronRightIcon sx={{ fontSize: 16, color: 'text.disabled' }} />)
-                            : isGroup
-                                ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
-                                : isTable
-                                    ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
-                                    : null}
+                        <Box
+                            className="cat-slot-glyph"
+                            sx={{
+                                display: (alwaysCheckbox || (rowSelectable && showAsChecked)) ? 'none' : 'flex',
+                                alignItems: 'center', justifyContent: 'center',
+                            }}
+                        >
+                            {isNamespace
+                                ? (isExpanded
+                                    ? <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                                    : <ChevronRightIcon sx={{ fontSize: 16, color: 'text.disabled' }} />)
+                                : isGroup
+                                    ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
+                                    : isTable
+                                        ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
+                                        : null}
+                        </Box>
+                        {rowSelectable && (
+                            <Box
+                                className="cat-slot-check"
+                                onClick={handleCheckboxClick}
+                                sx={{
+                                    position: 'absolute', inset: 0,
+                                    display: (alwaysCheckbox || showAsChecked) ? 'flex' : 'none',
+                                    alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    color: showAsChecked ? 'primary.main' : 'action.active',
+                                }}
+                            >
+                                {nsIndeterminate && !isTable
+                                    ? <IndeterminateCheckBoxIcon sx={{ fontSize: 15 }} />
+                                    : showAsChecked
+                                        ? <CheckBoxIcon sx={{ fontSize: 15 }} />
+                                        : <CheckBoxOutlineBlankIcon sx={{ fontSize: 15 }} />}
+                            </Box>
+                        )}
                     </Box>
                     {/* Label */}
                     <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: 13 }}>
@@ -240,10 +344,13 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                     </Typography>
                     {/* Loaded check */}
                     {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
-                    {/* Metadata status hint */}
-                    {isTable && metaStatus && metaStatus !== 'ok' && metaStatus !== 'synced' && (
-                        <Tooltip title={metaStatus === 'partial' ? t('sidebar.metadataPartial') : t('sidebar.metadataUnavailable')} placement="top">
-                            <InfoOutlinedIcon sx={{ fontSize: 12, color: metaStatus === 'partial' ? 'warning.main' : 'text.disabled', flexShrink: 0, opacity: 0.6 }} />
+                    {/* Metadata status hint — only surfaced when metadata is
+                        genuinely unavailable. "partial" just means columns are
+                        lazy-loaded (expected during a full-cluster browse), so
+                        it's not worth flagging. */}
+                    {isTable && metaStatus === 'unavailable' && (
+                        <Tooltip title={t('sidebar.metadataUnavailable')} placement="top">
+                            <InfoOutlinedIcon sx={{ fontSize: 12, color: 'text.disabled', flexShrink: 0, opacity: 0.6 }} />
                         </Tooltip>
                     )}
                     {/* Row count */}
@@ -282,7 +389,12 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
     onLoadMore,
     onDragStart,
     renderTableActions,
+    renderHoverCard,
     selectedItemId,
+    selectionEnabled,
+    selectedIds,
+    onToggleSelectTable,
+    onToggleSelectNamespace,
     maxHeight: maxHeightProp = 600,
     rowHeight = ROW_HEIGHT,
     sx,
@@ -317,7 +429,12 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
         onDragStart,
         renderTableActions,
         selectedItemId,
-    }), [flatRows, loadedMap, handleToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId]);
+        selectionEnabled,
+        selectedIds,
+        onToggleSelectTable,
+        onToggleSelectNamespace,
+        renderHoverCard,
+    }), [flatRows, loadedMap, handleToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId, selectionEnabled, selectedIds, onToggleSelectTable, onToggleSelectNamespace, renderHoverCard]);
 
     const totalHeight = flatRows.length * rowHeight;
     // When unconstrained, cap at a viewport-relative height so react-window

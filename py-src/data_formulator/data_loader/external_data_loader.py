@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 import pandas as pd
 import pyarrow as pa
 import logging
@@ -362,7 +362,29 @@ class ExternalDataLoader(ABC):
     - `fetch_data_as_arrow()`: each loader must implement; fetches data as PyArrow Table.
     - `ingest_to_workspace()`: fetches via Arrow and writes parquet to the given workspace.
     """
-    
+
+    # Optional progress sink. When set (by the connector route serving a
+    # catalog request), loaders may report high-level progress messages via
+    # ``_report_progress`` — e.g. "Querying database ContosoSales (3/8)…" —
+    # so the frontend can show what's happening alongside the spinner.
+    # Loaders that don't report progress simply never call the helper.
+    progress_callback: Callable[[str], None] | None = None
+
+    def _report_progress(self, message: str) -> None:
+        """Emit a high-level progress message if a sink is attached.
+
+        Safe to call unconditionally: no-op when no callback is set, and
+        callback failures are swallowed so progress reporting can never break
+        the underlying operation.
+        """
+        cb = self.progress_callback
+        if cb is None:
+            return
+        try:
+            cb(message)
+        except Exception:
+            logger.debug("progress_callback raised; ignoring", exc_info=True)
+
     def get_safe_params(self) -> dict[str, Any]:
         """
         Get connection parameters with sensitive values removed.

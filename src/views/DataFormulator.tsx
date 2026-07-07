@@ -571,6 +571,8 @@ export const DataFormulatorFC = ({ }) => {
             <DataSourceSidebar
                 onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                 connectorRefreshKey={connectorRefreshKey}
+                onConnectorsChanged={handleConnectorsChanged}
+                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
             />
             <Box ref={containerRef} className="outer-allotment" sx={{
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
@@ -939,6 +941,8 @@ export const DataFormulatorFC = ({ }) => {
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                             connectorRefreshKey={connectorRefreshKey}
+                            onConnectorsChanged={handleConnectorsChanged}
+                            onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
                         />
                         {dataUploadRequestBox}
                     </Box>

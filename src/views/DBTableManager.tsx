@@ -13,7 +13,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import TravelExploreIcon from '@mui/icons-material/TravelExplore';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest, type ApiError } from '../app/apiClient';
@@ -35,6 +35,18 @@ function extractConnectError(body: any, fallback: string): string {
     }
     return body.message ?? fallback;
 }
+
+// Public Azure Data Explorer sample clusters users can try when they don't have
+// their own cluster. The ADX "help" cluster is readable by any AAD-authenticated
+// user (az login / Managed Identity), so it also avoids the ARM cluster-search
+// permission. Connecting lists its sample databases (Samples, ContosoSales, …).
+const KUSTO_SAMPLE_CLUSTERS: { name: string; uri: string; subscription_name?: string; location?: string }[] = [
+    {
+        name: 'ADX help cluster — samples (StormEvents, ContosoSales, …)',
+        uri: 'https://help.kusto.windows.net',
+        subscription_name: 'Public Microsoft sample',
+    },
+];
 
 
 // ---------------------------------------------------------------------------
@@ -95,6 +107,11 @@ export const DataLoaderForm: React.FC<{
     let [isConnecting, setIsConnecting] = useState(false);
     const [persistCredentials, setPersistCredentials] = useState(true);
 
+    // High-level progress shown while connecting (e.g. Kusto reporting which
+    // database it's currently listing). Polled from the backend during the
+    // connect request; cleared when it resolves.
+    const [connectProgress, setConnectProgress] = useState('');
+
     // Sensitive params (passwords, tokens, secrets) live in component state only —
     // never persisted to Redux / localStorage.
     // Sensitivity is declared by the loader via `sensitive: true` or `type: "password"`.
@@ -104,10 +121,11 @@ export const DataLoaderForm: React.FC<{
     );
     const [sensitiveParams, setSensitiveParams] = useState<Record<string, string>>({});
 
-    // Cluster discovery (Kusto): populated after the user signs in with Microsoft.
-    type DiscoveredCluster = { name: string; uri: string; subscription_name?: string; location?: string };
-    const [discoveredClusters, setDiscoveredClusters] = useState<DiscoveredCluster[]>([]);
-    const [isDiscovering, setIsDiscovering] = useState(false);
+    // Kusto cluster suggestions: public sample clusters users can try. Finding
+    // their own cluster is done via the Azure portal link on the field (no ARM
+    // discovery, so only impersonation permission is needed).
+    type ClusterOption = { name: string; uri: string; subscription_name?: string; location?: string };
+    const clusterOptions: ClusterOption[] = KUSTO_SAMPLE_CLUSTERS;
 
     // Merged params: Redux (non-sensitive) + component state (sensitive)
     const mergedParams = useMemo(
@@ -123,8 +141,26 @@ export const DataLoaderForm: React.FC<{
     // the connection and hands off via onConnected.
     const connectAndListTables = useCallback(async () => {
         setIsConnecting(true);
+        setConnectProgress('');
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS);
+        // Poll for high-level listing progress (e.g. which Kusto database is
+        // being queried) so the spinner isn't silent on slow multi-database
+        // sources. Best-effort: any failure is ignored.
+        let cancelledPoll = false;
+        const pollProgress = async () => {
+            const cid = connectorIdRef.current;
+            if (cancelledPoll || !cid) return;
+            try {
+                const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG_PROGRESS, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connector_id: cid }),
+                });
+                if (!cancelledPoll && data?.message) setConnectProgress(data.message);
+            } catch { /* progress is best-effort */ }
+        };
+        const progressTimer = setInterval(pollProgress, 700);
         try {
             // Strip table_filter from params sent to connect (it's a catalog-side filter)
             const { table_filter: _tf, ...connectParams } = mergedParams as Record<string, any>;
@@ -151,32 +187,12 @@ export const DataLoaderForm: React.FC<{
                 onFinish("error", error.message || 'Failed to connect');
             }
         } finally {
+            cancelledPoll = true;
+            clearInterval(progressTimer);
+            setConnectProgress('');
             setIsConnecting(false);
         }
     }, [mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
-
-    // Discover Kusto clusters the signed-in user can see (via Microsoft SSO + ARM).
-    const handleDiscoverClusters = useCallback(async () => {
-        setIsDiscovering(true);
-        try {
-            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.DISCOVER_CLUSTERS, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ loader_type: dataLoaderType }),
-            });
-            const clusters = (data?.clusters ?? []) as DiscoveredCluster[];
-            setDiscoveredClusters(clusters);
-            if (clusters.length === 0) {
-                onFinish('warning', t('db.noClustersFound', {
-                    defaultValue: 'No clusters found in your subscriptions. You can still enter a cluster URL manually.',
-                }));
-            }
-        } catch (error: any) {
-            onFinish('error', error.message || 'Failed to discover clusters. Sign in with Microsoft first.');
-        } finally {
-            setIsDiscovering(false);
-        }
-    }, [dataLoaderType, onFinish, t]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -321,10 +337,19 @@ export const DataLoaderForm: React.FC<{
         <Box sx={{p: 0, pb: 2, display: 'flex', flexDirection: 'column' }}>
             {isConnecting && <Box sx={{
                 position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
-                display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-                backgroundColor: "rgba(255, 255, 255, 0.7)"
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, zIndex: 1000,
+                backgroundColor: "rgba(255, 255, 255, 0.85)"
             }}>
                 <CircularProgress size={20} />
+                {connectProgress && (
+                    <Typography sx={{
+                        fontSize: 12.5, fontWeight: 500, color: 'text.primary',
+                        textAlign: 'center', px: 1.5, py: 0.5, maxWidth: 380, wordBreak: 'break-word',
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: 1,
+                    }}>
+                        {connectProgress}
+                    </Typography>
+                )}
             </Box>}
             {/* Connection form. Catalog browsing + table loading live in
                 the data-source sidebar — this dialog is for create / edit /
@@ -387,7 +412,7 @@ export const DataLoaderForm: React.FC<{
 
                         const renderParamGrid = (tierParams: typeof paramDefs) => {
                             const cols = balancedCols(tierParams.length);
-                            // Kusto cluster field: render as a discoverable autocomplete.
+                            // Kusto cluster field: render with sample suggestions + an Azure portal link.
                             const isDiscoverableCluster = (name: string) =>
                                 dataLoaderType === 'kusto' && name === 'kusto_cluster';
                             return (
@@ -397,8 +422,8 @@ export const DataLoaderForm: React.FC<{
                                         <Autocomplete
                                             key={paramDef.name}
                                             freeSolo
-                                            options={discoveredClusters}
-                                            loading={isDiscovering}
+                                            options={clusterOptions}
+                                            noOptionsText={<Typography sx={{ fontSize: 12 }}>{t('db.noClustersOption', { defaultValue: 'Enter your cluster URL, or use the link to find it in the Azure portal' })}</Typography>}
                                             getOptionLabel={(o) => typeof o === 'string' ? o : o.uri}
                                             isOptionEqualToValue={(o, v) =>
                                                 (typeof o === 'string' ? o : o.uri) === (typeof v === 'string' ? v : v.uri)}
@@ -413,7 +438,7 @@ export const DataLoaderForm: React.FC<{
                                                 }
                                             }}
                                             renderOption={(optProps, option) => {
-                                                const o = option as DiscoveredCluster;
+                                                const o = option as ClusterOption;
                                                 return (
                                                     <li {...optProps} key={o.uri}>
                                                         <Box>
@@ -437,12 +462,10 @@ export const DataLoaderForm: React.FC<{
                                                     InputProps={{
                                                         ...inputParams.InputProps,
                                                         endAdornment: (
-                                                            <Tooltip title={t('db.discoverClusters', { defaultValue: 'Discover clusters you can access (requires Microsoft sign-in)' })}>
-                                                                <span>
-                                                                    <IconButton size="small" onClick={handleDiscoverClusters} disabled={isDiscovering}>
-                                                                        {isDiscovering ? <CircularProgress size={14} /> : <TravelExploreIcon sx={{ fontSize: 16 }} />}
-                                                                    </IconButton>
-                                                                </span>
+                                                            <Tooltip title={t('db.findClusterPortal', { defaultValue: 'Find your cluster in the Azure portal' })}>
+                                                                <IconButton size="small" component="a" href="https://portal.azure.com/#browse/Microsoft.Kusto%2Fclusters" target="_blank" rel="noopener noreferrer">
+                                                                    <OpenInNewIcon sx={{ fontSize: 16 }} />
+                                                                </IconButton>
                                                             </Tooltip>
                                                         ),
                                                     }}

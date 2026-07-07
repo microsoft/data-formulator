@@ -862,6 +862,7 @@
     "knowledge": "Knowledge",
     "metadataPartial": "Partial metadata",
     "metadataUnavailable": "Metadata unavailable",
+    "largeTableChatPrompt": "I want to load the following table(s) from \"{{connector}}\": {{tables}}. These are too large to import in full: {{large}}. Help me load a filtered, sampled, or aggregated subset instead of the entire table.",
     "saving": "Saving...",
     "rename": "Rename",
     "exportSession": "Export",

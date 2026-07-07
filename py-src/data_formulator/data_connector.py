@@ -23,6 +23,8 @@ import dataclasses
 import inspect
 import json as _json
 import logging
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +49,37 @@ DATA_CONNECTORS: dict[str, "DataConnector"] = {}
 
 _MAX_CATALOG_PAGE_SIZE = 1000
 _USER_CONNECTOR_PREFIX = "user::"
+
+
+# ---------------------------------------------------------------------------
+# Catalog progress registry
+# ---------------------------------------------------------------------------
+# While a catalog listing is in flight (e.g. Kusto enumerating databases one
+# by one), the loader reports high-level progress via ``_report_progress``.
+# We stash the latest message here keyed by connector id so the frontend can
+# poll ``/api/connectors/get-catalog-progress`` and show it beside the spinner.
+_CATALOG_PROGRESS: dict[str, dict[str, Any]] = {}
+_CATALOG_PROGRESS_LOCK = threading.Lock()
+
+
+def _set_catalog_progress(connector_id: str, message: str) -> None:
+    with _CATALOG_PROGRESS_LOCK:
+        _CATALOG_PROGRESS[connector_id] = {
+            "message": message,
+            "updated_at": time.time(),
+        }
+
+
+def _get_catalog_progress(connector_id: str) -> dict[str, Any] | None:
+    with _CATALOG_PROGRESS_LOCK:
+        entry = _CATALOG_PROGRESS.get(connector_id)
+        return dict(entry) if entry else None
+
+
+def _clear_catalog_progress(connector_id: str) -> None:
+    with _CATALOG_PROGRESS_LOCK:
+        _CATALOG_PROGRESS.pop(connector_id, None)
+
 
 
 # ---------------------------------------------------------------------------
@@ -1263,7 +1296,16 @@ def connector_connect():
             )
             identity_for_cache = source._get_identity()
             user_home = get_user_home(identity_for_cache)
-            flat_tables = loader.list_tables()
+            # Attach a progress sink so slow listings (e.g. Kusto enumerating
+            # databases) can report which source they're querying — polled by
+            # the connect dialog via /api/connectors/get-catalog-progress.
+            progress_key = data.get("connector_id") or source._source_id
+            loader.progress_callback = (
+                lambda msg: _set_catalog_progress(progress_key, msg))
+            try:
+                flat_tables = loader.list_tables()
+            finally:
+                loader.progress_callback = None
             loader.ensure_table_keys(flat_tables)
             cache_mode = (
                 "replace"
@@ -1277,6 +1319,8 @@ def connector_connect():
         except Exception:
             logger.debug("Failed to save catalog cache on connect for '%s'",
                          source._source_id, exc_info=True)
+        finally:
+            _clear_catalog_progress(data.get("connector_id") or source._source_id)
 
         result = {
             "status": "connected",
@@ -1298,41 +1342,6 @@ def connector_connect():
         except Exception:
             pass
         classify_and_raise_connector_error(e, operation="connect")
-
-
-@connectors_bp.route("/api/connectors/discover-clusters", methods=["POST"])
-def connector_discover_clusters():
-    """Discover data sources (e.g. Kusto clusters) the signed-in user can see.
-
-    Requires an active Microsoft SSO session. Dispatches to the loader
-    class's ``discover_clusters`` static method (currently Kusto), which
-    performs an On-Behalf-Of exchange for Azure Resource Manager and
-    enumerates clusters across the user's subscriptions.
-    """
-    data = request.get_json() or {}
-    loader_type = data.get("loader_type", "kusto")
-
-    from data_formulator.data_loader import DATA_LOADERS
-    loader_class = DATA_LOADERS.get(loader_type)
-    if loader_class is None or not hasattr(loader_class, "discover_clusters"):
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            f"Cluster discovery is not supported for '{loader_type}'.")
-
-    from data_formulator.auth.token_store import TokenStore
-    sso_token = TokenStore().get_sso_token()
-    if not sso_token:
-        raise AppError(
-            ErrorCode.ACCESS_DENIED,
-            "Sign in with Microsoft first to discover clusters.")
-
-    try:
-        clusters = loader_class.discover_clusters(sso_token)
-    except AppError:
-        raise
-    except Exception as e:
-        classify_and_raise_connector_error(e, operation="discover")
-    return json_ok({"clusters": clusters})
 
 
 @connectors_bp.route("/api/connectors/disconnect", methods=["POST"])
@@ -1494,6 +1503,8 @@ def connector_get_catalog_tree():
     """Build nested tree from cache, falling back to live lightweight listing."""
     data = request.get_json() or {}
     source = _resolve_connector(data)
+    # Key progress by the same id the frontend polls with.
+    progress_key = data.get("connector_id") or source._source_id
 
     try:
         loader = source._require_loader()
@@ -1518,7 +1529,14 @@ def connector_get_catalog_tree():
             flat_tables = _filter_catalog_tables(raw.get("tables", []), name_filter)
             flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
         else:
-            flat_tables = loader.list_tables(table_filter=name_filter)
+            # Attach a progress sink so slow live listings (e.g. Kusto
+            # enumerating databases) can report which source they're querying.
+            loader.progress_callback = (
+                lambda msg: _set_catalog_progress(progress_key, msg))
+            try:
+                flat_tables = loader.list_tables(table_filter=name_filter)
+            finally:
+                loader.progress_callback = None
             loader.ensure_table_keys(flat_tables)
             flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
             if is_local_folder and not name_filter:
@@ -1545,6 +1563,23 @@ def connector_get_catalog_tree():
         raise
     except Exception as e:
         classify_and_raise_connector_error(e, operation="catalog")
+    finally:
+        _clear_catalog_progress(progress_key)
+
+
+@connectors_bp.route("/api/connectors/get-catalog-progress", methods=["POST"])
+def connector_get_catalog_progress():
+    """Return the latest catalog-listing progress message for a connector.
+
+    Polled by the frontend while a live ``get-catalog-tree`` request is in
+    flight so it can show which database/source is being queried alongside the
+    spinner. Returns an empty message when nothing is in progress.
+    """
+    data = request.get_json() or {}
+    connector_id = data.get("connector_id")
+    entry = _get_catalog_progress(connector_id) if connector_id else None
+    return json_ok({"message": (entry or {}).get("message", "")})
+
 
 
 @connectors_bp.route("/api/connectors/get-cached-catalog-tree", methods=["POST"])

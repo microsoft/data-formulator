@@ -7,10 +7,26 @@ import pyarrow as pa
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
-from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRequestProperties
 from azure.kusto.data.helpers import dataframe_from_result_table
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_int(value: Any) -> int | None:
+    """Best-effort conversion of a Kusto stat field to ``int``.
+
+    ``.show tables details`` returns numeric stats that may arrive as ints,
+    floats, strings, or ``None`` depending on the SDK/cluster. Returns
+    ``None`` when the value is missing or not a number.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
 
 class KustoDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Kusto"
@@ -28,31 +44,9 @@ class KustoDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return """**Option 1 — Sign in with Microsoft (recommended):** If the app is configured with Microsoft (Entra) sign-in, just sign in and connect — DF exchanges your login for cluster access automatically (no fields needed).
+        return """**Option 1 — Azure Default Identity (recommended):** Leave the auth fields empty. DF connects using the host's ambient Azure credentials — your Azure CLI login (`az login`) when running locally, or a Managed Identity when deployed to Azure. That identity must be granted access to the cluster.
 
-**Option 2 — Azure Default Identity:** Leave auth fields empty. DF will automatically use your Azure CLI login (`az login`), Managed Identity, VS Code credentials, or environment variables — whichever is available.
-
-**Option 3 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access."""
-
-    @staticmethod
-    def auth_config() -> dict[str, Any]:
-        """Declare that Kusto can use the app-level Microsoft SSO token.
-
-        Mode ``sso_exchange`` (without an ``exchange_url``) signals the
-        framework to inject the user's DF SSO access token as
-        ``sso_access_token``. The loader then performs the Microsoft Entra
-        On-Behalf-Of (OBO) exchange in-process (see :meth:`_build_kcsb`),
-        because the target Kusto scope is cluster-specific and cannot be
-        expressed by a generic exchange endpoint.
-
-        Service-principal / Azure Default Identity remain available as
-        fallbacks when no SSO token is present.
-        """
-        return {
-            "mode": "sso_exchange",
-            "display_name": "Kusto",
-            "supports_refresh": True,
-        }
+**Option 2 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access."""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -63,11 +57,10 @@ class KustoDataLoader(ExternalDataLoader):
         self.client_secret = params.get("client_secret", None)
         self.tenant_id = params.get("tenant_id", None)
 
-        # Delegated-token inputs (populated by the auth framework):
-        #   access_token     — a Kusto-audience token (e.g. from a popup login)
-        #   sso_access_token — the app-level DF SSO token, exchanged via OBO
+        # Optional delegated user token (Kusto-audience). Reserved for a future
+        # user-impersonation sign-in; when absent the loader falls through to
+        # ambient Azure credentials (az login / Managed Identity).
         self.access_token = params.get("access_token", None)
-        self.sso_access_token = params.get("sso_access_token", None)
 
         try:
             self.client = KustoClient(self._build_kcsb())
@@ -80,151 +73,27 @@ class KustoDataLoader(ExternalDataLoader):
                 "Identity is assigned to the host."
             ) from e
 
-    @staticmethod
-    def _resolve_obo_tenant_id(explicit: str | None) -> str | None:
-        """Resolve the tenant used for the OBO exchange.
-
-        Priority: explicit param → ``AZURE_OBO_TENANT_ID`` env → tenant
-        segment parsed from ``OIDC_ISSUER_URL``.
-        """
-        import os
-        import re
-
-        if explicit:
-            return explicit
-        env_tenant = os.environ.get("AZURE_OBO_TENANT_ID", "").strip()
-        if env_tenant:
-            return env_tenant
-        issuer = os.environ.get("OIDC_ISSUER_URL", "").strip()
-        # e.g. https://login.microsoftonline.com/<tenant>/v2.0
-        match = re.search(
-            r"login\.microsoftonline\.com/([^/]+)", issuer
-        )
-        if match:
-            return match.group(1)
-        return None
-
-    @staticmethod
-    def discover_clusters(sso_access_token: str) -> list[dict[str, Any]]:
-        """Discover Kusto clusters visible to the signed-in user via Azure
-        Resource Manager (ARM).
-
-        Uses the On-Behalf-Of flow to obtain an ARM-scoped token, lists the
-        user's subscriptions, then enumerates ``Microsoft.Kusto/clusters`` in
-        each. Each returned entry includes the cluster query ``uri``.
-
-        Note: ARM lists clusters the user can *see* (control-plane RBAC). It
-        does NOT guarantee data-plane query access, and clusters granted only
-        at the Kusto data plane will not appear here. Treat the result as a
-        best-effort discovery aid, validated on connect.
-        """
-        import os
-        import requests
-
-        client_id = os.environ.get("OIDC_CLIENT_ID", "").strip()
-        client_secret = os.environ.get("OIDC_CLIENT_SECRET", "").strip()
-        tenant_id = KustoDataLoader._resolve_obo_tenant_id(None)
-        if not (client_id and client_secret and tenant_id):
-            raise RuntimeError(
-                "Microsoft SSO is not configured for cluster discovery "
-                "(OIDC_CLIENT_ID / OIDC_CLIENT_SECRET / tenant missing).")
-
-        from azure.identity import OnBehalfOfCredential
-        credential = OnBehalfOfCredential(
-            tenant_id=tenant_id,
-            client_id=client_id,
-            client_secret=client_secret,
-            user_assertion=sso_access_token,
-        )
-        arm_token = credential.get_token(
-            "https://management.azure.com/.default").token
-        headers = {"Authorization": f"Bearer {arm_token}"}
-
-        subs_resp = requests.get(
-            "https://management.azure.com/subscriptions?api-version=2022-12-01",
-            headers=headers, timeout=30)
-        subs_resp.raise_for_status()
-        subscriptions = subs_resp.json().get("value", [])
-
-        clusters: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for sub in subscriptions:
-            sub_id = sub.get("subscriptionId")
-            if not sub_id:
-                continue
-            url = (
-                f"https://management.azure.com/subscriptions/{sub_id}"
-                "/providers/Microsoft.Kusto/clusters?api-version=2023-08-15")
-            try:
-                resp = requests.get(url, headers=headers, timeout=30)
-                if resp.status_code != 200:
-                    continue
-                for c in resp.json().get("value", []):
-                    uri = (c.get("properties") or {}).get("uri")
-                    if not uri or uri in seen:
-                        continue
-                    seen.add(uri)
-                    clusters.append({
-                        "name": c.get("name"),
-                        "uri": uri,
-                        "location": c.get("location"),
-                        "subscription_id": sub_id,
-                        "subscription_name": sub.get("displayName"),
-                    })
-            except Exception as exc:
-                logger.debug("Cluster listing failed for subscription %s: %s",
-                             sub_id, exc)
-                continue
-
-        clusters.sort(key=lambda x: (x.get("name") or "").lower())
-        return clusters
-
     def _build_kcsb(self) -> KustoConnectionStringBuilder:
         """Build the Kusto connection string builder using the best available
         credential, in priority order.
 
         1. Explicit Kusto-audience ``access_token`` (delegated user token)
-        2. App-level SSO token → Microsoft Entra On-Behalf-Of exchange
-        3. Service principal (``client_id`` / ``client_secret`` / ``tenant_id``)
-        4. ``DefaultAzureCredential`` (``az login`` / Managed Identity / etc.)
+        2. Service principal (``client_id`` / ``client_secret`` / ``tenant_id``)
+        3. ``DefaultAzureCredential`` (``az login`` / Managed Identity / etc.)
         """
-        import os
-
         # 1. Explicit Kusto user token (already scoped for the cluster).
         if self.access_token:
             logger.info("Using delegated user token for Kusto client.")
             return KustoConnectionStringBuilder.with_aad_user_token_authentication(
                 self.kusto_cluster, self.access_token)
 
-        # 2. App-level Microsoft SSO token → OBO exchange for a Kusto token.
-        if self.sso_access_token:
-            client_id = os.environ.get("OIDC_CLIENT_ID", "").strip()
-            client_secret = os.environ.get("OIDC_CLIENT_SECRET", "").strip()
-            tenant_id = self._resolve_obo_tenant_id(self.tenant_id)
-            if client_id and client_secret and tenant_id:
-                from azure.identity import OnBehalfOfCredential
-                credential = OnBehalfOfCredential(
-                    tenant_id=tenant_id,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    user_assertion=self.sso_access_token,
-                )
-                logger.info(
-                    "Using On-Behalf-Of Microsoft SSO exchange for Kusto client.")
-                return KustoConnectionStringBuilder.with_azure_token_credential(
-                    self.kusto_cluster, credential)
-            logger.warning(
-                "SSO token present but OBO not configured "
-                "(OIDC_CLIENT_ID / OIDC_CLIENT_SECRET / tenant missing); "
-                "falling back to other credentials.")
-
-        # 3. Service principal.
+        # 2. Service principal.
         if self.client_id and self.client_secret and self.tenant_id:
             logger.info("Using service principal authentication for Kusto client.")
             return KustoConnectionStringBuilder.with_aad_application_key_authentication(
                 self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id)
 
-        # 4. DefaultAzureCredential: az login, Managed Identity, VS Code, env vars, etc.
+        # 3. DefaultAzureCredential: az login, Managed Identity, VS Code, env vars, etc.
         from azure.identity import DefaultAzureCredential
         credential = DefaultAzureCredential()
         logger.info(
@@ -288,9 +157,17 @@ class KustoDataLoader(ExternalDataLoader):
         logger.info(f"Column dtypes after conversion: {dict(df.dtypes)}")
         return df
 
-    def query(self, kql: str) -> pd.DataFrame:
+    def query(self, kql: str, no_truncation: bool = False) -> pd.DataFrame:
         logger.info(f"Executing KQL query: {kql} on database {self.kusto_database}")
-        result = self.client.execute(self.kusto_database, kql)
+        properties = None
+        if no_truncation:
+            # Kusto truncates query results at 64 MB / 500k rows by default and
+            # fails the whole query if exceeded. Bulk imports already bound the
+            # row count with `| take {size}`, so lift the truncation safety to
+            # let that bounded result through instead of erroring out.
+            properties = ClientRequestProperties()
+            properties.set_option("notruncation", True)
+        result = self.client.execute(self.kusto_database, kql, properties)
         logger.info(f"Query executed successfully, returning results.")
         df = dataframe_from_result_table(result.primary_results[0])
         
@@ -322,24 +199,37 @@ class KustoDataLoader(ExternalDataLoader):
 
         if not source_table:
             raise ValueError("source_table must be provided")
-        
-        base_query = f"['{source_table}']"
-        
+
+        # Cross-database catalog entries are "database.table"; resolve the
+        # database so the query targets it rather than the (possibly unset)
+        # connect-time default.
+        db, table = self._resolve_source_table(source_table)
+        base_query = f"['{table}']"
+
         # Add sort if specified (KQL syntax)
         sort_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "desc" if sort_order == 'desc' else "asc"
             sort_cols_with_order = [f"{col} {order_direction}" for col in sort_columns]
             sort_clause = f" | sort by {', '.join(sort_cols_with_order)}"
-        
+
         # Add take limit
         kql_query = f"{base_query}{sort_clause} | take {size}"
-        
+
         logger.info(f"Executing Kusto query: {kql_query[:200]}...")
-        
-        # Execute query
-        df = self.query(kql_query)
-        
+
+        # Execute query in the resolved database context
+        old_db = self.kusto_database
+        if db:
+            self.kusto_database = db
+        try:
+            # Bulk fetch: `take {size}` bounds the row count, so disable Kusto's
+            # 64 MB result-truncation safety (which would otherwise fail the
+            # whole query for wide tables) rather than returning nothing.
+            df = self.query(kql_query, no_truncation=True)
+        finally:
+            self.kusto_database = old_db
+
         # Convert to Arrow
         arrow_table = pa.Table.from_pandas(df, preserve_index=False)
         
@@ -347,13 +237,134 @@ class KustoDataLoader(ExternalDataLoader):
         
         return arrow_table
 
-    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List tables from Kusto database.
+    def _resolve_source_table(self, source_table: str) -> tuple[str | None, str]:
+        """Parse a source_table identifier into ``(database, table)``.
 
-        Uses `.show tables details` for lightweight metadata (name, schema,
-        DocString). Does NOT run per-table sample queries.
+        Cross-database catalog entries are ``"database.table"`` and must be
+        split even when a database is pinned — otherwise the whole identifier
+        gets bracket-quoted (``['db.table']``) and Kusto reads it as a single
+        table literally named with a dot. A bare identifier uses the pinned
+        database when available. Returns ``(database_or_None, table)``; when
+        *database* is ``None`` the caller should use the connect-time database.
         """
-        tables_df = self.query(".show tables details")
+        parts = source_table.split(".")
+        if len(parts) >= 2:
+            return parts[0], ".".join(parts[1:])
+        if self.kusto_database:
+            return self.kusto_database, source_table
+        return None, source_table
+
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List tables from the Kusto cluster.
+
+        When a database is pinned (``kusto_database`` supplied at connect
+        time), lists tables within that database and returns ``path =
+        [table]``. Otherwise enumerates every database on the cluster and
+        returns ``path = [database, table]`` so the catalog groups tables by
+        database — matching ``catalog_hierarchy()``.
+
+        Uses `.show tables details` for lightweight metadata (name, DocString).
+        When a single database is pinned, a bulk `.show database schema as json`
+        also fetches every table's columns in one control command. A
+        full-cluster scan (no pinned database) skips columns — running a bulk
+        schema query against *every* database is what caused connection
+        timeouts on large clusters; columns load lazily per database instead.
+        """
+        if self.kusto_database:
+            return self._list_tables_in_db(
+                self.kusto_database, table_filter,
+                path_prefix=[], fetch_columns=True)
+
+        # No database pinned: enumerate all databases on the cluster. Columns
+        # are intentionally NOT fetched here — a bulk schema query per database
+        # across the whole cluster is expensive and times out. They load lazily
+        # per database (see ``get_metadata`` / pinned-database browsing).
+        tables: list[dict[str, Any]] = []
+        self._report_progress("Listing databases on the cluster…")
+        db_df = self.query(".show databases")
+        db_names = [
+            rec.get("DatabaseName")
+            for rec in db_df.to_dict(orient="records")
+            if rec.get("DatabaseName")
+        ]
+        total = len(db_names)
+        self._report_progress(f"Found {total} databases; listing tables…")
+        for idx, db_name in enumerate(db_names, start=1):
+            self._report_progress(
+                f"Querying database '{db_name}' ({idx}/{total})…")
+            tables.extend(self._list_tables_in_db(
+                db_name, table_filter,
+                path_prefix=[db_name], fetch_columns=False))
+        return tables
+
+    def _fetch_db_columns_bulk(self, db_name: str) -> dict[str, list[dict[str, str]]]:
+        """Fetch column schemas for *every* table in a database with a single
+        control command (``.show database schema as json``).
+
+        This replaces a per-table ``.show table schema`` (one round-trip per
+        table) with one query for the whole database — cheap even for large
+        databases with many tables. Returns ``{table_name: [{"name", "type"},
+        ...]}``; empty on failure so callers degrade to "no columns".
+        """
+        old_db = self.kusto_database
+        self.kusto_database = db_name
+        try:
+            rows = self.query(".show database schema as json").to_dict(orient="records")
+        except Exception as e:
+            logger.warning(f"Bulk schema fetch failed for database '{db_name}': {e}")
+            return {}
+        finally:
+            self.kusto_database = old_db
+
+        if not rows:
+            return {}
+        # Single row holding the schema JSON; the column name varies by cluster
+        # version ("DatabaseSchema"), so just take the first value.
+        raw = next(iter(rows[0].values()), None)
+        if not raw:
+            return {}
+        try:
+            schema = json.loads(raw)
+        except Exception:
+            return {}
+
+        databases = schema.get("Databases", {}) or {}
+        # Prefer the requested database; fall back to the sole entry present.
+        db_entry = databases.get(db_name)
+        if db_entry is None and len(databases) == 1:
+            db_entry = next(iter(databases.values()))
+        db_entry = db_entry or {}
+
+        out: dict[str, list[dict[str, str]]] = {}
+        for tname, tinfo in (db_entry.get("Tables", {}) or {}).items():
+            out[tname] = [
+                # Prefer the friendly Kusto type ("long", "string", "datetime")
+                # over the verbose CLR type ("System.Int64") for display.
+                {"name": c.get("Name"), "type": c.get("CslType") or c.get("Type") or ""}
+                for c in (tinfo.get("OrderedColumns") or [])
+                if c.get("Name")
+            ]
+        return out
+
+    def _list_tables_in_db(
+        self,
+        db_name: str,
+        table_filter: str | None,
+        path_prefix: list[str],
+        fetch_columns: bool,
+    ) -> list[dict[str, Any]]:
+        """List tables in a single database (control command runs in-context)."""
+        old_db = self.kusto_database
+        self.kusto_database = db_name
+        try:
+            tables_df = self.query(".show tables details")
+        finally:
+            self.kusto_database = old_db
+
+        # One bulk schema query for the whole database, rather than a
+        # `.show table schema` per table (which explodes into thousands of
+        # control commands on large clusters).
+        columns_by_table = self._fetch_db_columns_bulk(db_name) if fetch_columns else {}
 
         tables = []
         for rec in tables_df.to_dict(orient="records"):
@@ -362,25 +373,31 @@ class KustoDataLoader(ExternalDataLoader):
             if table_filter and table_filter.lower() not in table_name.lower():
                 continue
 
-            try:
-                schema_result = self.query(
-                    f".show table ['{table_name}'] schema as json"
-                ).to_dict(orient="records")
-                columns = [
-                    {"name": r["Name"], "type": r["Type"]}
-                    for r in json.loads(schema_result[0]["Schema"])["OrderedColumns"]
-                ]
-            except Exception:
-                columns = []
+            columns = columns_by_table.get(table_name, [])
 
             metadata: dict[str, Any] = {"columns": columns}
+            # Qualify the identifier with the database when enumerating the
+            # whole cluster (path_prefix holds the db) so the catalog key
+            # carries the database and fetch/preview can target it.
+            qualified = ".".join(path_prefix + [table_name])
+            metadata["_source_name"] = qualified
             doc_string = rec.get("DocString")
             if doc_string and str(doc_string).strip():
                 metadata["description"] = str(doc_string).strip()
+            # `.show tables details` already carries size stats for every
+            # table — surface them for free (no extra round-trip) so the UI
+            # and load logic can decide up front whether a table is too big to
+            # import directly.
+            row_count = _coerce_int(rec.get("TotalRowCount"))
+            if row_count is not None:
+                metadata["row_count"] = row_count
+            original_size = _coerce_int(rec.get("TotalOriginalSize"))
+            if original_size is not None:
+                metadata["original_size_bytes"] = original_size
 
             tables.append({
-                "name": table_name,
-                "path": [table_name],
+                "name": qualified,
+                "path": path_prefix + [table_name],
                 "metadata": metadata,
             })
 
@@ -461,6 +478,9 @@ class KustoDataLoader(ExternalDataLoader):
             sample_df = self.query(f"['{table_name}'] | take 5")
             sample_rows = df_to_safe_records(sample_df)
             result: dict[str, Any] = {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+            original_size = _coerce_int(details[0].get("TotalOriginalSize"))
+            if original_size is not None:
+                result["original_size_bytes"] = original_size
             doc_string = details[0].get("DocString")
             if doc_string and str(doc_string).strip():
                 result["description"] = str(doc_string).strip()
