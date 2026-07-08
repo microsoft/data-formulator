@@ -417,3 +417,107 @@ class TestBuildSystemPromptConnectorSummary:
         now = datetime.now()
         assert f"Current date and time: {now.strftime('%Y-%m-%d')}" in prompt
         assert f"({now.strftime('%A')})" in prompt
+
+
+# ------------------------------------------------------------------
+# probe_data (design 37 §4.2 / §7)
+# ------------------------------------------------------------------
+
+class _StubLoader:
+    """Records the probe call and returns a canned result."""
+
+    def __init__(self, result=None):
+        self.result = result if result is not None else {
+            "rows": [{"n": 3}], "columns": ["n"], "row_count": 1, "exact": True,
+        }
+        self.calls = []
+
+    def probe(self, path, query):
+        self.calls.append((path, query))
+        return self.result
+
+
+class TestProbeData:
+    def test_missing_ids_returns_error(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+        assert "error" in agent._tool_probe_data({"table_key": "k_orders"})
+        assert "error" in agent._tool_probe_data({"source_id": "pg_prod"})
+
+    def test_unknown_table_key_returns_error(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+
+        result = agent._tool_probe_data({
+            "source_id": "pg_prod", "table_key": "nope", "query": {},
+        })
+        assert "error" in result
+        assert "not found" in result["error"]
+
+    def test_budget_exhaustion_returns_error(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 0
+
+        result = agent._tool_probe_data({
+            "source_id": "pg_prod", "table_key": "k_orders", "query": {},
+        })
+        assert "error" in result
+        assert "budget" in result["error"].lower()
+
+    def test_resolves_path_and_delegates_to_loader(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+        stub = _StubLoader()
+
+        with patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            return_value=stub,
+        ):
+            result = agent._tool_probe_data({
+                "source_id": "pg_prod",
+                "table_key": "k_orders",
+                "query": {"aggregates": [{"op": "count", "as": "n"}]},
+            })
+
+        # The model-facing table_key is mapped to the catalog path.
+        assert stub.calls == [(["Sales", "monthly_orders"],
+                               {"aggregates": [{"op": "count", "as": "n"}]})]
+        assert result["rows"] == [{"n": 3}]
+        assert "note" in result  # row-cap guidance attached
+        assert agent._probe_budget == 4  # decremented once
+
+    def test_not_connected_source_returns_error(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+
+        with patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            side_effect=RuntimeError("no such connector"),
+        ):
+            result = agent._tool_probe_data({
+                "source_id": "pg_prod", "table_key": "k_orders", "query": {},
+            })
+        assert "error" in result
+        assert "not connected" in result["error"]
+        # Budget is not consumed when the loader can't be resolved.
+        assert agent._probe_budget == 5
+
+    def test_loader_error_result_passes_through(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+        stub = _StubLoader(result={"error": "bad column"})
+
+        with patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            return_value=stub,
+        ):
+            result = agent._tool_probe_data({
+                "source_id": "pg_prod", "table_key": "k_orders", "query": {},
+            })
+        assert result == {"error": "bad column"}
+        assert "note" not in result  # no cap note on error results

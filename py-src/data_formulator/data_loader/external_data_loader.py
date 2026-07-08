@@ -465,6 +465,7 @@ class ExternalDataLoader(ABC):
         table_name: str,
         source_table: str,
         import_options: dict[str, Any] | None = None,
+        source_metadata: dict[str, Any] | None = None,
     ) -> "TableMetadata":
         """
         Fetch data from external source and store as parquet in workspace.
@@ -473,15 +474,21 @@ class ExternalDataLoader(ABC):
         This avoids pandas conversion overhead entirely.
         
         After writing the parquet file, performs a best-effort metadata
-        enrichment: pulls table/column descriptions from the source system
-        via ``get_column_types()`` and merges them into the persisted
-        ``TableMetadata``.  Metadata failures never block the import.
+        enrichment: merges table/column descriptions into the persisted
+        ``TableMetadata``.  Prefers ``source_metadata`` supplied by the caller
+        (served from the synced catalog cache) and only falls back to a live
+        ``get_column_types()`` fetch when none is provided — so a load doesn't
+        pay an extra metadata round-trip for data the catalog already has.
+        Metadata failures never block the import.
         
         Args:
             workspace: The workspace to store data in
             table_name: Name for the table in the workspace
             source_table: Full table name to fetch from
             import_options: See fetch_data_as_arrow for details.
+            source_metadata: Optional pre-fetched source metadata
+                (``{"columns": [...], "description": str}``), typically read
+                from the catalog cache to avoid a live round-trip.
             
         Returns:
             TableMetadata for the created parquet file
@@ -504,9 +511,11 @@ class ExternalDataLoader(ABC):
             source_info=source_info,
         )
 
-        # Best-effort metadata enrichment from the source system.
+        # Best-effort metadata enrichment. Prefer caller-supplied metadata
+        # (from the synced catalog cache); only hit the source live when the
+        # catalog had nothing for this table.
         try:
-            source_meta = self.get_column_types(source_table)
+            source_meta = source_metadata or self.get_column_types(source_table)
             if source_meta:
                 _merge_source_metadata(table_metadata, source_meta)
                 workspace.add_table_metadata(table_metadata)
@@ -815,6 +824,32 @@ class ExternalDataLoader(ABC):
         except Exception:
             pass
         return {}
+
+    # -- Agent probing (design 37) ---------------------------------------
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Run a bounded single-table SPJQ read (design 37 §4.2).
+
+        The ``query`` object supports ``filters`` (source-agnostic ``EQ/NEQ/…``
+        vocabulary), ``columns`` (projection), ``group_by``, ``aggregates``
+        (``count/count_distinct/sum/avg/min/max``), ``order_by`` and ``limit``.
+        Count / distinct / sample / aggregate are all degenerate shapes of this
+        one object.
+
+        Native-first: each loader overrides this and runs the probe the way its
+        backend does it best, one-lining the shared helpers in
+        :mod:`data_formulator.data_loader.probe_utils` — SQL backends call
+        ``probe_via_native_sql`` (compile → run on the source engine), file /
+        object sources call ``run_probe_on_duckdb`` (read the files into DuckDB),
+        and non-SQL backends (Kusto, Mongo) compile their own native query and
+        finish with ``shape_probe_payload``. The base class has no generic way to
+        do any of these, so it reports probe as unsupported rather than silently
+        pulling a local copy and guessing.
+
+        Returns ``{rows, columns, row_count, exact, compiled_note}`` — or
+        ``{error}``. ``exact=false`` marks a sampled answer.
+        """
+        return {"error": "probe is not supported for this source"}
 
     def _tables_to_catalog_tree(self, tables: list[dict[str, Any]]) -> list[dict]:
         """Build a nested catalog tree from ``list_tables``-style entries."""

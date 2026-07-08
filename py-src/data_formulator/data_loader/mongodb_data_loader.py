@@ -1,12 +1,14 @@
 import logging
 from datetime import datetime
 
+import re
 import pandas as pd
 import pyarrow as pa
 import pymongo
 from bson import ObjectId
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from typing import Any
 
@@ -219,7 +221,161 @@ class MongoDBDataLoader(ExternalDataLoader):
         logger.info(f"Fetched {arrow_table.num_rows} rows from MongoDB collection '{collection_name}'")
         
         return arrow_table
-        
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to a MongoDB aggregation pipeline and run it.
+
+        Native pushdown: ``$match / $group / $sort / $limit`` runs server-side
+        over the whole collection, so the result is exact.
+        """
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        q = query or {}
+        out_limit = probe_utils.clamp_probe_limit(q.get("limit"))
+        collection_name = str(path[-1])
+        try:
+            pipeline = self._compile_probe_pipeline(q, out_limit)
+        except ValueError as exc:
+            return {"error": f"invalid probe query: {exc}"}
+        try:
+            docs = list(self.db[collection_name].aggregate(pipeline))
+        except Exception as exc:
+            logger.debug("probe pipeline failed: %s", pipeline, exc_info=True)
+            return {"error": f"probe failed: {exc}"}
+        if not docs:
+            return {
+                "rows": [], "columns": [], "row_count": 0,
+                "exact": True, "compiled_note": None,
+            }
+        arrow = pa.Table.from_pandas(
+            self._process_documents(docs), preserve_index=False,
+        )
+        return probe_utils.shape_probe_payload(arrow, out_limit, exact=True)
+
+    # -- Aggregation-pipeline probe compiler -------------------------------
+
+    def _compile_probe_pipeline(
+        self, query: dict[str, Any], out_limit: int,
+    ) -> list[dict[str, Any]]:
+        """Compile a probe SPJQ object into a MongoDB aggregation pipeline."""
+        columns = query.get("columns") or []
+        group_by = query.get("group_by") or []
+        aggregates = query.get("aggregates") or []
+        order_by = query.get("order_by") or []
+        filters = query.get("filters") or []
+
+        pipeline: list[dict[str, Any]] = []
+
+        match = self._compile_match(filters)
+        if match:
+            pipeline.append({"$match": match})
+
+        if aggregates or group_by:
+            group_id = {g: f"${g}" for g in group_by} if group_by else None
+            group_stage: dict[str, Any] = {"_id": group_id}
+            distinct_aliases: set[str] = set()
+            aliases: list[str] = []
+            for agg in aggregates:
+                if not isinstance(agg, dict):
+                    continue
+                op = (agg.get("op") or "").lower().strip()
+                col = agg.get("column")
+                alias = str(agg.get("as") or (f"{op}_{col}" if col else op))
+                aliases.append(alias)
+                if op == "count" and not col:
+                    group_stage[alias] = {"$sum": 1}
+                elif op == "count":
+                    group_stage[alias] = {
+                        "$sum": {"$cond": [{"$eq": [f"${col}", None]}, 0, 1]}
+                    }
+                elif op == "count_distinct":
+                    if not col:
+                        raise ValueError("count_distinct requires a column")
+                    group_stage[alias] = {"$addToSet": f"${col}"}
+                    distinct_aliases.add(alias)
+                elif op in ("sum", "avg", "min", "max"):
+                    if not col:
+                        raise ValueError(f"aggregate {op} requires a column")
+                    group_stage[alias] = {f"${op}": f"${col}"}
+                else:
+                    raise ValueError(f"unsupported aggregate op: {op!r}")
+            pipeline.append({"$group": group_stage})
+
+            # Lift the group keys back to top-level fields and size the
+            # distinct sets so the shape matches the SQL semantics.
+            project: dict[str, Any] = {"_id": 0}
+            for g in group_by:
+                project[g] = f"$_id.{g}"
+            for alias in aliases:
+                project[alias] = {"$size": f"${alias}"} if alias in distinct_aliases else 1
+            pipeline.append({"$project": project})
+        elif columns:
+            project = {"_id": 0}
+            for c in columns:
+                project[str(c)] = 1
+            pipeline.append({"$project": project})
+
+        sort_spec: list[tuple[str, int]] = []
+        for o in order_by:
+            if not isinstance(o, dict):
+                continue
+            col = o.get("column")
+            if not col:
+                continue
+            direction = -1 if str(o.get("dir", "")).lower() == "desc" else 1
+            sort_spec.append((str(col), direction))
+        if sort_spec:
+            pipeline.append({"$sort": dict(sort_spec)})
+
+        pipeline.append({"$limit": int(out_limit)})
+        return pipeline
+
+    @staticmethod
+    def _compile_match(filters: list[dict[str, Any]]) -> dict[str, Any]:
+        """Compile probe ``filters`` into a MongoDB ``$match`` document."""
+        conds: list[dict[str, Any]] = []
+        for f in filters or []:
+            if not isinstance(f, dict):
+                continue
+            col = f.get("column")
+            op = (f.get("op") or "").upper().strip()
+            if not col:
+                continue
+            col = str(col)
+            val = f.get("value")
+            if op == "EQ":
+                conds.append({col: {"$eq": val}})
+            elif op == "NEQ":
+                conds.append({col: {"$ne": val}})
+            elif op == "GT":
+                conds.append({col: {"$gt": val}})
+            elif op == "GTE":
+                conds.append({col: {"$gte": val}})
+            elif op == "LT":
+                conds.append({col: {"$lt": val}})
+            elif op == "LTE":
+                conds.append({col: {"$lte": val}})
+            elif op in ("LIKE", "ILIKE"):
+                conds.append({col: {"$regex": re.escape(str(val)), "$options": "i"}})
+            elif op == "IN":
+                vals = val if isinstance(val, (list, tuple)) else [val]
+                conds.append({col: {"$in": list(vals)}})
+            elif op == "NOT_IN":
+                vals = val if isinstance(val, (list, tuple)) else [val]
+                conds.append({col: {"$nin": list(vals)}})
+            elif op == "IS_NULL":
+                conds.append({col: {"$eq": None}})
+            elif op == "IS_NOT_NULL":
+                conds.append({col: {"$ne": None}})
+            elif op == "BETWEEN":
+                if isinstance(val, (list, tuple)) and len(val) == 2:
+                    conds.append({col: {"$gte": val[0], "$lte": val[1]}})
+        if not conds:
+            return {}
+        if len(conds) == 1:
+            return conds[0]
+        return {"$and": conds}
+
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """
         List all collections

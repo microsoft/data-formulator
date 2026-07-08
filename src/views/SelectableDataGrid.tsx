@@ -58,7 +58,19 @@ interface SelectableDataGridProps {
     rowCount: number;
     virtual: boolean;
     columnDefs: ColumnDef[];
+    // Controlled quick-search text (owned by the focused-table canvas). Filters
+    // the loaded rows client-side across all data columns.
+    searchText?: string;
+    // Hide the in-grid footer widget (row count / random / download). The
+    // focused-table canvas surfaces these actions in its bottom toolbar.
+    hideFooter?: boolean;
+    // Bumping this number triggers a "random rows" refetch (virtual tables).
+    randomizeToken?: number;
+    // Report virtual-pagination state up so an external toolbar can render the
+    // loaded/total count and enable the random-rows action.
+    onStateReport?: (s: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean }) => void;
 }
+
 
 function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
     if (b[orderBy] < a[orderBy]) {
@@ -322,7 +334,7 @@ const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement>((props, ref)
 const PAGE_SIZE = 500;
 
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(({ 
-    tableId, rows, tableName, columnDefs, rowCount, virtual }) => {
+    tableId, rows, tableName, columnDefs, rowCount, virtual, searchText, hideFooter, randomizeToken, onStateReport }) => {
 
     const { t } = useTranslation();
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
@@ -360,6 +372,9 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
     const [isLoadingMore, setIsLoadingMore] = React.useState<boolean>(false);
     const [isDownloading, setIsDownloading] = React.useState<boolean>(false);
     const [hasMore, setHasMore] = React.useState<boolean>(virtual ? rows.length < rowCount : false);
+    // Filtered total reported by the server (reflects active search/filters for
+    // virtual tables). Falls back to the unfiltered prop count.
+    const [serverRowCount, setServerRowCount] = React.useState<number>(rowCount);
     const fetchIdRef = React.useRef(0);
     
     React.useEffect(() => {
@@ -376,6 +391,29 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             setHasMore(false);
         }
     }, [rows, order, orderBy])
+
+    // Report virtual-pagination state up to an external toolbar (focused-table
+    // canvas) so it can render the loaded/total count and the random-rows dice.
+    React.useEffect(() => {
+        const effectiveCount = virtual ? serverRowCount : rowCount;
+        onStateReport?.({
+            loadedCount: rowsToDisplay.length,
+            rowCount: effectiveCount,
+            virtual,
+            canRandomize: virtual && effectiveCount > 10000,
+        });
+    }, [rowsToDisplay.length, rowCount, serverRowCount, virtual, onStateReport]);
+
+    // Bumping `randomizeToken` (from the external toolbar's dice) resets sort
+    // and refetches a fresh random page for virtual tables.
+    const randomizeMountRef = React.useRef(true);
+    React.useEffect(() => {
+        if (randomizeMountRef.current) { randomizeMountRef.current = false; return; }
+        if (!virtual) return;
+        setOrderBy(undefined);
+        setOrder('asc');
+        fetchVirtualDataRef.current?.([], 'asc');
+    }, [randomizeToken]);
 
     // Only the Table component depends on columnDefs (for colgroup); memoize it
     // so react-virtuoso keeps a stable reference when columns haven't changed.
@@ -446,6 +484,14 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         filtersRef.current = Object.values(columnFilters);
     }, [columnFilters]);
 
+    // Committed global search term (server-side pushdown for virtual tables).
+    // Held in a ref so fetchVirtualData stays stable across sort/scroll while
+    // still carrying the latest search into every request.
+    const searchRef = React.useRef<string>('');
+    React.useEffect(() => {
+        searchRef.current = (searchText || '').trim();
+    }, [searchText]);
+
     const fetchVirtualData = React.useCallback((
         sortByColumnIds: string[],
         sortOrder: 'asc' | 'desc',
@@ -470,6 +516,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                 : 'head',
             order_by_fields: sortByColumnIds.length > 0 ? sortByColumnIds : ['#rowId'],
             ...(activeFilters.length > 0 ? { filters: activeFilters } : {}),
+            ...(searchRef.current ? { search: searchRef.current } : {}),
         };
 
         apiRequest<any>(getUrls().SAMPLE_TABLE, {
@@ -487,6 +534,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             } else {
                 setRowsToDisplay(newRows);
             }
+            setServerRowCount(totalCount);
             setHasMore(offset + newRows.length < totalCount);
             setIsLoading(false);
             setIsLoadingMore(false);
@@ -518,6 +566,20 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [columnFilters]);
 
+    // Refetch from offset 0 whenever the committed search term changes
+    // (virtual tables only). Non-virtual tables filter client-side below.
+    const didMountSearchRef = React.useRef(false);
+    React.useEffect(() => {
+        if (!virtual) return;
+        if (!didMountSearchRef.current) {
+            didMountSearchRef.current = true;
+            return;
+        }
+        searchRef.current = (searchText || '').trim();
+        fetchVirtualData(orderBy ? [orderBy] : [], order, 0, false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchText]);
+
     const handleEndReached = React.useCallback(() => {
         if (!virtual || !hasMore || isLoadingMore || isLoading) return;
         fetchVirtualData(
@@ -527,6 +589,15 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             true,
         );
     }, [virtual, hasMore, isLoadingMore, isLoading, fetchVirtualData, orderBy, order, rowsToDisplay.length]);
+
+    // Virtual tables are already filtered server-side (search pushdown), so we
+    // render their rows as-is. Non-virtual tables (fully loaded) filter
+    // client-side over the committed search term — case-insensitive substring.
+    const trimmedSearch = (searchText || '').trim().toLowerCase();
+    const visibleRows = (!virtual && trimmedSearch)
+        ? rowsToDisplay.filter(row =>
+            columnDefs.some(c => c.id !== '#rowId' && String(row[c.id] ?? '').toLowerCase().includes(trimmedSearch)))
+        : rowsToDisplay;
 
     return (
         <Box className="table-container table-container-small"
@@ -564,7 +635,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                 <Box sx={{ flex: '1 1', display: 'flex', flexDirection: 'column' }}>
                     <TableVirtuoso
                             style={{ flex: '1 1', paddingBottom: 32 }}
-                            data={rowsToDisplay}
+                            data={visibleRows}
                             components={tableComponents}
                             endReached={handleEndReached}
                             overscan={200}
@@ -661,16 +732,16 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                     <CircularProgress size={16} sx={{ color: 'text.secondary' }} />
                 </Box>
             )}
-            <Paper variant="outlined"
+            {!hideFooter && <Paper variant="outlined"
                 sx={{ display: 'flex', flexDirection: 'row', position: 'absolute', bottom: 4, right: 20, zIndex: 5 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
-                        {virtual && rowsToDisplay.length < rowCount
-                            ? t('dataGrid.loadedOfTotal', { loaded: rowsToDisplay.length, total: rowCount })
-                            : t('dataGrid.rowCount', { count: rowCount })}
+                        {virtual && rowsToDisplay.length < serverRowCount
+                            ? t('dataGrid.loadedOfTotal', { loaded: rowsToDisplay.length, total: serverRowCount })
+                            : t('dataGrid.rowCount', { count: virtual ? serverRowCount : rowCount })}
                     </Typography>
-                    {virtual && rowCount > 10000 && (
+                    {virtual && serverRowCount > 10000 && (
                         <Tooltip title={t('dataGrid.viewRandomRows')}>
                             <IconButton 
                                 size="small" 
@@ -708,7 +779,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                         </span>
                     </Tooltip>
                 </Box>
-            </Paper>
+            </Paper>}
             {/* Column filter popover — variant chosen synchronously from metadata
                 (design-doc 31). Server-side pushdown via fetchVirtualData. */}
             {filterPopover && (() => {

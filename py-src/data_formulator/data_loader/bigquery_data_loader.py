@@ -4,6 +4,7 @@ from typing import Any
 import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader import probe_utils
 
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -183,6 +184,22 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
         log.info(f"Fetched {arrow_table.num_rows} rows from BigQuery [Arrow-native]")
         
         return arrow_table
+    
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to BigQuery Standard SQL and run it server-side."""
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        src = ".".join(str(p) for p in path)
+        try:
+            # BigQuery quotes the whole `project.dataset.table` path in one
+            # backtick pair, so the dotted identifier is quoted as a unit.
+            relation = probe_utils.quote_ident(src, probe_utils.BIGQUERY)
+        except ValueError as exc:
+            return {"error": f"invalid table identifier: {exc}"}
+        return probe_utils.probe_via_native_sql(
+            query, relation=relation, dialect=probe_utils.BIGQUERY,
+            execute=lambda sql: self.client.query(sql).to_arrow(),
+        )
     
     def _build_select_parts(self, table_ref, table_name: str) -> list[str]:
         """Build SELECT parts handling nested BigQuery fields."""

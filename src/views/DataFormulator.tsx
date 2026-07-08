@@ -525,7 +525,9 @@ export const DataFormulatorFC = ({ }) => {
 
         return count;
     }, [tables]);
-    const preferredColumns = threadCount <= 1 ? 1 : 2;
+    // Default the thread pane to 2 columns so the docked chat box (rendered
+    // at the bottom of DataThread) is wide enough to read comfortably.
+    const preferredColumns = 2;
 
     // Track previous thread count to auto-resize intelligently
     const prevThreadCountRef = useRef(threadCount);
@@ -545,8 +547,9 @@ export const DataFormulatorFC = ({ }) => {
             // Case 1: was 1 thread, now 2+ → expand to 2 columns
             newSize = threadPaneWidth(2);
         } else if (prev > 1 && threadCount <= 1) {
-            // Case 2: was 2+ threads, now 1 → shrink to 1 column
-            newSize = threadPaneWidth(1);
+            // Case 2: was 2+ threads, now 1 → keep 2 columns so the docked
+            // chat box stays wide enough to read.
+            newSize = threadPaneWidth(2);
         }
         // Case 3: was 2+ threads and still 2+ → don't change (respect user's manual setting)
 
@@ -636,13 +639,16 @@ export const DataFormulatorFC = ({ }) => {
             backgroundSize: '16px 16px',
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
-        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
+        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
+            {/* Hero — fills the viewport so title + input own the first screen;
+                Demos/Sessions live below the fold and just peek up. */}
+            <Box sx={{ minHeight: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <Box sx={{display: 'flex', mx: 'auto'}}>
-                <Typography fontSize={84} sx={{ml: 2, letterSpacing: '0.05em'}}>{toolName}</Typography> 
+                <Typography fontSize={76} sx={{letterSpacing: '0.04em'}}>{toolName}</Typography> 
             </Box>
             <Typography sx={{ 
-                fontSize: 24, color: theme.palette.text.secondary, 
-                textAlign: 'center', mb: 2}}>
+                fontSize: 20, color: theme.palette.text.secondary, 
+                textAlign: 'center', mt: 1.5, mb: 0}}>
                 {t('landing.tagline')}
             </Typography>
 
@@ -732,7 +738,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             )}
 
-            <Box sx={{mt: 4}}>
+            <Box sx={{mt: 5}}>
                 <DataLoadMenu 
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     onSelectConnector={(conn) => {
@@ -752,20 +758,19 @@ export const DataFormulatorFC = ({ }) => {
                     connectors={pageConnectors}
                 />
             </Box>
+            </Box>
 
             {/* Demos — promoted ahead of "Your Sessions" on the hosted
                 demo, since first-time visitors won't have any sessions
                 yet and demos are the most engaging entry point. */}
-            <Box sx={{mt: 4}}>
-                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
-                    <Typography sx={{ color: 'text.secondary' }}>
-                        {t('landing.demos')}
-                    </Typography>
-                </Divider>
+            <Box sx={{mt: 3}}>
+                <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
+                    {t('landing.demos')}
+                </Typography>
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                    gap: 2,
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 1.5,
                 }}>
                     {demoSessions.map((session) => (
                         <ExampleSessionCard
@@ -778,15 +783,13 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
 
             {/* ── Saved workspaces section ──────────────────────────── */}
-            <Box sx={{mt: 4}}>
-                <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem'}}>
-                    <Typography sx={{ color: 'text.secondary' }}>
+            <Box sx={{mt: 8}}>
+                {/* Section header — left-aligned label with the sort control
+                    on the right, aligned to the card grid. */}
+                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2 }}>
+                    <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                         {t('workspace.yourSessions')}
                     </Typography>
-                </Divider>
-                {/* Sort control — placed in the upper-right of the section
-                    so it's visible without competing with the divider title. */}
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
                     <Select
                         size="small"
                         variant="standard"
@@ -823,8 +826,8 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                    gap: 2,
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 1.5,
                 }}>
                     {sortedSavedWorkspaces.map(w => {
                         const isRenaming = renamingWs === w.id;

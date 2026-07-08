@@ -53,7 +53,12 @@
       "writingFile": "Writing file",
       "listingFiles": "Listing files",
       "runningPython": "Running Python",
-      "preparingPreview": "Preparing preview"
+      "preparingPreview": "Preparing preview",
+      "browsingCatalog": "Browsing catalog",
+      "searchingData": "Searching data",
+      "describingData": "Reading table metadata",
+      "probingData": "Probing data",
+      "proposingLoadPlan": "Proposing load plan"
     },
     "examples": {
       "extractFromImage": "Extract data from an image",

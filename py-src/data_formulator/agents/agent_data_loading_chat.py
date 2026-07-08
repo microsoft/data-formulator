@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 _AGENT_ID = "data_loading_chat"
 
+# Max live probe_data calls allowed per user turn (design 37 §7).
+PROBE_TURN_BUDGET = 20
+
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -39,7 +42,8 @@ Tools available:
 - execute_python — run Python (pandas, numpy, DuckDB). All DataFrames are auto-saved to scratch/.
 - list_data — browse the catalog hierarchy of connected sources (cache-only, fast)
 - find_data — regex search across cached catalogs (names, descriptions, columns)
-- describe_data — read full metadata for one table
+- describe_data — read full metadata (schema, columns, row count) for one table
+- probe_data — run a bounded read on one table (count / distinct values / aggregate / sample) to size a slice and pick real filter values. Returns at most a few hundred rows — for inspection, NOT bulk loading.
 - show_user_data_preview — show interactive table preview with Load button (for execute_python results or extracted tables only)
 - propose_load_plan — propose a multi-table loading plan for user confirmation
 
@@ -73,6 +77,11 @@ Three workflows:
 3. For EACH promising not-imported table, call describe_data(source_id, table_key)
    to inspect columns and understand available values.
 4. Based on column metadata, decide which columns to filter on and what values to use.
+   When a table is large, or you need real filter values / a sense of the data before
+   committing, call probe_data(source_id, table_key, query=...) — a bounded read that
+   returns count / distinct values / aggregates / a small sample. Use it to pick REAL
+   filter values instead of guessing. It returns at most a few hundred rows; for the
+   full table use propose_load_plan, never probe_data.
 5. Call propose_load_plan(candidates=[...], reasoning="...") — the UI shows a
    confirmation card.
 6. Keep your text brief after propose_load_plan. The UI handles the rest.
@@ -315,6 +324,79 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "probe_data",
+            "description": (
+                "Run a bounded, read-only query on ONE connected-source table to size a slice and "
+                "pick REAL filter values before proposing a load. Single-table only (no joins). "
+                "Returns at MOST a few hundred rows — this is for inspection/reasoning, NOT bulk "
+                "loading (use propose_load_plan for full data). Call describe_data first so you use "
+                "exact column names.\n"
+                "The query is a structured object; common shapes:\n"
+                "- count rows: {\"aggregates\": [{\"op\": \"count\"}]}\n"
+                "- distinct values + frequency: {\"group_by\": [\"region\"], \"aggregates\": [{\"op\": \"count\", \"as\": \"n\"}], \"order_by\": [{\"column\": \"n\", \"dir\": \"desc\"}], \"limit\": 50}\n"
+                "- date range: {\"aggregates\": [{\"op\": \"min\", \"column\": \"ts\", \"as\": \"lo\"}, {\"op\": \"max\", \"column\": \"ts\", \"as\": \"hi\"}]}\n"
+                "- sample rows under a filter: {\"filters\": [{\"column\": \"region\", \"op\": \"EQ\", \"value\": \"West\"}], \"limit\": 20}\n"
+                "- aggregate: {\"group_by\": [\"region\"], \"aggregates\": [{\"op\": \"sum\", \"column\": \"revenue\", \"as\": \"total\"}]}\n"
+                "If the result is marked exact:false, it was computed over a bounded sample — treat counts as approximate."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_id": {"type": "string", "description": "Data source identifier"},
+                    "table_key": {"type": "string", "description": "Table key within the source"},
+                    "query": {
+                        "type": "object",
+                        "description": "SPJQ query object over the single table.",
+                        "properties": {
+                            "filters": {
+                                "type": "array",
+                                "description": "Row filters (AND-combined).",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "column": {"type": "string"},
+                                        "op": {"type": "string", "enum": ["EQ", "NEQ", "GT", "GTE", "LT", "LTE", "IN", "ILIKE", "BETWEEN", "IS_NULL"]},
+                                        "value": {"description": "Scalar; array for IN/BETWEEN; omit for IS_NULL."},
+                                    },
+                                    "required": ["column", "op"],
+                                },
+                            },
+                            "columns": {"type": "array", "items": {"type": "string"}, "description": "Projection (omit = all columns)."},
+                            "group_by": {"type": "array", "items": {"type": "string"}, "description": "Group-by keys."},
+                            "aggregates": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "op": {"type": "string", "enum": ["count", "count_distinct", "sum", "avg", "min", "max"]},
+                                        "column": {"type": "string", "description": "Required except for op=count."},
+                                        "as": {"type": "string", "description": "Output column alias."},
+                                    },
+                                    "required": ["op"],
+                                },
+                            },
+                            "order_by": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "column": {"type": "string"},
+                                        "dir": {"type": "string", "enum": ["asc", "desc"]},
+                                    },
+                                    "required": ["column"],
+                                },
+                            },
+                            "limit": {"type": "integer", "description": "Max rows (hard-capped server-side)."},
+                        },
+                    },
+                },
+                "required": ["source_id", "table_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_load_plan",
             "description": "Propose a data loading plan for the user to confirm. The UI will show an interactive card with checkboxes and a Load button. Use ONLY for connected data source tables (not workspace/sample).",
             "parameters": {
@@ -474,6 +556,10 @@ class DataLoadingAgent:
                 break
         system_prompt = self._build_system_prompt(last_user_text)
         llm_messages = [{"role": "system", "content": system_prompt}]
+
+        # Per-turn probe budget (design 37 §7): bound live probe_data calls so a
+        # chatty model can't hammer the source within a single turn.
+        self._probe_budget = PROBE_TURN_BUDGET
 
         # Convert chat messages to LLM format
         for msg in messages:
@@ -662,6 +748,8 @@ class DataLoadingAgent:
             return self._tool_find_data(args)
         elif name == "describe_data":
             return self._tool_describe_data(args)
+        elif name == "probe_data":
+            return self._tool_probe_data(args)
         elif name == "propose_load_plan":
             return self._tool_propose_load_plan(args)
         else:
@@ -1082,6 +1170,83 @@ class DataLoadingAgent:
         table_key = args.get("table_key", "")
         text = handle_read_catalog_metadata(source_id, table_key, self.workspace)
         return {"result": text}
+
+    def _resolve_catalog_path(self, source_id, table_key):
+        """Return the catalog ``path`` for a table_key, or ``None`` if unknown.
+
+        Used by ``probe_data`` to turn the model-facing ``table_key`` into the
+        loader-facing catalog path that ``probe``/``get_metadata`` expect.
+        """
+        user_home = getattr(self.workspace, "user_home", None)
+        if not user_home:
+            return None
+        from pathlib import Path
+        from data_formulator.datalake.catalog_cache import load_catalog
+        try:
+            catalog = load_catalog(Path(user_home), source_id) or []
+        except Exception:
+            logger.debug("probe_data: load_catalog failed", exc_info=True)
+            return None
+        for t in catalog:
+            if t.get("table_key") == table_key:
+                path = t.get("path")
+                if path:
+                    return list(path)
+                name = t.get("name")
+                return [name] if name else None
+        return None
+
+    def _tool_probe_data(self, args):
+        """Run a bounded SPJQ probe on one connected-source table (design 37 §4.2).
+
+        Resolves the live loader mid-turn, maps ``table_key`` → catalog path,
+        and delegates to ``loader.probe``. Guarded by a per-turn budget so a
+        chatty model can't hammer the source. Results are capped to at most a
+        few hundred rows and never written back to the cache (we stay agentic).
+        """
+        from data_formulator.data_loader.probe_utils import PROBE_MAX_ROWS
+
+        source_id = (args.get("source_id") or "").strip()
+        table_key = (args.get("table_key") or "").strip()
+        query = args.get("query") or {}
+        if not source_id or not table_key:
+            return {"error": "source_id and table_key are required"}
+        if not isinstance(query, dict):
+            return {"error": "query must be an object"}
+
+        if getattr(self, "_probe_budget", 0) <= 0:
+            return {"error": (
+                "Probe budget exhausted for this turn. Summarize what you've "
+                "learned and call propose_load_plan, or ask the user to continue."
+            )}
+
+        path = self._resolve_catalog_path(source_id, table_key)
+        if path is None:
+            return {"error": (
+                f"table_key '{table_key}' not found in source '{source_id}'. "
+                "Use find_data / describe_data to get an exact table_key first."
+            )}
+
+        try:
+            from data_formulator.data_connector import resolve_live_loader
+            loader = resolve_live_loader(source_id)
+        except Exception as exc:
+            return {"error": f"source '{source_id}' is not connected: {exc}"}
+
+        self._probe_budget -= 1
+        try:
+            result = loader.probe(path, query)
+        except Exception as exc:
+            logger.debug("probe_data failed", exc_info=True)
+            return {"error": f"probe failed: {exc}"}
+
+        if isinstance(result, dict) and "error" not in result:
+            result.setdefault(
+                "note",
+                f"probe returns at most {PROBE_MAX_ROWS} rows for inspection; "
+                "use propose_load_plan to load the full table.",
+            )
+        return result
 
     def _tool_propose_load_plan(self, args):
         """Produce a structured load plan action for frontend rendering.

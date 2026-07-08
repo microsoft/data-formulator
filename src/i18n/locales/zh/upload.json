@@ -10,7 +10,7 @@
     "extractData": "数据加载助手",
     "extractDataDesc": "使用 AI 查找并提取数据",
     "loadFromUrl": "从 URL 加载",
-    "loadFromUrlTitle": "从 URL 加载（实时）",
+    "loadFromUrlTitle": "从 URL 加载",
     "loadFromUrlDesc": "从远程 URL 获取数据",
     "database": "数据库",
     "databaseDesc": "连接数据库或服务",

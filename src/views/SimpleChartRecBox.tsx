@@ -1560,32 +1560,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, [pendingClarification, dispatch, t]);
 
-    // Landing / "no thread yet" highlight: when the user has loaded data
-    // but hasn't started an exploration on the focused table (no real
-    // charts AND the table isn't part of a derivation chain), gently pulse
-    // a colored ring around the input card to anchor the eye here.
-    // Suppressed once they start typing, while an agent is running, or
-    // while a clarification is pending — anything that already draws focus.
-    const focusedTableHasCharts = !!focusedTableId && charts.some(c =>
-        c.tableRef === focusedTableId
-        && c.chartType !== '?'
-        && c.chartType !== 'Auto'
-        && c.source !== 'trigger'
-    );
-    const focusedTableObj = focusedTableId ? tables.find(t => t.id === focusedTableId) : undefined;
-    const focusedTableHasDerivation = !!focusedTableObj && (
-        focusedTableObj.derive !== undefined
-        || tables.some(t => t.derive?.trigger?.tableId === focusedTableId)
-    );
-    const isLandingHighlight = (
-        !!focusedTableId
-        && !focusedTableHasCharts
-        && !focusedTableHasDerivation
-        && !isChatFormulating
-        && !pendingClarification
-        && chatPrompt.trim() === ''
-    );
-
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
@@ -1609,19 +1583,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             '&:hover': {
                 boxShadow: '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
             },
-            ...(isLandingHighlight ? {
-                animation: 'df-chatinput-landing-pulse 2.4s ease-in-out infinite',
-                '@keyframes df-chatinput-landing-pulse': {
-                    '0%, 100%': {
-                        boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0.0)}, 0 4px 14px ${alpha(theme.palette.common.black, 0.06)}`,
-                    },
-                    '50%': {
-                        boxShadow: `0 0 0 6px ${alpha(theme.palette.primary.main, 0.14)}, 0 4px 18px ${alpha(theme.palette.common.black, 0.08)}`,
-                    },
-                },
-            } : {}),
             '&:focus-within': {
-                animation: 'none',
                 borderColor: theme.palette.primary.main,
                 boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
             },

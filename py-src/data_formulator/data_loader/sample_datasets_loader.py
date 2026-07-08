@@ -25,6 +25,7 @@ import pandas as pd
 import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import (
     df_to_safe_records,
     sanitize_dataframe_for_arrow,
@@ -251,6 +252,15 @@ class SampleDatasetsLoader(ExternalDataLoader):
         # ArrowTypeError. Coerce such columns to a consistent type first.
         return pa.Table.from_pandas(
             sanitize_dataframe_for_arrow(df), preserve_index=False
+        )
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Read the sample file into DuckDB and compute the SPJQ there."""
+        # Sample tables are addressed as ``"Dataset/stem"`` (slash-joined),
+        # not dotted, so build the identifier ``_resolve`` expects.
+        source_table = "/".join(str(p) for p in path if p not in (None, ""))
+        return probe_utils.run_probe_on_duckdb(
+            self, path, query, source_table=source_table,
         )
 
     # ------------------------------------------------------------------

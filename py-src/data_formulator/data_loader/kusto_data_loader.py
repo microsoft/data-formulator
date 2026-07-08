@@ -1,11 +1,19 @@
 import json
 import logging
+import re
 from typing import Any
 import pandas as pd
 import pyarrow as pa
 
+# ISO-8601 date / datetime literal (optional time, fractional seconds and
+# timezone). Values matching this are emitted as KQL ``datetime(...)`` literals
+# so comparisons against ``datetime`` columns type-check.
+_ISO_DATETIME_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$"
+)
+
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
-from data_formulator.datalake.parquet_utils import df_to_safe_records
+from data_formulator.data_loader import probe_utils
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRequestProperties
 from azure.kusto.data.helpers import dataframe_from_result_table
@@ -157,6 +165,35 @@ class KustoDataLoader(ExternalDataLoader):
         logger.info(f"Column dtypes after conversion: {dict(df.dtypes)}")
         return df
 
+    @staticmethod
+    def _stringify_dynamic_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """Serialize Kusto ``dynamic`` (nested JSON) column values to strings.
+
+        Dynamic columns arrive as Python ``dict``/``list`` objects. Left as-is
+        they render as ``[object Object]`` in the UI, break value hashing/
+        summary code (``unhashable type: 'dict'``), and convert unpredictably
+        to Arrow/parquet. Serializing each dict/list value to a JSON string
+        keeps the content readable and safe for downstream processing; nested
+        fields can still be extracted later by the agent.
+        """
+        def _encode(value: Any) -> Any:
+            if isinstance(value, (dict, list)):
+                try:
+                    return json.dumps(value, ensure_ascii=False, default=str)
+                except (TypeError, ValueError):
+                    return str(value)
+            return value
+
+        for col in df.columns:
+            if df[col].dtype != "object":
+                continue
+            series = df[col]
+            # Only pay for the map when the column actually holds structured
+            # values (dynamic columns); pure-string columns are left untouched.
+            if series.map(lambda v: isinstance(v, (dict, list))).any():
+                df[col] = series.map(_encode)
+        return df
+
     def query(self, kql: str, no_truncation: bool = False) -> pd.DataFrame:
         logger.info(f"Executing KQL query: {kql} on database {self.kusto_database}")
         properties = None
@@ -173,6 +210,9 @@ class KustoDataLoader(ExternalDataLoader):
         
         # Convert datetime columns properly
         df = self._convert_kusto_datetime_columns(df)
+        # Flatten dynamic (nested JSON) columns to strings so they display and
+        # process cleanly instead of surfacing as [object Object]/unhashable dicts.
+        df = self._stringify_dynamic_columns(df)
         
         return df
 
@@ -196,6 +236,7 @@ class KustoDataLoader(ExternalDataLoader):
         size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
+        source_filters = opts.get("source_filters")
 
         if not source_table:
             raise ValueError("source_table must be provided")
@@ -204,17 +245,38 @@ class KustoDataLoader(ExternalDataLoader):
         # database so the query targets it rather than the (possibly unset)
         # connect-time default.
         db, table = self._resolve_source_table(source_table)
-        base_query = f"['{table}']"
+        segments: list[str] = [f"['{table}']"]
 
-        # Add sort if specified (KQL syntax)
-        sort_clause = ""
+        # Push agent/user filters down to the engine FIRST so we scan a slice,
+        # not the whole table. Without this, a filtered load plan silently
+        # degrades to a full-table scan (+ sort) and can trip Kusto's
+        # low-memory guard (E_LOW_MEMORY_CONDITION / "top_n consume source").
+        # ``source_filters`` use the source-agnostic ``operator`` field, while
+        # ``_compile_kql_where`` (shared with probe) expects ``op``.
+        if source_filters:
+            normalized = [
+                {"column": sf.get("column"), "op": sf.get("operator"), "value": sf.get("value")}
+                for sf in source_filters
+                if isinstance(sf, dict)
+            ]
+            where_parts = self._compile_kql_where(normalized)
+            if where_parts:
+                segments.append("where " + " and ".join(where_parts))
+
+        # Prefer ``top N by`` over ``sort by | take``: top-N is the
+        # memory-efficient operator, whereas a full ``sort`` materializes and
+        # orders the entire (filtered) set — the operation that surfaces
+        # low-memory failures on large tables.
         if sort_columns and len(sort_columns) > 0:
             order_direction = "desc" if sort_order == 'desc' else "asc"
-            sort_cols_with_order = [f"{col} {order_direction}" for col in sort_columns]
-            sort_clause = f" | sort by {', '.join(sort_cols_with_order)}"
+            order_expr = ", ".join(
+                f"{self._kql_ident(col)} {order_direction}" for col in sort_columns
+            )
+            segments.append(f"top {size} by {order_expr}")
+        else:
+            segments.append(f"take {size}")
 
-        # Add take limit
-        kql_query = f"{base_query}{sort_clause} | take {size}"
+        kql_query = "\n| ".join(segments)
 
         logger.info(f"Executing Kusto query: {kql_query[:200]}...")
 
@@ -236,6 +298,187 @@ class KustoDataLoader(ExternalDataLoader):
         logger.info(f"Fetched {arrow_table.num_rows} rows from Kusto")
         
         return arrow_table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to KQL and run ``summarize`` on the cluster.
+
+        Native pushdown: the filter/group/aggregate runs over the *whole* table
+        on the Kusto engine (not a local sample), so the result is exact — this
+        is how Kusto is meant to be queried.
+        """
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        q = query or {}
+        out_limit = probe_utils.clamp_probe_limit(q.get("limit"))
+        db, table = self._resolve_source_table(
+            ".".join(str(p) for p in path if p not in (None, ""))
+        )
+        try:
+            kql = self._compile_probe_kql(table, q, out_limit)
+        except ValueError as exc:
+            return {"error": f"invalid probe query: {exc}"}
+
+        old_db = self.kusto_database
+        try:
+            if db:
+                self.kusto_database = db
+            df = self.query(kql)
+        except Exception as exc:
+            logger.debug("probe kql failed: %s", kql, exc_info=True)
+            return {"error": f"probe failed: {exc}"}
+        finally:
+            self.kusto_database = old_db
+
+        arrow = pa.Table.from_pandas(df, preserve_index=False)
+        return probe_utils.shape_probe_payload(arrow, out_limit, exact=True)
+
+    # -- KQL probe compiler ------------------------------------------------
+
+    @staticmethod
+    def _kql_ident(name: Any) -> str:
+        """Quote a column as a KQL bracketed identifier ``['name']``."""
+        s = str(name)
+        if "\x00" in s:
+            raise ValueError(f"invalid identifier: {name!r}")
+        s = s.replace("\\", "\\\\").replace("'", "\\'")
+        return f"['{s}']"
+
+    @staticmethod
+    def _kql_lit(value: Any) -> str:
+        """Render a scalar as a KQL literal (string double-quoted, escaped)."""
+        if value is None:
+            return "''"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        s = str(value).replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{s}"'
+
+    @staticmethod
+    def _kql_cmp_lit(value: Any) -> str:
+        """Render a literal for a comparison/range/set predicate.
+
+        ISO-8601 date/datetime strings are emitted as KQL ``datetime(...)``
+        literals — KQL rejects comparing a ``datetime`` column with a string
+        (``SEM0064: Cannot compare values of types datetime and string``).
+        Everything else falls back to the plain string/number literal.
+        """
+        if isinstance(value, str) and _ISO_DATETIME_RE.match(value.strip()):
+            return f'datetime("{value.strip()}")'
+        return KustoDataLoader._kql_lit(value)
+
+    def _compile_probe_kql(
+        self, table: str, query: dict[str, Any], out_limit: int,
+    ) -> str:
+        """Compile a probe SPJQ object into a KQL query pipeline.
+
+        ``T | where … | summarize <aggs> by <keys> | order by … | take N``.
+        Only bare columns and the fixed aggregate vocabulary are emitted.
+        """
+        ident = self._kql_ident
+        columns = query.get("columns") or []
+        group_by = query.get("group_by") or []
+        aggregates = query.get("aggregates") or []
+        order_by = query.get("order_by") or []
+        filters = query.get("filters") or []
+
+        segments: list[str] = [ident(table)]
+
+        where_parts = self._compile_kql_where(filters)
+        if where_parts:
+            segments.append("where " + " and ".join(where_parts))
+
+        if aggregates or group_by:
+            agg_parts: list[str] = []
+            for agg in aggregates:
+                if not isinstance(agg, dict):
+                    continue
+                op = (agg.get("op") or "").lower().strip()
+                col = agg.get("column")
+                alias = agg.get("as") or (f"{op}_{col}" if col else op)
+                if op == "count" and not col:
+                    expr = "count()"
+                elif op == "count":
+                    expr = f"count({ident(col)})"
+                elif op == "count_distinct":
+                    if not col:
+                        raise ValueError("count_distinct requires a column")
+                    expr = f"dcount({ident(col)})"
+                elif op in ("sum", "avg", "min", "max"):
+                    if not col:
+                        raise ValueError(f"aggregate {op} requires a column")
+                    expr = f"{op}({ident(col)})"
+                else:
+                    raise ValueError(f"unsupported aggregate op: {op!r}")
+                agg_parts.append(f"{ident(alias)}={expr}")
+            summarize = "summarize"
+            if agg_parts:
+                summarize += " " + ", ".join(agg_parts)
+            if group_by:
+                summarize += " by " + ", ".join(ident(g) for g in group_by)
+            segments.append(summarize)
+        elif columns:
+            segments.append("project " + ", ".join(ident(c) for c in columns))
+
+        order_parts: list[str] = []
+        for o in order_by:
+            if not isinstance(o, dict):
+                continue
+            col = o.get("column")
+            if not col:
+                continue
+            direction = "desc" if str(o.get("dir", "")).lower() == "desc" else "asc"
+            order_parts.append(f"{ident(col)} {direction}")
+        if order_parts:
+            segments.append("order by " + ", ".join(order_parts))
+
+        segments.append(f"take {int(out_limit)}")
+        return "\n| ".join(segments)
+
+    def _compile_kql_where(self, filters: list[dict[str, Any]]) -> list[str]:
+        """Compile probe ``filters`` into a list of KQL ``where`` predicates."""
+        ident, lit, cmp = self._kql_ident, self._kql_lit, self._kql_cmp_lit
+        parts: list[str] = []
+        for f in filters or []:
+            if not isinstance(f, dict):
+                continue
+            col = f.get("column")
+            op = (f.get("op") or "").upper().strip()
+            if not col:
+                continue
+            qcol = ident(col)
+            val = f.get("value")
+            if op == "EQ":
+                parts.append(f"{qcol} == {cmp(val)}")
+            elif op == "NEQ":
+                parts.append(f"{qcol} != {cmp(val)}")
+            elif op == "GT":
+                parts.append(f"{qcol} > {cmp(val)}")
+            elif op == "GTE":
+                parts.append(f"{qcol} >= {cmp(val)}")
+            elif op == "LT":
+                parts.append(f"{qcol} < {cmp(val)}")
+            elif op == "LTE":
+                parts.append(f"{qcol} <= {cmp(val)}")
+            elif op in ("LIKE", "ILIKE"):
+                parts.append(f"{qcol} contains {lit(val)}")
+            elif op == "IN":
+                vals = val if isinstance(val, (list, tuple)) else [val]
+                if vals:
+                    parts.append(f"{qcol} in ({', '.join(cmp(v) for v in vals)})")
+            elif op == "NOT_IN":
+                vals = val if isinstance(val, (list, tuple)) else [val]
+                if vals:
+                    parts.append(f"{qcol} !in ({', '.join(cmp(v) for v in vals)})")
+            elif op == "IS_NULL":
+                parts.append(f"isnull({qcol})")
+            elif op == "IS_NOT_NULL":
+                parts.append(f"isnotnull({qcol})")
+            elif op == "BETWEEN":
+                if isinstance(val, (list, tuple)) and len(val) == 2:
+                    parts.append(f"{qcol} between ({cmp(val[0])} .. {cmp(val[1])})")
+        return parts
 
     def _resolve_source_table(self, source_table: str) -> tuple[str | None, str]:
         """Parse a source_table identifier into ``(database, table)``.
@@ -453,6 +696,21 @@ class KustoDataLoader(ExternalDataLoader):
         return []
 
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        """Live *structural* metadata for one table (columns only).
+
+        Intentionally lean. Row counts and byte sizes are **not** fetched here:
+        ``.show table ['T'] details`` runs an extent-stat aggregation that is
+        slow on large tables, and those stats — along with the table
+        description — are already collected in bulk at sync time
+        (``list_tables`` → ``.show tables details``) and live in the catalog
+        cache. Sample rows are likewise not fetched here; callers that need
+        data use the preview/probe paths on demand.
+
+        This method exists mainly as the *gap-filler* for cluster-wide browse,
+        where per-database schema is skipped for performance, so a table node
+        may reach the UI/agent without ``columns``. One cheap schema control
+        command fills that gap.
+        """
         if not path:
             return {}
         pinned = self.pinned_scope()
@@ -473,18 +731,7 @@ class KustoDataLoader(ExternalDataLoader):
                 {"name": r["Name"], "type": r["Type"]}
                 for r in json.loads(schema_result[0]["Schema"])["OrderedColumns"]
             ]
-            details = self.query(f".show table ['{table_name}'] details").to_dict(orient="records")
-            row_count = int(details[0]["TotalRowCount"])
-            sample_df = self.query(f"['{table_name}'] | take 5")
-            sample_rows = df_to_safe_records(sample_df)
-            result: dict[str, Any] = {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
-            original_size = _coerce_int(details[0].get("TotalOriginalSize"))
-            if original_size is not None:
-                result["original_size_bytes"] = original_size
-            doc_string = details[0].get("DocString")
-            if doc_string and str(doc_string).strip():
-                result["description"] = str(doc_string).strip()
-            return result
+            return {"columns": columns}
         except Exception as e:
             logger.warning(f"get_metadata failed for {path}: {e}")
             return {}

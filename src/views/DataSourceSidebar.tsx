@@ -1143,7 +1143,27 @@ const DataSourceSidebarPanel: React.FC<{
         })
             .then(({ data }) => {
                 if (data.columns) {
-                    const newCols = (data.columns as ColumnMeta[]);
+                    const rawCols = (data.columns as ColumnMeta[]);
+                    // Preview returns content only. Enrich each column's
+                    // source type / description from the catalog metadata we
+                    // already hold (nodeMeta.columns), so we keep the correct
+                    // filter widgets and header tooltips without paying for a
+                    // live metadata round-trip to the source on every preview.
+                    const catalogCols: any[] = Array.isArray(nodeMeta.columns) ? nodeMeta.columns : [];
+                    const catalogByName = new Map<string, any>(
+                        catalogCols.map((c: any) => [c.name, c]),
+                    );
+                    const newCols: ColumnMeta[] = rawCols.map(col => {
+                        const cat = catalogByName.get(col.name);
+                        if (!cat) return col;
+                        return {
+                            ...col,
+                            source_type: col.source_type ?? cat.source_type ?? cat.type,
+                            description: col.description ?? cat.description,
+                            verbose_name: col.verbose_name ?? cat.verbose_name,
+                            expression: col.expression ?? cat.expression,
+                        };
+                    });
                     const sampleLen = (data.rows || []).length;
                     // Only treat `total_row_count` as authoritative when
                     // it's strictly greater than the returned sample, or
@@ -1943,7 +1963,7 @@ const DataSourceSidebarPanel: React.FC<{
                 Appears when one or more tables are selected via checkboxes.
                 Loads sequentially (Kusto's client isn't parallel-safe). */}
             {selection && Object.keys(selection.nodes).length > 0 && (
-                <Box sx={{ flexShrink: 0, borderTop: `1px solid ${borderColor.view}`, px: 1.5, py: 1, display: 'flex', flexDirection: 'column', gap: 0.75, backgroundColor: 'background.paper' }}>
+                <Box sx={{ flexShrink: 0, borderTop: `1px solid ${borderColor.view}`, boxShadow: '0 -2px 8px -6px rgba(0,0,0,0.12)', px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 1, backgroundColor: 'background.paper' }}>
                     {batchProgress ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <CircularProgress size={14} thickness={5} />
@@ -1958,47 +1978,47 @@ const DataSourceSidebarPanel: React.FC<{
                         </Box>
                     ) : (
                         <>
-                            <Typography sx={{ fontSize: 11.5, color: 'text.secondary', fontWeight: 500 }}>
-                                {t('sidebar.selectedCount', {
-                                    count: Object.keys(selection.nodes).length,
-                                    defaultValue: `${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'} selected`,
-                                })}
-                            </Typography>
-                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <Button
-                                    size="small"
-                                    variant="contained"
-                                    disableElevation
-                                    onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
-                                    sx={{ fontSize: 11.5, textTransform: 'none', py: 0.25, minWidth: 0 }}
-                                >
-                                    {t('sidebar.loadNTables', {
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <Typography sx={{ fontSize: 12, color: 'text.primary', fontWeight: 600 }}>
+                                    {t('sidebar.selectedCount', {
                                         count: Object.keys(selection.nodes).length,
-                                        defaultValue: `Load ${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'}`,
+                                        defaultValue: `${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'} selected`,
                                     })}
-                                </Button>
-                                {activeWorkspace && (
-                                    <Tooltip title={t('sidebar.loadInNewSessionTooltip', { defaultValue: 'Load in new session' })}>
-                                        <Button
-                                            size="small"
-                                            variant="text"
-                                            onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes), { newSession: true })}
-                                            sx={{ fontSize: 11.5, textTransform: 'none', py: 0.25, minWidth: 0 }}
-                                        >
-                                            {t('sidebar.loadInNewSession', { defaultValue: 'New session' })}
-                                        </Button>
-                                    </Tooltip>
-                                )}
+                                </Typography>
                                 <Button
                                     size="small"
                                     variant="text"
                                     color="inherit"
                                     onClick={clearSelection}
-                                    sx={{ fontSize: 11.5, textTransform: 'none', py: 0.25, minWidth: 0, color: 'text.disabled' }}
+                                    sx={{ fontSize: 11, textTransform: 'none', py: 0, px: 0.5, minWidth: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'transparent' } }}
                                 >
                                     {t('sidebar.clear', { defaultValue: 'Clear' })}
                                 </Button>
                             </Box>
+                            <Button
+                                size="medium"
+                                variant="contained"
+                                disableElevation
+                                fullWidth
+                                onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
+                                sx={{ fontSize: 13, fontWeight: 600, textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
+                            >
+                                {t('sidebar.loadNTables', {
+                                    count: Object.keys(selection.nodes).length,
+                                    defaultValue: `Load ${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'}`,
+                                })}
+                            </Button>
+                            {activeWorkspace && (
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    fullWidth
+                                    onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes), { newSession: true })}
+                                    sx={{ fontSize: 12, textTransform: 'none', py: 0.5, borderRadius: 1.5, color: 'text.secondary', borderColor: borderColor.view, '&:hover': { borderColor: 'primary.main', color: 'primary.main', backgroundColor: 'transparent' } }}
+                                >
+                                    {t('sidebar.loadInNewSession', { defaultValue: 'Load in new session' })}
+                                </Button>
+                            )}
                         </>
                     )}
                 </Box>

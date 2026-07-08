@@ -278,7 +278,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                 width: '100%',
                 px: 1,
                 py: 0.75,
-                fontSize: 13,
+                fontSize: 14,
                 lineHeight: 1.5,
                 alignItems: 'flex-start',
                 '& .MuiInputBase-input': { width: '100%' },
@@ -492,7 +492,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 variant="body2"
                                 sx={{
                                     flex: 1, minWidth: 0,
-                                    fontSize: 13,
+                                    fontSize: 14,
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
                                     whiteSpace: 'nowrap',

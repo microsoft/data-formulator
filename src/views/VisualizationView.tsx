@@ -32,6 +32,7 @@ import {
     Alert,
     Fade,
     Grow,
+    CircularProgress,
 } from '@mui/material';
 
 import _ from 'lodash';
@@ -62,6 +63,8 @@ import CasinoIcon from '@mui/icons-material/Casino';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CloseIcon from '@mui/icons-material/Close';
+import AddchartIcon from '@mui/icons-material/Addchart';
+import * as d3dsv from 'd3-dsv';
 import { AgentToyIcon, AnimatedAgentToyIcon } from './AgentToyIcon';
 
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
@@ -1161,6 +1164,131 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
     );
 };
 
+// Content-first action dock shown when a *table* (not a chart) is focused.
+// The table becomes the primary content at the top of the canvas; this
+// sticky bottom bar keeps a lightweight "pick a chart" affordance and a
+// pointer to the chat available without a wall of buttons dominating the
+// page. The full CHART_TEMPLATES palette lives inside the popover.
+// NOTE: designed to extend to multi-table selection — when several tables
+// are highlighted this dock can summarize the selection and offer actions
+// that span them (e.g. "combine", "chart each").
+const TableActionDock: FC<{
+    chartSelectionBox: React.ReactNode;
+    tableId: string;
+    tableName: string;
+    rows: any[];
+    virtual: boolean;
+    gridReport?: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean } | null;
+    onRandomize?: () => void;
+}> = ({ chartSelectionBox, tableId, tableName, rows, virtual, gridReport, onRandomize }) => {
+    const { t } = useTranslation();
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
+    const open = Boolean(anchorEl);
+
+    const handleDownload = async () => {
+        if (isDownloading) return;
+        setIsDownloading(true);
+        try {
+            if (virtual) {
+                const response = await fetchWithIdentity(getUrls().EXPORT_TABLE_CSV, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ table_name: tableId, delimiter: ',' }),
+                });
+                if (!response.ok) throw new Error('Export failed');
+                const blob = await response.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${tableName}.csv`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } else {
+                const csvContent = d3dsv.dsvFormat(',').format(rows);
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${tableName}.csv`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            }
+        } catch (error) {
+            console.error('Error downloading table:', error);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    return (
+        <Box sx={{
+            position: 'sticky', bottom: 0, zIndex: 2,
+            display: 'flex', justifyContent: 'center',
+            px: 2, pt: 1.5, pb: 3,
+            backgroundColor: 'background.paper',
+        }}>
+            <Box sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                px: 1, py: 0.5, borderRadius: '8px',
+                backgroundColor: 'background.paper',
+                border: '1px solid', borderColor: 'divider',
+            }}>
+                <Button
+                    size="small"
+                    variant="text"
+                    startIcon={<AddchartIcon />}
+                    onClick={(e) => setAnchorEl(e.currentTarget)}
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main', fontWeight: 600 }}
+                >
+                    {t('chart.quickChart', { defaultValue: 'Quick chart' })}
+                </Button>
+                <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                <Button
+                    size="small"
+                    variant="text"
+                    startIcon={isDownloading ? <CircularProgress size={14} /> : <SaveAltIcon />}
+                    onClick={handleDownload}
+                    disabled={isDownloading}
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary' }}
+                >
+                    {t('dataGrid.downloadCsv', { defaultValue: 'Download CSV' })}
+                </Button>
+                {gridReport?.virtual && (
+                    <>
+                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                            {gridReport.loadedCount < gridReport.rowCount
+                                ? t('dataGrid.loadedOfTotal', { loaded: gridReport.loadedCount, total: gridReport.rowCount })
+                                : t('dataGrid.rowCount', { count: gridReport.rowCount })}
+                        </Typography>
+                        {gridReport.canRandomize && (
+                            <Tooltip title={t('dataGrid.viewRandomRows')}>
+                                <IconButton size="small" color="primary" onClick={onRandomize}>
+                                    <CasinoIcon sx={{ fontSize: 18, '&:hover': { transform: 'rotate(180deg)' } }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </>
+                )}
+            </Box>
+            <Popover
+                open={open}
+                anchorEl={anchorEl}
+                onClose={() => setAnchorEl(null)}
+                anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                slotProps={{ paper: { sx: { p: 2, maxWidth: 'min(90vw, 1140px)' } } }}
+            >
+                {/* Clicking a template creates the chart and this whole
+                    empty-state unmounts; closing the popover here keeps
+                    things tidy in the transient frame. */}
+                <Box onClickCapture={() => setAnchorEl(null)}>
+                    {chartSelectionBox}
+                </Box>
+            </Popover>
+        </Box>
+    );
+};
+
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
     const { t } = useTranslation();
@@ -1179,6 +1307,11 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const dispatch = useDispatch();
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+
+    // Virtual-pagination state reported up from the focused-table grid, so the
+    // bottom toolbar can show the loaded/total count and drive the random dice.
+    const [tableGridReport, setTableGridReport] = React.useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean } | null>(null);
+    const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
@@ -1231,10 +1364,12 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                 ))
             }
         </Box>
+        const isTableFocus = focusedId?.type === 'table' && !!focusedTableId;
         return (
             <Box id="vis-view-canvas" sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row", position: 'relative' }}>
                 <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
                     <Box className="vis-scroll" sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', flex: 1 }}>
+                        {!isTableFocus && (
                         <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                             <Box sx={{ margin: 'auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                 {(() => {
@@ -1267,6 +1402,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                 })()}
                             </Box>
                         </Box>
+                        )}
                         {focusedId?.type === 'table' && focusedTableId && (() => {
                             const focusedTable = tables.find(t => t.id === focusedTableId);
                             if (!focusedTable) return null;
@@ -1274,12 +1410,10 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             const HEADER_HEIGHT = 32;
                             const FOOTER_HEIGHT = 32;
                             const MIN_TABLE_HEIGHT = 150;
-                            const MAX_TABLE_HEIGHT = 400;
                             const MIN_TABLE_WIDTH = 300;
                             const MAX_TABLE_WIDTH = 900;
                             const rowCount = focusedTable.virtual?.rowCount || focusedTable.rows?.length || 0;
                             const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
-                            const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
                             const ROW_ID_COL_WIDTH = 56;
                             const sampleSize = Math.min(29, focusedTable.rows.length);
                             const step = focusedTable.rows.length > sampleSize ? focusedTable.rows.length / sampleSize : 1;
@@ -1295,14 +1429,38 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             const SCROLLBAR_WIDTH = 17;
                             // +34px gutter so the maximize button can sit just outside the table on the right.
                             const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
+                            // Single card that fills the available canvas height as much
+                            // as possible (tall tables scroll inside), but never grows past
+                            // its own content so short tables stay compact and centered.
+                            // Width fills up to adaptiveWidth with an 80% floor. +48px is
+                            // the focused-view header bar.
+                            const HEADER_BAR_HEIGHT = 48;
+                            const maxCardHeight = contentHeight + HEADER_BAR_HEIGHT;
                             return (
                                 <Box sx={{
-                                    margin: '8px auto 24px auto', padding: 0,
-                                    height: adaptiveHeight, width: adaptiveWidth,
-                                    overflow: 'hidden', flexShrink: 0,
+                                    flex: 1, minHeight: 0, width: '100%',
+                                    display: 'flex', flexDirection: 'column',
+                                    justifyContent: 'center', alignItems: 'center',
+                                    px: 3, pt: 2, pb: 2, boxSizing: 'border-box',
                                 }}>
-                                    <FreeDataViewFC maximizable />
+                                    <Box sx={{ width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, flex: '1 1 auto', minHeight: MIN_TABLE_HEIGHT, maxHeight: maxCardHeight }}>
+                                        <FreeDataViewFC maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} onStateReport={setTableGridReport} />
+                                    </Box>
                                 </Box>
+                            );
+                        })()}
+                        {isTableFocus && focusedTableId && (() => {
+                            const ft = tables.find(t => t.id === focusedTableId);
+                            return (
+                                <TableActionDock
+                                    chartSelectionBox={chartSelectionBox}
+                                    tableId={focusedTableId}
+                                    tableName={ft?.displayId || ft?.id || 'table'}
+                                    rows={ft?.rows || []}
+                                    virtual={!!ft?.virtual}
+                                    gridReport={tableGridReport}
+                                    onRandomize={() => setTableRandomizeToken(x => x + 1)}
+                                />
                             );
                         })()}
                     </Box>

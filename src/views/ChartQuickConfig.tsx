@@ -127,6 +127,7 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
     const { t } = useTranslation('chart');
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
+
     const allCharts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const chart = allCharts.find((c: Chart) => c.id == chartId) as Chart | undefined;

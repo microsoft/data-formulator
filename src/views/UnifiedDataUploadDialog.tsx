@@ -31,6 +31,7 @@ import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
+import HistoryIcon from '@mui/icons-material/History';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 
@@ -208,6 +209,85 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     return tooltip
         ? <Tooltip title={tooltip} placement="top" arrow>{card}</Tooltip>
         : card;
+};
+
+// Compact pill variant of DataSourceCard. Used by the chat-focused landing
+// so data sources read as lightweight affordances orbiting the composer,
+// rather than a grid of blocks competing with it. Same click behavior as
+// DataSourceCard — only the visual weight differs. The description is
+// demoted to a hover tooltip so the row stays dense.
+const SourcePill: React.FC<DataSourceCardProps> = ({
+    icon,
+    title,
+    description,
+    onClick,
+    disabled = false,
+    variant = 'data',
+    badge,
+    tooltip,
+}) => {
+    const theme = useTheme();
+    const isAction = variant === 'action';
+
+    const pill = (
+        <Box
+            onClick={disabled ? undefined : onClick}
+            sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.75,
+                pl: 0.625,
+                pr: 1.25,
+                py: 0.5,
+                maxWidth: '100%',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                border: `1px ${isAction ? 'dashed' : 'solid'} ${borderColor.divider}`,
+                borderRadius: 5,
+                opacity: disabled ? 0.5 : 1,
+                backgroundColor: 'background.paper',
+                transition: 'background-color 120ms ease, border-color 120ms ease',
+                '&:hover': disabled ? {} : {
+                    backgroundColor: 'action.hover',
+                    borderColor: alpha(theme.palette.primary.main, 0.4),
+                },
+            }}
+        >
+            <Box sx={{
+                color: disabled ? 'text.disabled' : 'primary.main',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 22,
+                height: 22,
+                borderRadius: 0.75,
+                backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                flexShrink: 0,
+                '& .MuiSvgIcon-root': { fontSize: 15 },
+            }}>
+                {icon}
+            </Box>
+            <Typography
+                variant="body2"
+                sx={{
+                    fontWeight: 500,
+                    fontSize: '0.8125rem',
+                    color: disabled ? 'text.disabled' : 'text.primary',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    minWidth: 0,
+                }}
+            >
+                {title}
+            </Typography>
+            {badge}
+        </Box>
+    );
+
+    const tip = tooltip ?? (description || null);
+    return tip
+        ? <Tooltip title={tip} placement="top" arrow>{pill}</Tooltip>
+        : pill;
 };
 
 const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
@@ -523,15 +603,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         },
         { 
             value: 'url' as UploadTabType, 
-            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL (live)' }), 
+            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL' }), 
             description: t('upload.loadFromUrlDesc'),
             icon: <LinkIcon />, 
             disabled: false,
-            badge: <StreamIcon sx={{ fontSize: 14, color: 'success.main', animation: 'pulse 2s infinite', '@keyframes pulse': {
-                '0%': { opacity: 1 },
-                '50%': { opacity: 0.4 },
-                '100%': { opacity: 1 },
-            } }} />,
         },
     ];
 
@@ -649,63 +724,21 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [t, onStartChat]);
     const agentChatBox = (
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 640 }}>
-            <Box
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    mb: 1.5,
-                }}
-            >
-                <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                        textAlign: 'left',
-                        opacity: 0.6,
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.02em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                    }}
-                >
-                    <AnimatedAgentToyIcon sx={{ fontSize: 14 }} />
-                    {t('upload.dataLoadingAgent', { defaultValue: 'Data Loading Agent' })}
-                </Typography>
-                {hasPriorConversation && onResumeChat && (
-                    <Typography
-                        variant="body2"
-                        sx={{
-                            fontSize: '0.75rem',
-                            letterSpacing: '0.02em',
-                        }}
-                    >
-                        <Link
-                            component="button"
-                            type="button"
-                            onClick={onResumeChat}
-                            underline="hover"
-                            sx={{
-                                fontSize: 'inherit',
-                                letterSpacing: 'inherit',
-                                color: 'text.secondary',
-                                opacity: 0.7,
-                                '&:hover': { opacity: 1 },
-                            }}
-                        >
-                            {t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation →' })}
-                        </Link>
-                    </Typography>
-                )}
-            </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 900, alignSelf: 'center' }}>
             <AgentChatInput
                 value={agentInput}
                 onChange={setAgentInput}
                 images={agentImages}
                 onImagesChange={setAgentImages}
                 onSend={submitAgentChat}
+                layout="stacked"
+                leadingSlot={hasPriorConversation && onResumeChat ? (
+                    <Tooltip title={t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation' })}>
+                        <IconButton size="small" onClick={onResumeChat} sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
+                            <HistoryIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
+                ) : undefined}
                 onNonImageFile={(file) => {
                     // Upload non-image files (Excel, CSV, JSON, …) to the
                     // session scratch space. The filename is shown as a
@@ -727,7 +760,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}
                 attachments={agentAttachments}
                 onAttachmentsChange={setAgentAttachments}
-                minRows={1}
+                minRows={4}
                 tabSuggestion={t('upload.agentChatTabSuggestion', {
                     defaultValue: 'What dataset do we have here?',
                 })}
@@ -746,77 +779,30 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            gap: 3,
+            gap: 2.5,
             mx: 0,
             textAlign: 'left',
         }}>
-            {/* Data Loading Agent quick-chat */}
+            {/* Data Loading Agent quick-chat — the hero of this surface */}
             {agentChatBox}
 
-            {/* Upload data */}
-            <Box>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
-                        textAlign: 'left',
-                        mb: 1.5,
-                        opacity: 0.6,
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.02em'
-                    }}
-                >
-                    {t('upload.uploadData', { defaultValue: 'Upload data' })}
-                </Typography>
+            {/* Sources — same width as the chat box so they read as part of it */}
+            <Box sx={{ width: '100%', maxWidth: 900, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {/* Connected sources status bar — "Connected: xxx, xxx  + connect + link" */}
                 <Box sx={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                    gap: 1.5,
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 0.75,
                 }}>
-                    {regularDataSources.map((source) => (
-                        <DataSourceCard
-                            key={source.value}
-                            icon={source.icon}
-                            title={source.title}
-                            description={source.description}
-                            onClick={() => onSelectTab(source.value)}
-                            disabled={source.disabled}
-                            badge={source.badge}
-                        />
-                    ))}
-                </Box>
-            </Box>
-
-            {/* Data Connections */}
-            <Box>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
-                        textAlign: 'left',
-                        mb: 1.5,
-                        opacity: 0.6,
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.02em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                    }}
-                >
-                    <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                        '0%': { opacity: 1 },
-                        '50%': { opacity: 0.4 },
-                        '100%': { opacity: 1 },
-                    } }} />
-                    {t('upload.dataConnections')}
-                </Typography>
-                <Box sx={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                    gap: 1.5,
-                }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ fontSize: '0.75rem', color: 'text.secondary', opacity: 0.7, mr: 0.25, flexShrink: 0 }}
+                    >
+                        {t('upload.connectedLabel', { defaultValue: 'Connected:' })}
+                    </Typography>
                     {connectionSources.map((source) => (
-                        <DataSourceCard
+                        <SourcePill
                             key={source.value}
                             icon={source.icon}
                             title={source.title}
@@ -825,6 +811,31 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             disabled={source.disabled}
                             variant={source.variant}
                             tooltip={source.tooltip}
+                        />
+                    ))}
+                </Box>
+
+                {/* Manual upload — one-off sources (file, paste, URL) */}
+                <Box sx={{ 
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 0.75,
+                }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ fontSize: '0.75rem', color: 'text.secondary', opacity: 0.7, mr: 0.25, flexShrink: 0 }}
+                    >
+                        {t('upload.loadDirectlyLabel', { defaultValue: 'or load data directly:' })}
+                    </Typography>
+                    {regularDataSources.map((source) => (
+                        <SourcePill
+                            key={source.value}
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => onSelectTab(source.value)}
+                            disabled={source.disabled}
                         />
                     ))}
                 </Box>

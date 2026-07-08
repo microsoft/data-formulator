@@ -50,6 +50,12 @@ DATA_CONNECTORS: dict[str, "DataConnector"] = {}
 _MAX_CATALOG_PAGE_SIZE = 1000
 _USER_CONNECTOR_PREFIX = "user::"
 
+# Auto-reconnect retry policy: retry the connection test a few times with
+# exponential backoff to ride out transient failures (network blips, token
+# exchange hiccups) before giving up / clearing stale credentials.
+_RECONNECT_MAX_ATTEMPTS = 3
+_RECONNECT_BACKOFF_BASE = 0.5  # seconds; delays: 0.5s, 1.0s between attempts
+
 
 # ---------------------------------------------------------------------------
 # Catalog progress registry
@@ -581,31 +587,85 @@ class DataConnector:
     def _try_auto_reconnect(self, identity: str) -> ExternalDataLoader | None:
         """Attempt to restore a connection from vault credentials.
 
-        Returns the loader on success, or None (and cleans up stale vault
-        entry) on failure.
+        Retries the connection test up to ``_RECONNECT_MAX_ATTEMPTS`` times with
+        exponential backoff to ride out transient failures. Stale vault
+        credentials are only cleared once every attempt has failed.
+
+        Returns the loader on success, or None on failure.
         """
         stored_params = self._vault_retrieve(identity)
         if stored_params is None:
             # No vault creds — try SSO token exchange as last resort
             return self._try_sso_auto_connect(identity)
-        try:
-            merged = {**self._default_params, **stored_params}
-            self._inject_credentials(merged)
-            loader = self._loader_class(merged)
-            if loader.test_connection():
-                self._loaders[identity] = loader
-                logger.info("Auto-reconnected '%s' for %s", self._source_id, identity[:16])
-                return loader
-            else:
-                logger.info("Auto-reconnect test failed for '%s'/%s, clearing stale credentials",
-                            self._source_id, identity[:16])
-                self._vault_delete(identity)
-                return None
-        except Exception as exc:
-            logger.warning("Auto-reconnect failed for '%s'/%s: %s",
-                           self._source_id, identity[:16], exc)
-            self._vault_delete(identity)
+
+        for attempt in range(_RECONNECT_MAX_ATTEMPTS):
+            if attempt:
+                time.sleep(_RECONNECT_BACKOFF_BASE * (2 ** (attempt - 1)))
+            try:
+                merged = {**self._default_params, **stored_params}
+                self._inject_credentials(merged)
+                loader = self._loader_class(merged)
+                if loader.test_connection():
+                    self._loaders[identity] = loader
+                    logger.info("Auto-reconnected '%s' for %s (attempt %d/%d)",
+                                self._source_id, identity[:16],
+                                attempt + 1, _RECONNECT_MAX_ATTEMPTS)
+                    return loader
+                logger.info("Auto-reconnect test failed for '%s'/%s (attempt %d/%d)",
+                            self._source_id, identity[:16],
+                            attempt + 1, _RECONNECT_MAX_ATTEMPTS)
+            except Exception as exc:
+                logger.warning("Auto-reconnect failed for '%s'/%s (attempt %d/%d): %s",
+                               self._source_id, identity[:16],
+                               attempt + 1, _RECONNECT_MAX_ATTEMPTS, exc)
+
+        logger.info("Auto-reconnect exhausted for '%s'/%s, clearing stale credentials",
+                    self._source_id, identity[:16])
+        self._vault_delete(identity)
+        return None
+
+    def _try_ambient_reconnect(self, identity: str) -> ExternalDataLoader | None:
+        """Reconnect using only the connector's pinned connection params.
+
+        Some connectors authenticate with *ambient*, host-provided credentials
+        rather than anything stored per-user — e.g. Kusto via
+        ``DefaultAzureCredential`` (``az login`` / Managed Identity), or any
+        service-principal whose secret lives in ``_default_params``. For these
+        there is nothing in the vault to restore, yet the connection params
+        persisted with the connector definition are enough to rebuild a working
+        loader. This is the fallback that lets "refresh" transparently
+        reconnect after the in-memory loader is dropped (server restart,
+        identity refresh, cache eviction).
+
+        Only attempted for connection/credentials-mode loaders — token/SSO
+        modes are handled by :meth:`_try_sso_auto_connect`. Retries with
+        exponential backoff and never persists anything.
+        """
+        mode = _loader_auth_mode(self._loader_class)
+        if mode in ("token", "sso_exchange", "delegated", "oauth2"):
             return None
+
+        for attempt in range(_RECONNECT_MAX_ATTEMPTS):
+            if attempt:
+                time.sleep(_RECONNECT_BACKOFF_BASE * (2 ** (attempt - 1)))
+            try:
+                merged = {**self._default_params}
+                self._inject_credentials(merged)
+                loader = self._loader_class(merged)
+                if loader.test_connection():
+                    self._loaders[identity] = loader
+                    logger.info("Ambient auto-reconnect succeeded for '%s'/%s (attempt %d/%d)",
+                                self._source_id, identity[:16],
+                                attempt + 1, _RECONNECT_MAX_ATTEMPTS)
+                    return loader
+                logger.info("Ambient auto-reconnect test failed for '%s'/%s (attempt %d/%d)",
+                            self._source_id, identity[:16],
+                            attempt + 1, _RECONNECT_MAX_ATTEMPTS)
+            except Exception as exc:
+                logger.debug("Ambient auto-reconnect failed for '%s' (attempt %d/%d): %s",
+                             self._source_id, attempt + 1,
+                             _RECONNECT_MAX_ATTEMPTS, exc)
+        return None
 
     def _inject_credentials(self, params: dict[str, Any]) -> None:
         """Inject the best available credentials via TokenStore.
@@ -673,16 +733,24 @@ class DataConnector:
 
         if not (merged.get("access_token") or merged.get("sso_access_token")):
             return None
-        try:
-            loader = self._loader_class(merged)
-            if loader.test_connection():
-                self._loaders[identity] = loader
-                logger.info("Auto-connect succeeded for '%s'/%s",
-                            self._source_id, identity[:16])
-                return loader
-        except Exception as exc:
-            logger.debug("Auto-connect failed for '%s': %s",
-                         self._source_id, exc)
+        for attempt in range(_RECONNECT_MAX_ATTEMPTS):
+            if attempt:
+                time.sleep(_RECONNECT_BACKOFF_BASE * (2 ** (attempt - 1)))
+            try:
+                loader = self._loader_class(merged)
+                if loader.test_connection():
+                    self._loaders[identity] = loader
+                    logger.info("Auto-connect succeeded for '%s'/%s (attempt %d/%d)",
+                                self._source_id, identity[:16],
+                                attempt + 1, _RECONNECT_MAX_ATTEMPTS)
+                    return loader
+                logger.info("Auto-connect test failed for '%s'/%s (attempt %d/%d)",
+                            self._source_id, identity[:16],
+                            attempt + 1, _RECONNECT_MAX_ATTEMPTS)
+            except Exception as exc:
+                logger.debug("Auto-connect failed for '%s' (attempt %d/%d): %s",
+                             self._source_id, attempt + 1,
+                             _RECONNECT_MAX_ATTEMPTS, exc)
         return None
 
     def _require_loader(self) -> ExternalDataLoader:
@@ -704,6 +772,13 @@ class DataConnector:
         loader = self._try_auto_reconnect(identity)
         if loader is not None:
             return loader
+        # Last resort: connectors with ambient / host-provided auth (e.g. Kusto
+        # via DefaultAzureCredential, or a service principal pinned in the
+        # connector config) can reconnect from their persisted connection params
+        # alone — no stored user credentials required.
+        loader = self._try_ambient_reconnect(identity)
+        if loader is not None:
+            return loader
         raise ValueError("Not connected. Please connect first.")
 
 
@@ -718,6 +793,21 @@ def _resolve_connector(data: dict[str, Any]) -> DataConnector:
     """
     _, connector = _resolve_connector_with_key(data)
     return connector
+
+
+def resolve_live_loader(source_id: str) -> "ExternalDataLoader":
+    """Resolve a live, connected loader for ``source_id`` in the current identity.
+
+    Mirrors the request-route resolution path (``_resolve_connector_with_key``
+    + ``_require_loader``) so callers running inside a Flask request context —
+    notably the data-loading agent's live tools — can turn a ``source_id`` into
+    a connected :class:`ExternalDataLoader` mid-turn.
+
+    Raises ``AppError`` if the source is unknown to the identity, or
+    ``ValueError`` if it is known but not connected.
+    """
+    _, connector = _resolve_connector_with_key({"connector_id": source_id})
+    return connector._require_loader()
 
 
 def _parse_source_table(raw: Any) -> tuple[str, str]:
@@ -736,6 +826,34 @@ def _parse_source_table(raw: Any) -> tuple[str, str]:
         sname = str(raw.get("name") or raw.get("id") or "")
         return sid, sname
     return str(raw), str(raw)
+
+
+def _cached_source_metadata(source: Any, source_table_id: str) -> dict[str, Any] | None:
+    """Look up a table's metadata (columns + description) from the synced
+    catalog cache.
+
+    Lets load/refresh enrich persisted ``TableMetadata`` without a live
+    source round-trip — the columns and descriptions were already collected in
+    bulk at sync time. Returns ``None`` when the catalog has nothing usable for
+    this table (caller then falls back to a live fetch).
+    """
+    if not source_table_id:
+        return None
+    try:
+        from data_formulator.datalake.workspace import get_user_home
+        from data_formulator.datalake.catalog_cache import load_catalog
+        identity = source._get_identity()
+        user_home = get_user_home(identity)
+        catalog = load_catalog(user_home, source._source_id) or []
+        for entry in catalog:
+            if entry.get("name") == source_table_id or entry.get("table_key") == source_table_id:
+                meta = entry.get("metadata") or {}
+                if meta.get("columns") or meta.get("description"):
+                    return meta
+                return None
+    except Exception as e:
+        logger.debug("Catalog metadata lookup failed for %s", source_table_id, exc_info=e)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1486,11 +1604,39 @@ def connector_get_catalog():
             "next_offset": next_offset,
         }
         if path:
+            # Cache-first metadata. Columns, description, row_count and size are
+            # all collected in bulk at sync time and live in the catalog cache,
+            # so serve them from there instead of re-fetching per table (a live
+            # per-table fetch can cost several round-trips — e.g. Kusto's
+            # `.show table details` extent scan). We only fall back to a lean
+            # live fetch to fill a *missing structural gap* (columns absent,
+            # e.g. cluster-wide browse that skipped per-database schema), and
+            # never let that clobber cached stats/description.
+            metadata: dict[str, Any] = {}
             try:
-                metadata = loader.get_metadata(path)
-                result["metadata"] = metadata
+                from data_formulator.datalake.workspace import get_user_home
+                from data_formulator.datalake.catalog_cache import load_catalog
+                identity = source._get_identity()
+                user_home = get_user_home(identity)
+                catalog = load_catalog(user_home, source._source_id) or []
+                for entry in catalog:
+                    if entry.get("path") == path:
+                        metadata = dict(entry.get("metadata") or {})
+                        break
             except Exception as e:
-                logger.debug("Metadata fetch failed for path %s", path, exc_info=e)
+                logger.debug("Catalog cache lookup failed for path %s", path, exc_info=e)
+
+            if not metadata.get("columns"):
+                try:
+                    live = loader.get_metadata(path)
+                    for key, value in (live or {}).items():
+                        if value is not None and not metadata.get(key):
+                            metadata[key] = value
+                except Exception as e:
+                    logger.debug("Metadata gap-fill failed for path %s", path, exc_info=e)
+
+            if metadata:
+                result["metadata"] = metadata
         return json_ok(result)
     except AppError:
         raise
@@ -1786,6 +1932,7 @@ def connector_import_data():
             table_name=safe_name,
             source_table=source_id,
             import_options=import_options or None,
+            source_metadata=_cached_source_metadata(source, source_id),
         )
         return json_ok({
             "table_name": meta.name,
@@ -1826,7 +1973,7 @@ def connector_refresh_data():
         # Best-effort: refresh source metadata (table/column descriptions).
         try:
             from data_formulator.data_loader.external_data_loader import _merge_source_metadata
-            source_meta = loader.get_column_types(meta.source_table)
+            source_meta = _cached_source_metadata(source, meta.source_table) or loader.get_column_types(meta.source_table)
             if source_meta:
                 _merge_source_metadata(new_meta, source_meta)
                 workspace.add_table_metadata(new_meta)
@@ -1870,32 +2017,13 @@ def connector_preview_data():
         rows = df_to_safe_records(df)
         columns = [{"name": col, "type": normalize_dtype_to_app_type(str(df[col].dtype))} for col in df.columns]
 
-        # Enrich columns with source-level types from loader metadata.
-        # Source types (e.g. "timestamp", "varchar", "boolean") are far more
-        # reliable for UI widget selection than pandas dtypes ("object", "int64").
-        table_description = None
-        try:
-            meta = loader.get_column_types(source_id)
-            if not meta:
-                meta = {}
-            if meta.get("description"):
-                table_description = meta["description"]
-            source_cols = {c["name"]: c for c in meta.get("columns", [])}
-            if source_cols:
-                for col_info in columns:
-                    src = source_cols.get(col_info["name"])
-                    if src:
-                        col_info["source_type"] = src.get("type", "")
-                        if src.get("description"):
-                            col_info["description"] = src["description"]
-                        if src.get("verbose_name"):
-                            col_info["verbose_name"] = src["verbose_name"]
-                        if src.get("expression"):
-                            col_info["expression"] = src["expression"]
-                        if src.get("is_dttm"):
-                            col_info["source_type"] = "TEMPORAL"
-        except Exception:
-            pass  # source type enrichment is best-effort
+        # Preview returns *content only*. Source-level column types and
+        # descriptions are metadata: fetching them live here (via
+        # get_column_types → get_metadata) costs several extra round-trips to
+        # the source per preview (e.g. Kusto runs `.show table schema`,
+        # `.show table details`, and a redundant sample). The frontend
+        # already holds this metadata in the catalog and merges it into the
+        # preview columns, so we keep this path lean and just return data.
 
         # Get actual total row count (some loaders store it before slicing)
         total_row_count = getattr(loader, '_last_total_rows', None) or len(rows)
@@ -1907,8 +2035,6 @@ def connector_preview_data():
             "row_count": len(rows),
             "total_row_count": total_row_count,
         }
-        if table_description:
-            result["description"] = table_description
         return json_ok(result)
     except AppError:
         raise
@@ -2002,6 +2128,7 @@ def connector_import_group():
                     table_name=safe_name,
                     source_table=source_table,
                     import_options=import_options or None,
+                    source_metadata=_cached_source_metadata(source, source_table),
                 )
                 results.append({
                     "status": "success",

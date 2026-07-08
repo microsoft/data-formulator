@@ -37,6 +37,7 @@ import { createTableFromText } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
 import { LoadPlanCard, PendingLoadsCard } from '../components/LoadPlanCard';
 import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
+import { formatFilterChipLabel } from '../components/filterFormat';
 import { AgentChatInput } from './AgentChatInput';
 import { generateUUID } from '../app/identity';
 
@@ -360,15 +361,24 @@ const ChatBubble = React.memo<{
                 const csvText = await res.text();
                 const table = createTableFromText(unique, csvText);
                 if (table) {
-                    dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } }));
+                    // Only flip to "loaded" once the table is actually in the
+                    // workspace — `.unwrap()` throws if the load thunk rejects,
+                    // so a failure skips confirmTableLoad and keeps the button.
+                    await dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } })).unwrap();
                     dispatch(dfActions.confirmTableLoad({ messageId: message.id, tableName: pending.name }));
                     // Loading data is a deliberate commit — return the
                     // user to the canvas (the dialog closes via this hook).
                     onTableLoaded?.();
                 }
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to load table:', err);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data loader',
+                value: `Failed to load "${pending.name}": ${err?.message || err}`,
+            }));
         }
     };
 
@@ -471,36 +481,51 @@ const ChatBubble = React.memo<{
                                 const displayName = selected[0]?.displayName || 'Untitled Session';
                                 dispatch(dfActions.resetForNewWorkspace({ id: newWorkspaceSessionId(), displayName }));
                             }
-                            for (const item of selected) {
-                                const sourceTableName = item.sourceTableName || item.displayName;
-                                const table = {
-                                    kind: 'table' as const,
-                                    id: item.displayName,
-                                    displayId: item.displayName,
-                                    names: [] as string[],
-                                    metadata: {},
-                                    rows: [] as any[],
-                                    virtual: { tableId: item.displayName, rowCount: 0 },
-                                    anchored: true,
-                                    description: '',
-                                    source: {
-                                        type: 'database' as const,
-                                        databaseTable: sourceTableName,
-                                        canRefresh: true,
-                                        lastRefreshed: Date.now(),
+                            try {
+                                for (const item of selected) {
+                                    const sourceTableName = item.sourceTableName || item.displayName;
+                                    const table = {
+                                        kind: 'table' as const,
+                                        id: item.displayName,
+                                        displayId: item.displayName,
+                                        names: [] as string[],
+                                        metadata: {},
+                                        rows: [] as any[],
+                                        virtual: { tableId: item.displayName, rowCount: 0 },
+                                        anchored: true,
+                                        description: '',
+                                        source: {
+                                            type: 'database' as const,
+                                            databaseTable: sourceTableName,
+                                            canRefresh: true,
+                                            lastRefreshed: Date.now(),
+                                            connectorId: item.sourceId,
+                                        },
+                                    };
+                                    // `.unwrap()` rethrows if the ingest thunk rejects, so a
+                                    // failed load skips markLoadPlanConfirmed below — the card
+                                    // stays actionable instead of falsely showing "Loaded".
+                                    await dispatch(loadTable({
+                                        table,
                                         connectorId: item.sourceId,
-                                    },
-                                };
-                                await dispatch(loadTable({
-                                    table,
-                                    connectorId: item.sourceId,
-                                    sourceTableRef: { id: item.sourceTable, name: item.displayName },
-                                    importOptions: {
-                                        source_filters: item.filters || [],
-                                        sort_columns: item.sortBy ? [item.sortBy] : undefined,
-                                        sort_order: item.sortOrder,
-                                    },
+                                        sourceTableRef: { id: item.sourceTable, name: item.displayName },
+                                        importOptions: {
+                                            source_filters: item.filters || [],
+                                            sort_columns: item.sortBy ? [item.sortBy] : undefined,
+                                            sort_order: item.sortOrder,
+                                        },
+                                    })).unwrap();
+                                }
+                            } catch (err: any) {
+                                console.error('Failed to load plan:', err);
+                                dispatch(dfActions.addMessages({
+                                    timestamp: Date.now(),
+                                    type: 'error',
+                                    component: 'data loader',
+                                    value: `Failed to load data: ${err?.message || err}`,
                                 }));
+                                // Leave the plan unconfirmed so the user can retry.
+                                return;
                             }
                             dispatch(dfActions.markLoadPlanConfirmed({ messageId: message.id }));
                             if (selected.length > 0) {
@@ -545,6 +570,93 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
     list_directory: 'dataLoading.toolLabels.listingFiles',
     execute_python: 'dataLoading.toolLabels.runningPython',
     show_user_data_preview: 'dataLoading.toolLabels.preparingPreview',
+    list_data: 'dataLoading.toolLabels.browsingCatalog',
+    find_data: 'dataLoading.toolLabels.searchingData',
+    describe_data: 'dataLoading.toolLabels.describingData',
+    probe_data: 'dataLoading.toolLabels.probingData',
+    propose_load_plan: 'dataLoading.toolLabels.proposingLoadPlan',
+};
+
+// Build a short, human-readable summary of a probe SPJQ query so the user
+// can see what the agent is actually asking for (e.g. "sum(revenue) by region").
+const summarizeProbeQuery = (q: any): string => {
+    if (!q || typeof q !== 'object') return '';
+    const parts: string[] = [];
+    if (Array.isArray(q.aggregates) && q.aggregates.length) {
+        parts.push(q.aggregates
+            .map((a: any) => (a.op === 'count' && !a.column) ? 'count' : `${a.op}(${a.column ?? ''})`)
+            .join(', '));
+    }
+    if (Array.isArray(q.group_by) && q.group_by.length) {
+        parts.push(`by ${q.group_by.join(', ')}`);
+    }
+    if (Array.isArray(q.filters) && q.filters.length) {
+        parts.push('where ' + q.filters
+            .map((f: any) => formatFilterChipLabel(f.column, f.op ?? f.operator, f.value))
+            .join(' & '));
+    }
+    if (q.limit) parts.push(`limit ${q.limit}`);
+    return parts.join(' ');
+};
+
+const truncateDetail = (s: string, n = 72): string =>
+    s.length > n ? `${s.slice(0, n - 1)}…` : s;
+
+// Extract the key parameter(s) of a tool call as a compact string, shown next
+// to the tool label so users can follow what each step is actually doing.
+const summarizeToolArgs = (tool: string, args: any): string => {
+    if (!args || typeof args !== 'object') return '';
+    let detail = '';
+    switch (tool) {
+        case 'read_file':
+        case 'write_file':
+        case 'list_directory':
+            detail = args.path ? String(args.path) : '';
+            break;
+        case 'list_data': {
+            const pathStr = Array.isArray(args.path) ? args.path.join('/') : args.path;
+            detail = [args.source_id, pathStr, args.filter && `“${args.filter}”`]
+                .filter(Boolean).join(' / ');
+            break;
+        }
+        case 'find_data': {
+            const scope = args.scope && args.scope !== 'all' ? ` in ${args.scope}` : '';
+            detail = args.query ? `“${args.query}”${scope}` : '';
+            break;
+        }
+        case 'describe_data':
+            detail = [args.source_id, args.table_key].filter(Boolean).join(' · ');
+            break;
+        case 'probe_data':
+            detail = [args.table_key, summarizeProbeQuery(args.query)]
+                .filter(Boolean).join(' · ');
+            break;
+        case 'show_user_data_preview':
+            if (Array.isArray(args.saved_dfs) && args.saved_dfs.length) {
+                detail = args.saved_dfs.join(', ');
+            } else if (Array.isArray(args.tables) && args.tables.length) {
+                detail = args.tables.map((tb: any) => tb?.name).filter(Boolean).join(', ');
+            }
+            break;
+        case 'propose_load_plan':
+            if (Array.isArray(args.candidates)) {
+                detail = args.candidates
+                    .map((c: any) => c?.display_name || c?.table_key)
+                    .filter(Boolean).join(', ');
+            }
+            break;
+        case 'execute_python':
+            // Code is rendered in its own block below — no inline detail.
+            detail = '';
+            break;
+        default: {
+            const firstStr = Object.values(args).find(
+                (v) => typeof v === 'string' && v.length > 0,
+            );
+            detail = firstStr ? String(firstStr) : '';
+        }
+    }
+    return detail ? truncateDetail(detail) : '';
 };
 
 // ---------------------------------------------------------------------------
@@ -555,6 +667,7 @@ interface ToolStep {
     tool: string;
     status: 'running' | 'done';
     label: string;
+    detail?: string;
 }
 
 // Memoized so an unrelated parent re-render (e.g. typing) doesn't
@@ -596,6 +709,16 @@ const StreamingIndicator = React.memo<{ content: string; toolSteps: ToolStep[] }
                             )}
                             <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
                                 {step.label}
+                                {step.detail ? (
+                                    <Box component="span" sx={{
+                                        ml: 0.75,
+                                        color: 'text.disabled',
+                                        fontFamily: 'monospace',
+                                        fontSize: 10.5,
+                                    }}>
+                                        {step.detail}
+                                    </Box>
+                                ) : null}
                             </Typography>
                         </Box>
                     ))}
@@ -859,8 +982,9 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                         break;
                     case 'tool_start': {
                         const label = TOOL_LABEL_KEYS[(event as any).tool] ? t(TOOL_LABEL_KEYS[(event as any).tool]) : (event as any).tool;
+                        const detail = summarizeToolArgs((event as any).tool, (event as any).args);
                         const newSteps = [...streamingToolStepsRef];
-                        newSteps.push({ tool: (event as any).tool, status: 'running', label });
+                        newSteps.push({ tool: (event as any).tool, status: 'running', label, detail });
                         streamingToolStepsRef = newSteps;
                         setStreamingToolSteps(newSteps);
                         if ((event as any).tool === 'execute_python' && (event as any).code) {

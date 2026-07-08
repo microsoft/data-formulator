@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import {
-    Box, Button, Checkbox, Chip, Typography,
+    Box, Button, Checkbox, Chip, CircularProgress, Typography,
     alpha, useTheme,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
@@ -12,6 +12,7 @@ import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { transition } from '../app/tokens';
 import { TablePreviewRow, TablePreviewData } from './TablePreviewRow';
+import { formatFilterChipLabel } from './filterFormat';
 import type { LoadPlan, LoadPlanCandidate, PendingTableLoad } from './ComponentType';
 
 interface LoadPlanCardProps {
@@ -48,11 +49,6 @@ const buildImportOptions = (candidate: LoadPlanCandidate, size: number) => ({
         sort_order: candidate.sortOrder,
     } : {}),
 });
-
-const formatFilterValue = (value: any) => {
-    if (value === undefined || value === null || value === '') return '';
-    return Array.isArray(value) ? value.join(', ') : String(value);
-};
 
 export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed, canLoadInNewWorkspace }) => {
     const theme = useTheme();
@@ -221,12 +217,12 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             <>
                                 {c.filters?.map((f, fi) => (
                                     <Chip key={fi}
-                                        label={`${f.column} ${f.operator}${formatFilterValue(f.value) ? ` ${formatFilterValue(f.value)}` : ''}`}
+                                        label={formatFilterChipLabel(f.column, f.operator, f.value)}
                                         size="small" variant="outlined"
                                         sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
                                 ))}
                                 {c.sortBy && (
-                                    <Chip label={`${c.sortBy} ${c.sortOrder || 'asc'}`}
+                                    <Chip label={`${c.sortBy} ${c.sortOrder === 'desc' ? '↓' : '↑'}`}
                                         size="small" variant="outlined"
                                         sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
                                 )}
@@ -272,30 +268,28 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             variant="outlined"
                             disabled={selectedCount === 0 || loading}
                             onClick={() => handleConfirm(true)}
+                            startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{
                                 textTransform: 'none', fontSize: 12,
                                 py: 0.5, px: 1.5, minHeight: 0,
                                 borderRadius: 1.5,
                             }}
                         >
-                            {loading
-                                ? '...'
-                                : t('dataLoading.loadPlan.loadInNewWorkspace', { defaultValue: 'Load in new workspace' })}
+                            {t('dataLoading.loadPlan.loadInNewWorkspace', { defaultValue: 'Load in new workspace' })}
                         </Button>
                         <Button
                             size="small"
                             variant="contained"
                             disabled={selectedCount === 0 || loading}
                             onClick={() => handleConfirm(false)}
+                            startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{
                                 textTransform: 'none', fontSize: 12,
                                 py: 0.5, px: 2, minHeight: 0,
                                 borderRadius: 1.5, boxShadow: 'none',
                             }}
                         >
-                            {loading
-                                ? '...'
-                                : `${t('dataLoading.loadPlan.addToCurrent', { defaultValue: 'Add to current workspace' })} (${selectedCount})`}
+                            {`${t('dataLoading.loadPlan.addToCurrent', { defaultValue: 'Add to current workspace' })} (${selectedCount})`}
                         </Button>
                     </>
                 ) : (
@@ -304,16 +298,14 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                         variant="contained"
                         disabled={selectedCount === 0 || loading}
                         onClick={() => handleConfirm(false)}
+                        startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                         sx={{
                             textTransform: 'none', fontSize: 12,
                             py: 0.5, px: 2, minHeight: 0,
                             borderRadius: 1.5, boxShadow: 'none',
                         }}
                     >
-                        {loading
-                            ? '...'
-                            : `${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`
-                        }
+                        {`${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
                     </Button>
                 )}
             </Box>
@@ -445,15 +437,14 @@ export const PendingLoadsCard: React.FC<PendingLoadsCardProps> = ({ pendingLoads
                         variant="contained"
                         disabled={selectedCount === 0 || loading}
                         onClick={handleConfirm}
+                        startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                         sx={{
                             textTransform: 'none', fontSize: 12,
                             py: 0.5, px: 2, minHeight: 0,
                             borderRadius: 1.5, boxShadow: 'none',
                         }}
                     >
-                        {loading
-                            ? '...'
-                            : `${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
+                        {`${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
                     </Button>
                 )}
             </Box>
