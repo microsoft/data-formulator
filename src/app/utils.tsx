@@ -49,6 +49,9 @@ export function getUrls() {
 
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
 
+        // Starter exploration questions (generated on data load)
+        DERIVE_STARTER_QUESTIONS: `/api/agent/derive-starter-questions`,
+
         // Workspace display name (auto-naming)
         WORKSPACE_NAME: `/api/agent/workspace-name`,
 

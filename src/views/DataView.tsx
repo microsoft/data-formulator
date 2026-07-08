@@ -42,10 +42,13 @@ export interface FreeDataViewProps {
     // Controlled random-rows trigger + virtual-state report, forwarded to the
     // grid so the external toolbar can drive/observe them.
     randomizeToken?: number;
-    onStateReport?: (s: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean }) => void;
+    // Controlled "restore natural order" trigger, forwarded to the grid so the
+    // toolbar can undo a random sample.
+    resetOrderToken?: number;
+    onStateReport?: (s: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean }) => void;
 }
 
-export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximizable, tableId, showHeaderBar, hideFooter, randomizeToken, onStateReport }) {
+export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximizable, tableId, showHeaderBar, hideFooter, randomizeToken, resetOrderToken, onStateReport }) {
 
     const { t } = useTranslation();
     const [maximized, setMaximized] = React.useState(false);
@@ -165,6 +168,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                         searchText={searchQuery}
                         hideFooter={hideFooter}
                         randomizeToken={randomizeToken}
+                        resetOrderToken={resetOrderToken}
                         onStateReport={onStateReport}
                     />
                 </Box>

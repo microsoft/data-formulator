@@ -540,6 +540,8 @@
     "generateReport": "Generate a report",
     "reportPrompt": "Write a report summarizing the key findings from this exploration.",
     "askedForReport": "Write a report summarizing the exploration.",
+    "expandStarters": "Show suggestions",
+    "collapseStarters": "Hide suggestions",
     "endConversation": "End conversation",
     "sendReply": "Send reply",
     "explore": "Explore",
@@ -590,6 +592,7 @@
     "rowCount": "{{count}} rows",
     "loadedOfTotal": "{{loaded}} / {{total}} rows",
     "viewRandomRows": "view 10000 random rows from this table",
+    "restoreOrder": "Restore original order",
     "downloadAsCsv": "Download as CSV",
     "downloading": "Downloading...",
     "columnMenu": {

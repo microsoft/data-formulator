@@ -11,7 +11,7 @@ import { FC } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector, useDispatch } from 'react-redux';
-import { Box, Typography, Select, MenuItem, useTheme, Tooltip, IconButton, Divider } from '@mui/material';
+import { Box, Typography, Select, MenuItem, useTheme, Tooltip, IconButton, Divider, Popover, Button } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
@@ -124,9 +124,14 @@ type QuickControl = {
 };
 
 export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, tableMetadata, options, deleteDisabled }) {
-    const { t } = useTranslation('chart');
+    const { t } = useTranslation();
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
+
+    // Confirmation popover for the destructive delete action: clicking the
+    // trash opens a small "delete?" popover so an accidental click can't remove
+    // the chart. Anchored to the button; explicit confirm/dismiss.
+    const [deleteAnchor, setDeleteAnchor] = React.useState<HTMLElement | null>(null);
 
     const allCharts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -326,22 +331,84 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
             })}
             {/* Built-in chart-level action: delete this chart. Lives in the
                 property-config bar so the chart's controls and its delete sit
-                together; a hairline divider sets it apart from the property
-                controls. Only shown when there are controls to set it apart
-                from — otherwise it stands alone in the bar. */}
-            <Tooltip title={t('deleteChart')}>
-                <span>
-                    <IconButton
-                        size="small"
-                        aria-label={t('deleteChart')}
-                        disabled={deleteDisabled}
-                        onClick={() => dispatch(dfActions.deleteChartById(chartId))}
-                        sx={{ color: 'text.disabled','&:hover': { color: 'error.main', backgroundColor: 'rgba(211, 47, 47, 0.08)' } }}
-                    >
-                        <DeleteIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                </span>
-            </Tooltip>
+                together; a hairline divider + extra spacing sets it apart from
+                the property controls so it isn't easy to mis-fire. Clicking
+                opens a confirmation popover since it's destructive. */}
+            <Box sx={{ display: 'flex', alignItems: 'center', ml: 1 }}>
+                <Divider orientation="vertical" flexItem sx={{ mr: 1, my: 0.25 }} />
+                <Tooltip title={t('chart.deleteChart')}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            aria-label={t('chart.deleteChart')}
+                            disabled={deleteDisabled}
+                            onClick={(e) => setDeleteAnchor(e.currentTarget)}
+                            sx={{
+                                color: deleteAnchor ? 'error.main' : 'text.disabled',
+                                backgroundColor: deleteAnchor ? 'rgba(211, 47, 47, 0.08)' : 'transparent',
+                                '&:hover': { color: 'error.main', backgroundColor: 'rgba(211, 47, 47, 0.08)' },
+                            }}
+                        >
+                            <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                <Popover
+                    open={Boolean(deleteAnchor)}
+                    anchorEl={deleteAnchor}
+                    onClose={() => setDeleteAnchor(null)}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                    transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                    slotProps={{ paper: { sx: {
+                        p: 1.25,
+                        borderRadius: '8px',
+                        mt: '-10px',
+                        ml: '-14px',
+                        overflow: 'visible',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.16)',
+                        // Callout arrow pointing straight down at the delete button
+                        // (button center sits under this arrow via the ml offset).
+                        '&::before': {
+                            content: '""',
+                            position: 'absolute',
+                            bottom: -5,
+                            left: 14,
+                            width: 10,
+                            height: 10,
+                            backgroundColor: 'background.paper',
+                            transform: 'rotate(45deg)',
+                            boxShadow: '2px 2px 3px rgba(0,0,0,0.06)',
+                        },
+                    } } }}
+                >
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
+                        {t('chart.deleteChartConfirm')}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                        <Button
+                            size="small"
+                            onClick={() => setDeleteAnchor(null)}
+                            sx={{ fontSize: 11, textTransform: 'none', color: 'text.secondary', minWidth: 0 }}
+                        >
+                            {t('chart.deleteChartCancel')}
+                        </Button>
+                        <Button
+                            size="small"
+                            variant="contained"
+                            color="error"
+                            disableElevation
+                            startIcon={<DeleteIcon sx={{ fontSize: 14 }} />}
+                            onClick={() => {
+                                dispatch(dfActions.deleteChartById(chartId));
+                                setDeleteAnchor(null);
+                            }}
+                            sx={{ fontSize: 11, textTransform: 'none', py: 0.25 }}
+                        >
+                            {t('chart.deleteChartYes')}
+                        </Button>
+                    </Box>
+                </Popover>
+            </Box>
         </Box>
         </Box>
     );

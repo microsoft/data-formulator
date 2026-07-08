@@ -19,6 +19,7 @@ import html
 import pandas as pd
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
+from data_formulator.agents.agent_starter_questions import StarterQuestionsAgent
 from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
@@ -287,6 +288,34 @@ def sort_data_request():
         return json_ok({"result": candidates})
     except Exception as e:
         logger.error("Error in sort-data", exc_info=e)
+        raise classify_and_wrap_llm_error(e) from e
+
+@agent_bp.route('/derive-starter-questions', methods=['GET', 'POST'])
+def derive_starter_questions_request():
+    """Generate a few short, data-tailored starter exploration questions.
+
+    Called once when a workspace's set of root tables changes (e.g. after
+    data is loaded). Input: ``input_tables`` (list of {name, columns,
+    sample_rows, description}) and ``model``. Returns ``{"result": [..]}``.
+    """
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
+
+    logger.info("# derive-starter-questions request")
+    content = request.get_json()
+
+    try:
+        client = get_client(content['model'])
+
+        n = content.get('n', 2)
+        language_instruction = get_language_instruction(mode="compact")
+        agent = StarterQuestionsAgent(client=client, language_instruction=language_instruction)
+        questions = agent.run(content.get('input_tables', []), primary_table=content.get('primary_table'), n=n)
+
+        questions = questions if questions is not None else []
+        return json_ok({"result": questions})
+    except Exception as e:
+        logger.error("Error in derive-starter-questions", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/analyst-streaming', methods=['GET', 'POST'])

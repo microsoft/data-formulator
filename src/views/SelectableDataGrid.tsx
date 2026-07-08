@@ -66,9 +66,12 @@ interface SelectableDataGridProps {
     hideFooter?: boolean;
     // Bumping this number triggers a "random rows" refetch (virtual tables).
     randomizeToken?: number;
+    // Bumping this number restores the natural (#rowId head) order after a
+    // random sample (virtual tables).
+    resetOrderToken?: number;
     // Report virtual-pagination state up so an external toolbar can render the
     // loaded/total count and enable the random-rows action.
-    onStateReport?: (s: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean }) => void;
+    onStateReport?: (s: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean }) => void;
 }
 
 
@@ -334,7 +337,7 @@ const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement>((props, ref)
 const PAGE_SIZE = 500;
 
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(({ 
-    tableId, rows, tableName, columnDefs, rowCount, virtual, searchText, hideFooter, randomizeToken, onStateReport }) => {
+    tableId, rows, tableName, columnDefs, rowCount, virtual, searchText, hideFooter, randomizeToken, resetOrderToken, onStateReport }) => {
 
     const { t } = useTranslation();
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
@@ -354,11 +357,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
 
     // Ref-based bridge to fetchVirtualData (declared further below); lets stable
     // sort handlers call into the latest fetch function without re-creating themselves.
-    const fetchVirtualDataRef = React.useRef<((sortByColumnIds: string[], sortOrder: 'asc' | 'desc', offset?: number, append?: boolean) => void) | null>(null);
+    const fetchVirtualDataRef = React.useRef<((sortByColumnIds: string[], sortOrder: 'asc' | 'desc', offset?: number, append?: boolean, random?: boolean) => void) | null>(null);
 
     const applySort = React.useCallback((newOrderBy: string | undefined, newOrder: 'asc' | 'desc') => {
         setOrder(newOrder);
         setOrderBy(newOrderBy);
+        setIsRandom(false);
         if (virtual) {
             fetchVirtualDataRef.current?.(newOrderBy ? [newOrderBy] : [], newOrder);
         }
@@ -367,7 +371,9 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
     let theme = useTheme();
 
     const [rowsToDisplay, setRowsToDisplay] = React.useState<any[]>(rows);
-    
+    // True while the grid is showing a random sample (virtual tables). Lets the
+    // external toolbar offer a "restore order" action alongside the dice.
+    const [isRandom, setIsRandom] = React.useState<boolean>(false);
     const [isLoading, setIsLoading] = React.useState<boolean>(true);
     const [isLoadingMore, setIsLoadingMore] = React.useState<boolean>(false);
     const [isDownloading, setIsDownloading] = React.useState<boolean>(false);
@@ -401,19 +407,34 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             rowCount: effectiveCount,
             virtual,
             canRandomize: virtual && effectiveCount > 10000,
+            isRandom: virtual && isRandom,
         });
-    }, [rowsToDisplay.length, rowCount, serverRowCount, virtual, onStateReport]);
+    }, [rowsToDisplay.length, rowCount, serverRowCount, virtual, isRandom, onStateReport]);
 
     // Bumping `randomizeToken` (from the external toolbar's dice) resets sort
-    // and refetches a fresh random page for virtual tables.
+    // and refetches a fresh random sample (ORDER BY RANDOM() on the server,
+    // which also respects any active filters/search) for virtual tables.
     const randomizeMountRef = React.useRef(true);
     React.useEffect(() => {
         if (randomizeMountRef.current) { randomizeMountRef.current = false; return; }
         if (!virtual) return;
         setOrderBy(undefined);
         setOrder('asc');
-        fetchVirtualDataRef.current?.([], 'asc');
+        setIsRandom(true);
+        fetchVirtualDataRef.current?.([], 'asc', 0, false, true);
     }, [randomizeToken]);
+
+    // Bumping `resetOrderToken` (from the toolbar's "restore order" button)
+    // returns a randomized virtual table to its natural #rowId head order.
+    const resetOrderMountRef = React.useRef(true);
+    React.useEffect(() => {
+        if (resetOrderMountRef.current) { resetOrderMountRef.current = false; return; }
+        if (!virtual) return;
+        setOrderBy(undefined);
+        setOrder('asc');
+        setIsRandom(false);
+        fetchVirtualDataRef.current?.([], 'asc', 0, false, false);
+    }, [resetOrderToken]);
 
     // Only the Table component depends on columnDefs (for colgroup); memoize it
     // so react-virtuoso keeps a stable reference when columns haven't changed.
@@ -497,6 +518,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         sortOrder: 'asc' | 'desc',
         offset: number = 0,
         append: boolean = false,
+        random: boolean = false,
     ) => {
         if (!append) {
             setIsLoading(true);
@@ -511,9 +533,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             table: tableId,
             size: PAGE_SIZE,
             offset,
-            method: sortByColumnIds.length > 0
-                ? (sortOrder === 'asc' ? 'head' : 'bottom')
-                : 'head',
+            method: random
+                ? 'random'
+                : (sortByColumnIds.length > 0
+                    ? (sortOrder === 'asc' ? 'head' : 'bottom')
+                    : 'head'),
             order_by_fields: sortByColumnIds.length > 0 ? sortByColumnIds : ['#rowId'],
             ...(activeFilters.length > 0 ? { filters: activeFilters } : {}),
             ...(searchRef.current ? { search: searchRef.current } : {}),
@@ -535,7 +559,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                 setRowsToDisplay(newRows);
             }
             setServerRowCount(totalCount);
-            setHasMore(offset + newRows.length < totalCount);
+            setHasMore(!random && offset + newRows.length < totalCount);
             setIsLoading(false);
             setIsLoadingMore(false);
         })
@@ -562,6 +586,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             didMountFiltersRef.current = true;
             return;
         }
+        setIsRandom(false);
         fetchVirtualData(orderBy ? [orderBy] : [], order, 0, false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [columnFilters]);
@@ -576,6 +601,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             return;
         }
         searchRef.current = (searchText || '').trim();
+        setIsRandom(false);
         fetchVirtualData(orderBy ? [orderBy] : [], order, 0, false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchText]);

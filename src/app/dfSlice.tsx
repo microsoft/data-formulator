@@ -272,6 +272,17 @@ export interface DataFormulatorState {
      * + briefly highlight). Cleared by the sidebar after consumption.
      */
     focusedConnectorId?: string;
+
+    /**
+     * AI-generated starter exploration questions, stored per root table.
+     * Keyed by table id; each entry's `questions` are tailored to that table
+     * (plus optional cross-table questions when other tables exist).
+     * `signature` is the root-table-set signature the questions were generated
+     * for (so they refresh when the set of tables changes). Persisted;
+     * `starterQuestionsStatus` is transient.
+     */
+    starterQuestions: { [tableId: string]: { questions: string[]; signature: string } };
+    starterQuestionsStatus: { [tableId: string]: 'idle' | 'loading' | 'error' };
 }
 
 // Define the initial state using that type
@@ -346,8 +357,10 @@ const initialState: DataFormulatorState = {
     dataSourceSidebarTab: 'sources',
 
     focusedConnectorId: undefined,
-}
 
+    starterQuestions: {},
+    starterQuestionsStatus: {},
+}
 /**
  * Non-memoized equivalent of `dfSelectors.getAllCharts` for use inside
  * reducers. Reducers receive an Immer draft `state`; passing a draft into
@@ -530,6 +543,10 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     // Delete reports triggered from this table
     state.generatedReports = state.generatedReports.filter(r => r.triggerTableId !== tableId);
 
+    // Drop this table's starter questions / generation status
+    delete state.starterQuestions[tableId];
+    delete state.starterQuestionsStatus[tableId];
+
     if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
         state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
     }
@@ -561,6 +578,60 @@ export const fetchFieldSemanticType = createAsyncThunk(
             }),
         });
         return data;
+    }
+);
+
+/**
+ * Generate a few short, table-tailored starter exploration questions for the
+ * currently focused root table. Called (debounced) when a root table is
+ * focused and it has no fresh questions for the current table-set signature.
+ * The focused table is the "primary" table; all root tables are passed as
+ * context so the agent can add a cross-table question when relevant.
+ * Dispatches `startStarterQuestions` up front, then `setStarterQuestions` /
+ * `setStarterQuestionsError`. Results are only applied if the signature is
+ * still current (guards against stale responses when data changed mid-flight).
+ */
+export const generateStarterQuestions = createAsyncThunk(
+    "dataFormulatorSlice/generateStarterQuestions",
+    async (arg: { tableId: string; signature: string; tableIds: string[] }, { getState, dispatch }) => {
+        const state = getState() as DataFormulatorState;
+
+        dispatch(dfActions.startStarterQuestions({ tableId: arg.tableId, signature: arg.signature }));
+
+        const inputTables = arg.tableIds
+            .map(id => state.tables.find(t => t.id === id))
+            .filter((t): t is DictTable => !!t)
+            .map(t => ({
+                name: t.id,
+                columns: t.names,
+                sample_rows: (t.rows || []).slice(0, 10),
+                description: typeof t.description === 'string' ? t.description : '',
+            }));
+
+        if (inputTables.length === 0) {
+            dispatch(dfActions.setStarterQuestions({ tableId: arg.tableId, signature: arg.signature, questions: [] }));
+            return;
+        }
+
+        try {
+            const { data } = await apiRequest(getUrls().DERIVE_STARTER_QUESTIONS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    input_tables: inputTables,
+                    primary_table: arg.tableId,
+                    model: dfSelectors.getActiveModel(state),
+                    n: 2,
+                }),
+            });
+            const questions: string[] = Array.isArray(data?.result)
+                ? data.result.map((q: any) => String(q)).filter((q: string) => q.trim() !== '')
+                : [];
+            dispatch(dfActions.setStarterQuestions({ tableId: arg.tableId, signature: arg.signature, questions: questions.slice(0, 2) }));
+        } catch (err) {
+            console.warn('generateStarterQuestions failed', err);
+            dispatch(dfActions.setStarterQuestionsError({ tableId: arg.tableId, signature: arg.signature }));
+        }
     }
 );
 
@@ -737,6 +808,27 @@ export const dataFormulatorSlice = createSlice({
         clearFocusedConnector: (state) => {
             state.focusedConnectorId = undefined;
         },
+        /** Mark a starter-questions generation as started for a table. */
+        startStarterQuestions: (state, action: PayloadAction<{ tableId: string; signature: string }>) => {
+            state.starterQuestions[action.payload.tableId] = {
+                questions: [],
+                signature: action.payload.signature,
+            };
+            state.starterQuestionsStatus[action.payload.tableId] = 'loading';
+        },
+        /** Store generated starter questions (only if signature still current). */
+        setStarterQuestions: (state, action: PayloadAction<{ tableId: string; signature: string; questions: string[] }>) => {
+            const cur = state.starterQuestions[action.payload.tableId];
+            if (!cur || cur.signature !== action.payload.signature) return;
+            cur.questions = action.payload.questions;
+            state.starterQuestionsStatus[action.payload.tableId] = 'idle';
+        },
+        /** Mark starter-questions generation as failed (only if signature current). */
+        setStarterQuestionsError: (state, action: PayloadAction<{ tableId: string; signature: string }>) => {
+            const cur = state.starterQuestions[action.payload.tableId];
+            if (!cur || cur.signature !== action.payload.signature) return;
+            state.starterQuestionsStatus[action.payload.tableId] = 'error';
+        },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
 
@@ -834,6 +926,10 @@ export const dataFormulatorSlice = createSlice({
                 // repopulates this slice from the module cache / fresh
                 // renders after load.
                 chartThumbnails: {},
+
+                // Restore persisted starter questions (status is transient).
+                starterQuestions: saved.starterQuestions ?? {},
+                starterQuestionsStatus: {},
             };
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {

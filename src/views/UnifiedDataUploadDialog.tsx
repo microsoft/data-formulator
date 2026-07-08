@@ -259,7 +259,7 @@ const SourcePill: React.FC<DataSourceCardProps> = ({
                 justifyContent: 'center',
                 width: 22,
                 height: 22,
-                borderRadius: 0.75,
+                borderRadius: '50%',
                 backgroundColor: alpha(theme.palette.primary.main, 0.08),
                 flexShrink: 0,
                 '& .MuiSvgIcon-root': { fontSize: 15 },

@@ -476,6 +476,7 @@
     "rowCount": "{{count}} 行",
     "loadedOfTotal": "已加载 {{loaded}} / {{total}} 行",
     "viewRandomRows": "查看此表的 10000 行随机数据",
+    "restoreOrder": "恢复原始顺序",
     "downloadAsCsv": "下载为 CSV",
     "downloading": "下载中...",
     "columnMenu": {
@@ -591,6 +592,8 @@
     "generateReport": "生成报告",
     "reportPrompt": "撰写一份报告，总结本次探索的主要发现。",
     "askedForReport": "撰写一份报告，总结本次探索。",
+    "expandStarters": "显示建议",
+    "collapseStarters": "隐藏建议",
     "endConversation": "结束对话",
     "sendReply": "发送回复",
     "explore": "探索",

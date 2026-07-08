@@ -3443,7 +3443,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 display: 'flex',
                 flexDirection: 'row',
                 flexWrap: 'nowrap',
-                justifyContent: 'center',
+                justifyContent: 'flex-start',
                 gap: `${CARD_GAP}px`,
                 py: 1,
                 // Bottom padding leaves room so the scroll handler can position

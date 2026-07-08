@@ -14,6 +14,7 @@ import {
     Card,
     LinearProgress,
     Chip,
+    Collapse,
     Popper,
     Paper,
     MenuList,
@@ -21,7 +22,7 @@ import {
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart, GeneratedReport } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest } from '../app/apiClient';
@@ -33,9 +34,9 @@ import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clar
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
-import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import BoltIcon from '@mui/icons-material/Bolt';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
 
@@ -45,11 +46,42 @@ import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ClarificationPanel, DelegatePanel, ExplanationPanel } from './AgentPausePanel';
+import { CARD_WIDTH } from './threadLayout';
+
+// Approx footprint of the leading lightning-bolt IconButton (size small,
+// p:0.5 + 16px icon). Used to cap a starter chip so a single chip fits
+// within one thread-column width alongside the toggle icon.
+const STARTER_ICON_WIDTH = 28;
 
 // Seed prompt used when the user invokes "report" mode (or a report hand-off)
 // without typing an explicit instruction. The unified analyst loads its
 // `report` skill and emits `write_report` within a normal explore run.
 const REPORT_SEED_PROMPT = 'Write a report summarizing the exploration.';
+
+// A starter-question chip that only shows a tooltip when its label is
+// truncated (i.e. the text is too long to fit within the capped width).
+const StarterChip: FC<{ label: string; onClick: () => void; sx: any }> = ({ label, onClick, sx }) => {
+    const labelRef = useRef<HTMLSpanElement | null>(null);
+    const [isClipped, setIsClipped] = useState(false);
+    const checkClipped = () => {
+        // The MUI `.MuiChip-label` element (parent of our span) is the one that
+        // applies overflow:hidden + ellipsis, so measure that container.
+        const el = labelRef.current?.parentElement;
+        if (el) setIsClipped(el.scrollWidth > el.clientWidth);
+    };
+    return (
+        <Tooltip title={isClipped ? label : ''} placement="top" enterDelay={400}>
+            <Chip
+                size="small"
+                clickable
+                label={<span ref={labelRef}>{label}</span>}
+                onClick={onClick}
+                onMouseEnter={checkClipped}
+                sx={sx}
+            />
+        </Tooltip>
+    );
+};
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
     const { t } = useTranslation();
@@ -134,7 +166,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const charts = useSelector(dfSelectors.getAllCharts);
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const starterQuestions = useSelector((state: DataFormulatorState) => state.starterQuestions);
+    const starterQuestionsStatus = useSelector((state: DataFormulatorState) => state.starterQuestionsStatus);    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const workspaceBackend = useSelector((state: DataFormulatorState) => state.serverConfig.WORKSPACE_BACKEND);
@@ -160,9 +193,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // clears). Tracks the draftId we've already auto-submitted for.
     const clarifySubmittedRef = useRef<string | null>(null);
     const [isChatFormulating, setIsChatFormulating] = useState(false);
+    // Whether the getting-started starter questions are collapsed (click the
+    // lightning bolt to expand/collapse).
+    const [starterCollapsed, setStarterCollapsed] = useState(false);
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
-    const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
-    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
+    const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
     const [attachedImages, setAttachedImages] = useState<string[]>([]);
     const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -198,6 +233,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Stale draft detection is handled by loadState in dfSlice (marks running/clarifying drafts as interrupted)
 
     const inputCardRef = useRef<HTMLDivElement>(null);
+    // Ref to the chat textarea so getting-started starter prompts can seed
+    // the input and immediately focus it for editing.
+    const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+    const seedChatPrompt = useCallback((text: string) => {
+        setChatPrompt(text);
+        requestAnimationFrame(() => chatInputRef.current?.focus());
+    }, []);
 
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
 
@@ -269,6 +312,35 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     React.useEffect(() => {
         setMentionHighlightIdx(0);
     }, [mentionFilter]);
+
+    // ── Starter-questions generation trigger ─────────────────────────
+    // Questions are stored per root table (each table has its own, plus an
+    // optional cross-table question). When a root table is focused and it has
+    // no fresh questions for the current table set, generate them lazily. The
+    // signature (all root table ids) refreshes questions when tables change;
+    // the 500ms debounce collapses batch loads into a single call.
+    const rootTableSignature = React.useMemo(
+        () => rootTables.map(t => t.id).sort().join('|'),
+        [rootTables]
+    );
+    const focusedRootTableId = (focusedTableId && rootTables.some(t => t.id === focusedTableId))
+        ? focusedTableId
+        : undefined;
+    React.useEffect(() => {
+        if (!focusedRootTableId) return;
+        const entry = starterQuestions[focusedRootTableId];
+        if (entry && entry.signature === rootTableSignature) return;        // already fresh
+        if (starterQuestionsStatus[focusedRootTableId] === 'loading') return; // in flight
+        const timer = setTimeout(() => {
+            dispatch(generateStarterQuestions({
+                tableId: focusedRootTableId,
+                signature: rootTableSignature,
+                tableIds: rootTableSignature.split('|'),
+            }));
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [focusedRootTableId, rootTableSignature, starterQuestions, starterQuestionsStatus, dispatch]);
+
 
     // Helper: confirm selection of a mention (table only)
     const confirmMention = (optionId: string) => {
@@ -1799,6 +1871,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     inputLabel: { shrink: true },
                     input: { readOnly: isChatFormulating },
                 }}
+                inputRef={chatInputRef}
                 value={chatPrompt}
                 placeholder={
                     pendingClarification
@@ -1920,8 +1993,96 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         </Card>
     );
 
+    // ── Getting-started guidance ─────────────────────────────────────
+    // When a root table is focused, show a muted row of AI-generated starter
+    // questions tailored to that table (see the trigger effect above — each
+    // table has its own set, plus an optional cross-table question). Clicking
+    // a chip runs it; clicking the lightning bolt collapses/expands the row.
+    const focusedStarterEntry = focusedRootTableId ? starterQuestions[focusedRootTableId] : undefined;
+    const focusedStarterStatus = focusedRootTableId ? starterQuestionsStatus[focusedRootTableId] : undefined;
+    const focusedStarterFresh = !!focusedStarterEntry && focusedStarterEntry.signature === rootTableSignature;
+    const starterLoading = !!focusedRootTableId && (!focusedStarterFresh || focusedStarterStatus === 'loading');
+
+    const showGettingStarted = !!focusedRootTableId
+        && !isChatFormulating
+        && !pendingClarification
+        && (starterLoading || (focusedStarterEntry?.questions?.length ?? 0) > 0);
+
+    const starterChipSx = {
+        height: 24, borderRadius: '6px', fontSize: 11,
+        color: 'text.secondary',
+        backgroundColor: 'transparent',
+        border: `1px solid ${borderColor.divider}`,
+        // Cap a single chip to one column width minus the toggle icon, and
+        // allow it to shrink (flex) when the row would otherwise overflow.
+        maxWidth: CARD_WIDTH - STARTER_ICON_WIDTH,
+        minWidth: 0,
+        flexShrink: 1,
+        '& .MuiChip-label': {
+            px: '8px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+        },
+        '&:hover': {
+            backgroundColor: alpha(theme.palette.text.primary, 0.04),
+            color: 'text.primary',
+            borderColor: alpha(theme.palette.text.primary, 0.24),
+        },
+    } as const;
+
+    const gettingStartedBlock = showGettingStarted ? (
+        <Box sx={{ mx: 1, mb: 0.75, px: 0.5, display: 'flex', alignItems: 'center', gap: 0.25, overflow: 'hidden' }}>
+            <Tooltip title={t(starterCollapsed ? 'chartRec.expandStarters' : 'chartRec.collapseStarters', { defaultValue: starterCollapsed ? 'Show suggestions' : 'Hide suggestions' })}>
+                <IconButton
+                    size="small"
+                    onClick={() => setStarterCollapsed(c => !c)}
+                    sx={{
+                        flexShrink: 0,
+                        p: 0.5, borderRadius: '6px', color: 'text.disabled',
+                        transition: 'background-color 0.15s, color 0.15s',
+                        '&:hover': { color: 'text.secondary', backgroundColor: alpha(theme.palette.text.primary, 0.06) },
+                    }}
+                >
+                    <BoltIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+            </Tooltip>
+            {starterCollapsed && (
+                <Typography
+                    onClick={() => setStarterCollapsed(false)}
+                    sx={{ fontSize: 11, color: 'text.disabled', cursor: 'pointer', '&:hover': { color: 'text.secondary' } }}
+                >
+                    {t('chartRec.expandStarters', { defaultValue: 'Show suggestions' })}
+                </Typography>
+            )}
+            <Collapse
+                orientation="horizontal"
+                in={!starterCollapsed}
+                timeout={200}
+                sx={{
+                    minWidth: 0,
+                    flexShrink: 1,
+                    '& .MuiCollapse-wrapperInner': { display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'nowrap', minWidth: 0 },
+                }}
+            >
+                {starterLoading
+                    ? <CircularProgress size={13} thickness={5} sx={{ color: 'text.disabled', mx: 0.5 }} />
+                    : (focusedStarterEntry?.questions ?? []).map((q, i) => (
+                        <StarterChip
+                            key={i}
+                            label={q}
+                            onClick={() => submitChat(q)}
+                            sx={starterChipSx}
+                        />
+                    ))
+                }
+            </Collapse>
+        </Box>
+    ) : null;
+
     return (
         <Box>
+            {gettingStartedBlock}
             {/* The input box */}
             {inputBox}
         </Box>

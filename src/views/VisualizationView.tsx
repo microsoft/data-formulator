@@ -532,6 +532,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [encodingOpen, setEncodingOpen] = useState<boolean>(false);
     const editButtonRef = useRef<HTMLButtonElement | null>(null);
 
+    // State for the compact action dock that sits below the chart-mode data
+    // table (mirrors the table-focus dock; replaces the grid's inline footer).
+    const [chartTableGridReport, setChartTableGridReport] = useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null>(null);
+    const [chartRandomizeToken, setChartRandomizeToken] = useState(0);
+    const [chartResetOrderToken, setChartResetOrderToken] = useState(0);
+
     // Reset local UI state when focused chart changes
     useEffect(() => {
         setCodeDialogOpen(false);
@@ -883,13 +889,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     {(() => {
                         const ROW_HEIGHT = 25;
                         const HEADER_HEIGHT = 32;
-                        const FOOTER_HEIGHT = 32;
-                        const MIN_TABLE_HEIGHT = 150;
+                        const MIN_TABLE_HEIGHT = 60;
                         const MAX_TABLE_HEIGHT = 400;
                         const MIN_TABLE_WIDTH = 300;
                         const MAX_TABLE_WIDTH = 900;
                         const rowCount = table.virtual?.rowCount || table.rows?.length || 0;
-                        const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
+                        // Footer is hidden in chart mode (hideFooter), so don't reserve its height.
+                        const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 12;
                         const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
 
                         // Estimate total width from columns (generous: account for type icons, sort arrows, padding)
@@ -912,11 +918,27 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
 
                         return (
-                            <Box sx={{ margin: '8px auto 24px auto', padding: 0, height: adaptiveHeight, width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, overflow: 'hidden' }}>
-                                <FreeDataViewFC maximizable />
+                            <Box sx={{ margin: '8px auto 0 auto', padding: 0, height: adaptiveHeight, width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, overflow: 'hidden' }}>
+                                <FreeDataViewFC
+                                    maximizable
+                                    hideFooter
+                                    randomizeToken={chartRandomizeToken}
+                                    resetOrderToken={chartResetOrderToken}
+                                    onStateReport={setChartTableGridReport}
+                                />
                             </Box>
                         );
                     })()}
+                    <TableActionDock
+                        compact
+                        tableId={table.id}
+                        tableName={table.displayId || table.id || 'table'}
+                        rows={table.rows || []}
+                        virtual={!!table.virtual}
+                        gridReport={chartTableGridReport}
+                        onRandomize={() => setChartRandomizeToken(x => x + 1)}
+                        onResetOrder={() => setChartResetOrderToken(x => x + 1)}
+                    />
                 </Box>;
             })()}
         </React.Fragment>,
@@ -1173,18 +1195,23 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
 // are highlighted this dock can summarize the selection and offer actions
 // that span them (e.g. "combine", "chart each").
 const TableActionDock: FC<{
-    chartSelectionBox: React.ReactNode;
+    chartSelectionBox?: React.ReactNode;
     tableId: string;
     tableName: string;
     rows: any[];
     virtual: boolean;
-    gridReport?: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean } | null;
+    // Compact variant (smaller paddings) used below the chart-mode data table.
+    compact?: boolean;
+    gridReport?: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null;
     onRandomize?: () => void;
-}> = ({ chartSelectionBox, tableId, tableName, rows, virtual, gridReport, onRandomize }) => {
+    onResetOrder?: () => void;
+}> = ({ chartSelectionBox, tableId, tableName, rows, virtual, compact, gridReport, onRandomize, onResetOrder }) => {
     const { t } = useTranslation();
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const open = Boolean(anchorEl);
+    // The Quick chart action only renders when a template picker is supplied.
+    const showQuickChart = !!chartSelectionBox;
 
     const handleDownload = async () => {
         if (isDownloading) return;
@@ -1221,70 +1248,86 @@ const TableActionDock: FC<{
 
     return (
         <Box sx={{
-            position: 'sticky', bottom: 0, zIndex: 2,
+            position: 'static',
             display: 'flex', justifyContent: 'center',
-            px: 2, pt: 1.5, pb: 3,
+            px: 2, pt: compact ? 1.5 : 1.5, pb: compact ? 1 : 3,
             backgroundColor: 'background.paper',
         }}>
             <Box sx={{
                 display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                px: 1, py: 0.5, borderRadius: '8px',
+                px: 1, py: compact ? 0.25 : 0.5, borderRadius: '8px',
                 backgroundColor: 'background.paper',
                 border: '1px solid', borderColor: 'divider',
             }}>
-                <Button
-                    size="small"
-                    variant="text"
-                    startIcon={<AddchartIcon />}
-                    onClick={(e) => setAnchorEl(e.currentTarget)}
-                    sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main', fontWeight: 600 }}
-                >
-                    {t('chart.quickChart', { defaultValue: 'Quick chart' })}
-                </Button>
-                <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                {showQuickChart && (
+                    <>
+                        <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<AddchartIcon />}
+                            onClick={(e) => setAnchorEl(e.currentTarget)}
+                            sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main' }}
+                        >
+                            {t('chart.quickChart', { defaultValue: 'Quick chart' })}
+                        </Button>
+                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                    </>
+                )}
                 <Button
                     size="small"
                     variant="text"
                     startIcon={isDownloading ? <CircularProgress size={14} /> : <SaveAltIcon />}
                     onClick={handleDownload}
                     disabled={isDownloading}
-                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary' }}
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: 12 } : {}) }}
                 >
                     {t('dataGrid.downloadCsv', { defaultValue: 'Download CSV' })}
                 </Button>
-                {gridReport?.virtual && (
-                    <>
-                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
-                            {gridReport.loadedCount < gridReport.rowCount
-                                ? t('dataGrid.loadedOfTotal', { loaded: gridReport.loadedCount, total: gridReport.rowCount })
-                                : t('dataGrid.rowCount', { count: gridReport.rowCount })}
-                        </Typography>
-                        {gridReport.canRandomize && (
-                            <Tooltip title={t('dataGrid.viewRandomRows')}>
-                                <IconButton size="small" color="primary" onClick={onRandomize}>
-                                    <CasinoIcon sx={{ fontSize: 18, '&:hover': { transform: 'rotate(180deg)' } }} />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </>
+                <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                    {gridReport?.virtual
+                        ? (gridReport.loadedCount < gridReport.rowCount
+                            ? t('dataGrid.loadedOfTotal', { loaded: gridReport.loadedCount, total: gridReport.rowCount })
+                            : t('dataGrid.rowCount', { count: gridReport.rowCount }))
+                        : t('dataGrid.rowCount', { count: rows.length })}
+                </Typography>
+                {gridReport?.virtual && gridReport.canRandomize && (
+                    <Tooltip title={gridReport.isRandom
+                        ? t('dataGrid.restoreOrder', { defaultValue: 'Restore original order' })
+                        : t('dataGrid.viewRandomRows')}>
+                        <IconButton
+                            size="small"
+                            color={gridReport.isRandom ? 'primary' : 'default'}
+                            onClick={gridReport.isRandom ? onResetOrder : onRandomize}
+                        >
+                            <CasinoIcon sx={{
+                                fontSize: 18,
+                                color: gridReport.isRandom ? 'primary.main' : 'text.secondary',
+                                transform: gridReport.isRandom ? 'rotate(15deg)' : 'none',
+                                transition: 'transform 0.2s, color 0.2s',
+                                '&:hover': { transform: 'rotate(180deg)' },
+                            }} />
+                        </IconButton>
+                    </Tooltip>
                 )}
             </Box>
-            <Popover
-                open={open}
-                anchorEl={anchorEl}
-                onClose={() => setAnchorEl(null)}
-                anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
-                transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                slotProps={{ paper: { sx: { p: 2, maxWidth: 'min(90vw, 1140px)' } } }}
-            >
-                {/* Clicking a template creates the chart and this whole
-                    empty-state unmounts; closing the popover here keeps
-                    things tidy in the transient frame. */}
-                <Box onClickCapture={() => setAnchorEl(null)}>
-                    {chartSelectionBox}
-                </Box>
-            </Popover>
+            {showQuickChart && (
+                <Popover
+                    open={open}
+                    anchorEl={anchorEl}
+                    onClose={() => setAnchorEl(null)}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+                    transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                    slotProps={{ paper: { sx: { p: 2, maxWidth: 'min(90vw, 1140px)' } } }}
+                >
+                    {/* Clicking a template creates the chart and this whole
+                        empty-state unmounts; closing the popover here keeps
+                        things tidy in the transient frame. */}
+                    <Box onClickCapture={() => setAnchorEl(null)}>
+                        {chartSelectionBox}
+                    </Box>
+                </Popover>
+            )}
         </Box>
     );
 };
@@ -1310,8 +1353,9 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     // Virtual-pagination state reported up from the focused-table grid, so the
     // bottom toolbar can show the loaded/total count and drive the random dice.
-    const [tableGridReport, setTableGridReport] = React.useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean } | null>(null);
+    const [tableGridReport, setTableGridReport] = React.useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null>(null);
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
+    const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
@@ -1444,7 +1488,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                     px: 3, pt: 2, pb: 2, boxSizing: 'border-box',
                                 }}>
                                     <Box sx={{ width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, flex: '1 1 auto', minHeight: MIN_TABLE_HEIGHT, maxHeight: maxCardHeight }}>
-                                        <FreeDataViewFC maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} onStateReport={setTableGridReport} />
+                                        <FreeDataViewFC maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} resetOrderToken={tableResetOrderToken} onStateReport={setTableGridReport} />
                                     </Box>
                                 </Box>
                             );
@@ -1460,6 +1504,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                     virtual={!!ft?.virtual}
                                     gridReport={tableGridReport}
                                     onRandomize={() => setTableRandomizeToken(x => x + 1)}
+                                    onResetOrder={() => setTableResetOrderToken(x => x + 1)}
                                 />
                             );
                         })()}

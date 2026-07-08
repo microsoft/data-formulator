@@ -470,7 +470,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 px: 1.5,
                                 py: 0.5,
                                 cursor: 'pointer',
-                                color: 'text.secondary',
+                                color: 'text.primary',
                                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
                             }}
                         >
@@ -482,7 +482,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         width: 16, flexShrink: 0,
-                                        color: 'text.disabled',
+                                        color: 'text.secondary',
                                     }}
                                 >
                                     {s.icon}
@@ -509,20 +509,6 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                             >
                                 {s.label}
                             </Typography>
-                            {s.kind && (
-                                <Typography
-                                    variant="caption"
-                                    sx={{
-                                        flexShrink: 0,
-                                        fontSize: 10,
-                                        letterSpacing: '0.04em',
-                                        textTransform: 'uppercase',
-                                        color: 'text.disabled',
-                                    }}
-                                >
-                                    {s.kind}
-                                </Typography>
-                            )}
                         </Box>
                     ))}
                 </Box>
