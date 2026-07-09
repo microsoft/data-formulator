@@ -1,0 +1,772 @@
+/* ============================================================================
+   GitHub-flavored Markdown Preview Theme
+   Alex Cognitive Architecture - Polished Edition
+   
+   Copy to .vscode/markdown-light.css and reference in settings.json:
+   "markdown.styles": [".vscode/markdown-light.css"]
+   ============================================================================ */
+
+/* ============================================
+   CSS Variables Override
+   ============================================ */
+:root,
+body,
+.vscode-body {
+    /* ================================================
+       PREVIEW WIDTH - Adjust this value to change
+       the maximum width of the markdown preview
+       ================================================ */
+    --preview-max-width: 1600px;
+
+    --vscode-textBlockQuote-background: #f6f8fa !important;
+    --vscode-textBlockQuote-border: #d1d9e0 !important;
+    --vscode-editor-background: #ffffff !important;
+    --vscode-editor-foreground: #1f2328 !important;
+}
+
+/* ============================================
+   Base Typography
+   ============================================ */
+body {
+    background-color: #ffffff !important;
+    color: #1f2328 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif !important;
+    font-size: 16px !important;
+    line-height: 1.6 !important;
+    max-width: var(--preview-max-width) !important;
+    margin: 0 auto !important;
+    padding: 32px 45px !important;
+    word-wrap: break-word !important;
+}
+
+/* Allow images to display at full width */
+img {
+    max-width: 100% !important;
+    height: auto !important;
+}
+
+/* ============================================
+   Headings
+   ============================================ */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: #1f2328 !important;
+    font-weight: 600 !important;
+    margin-top: 24px !important;
+    margin-bottom: 16px !important;
+    line-height: 1.25 !important;
+}
+
+h1 {
+    font-size: 2em !important;
+}
+
+h2 {
+    font-size: 1.5em !important;
+}
+
+h3 {
+    font-size: 1.25em !important;
+}
+
+h4 {
+    font-size: 1em !important;
+}
+
+h5 {
+    font-size: 0.875em !important;
+}
+
+h6 {
+    font-size: 0.85em !important;
+    color: #656d76 !important;
+}
+
+h1,
+h2 {
+    border-bottom: 1px solid #d1d9e0 !important;
+    padding-bottom: 0.3em !important;
+}
+
+/* ============================================
+   Links
+   ============================================ */
+a {
+    color: #0969da !important;
+    text-decoration: none !important;
+}
+
+a:hover {
+    text-decoration: underline !important;
+}
+
+/* ============================================
+   Code - Inline
+   ============================================ */
+code {
+    background-color: #eff1f3 !important;
+    color: #1f2328 !important;
+    padding: 0.2em 0.4em !important;
+    border-radius: 6px !important;
+    font-size: 85% !important;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace !important;
+}
+
+/* ============================================
+   Code - Blocks
+   ============================================ */
+pre {
+    background-color: #f6f8fa !important;
+    border: 1px solid #d1d9e0 !important;
+    border-radius: 6px !important;
+    padding: 16px !important;
+    overflow: auto !important;
+    font-size: 85% !important;
+    line-height: 1.45 !important;
+}
+
+pre code {
+    background-color: transparent !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    color: #1f2328 !important;
+}
+
+/* Force all code text readable (nuclear option for VS Code dark themes) */
+pre code,
+pre code span,
+pre code * {
+    color: #1f2328 !important;
+}
+
+/* VS Code Monaco editor classes override */
+.mtk1 {
+    color: #1f2328 !important;
+}
+
+.mtk3 {
+    color: #57606a !important;
+}
+
+.mtk4 {
+    color: #0550ae !important;
+}
+
+.mtk5 {
+    color: #cf222e !important;
+}
+
+.mtk6 {
+    color: #0a3069 !important;
+}
+
+.mtk7 {
+    color: #8250df !important;
+}
+
+.mtk8 {
+    color: #953800 !important;
+}
+
+.mtk9 {
+    color: #0550ae !important;
+}
+
+.mtk10 {
+    color: #1f2328 !important;
+}
+
+.mtk11 {
+    color: #0550ae !important;
+}
+
+.mtk12 {
+    color: #8250df !important;
+}
+
+/* ============================================
+   Syntax Highlighting - GitHub Colors
+   ============================================ */
+pre code .hljs-keyword,
+pre code .token.keyword {
+    color: #cf222e !important;
+}
+
+pre code .hljs-string,
+pre code .token.string {
+    color: #0a3069 !important;
+}
+
+pre code .hljs-comment,
+pre code .token.comment {
+    color: #57606a !important;
+    font-style: italic !important;
+}
+
+pre code .hljs-function,
+pre code .token.function,
+pre code .hljs-title,
+pre code .token.method {
+    color: #8250df !important;
+}
+
+pre code .hljs-number,
+pre code .token.number {
+    color: #0550ae !important;
+}
+
+pre code .hljs-class-name,
+pre code .token.class-name,
+pre code .hljs-type,
+pre code .token.type {
+    color: #953800 !important;
+}
+
+pre code .hljs-variable,
+pre code .token.variable {
+    color: #24292f !important;
+}
+
+pre code .hljs-attr,
+pre code .token.attr-name,
+pre code .hljs-property,
+pre code .token.property {
+    color: #0550ae !important;
+}
+
+pre code .hljs-operator,
+pre code .token.operator {
+    color: #cf222e !important;
+}
+
+pre code .hljs-punctuation,
+pre code .token.punctuation {
+    color: #24292f !important;
+}
+
+pre code .hljs-built_in,
+pre code .token.builtin {
+    color: #0550ae !important;
+}
+
+pre code .hljs-literal,
+pre code .token.boolean {
+    color: #0550ae !important;
+}
+
+/* ============================================
+   Blockquotes
+   ============================================ */
+blockquote,
+.vscode-body blockquote,
+body blockquote {
+    border-left: 4px solid #d1d9e0 !important;
+    color: #1f2328 !important;
+    margin: 0 0 16px 0 !important;
+    padding: 8px 16px !important;
+    background-color: #f6f8fa !important;
+}
+
+blockquote p {
+    margin: 0 !important;
+    line-height: 1.5 !important;
+    color: #1f2328 !important;
+}
+
+blockquote strong,
+blockquote em {
+    color: #1f2328 !important;
+}
+
+/* ============================================
+   Tables
+   ============================================ */
+table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    margin-bottom: 16px !important;
+    display: block !important;
+    overflow-x: auto !important;
+}
+
+th,
+td {
+    border: 1px solid #d1d9e0 !important;
+    padding: 8px 13px !important;
+}
+
+th {
+    background-color: #f6f8fa !important;
+    font-weight: 600 !important;
+}
+
+tr:nth-child(even) {
+    background-color: #f6f8fa !important;
+}
+
+/* ============================================
+   Lists
+   ============================================ */
+ul,
+ol {
+    padding-left: 2em !important;
+    margin-bottom: 16px !important;
+}
+
+li+li {
+    margin-top: 0.25em !important;
+}
+
+/* Task lists */
+li input[type="checkbox"] {
+    margin-right: 0.5em !important;
+}
+
+/* Nested lists */
+ul ul,
+ul ol,
+ol ul,
+ol ol {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+/* ============================================
+   Horizontal Rule
+   ============================================ */
+hr {
+    background-color: #d1d9e0 !important;
+    border: 0 !important;
+    height: 0.25em !important;
+    margin: 24px 0 !important;
+    padding: 0 !important;
+}
+
+/* ============================================
+   Images
+   ============================================ */
+img {
+    max-width: 100% !important;
+    border-radius: 6px !important;
+    box-sizing: border-box !important;
+}
+
+/* ============================================
+   Mermaid Diagrams - Polished Light Theme
+   Supports: flowchart, sequence, class, state,
+   ER, gantt, pie, mindmap, timeline, git
+   ============================================ */
+
+/* Container styling */
+.mermaid,
+.mermaid svg {
+    background-color: #ffffff !important;
+    border: 1px solid #e1e4e8 !important;
+    padding: 20px !important;
+    border-radius: 8px !important;
+    text-align: center !important;
+}
+
+/* ---- FLOWCHART / GRAPH ---- */
+/* Node shapes - soft blue theme */
+.mermaid rect,
+.mermaid circle,
+.mermaid ellipse,
+.mermaid polygon,
+.mermaid .node rect,
+.mermaid .node circle,
+.mermaid .node polygon,
+.mermaid .label-container,
+.mermaid g.node rect,
+.mermaid g.node polygon {
+    fill: #dbeafe !important;
+    stroke: #3b82f6 !important;
+    stroke-width: 1.5px !important;
+}
+
+/* Rhombus/diamond decision nodes */
+.mermaid .node polygon[points] {
+    fill: #fef3c7 !important;
+    stroke: #f59e0b !important;
+}
+
+/* Text in diagrams */
+.mermaid text,
+.mermaid tspan,
+.mermaid .nodeLabel,
+.mermaid .label,
+.mermaid span,
+.mermaid p {
+    fill: #1f2328 !important;
+    color: #1f2328 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif !important;
+    font-size: 14px !important;
+}
+
+/* Edge lines */
+.mermaid .edgePath path,
+.mermaid path.path,
+.mermaid .flowchart-link {
+    stroke: #6b7280 !important;
+    stroke-width: 1.5px !important;
+}
+
+/* Arrowheads */
+.mermaid .arrowheadPath,
+.mermaid marker path {
+    fill: #6b7280 !important;
+    stroke: #6b7280 !important;
+}
+
+/* Edge labels */
+.mermaid .edgeLabel {
+    background-color: #ffffff !important;
+    color: #1f2328 !important;
+}
+
+.mermaid .edgeLabel rect {
+    fill: #ffffff !important;
+    stroke: none !important;
+}
+
+/* Clusters/Subgraphs */
+.mermaid .cluster rect {
+    fill: #f8fafc !important;
+    stroke: #94a3b8 !important;
+    stroke-width: 1.5px !important;
+    stroke-dasharray: 5 5 !important;
+    rx: 8px !important;
+    ry: 8px !important;
+}
+
+.mermaid .cluster text,
+.mermaid .cluster span {
+    fill: #475569 !important;
+    font-weight: 600 !important;
+}
+
+/* ---- SEQUENCE DIAGRAMS ---- */
+.mermaid .actor {
+    fill: #dbeafe !important;
+    stroke: #3b82f6 !important;
+    stroke-width: 1.5px !important;
+}
+
+.mermaid .actor-line {
+    stroke: #94a3b8 !important;
+    stroke-dasharray: 4 4 !important;
+}
+
+.mermaid .messageLine0 {
+    stroke: #3b82f6 !important;
+    stroke-width: 1.5px !important;
+}
+
+.mermaid .messageLine1 {
+    stroke: #3b82f6 !important;
+    stroke-width: 1.5px !important;
+    stroke-dasharray: 4 4 !important;
+}
+
+.mermaid .messageText {
+    fill: #1f2328 !important;
+    font-size: 13px !important;
+}
+
+.mermaid .activation0,
+.mermaid .activation1,
+.mermaid .activation2 {
+    fill: #bfdbfe !important;
+    stroke: #3b82f6 !important;
+}
+
+.mermaid .labelText,
+.mermaid .loopText {
+    fill: #1f2328 !important;
+    font-weight: 500 !important;
+}
+
+.mermaid .loopLine {
+    stroke: #94a3b8 !important;
+    stroke-dasharray: 4 4 !important;
+}
+
+.mermaid .note {
+    fill: #fef9c3 !important;
+    stroke: #eab308 !important;
+}
+
+.mermaid .noteText {
+    fill: #713f12 !important;
+}
+
+/* ---- STATE DIAGRAMS ---- */
+.mermaid .statediagram-state rect {
+    fill: #dbeafe !important;
+    stroke: #3b82f6 !important;
+    rx: 8px !important;
+    ry: 8px !important;
+}
+
+.mermaid .stateLabel text {
+    fill: #1f2328 !important;
+}
+
+/* Start state - green dot */
+.mermaid g.stateGroup circle.start-state,
+.mermaid .start-state {
+    fill: #22c55e !important;
+    stroke: #16a34a !important;
+}
+
+/* End state - red with inner circle */
+.mermaid g.stateGroup circle.end-state,
+.mermaid .end-state {
+    fill: #ef4444 !important;
+    stroke: #dc2626 !important;
+}
+
+.mermaid .state-note {
+    fill: #fef9c3 !important;
+    stroke: #eab308 !important;
+}
+
+/* ---- CLASS DIAGRAMS ---- */
+.mermaid .classGroup rect {
+    fill: #f1f5f9 !important;
+    stroke: #64748b !important;
+    stroke-width: 1.5px !important;
+}
+
+.mermaid .classGroup .title {
+    fill: #1e293b !important;
+    font-weight: 700 !important;
+}
+
+.mermaid .classGroup line {
+    stroke: #cbd5e1 !important;
+}
+
+.mermaid .classLabel .box {
+    fill: #f8fafc !important;
+    stroke: #e2e8f0 !important;
+}
+
+.mermaid .classLabel .label {
+    fill: #334155 !important;
+}
+
+.mermaid .relation {
+    stroke: #64748b !important;
+}
+
+.mermaid .composition,
+.mermaid .aggregation,
+.mermaid .dependency {
+    fill: #64748b !important;
+    stroke: #64748b !important;
+}
+
+/* ---- ER DIAGRAMS ---- */
+.mermaid .er.entityBox {
+    fill: #dbeafe !important;
+    stroke: #3b82f6 !important;
+}
+
+.mermaid .er.entityLabel {
+    fill: #1f2328 !important;
+    font-weight: 600 !important;
+}
+
+.mermaid .er.attributeBoxOdd,
+.mermaid .er.attributeBoxEven {
+    fill: #f1f5f9 !important;
+    stroke: #cbd5e1 !important;
+}
+
+.mermaid .er.relationshipLine {
+    stroke: #64748b !important;
+}
+
+.mermaid .er.relationshipLabel {
+    fill: #475569 !important;
+}
+
+/* ---- GANTT CHARTS ---- */
+.mermaid .grid .tick line {
+    stroke: #e2e8f0 !important;
+}
+
+.mermaid .grid .tick text {
+    fill: #64748b !important;
+}
+
+.mermaid .section {
+    fill: #f1f5f9 !important;
+    stroke: #cbd5e1 !important;
+}
+
+.mermaid .sectionTitle {
+    fill: #1e293b !important;
+    font-weight: 600 !important;
+}
+
+.mermaid .task {
+    fill: #3b82f6 !important;
+    stroke: #2563eb !important;
+}
+
+.mermaid .taskText {
+    fill: #ffffff !important;
+}
+
+.mermaid .done {
+    fill: #22c55e !important;
+    stroke: #16a34a !important;
+}
+
+.mermaid .active {
+    fill: #f59e0b !important;
+    stroke: #d97706 !important;
+}
+
+.mermaid .crit {
+    fill: #ef4444 !important;
+    stroke: #dc2626 !important;
+}
+
+.mermaid .milestone {
+    fill: #8b5cf6 !important;
+    stroke: #7c3aed !important;
+}
+
+/* ---- PIE CHARTS ---- */
+.mermaid .pieCircle {
+    stroke: #ffffff !important;
+    stroke-width: 2px !important;
+}
+
+.mermaid .pieTitleText {
+    fill: #1f2328 !important;
+    font-weight: 600 !important;
+    font-size: 16px !important;
+}
+
+.mermaid .slice {
+    stroke: #ffffff !important;
+    stroke-width: 1px !important;
+}
+
+.mermaid .legend text {
+    fill: #1f2328 !important;
+}
+
+/* ---- MINDMAP ---- */
+.mermaid .mindmap-node rect,
+.mermaid .mindmap-node circle,
+.mermaid .mindmap-node polygon {
+    fill: #dbeafe !important;
+    stroke: #3b82f6 !important;
+}
+
+.mermaid .mindmap-node--level-0 rect {
+    fill: #3b82f6 !important;
+    stroke: #1d4ed8 !important;
+}
+
+.mermaid .mindmap-node--level-0 .nodeLabel {
+    fill: #ffffff !important;
+    color: #ffffff !important;
+}
+
+.mermaid .mindmap-node--level-1 rect {
+    fill: #93c5fd !important;
+    stroke: #3b82f6 !important;
+}
+
+.mermaid .mindmap-node--level-2 rect {
+    fill: #dbeafe !important;
+    stroke: #60a5fa !important;
+}
+
+.mermaid .mindmap-edge {
+    stroke: #60a5fa !important;
+    stroke-width: 2px !important;
+}
+
+/* ---- TIMELINE ---- */
+.mermaid .timeline-section rect {
+    fill: #f1f5f9 !important;
+    stroke: #cbd5e1 !important;
+}
+
+.mermaid .timeline-section text {
+    fill: #1e293b !important;
+    font-weight: 600 !important;
+}
+
+.mermaid .timeline-event rect {
+    fill: #dbeafe !important;
+    stroke: #3b82f6 !important;
+    rx: 4px !important;
+    ry: 4px !important;
+}
+
+.mermaid .timeline-event text {
+    fill: #1f2328 !important;
+}
+
+/* ---- GIT GRAPH ---- */
+.mermaid .commit circle {
+    fill: #3b82f6 !important;
+    stroke: #1d4ed8 !important;
+    stroke-width: 2px !important;
+}
+
+.mermaid .commit text {
+    fill: #1f2328 !important;
+    font-size: 12px !important;
+}
+
+.mermaid .branch line {
+    stroke-width: 3px !important;
+}
+
+.mermaid .branch-label rect {
+    fill: #f1f5f9 !important;
+    stroke: #cbd5e1 !important;
+    rx: 4px !important;
+    ry: 4px !important;
+}
+
+.mermaid .branch-label text {
+    fill: #334155 !important;
+    font-weight: 500 !important;
+}
+
+/* ---- TITLES ---- */
+.mermaid .titleText {
+    fill: #1f2328 !important;
+    font-weight: 700 !important;
+    font-size: 18px !important;
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+    body {
+        background-color: white !important;
+        max-width: none !important;
+        padding: 20px !important;
+    }
+
+    pre {
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+    }
+}
