@@ -159,6 +159,19 @@ class TestClassifyLlmError:
         msg = classify_llm_error(RuntimeError("maximum context length is 8192 tokens"))
         assert "too long" in msg.lower() or "reduce" in msg.lower()
 
+    def test_max_output_tokens_validation_is_not_context_overflow(self):
+        from data_formulator.error_handler import classify_and_wrap_llm_error
+        from data_formulator.errors import ErrorCode
+        from data_formulator.security.sanitize import classify_llm_error
+
+        error = RuntimeError(
+            "Error code: 400 - Invalid 'max_output_tokens': integer below "
+            "minimum value. Expected a value >= 16, but got 3 instead."
+        )
+
+        assert classify_llm_error(error) == "Invalid request — please check your input and try again"
+        assert classify_and_wrap_llm_error(error).code == ErrorCode.LLM_UNKNOWN_ERROR
+
     def test_model_not_found(self):
         from data_formulator.security.sanitize import classify_llm_error
 

@@ -8,6 +8,8 @@ import os
 import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
+mimetypes.add_type('image/webp', '.webp')
+mimetypes.add_type('image/avif', '.avif')
 import json
 import gzip
 from flask import request, Blueprint, Response, stream_with_context
@@ -473,7 +475,7 @@ def list_tables():
         return json_ok({"tables": result})
     except Exception as e:
         classify_and_raise_db_error(e)
-        
+
 
 def _apply_aggregation_and_sample(
     df: pd.DataFrame,
@@ -895,7 +897,7 @@ def parse_file():
 @tables_bp.route('/sync-table-data', methods=['POST'])
 def sync_table_data():
     """Update an existing workspace table's parquet with new row data.
-    
+
     Used when the frontend has fresher data than the workspace (e.g., from stream refresh)
     and needs to sync it so sandbox code reads the latest data.
     """

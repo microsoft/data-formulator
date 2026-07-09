@@ -123,7 +123,7 @@ _LLM_ERROR_PATTERNS: list[tuple[str, str]] = [
     (r"429|rate.?limit|too many requests|quota",
      "Rate limit exceeded — please wait and try again"),
     # — Context / token length
-    (r"context.{0,10}length|too many tokens|max.{0,10}tokens|token limit|maximum context",
+    (r"context.{0,10}length|too many tokens|\bmax(?:imum)?\s+(?:context\s+)?tokens\b|token limit|maximum context",
      "Input too long — please reduce the data size or prompt length"),
     # — Model not found / not available
     (r"model.{0,20}not.{0,5}found|model.{0,20}does not exist|no such model|decommissioned|deprecated model",

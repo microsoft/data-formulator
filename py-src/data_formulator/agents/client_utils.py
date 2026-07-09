@@ -8,7 +8,7 @@ class Client(object):
     Supports OpenAI, Azure, Ollama, and other providers via LiteLLM.
     """
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None):
-        
+
         self.endpoint = endpoint
         self.model = model
         self.params = {}
@@ -90,18 +90,24 @@ class Client(object):
     def _is_reasoning_effort_error(self, error_text: str) -> bool:
         """Detect provider errors caused by an unsupported ``reasoning_effort``
         value (e.g. ``"minimal"`` on a model that only accepts
-        ``none/low/medium/high/xhigh``). The provider message reliably
-        mentions the parameter name."""
-        return "reasoning_effort" in error_text.lower()
+        ``none/low/medium/high/xhigh``). Some Azure model errors name only the
+        rejected value and supported values, not the parameter itself."""
+        lowered = error_text.lower()
+        return "reasoning_effort" in lowered or (
+            "unsupported value" in lowered
+            and "supported values" in lowered
+            and "medium" in lowered
+            and "high" in lowered
+        )
 
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
         """
         Create a client instance from model configuration.
-        
+
         Args:
             model_config: Dictionary containing endpoint, model, api_key, api_base, api_version
-            
+
         Returns:
             Client instance for making API calls
         """
@@ -120,13 +126,15 @@ class Client(object):
 
     def ping(self, timeout: int = 10):
         """Lightweight connectivity check: send a minimal completion with
-        max_tokens=3 and a short timeout.  Raises on any failure."""
+        max_tokens=64 and a short timeout. GPT-5 Pro rejects output limits
+        below 16 tokens and can consume that minimum budget while reasoning.
+        Raises on any failure."""
         messages = [{"role": "user", "content": "Reply only 'ok'."}]
         params = self.params.copy()
         params["timeout"] = timeout
         litellm.completion(
             model=self.model, messages=messages,
-            max_tokens=3, drop_params=True, **params,
+            max_tokens=64, drop_params=True, **params,
         )
 
     def get_completion(self, messages, stream=False, reasoning_effort="low",

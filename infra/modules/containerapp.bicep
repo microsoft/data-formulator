@@ -62,6 +62,10 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'ca-${environmentName}'
   location: location
+  // azd maps the "web" service in azure.yaml to whichever resource carries this tag.
+  tags: {
+    'azd-service-name': 'web'
+  }
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {

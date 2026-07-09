@@ -8,6 +8,12 @@ import warnings
 import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
+# Minimal base images (e.g. python:3.11-slim) often ship an incomplete
+# /etc/mime.types without newer image formats, so Flask's static file
+# serving falls back to application/octet-stream and browsers refuse to
+# render the image even though the response is a 200 with correct bytes.
+mimetypes.add_type('image/webp', '.webp')
+mimetypes.add_type('image/avif', '.avif')
 
 # Suppress a noisy pydantic serializer warning emitted by litellm/openai
 # when a Chat Completions ``usage`` dict (prompt_tokens / completion_tokens)
@@ -180,14 +186,14 @@ def _register_blueprints():
     # Import agent routes (imports AI/ML libraries: litellm, sklearn, etc.)
     with spinner("Loading AI agents"):
         from data_formulator.routes.agents import agent_bp
-    
+
     # Import session routes
     from data_formulator.routes.sessions import session_bp
 
     # Import demo stream routes
     from data_formulator.routes.demo_stream import demo_stream_bp, limiter as demo_stream_limiter
     demo_stream_limiter.init_app(app)
-    
+
     # Register blueprints
     app.register_blueprint(tables_bp)
     app.register_blueprint(agent_bp)
@@ -279,7 +285,7 @@ def get_auth_info():
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
     args = app.config['CLI_ARGS']
-    
+
     workspace_backend = args.get('workspace_backend', 'local')
     config = {
         "SANDBOX": args['sandbox'],
@@ -405,10 +411,10 @@ def parse_args() -> argparse.Namespace:
 
 def run_app():
     print("Starting Data Formulator...", flush=True)
-    
+
     configure_logging()
     args = parse_args()
-    
+
     # --disable-database is a convenience preset for multi-user anonymous deployments.
     # It bundles: ephemeral workspace + no data connectors + no custom models + hide keys.
     workspace_backend = args.workspace_backend
@@ -440,13 +446,13 @@ def run_app():
             lang.strip() for lang in os.environ.get('AVAILABLE_LANGUAGES', 'en,zh').split(',') if lang.strip()
         ],
     }
-    
+
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints()
 
     url = "http://localhost:{0}".format(args.port)
     print(f"Ready! Open {url} in your browser.", flush=True)
-    
+
     if not args.dev:
         threading.Timer(1.5, lambda: webbrowser.open(url, new=2)).start()
 

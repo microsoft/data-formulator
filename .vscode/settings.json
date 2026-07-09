@@ -27,5 +27,6 @@
   "chat.permissions.default": "default",
   "markdown.styles": [
     ".vscode/markdown-light.css"
-  ]
+  ],
+  "chat.agent.maxRequests": 500
 }

@@ -21,16 +21,26 @@ param privateEndpointSubnetId string
 param principalIdForOpenAiUser string
 
 @description('Model to deploy.')
-param modelName string = 'gpt-5.4'
+param modelName string = 'gpt-5.4-mini'
 
 @description('Model version to deploy.')
-param modelVersion string = '2026-03-05'
+param modelVersion string = '2026-03-17'
 
 @description('Deployment capacity in units of 1,000 TPM.')
-param modelCapacity int = 10
+param modelCapacity int = 260
+
+@description('Additional model deployments on the same account, exposed alongside the primary model via AZURE_MODELS so the UI can select between them for side-by-side comparison.')
+// GPT-5.5 is the preferred high-performance comparison, but this subscription
+// currently has zero GPT-5.5 quota in every checked region. Add it after quota
+// is granted; GPT-5.4 Pro is intentionally omitted because of its high cost.
+param additionalModels array = [
+  { name: 'gpt-5.4-nano', version: '2026-03-17', capacity: 2009 }
+  { name: 'gpt-5.4', version: '2026-03-05', capacity: 260 }
+]
 
 var cognitiveServicesOpenAiUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 var accountName = 'aoai-${environmentName}'
+var additionalModelNames = [for m in additionalModels: m.name]
 
 resource account 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   name: accountName
@@ -95,6 +105,31 @@ resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
   }
 }
 
+// Cognitive Services deployments on the same account must be applied
+// sequentially — concurrent PUTs against sibling deployments can 429/409
+// (the same class of race hit with the private endpoint below). @batchSize(1)
+// forces Bicep to deploy the array one item at a time instead of in parallel.
+@batchSize(1)
+resource additionalModelDeployments 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = [
+  for m in additionalModels: {
+    parent: account
+    name: m.name
+    sku: {
+      name: 'GlobalStandard'
+      capacity: m.capacity
+    }
+    properties: {
+      model: {
+        format: 'OpenAI'
+        name: m.name
+        version: m.version
+      }
+      raiPolicyName: contentFilterPolicy.name
+    }
+    dependsOn: [modelDeployment]
+  }
+]
+
 resource openAiUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(account.id, principalIdForOpenAiUser, cognitiveServicesOpenAiUserRoleId)
   scope: account
@@ -117,6 +152,7 @@ resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-01-01' = {
   // private endpoint's preflight validation rejects. Force full sequencing.
   dependsOn: [
     modelDeployment
+    additionalModelDeployments
     contentFilterPolicy
     openAiUserAssignment
   ]
@@ -156,5 +192,8 @@ resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneG
 }
 
 output endpoint string = account.properties.endpoint
-output deploymentName string = modelDeployment.name
+// Comma-separated list of every deployed model name (primary + additional),
+// consumed directly as AZURE_MODELS by data_formulator.model_registry, which
+// splits on "," and lists each as a separately selectable model in the UI.
+output deploymentName string = join(concat([modelDeployment.name], additionalModelNames), ',')
 output accountId string = account.id

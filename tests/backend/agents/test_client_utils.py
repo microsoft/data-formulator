@@ -13,6 +13,8 @@ Tests cover the pure-logic parts that don't require a live LLM:
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from data_formulator.agents.client_utils import Client
@@ -233,3 +235,17 @@ class TestFromConfig:
         cfg = {"endpoint": "gemini", "model": "gemini-pro", "api_key": "k"}
         c = Client.from_config(cfg)
         assert c.model.startswith("gemini/")
+
+
+# ---------------------------------------------------------------------------
+# Connectivity probe
+# ---------------------------------------------------------------------------
+
+class TestPing:
+    def test_reserves_output_budget_for_gpt_5_pro_reasoning(self):
+        client = Client("openai", "gpt-5.4-pro", api_key="k")
+
+        with patch("data_formulator.agents.client_utils.litellm.completion") as completion:
+            client.ping()
+
+        assert completion.call_args.kwargs["max_tokens"] == 64

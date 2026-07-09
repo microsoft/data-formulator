@@ -161,6 +161,25 @@ class TestIsImageDeserializeError:
 
 class TestGetCompletionRetryLitellm:
     @patch("data_formulator.agents.client_utils.litellm")
+    def test_retries_without_unsupported_reasoning_effort(self, mock_litellm, client):
+        mock_litellm.completion.side_effect = [
+            Exception(
+                "Unsupported value: 'low' is not supported with this model. "
+                "Supported values are: 'medium', 'high', and 'xhigh'."
+            ),
+            MagicMock(name="success_response"),
+        ]
+
+        result = client.get_completion(
+            [{"role": "user", "content": "hi"}],
+            reasoning_effort="low",
+        )
+
+        assert result is not None
+        assert mock_litellm.completion.call_count == 2
+        assert "reasoning_effort" not in mock_litellm.completion.call_args_list[1].kwargs
+
+    @patch("data_formulator.agents.client_utils.litellm")
     def test_retries_on_image_error(self, mock_litellm, client):
         mock_litellm.completion.side_effect = [
             Exception('unknown variant `image_url`, expected `text`'),
