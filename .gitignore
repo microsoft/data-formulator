@@ -2,7 +2,6 @@
 *env
 .venv/
 .env
-.vscode/settings.json
 **/*.ipynb_checkpoints/
 .DS_Store
 build/
@@ -391,13 +390,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-# VS Code files for those working on multiple tools
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/markdown-light.css
 *.code-workspace
 
 # Local History for Visual Studio Code

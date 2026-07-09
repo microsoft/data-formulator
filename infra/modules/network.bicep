@@ -29,14 +29,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
         name: 'snet-infra'
         properties: {
           addressPrefix: infrastructureSubnetPrefix
-          delegations: [
-            {
-              name: 'Microsoft.App.environments'
-              properties: {
-                serviceName: 'Microsoft.App/environments'
-              }
-            }
-          ]
+          // Consumption-only (V1) Container Apps environments must NOT have the
+          // Microsoft.App/environments subnet delegation — that delegation is only
+          // for other environment types. The platform manages the subnet directly.
         }
       }
       {
