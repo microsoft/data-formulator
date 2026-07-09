@@ -64,6 +64,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _data_cache_ttl() -> float:
+    """Seconds a cached *data* blob may be served without re-validating.
+
+    Metadata is always re-validated (TTL 0). Data blobs (parquet) are
+    effectively immutable per table version, so a small TTL lets rapid repeat
+    reads (agent tool loops, UI refreshes) skip Azure entirely. Override with
+    ``AZURE_BLOB_CACHE_TTL_SECONDS``.
+    """
+    try:
+        return max(0.0, float(os.getenv("AZURE_BLOB_CACHE_TTL_SECONDS", "3")))
+    except (TypeError, ValueError):
+        return 3.0
+
+
+
 class AzureBlobWorkspace(Workspace):
     """
     Workspace backed by Azure Blob Storage.
@@ -111,6 +126,7 @@ class AzureBlobWorkspace(Workspace):
 
         # --- blob storage ----------------------------------------------------
         self._container: ContainerClient = container_client
+        self._container_name = getattr(container_client, "container_name", "") or ""
         if blob_prefix is not None:
             # Direct prefix mode (used by AzureBlobWorkspaceManager)
             self._datalake_root = ""
@@ -141,6 +157,13 @@ class AzureBlobWorkspace(Workspace):
         scratch_base.mkdir(parents=True, exist_ok=True)
         self._scratch_dir = scratch_base
         self._confined_scratch = ConfinedDir(scratch_base, mkdir=False)
+        # Blob storage has no local workspace root, so ``confined_root``
+        # (inherited from :class:`Workspace`, returns ``self._confined_root``)
+        # would otherwise be undefined. Point it at the same local scratch jail
+        # so agents that read/list from the workspace root (e.g. the
+        # data-loading chat's read_file/list_directory tools) operate on the
+        # local working dir instead of raising AttributeError.
+        self._confined_root = ConfinedDir(scratch_base, mkdir=False)
 
         # --- in-memory metadata cache ----------------------------------------
         # Avoids re-downloading workspace.yaml on every method call.
@@ -153,16 +176,22 @@ class AzureBlobWorkspace(Workspace):
         self._metadata_lock = threading.Lock()
 
         # --- blob data cache -------------------------------------------------
-        # Caches downloaded blob bytes keyed by filename.  Avoids repeated
-        # downloads of the same data file within one request (e.g.
-        # analyze_table calls run_parquet_sql once per column, each of
-        # which would otherwise re-download the entire parquet blob).
+        # Request-local in-memory cache of downloaded blob bytes keyed by
+        # filename.  Avoids repeated downloads of the same data file within one
+        # request (e.g. analyze_table calls run_parquet_sql once per column).
+        # Backed by the process-global :mod:`blob_disk_cache`, which persists
+        # bytes + ETag across the short-lived per-request workspace instances.
         # Invalidated per-file on upload/delete, cleared on cleanup.
         self._blob_data_cache: dict[str, bytes] = {}
 
         # --- metadata --------------------------------------------------------
-        if not self._blob_exists(METADATA_FILENAME):
-            self._init_metadata()
+        # Skip the existence HEAD when the metadata blob is already cached on
+        # disk (warm container) — this runs on every request-scoped construction.
+        from data_formulator.datalake.blob_disk_cache import get_blob_disk_cache
+
+        if get_blob_disk_cache().get(self._cache_key(METADATA_FILENAME)) is None:
+            if not self._blob_exists(METADATA_FILENAME):
+                self._init_metadata()
 
         logger.debug("Initialized AzureBlobWorkspace at %s", self._prefix)
 
@@ -177,6 +206,10 @@ class AzureBlobWorkspace(Workspace):
     def _data_blob_key(self, filename: str) -> str:
         """Blob-internal key for a data file (under data/ subdirectory)."""
         return f"data/{filename}"
+
+    def _cache_key(self, filename: str) -> str:
+        """Globally-unique key for the disk cache: container + full blob name."""
+        return f"{self._container_name}/{self._blob_name(filename)}"
 
     def _get_blob(self, filename: str):
         """Return a ``BlobClient`` for *filename*."""
@@ -193,25 +226,79 @@ class AzureBlobWorkspace(Workspace):
     def _upload_bytes(
         self, filename: str, data: bytes | str, *, overwrite: bool = True
     ) -> int:
-        """Upload *data* to blob.  Returns size in bytes."""
+        """Upload *data* to blob.  Returns size in bytes.
+
+        Write-through: the disk cache is updated with the new bytes + ETag so
+        this worker serves the fresh copy immediately without a round trip.
+        """
+        from data_formulator.datalake.blob_disk_cache import get_blob_disk_cache
+
         raw = data.encode("utf-8") if isinstance(data, str) else data
-        self._get_blob(filename).upload_blob(raw, overwrite=overwrite)
-        # Invalidate cached copy of this file
+        resp = self._get_blob(filename).upload_blob(raw, overwrite=overwrite)
+        cache = get_blob_disk_cache()
+        key = self._cache_key(filename)
+        etag = resp.get("etag") if isinstance(resp, dict) else None
+        if etag:
+            cache.put(key, raw, etag)
+        else:
+            cache.invalidate(key)
+        # Invalidate request-local copy of this file
         self._blob_data_cache.pop(filename, None)
         if hasattr(self, "_temp_file_cache") and filename in self._temp_file_cache:
             self._temp_file_cache.pop(filename).unlink(missing_ok=True)
         return len(raw)
 
+    def _ensure_cached(self, filename: str):
+        """Return a disk-cache :class:`CacheEntry` for *filename*, fetching or
+        re-validating from Azure only when necessary.
+
+        - Fresh within TTL (data blobs only) → served from disk, no Azure call.
+        - Otherwise revalidate via a cheap ``get_blob_properties`` HEAD (no data
+          transfer): matching ETag → keep the cached bytes; changed ETag → full
+          download to refresh the cache.
+        - Cold cache → full download.
+        Raises ``ResourceNotFoundError`` if the blob does not exist.
+
+        Note: we deliberately avoid a conditional ``download_blob`` here. The
+        ``StorageStreamDownloader`` injects an ``If-Match`` on multi-chunk
+        continuation requests, which combined with an ``If-None-Match`` makes
+        large (multi-chunk) downloads fail with ``ResourceModifiedError``.
+        Comparing ETags ourselves after a HEAD is equally cheap and robust.
+        """
+        from data_formulator.datalake.blob_disk_cache import get_blob_disk_cache
+
+        cache = get_blob_disk_cache()
+        key = self._cache_key(filename)
+        ttl = 0.0 if filename == METADATA_FILENAME else _data_cache_ttl()
+        blob = self._get_blob(filename)
+
+        entry = cache.get(key)
+        if entry is not None:
+            if cache.is_fresh(key, ttl):
+                return entry
+            # Cheap revalidation: compare ETags via a HEAD (no data transfer).
+            if blob.get_blob_properties().etag == entry.etag:
+                cache.mark_validated(key)
+                return entry
+
+        # Cold cache or changed blob — full download.
+        stream = blob.download_blob()
+        data = stream.readall()
+        return cache.put(key, data, stream.properties.etag)
+
     def _download_bytes(self, filename: str) -> bytes:
         cached = self._blob_data_cache.get(filename)
         if cached is not None:
             return cached
-        data = self._get_blob(filename).download_blob().readall()
+        data = self._ensure_cached(filename).read_bytes()
         self._blob_data_cache[filename] = data
         return data
 
     def _delete_blob(self, filename: str) -> None:
+        from data_formulator.datalake.blob_disk_cache import get_blob_disk_cache
+
         self._get_blob(filename).delete_blob()
+        get_blob_disk_cache().invalidate(self._cache_key(filename))
         self._blob_data_cache.pop(filename, None)
         if hasattr(self, "_temp_file_cache") and filename in self._temp_file_cache:
             self._temp_file_cache.pop(filename).unlink(missing_ok=True)
@@ -220,27 +307,14 @@ class AzureBlobWorkspace(Workspace):
     def _temp_local_copy(self, filename: str):
         """Yield a local file path containing the blob's data.
 
-        The file is cached on disk for the lifetime of this workspace
-        instance so that repeated calls (e.g. ``run_parquet_sql`` once
-        per column in ``analyze_table``) don't re-write the temp file.
-        The cache is keyed by filename and cleaned up when the instance
-        is garbage-collected or when :meth:`cleanup` is called.
+        Backed by the process-global disk cache: the yielded path points at the
+        cached ``.bin`` file (ETag-validated against Azure), so repeated calls
+        across requests reuse the same local file with no re-download. Callers
+        only read the file (DuckDB / pyarrow), so sharing the cached path is
+        safe.
         """
-        if not hasattr(self, "_temp_file_cache"):
-            self._temp_file_cache: dict[str, Path] = {}
-
-        tmp_path = self._temp_file_cache.get(filename)
-        if tmp_path is None or not tmp_path.exists():
-            data = self._download_bytes(filename)
-            suffix = Path(filename).suffix
-            tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
-            tmp.write(data)
-            tmp.close()
-            tmp_path = Path(tmp.name)
-            self._temp_file_cache[filename] = tmp_path
-
-        yield tmp_path
-        # Don't delete — reused across calls, cleaned up on GC / cleanup()
+        entry = self._ensure_cached(filename)
+        yield entry.path
 
     def _cleanup_temp_files(self) -> None:
         """Remove all cached temp files from disk."""
@@ -384,8 +458,12 @@ class AzureBlobWorkspace(Workspace):
 
     def cleanup(self) -> None:
         """Delete **all** blobs under this workspace's prefix."""
+        from data_formulator.datalake.blob_disk_cache import get_blob_disk_cache
+
+        cache = get_blob_disk_cache()
         for blob in self._container.list_blobs(name_starts_with=self._prefix):
             self._container.delete_blob(blob.name)
+            cache.invalidate(f"{self._container_name}/{blob.name}")
         self._metadata_cache = None
         self._blob_data_cache.clear()
         self._cleanup_temp_files()
@@ -397,19 +475,25 @@ class AzureBlobWorkspace(Workspace):
     # ------------------------------------------------------------------
 
     def read_data_as_df(self, table_name: str) -> pd.DataFrame:
+        from azure.core.exceptions import ResourceNotFoundError
+
         meta = self.get_table_metadata(table_name)
         if meta is None:
             raise FileNotFoundError(f"Table not found: {table_name}")
-        if not self._blob_exists(self._data_blob_key(meta.filename)):
+        # Read straight from the ETag-validated disk cache path (no redundant
+        # existence HEAD, no full in-memory copy); the download validates
+        # existence and raises ResourceNotFoundError if the blob is gone.
+        try:
+            entry = self._ensure_cached(self._data_blob_key(meta.filename))
+        except ResourceNotFoundError:
             raise FileNotFoundError(f"Blob not found: {meta.filename}")
 
-        buf = io.BytesIO(self._download_bytes(self._data_blob_key(meta.filename)))
         readers = {
-            "parquet": lambda b: pd.read_parquet(b),
-            "csv": lambda b: pd.read_csv(b),
-            "excel": lambda b: pd.read_excel(b),
-            "json": lambda b: pd.read_json(b),
-            "txt": lambda b: pd.read_csv(b, sep="\t"),
+            "parquet": lambda p: pd.read_parquet(p),
+            "csv": lambda p: pd.read_csv(p),
+            "excel": lambda p: pd.read_excel(p),
+            "json": lambda p: pd.read_json(p),
+            "txt": lambda p: pd.read_csv(p, sep="\t"),
         }
         reader = readers.get(meta.file_type)
         if reader is None:
@@ -417,7 +501,7 @@ class AzureBlobWorkspace(Workspace):
                 f"Unsupported file type '{meta.file_type}' for table '{table_name}'. "
                 f"Supported: {', '.join(readers)}."
             )
-        return reader(buf)
+        return reader(entry.path)
 
     # ------------------------------------------------------------------
     # Parquet write
@@ -531,31 +615,34 @@ class AzureBlobWorkspace(Workspace):
     # ------------------------------------------------------------------
 
     def get_parquet_schema(self, table_name: str) -> dict:
+        from azure.core.exceptions import ResourceNotFoundError
+
         meta = self.get_table_metadata(table_name)
         if meta is None:
             raise FileNotFoundError(f"Table not found: {table_name}")
         if meta.file_type != "parquet":
             raise ValueError(f"Table {table_name} is not a parquet file")
-        if not self._blob_exists(self._data_blob_key(meta.filename)):
-            raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
 
-        with self._temp_local_copy(self._data_blob_key(meta.filename)) as tmp_path:
-            pf = pq.ParquetFile(tmp_path)
-            schema = pf.schema_arrow
-            return {
-                "table_name": table_name,
-                "filename": meta.filename,
-                "num_rows": pf.metadata.num_rows,
-                "num_columns": len(schema),
-                "columns": [
-                    {"name": f.name, "type": str(f.type), "nullable": f.nullable}
-                    for f in schema
-                ],
-                "created_at": meta.created_at.isoformat(),
-                "last_synced": (
-                    meta.last_synced.isoformat() if meta.last_synced else None
-                ),
-            }
+        try:
+            entry = self._ensure_cached(self._data_blob_key(meta.filename))
+        except ResourceNotFoundError:
+            raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
+        pf = pq.ParquetFile(entry.path)
+        schema = pf.schema_arrow
+        return {
+            "table_name": table_name,
+            "filename": meta.filename,
+            "num_rows": pf.metadata.num_rows,
+            "num_columns": len(schema),
+            "columns": [
+                {"name": f.name, "type": str(f.type), "nullable": f.nullable}
+                for f in schema
+            ],
+            "created_at": meta.created_at.isoformat(),
+            "last_synced": (
+                meta.last_synced.isoformat() if meta.last_synced else None
+            ),
+        }
 
     def get_parquet_path(self, table_name: str) -> str:  # type: ignore[override]
         """Return the full blob name for the parquet file.
@@ -580,25 +667,27 @@ class AzureBlobWorkspace(Workspace):
         the query, so DuckDB can use its native parquet reader.
         """
         import duckdb
+        from azure.core.exceptions import ResourceNotFoundError
 
         meta = self.get_table_metadata(table_name)
         if meta is None:
             raise FileNotFoundError(f"Table not found: {table_name}")
         if meta.file_type != "parquet":
             raise ValueError(f"Table {table_name} is not a parquet file")
-        if not self._blob_exists(self._data_blob_key(meta.filename)):
-            raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
         if "{parquet}" not in sql:
             raise ValueError("SQL must contain {parquet} placeholder")
 
-        with self._temp_local_copy(self._data_blob_key(meta.filename)) as tmp_path:
-            escaped = str(tmp_path).replace("\\", "\\\\").replace("'", "''")
-            full_sql = sql.format(parquet=f"read_parquet('{escaped}')")
-            conn = duckdb.connect(":memory:")
-            try:
-                return conn.execute(full_sql).fetchdf()
-            finally:
-                conn.close()
+        try:
+            entry = self._ensure_cached(self._data_blob_key(meta.filename))
+        except ResourceNotFoundError:
+            raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
+        escaped = str(entry.path).replace("\\", "\\\\").replace("'", "''")
+        full_sql = sql.format(parquet=f"read_parquet('{escaped}')")
+        conn = duckdb.connect(":memory:")
+        try:
+            return conn.execute(full_sql).fetchdf()
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------------
     # Local directory materialisation (for sandbox execution)

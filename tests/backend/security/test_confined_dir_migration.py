@@ -4,7 +4,7 @@
 """Regression tests for Phase 5 ConfinedDir migration.
 
 Verifies that Workspace.confined_* properties, agent tool path safety,
-scratch route path safety, and CachedAzureBlobWorkspace._cache_path all
+and scratch route path safety all
 correctly delegate to ConfinedDir after the migration from hand-written
 resolve+relative_to checks.
 """
@@ -160,52 +160,6 @@ class TestAgentToolsUseConfinedProperties:
         actions = result["actions"]
         assert len(actions) == 1
         assert "error" in actions[0]
-
-
-# ── CachedAzureBlobWorkspace._cache_path uses ConfinedDir ──────────────
-
-
-class TestCachedAzureBlobCachePath:
-
-    def test_cache_path_rejects_traversal(self, tmp_path):
-        from data_formulator.datalake.cached_azure_blob_workspace import (
-            CachedAzureBlobWorkspace,
-        )
-        jail = ConfinedDir(tmp_path / "cache", mkdir=True)
-
-        instance = CachedAzureBlobWorkspace.__new__(CachedAzureBlobWorkspace)
-        instance._cache_dir = jail.root
-        instance._cache_jail = jail
-
-        with pytest.raises(ValueError):
-            instance._cache_path("../../etc/passwd")
-
-    def test_cache_path_normal_file(self, tmp_path):
-        from data_formulator.datalake.cached_azure_blob_workspace import (
-            CachedAzureBlobWorkspace,
-        )
-        cache_dir = tmp_path / "cache"
-        jail = ConfinedDir(cache_dir, mkdir=True)
-
-        instance = CachedAzureBlobWorkspace.__new__(CachedAzureBlobWorkspace)
-        instance._cache_dir = jail.root
-        instance._cache_jail = jail
-
-        result = instance._cache_path("data.parquet")
-        assert result == (cache_dir / "data.parquet").resolve()
-
-    def test_cache_path_absolute_path_rejected(self, tmp_path):
-        from data_formulator.datalake.cached_azure_blob_workspace import (
-            CachedAzureBlobWorkspace,
-        )
-        jail = ConfinedDir(tmp_path / "cache", mkdir=True)
-
-        instance = CachedAzureBlobWorkspace.__new__(CachedAzureBlobWorkspace)
-        instance._cache_dir = jail.root
-        instance._cache_jail = jail
-
-        with pytest.raises(ValueError):
-            instance._cache_path("/etc/passwd")
 
 
 # ── Scratch routes use workspace.confined_scratch ───────────────────────

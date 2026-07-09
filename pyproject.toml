@@ -67,6 +67,14 @@ Repository = "https://github.com/microsoft/data-formulator.git"
 package-dir = {"" = "py-src"}
 include-package-data = true
 
+# Non-Python resources that must ship inside the installed package. The Azure
+# build runs `pip install .` from a zip (no VCS), so include-package-data alone
+# does not pick these up — declare them explicitly. Analyst skills load their
+# `SKILL.md` body and `tools.json` schemas at runtime from the package dir.
+# Scoped to the exact skill filenames so unrelated data JSON is not bundled.
+[tool.setuptools.package-data]
+"*" = ["SKILL.md", "tools.json"]
+
 [project.scripts]
 data_formulator = "data_formulator:run_app"
 
