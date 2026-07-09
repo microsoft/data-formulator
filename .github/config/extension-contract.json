@@ -1,0 +1,9 @@
+{
+  "$comment": "Hand-authored contract fields that the Extension static-fetch path (ADR-009) reads from .github/config/edition-manifest.json after the generator merges these in. Bump min_extension_version requires a `Brain contract:` line in CHANGELOG.md per release-preflight discipline.",
+  "min_extension_version": "9.5.1",
+  "brain_subtrees": [".github"],
+  "marker_schema": {
+    "file_name": ".act-heir.json",
+    "version": 2
+  }
+}

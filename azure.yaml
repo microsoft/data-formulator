@@ -1,0 +1,12 @@
+name: data-formulator
+metadata:
+  template: data-formulator@0.1.0
+services:
+  web:
+    project: .
+    language: docker
+    docker:
+      path: ./Dockerfile
+      context: .
+      remoteBuild: true
+    host: containerapp

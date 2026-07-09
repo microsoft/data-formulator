@@ -1,15 +1,31 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-    "chat.tools.terminal.autoApprove": {
-        "npx tsc": true,
-        "npx vite": true,
-        "npx tsx": true
-    },
-    "python-envs.pythonProjects": [
-        {
-            "path": "",
-            "envManager": "ms-python.python:conda",
-            "packageManager": "ms-python.python:conda"
-        }
-    ]
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "chat.tools.terminal.autoApprove": {
+    "npx tsc": true,
+    "npx vite": true,
+    "npx tsx": true
+  },
+  "python-envs.pythonProjects": [
+    {
+      "path": "",
+      "envManager": "ms-python.python:conda",
+      "packageManager": "ms-python.python:conda"
+    }
+  ],
+  "chat.agentSkillsLocations": {
+    ".github/skills": true,
+    ".github/skills/local": true
+  },
+  "chat.promptFilesLocations": {
+    ".github/prompts": true,
+    ".github/prompts/local": true
+  },
+  "chat.agentFilesLocations": {
+    ".github/agents": true,
+    ".github/agents/local": true
+  },
+  "chat.permissions.default": "default",
+  "markdown.styles": [
+    ".vscode/markdown-light.css"
+  ]
 }

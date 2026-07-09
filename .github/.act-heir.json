@@ -1,0 +1,23 @@
+{
+  "spec_version": "1.0",
+  "edition": "Alex",
+  "edition_version": "3.8.3",
+  "heir_id": "data-formulator",
+  "heir_name": "data-formulator",
+  "repo_url": "https://github.com/fabioc-aloha/data-formulator.git",
+  "deployed_at": "2026-07-09T15:41:30.283Z",
+  "last_sync_at": "2026-07-09T15:41:30.283Z",
+  "contact": {
+    "owner": "fabioc-aloha"
+  },
+  "opt_in": {
+    "fleet_inventory": true,
+    "auto_upgrade": false
+  },
+  "source": "github-fetch",
+  "commit_sha": "f2758cba8ded0680500238b59bdb6bf88a447183",
+  "fetched_at": "2026-07-09T15:41:30.380Z",
+  "auth_mode": "anonymous",
+  "extension_version": "9.5.6",
+  "marker_schema_version": 2
+}

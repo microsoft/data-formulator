@@ -1,0 +1,39 @@
+{
+    "$schema": "converter-config.schema.json",
+    "version": "1.0.0",
+    "description": "Per-project converter configuration. Place as .converter.json in project root to override default converter behavior.",
+    "example": {
+        "word": {
+            "style": "professional",
+            "pageSize": "letter",
+            "toc": true,
+            "cover": true,
+            "referenceDoc": null,
+            "luaFilters": [],
+            "mermaid": {
+                "scale": 8,
+                "width": 2400,
+                "background": "white",
+                "injectPalette": false
+            },
+            "fonts": {
+                "body": "Segoe UI",
+                "heading": "Segoe UI",
+                "code": "Consolas"
+            },
+            "colors": {
+                "h1": "0078D4",
+                "h2": "2B579A",
+                "h3": "3B3B3B",
+                "body": "1F2328",
+                "link": "0563C1",
+                "tableHeader": "0078D4"
+            }
+        },
+        "email": {
+            "inlineImages": true,
+            "defaultFrom": "team@example.com",
+            "testTo": "dev@example.com"
+        }
+    }
+}

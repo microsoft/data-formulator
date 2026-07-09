@@ -421,3 +421,7 @@ NUL
 
 # Package manager lock files (using yarn)
 package-lock.json
+# Agency Integration Starter
+.env.*
+!.env.example
+local.settings.json

@@ -1,0 +1,202 @@
+[mcps]
+include_mcps_from_workspace = false
+
+[profiles.project-servicetree.mcps.builtins]
+"service-tree" = true
+workiq = false
+bluebird = false
+
+[profiles.project-docs.mcps.builtins]
+enghub = true
+"msft-learn" = true
+workiq = false
+bluebird = false
+
+[profiles.project-ops.mcps.builtins]
+ado = true
+enghub = true
+"msft-learn" = true
+mrc = true
+kusto = true
+workiq = false
+bluebird = false
+graph = false
+"security-context" = false
+safefly = false
+"change-ledger" = false
+"domain-lens" = false
+dvdr = false
+
+[profiles.meeting-note-taker.mcps.builtins]
+calendar = true
+teams = true
+workiq = true
+"m365-copilot" = true
+"m365-user" = true
+bluebird = false
+
+[profiles.m365-people-context.mcps.builtins]
+graph = true
+"m365-user" = true
+workiq = false
+bluebird = false
+
+[profiles.m365-mail-review.mcps.builtins]
+mail = true
+"m365-user" = true
+workiq = false
+bluebird = false
+
+[profiles.m365-doc-review.mcps.builtins]
+onedrive = true
+sharepoint = true
+word = true
+workiq = false
+bluebird = false
+
+[profiles.m365-planner-review.mcps.builtins]
+planner = true
+"m365-user" = true
+workiq = false
+bluebird = false
+
+[profiles.project-s360-read.mcps.builtins]
+"s360-breeze" = true
+"service-tree" = true
+workiq = false
+bluebird = false
+
+[profiles.project-safety.mcps.builtins]
+"security-context" = true
+safefly = true
+"change-ledger" = true
+"domain-lens" = true
+dvdr = true
+mrc = true
+workiq = false
+bluebird = false
+
+[profiles.project-reports.mcps.builtins]
+"s360-breeze" = true
+"service-tree" = true
+workiq = false
+bluebird = false
+
+[profiles.project-reports.plugins]
+default = []
+
+[profiles.project-context.mcps.builtins]
+graph = true
+workiq = true
+teams = true
+mail = true
+calendar = true
+onedrive = true
+sharepoint = true
+"m365-user" = true
+"m365-copilot" = true
+planner = true
+word = true
+ado = true
+bluebird = false
+
+[profiles.azure-remediate.mcps.builtins]
+enghub = true
+"security-context" = true
+safefly = true
+"change-ledger" = true
+"service-tree" = true
+workiq = false
+bluebird = false
+
+[profiles.service360-breeze.mcps.builtins]
+enghub = true
+"s360-breeze" = true
+"service-tree" = true
+"security-context" = true
+safefly = true
+"change-ledger" = true
+workiq = false
+bluebird = false
+
+[profiles.service360-breeze.plugins]
+default = [
+  { plugin = "github:agency-microsoft/.github-private:plugins/s360-breeze-toolkit", cache_policy = "no-refresh", fetch_mode = "background" },
+]
+
+[profiles.project-connect-tracker.mcps.builtins]
+mail = true
+calendar = true
+teams = true
+ado = true
+workiq = true
+bluebird = false
+
+[profiles.project-connect-tracker.plugins]
+default = [
+  { plugin = "github:agency-microsoft/.github-private:plugins/connect-tracker", cache_policy = "no-refresh", fetch_mode = "background" },
+]
+
+[profiles.project-ado-spec.mcps.builtins]
+ado = true
+workiq = false
+bluebird = false
+
+[profiles.project-ado-spec.plugins]
+default = [
+  { plugin = "github:agency-microsoft/.github-private:plugins/requirement-spec-agent", cache_policy = "no-refresh", fetch_mode = "background" },
+  { plugin = "github:agency-microsoft/.github-private:plugins/implementation-spec-agent", cache_policy = "no-refresh", fetch_mode = "background" },
+]
+
+[profiles.project-incidents.mcps.builtins]
+icm = true
+"smart-dri" = true
+workiq = false
+bluebird = false
+
+# Fabric profiles are a template for a Fabric-heavy project, not activated by
+# default in this generic starter. None of the Fabric MCPs below are Agency
+# CLI builtins -- they arrive bundled with the plugins themselves (or, for
+# tompo-fabriclineage, require a separate manual local MCP setup documented in
+# the project-fabric-operations skill). Verify exact plugin spec syntax and
+# MCP wiring when actually installing into a real Fabric project.
+
+[profiles.project-fabric.mcps.builtins]
+workiq = false
+bluebird = false
+
+[profiles.project-fabric.plugins]
+default = [
+  { plugin = "github:microsoft/skills-for-fabric:.", cache_policy = "no-refresh", fetch_mode = "background" },
+]
+
+[profiles.project-fabric-notebooks.mcps.builtins]
+workiq = false
+bluebird = false
+
+[profiles.project-fabric-notebooks.plugins]
+default = [
+  { plugin = "github:microsoft/skills-for-fabric:.", cache_policy = "no-refresh", fetch_mode = "background" },
+  { plugin = "github:agency-microsoft/.github-private:plugins/dq-coworker", cache_policy = "no-refresh", fetch_mode = "background" },
+  { plugin = "github:agency-microsoft/.github-private:plugins/raw-2-enrich", cache_policy = "no-refresh", fetch_mode = "background" },
+]
+
+[profiles.project-fabric-review.mcps.builtins]
+workiq = false
+bluebird = false
+
+[profiles.project-fabric-review.plugins]
+default = [
+  { plugin = "github:agency-microsoft/.github-private:plugins/tompo-fabriclineage", cache_policy = "no-refresh", fetch_mode = "background" },
+  { plugin = "github:agency-microsoft/.github-private:plugins/semantic-model-disambiguation", cache_policy = "no-refresh", fetch_mode = "background" },
+  { plugin = "github:agency-microsoft/.github-private:plugins/semantic-model-fda-creator", cache_policy = "no-refresh", fetch_mode = "background" },
+]
+
+[profiles.project-fabric-security.mcps.builtins]
+workiq = false
+bluebird = false
+
+[profiles.project-fabric-security.plugins]
+default = [
+  { plugin = "github:agency-microsoft/.github-private:plugins/MaskIQ", cache_policy = "no-refresh", fetch_mode = "background" },
+]

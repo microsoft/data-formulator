@@ -1,0 +1,48 @@
+{
+  "servers": {
+    "enghub": {
+      "type": "http",
+      "url": "https://mcp.eng.ms"
+    },
+    "msft-learn": {
+      "command": "agency",
+      "args": ["mcp", "msft-learn"]
+    },
+    "service-tree": {
+      "command": "agency",
+      "args": ["mcp", "service-tree"]
+    },
+    "security-context": {
+      "command": "agency",
+      "args": ["mcp", "security-context"]
+    },
+    "safefly": {
+      "command": "agency",
+      "args": ["mcp", "safefly"]
+    },
+    "change-ledger": {
+      "command": "agency",
+      "args": ["mcp", "change-ledger"]
+    },
+    "domain-lens": {
+      "command": "agency",
+      "args": ["mcp", "domain-lens"]
+    },
+    "dvdr": {
+      "command": "agency",
+      "args": ["mcp", "dvdr"]
+    },
+    "mrc": {
+      "command": "agency",
+      "args": ["mcp", "mrc"]
+    },
+    "kusto": {
+      "command": "agency",
+      "args": ["mcp", "kusto"]
+    },
+    "s360-breeze": {
+      "command": "agency",
+      "args": ["mcp", "s360-breeze"]
+    }
+  }
+}

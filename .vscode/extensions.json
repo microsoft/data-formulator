@@ -1,0 +1,19 @@
+{
+  "recommendations": [
+    "GitHub.vscode-pull-request-github",
+    "fabioc-aloha.alex-cognitive-architecture",
+    "DavidAnson.vscode-markdownlint",
+    "streetsidesoftware.code-spell-checker",
+    "redhat.vscode-yaml",
+    "microsoft.agency",
+    "ms-azuretools.vscode-azurefunctions",
+    "ms-azuretools.vscode-azureresourcegroups",
+    "ms-azuretools.vscode-azurestaticwebapps",
+    "ms-azuretools.vscode-bicep",
+    "ms-azuretools.vscode-cosmosdb",
+    "ms-vscode.powershell",
+    "tamasfe.even-better-toml",
+    "ms-toolsai.jupyter",
+    "ms-python.python"
+  ]
+}

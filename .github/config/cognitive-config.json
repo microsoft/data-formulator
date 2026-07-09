@@ -1,0 +1,6 @@
+{
+    "$schema": "https://github.com/fabioc-aloha/Alex_ACT_Edition/blob/main/.github/config/cognitive-config.schema.json",
+    "version": "2.0",
+    "showConfidenceBadge": false,
+    "notes": "Heir-owned. Shared memory is resolved via the sibling Alex_ACT_Memory repo (see _registry.cjs). Edition upgrades will never overwrite this file."
+}
