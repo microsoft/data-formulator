@@ -1268,25 +1268,25 @@
   resolved "https://registry.npmjs.org/@tiptap/extension-strike/-/extension-strike-3.22.2.tgz"
   integrity sha512-YFC3elKU1L8PiGbcB6tqd/7vWPF5IbydJz0POJpHzSjstX+VfT8VsvS7ubxVuSIWQ11kGkH3mzX6LX8JHsHZxg==
 
-"@tiptap/extension-table-cell@^3.23.6":
-  version "3.23.6"
-  resolved "https://registry.npmjs.org/@tiptap/extension-table-cell/-/extension-table-cell-3.23.6.tgz"
-  integrity sha512-hS9TmmvRlT9/ikT+0ukACS+hmJuii4zQaH47cg3oJkz/Fv7O7tL7GZniKtK6l2OUZGPhY+4SV2RkDB6bD7DXfw==
+"@tiptap/extension-table-cell@^3.22.2":
+  version "3.27.3"
+  resolved "https://registry.yarnpkg.com/@tiptap/extension-table-cell/-/extension-table-cell-3.27.3.tgz#236dec326f86e7059011eb06a4c34dc7353654f8"
+  integrity sha512-W8onBLgjge3D2PlYetbPC/BvwH5jgYfL9PLqMurfCPD7t8fyU4s+4E3SwbZkuf6eCH0twBjqyapH7+sOW/sPhA==
 
-"@tiptap/extension-table-header@^3.23.6":
-  version "3.23.6"
-  resolved "https://registry.npmjs.org/@tiptap/extension-table-header/-/extension-table-header-3.23.6.tgz"
-  integrity sha512-D6o0a1cJXUU0xWakainBFGPnGHinQkPcdu1YqGd/PoFANY38lnuZt/NW2O/OLfLXu5LXDRfpqF1+dsKww27dUA==
+"@tiptap/extension-table-header@^3.22.2":
+  version "3.27.3"
+  resolved "https://registry.yarnpkg.com/@tiptap/extension-table-header/-/extension-table-header-3.27.3.tgz#0e95faf1b92d8d0f9a4f1e7f453be299a9966c5d"
+  integrity sha512-8iBOxh0S1Wh5VC1rmVTZVJKanGhJpZd5E5O7Pycf+KKUu+BcWQZ17ewj3+VVSdU76sDCUWIjQE0qJ/EyI1vZeg==
 
-"@tiptap/extension-table-row@^3.23.6":
-  version "3.23.6"
-  resolved "https://registry.npmjs.org/@tiptap/extension-table-row/-/extension-table-row-3.23.6.tgz"
-  integrity sha512-OauWVzkyRQg0rKOqM/a3PuKPc1S7YXMb1LRN7Nh8Ytvglvd7GFRTbl1lVqdZRaz4Jzopag4PQnriIZfMPUpxWw==
+"@tiptap/extension-table-row@^3.22.2":
+  version "3.27.3"
+  resolved "https://registry.yarnpkg.com/@tiptap/extension-table-row/-/extension-table-row-3.27.3.tgz#18916fe44862a211c202c3d7f287bbd0243712ee"
+  integrity sha512-AFMVQI+1kRh97++g+NA6MjATpwQPvjar4JUyaGlnSBIt+b5sYLTW3qQS8EzpMbKPqUp7uZOX9EkLgpvepWYSow==
 
-"@tiptap/extension-table@^3.23.6":
-  version "3.23.6"
-  resolved "https://registry.npmjs.org/@tiptap/extension-table/-/extension-table-3.23.6.tgz"
-  integrity sha512-XbhZXjhsS6AP7ThoZxjAnNs+NiR81YRori25l6E+ORqB7quiPkIXOAi5h4AIpkn/CYIqze6ere11lWsYpDjtaQ==
+"@tiptap/extension-table@^3.22.2":
+  version "3.27.3"
+  resolved "https://registry.yarnpkg.com/@tiptap/extension-table/-/extension-table-3.27.3.tgz#c5e7aa54f80ad819a1ffe33078631666d2600ec5"
+  integrity sha512-P7iQ0SkkDWZwnXzQDOVFLXktXlX67VQ3s2YxoJYKTHlc8rPZ4UCaSogFq0G2APyBlizlY3LbMNrDeZAVFOD8wQ==
 
 "@tiptap/extension-text@^3.22.2":
   version "3.22.2"
