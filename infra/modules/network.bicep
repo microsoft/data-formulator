@@ -13,11 +13,20 @@ param location string
 @description('azd environment name, used for resource naming.')
 param environmentName string
 
+@description('Optional network security group ID attached by subscription policy to the infrastructure subnet.')
+param infrastructureSubnetNsgId string = ''
+
+@description('Optional network security group ID attached by subscription policy to the private endpoint subnet.')
+param privateEndpointSubnetNsgId string = ''
+
+@description('Reference an existing governed VNet instead of updating it.')
+param useExistingVirtualNetwork bool = false
+
 var vnetAddressPrefix = '10.20.0.0/16'
 var infrastructureSubnetPrefix = '10.20.0.0/23'
 var privateEndpointSubnetPrefix = '10.20.2.0/27'
 
-resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
+resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = if (!useExistingVirtualNetwork) {
   name: 'vnet-${environmentName}'
   location: location
   properties: {
@@ -29,6 +38,11 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
         name: 'snet-infra'
         properties: {
           addressPrefix: infrastructureSubnetPrefix
+          networkSecurityGroup: !empty(infrastructureSubnetNsgId)
+            ? {
+                id: infrastructureSubnetNsgId
+              }
+            : null
           // Consumption-only (V1) Container Apps environments must NOT have the
           // Microsoft.App/environments subnet delegation — that delegation is only
           // for other environment types. The platform manages the subnet directly.
@@ -38,12 +52,25 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
         name: 'snet-privateendpoints'
         properties: {
           addressPrefix: privateEndpointSubnetPrefix
+          networkSecurityGroup: !empty(privateEndpointSubnetNsgId)
+            ? {
+                id: privateEndpointSubnetNsgId
+              }
+            : null
           privateEndpointNetworkPolicies: 'Disabled'
         }
       }
     ]
   }
 }
+
+resource existingVirtualNetwork 'Microsoft.Network/virtualNetworks@2024-01-01' existing = if (useExistingVirtualNetwork) {
+  name: 'vnet-${environmentName}'
+}
+
+var virtualNetworkId = useExistingVirtualNetwork ? existingVirtualNetwork.id : vnet.id
+var infrastructureSubnetId = '${virtualNetworkId}/subnets/snet-infra'
+var privateEndpointSubnetId = '${virtualNetworkId}/subnets/snet-privateendpoints'
 
 // Private DNS zone for the Azure OpenAI private endpoint (CloudGov requires
 // publicNetworkAccess: Disabled on Cognitive Services accounts).
@@ -59,12 +86,12 @@ resource openAiPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetw
   properties: {
     registrationEnabled: false
     virtualNetwork: {
-      id: vnet.id
+      id: virtualNetworkId
     }
   }
 }
 
-output virtualNetworkId string = vnet.id
-output infrastructureSubnetId string = vnet.properties.subnets[0].id
-output privateEndpointSubnetId string = vnet.properties.subnets[1].id
+output virtualNetworkId string = virtualNetworkId
+output infrastructureSubnetId string = infrastructureSubnetId
+output privateEndpointSubnetId string = privateEndpointSubnetId
 output openAiPrivateDnsZoneId string = openAiPrivateDnsZone.id

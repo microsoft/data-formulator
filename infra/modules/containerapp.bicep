@@ -37,6 +37,12 @@ param azureOpenAiEndpoint string
 @description('Azure OpenAI model deployment name.')
 param azureOpenAiDeploymentName string
 
+@description('Optional custom domain bound to the Container App ingress.')
+param customDomainName string = ''
+
+@description('Managed certificate resource ID for the custom domain.')
+param customDomainCertificateId string = ''
+
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
   name: last(split(logAnalyticsWorkspaceId, '/'))
 }
@@ -55,6 +61,16 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
     vnetConfiguration: {
       infrastructureSubnetId: infrastructureSubnetId
       internal: false
+    }
+    peerAuthentication: {
+      mtls: {
+        enabled: false
+      }
+    }
+    peerTrafficConfiguration: {
+      encryption: {
+        enabled: false
+      }
     }
   }
 }
@@ -79,6 +95,22 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         external: true
         targetPort: 5567
         transport: 'auto'
+        exposedPort: 0
+        traffic: [
+          {
+            latestRevision: true
+            weight: 100
+          }
+        ]
+        customDomains: !empty(customDomainName) && !empty(customDomainCertificateId)
+          ? [
+              {
+                name: customDomainName
+                bindingType: 'SniEnabled'
+                certificateId: customDomainCertificateId
+              }
+            ]
+          : []
       }
       registries: [
         {

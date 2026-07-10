@@ -11,8 +11,26 @@ param location string = 'eastus2'
 @description('Name of the resource group to create.')
 param resourceGroupName string = 'rg-data-formulator'
 
-@description('Container image to deploy. azd overwrites this after building/pushing the Dockerfile image.')
-param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+@description('Container image to deploy. Supply the current image when reprovisioning an existing environment.')
+param containerImage string
+
+@description('Optional policy-managed resource-group ring tag.')
+param resourceGroupRingValue string = ''
+
+@description('Optional custom domain bound to the Container App.')
+param customDomainName string = ''
+
+@description('Managed certificate resource ID for the custom domain.')
+param customDomainCertificateId string = ''
+
+@description('Optional network security group ID attached to the Container Apps infrastructure subnet.')
+param infrastructureSubnetNsgId string = ''
+
+@description('Optional network security group ID attached to the private endpoint subnet.')
+param privateEndpointSubnetNsgId string = ''
+
+@description('Reference the governed VNet instead of updating it. Use for environments where policy owns VNet metadata.')
+param useExistingVirtualNetwork bool = false
 
 // This subscription is governed by CloudGov policy: Azure OpenAI and Key Vault must have
 // local auth / public network access disabled. See infra/README.md for the full rationale.
@@ -22,6 +40,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
   location: location
   tags: {
     'azd-env-name': environmentName
+    ...(!empty(resourceGroupRingValue) ? { ringValue: resourceGroupRingValue } : {})
   }
 }
 
@@ -49,6 +68,9 @@ module network 'modules/network.bicep' = {
   params: {
     location: location
     environmentName: environmentName
+    infrastructureSubnetNsgId: infrastructureSubnetNsgId
+    privateEndpointSubnetNsgId: privateEndpointSubnetNsgId
+    useExistingVirtualNetwork: useExistingVirtualNetwork
   }
 }
 
@@ -88,6 +110,8 @@ module containerApp 'modules/containerapp.bicep' = {
     containerRegistryLoginServer: registry.outputs.loginServer
     azureOpenAiEndpoint: openai.outputs.endpoint
     azureOpenAiDeploymentName: openai.outputs.deploymentName
+    customDomainName: customDomainName
+    customDomainCertificateId: customDomainCertificateId
   }
 }
 

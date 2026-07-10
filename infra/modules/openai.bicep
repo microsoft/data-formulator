@@ -102,6 +102,7 @@ resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
       version: modelVersion
     }
     raiPolicyName: contentFilterPolicy.name
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
   }
 }
 
@@ -125,6 +126,7 @@ resource additionalModelDeployments 'Microsoft.CognitiveServices/accounts/deploy
         version: m.version
       }
       raiPolicyName: contentFilterPolicy.name
+      versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
     }
     dependsOn: [modelDeployment]
   }

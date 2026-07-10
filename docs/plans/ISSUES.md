@@ -20,13 +20,13 @@ other, but not before their shared prerequisite row.
 | Order | Workstream | Issues | Depends on | Current state | Exit gate |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Prevent Azure metadata loss | DF-011 | None | Resolved; focused and adjacent tests pass | Concurrent metadata updates cannot overwrite one another |
-| 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | DF-012 resolved; DF-001 source green, deployment blocked by unrelated what-if drift | Request memory is bounded and state remains consistent across replicas |
+| 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | Resolved; request limits are bounded and the live app is capped at one replica | Request memory is bounded and state remains consistent across replicas |
 | 3 | Secure connector query boundaries | DF-002 | DF-001 | Resolved; focused and adjacent loader tests pass | Request-controlled identifiers are validated or parameterized |
 | 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004 | DF-001, DF-002 | Resolved; lifecycle and reconnect suites pass | Connections close predictably and transient failures preserve credentials |
 | 5 | Complete model transport resilience | DF-009 | DF-012 | Resolved; retry and compatibility suites pass | Bounded 429 retry behavior passes focused tests |
-| 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015 | DF-001 through DF-004 | Resolved in source; image/runtime deployment checks remain | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests |
-| 7 | Reassess connector readiness, then build shared Fabric discovery and delegated auth | DF-017 | DF-001 deployment strategy, completed source fixes, readiness requirements | Ready for reassessment; implementation paused | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and shared sessions are verified |
-| 8 | Add Azure SQL delegated Entra authentication | DF-016 | DF-001 deployment strategy and shared delegated-auth/session foundation | Planned; blocked pending reassessment | Entra token connects through ODBC while SQL and Windows auth remain green |
+| 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015 | DF-001 through DF-004 | Resolved in source; live image/runtime deployment checks remain | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests |
+| 7 | Reassess connector readiness, then build shared Fabric discovery and delegated auth | DF-017 | Resolved DF-001, completed source fixes, readiness requirements | Ready for reassessment; implementation paused | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and shared sessions are verified |
+| 8 | Add Azure SQL delegated Entra authentication | DF-016 | Shared delegated-auth/session foundation | Planned; blocked pending reassessment | Entra token connects through ODBC while SQL and Windows auth remain green |
 | 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Planned; blocked | Delta and supported file imports pass catalog, limit, and audience tests |
 | 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Planned; blocked | Delegated RLS-safe query results pass API, limit, and serialization tests |
 
@@ -35,17 +35,17 @@ whenever an issue is resolved, superseded, or split.
 
 ### Reassessment checkpoint (2026-07-09)
 
-- Source fixes through order 6 are implemented; DF-001 remains deployment
-  pending because the subscription what-if includes unsafe unrelated drift.
+- Source fixes through order 6 are implemented; DF-001 was deployed through a
+  narrow Container Apps update. The full subscription template was then
+  reconciled with governed live state and deployed successfully.
 - Consolidated issue-fix suite: 150 passed, 1 skipped.
 - OAuth gateway/provider subset: 101 passed, 1 skipped.
 - Full backend suite: 1,952 passed, 12 skipped, 1 xpassed; five failures and
   two setup errors are pre-existing Windows/stale-test issues (plugin fixture
   encoding, symlink privilege, and `sample_datasets` parameter assumptions).
-- No connector implementation begins until the readiness requirements and
-  remaining DF-001 deployment strategy are reassessed.
-- **Next action**: reassess connector readiness and choose the narrow DF-001
-  deployment path; do not run the current full Bicep deployment as-is.
+- No connector implementation begins until the readiness requirements are
+  reassessed.
+- **Next action**: reassess connector readiness.
 
 ## Implemented Changes
 
@@ -212,7 +212,7 @@ committed, redeployed, superseded, or rolled back.
 
 ### DF-001: Replica-local state conflicts with multi-replica scaling
 
-**Status**: In progress; source mitigation green, deployment blocked by unsafe what-if drift \
+**Status**: Resolved; source and narrow live deployment verified \
 **Severity**: High \
 **Area**: Deployment, sessions, connectors, workspaces
 
@@ -223,18 +223,31 @@ Progress evidence (2026-07-09):
 - Confirmed RED against the prior `maxReplicas: 3` declaration.
 - Updated the Bicep source to cap the Container App at one replica.
 - Subscription-scoped what-if confirms the intended `maxReplicas: 3 -> 1`,
-  but also predicts unsafe unrelated drift: placeholder image replacement,
-  custom-domain and traffic removal, and other resource modifications.
-- Deployment was not applied. Reconcile live Container App properties or use a
-  narrowly scoped update before marking this resolved.
+  but initially predicted unsafe unrelated drift, including removal of VNet
+  NSG and flow-log configuration.
+- Applied `az containerapp update --max-replicas 1`, creating revision
+  `ca-dataformulator--0000005` without changing the deployed image.
+- Revision `0000005` is healthy and provisioned with one replica. The generated
+  FQDN and `data.gcxteam.com` both return HTTP 200; the custom-domain binding and
+  latest-revision traffic rule remain intact.
+- Reconciled the production Bicep parameters with the custom domain, managed
+  certificate, policy tags, subnet NSGs, registry defaults, and model upgrade
+  policy. Production now references the policy-governed VNet instead of issuing
+  a VNet update that would remove policy-owned flow-log metadata.
+- Full subscription deployment
+  `data-formulator-drift-reconciliation-20260709` succeeded. Post-deployment
+  verification confirmed the image, one-replica cap, domain, traffic, both NSG
+  associations, flow-log metadata, model capacities, RAI policy bindings, and
+  both HTTPS endpoints remain healthy.
 
-The Container App permits up to three replicas, but its stateful services use
-the container's local filesystem and no persistent volume is configured.
+The Container App previously permitted up to three replicas, but its stateful
+services use the container's local filesystem and no persistent volume is
+configured.
 
 Evidence:
 
-- `infra/modules/containerapp.bicep` sets `maxReplicas: 3` without `volumes` or
-  `volumeMounts`.
+- The prior live configuration allowed `maxReplicas: 3` without `volumes` or
+  `volumeMounts`; source and live configuration now cap it at one replica.
 - `py-src/data_formulator/app.py` stores server-side sessions in a local
   `FileSystemCache` under `DATA_FORMULATOR_HOME`.
 - User connector definitions, the encrypted credential vault, catalog caches,

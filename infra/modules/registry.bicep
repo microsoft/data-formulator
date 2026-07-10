@@ -17,7 +17,7 @@ param principalIdForAcrPull string
 
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource registry 'Microsoft.ContainerRegistry/registries@2025-11-01' = {
   name: toLower(replace('acr${environmentName}', '-', ''))
   location: location
   sku: {
@@ -25,6 +25,18 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
   properties: {
     adminUserEnabled: false
+    anonymousPullEnabled: false
+    dataEndpointEnabled: false
+    encryption: {
+      status: 'disabled'
+    }
+    policies: {
+      azureADAuthenticationAsArmPolicy: {
+        status: 'enabled'
+      }
+    }
+    networkRuleBypassAllowedForTasks: false
+    roleAssignmentMode: 'LegacyRegistryPermissions'
   }
 }
 
