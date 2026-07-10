@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import struct
 from typing import Any
 
 import pyarrow as pa
@@ -10,6 +11,13 @@ from data_formulator.data_loader.external_data_loader import ExternalDataLoader,
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 log = logging.getLogger(__name__)
+
+SQL_COPT_SS_ACCESS_TOKEN = 1256
+
+
+def _encode_odbc_access_token(access_token: str) -> bytes:
+    encoded = access_token.encode("utf-16-le")
+    return struct.pack("=i", len(encoded)) + encoded
 
 
 def _is_nan(value) -> bool:
@@ -24,6 +32,23 @@ def _is_nan(value) -> bool:
 
 class MSSQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "SQL Server"
+
+    @staticmethod
+    def auth_config() -> dict[str, Any]:
+        return {
+            "mode": "delegated",
+            "display_name": "Microsoft Entra",
+            "audience": "https://database.windows.net/",
+            "login_url": "/api/auth/azure-sql/login",
+            "supports_refresh": False,
+        }
+
+    @staticmethod
+    def delegated_login_config() -> dict[str, str]:
+        return {
+            "login_url": "/api/auth/azure-sql/login",
+            "label_key": "loader.mssql.entraSignIn",
+        }
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -129,6 +154,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         self.database = params.get("database", "") or ""
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
+        access_token = params.get("access_token", "").strip()
         self.port = params.get("port", "1433")
         self.driver = params.get("driver", "ODBC Driver 17 for SQL Server")
         self.encrypt = params.get("encrypt", "yes")
@@ -147,17 +173,23 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
             f"TrustServerCertificate={self.trust_server_certificate};"
             f"Connection Timeout={self.connection_timeout};"
         )
-        if self.user:
+        connect_kwargs: dict[str, Any] = {}
+        if access_token:
+            connect_kwargs["attrs_before"] = {
+                SQL_COPT_SS_ACCESS_TOKEN: _encode_odbc_access_token(access_token),
+            }
+            access_token = ""
+        elif self.user:
             conn_str += f"UID={self.user};PWD={self.password};"
         else:
             conn_str += "Trusted_Connection=yes;"
 
         try:
-            self._conn = pyodbc.connect(conn_str)
+            self._conn = pyodbc.connect(conn_str, **connect_kwargs)
             log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
-            log.error(f"Failed to connect to SQL Server: {e}")
-            raise ValueError(f"Failed to connect to SQL Server '{self.server}': {e}") from e
+            log.error("Failed to connect to SQL Server type=%s", type(e).__name__)
+            raise ValueError(f"Failed to connect to SQL Server '{self.server}'") from e
 
     # SQL Server types that may need special handling
     _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # use .STAsText()
@@ -223,7 +255,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         try:
             return self._read_sql(query)
         except Exception as e:
-            log.error(f"Failed to execute query: {e}")
+            log.error("Failed to execute SQL Server query type=%s", type(e).__name__)
             raise
 
     def fetch_data_as_arrow(
@@ -375,7 +407,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                 })
 
         except Exception as e:
-            log.error(f"Failed to list tables from SQL Server: {e}")
+            log.error("Failed to list SQL Server tables type=%s", type(e).__name__)
             results = []
 
         return results
@@ -691,7 +723,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                 result["description"] = table_description
             return result
         except Exception as e:
-            log.warning(f"get_metadata failed for {path}: {e}")
+            log.warning("Failed to read SQL Server metadata type=%s", type(e).__name__)
             return {}
 
     def test_connection(self) -> bool:

@@ -1,25 +1,23 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import PersonIcon from '@mui/icons-material/Person';
+import SearchIcon from '@mui/icons-material/Search';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { Box, Collapse, Typography, useTheme } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
-import { Box, Collapse, Typography, useTheme } from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import PersonIcon from '@mui/icons-material/Person';
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import { AgentToyIcon, AgentToyVariant } from './AgentToyIcon';
-import TerminalIcon from '@mui/icons-material/Terminal';
-import SearchIcon from '@mui/icons-material/Search';
-import AutoGraphIcon from '@mui/icons-material/AutoGraph';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import CheckIcon from '@mui/icons-material/Check';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { borderColor, radius } from '../app/tokens';
 import { InteractionEntry } from '../components/ComponentType';
 import { AgentIcon } from '../icons';
-import { radius, borderColor } from '../app/tokens';
+import { AgentToyIcon, AgentToyVariant } from './AgentToyIcon';
 
 /** Pick the icon component for a step line based on known prefixes. */
 export const getStepIconComponent = (line: string) => {
@@ -95,7 +93,7 @@ const PlanStepItem: React.FC<{
 };
 
 /** Shared component to render plan steps as a list with icons.
- *  `activeLastStep` adds a shimmer animation to the last incomplete step (for streaming). 
+ *  `activeLastStep` adds a shimmer animation to the last incomplete step (for streaming).
  *  `filterCreatingChart` hides "creating chart..." lines (already shown as instruction text). */
 export const PlanStepsView: React.FC<{
     steps: string[];
@@ -222,6 +220,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     const text = entry.displayContent || entry.content;
     const clickable = !!onClick;
     const clickSx = clickable ? { cursor: 'pointer', '&:hover': { opacity: 0.8 } } : {};
+    const [expanded, setExpanded] = useState(false);
 
     const handleClick = onClick ? () => onClick(entry) : undefined;
 
@@ -324,8 +323,6 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             && (displayText?.length ?? 0) > TEXT_CLAMP_CHAR_THRESHOLD;
 
         const isCollapsible = hasPlan || !!collapsedLabel || canClampText;
-        const [expanded, setExpanded] = useState(false);
-
         // Provenance for multi-input derivations is rendered as a structural
         // "merge node" in the timeline gutter (see DataThread), so the
         // instruction card itself stays free of chip-strip chrome.

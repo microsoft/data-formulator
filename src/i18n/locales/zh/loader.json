@@ -18,7 +18,8 @@
       "encrypt": "启用加密（yes/no）",
       "trust_server_certificate": "信任服务器证书（yes/no）",
       "connection_timeout": "连接超时时间（秒）",
-      "authInstructions": "**示例（SQL 认证）：** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**示例（Windows 认证）：** server: `localhost\\SQLEXPRESS` · database: `mydb`（用户名和密码留空）\n\n**前置条件（仅 macOS/Linux）：**\n安装 ODBC 驱动：`brew install unixodbc msodbcsql17`（macOS）或 `sudo apt-get install unixodbc-dev msodbcsql17`（Ubuntu/Debian）。Windows 通常已预装。\n\n**认证方式：**\n- **Windows 认证：** 用户名和密码留空（推荐用于本地开发）\n- **SQL Server 认证：** 提供用户名和密码\n\n**排查：** 确保 SQL Server 服务正在运行。在 SQL Server 配置管理器中确认 TCP/IP 已启用。用 `sqlcmd -S <server> -d <database> -U <user> -P <password>` 测试连接。"
+      "entraSignIn": "使用 Microsoft Entra 登录",
+      "authInstructions": "**示例（SQL 认证）：** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**示例（Windows 认证）：** server: `localhost\\SQLEXPRESS` · database: `mydb`（用户名和密码留空）\n\n**前置条件：** Microsoft Entra 委托登录需要 ODBC Driver 18。SQL 和 Windows 认证仍然可用。\n\n**认证方式：**\n- **Microsoft Entra：** 使用登录按钮；条件访问策略可要求 MFA\n- **Windows 认证：** 用户名和密码留空（推荐用于本地开发）\n- **SQL Server 认证：** 提供用户名和密码\n\n**排查：** 确保 SQL Server 服务正在运行且 TCP/IP 已启用。"
     },
     "postgresql": {
       "user": "PostgreSQL 用户名",

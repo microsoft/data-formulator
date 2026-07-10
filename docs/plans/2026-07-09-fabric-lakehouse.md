@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Reassessed; blocked on DF-017 and data-plane spikes
 date: 2026-07-09
 scope: Implement a production Fabric lakehouse loader with delegated per-user authorization, GUID-stable catalog hierarchy, and safe bounded data reads.
 related:
@@ -12,6 +12,12 @@ related:
 ## Goal
 
 Build a real `FabricLakehouseDataLoader` at `py-src/data_formulator/data_loader/fabric_lakehouse_data_loader.py` and register it in `_LOADER_SPECS` at `py-src/data_formulator/data_loader/__init__.py` so users can connect to Microsoft Fabric lakehouse data with delegated per-user authorization.
+
+Reassessment result: implementation remains blocked until DF-017 supplies the
+audience-aware auth and discovery contracts. OneLake workspace listing is
+available to the current identity, but no representative managed Delta and
+multi-format Files fixture has been verified. The data-access and OneLake Table
+API token-routing spikes remain mandatory.
 
 This plan is explicitly dependent on `docs/plans/2026-07-09-fabric-workspaces.md` as the shared token/session and workspace discovery foundation. This plan does not duplicate or bypass that foundation.
 

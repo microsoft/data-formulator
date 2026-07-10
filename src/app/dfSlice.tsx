@@ -1,32 +1,31 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
+import { PayloadAction, createAsyncThunk, createSelector, createSlice } from '@reduxjs/toolkit';
 import { enableMapSet } from 'immer';
-import { DictTable } from "../components/ComponentType";
-import { Message } from '../views/MessageSnackbar';
-import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
+import { REHYDRATE } from 'redux-persist';
+import { getChartChannels, getChartTemplate } from "../components/ChartTemplates";
+import { Channel, Chart, ChartInsight, ChartStyleVariant, ChartTemplate, ChatMessage, DataCleanBlock, DataSourceConfig, DeriveStatus, DictTable, DraftNode, EncodingItem, EncodingMap, FieldItem, InteractionEntry, PendingClarification, computeInsightKey } from '../components/ComponentType';
+import { Type } from '../data/types';
+import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
+import i18n from '../i18n';
 import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
 import { getDataTable } from '../views/ChartUtils';
-import { getTriggers, getUrls, computeContentHash } from './utils';
+import { Message } from '../views/MessageSnackbar';
 import { apiRequest } from './apiClient';
-import { deleteTablesFromWorkspace } from './workspaceService';
 import { getChartPngDataUrl } from './chartCache';
-import i18n from '../i18n';
-import { Type } from '../data/types';
-import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporalType } from '../data/utils';
-import { Identity, IdentityType, getBrowserId } from './identity';
-import { REHYDRATE } from 'redux-persist';
+import { Identity, getBrowserId } from './identity';
+import { computeContentHash, getUrls } from './utils';
+import { deleteTablesFromWorkspace } from './workspaceService';
 
 enableMapSet();
 
 // Redux Persist will handle persistence automatically with enableMapSet()
 
 export const generateFreshChart = (tableRef: string, chartType: string, source: "user" | "trigger" = "user") : Chart => {
-    return { 
-        id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`, 
-        chartType: chartType, 
+    return {
+        id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`,
+        chartType: chartType,
         encodingMap: Object.assign({}, ...getChartChannels(chartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
         tableRef: tableRef,
         source: source,
@@ -47,7 +46,7 @@ const migrateDottedLineChart = (chart: any): any => {
 };
 
 export interface SSEMessage {
-    type: "heartbeat" | "notification" | "action"; 
+    type: "heartbeat" | "notification" | "action";
     text: string;
     data?: Record<string, any>;
     timestamp: number;
@@ -81,7 +80,7 @@ export interface ServerConfig {
         effective_hierarchy: Array<{key: string; label: string}>;
         auth_instructions: string;
         auth_mode?: string;
-        delegated_login?: { login_url: string; label?: string } | null;
+        delegated_login?: { login_url: string; label?: string; label_key?: string } | null;
     }>;
     DISABLED_SOURCES?: Record<string, {install_hint: string}>;
     CONNECTED_CONNECTORS?: string[];
@@ -102,7 +101,7 @@ export interface ModelConfig {
 }
 
 
-export type FocusedId = 
+export type FocusedId =
     | { type: 'table'; tableId: string }
     | { type: 'chart'; chartId: string }
     | { type: 'report'; reportId: string }
@@ -153,7 +152,7 @@ export interface DataFormulatorState {
     tables : DictTable[];
     draftNodes: DraftNode[];
     charts: Chart[];
-    
+
     conceptShelfItems: FieldItem[];
 
     // controls logs and message index
@@ -396,7 +395,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
-    
+
     // Clean up virtual tables from workspace before removing from state
     let tablesToDelete = state.tables.filter(t => tableIdsToDelete.includes(t.id));
     deleteTablesFromWorkspace(tablesToDelete.map(t => t.virtual.tableId));
@@ -544,8 +543,8 @@ export const fetchCodeExpl = createAsyncThunk(
             body: JSON.stringify({
                 input_tables: derivedTable.derive?.source
                                 .map(tId => state.tables.find(t => t.id == tId) as DictTable)
-                                .map(t => ({ 
-                                    name: t.id, 
+                                .map(t => ({
+                                    name: t.id,
                                     rows: t.rows,
                                 })),
                 code: derivedTable.derive?.code,
@@ -690,7 +689,7 @@ export const dataFormulatorSlice = createSlice({
     reducers: {
         resetState: (state) => {
             //state.table = undefined;
-            
+
             // Preserve: models, selectedModelId, testedModels,
             //           config, dataLoaderConnectParams, identity
 
@@ -726,7 +725,7 @@ export const dataFormulatorSlice = createSlice({
             // Clear active workspace so stale IDs don't persist across restarts
             state.activeWorkspace = null;
             // Redux Persist will handle persistence automatically
-            
+
         },
         setSessionLoading: (state, action: PayloadAction<{loading: boolean, label?: string}>) => {
             state.sessionLoading = action.payload.loading;
@@ -903,9 +902,9 @@ export const dataFormulatorSlice = createSlice({
             let id = action.payload.id;
             let status = action.payload.status;
             let message = action.payload.message;
-            
+
             state.testedModels = [
-                ...state.testedModels.filter(t => t.id != id), 
+                ...state.testedModels.filter(t => t.id != id),
                 {id: id, status, message}
             ];
         },
@@ -953,7 +952,7 @@ export const dataFormulatorSlice = createSlice({
             let tableId = action.payload.tableId;
             let newRows = action.payload.rows;
             let providedContentHash = action.payload.contentHash;
-            
+
             state.tables = state.tables.map(t => {
                 if (t.id == tableId) {
                     let newMetadata = { ...t.metadata };
@@ -1043,7 +1042,7 @@ export const dataFormulatorSlice = createSlice({
             if (previousName && table.names.indexOf(previousName) != -1) {
                 let replacePosition = table.names.indexOf(previousName);
                 newNames[replacePosition] = columnName;
-            } else {            
+            } else {
                 let insertPosition = lastParentName ? table.names.indexOf(lastParentName) : table.names.length - 1;
                 newNames = table.names.slice(0, insertPosition + 1).concat(columnName).concat(table.names.slice(insertPosition + 1));
             }
@@ -1071,7 +1070,7 @@ export const dataFormulatorSlice = createSlice({
                 }
                 return newRow;
             });
-            
+
             table.names = newNames;
             table.metadata = newMetadata;
             table.rows = newRows;
@@ -1082,7 +1081,7 @@ export const dataFormulatorSlice = createSlice({
             let table = state.tables.find(t => t.id == tableId) as DictTable;
             let fieldName = state.conceptShelfItems.find(f => f.id == fieldId)?.name as string;
 
-            let fieldIndex = table.names.indexOf(fieldName);  
+            let fieldIndex = table.names.indexOf(fieldName);
             if (fieldIndex != -1) {
                 table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
                 delete table.metadata[fieldName];
@@ -1096,7 +1095,7 @@ export const dataFormulatorSlice = createSlice({
             let chartType = action.payload.chartType;
             let tableId = action.payload.tableId || state.tables[0].id;
             let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
-            
+
             // Auto-populate encodings based on table metadata
             let table = state.tables.find(t => t.id === tableId);
             if (table) {
@@ -1112,7 +1111,7 @@ export const dataFormulatorSlice = createSlice({
                     }
                 }
             }
-            
+
             state.charts = [ freshChart , ...state.charts];
             state.focusedId = { type: 'chart', chartId: freshChart.id };
         },
@@ -1205,7 +1204,7 @@ export const dataFormulatorSlice = createSlice({
                 dfSelectors.replaceChart(state, chart);
             }
         },
-        
+
         updateTableRef: (state, action: PayloadAction<{chartId: string, tableRef: string}>) => {
             let chartId = action.payload.chartId;
             let tableRef = action.payload.tableRef;
@@ -1323,7 +1322,7 @@ export const dataFormulatorSlice = createSlice({
             let value = action.payload.value;
             let chart = collectAllCharts(state).find(c => c.id == chartId);
             let table = state.tables.find(t => t.id == chart?.tableRef) as DictTable;
-            
+
             if (chart) {
                 //TODO: check this, finding reference and directly update??
                 let encoding = chart.encodingMap[channel];
@@ -1522,25 +1521,25 @@ export const dataFormulatorSlice = createSlice({
         },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            
+
             // Clean up old virtual table from workspace since it's being replaced
             let oldTable = state.tables.find(t => t.id == table.id);
             if (oldTable) {
                 deleteTablesFromWorkspace([oldTable.virtual.tableId]);
             }
-            
+
             state.tables = [...state.tables.filter(t => t.id != table.id), table];
         },
         deleteDerivedTableById: (state, action: PayloadAction<string>) => {
             // delete a synthesis output based on index
             let tableId = action.payload;
-            
+
             // Clean up virtual table from workspace before removing from state
             let tableToDelete = state.tables.find(t => t.derive && t.id == tableId);
             if (tableToDelete) {
                 deleteTablesFromWorkspace([tableToDelete.virtual.tableId]);
             }
-            
+
             state.tables = state.tables.filter(t => !(t.derive && t.id == tableId));
         },
         clearUnReferencedTables: (state) => {
@@ -1549,17 +1548,17 @@ export const dataFormulatorSlice = createSlice({
             let referredTableId = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems))
                 .filter(t => t != undefined).map(t => t.id);
             let tablesToRemove = state.tables.filter(t => t.derive && !referredTableId.some(tableId => tableId == t.id));
-            
+
             // Clean up virtual tables from workspace
             deleteTablesFromWorkspace(tablesToRemove.map(t => t.virtual.tableId));
-            
+
             state.tables = state.tables.filter(t => !tablesToRemove.some(tr => tr.id == t.id));
         },
         clearUnReferencedCustomConcepts: (state) => {
             let fieldNamesFromTables = state.tables.map(t => t.names).flat();
             let fieldIdsReferredByCharts = collectAllCharts(state).map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
 
-            state.conceptShelfItems = state.conceptShelfItems.filter(field => !(field.source == "custom" 
+            state.conceptShelfItems = state.conceptShelfItems.filter(field => !(field.source == "custom"
                 && !(fieldNamesFromTables.includes(field.name) || fieldIdsReferredByCharts.includes(field.id))))
         },
         addMessages: (state, action: PayloadAction<Message>) => {
@@ -1633,9 +1632,9 @@ export const dataFormulatorSlice = createSlice({
         updateLastDataCleanBlock: (state, action: PayloadAction<Partial<DataCleanBlock>>) => {
             if (state.dataCleanBlocks.length > 0) {
                 const lastIndex = state.dataCleanBlocks.length - 1;
-                state.dataCleanBlocks[lastIndex] = { 
-                    ...state.dataCleanBlocks[lastIndex], 
-                    ...action.payload 
+                state.dataCleanBlocks[lastIndex] = {
+                    ...state.dataCleanBlocks[lastIndex],
+                    ...action.payload
                 };
             }
         },
@@ -2137,11 +2136,11 @@ export const dfSelectors = {
         let sourceTables = focusedTable?.derive?.source || [focusedTable?.id];
         return sourceTables;
     },
-    
+
     // Memoized chart selector that combines both sources.
     // Decoupled from row-data changes via selectTriggerCharts.
     getAllCharts: createSelector(
-        [(state: DataFormulatorState) => state.charts, 
+        [(state: DataFormulatorState) => state.charts,
          selectTriggerCharts],
         (userCharts, triggerCharts) => {
             return [...userCharts, ...triggerCharts];
@@ -2171,7 +2170,7 @@ export const dfSelectors = {
     },
     // Generated reports selectors
     getAllGeneratedReports: (state: DataFormulatorState) => state.generatedReports,
-    getReportById: (state: DataFormulatorState, reportId: string) => 
+    getReportById: (state: DataFormulatorState, reportId: string) =>
         state.generatedReports.find(r => r.id === reportId),
 }
 

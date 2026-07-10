@@ -1,24 +1,23 @@
 // TableManager.tsx
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
-  Typography,
-  Button,
-  Box,
-  TextField,
-  CircularProgress,
-  Checkbox,
-  FormControlLabel,
+    Box,
+    Button,
+    Checkbox,
+    CircularProgress,
+    FormControlLabel,
+    TextField,
+    Typography,
 } from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { CONNECTOR_ACTION_URLS } from '../app/utils';
+import Markdown from 'markdown-to-jsx';
 import { apiRequest, type ApiError } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import Markdown from 'markdown-to-jsx';
+import { CONNECTOR_ACTION_URLS } from '../app/utils';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { dfActions } from '../app/dfSlice';
-import { DataFormulatorState } from '../app/dfSlice';
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 
 /** Extract a user-visible error message from a connector data payload. */
@@ -30,6 +29,27 @@ function extractConnectError(body: any, fallback: string): string {
         return getErrorMessage(body.error as ApiError);
     }
     return body.message ?? fallback;
+}
+
+export type DelegatedLoginMessage =
+    | { kind: 'server-stored' }
+    | { kind: 'browser-token'; accessToken: string; refreshToken?: string; user?: unknown };
+
+export function validateDelegatedLoginMessage(
+    event: MessageEvent,
+    expectedOrigin: string,
+    expectedSource: Window,
+): DelegatedLoginMessage | null {
+    if (event.origin !== expectedOrigin || event.source !== expectedSource) return null;
+    if (event.data?.type !== 'df-sso-auth') return null;
+    if (event.data.authenticated === true) return { kind: 'server-stored' };
+    if (typeof event.data.access_token !== 'string' || !event.data.access_token) return null;
+    return {
+        kind: 'browser-token',
+        accessToken: event.data.access_token,
+        refreshToken: event.data.refresh_token,
+        user: event.data.user,
+    };
 }
 
 
@@ -45,7 +65,7 @@ export const DataLoaderForm: React.FC<{
     autoConnect?: boolean,
     /** When true, attempt SSO token passthrough on mount (no popup). */
     ssoAutoConnect?: boolean,
-    delegatedLogin?: { login_url: string; label?: string } | null,
+    delegatedLogin?: { login_url: string; label?: string; label_key?: string } | null,
     authMode?: string,
     onImport: () => void,
     onFinish: (status: "success" | "error" | "warning", message: string, importedTables?: string[]) => void,
@@ -167,6 +187,7 @@ export const DataLoaderForm: React.FC<{
 
         const url = new URL(delegatedLogin.login_url, window.location.origin);
         url.searchParams.set('df_origin', window.location.origin);
+        url.searchParams.set('connector_id', connectorIdRef.current);
         // Pass auth-tier form params (e.g. client_id, tenant_id) to the login endpoint
         for (const p of paramDefs) {
             if (p.tier === 'auth' && !p.sensitive && p.type !== 'password' && mergedParams[p.name]) {
@@ -191,47 +212,48 @@ export const DataLoaderForm: React.FC<{
         }
 
         const handler = async (event: MessageEvent) => {
-            if (event.data?.type !== 'df-sso-auth') return;
+            const result = validateDelegatedLoginMessage(event, window.location.origin, popup);
+            if (!result) return;
             window.removeEventListener('message', handler);
             if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
             popup.close();
 
-            const { access_token, refresh_token, user } = event.data;
-            if (access_token) {
-                try {
-                    // Persist token in TokenStore for Agent and future requests
+            try {
+                if (result.kind === 'browser-token') {
                     await apiRequest('/api/auth/tokens/save', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             system_id: connectorIdRef.current,
-                            access_token,
-                            refresh_token,
-                            user,
+                            access_token: result.accessToken,
+                            refresh_token: result.refreshToken,
+                            user: result.user,
                         }),
                     }).catch(() => {});
-
-                    // Send tokens to backend token-connect endpoint
-                    const { data: connectData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            connector_id: connectorIdRef.current,
-                            mode: 'token',
-                            access_token,
-                            refresh_token,
-                            user,
-                            params: mergedParams,  // include any filled-in params (e.g. url)
-                            persist: persistCredentials,
-                        }),
-                    });
-                    if (connectData.status !== 'connected') {
-                        throw new Error(extractConnectError(connectData, 'Token connection failed'));
-                    }
-                    onConnected?.();
-                } catch (err: any) {
-                    onFinish("error", err.message || 'Login failed');
                 }
+
+                const tokenFields = result.kind === 'browser-token' ? {
+                    mode: 'token',
+                    access_token: result.accessToken,
+                    refresh_token: result.refreshToken,
+                    user: result.user,
+                } : {};
+                const { data: connectData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        connector_id: connectorIdRef.current,
+                        ...tokenFields,
+                        params: mergedParams,
+                        persist: persistCredentials,
+                    }),
+                });
+                if (connectData.status !== 'connected') {
+                    throw new Error(extractConnectError(connectData, 'Token connection failed'));
+                }
+                onConnected?.();
+            } catch (err: any) {
+                onFinish("error", err.message || 'Login failed');
             }
             setIsConnecting(false);
         };
@@ -245,7 +267,7 @@ export const DataLoaderForm: React.FC<{
                 setIsConnecting(false);
             }
         }, 1000);
-    }, [delegatedLogin, mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+    }, [delegatedLogin, mergedParams, paramDefs, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
 
 
     // Auto-connect on mount from vault credentials or SSO token passthrough.
@@ -283,12 +305,12 @@ export const DataLoaderForm: React.FC<{
                 setIsConnecting(false);
             }
         })();
-    }, [autoConnect, ssoAutoConnect, connectorId]);
+    }, [autoConnect, ssoAutoConnect, connectorId, onConnected]);
 
     return (
         <Box sx={{p: 0, pb: 2, display: 'flex', flexDirection: 'column' }}>
             {isConnecting && <Box sx={{
-                position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
+                position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
                 display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
                 backgroundColor: "rgba(255, 255, 255, 0.7)"
             }}>
@@ -430,7 +452,7 @@ export const DataLoaderForm: React.FC<{
                                                     disabled={isConnecting}
                                                     onClick={handleDelegatedLogin}
                                                 >
-                                                    {delegatedLogin!.label || t('db.delegatedLogin')}
+                                                    {delegatedLogin!.label_key ? t(delegatedLogin!.label_key) : delegatedLogin!.label || t('db.delegatedLogin')}
                                                 </Button>
                                             </Box>
                                             {/* Right: credential fields + connect */}
@@ -472,7 +494,7 @@ export const DataLoaderForm: React.FC<{
                                             disabled={isConnecting}
                                             onClick={handleDelegatedLogin}
                                         >
-                                            {delegatedLogin!.label || t('db.delegatedLogin')}
+                                            {delegatedLogin!.label_key ? t(delegatedLogin!.label_key) : delegatedLogin!.label || t('db.delegatedLogin')}
                                         </Button>
                                     ) : (
                                         /* Manual credentials only + connect */
@@ -510,7 +532,7 @@ export const DataLoaderForm: React.FC<{
                     )}
                     {localizedAuthInstructions && (
                         <Box sx={(theme) => ({
-                            mt: 2, px: 1.5, py: 1, 
+                            mt: 2, px: 1.5, py: 1,
                             backgroundColor: 'rgba(0,0,0,0.02)',
                             borderRadius: 1,
                             border: '1px solid rgba(0,0,0,0.06)',

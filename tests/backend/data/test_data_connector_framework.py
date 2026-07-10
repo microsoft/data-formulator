@@ -155,6 +155,15 @@ class MockLoader(ExternalDataLoader):
         return "Connect with host, user, password."
 
 
+class DelegatedMockLoader(MockLoader):
+    @staticmethod
+    def delegated_login_config() -> dict[str, Any]:
+        return {
+            "login_url": "/api/auth/azure-sql/login",
+            "label_key": "loader.mssql.entraSignIn",
+        }
+
+
 class FailingTestConnectionLoader(MockLoader):
     """Loader whose test_connection always returns False."""
 
@@ -286,6 +295,72 @@ class TestSharedRouteRegistration:
         assert "/api/connectors/preview-data" in rules
         assert "/api/connectors/column-values" in rules
 
+class TestDelegatedLoginConfig:
+    def test_app_relative_login_url_is_not_connector_prefixed(self):
+        source = DataConnector.from_loader(
+            DelegatedMockLoader,
+            source_id="mssql:staging",
+            display_name="Azure SQL staging",
+        )
+
+        assert source.get_frontend_config()["delegated_login"]["login_url"] == "/api/auth/azure-sql/login"
+
+    def test_label_key_is_preserved(self):
+        source = DataConnector.from_loader(
+            DelegatedMockLoader,
+            source_id="mssql:staging",
+            display_name="Azure SQL staging",
+        )
+
+        assert source.get_frontend_config()["delegated_login"]["label_key"] == "loader.mssql.entraSignIn"
+
+    def test_delegated_credentials_use_connector_and_audience_lookup(self, app):
+        class AudienceLoader(DelegatedMockLoader):
+            @staticmethod
+            def auth_config() -> dict[str, Any]:
+                return {
+                    "mode": "delegated",
+                    "audience": "https://database.windows.net/",
+                }
+
+        source = DataConnector.from_loader(
+            AudienceLoader,
+            source_id="mssql:staging",
+            display_name="Azure SQL staging",
+        )
+        params: dict[str, Any] = {}
+
+        with app.test_request_context(), \
+             patch("data_formulator.auth.token_store.TokenStore.get_service_token", return_value="sql-token") as get_token:
+            source._inject_credentials(params)
+
+        get_token.assert_called_once_with("mssql:staging", "https://database.windows.net/")
+        assert params["access_token"] == "sql-token"
+
+    def test_audience_loader_does_not_fall_back_to_raw_sso_token(self, app):
+        class AudienceLoader(DelegatedMockLoader):
+            @staticmethod
+            def auth_config() -> dict[str, Any]:
+                return {
+                    "mode": "delegated",
+                    "audience": "https://database.windows.net/",
+                }
+
+        source = DataConnector.from_loader(
+            AudienceLoader,
+            source_id="mssql:staging",
+            display_name="Azure SQL staging",
+        )
+        params: dict[str, Any] = {}
+
+        with app.test_request_context(), \
+             patch("data_formulator.auth.token_store.TokenStore.get_service_token", return_value=None), \
+             patch("data_formulator.auth.identity.get_sso_token", return_value="wrong-audience-token"):
+            source._inject_credentials(params)
+
+        assert "access_token" not in params
+        assert "sso_access_token" not in params
+
 
 # ==================================================================
 # Tests: Frontend Config
@@ -400,6 +475,31 @@ class TestAuthRoutes:
         data = resp.get_json()
         assert resp.status_code == 200
         assert data["status"] == "success"
+
+    def test_token_connect_never_persists_tokens_to_vault(self, client, source):
+        loader = MagicMock()
+        loader.test_connection.return_value = True
+        loader.get_safe_params.return_value = {}
+        loader.catalog_hierarchy.return_value = []
+        loader.effective_hierarchy.return_value = []
+        loader.pinned_scope.return_value = {}
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch.object(source, "_connect", return_value=loader),
+            patch.object(source, "_persist_credentials", return_value=True) as persist,
+        ):
+            response = client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
+                "mode": "token",
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "params": {"host": "localhost"},
+                "persist": True,
+            })
+
+        assert response.get_json()["status"] == "success"
+        persisted = persist.call_args.args[0]
+        assert persisted == {"host": "localhost"}
 
     def test_connect_bad_host_returns_error(self, app):
         source = DataConnector.from_loader(MockLoader, source_id="mock_bad")

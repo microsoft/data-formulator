@@ -1,9 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import * as React from 'react';
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { borderColor, transition, radius } from '../app/tokens';
 import {
     Alert,
     AlertTitle,
@@ -14,51 +11,54 @@ import {
     DialogContent,
     DialogTitle,
     IconButton,
-    TextField,
-    Typography,
-    Tooltip,
-    Link,
     Input,
+    Link,
+    TextField,
+    Tooltip,
+    Typography,
     alpha,
     useTheme,
 } from '@mui/material';
+import * as React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { borderColor, radius, transition } from '../app/tokens';
 
+import AddIcon from '@mui/icons-material/Add';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloseIcon from '@mui/icons-material/Close';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import LinkIcon from '@mui/icons-material/Link';
-import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import AddIcon from '@mui/icons-material/Add';
-import Paper from '@mui/material/Paper';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CircularProgress from '@mui/material/CircularProgress';
+import Paper from '@mui/material/Paper';
+import { StreamIcon, connectorSortOrder, getConnectorIcon } from '../icons';
 
-import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { AppDispatch } from '../app/store';
-import { loadTable } from '../app/tableThunks';
-import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
-import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
-import { DataLoadingChat } from './DataLoadingChat';
-import { AnimatedAgentToyIcon } from './AgentToyIcon';
-import { AgentChatInput } from './AgentChatInput';
-import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
-import { getUrls, CONNECTOR_URLS } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
-import { generateUUID } from '../app/identity';
-import { DataLoaderForm } from './DBTableManager';
-import { MultiTablePreview } from './MultiTablePreview';
-import { 
+import CloudIcon from '@mui/icons-material/Cloud';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import LanguageIcon from '@mui/icons-material/Language';
+import {
     Checkbox,
     FormControlLabel,
     Switch,
 } from '@mui/material';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import CloudIcon from '@mui/icons-material/Cloud';
-import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
+import { apiRequest } from '../app/apiClient';
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { generateUUID } from '../app/identity';
+import { AppDispatch } from '../app/store';
+import { loadTable } from '../app/tableThunks';
+import { CONNECTOR_URLS, getUrls } from '../app/utils';
+import { ConnectorInstance, DataSourceConfig, DictTable } from '../components/ComponentType';
+import { createTableFromFromObjectArray, createTableFromText, loadBinaryDataWrapper, loadTextDataWrapper, readFileText } from '../data/utils';
+import { AgentChatInput } from './AgentChatInput';
+import { AnimatedAgentToyIcon } from './AgentToyIcon';
+import { DataLoadingChat } from './DataLoadingChat';
+import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { DataLoaderForm } from './DBTableManager';
 import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
+import { MultiTablePreview } from './MultiTablePreview';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
@@ -124,11 +124,11 @@ interface DataSourceCardProps {
     tooltip?: React.ReactNode;
 }
 
-const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
-    icon, 
-    title, 
-    description, 
-    onClick, 
+const DataSourceCard: React.FC<DataSourceCardProps> = ({
+    icon,
+    title,
+    description,
+    onClick,
     disabled = false,
     variant = 'data',
     badge,
@@ -160,7 +160,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
                 }
             }}
         >
-            <Box sx={{ 
+            <Box sx={{
                 color: disabled ? 'text.disabled' : 'primary.main',
                 display: 'flex',
                 alignItems: 'center',
@@ -176,9 +176,9 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                    <Typography 
-                        variant="body2" 
-                        sx={{ 
+                    <Typography
+                        variant="body2"
+                        sx={{
                             fontWeight: 500,
                             color: disabled ? 'text.disabled' : 'text.primary',
                         }}
@@ -472,8 +472,8 @@ export interface DataLoadMenuProps {
     connectors?: ConnectorInstance[];
 }
 
-export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
-    onSelectTab, 
+export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
+    onSelectTab,
     onSelectConnector,
     onStartChat,
     hasPriorConversation = false,
@@ -490,7 +490,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     // surface before any workspace has been picked, so we lazily mint
     // one here — the parent's `openUploadDialog` does the same when it
     // can, but we cover the path where this menu is rendered directly.
-    const ensureActiveWorkspace = (): string => {
+    const ensureActiveWorkspace = useCallback((): string => {
         if (activeWorkspace?.id) return activeWorkspace.id;
         const now = new Date();
         const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -498,32 +498,32 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         const wsId = `session_${date}_${time}_${generateUUID().slice(0, 4)}`;
         dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: 'Untitled Session' }));
         return wsId;
-    };
+    }, [activeWorkspace, dispatch]);
     // Data source configurations (upload-style entries — file, paste,
     // URL). The "Data Loading Agent" entry is surfaced separately as a
     // chat box at the top of the menu. Sample datasets are no longer
     // listed here — they're now exposed as the built-in `sample_datasets`
     // connector in the Data Connectors section below.
     const regularDataSources = [
-        { 
-            value: 'upload' as UploadTabType, 
-            title: t('upload.uploadFile'), 
+        {
+            value: 'upload' as UploadTabType,
+            title: t('upload.uploadFile'),
             description: t('upload.uploadFileDesc'),
-            icon: <UploadFileIcon />, 
+            icon: <UploadFileIcon />,
             disabled: false
         },
-        { 
-            value: 'paste' as UploadTabType, 
-            title: t('upload.pasteData'), 
+        {
+            value: 'paste' as UploadTabType,
+            title: t('upload.pasteData'),
             description: t('upload.pasteDataDesc'),
-            icon: <ContentPasteIcon />, 
+            icon: <ContentPasteIcon />,
             disabled: false
         },
-        { 
-            value: 'url' as UploadTabType, 
-            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL (live)' }), 
+        {
+            value: 'url' as UploadTabType,
+            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL (live)' }),
             description: t('upload.loadFromUrlDesc'),
-            icon: <LinkIcon />, 
+            icon: <LinkIcon />,
             disabled: false,
             badge: <StreamIcon sx={{ fontSize: 14, color: 'success.main', animation: 'pulse 2s infinite', '@keyframes pulse': {
                 '0%': { opacity: 1 },
@@ -638,7 +638,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         setImages: setAgentImages,
         setAttachments: setAgentAttachments,
         ensureActiveWorkspace,
-    }), [t]);
+    }), [ensureActiveWorkspace, t]);
     const agentChatBox = (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 640 }}>
             <Box
@@ -729,7 +729,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     );
 
     return (
-        <Box sx={{ 
+        <Box sx={{
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
@@ -742,10 +742,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 
             {/* Upload data */}
             <Box>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
+                <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
                         textAlign: 'left',
                         mb: 1.5,
                         opacity: 0.6,
@@ -755,8 +755,8 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 >
                     {t('upload.uploadData', { defaultValue: 'Upload data' })}
                 </Typography>
-                <Box sx={{ 
-                    display: 'grid', 
+                <Box sx={{
+                    display: 'grid',
                     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
                     gap: 1.5,
                 }}>
@@ -776,10 +776,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 
             {/* Data Connections */}
             <Box>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
+                <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
                         textAlign: 'left',
                         mb: 1.5,
                         opacity: 0.6,
@@ -797,8 +797,8 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     } }} />
                     {t('upload.dataConnections')}
                 </Typography>
-                <Box sx={{ 
-                    display: 'grid', 
+                <Box sx={{
+                    display: 'grid',
                     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
                     gap: 1.5,
                 }}>
@@ -831,7 +831,7 @@ interface LoaderType {
     hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;
     auth_instructions?: string;
-    delegated_login?: { login_url: string; label?: string } | null;
+    delegated_login?: { login_url: string; label?: string; label_key?: string } | null;
     source?: 'plugin' | 'builtin';
     source_path?: string | null;
 }
@@ -926,7 +926,7 @@ const AddConnectionPanel: React.FC<{
         } catch {
             // Connection succeeded even if list fetch fails
         }
-    }, [onCreated, dispatch]);
+    }, [onCreated, dispatch, t]);
 
     // Shared input style
     const inputSx = {
@@ -1140,7 +1140,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
-    const existingNames = new Set(existingTables.map(t => t.id));
+    const existingNames = useMemo(
+        () => new Set(existingTables.map(table => table.id)),
+        [existingTables],
+    );
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
     // Prompt to seed the agent chat with. Sourced from the `initialChatPrompt`
@@ -1195,7 +1198,16 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 setAutoSendSeededPrompt(false);
             }
         }
-    }, [open, refreshConnectors, identityKey, initialTab, initialChatPrompt, initialChatImages]);
+    }, [
+        open,
+        refreshConnectors,
+        identityKey,
+        initialTab,
+        initialChatPrompt,
+        initialChatImages,
+        dataLoadingChatMessages.length,
+        dispatch,
+    ]);
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
@@ -1205,7 +1217,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [pasteContent, setPasteContent] = useState<string>("");
     const [isLargeContent, setIsLargeContent] = useState<boolean>(false);
     const [showFullContent, setShowFullContent] = useState<boolean>(false);
-    
+
     // File preview state
     const [filePreviewTables, setFilePreviewTables] = useState<DictTable[] | null>(null);
     const [filePreviewLoading, setFilePreviewLoading] = useState<boolean>(false);
@@ -1222,9 +1234,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [urlPreviewLoading, setUrlPreviewLoading] = useState<boolean>(false);
     const [urlPreviewError, setUrlPreviewError] = useState<string | null>(null);
     const [urlPreviewActiveIndex, setUrlPreviewActiveIndex] = useState<number>(0);
-    
+
     // Example URLs state
-    const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number; resetUrl?: string }>>([]); 
+    const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number; resetUrl?: string }>>([]);
 
     // Loading state for table loading (file/URL/paste)
     const [tableLoading, setTableLoading] = useState<boolean>(false);
@@ -1320,15 +1332,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         const processFiles = async () => {
             for (const file of selectedFiles) {
                 const uniqueName = getUniqueTableName(file.name, existingNames);
-                const isTextFile = file.type === 'text/csv' || 
-                    file.type === 'text/tab-separated-values' || 
+                const isTextFile = file.type === 'text/csv' ||
+                    file.type === 'text/tab-separated-values' ||
                     file.type === 'application/json' ||
-                    file.name.endsWith('.csv') || 
-                    file.name.endsWith('.tsv') || 
+                    file.name.endsWith('.csv') ||
+                    file.name.endsWith('.tsv') ||
                     file.name.endsWith('.json');
                 const isExcelFile = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
                     file.type === 'application/vnd.ms-excel' ||
-                    file.name.endsWith('.xlsx') || 
+                    file.name.endsWith('.xlsx') ||
                     file.name.endsWith('.xls');
 
                 if (isTextFile) {
@@ -1395,7 +1407,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         };
 
         processFiles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [existingNames, t]);
 
     // File input change handler
@@ -1527,10 +1538,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const handleContentChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         const newContent = event.target.value;
         setPasteContent(newContent);
-        
+
         const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
         setIsLargeContent(isLarge);
-        
+
         // If switching from large to small content, ensure full content is shown
         if (!isLarge) {
             setShowFullContent(true);
@@ -1543,7 +1554,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     const handlePasteSubmit = async (): Promise<void> => {
         let table: undefined | DictTable = undefined;
-        
+
         const defaultName = (() => {
             const hashStr = pasteContent.substring(0, 100) + Date.now();
             const hashCode = hashStr.split('').reduce((acc, char) => {
@@ -1656,8 +1667,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (table) {
             let sourceConfig: DataSourceConfig;
             if (urlAutoRefresh) {
-                sourceConfig = { 
-                    type: 'stream', 
+                sourceConfig = {
+                    type: 'stream',
                     url: tableURL,
                     autoRefresh: true,
                     refreshIntervalSeconds: urlRefreshInterval,
@@ -1687,8 +1698,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 const table = urlPreviewTables[i];
                 let sourceConfig: DataSourceConfig;
                 if (urlAutoRefresh) {
-                    sourceConfig = { 
-                        type: 'stream', 
+                    sourceConfig = {
+                        type: 'stream',
                         url: tableURL,
                         autoRefresh: true,
                         refreshIntervalSeconds: urlRefreshInterval,
@@ -1754,16 +1765,16 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             open={open}
             onClose={handleClose}
             maxWidth={false}
-            sx={{ 
-                '& .MuiDialog-paper': { 
+            sx={{
+                '& .MuiDialog-paper': {
                     width: 1200,
                     maxWidth: '95vw',
-                    height: 700, 
+                    height: 700,
                     maxHeight: '90vh',
                     display: 'flex',
                     flexDirection: 'column',
                     transition: 'width 0.2s ease',
-                } 
+                }
             }}
         >
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1 }}>
@@ -1781,15 +1792,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 </Typography>
                 {activeTab === 'extract' && dataLoadingChatMessages.length > 0 && (
                     <Tooltip title={t('upload.resetExtraction')}>
-                        <IconButton 
-                            size="small" 
-                            color='warning' 
+                        <IconButton
+                            size="small"
+                            color='warning'
                             sx={{
-                                '&:hover': { 
-                                    transform: 'rotate(180deg)', 
-                                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
-                                } 
-                            }} 
+                                '&:hover': {
+                                    transform: 'rotate(180deg)',
+                                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+                                }
+                            }}
                             onClick={() => dispatch(dfActions.clearChatMessages())}
                         >
                             <RestartAltIcon fontSize="small" />
@@ -1835,7 +1846,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 <TabPanel value={activeTab} index="menu">
                     <Box sx={{ p: 2, boxSizing: 'border-box', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <Box sx={{ width: '100%', maxWidth: 860 }}>
-                        <DataLoadMenu 
+                        <DataLoadMenu
                             onSelectTab={(tab) => setActiveTab(tab)}
                             onSelectConnector={(conn) => {
                                 // Already-authed connector → close dialog and
@@ -1905,7 +1916,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             inputRef={fileInputRef}
                             onChange={handleFileInputChange}
                         />
-                        
+
                         {/* File Upload Section */}
                         <Box
                             sx={{
@@ -2236,21 +2247,21 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         alignItems: hasPasteContent ? 'stretch' : 'center',
                     }}>
                         {isLargeContent && (
-                            <Box sx={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                mb: 1, 
-                                p: 1, 
-                                backgroundColor: 'rgba(255, 193, 7, 0.1)', 
-                                borderRadius: 1 
+                            <Box sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                mb: 1,
+                                p: 1,
+                                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                                borderRadius: 1
                             }}>
                                 <Typography variant="caption" sx={{ flex: 1 }}>
                                     {t('upload.largeContentDetected', { size: Math.round(pasteContent.length / 1000) })}{' '}
                                     {showFullContent ? t('upload.showingFullContent') : t('upload.showingPreview')}
                                 </Typography>
-                                <Button 
-                                    size="small" 
-                                    variant="outlined" 
+                                <Button
+                                    size="small"
+                                    variant="outlined"
                                     onClick={toggleFullContent}
                                     sx={{ textTransform: 'none', minWidth: 'auto' }}
                                 >
@@ -2289,10 +2300,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             />
                             {/* Show preview indicator when in preview mode */}
                             {isLargeContent && !showFullContent && (
-                                <Box sx={{ 
-                                    mt: 0.5, 
-                                    px: 1, 
-                                    py: 0.5, 
+                                <Box sx={{
+                                    mt: 0.5,
+                                    px: 1,
+                                    py: 0.5,
                                     backgroundColor: alpha(theme.palette.info.main, 0.08),
                                     borderRadius: 0.5,
                                     border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`

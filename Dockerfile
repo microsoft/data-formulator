@@ -25,11 +25,19 @@ FROM python:3.11-slim AS runtime
 
 # System dependencies needed by some Python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
         gcc \
         g++ \
+    gnupg \
         libpq-dev \
         unixodbc-dev \
         curl \
+  && curl -sSL -o /tmp/packages-microsoft-prod.deb \
+    "https://packages.microsoft.com/config/debian/$(. /etc/os-release && echo "${VERSION_ID%%.*}")/packages-microsoft-prod.deb" \
+  && dpkg -i /tmp/packages-microsoft-prod.deb \
+  && rm /tmp/packages-microsoft-prod.deb \
+  && apt-get update \
+  && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user to run the application

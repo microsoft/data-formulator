@@ -25,10 +25,11 @@ other, but not before their shared prerequisite row.
 | 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004 | DF-001, DF-002 | Resolved; lifecycle and reconnect suites pass | Connections close predictably and transient failures preserve credentials |
 | 5 | Complete model transport resilience | DF-009 | DF-012 | Resolved; retry and compatibility suites pass | Bounded 429 retry behavior passes focused tests |
 | 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015 | DF-001 through DF-004 | Resolved in source; live image/runtime deployment checks remain | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests |
-| 7 | Reassess connector readiness, then build shared Fabric discovery and delegated auth | DF-017 | Resolved DF-001, completed source fixes, readiness requirements | Ready for reassessment; implementation paused | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and shared sessions are verified |
-| 8 | Add Azure SQL delegated Entra authentication | DF-016 | Shared delegated-auth/session foundation | Planned; blocked pending reassessment | Entra token connects through ODBC while SQL and Windows auth remain green |
-| 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Planned; blocked | Delta and supported file imports pass catalog, limit, and audience tests |
-| 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Planned; blocked | Delegated RLS-safe query results pass API, limit, and serialization tests |
+| 7 | Build shared delegated-auth contract and Fabric discovery | DF-017 | Resolved DF-001, completed source fixes, reassessed requirements | Ready to implement shared auth and mocked discovery; real-service release gates remain | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and restart-durable sessions are verified |
+| 8A | Add Azure SQL delegated Entra authentication | DF-016 | Shared delegated-auth contract from DF-017 | Review blockers resolved; staging data-plane verified, production Entra/session/image/popup gates remain | Entra token connects through ODBC while SQL and Windows auth remain green |
+| 8B | Complete Fabric discovery integration | DF-017 | Shared delegated-auth contract | May proceed in parallel with DF-016 after shared contract; representative tenant evidence required for release | Bounded delegated workspace/item discovery passes contract and real-service tests |
+| 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Blocked on DF-017 and data-plane spikes | Delta and supported file imports pass catalog, limit, and audience tests |
+| 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Blocked on DF-017 and metadata/query spikes | Delegated RLS-safe query results pass API, limit, and serialization tests |
 
 Orders 9A and 9B are parallel. Update the tracker state and exit-gate evidence
 whenever an issue is resolved, superseded, or split.
@@ -43,9 +44,19 @@ whenever an issue is resolved, superseded, or split.
 - Full backend suite: 1,952 passed, 12 skipped, 1 xpassed; five failures and
   two setup errors are pre-existing Windows/stale-test issues (plugin fixture
   encoding, symlink privilege, and `sample_datasets` parameter assumptions).
-- No connector implementation begins until the readiness requirements are
-  reassessed.
-- **Next action**: reassess connector readiness.
+- Connector implementation was paused until the readiness requirements were
+  reassessed. Reassessment is now complete.
+- Shared delegated-auth implementation may begin. Azure SQL token support and
+  Fabric discovery clients may proceed in parallel after that contract is
+  green; real-service release gates remain blocked on external prerequisites.
+- Azure SQL staging readiness is verified for DNS, TCP 1433, ODBC Driver 18,
+  TLS certificate validation, explicit-active-tenant SQL token acquisition,
+  three independent connections, and 25 catalog entries through the
+  implemented loader. Smoke tests must select the tenant explicitly because
+  the local Azure CLI cache contains multiple tenant contexts.
+- **Next action**: commit and deploy the reviewed source, configure production
+  Entra permission/callback and durable sessions, then verify Driver 18,
+  Gunicorn, trusted public callback/origin, and the interactive popup flow.
 
 ## Implemented Changes
 
@@ -872,18 +883,35 @@ Implementation evidence (2026-07-09):
 
 ### DF-016: Azure SQL connector lacks delegated Microsoft Entra MFA
 
-**Status**: Planned; design verification blocked on shared auth/session prerequisites \
+**Status**: Implemented and review blockers resolved; production release gates pending \
 **Severity**: Medium \
 **Area**: SQL Server connector, authentication, Azure SQL
 
-The current MSSQL loader path supports SQL username/password and
-`Trusted_Connection` modes, but does not yet support delegated Microsoft Entra
-access-token authentication via `SQL_COPT_SS_ACCESS_TOKEN`.
+The MSSQL loader supports SQL username/password, `Trusted_Connection`, and
+delegated Microsoft Entra access-token authentication through
+`SQL_COPT_SS_ACCESS_TOKEN`.
 
 Evidence:
 
-- `py-src/data_formulator/data_loader/mssql_data_loader.py` uses connection
-  strings and no `SQL_COPT_SS_ACCESS_TOKEN` handoff.
+- Tokens are isolated by connector instance plus audience with legacy fallback
+  disabled after migration begins.
+- Azure SQL login and callback routes bind connector, identity, origin, and
+  single-use state, then store tokens server-side and emit token-free popup
+  completion.
+- The frontend validates exact popup origin and source while retaining the
+  legacy Superset token flow.
+- ODBC token packing is covered and the real `MSSQLDataLoader` reaches the
+  approved staging server. Explicit active-tenant token acquisition produced
+  three independent successful connections and 25 catalog entries.
+- The Dockerfile installs Microsoft ODBC Driver 18 for the production runtime.
+- Code and integration review blockers are resolved:
+  - one trusted proxy hop produces and validates the public HTTPS callback and
+    browser origin;
+  - token-mode vault persistence receives only non-sensitive connection params;
+  - the SQL gateway rejects connectors without delegated SQL audience;
+  - a lock-backed process-local state registry makes callback consumption
+    atomic under the enforced one-worker deployment.
+- Delegated sessions remain restart-ephemeral and are still a production gate.
 - Planned design work is tracked in
   `docs/plans/2026-07-09-azure-sql-entra-mfa.md`.
 - MFA enforcement is performed by Microsoft Entra Conditional Access at token
@@ -891,21 +919,18 @@ Evidence:
 
 Impact:
 
-- Users and organizations requiring delegated Entra MFA for Azure SQL cannot
-  use this connector path.
-- Auth mode selection remains incomplete for mixed SQL auth and delegated
-  identity deployments.
+- Production requires Entra app permission and callback configuration,
+  restart-durable delegated-token sessions, a
+  successful remote image build, and an interactive popup smoke test under
+  Conditional Access.
 
 Recommended remediation:
 
-1. Add audience-aware connector-instance `TokenStore` support for
-   `https://database.windows.net/` delegated tokens.
-2. Implement fail-closed auth-mode selection that rejects ambiguous or mixed
-   credential/token states.
-3. Ensure secure shared session handling for delegated tokens across worker
-   replicas.
-4. Install and validate ODBC Driver 18 in the runtime container for token-based
-   Azure SQL connectivity.
+1. Configure the production Entra app permission and Azure SQL callback URI.
+2. Replace restart-ephemeral delegated-token sessions with approved durable
+  storage; retain the one-replica cap until a shared backend is available.
+3. Build and deploy the image, verify Driver 18 and Gunicorn in the container,
+  and run the interactive popup smoke test.
 
 Acceptance criteria:
 
@@ -916,6 +941,17 @@ Acceptance criteria:
 - No browser-side storage or credential-vault persistence exposes delegated
   tokens.
 - Existing SQL authentication and Windows authentication regression tests pass.
+- Focused implementation evidence: 118 backend tests, 5 popup security tests,
+  clean project TypeScript, and 64 app/auth integration tests.
+- Forwarded HTTPS/host requests produce the registered public callback URI and
+  accept only the exact public browser origin.
+- Token-mode connection never sends access or refresh tokens to the credential
+  vault, regardless of the client `persist` value.
+- Azure SQL login rejects visible connectors whose loader does not declare the
+  delegated SQL audience.
+- Concurrent callback attempts can consume a state value at most once.
+- Review-blocker regression tests pass for forwarded proxy handling,
+  token-vault exclusion, SQL connector binding, and concurrent state use.
 
 ### DF-017: Fabric workspace and item discovery are not available
 

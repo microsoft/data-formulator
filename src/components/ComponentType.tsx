@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 
 import { Type } from '../data/types';
-import { channels, type ChartTemplateDef } from '../lib/agents-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
+import { channels, type ChartTemplateDef } from '../lib/agents-chart';
 
 export type FieldSource = "custom" | "original";
 
@@ -130,7 +130,7 @@ export interface DataCleanBlock {
         artifacts: {type: 'image_url' | 'web_url', value: string}[]; // images sent along with the prompt
     }
 
-    // For output messages  
+    // For output messages
     dialogItem?: any; // Store the dialog item from the model response
 }
 
@@ -205,25 +205,25 @@ export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 
 // not in the frontend. Frontend only manages refresh timing/toggle.
 export interface DataSourceConfig {
     type: DataSourceType;
-    
+
     // For URL/stream sources - the URL to fetch data from
     url?: string;
-    
+
     // Refresh interval in seconds (used for streams and database auto-refresh)
     refreshIntervalSeconds?: number;
-    
+
     // For database sources - the DuckDB table name (backend knows how to refresh it)
     databaseTable?: string;
-    
+
     // Whether auto-refresh is enabled (frontend controls this for all source types)
     autoRefresh?: boolean;
-    
+
     // Last refresh timestamp
     lastRefreshed?: number;
-    
+
     // Original file name (for file uploads)
     fileName?: string;
-    
+
     // Whether this table can be refreshed (backend has connection info)
     canRefresh?: boolean;
 
@@ -237,12 +237,12 @@ export interface DataSourceConfig {
 export interface DictTable {
     kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
-    displayId: string; // display id of the table 
-    
+    displayId: string; // display id of the table
+
     names: string[]; // column names
     metadata: {[key: string]: {
         type: Type,
-        semanticType: string, 
+        semanticType: string,
         levels: any[],
         // Parallel to `levels` (same order); only populated when `levels`
         // was filled by the backend column-stats pass (design-doc 31).
@@ -284,21 +284,21 @@ export interface DictTable {
     description: string; // table-level description sourced from the loader (read-only). Empty string when none.
 
     source?: DataSourceConfig;
-    
+
     // Content hash for detecting data changes during refresh
     // Used to avoid unnecessary derived table recalculations when data hasn't changed
     contentHash?: string;
 }
 
 export function createDictTable(
-    id: string, rows: any[], 
+    id: string, rows: any[],
     derive: {
-        code: string, codeSignature?: string, outputVariable: string, 
+        code: string, codeSignature?: string, outputVariable: string,
         explanation?: {
-            code: string, 
-            concepts: {field: string, explanation: string}[]}, 
-            source: string[], 
-            dialog: any[], 
+            code: string,
+            concepts: {field: string, explanation: string}[]},
+            source: string[],
+            dialog: any[],
             trigger: Trigger
         } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },
@@ -306,14 +306,14 @@ export function createDictTable(
     description: string = '',
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
-    
+
     let names = Object.keys(rows[0])
 
     return {
         kind: 'table' as const,
         id,
         displayId: `${id}`,
-        names, 
+        names,
         rows,
         metadata: names.reduce((acc, name) => {
             const colValues = rows.map(r => r[name]);
@@ -361,11 +361,11 @@ export interface ChartStyleVariant {
     rationale?: string,           // optional one-line explanation from the agent
 }
 
-export type Chart = { 
-    id: string, 
-    chartType: string, 
-    encodingMap: EncodingMap, 
-    tableRef: string, 
+export type Chart = {
+    id: string,
+    chartType: string,
+    encodingMap: EncodingMap,
+    tableRef: string,
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
     insight?: ChartInsight,  // AI-generated insight about the visualization
@@ -424,7 +424,7 @@ export interface EncodingItem {
     dtype?: "quantitative" | "nominal" | "ordinal" | "temporal",
     aggregate?: AggrOp,
     //sort?: "ascending" | "descending" | string,
-    sortOrder?: "ascending" | "descending", // 
+    sortOrder?: "ascending" | "descending", //
     sortBy?: undefined | string, // what values are used to sort the encoding
     scheme?: string
 }
@@ -469,5 +469,5 @@ export interface ConnectorInstance {
     effective_hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;
     auth_instructions?: string;
-    delegated_login?: { login_url: string; label?: string } | null;
+    delegated_login?: { login_url: string; label?: string; label_key?: string } | null;
 }

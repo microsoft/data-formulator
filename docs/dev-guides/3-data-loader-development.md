@@ -278,7 +278,7 @@ my_report_data_loader.py -> my_report
 |--------|--------|---------|
 | `PostgreSQLDataLoader` | PostgreSQL | `psycopg2` |
 | `MySQLDataLoader` | MySQL | `pymysql` |
-| `MSSQLDataLoader` | SQL Server | `pyodbc` |
+| `MSSQLDataLoader` | SQL Server / Azure SQL | `pyodbc`；支持 SQL、Windows 和委托 Microsoft Entra access token |
 | `BigQueryDataLoader` | Google BigQuery | `google-cloud-bigquery`，查询结果可直接 `to_arrow()` |
 | `AthenaDataLoader` | AWS Athena | SQL on S3 |
 | `KustoDataLoader` | Azure Data Explorer | `azure-kusto-data`，KQL 结果转 Arrow |
@@ -305,6 +305,11 @@ my_report_data_loader.py -> my_report
 - [ ] `list_params()` 中密码、token、access key、connection string 等字段标记 `sensitive=True` 或 `type="password"`；认证专用字段标记 `tier="auth"`。
 - [ ] 连接成功后需要复用的敏感凭据只进入 vault，不写入 `connectors.yaml`，也不作为 `pinned_params` 返回前端。
 - [ ] `delegated` 或 `sso_exchange` loader 已在 `__init__` 中真正消费 `access_token` / `sso_access_token`，不能只声明 `auth_config()`。
+- [ ] 声明多个资源 token 的 loader 在 `auth_config()` 中提供明确
+    `audience`；DataConnector 必须按 connector instance + audience 注入。
+- [ ] MSSQL 委托模式通过 `SQL_COPT_SS_ACCESS_TOKEN` 传入 UTF-16-LE
+    length-prefixed token，连接串不得同时包含 `UID`、`PWD`、
+    `Trusted_Connection` 或 `Authentication`。
 
 **数据与 catalog**
 

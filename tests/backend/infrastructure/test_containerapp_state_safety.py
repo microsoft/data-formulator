@@ -38,6 +38,14 @@ def test_production_container_uses_gunicorn() -> None:
     assert "data_formulator.app:app" in dockerfile
 
 
+def test_production_container_includes_sql_server_odbc_driver_18() -> None:
+    dockerfile = _DOCKERFILE.read_text(encoding="utf-8")
+
+    assert "packages.microsoft.com/config/debian" in dockerfile
+    assert "ACCEPT_EULA=Y" in dockerfile
+    assert "msodbcsql18" in dockerfile
+
+
 def test_production_ingress_state_is_parameterized() -> None:
     main = _MAIN_BICEP.read_text(encoding="utf-8")
     parameters = _MAIN_PARAMETERS.read_text(encoding="utf-8")

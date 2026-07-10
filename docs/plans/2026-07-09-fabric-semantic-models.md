@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Reassessed; blocked on DF-017 and metadata/query spikes
 date: 2026-07-09
 scope: Add a Fabric semantic model data loader with delegated OAuth, RLS-preserving query execution, and safe query templates.
 related:
@@ -11,6 +11,12 @@ related:
 ## Goal
 
 Deliver a FabricSemanticModelDataLoader registered in _LOADER_SPECS that provides a hierarchy of Workspace -> Semantic Model -> queryable object or query template, while preserving delegated user permissions and row-level security.
+
+Reassessment result: implementation remains blocked until DF-017 supplies the
+audience-aware auth and discovery contracts. A representative Viewer-plus-Build
+RLS fixture has not been verified. JSON `executeQueries` remains the default
+first slice; Arrow and generated table previews remain behind their documented
+endpoint, capacity, metadata, and safety spikes.
 
 This plan explicitly depends on docs/plans/2026-07-09-fabric-workspaces.md for the shared audience-aware token and session foundation, delegated OAuth scope plumbing, and token-free popup behavior.
 

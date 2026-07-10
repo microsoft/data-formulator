@@ -12,7 +12,7 @@
 DF 支持两种认证模式，**自动根据 `OIDC_CLIENT_SECRET` 是否配置来推导**：
 
 | 模式 | 触发条件 | Token 存储 | 适用场景 |
-|------|---------|-----------|---------|
+| ------ | --------- | ----------- | --------- |
 | Frontend (Public Client) | 未设置 `OIDC_CLIENT_SECRET` | Bearer header (浏览器) | 公开客户端、本地开发 |
 | Backend (Confidential Client) | 设置了 `OIDC_CLIENT_SECRET` | Flask Session (cookie) | 机密客户端、生产部署 |
 
@@ -40,7 +40,7 @@ Session-backed 凭证管理器，统一管理所有第三方系统的 token。
 **关键方法**:
 
 | 方法 | 说明 |
-|------|------|
+| ------ | ------ |
 | `get_access(system_id)` | 返回最佳可用凭证（str / dict / None） |
 | `get_sso_token()` | 获取 DF 级 SSO token |
 | `get_auth_status()` | 批量查询所有系统的认证状态，包含 `requires_user_action` 与 `available_strategies` |
@@ -73,7 +73,7 @@ OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 
 **`oidc_bp`** (`/api/auth/oidc/`):
 
 | 路由 | 方法 | 说明 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `/login` | GET | 重定向到 IdP 授权页 |
 | `/status` | GET | 检查 SSO 登录状态 |
 | `/logout` | POST | 清除当前浏览器 Session 中的 SSO/service token，不删除 Vault 凭据 |
@@ -81,7 +81,7 @@ OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 
 **`oidc_callback_bp`**（无前缀）:
 
 | 路由 | 方法 | 说明 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `/auth/callback` | GET | 接收授权码，换取 token，自动触发 SSO Exchange |
 
 > 回调路径 `/auth/callback` 与前端 PKCE 模式共用，SSO 侧只需注册一个 redirect URI。
@@ -89,7 +89,7 @@ OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 
 **`auth_tokens_bp`** (`/api/auth/`):
 
 | 路由 | 方法 | 说明 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `/tokens/save` | POST | 接收弹窗登录获取的 token，并通过 `store_service_token()` 写入 TokenStore |
 | `/tokens/<system_id>` | DELETE | 显式断开某个 service token，并清理对应 Vault 凭据 |
 | `/service-status` | GET | 返回所有系统的认证状态 |
@@ -99,7 +99,7 @@ OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 
 前端不直接读取 `AUTH_MODE` 环境变量，而是调用 `/api/auth/info`。OIDC provider 返回：
 
 | `action` | 前端行为 |
-|----------|----------|
+| ---------- | ---------- |
 | `backend` | `AuthButton` 跳转到 `login_url`，登出时 POST `logout_url`，后续请求依赖 session cookie |
 | `frontend` | 使用 `oidc-client-ts` 走浏览器 PKCE，并由 `fetchWithIdentity()` 附加 Bearer token |
 | `transparent` | 平台已完成身份注入，前端不展示普通 OIDC 登录按钮 |
@@ -124,6 +124,7 @@ def auth_config() -> dict:
 ```
 
 **mode 枚举**:
+
 - `credentials` — 用户名/密码（默认，不进入 TokenStore）
 - `connection` — 连接串（同 credentials）
 - `sso_exchange` — SSO token 自动交换
@@ -142,12 +143,36 @@ def auth_config() -> dict:
 
 用户或运维侧 Superset 配置步骤见 `docs/docs-cn/5.1-superset-sso-oauth-config-guide.md`。
 
+新建后端委托流程使用更安全的 token-free 合约：
+
+- `TokenStore.store_service_token(..., audience=...)` 按 connector instance
+  和资源 audience 隔离 token；`get_service_token(connector_id, audience)`
+  只返回完全匹配的有效 token。
+- 后端 callback 只向 opener 发送
+  `{type: "df-sso-auth", authenticated: true}`，不发送 access token 或
+  refresh token。
+- 前端必须同时校验 `event.origin` 和 `event.source`，然后调用普通
+  connector connect route，让后端从 TokenStore 注入 token。
+- 旧 Superset token-bearing popup 合约保留兼容；一旦某 connector 写入
+  audience-qualified token，就不再跨 audience 回退到旧 token。
+- `delegated_login_config().login_url` 以 `/` 开头时视为 app-relative
+  route，不得添加 connector route 前缀；`label_key` 原样传给前端 i18n。
+- Provider-specific gateway 在生成 state 前必须确认 connector 对当前
+  identity 可见，并且 loader 声明了预期的 auth mode 和 audience。
+- TLS 终止代理后的 callback/origin 必须来自受信任的公开 HTTPS 边界：
+  使用精确代理层数的 forwarded-header middleware，或显式配置并校验公开
+  OAuth base URL。不得直接信任任意 `X-Forwarded-*` 请求头。
+- Token-mode connect 即使收到 `persist=true`，也不得把 access token 或
+  refresh token 传入 vault；只允许持久化非敏感连接参数。
+- OAuth state 的 single-use 语义必须在并发 callback 下仍然成立；普通
+  session dict 的 read-pop-write 不等同于原子消费。
+
 ---
 
 ## 3. 环境变量
 
 | 变量 | 说明 | 必需 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `OIDC_ISSUER_URL` | IdP Issuer URL（自动发现 + JWT 验证） | 是 |
 | `OIDC_CLIENT_ID` | OIDC Client ID | 是 |
 | `OIDC_CLIENT_SECRET` | OIDC Client Secret（设置即启用 backend 模式） | 机密客户端必需 |
@@ -203,7 +228,7 @@ def auth_config() -> dict:
 ## 6. 测试
 
 | 测试文件 | 覆盖范围 |
-|---------|---------|
+| --------- | --------- |
 | `tests/backend/auth/test_token_store.py` | TokenStore 解析链、存储、过期、刷新、SSO Exchange |
 | `tests/backend/auth/test_oidc_gateway.py` | OIDC 登录/回调/状态/登出、token 保存路由 |
 | `tests/backend/auth/test_oidc_provider.py` | JWT 验证（前端模式） |
@@ -221,4 +246,4 @@ def auth_config() -> dict:
 - [ ] 检查 TokenStore 集成：新的 Loader 是否需要 `auth_config()` 声明
 - [ ] 日志审查：新代码是否可能泄露 token 或 secret
 - [ ] Session 依赖：新路由是否需要 Flask Session（仅 backend 模式有 session）
-- [ ] 测试覆盖：新路由是否有对应的测试用例
+- [ ] 测试覆盖：新路由是否有对应的测试用例。

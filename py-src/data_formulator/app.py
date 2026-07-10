@@ -44,6 +44,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import secrets
 import base64
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 APP_ROOT = Path(Path(__file__).parent).absolute()
 
@@ -53,6 +54,8 @@ load_dotenv(os.path.join(APP_ROOT, '.env'))
 
 # Create Flask app (lightweight, no heavy imports yet)
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
+# Azure Container Apps terminates TLS one trusted proxy hop before Flask.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(16)
 app.json.sort_keys = False
 app.json.ensure_ascii = False
@@ -225,6 +228,8 @@ def _register_blueprints():
     # Register auth token management routes (always active)
     from data_formulator.auth.gateways.oidc_gateway import auth_tokens_bp
     app.register_blueprint(auth_tokens_bp)
+    from data_formulator.auth.gateways.azure_sql_gateway import azure_sql_bp
+    app.register_blueprint(azure_sql_bp)
 
     # Register backend OIDC gateway (auto-detected: active when OIDC_CLIENT_SECRET is set)
     from data_formulator.auth.providers.oidc import is_backend_oidc_mode

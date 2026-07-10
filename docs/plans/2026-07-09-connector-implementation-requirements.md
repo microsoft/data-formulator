@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Reassessed; shared foundation ready to implement
 date: 2026-07-09
 scope: Define readiness requirements and objective evidence for Azure SQL and Microsoft Fabric connector implementation.
 falsification-deadline: 2026-09-30
@@ -37,9 +37,9 @@ Implementation order and issue sequencing remain in `docs/plans/ISSUES.md`. This
 | --- | --- | --- |
 | OS | Verified available | Windows environment |
 | Python | Verified available | Python 3.12.10 on PATH |
-| Python virtual environment | Declared not installed | No `.venv/` and no `venv/` detected |
-| Python imports | Declared not installed | Imports currently false for `pyodbc`, `flask_session`, `cachelib`, `redis`, `deltalake`, `pyarrow`, `pytest` |
-| Python CLI helpers | Declared not installed | `uv` and `pytest` commands are missing |
+| Python virtual environment | Verified available | `.venv` exists and runs Python dependencies and tests |
+| Python imports | Partially verified | `pyodbc`, `flask_session`, `cachelib`, `pyarrow`, and `pytest` are available; `redis` and `deltalake` are absent by design pending decisions |
+| Python CLI helpers | Verified available | `uv 0.11.28` and `pytest 9.1.1` run through `.venv` |
 | Node.js | Verified available | Node 24.18.0 |
 | Corepack | Verified available | Corepack 0.35.0 |
 | Yarn runtime | Verified available | Direct `yarn` command missing, `corepack yarn` provides Yarn 1.22.22 |
@@ -50,7 +50,7 @@ Implementation order and issue sequencing remain in `docs/plans/ISSUES.md`. This
 | Azure Developer CLI | Verified available | `azd` 1.27.0 |
 | Azure CLI Bicep integration | Verified available | Azure CLI Bicep 0.44.1 available |
 | Standalone Bicep binary | Declared not installed | Standalone `bicep` command absent, not required when Azure CLI Bicep integration is available |
-| SQL Server ODBC driver | Declared not installed | No ODBC Driver 17 or 18 found |
+| SQL Server ODBC driver | Verified available | Microsoft ODBC Driver 18.6.2.1 is installed for x64 and x86 |
 
 ### 3.2 Auth/session and cloud context
 
@@ -64,19 +64,19 @@ Implementation order and issue sequencing remain in `docs/plans/ISSUES.md`. This
 
 | Area | Status | Evidence |
 | --- | --- | --- |
-| Container App scale | Verified available | Minimum replicas 1, maximum replicas 3 |
+| Container App scale | Verified available | Minimum replicas 1, maximum replicas 1; multi-replica deployment is prohibited while runtime state is instance-local |
 | Current env var families | Verified available | Current app/OpenAI/App Insights names present |
 | OIDC/Fabric/Power BI/Redis/Azure SQL env vars | Missing | Not present in current app environment set |
 | Live resource inventory classes | Verified available | App, environment, registry, OpenAI, App Insights, managed identity, network, certificate, and storage classes are present |
-| Redis in app resource group | Missing | Targeted check found no Redis resource |
-| Azure SQL in app resource group | Missing | Targeted check found no Azure SQL resource |
+| Redis in app resource group | Deferred scale-out dependency | No Redis resource; not required while production remains capped at one replica, but required before raising the cap |
+| Azure SQL target | Verified external asset | DNS, TCP 1433, TLS validation, Driver 18, explicit-active-tenant SQL token acquisition, and repeatable token-only database/catalog access succeeded. Multi-tenant CLI caches require explicit tenant selection in smoke tests. |
 | Key Vault in app resource group | Missing | Targeted check found no Key Vault resource |
 
 ### 3.4 Fabric and accelerator evidence
 
 | Area | Status | Evidence |
 | --- | --- | --- |
-| Fabric MCP workspace listing | Verified available | Fabric MCP can list accessible workspaces |
+| Fabric MCP workspace listing | Verified available | OneLake MCP returned accessible workspaces and regional service endpoints for the current identity |
 | Sampled workspace OneLake content | Missing | Three sampled workspaces had no OneLake items |
 | Lakehouse/Semantic Model concrete test asset | External verification required | No concrete delegated test asset verified yet |
 | WorkIQ | Verified available | WorkIQ available and lists agents |
@@ -94,6 +94,24 @@ Implementation order and issue sequencing remain in `docs/plans/ISSUES.md`. This
 | WorkIQ | Agent/tool inventory and workflow assistance for implementation support | Replacement for runtime integration code, auth boundaries, or loader execution contracts |
 
 Fabric IQ and WorkIQ runtime integration is out of scope unless separately designed, specified, and accepted.
+
+### 3.5 Reassessment decision (2026-07-09)
+
+Connector work now has two distinct readiness thresholds:
+
+- **Implementation-ready:** shared delegated-auth contracts and mocked connector
+  clients may begin. The local environment, single-replica production safety,
+  secure-cookie default, bounded OAuth state, request limits, loader lifecycle,
+  identifier validation, and retry foundations are available.
+- **Release-ready:** real-service release remains blocked until Entra app
+  permissions and redirects, durable delegated-token sessions across restarts,
+  high-entropy secret sourcing, representative service assets, and
+  connector-specific runtime dependencies are verified.
+
+The shared delegated-auth foundation is the first implementation slice. Azure
+SQL token packing and Fabric REST discovery may proceed in parallel after that
+contract is green. Lakehouse and Semantic Models remain downstream of Fabric
+discovery and their connector-specific spikes.
 
 ## 5. Quality attributes
 
@@ -119,7 +137,7 @@ The following quality attributes are release-blocking for DF-016 through DF-019.
 - **ROBUST-002 (MUST):** Retries MUST apply only to transient classes (408, 429, selected 5xx, and network failures), use max three attempts by default, exponential backoff with jitter, and honor Retry-After with a configured cap. Retries MUST NOT apply to auth, permission, validation, DAX semantic, or SQL semantic errors.
 - **ROBUST-003 (MUST):** Token handling MUST fail closed on missing token, wrong audience, or expired token. Credential mode fallback is not allowed.
 - **ROBUST-004 (MUST):** Connect, import, and refresh flows MUST be atomic from the user perspective. No live loader, cache, or source metadata may be committed until validation succeeds. Failures MUST clean temporary resources and preserve the last known good state.
-- **ROBUST-005 (MUST):** Identity, connector, and audience isolation plus multi-replica session continuity MUST be tested, including concurrent tabs, callback reorder and replay, token expiry, replica change, and cancellation.
+- **ROBUST-005 (MUST):** Identity, connector, and audience isolation plus session continuity MUST be tested, including concurrent tabs, callback reorder and replay, token expiry, process restart, and cancellation. Replica-change tests become release-blocking before `maxReplicas` is raised above one.
 - **ROBUST-006 (MUST):** Pagination MUST terminate deterministically, including continuation-cycle detection and page and item caps.
 - **ROBUST-007 (MUST):** Errors MUST use the unified protocol, logs MUST be sanitized, request correlation MUST be present, and upstream response bodies MUST NOT be logged.
 - **ROBUST-008 (MUST):** Each connector MUST include mocked unit and contract tests plus opt-in real-service smoke tests. Outage, throttling, partial response, and malformed payload scenarios MUST be covered.
@@ -198,7 +216,7 @@ Each report MUST include:
 
 | ID | Requirement | Level |
 | --- | --- | --- |
-| SEC-001 | Production session state MUST use a shared server-side session store compatible with multi-replica deployment. | MUST |
+| SEC-001 | Delegated-token session state MUST survive ordinary process and revision restarts. A shared multi-replica store is additionally required before `maxReplicas` is raised above one. | MUST |
 | SEC-002 | Production session handling MUST NOT fall back to cookie-only state for delegated auth flows. | MUST |
 | SEC-003 | `SESSION_COOKIE_SECURE` MUST be true for production runtime. | MUST |
 | SEC-004 | Flask/session secret material MUST come from high-entropy secure input or Key Vault sourced secret flow. | MUST |
@@ -206,6 +224,10 @@ Each report MUST include:
 | SEC-006 | Popup callback handling MUST validate both message origin and source before accepting auth completion. | MUST |
 | SEC-007 | Token isolation MUST enforce identity plus connector plus audience or profile keying in TokenStore paths. | MUST |
 | SEC-008 | Tokens MUST NOT be logged, persisted in connector vault/config, or sent to browser storage unless explicitly approved by separate design. | MUST |
+| SEC-009 | Delegated OAuth callbacks and accepted browser origins MUST use the validated public HTTPS origin behind trusted proxies. Forwarded headers MUST be trusted only with an exact proxy boundary, or a configured public OAuth base URL MUST be used. | MUST |
+| SEC-010 | Token-mode connect MUST remove access and refresh tokens before credential-vault persistence, regardless of client `persist` input. | MUST |
+| SEC-011 | Provider-specific auth gateways MUST verify that the resolved connector declares the expected auth mode and resource audience before issuing state. | MUST |
+| SEC-012 | Pending OAuth state consumption MUST be atomic so concurrent callbacks cannot exchange one state more than once. | MUST |
 
 ### 6.4 ID requirements
 
@@ -215,7 +237,7 @@ Each report MUST include:
 | ID-002 | Redirect URIs MUST exactly match deployed callback endpoints for each delegated connector flow. | MUST |
 | ID-003 | Admin consent and least-privilege delegated permissions MUST be validated before integration testing. | MUST |
 | ID-004 | Azure SQL delegated scope MUST be `https://database.windows.net/.default`; consent and resource setup assumptions MUST be explicitly verified. | MUST |
-| ID-005 | Fabric scopes MUST include `https://api.fabric.microsoft.com/Workspace.Read.All` and `https://api.fabric.microsoft.com/Item.Read.All`. | MUST |
+| ID-005 | The Entra app registration MUST include delegated Fabric permissions `Workspace.Read.All` and `Item.Read.All`. Runtime token requests MUST use a verified Fabric resource profile; do not construct permission URIs by assumption. | MUST |
 | ID-006 | OneLake Storage delegated scope MUST include `https://storage.azure.com/.default`. | MUST |
 | ID-007 | Power BI delegated scope MUST include `https://analysis.windows.net/powerbi/api/Dataset.Read.All`. | MUST |
 | ID-008 | Conditional Access MFA enforcement MUST be handled by Entra policy; connector auth design MUST preserve delegated interactive flow compatibility. | MUST |
@@ -226,13 +248,13 @@ Each report MUST include:
 
 | ID | Requirement | Level |
 | --- | --- | --- |
-| AZR-001 | A shared Redis-compatible session resource or formally approved equivalent MUST be provisioned for production multi-replica session integrity. | MUST |
+| AZR-001 | A Redis-compatible or formally approved shared session resource MUST be provisioned before production scales above one replica. Single-replica release still requires restart-durable delegated-token session storage. | MUST |
 | AZR-002 | A Key Vault or approved high-entropy secret source MUST provide runtime session secret material. | MUST |
 | AZR-003 | Runtime container image MUST include ODBC support required for token-based Azure SQL connections. | MUST |
 | AZR-004 | Azure SQL target MAY be external to app resource group, but if required it MUST have Entra admin configured and contained users or groups provisioned. | SHOULD |
 | AZR-005 | Network controls MUST validate firewall or private endpoint requirements for SQL and Fabric access paths. | MUST |
 | AZR-006 | App Insights telemetry MUST remain sanitized and exclude credentials, tokens, and sensitive payloads. | MUST |
-| AZR-007 | Current app resource group lacks Redis, Azure SQL, and Key Vault; this MUST be treated as an active readiness gap. | MUST |
+| AZR-007 | Current app resource group lacks Redis, Azure SQL, and Key Vault. Redis is a conditional scale-out gap; SQL may be an external target; an approved high-entropy secret source remains an active release gap. | MUST |
 
 ### 6.6 FAB requirements
 
@@ -250,7 +272,7 @@ Each report MUST include:
 
 | ID | Requirement | Level |
 | --- | --- | --- |
-| TEST-001 | A representative Azure SQL test database MUST exist for delegated auth and query validation. | MUST |
+| TEST-001 | A representative Azure SQL test database MUST exist for delegated auth and query validation. The approved external staging target satisfies network, driver, current-user authorization, and catalog readiness; application-flow validation remains required. | MUST |
 | TEST-002 | A Fabric workspace with a managed Delta Lakehouse and representative Files assets MUST exist for integration testing. | MUST |
 | TEST-003 | Files test assets MUST include CSV, TSV, Parquet, JSON, and JSONL coverage. | MUST |
 | TEST-004 | A Semantic Model test asset MUST include both safe non-RLS and RLS scenarios, with Build permission in test principal context. | MUST |
@@ -273,10 +295,14 @@ Each report MUST include:
 
 ### DF-016: Azure SQL delegated Entra authentication
 
-- **Prerequisites**: TOOL-001, TOOL-002, TOOL-005, SEC-001, SEC-003,
-  SEC-005, SEC-007, ID-001, ID-004, AZR-001, AZR-002, TEST-001, APP-002,
+- **Implementation prerequisites**: TOOL-001, TOOL-002, SEC-003, SEC-005,
+  SEC-007, APP-002,
   SIMPLE-001 through SIMPLE-006, ROBUST-001 through ROBUST-008,
   PERF-001, PERF-002, PERF-004, PERF-006, PERF-007, PERF-008.
+- **Real-service and release prerequisites**: SEC-001, ID-001, ID-004,
+  AZR-002 and application-flow validation against TEST-001. TOOL-005 and the
+  target/current-user portion of TEST-001 are verified. AZR-001 is additionally
+  required before scaling above one replica.
 - **Go condition**: A delegated token is acquired and injected through the ODBC
   token path while SQL and Windows authentication regressions remain green.
   The shared delegated-auth/session foundation may be reused, but Fabric API
@@ -284,10 +310,13 @@ Each report MUST include:
 
 ### DF-017: Fabric workspace and item discovery
 
-- **Prerequisites**: TOOL-001, TOOL-002, SEC-001 through SEC-007, ID-001,
-  ID-005, AZR-001, AZR-002, FAB-001, APP-001, APP-004, SIMPLE-001 through
+- **Implementation prerequisites**: TOOL-001, TOOL-002, SEC-003 through
+  SEC-007, APP-001, APP-004, SIMPLE-001 through
   SIMPLE-006, ROBUST-001 through ROBUST-008, PERF-001, PERF-002, PERF-003,
   PERF-005, PERF-006, PERF-007, PERF-008.
+- **Real-service and release prerequisites**: SEC-001, ID-001, ID-005,
+  AZR-002, FAB-001. AZR-001 is additionally required before scaling above one
+  replica.
 - **Go condition**: Per-user delegated authentication and workspace-item
   discovery operate with bounded pagination/retry and token-safe popup/session
   behavior.
@@ -315,7 +344,7 @@ Correction versus tracker shorthand: extractable delegated-auth and session foun
 | Gate | Scope | Objective evidence (no secrets) |
 | --- | --- | --- |
 | Gate A | Local development baseline | Confirm venv creation, dependency install, `corepack yarn --version`, backend/frontend test tool availability, `Get-OdbcDriver` presence checks |
-| Gate B | Security and session baseline | Confirm shared session backend configured, secure cookie enabled, high-entropy secret source configured, popup origin/source checks and OAuth state map tests passing |
+| Gate B | Security and session baseline | Confirm connector-instance and audience token isolation, restart-durable session storage, secure cookie, high-entropy secret source, popup origin/source checks, trusted public proxy callback/origin handling, token-vault exclusion, provider/connector audience binding, and sequential plus concurrent OAuth state tests. Confirm a shared session backend before scale-out above one replica. |
 | Gate C | Entra and resource consent baseline | Confirm delegated app registration setup, callback URI alignment, required scopes consented, and runtime resource classes provisioned where required |
 | Gate D | Quality baseline and scenario validation | Establish connector p50 and p95 latency baselines and connector-specific peak-memory and concurrency thresholds in representative environments; validate first-connection usability path and failure scenarios (timeouts, throttling, cancellation, callback replay and reorder, token expiry); record provisional PERF budgets and any approved exceptions with evidence links |
 | Gate E | Release budget enforcement | Enforce approved release budgets and regression policy: p95 latency and peak memory must not regress by more than 20 percent without recorded review and exception; confirm quality evidence reports are complete and linked to tracker transitions |
@@ -383,13 +412,16 @@ Command safety rules:
 
 | Category | Status | Notes |
 | --- | --- | --- |
-| Blockers | Active | Missing Python venv/dependencies, missing ODBC Driver 18, missing shared session resource, missing Key Vault or equivalent secret source, missing representative Fabric and SQL test assets |
-| Partial | Active | Azure CLI and azd readiness present; Node/Corepack/Yarn runtime path present; Fabric MCP listing available; WorkIQ and Agency available for accelerator workflows |
-| Ready | Limited | Baseline local OS and Node toolchain are sufficient to start prerequisite remediation and evidence capture |
+| Implementation blockers | Narrow | Shared auth contract defects remain: TokenStore lacks connector-plus-audience keying, delegated app-relative URLs are mutated, `label_key` is dropped, and popup messages lack origin/source validation and token-free success handling |
+| Release blockers | Active | Missing Entra app permissions/redirect evidence, restart-durable delegated-token sessions, approved high-entropy secret source, representative Fabric assets, and application-flow validation against the verified SQL target |
+| Ready | Shared foundation | Local Python/Yarn toolchains, single-replica deployment safety, request and memory limits, secure-cookie default, bounded OAuth state, loader lifecycle, retries, and OneLake workspace access are verified |
 
 ## 11. Definition of ready
 
-Readiness is achieved only when all MUST requirements in this document are verified with objective evidence, evidence is recorded in repository planning artifacts, and `docs/plans/ISSUES.md` tracker states and gates are updated to reflect verified completion.
+Implementation readiness is achieved per connector when its implementation
+prerequisites are verified. Release readiness requires all applicable MUST
+requirements, including real-service prerequisites and quality evidence.
+Tracker states must distinguish these thresholds explicitly.
 
 ## 12. References
 

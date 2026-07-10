@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Reassessed; shared auth implementation may begin
 date: 2026-07-09
 scope: Establish shared Microsoft Fabric workspace discovery and delegated auth foundations used by Fabric Lakehouse and Semantic Model plans.
 severity: behaviour
@@ -23,8 +23,11 @@ Required outcomes:
 
 - Workspace discovery uses Fabric REST `GET https://api.fabric.microsoft.com/v1/workspaces`.
 - Item discovery uses Fabric REST `GET /v1/workspaces/{workspaceId}/items`.
-- OAuth scope request URIs are `https://api.fabric.microsoft.com/Workspace.Read.All` and `https://api.fabric.microsoft.com/Item.Read.All`.
-- UI text may show API permission display names `Workspace.Read.All` and `Item.Read.All`, but backend scope requests always use the full URI scopes.
+- The Entra app registration uses delegated permissions `Workspace.Read.All`
+  and `Item.Read.All` from the Power BI Service API permission surface.
+- Runtime token requests use an explicit Fabric resource profile whose exact
+  scope values are verified in the target tenant. Do not fabricate full scope
+  URIs by concatenating the Fabric API base URL and permission names.
 - Pagination handles `continuationToken` and `continuationUri`.
 - 429 handling is bounded and honors `Retry-After`.
 - No raw token values and no raw upstream response bodies are logged.
@@ -54,8 +57,12 @@ The following defects are blockers and must be fixed before any Fabric token is 
 
 - TokenStore indexing mismatch: current behavior is loader-type keyed while DataConnector auth calls need connector instance IDs plus audience/profile.
 - Delegated URL mutation bug: declared app-relative delegated URLs (for example `/api/auth/...`) currently risk connector prefix mutation and `label_key` stripping.
-- Session scale gap: production session backend for multi-replica ACA must be decided and implemented as shared server-side storage (for example Redis-compatible), not instance-local fallback.
-- Cookie security gap: `SESSION_COOKIE_SECURE` is not enforced.
+- Session durability gap: production is intentionally capped at one replica,
+  so Redis is not an implementation blocker. Delegated tokens must still
+  survive ordinary process and revision restarts. A shared Redis-compatible
+  backend becomes mandatory before scale-out above one replica.
+- Cookie security is resolved: production defaults to
+  `SESSION_COOKIE_SECURE=True` unless an explicit development override is set.
 - Secret entropy gap: infrastructure currently includes deterministic Flask secret behavior.
 - Frontend postMessage gap: popup receiver lacks `event.origin` and `event.source` checks.
 
@@ -173,10 +180,11 @@ Paths:
 Work:
 
 - Implement server-side auth code flow endpoints for Fabric delegated consent.
-- Define resource profile for Fabric audience `https://api.fabric.microsoft.com` with OAuth request scopes:
-  - `https://api.fabric.microsoft.com/Workspace.Read.All`
-  - `https://api.fabric.microsoft.com/Item.Read.All`
-- Keep API permission display names (`Workspace.Read.All`, `Item.Read.All`) only for UI copy and audit logging labels.
+- Define a Fabric resource profile with audience
+  `https://api.fabric.microsoft.com` and target-tenant-verified scope values.
+- Require delegated Entra permissions `Workspace.Read.All` and
+  `Item.Read.All`; keep permission names distinct from resource/audience
+  identifiers in code and documentation.
 - Bind state to identity, connector_id, audience, and allowed origin.
 - Validate connector exists and is visible to the requesting identity before initiating delegated login.
 - Enforce exact origin allowlist on callback and popup completion.
@@ -236,7 +244,7 @@ python -m pytest tests/backend/routes/test_fabric_workspace_discovery_routes.py 
 python -m pytest tests/backend/routes/ -q
 ```
 
-### Task 7: Harden production session and secret prerequisites for ACA
+### Task 7: Harden production session durability and secret prerequisites
 
 Paths:
 
@@ -247,11 +255,16 @@ Paths:
 
 Work:
 
-- Run a backend decision/spike for a Redis-compatible server-side session backend for multi-replica ACA, then implement the selected dependency and config path.
-- Enforce `SESSION_COOKIE_SECURE=True` for production profile.
+- Select and implement restart-durable delegated-token session storage for the
+  current single-replica profile.
+- Add a deployment invariant that prohibits raising `maxReplicas` above one
+  until a shared Redis-compatible or approved equivalent backend is configured.
+- Retain the existing production `SESSION_COOKIE_SECURE=True` default and its
+  regression tests.
 - Replace deterministic secret behavior with high-entropy secret configuration path.
 - Add tests and deployment checks that fail fast when insecure config is detected.
-- Add tests that prohibit production fallback to local or in-memory instance-local session storage.
+- Add tests that prohibit restart-ephemeral delegated-token sessions in
+  production and prohibit instance-local storage when scale-out is enabled.
 
 Commands:
 
@@ -342,7 +355,9 @@ Discovery foundation is accepted when all items are true:
 - User can complete delegated consent for Fabric with least-privilege scopes and no token leakage to frontend.
 - Backend can list workspaces and workspace items using Fabric REST with bounded pagination and retry behavior.
 - Connector and auth contracts are fixed for connector-instance identity plus audience keying.
-- Production profile enforces shared server-side session backend, secure cookie, high-entropy secret, and no instance-local session fallback.
+- Production profile provides restart-durable delegated-token sessions, secure
+  cookies, and a high-entropy secret. A shared backend and no instance-local
+  fallback are required before scale-out above one replica.
 - Frontend popup flow validates origin and source.
 - Logs and error responses are sanitized.
 - Shared quality gates SIMPLE-001 through SIMPLE-006,
@@ -384,7 +399,8 @@ This plan is falsified if any of the following occurs:
 - Workspace discovery is implemented through a generic ExternalDataLoader that treats arbitrary items as tabular import targets.
 - Fabric token lookup still depends on loader type and cannot disambiguate connector instance plus audience.
 - Delegated flow still accepts popup messages without strict origin and source checks.
-- Production deployment on ACA 2 to 3 replicas cannot maintain stable delegated session state.
+- Production loses delegated-token state during ordinary revision or process
+  restart, or scales above one replica without a shared session backend.
 - Logs include any bearer token, refresh token, or unsanitized upstream response payload.
 - 429 handling retries without bound or ignores `Retry-After`.
 

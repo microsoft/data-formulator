@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _SSO_NS = "sso"
 _SVC_NS = "service_tokens"
+_SVC_AUDIENCE_NS = "service_tokens_by_audience"
 _SSO_BLOCKED_NS = "sso_disconnected_services"
 
 
@@ -113,18 +114,47 @@ class TokenStore:
         refresh_token: str | None = None,
         expires_in: int = 3600,
         user: dict | None = None,
+        audience: str | None = None,
     ) -> None:
         """Store a token acquired via popup or manual login."""
-        tokens = session.get(_SVC_NS, {})
-        tokens[system_id] = {
+        token_record = {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_at": time.time() + expires_in,
             "user": user,
             "stored_at": time.time(),
         }
-        session[_SVC_NS] = tokens
+        if audience:
+            tokens_by_connector = session.get(_SVC_AUDIENCE_NS, {})
+            connector_tokens = tokens_by_connector.get(system_id, {})
+            connector_tokens[audience] = token_record
+            tokens_by_connector[system_id] = connector_tokens
+            session[_SVC_AUDIENCE_NS] = tokens_by_connector
+        else:
+            tokens = session.get(_SVC_NS, {})
+            tokens[system_id] = token_record
+            session[_SVC_NS] = tokens
         self.allow_sso_reconnect(system_id)
+
+    def get_service_token(self, system_id: str, audience: str) -> str | None:
+        """Return a current token for one connector and resource audience.
+
+        Legacy connector tokens are read only when no audience-qualified entry
+        exists, allowing existing sessions to migrate without cross-audience
+        fallback once the new namespace is populated.
+        """
+        tokens_by_connector = session.get(_SVC_AUDIENCE_NS, {})
+        connector_tokens = tokens_by_connector.get(system_id, {})
+        cached = connector_tokens.get(audience)
+        if cached is not None:
+            return None if self._is_expired(cached) else cached.get("access_token")
+        if connector_tokens:
+            return None
+
+        legacy = self._get_cached(system_id)
+        if legacy and not self._is_expired(legacy):
+            return legacy.get("access_token")
+        return None
 
     def clear_service_token(self, system_id: str) -> None:
         """Clear cached token AND vault credentials for a system.
@@ -136,6 +166,9 @@ class TokenStore:
         tokens = session.get(_SVC_NS, {})
         tokens.pop(system_id, None)
         session[_SVC_NS] = tokens
+        tokens_by_connector = session.get(_SVC_AUDIENCE_NS, {})
+        tokens_by_connector.pop(system_id, None)
+        session[_SVC_AUDIENCE_NS] = tokens_by_connector
         self._vault_delete(system_id)
         config = self._get_auth_config(system_id) or {}
         if config.get("mode") == "sso_exchange":
@@ -145,6 +178,7 @@ class TokenStore:
         """Clear current-session SSO and service tokens without touching vault."""
         session.pop(_SSO_NS, None)
         session.pop(_SVC_NS, None)
+        session.pop(_SVC_AUDIENCE_NS, None)
         session.pop(_SSO_BLOCKED_NS, None)
 
     def block_sso_reconnect(self, system_id: str) -> None:

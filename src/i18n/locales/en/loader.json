@@ -18,7 +18,8 @@
       "encrypt": "Enable encryption (yes/no)",
       "trust_server_certificate": "Trust server certificate (yes/no)",
       "connection_timeout": "Connection timeout in seconds",
-      "authInstructions": "**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Example (Windows auth):** server: `localhost\\SQLEXPRESS` · database: `mydb` (leave user/password empty)\n\n**Prerequisites (macOS/Linux only):**\nInstall ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-get install unixodbc-dev msodbcsql17` (Ubuntu/Debian). Windows usually has these pre-installed.\n\n**Authentication:**\n- **Windows Auth:** Leave user/password empty (recommended for local dev)\n- **SQL Server Auth:** Provide username and password\n\n**Troubleshooting:** Ensure SQL Server service is running. Verify TCP/IP is enabled in SQL Server Configuration Manager. Test with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."
+      "entraSignIn": "Sign in with Microsoft Entra",
+      "authInstructions": "**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Example (Windows auth):** server: `localhost\\SQLEXPRESS` · database: `mydb` (leave user/password empty)\n\n**Prerequisites:** Microsoft Entra delegated sign-in requires ODBC Driver 18. SQL and Windows authentication remain available.\n\n**Authentication:**\n- **Microsoft Entra:** Use the sign-in button; Conditional Access can require MFA\n- **Windows Auth:** Leave user/password empty (recommended for local dev)\n- **SQL Server Auth:** Provide username and password\n\n**Troubleshooting:** Ensure SQL Server service is running and TCP/IP is enabled."
     },
     "postgresql": {
       "user": "PostgreSQL username",

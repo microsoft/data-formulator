@@ -1,18 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo, useCallback } from 'react';
+import { FC, useEffect, useMemo } from 'react';
 
-import _ from 'lodash';
 
-import { Typography, Box, Link, Breadcrumbs, useTheme, Fade } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { Box, Fade, Typography } from '@mui/material';
 
 import '../scss/DataView.scss';
 
-import { DictTable } from '../components/ComponentType';
-import { DataFormulatorState, dfActions, dfSelectors, FocusedId } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
@@ -32,6 +29,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
     const focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
+        if (focusedId.type !== 'chart') return undefined;
         const chartId = focusedId.chartId;
         const chart = allCharts.find(c => c.id === chartId);
         return chart?.tableRef;
@@ -49,7 +47,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
         if (focusedId == undefined && tableCount > 0 && firstTableId) {
             dispatch(dfActions.setFocused({ type: 'table', tableId: firstTableId }));
         }
-    }, [tableCount, firstTableId]);
+    }, [dispatch, focusedId, tableCount, firstTableId]);
 
     // Memoize row data — only recompute when the table object itself changes
     const rowData = useMemo(() => {

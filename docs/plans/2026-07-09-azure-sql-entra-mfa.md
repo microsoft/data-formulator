@@ -1,5 +1,17 @@
 # Azure SQL Microsoft Entra MFA Implementation Plan
 
+**Status:** Reassessed; loader and mocked auth implementation may begin after
+the shared delegated-auth contract is green. The representative Azure SQL
+target, network path, ODBC Driver 18, current-user SQL-audience token, and
+token packing are verified. Explicit active-tenant token acquisition produced
+three successful independent connections, and the implemented loader enumerated
+the catalog. Code and integration review blockers are resolved: one trusted
+proxy hop preserves the public callback/origin, token-mode vault persistence
+excludes tokens, the gateway binds to delegated SQL connectors, and pending
+state consumption is process-atomic under the one-worker deployment. Release
+validation remains blocked on app permission/redirect evidence, the application
+popup flow, and restart-durable delegated-token sessions.
+
 **Goal:** Add hosted, per-user Microsoft Entra authentication for Azure SQL Database so Conditional Access can require MFA and Data Formulator can connect with the resulting delegated access token.
 
 **Architecture:** Extend the existing SQL Server loader rather than creating a parallel Azure SQL loader. A dedicated backend OAuth popup flow obtains an Azure SQL-scoped token, stores it only in the identity-scoped `TokenStore` session, and posts a token-free success message to the opener; `DataConnector` then injects the token into `MSSQLDataLoader`, which passes it to `pyodbc` through `SQL_COPT_SS_ACCESS_TOKEN`. Existing SQL username/password and Windows trusted authentication remain unchanged.
@@ -31,6 +43,53 @@ The feature is complete when:
 - The host has Microsoft ODBC Driver 18 for SQL Server.
 
 Stop and revise the design if the Entra app cannot request an Azure SQL delegated scope, if the deployment must remain provider-agnostic, or if the user requirement is workload identity rather than per-user authorization. In those cases, use managed identity as a separate authentication mode instead of weakening this flow.
+
+Implementation does not depend on Fabric workspace discovery. It does depend
+on the shared connector-instance-plus-audience TokenStore contract, safe
+app-relative delegated URLs, token-free popup success, and exact popup
+origin/source validation from the Fabric workspace foundation.
+
+## Verified Real-Service Fixture
+
+The approved external staging target is reachable on TCP 1433. Microsoft ODBC
+Driver 18.6.2.1 reaches the server using an in-memory token for the Azure SQL
+resource audience, with encryption enabled and server-certificate trust
+disabled. The token is current, audience-correct, tenant-aligned, and
+MFA-authenticated. Three independent non-pooled connections succeeded, and the
+implemented loader enumerated 25 catalog entries.
+
+The Azure CLI cache contains more than one tenant context. Real-service smoke
+tests must request the SQL token explicitly for the active tenant; an ambiguous
+cached-token attempt produced SQLSTATE 28000 before explicit tenant selection
+restored repeatable access. This proves target reachability, TLS, native-driver
+support, token acquisition, token packing, and current-user authorization. It
+does not prove the application registration, callback, consent, or popup flow.
+No username, password, token, or connection string was persisted or printed.
+
+## Code And Integration Review Gate
+
+The merge-blocking review findings are resolved:
+
+1. **Forwarded proxy correctness:** Flask trusts exactly one Container Apps
+    ingress proxy hop for scheme, host, and client address. Login and token
+    exchange use the same public HTTPS callback URI registered in Entra.
+2. **Vault exclusion:** token-mode connect persists only non-sensitive
+    connection params; access and refresh tokens remain session-only.
+3. **Connector binding:** login requires delegated mode and the exact Azure SQL
+    audience.
+4. **Atomic state:** a process-local lock-backed registry permits one callback
+    consumption under the enforced one-worker deployment.
+
+Before production release, require:
+
+- Delegated-token sessions survive ordinary process and revision replacement.
+- The production Entra permission, callback URI, Driver 18 image, and
+    Conditional Access popup flow are verified end to end.
+
+Review evidence includes RED/GREEN tests for forwarded headers, token-vault
+exclusion, connector binding, and concurrent state use, plus focused backend
+and frontend suites, clean project TypeScript and touched-file lint, and
+repeatable explicit-tenant staging catalog access.
 
 ## Task 1: Specify The Loader Token Contract With Failing Tests
 
@@ -180,7 +239,7 @@ Use a minimal Flask app with `register_error_handlers(app)`. Mock discovery/toke
 
 - Login requires an existing connector ID visible to the current identity.
 - Login creates a cryptographically random state bound to connector ID and identity.
-- Authorization URL uses the configured Entra authorize endpoint, callback URI, and `https://database.windows.net/.default offline_access` scopes.
+- Authorization URL uses the configured Entra authorize endpoint, callback URI, and `https://database.windows.net/.default` scope. The first slice does not request or retain refresh tokens.
 - Callback rejects missing or mismatched state without calling the token endpoint.
 - Callback exchanges the code with the configured client ID/client secret and exact callback URI.
 - Callback stores the token under the connector instance ID in `TokenStore`.

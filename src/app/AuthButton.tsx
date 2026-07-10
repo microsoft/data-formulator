@@ -10,20 +10,20 @@
  * - Anonymous without OIDC     → render nothing
  */
 
-import { FC, useCallback, useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { Alert, Box, Button, IconButton, Snackbar, Tooltip, Typography } from "@mui/material";
-import LogoutIcon from "@mui/icons-material/Logout";
-import LoginIcon from "@mui/icons-material/Login";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
-import { useTranslation } from "react-i18next";
+import LoginIcon from "@mui/icons-material/Login";
+import LogoutIcon from "@mui/icons-material/Logout";
+import { Alert, Box, Button, IconButton, Snackbar, Tooltip, Typography } from "@mui/material";
 import type { UserManager } from "oidc-client-ts";
-import { dfActions, type DataFormulatorState } from "./dfSlice";
-import type { AppDispatch } from "./store";
-import type { AuthInfo } from "./oidcConfig";
-import { persistor } from "./store";
-import { getBrowserId } from "./identity";
+import { FC, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useDispatch, useSelector } from "react-redux";
 import { apiRequest } from "./apiClient";
+import { dfActions, type DataFormulatorState } from "./dfSlice";
+import { getBrowserId } from "./identity";
+import type { AuthInfo } from "./oidcConfig";
+import type { AppDispatch } from "./store";
+import { persistor } from "./store";
 
 export const AuthButton: FC = () => {
     const { t } = useTranslation();
@@ -81,6 +81,20 @@ export const AuthButton: FC = () => {
         }
     }, [mgr, isBackend, authInfo, dispatch]);
 
+    const handleSignIn = useCallback(async () => {
+        if (isBackend) {
+            window.location.href = authInfo?.login_url || "/api/auth/oidc/login";
+            return;
+        }
+        if (!mgr) return;
+        try {
+            await mgr.signinRedirect();
+        } catch (err) {
+            console.error("[AuthButton] signinRedirect failed:", err);
+            setLoginError(err instanceof Error ? err.message : String(err));
+        }
+    }, [mgr, isBackend, authInfo]);
+
     if (identity?.type === "user") {
         const label = String(identity.displayName || identity.id || '');
         return (
@@ -102,20 +116,6 @@ export const AuthButton: FC = () => {
             </Box>
         );
     }
-
-    const handleSignIn = useCallback(async () => {
-        if (isBackend) {
-            window.location.href = authInfo?.login_url || "/api/auth/oidc/login";
-            return;
-        }
-        if (!mgr) return;
-        try {
-            await mgr.signinRedirect();
-        } catch (err) {
-            console.error("[AuthButton] signinRedirect failed:", err);
-            setLoginError(err instanceof Error ? err.message : String(err));
-        }
-    }, [mgr, isBackend, authInfo]);
 
     if (initError) {
         return (

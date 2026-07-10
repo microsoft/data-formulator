@@ -443,11 +443,16 @@ class DataConnector:
         if raw is None:
             return None
         login_url = raw.get("login_url", "")
-        # Resolve relative URLs to the connector's API prefix
-        if login_url and not login_url.startswith("http"):
+        # Bare relative paths belong to the connector API surface. Leading-slash
+        # paths are app routes and must remain rooted at the application origin.
+        if login_url and not login_url.startswith(("http", "/")):
             login_url = f"/api/connectors/{self._source_id}/{login_url}"
         # Only send safe fields to the frontend
-        return {"login_url": login_url, "label": raw.get("label", "")}
+        return {
+            "login_url": login_url,
+            "label": raw.get("label", ""),
+            "label_key": raw.get("label_key", ""),
+        }
 
     # -- Identity + Loader Management --------------------------------------
 
@@ -611,12 +616,19 @@ class DataConnector:
             token_store = TokenStore()
             if token_store.is_sso_reconnect_blocked(self._source_id):
                 return
-            access = token_store.get_access(self._source_id)
+            audience = config.get("audience") if config else None
+            access = (
+                token_store.get_service_token(self._source_id, audience)
+                if audience
+                else token_store.get_access(self._source_id)
+            )
             if access:
                 if isinstance(access, dict):
                     params.update(access)
                 else:
                     params["access_token"] = access
+                return
+            if audience:
                 return
         except Exception as exc:
             logger.debug("TokenStore lookup failed for %s: %s",
@@ -1242,8 +1254,10 @@ def connector_connect():
                 "access_token": access_token,
                 "refresh_token": data.get("refresh_token", ""),
             }
+            persist_params = extra_params
         else:
             user_params = data.get("params", {})
+            persist_params = user_params
 
         loader = source._connect(user_params)
 
@@ -1254,7 +1268,7 @@ def connector_connect():
 
         persisted = False
         if persist:
-            persisted = source._persist_credentials(user_params)
+            persisted = source._persist_credentials(persist_params)
         else:
             identity = source._get_identity()
             source._vault_delete(identity)
