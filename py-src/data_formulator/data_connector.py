@@ -469,6 +469,7 @@ class DataConnector:
             "effective_hierarchy": _hierarchy_dicts(effective),
             "auth_instructions": self._loader_class.auth_instructions(),
             "auth_mode": self._loader_class.auth_mode(),
+            "auth_paths": self._loader_class.auth_paths(),
             "delegated_login": self._resolve_delegated_login(),
         }
 
@@ -893,6 +894,7 @@ def list_data_loaders():
             "params": params,
             "hierarchy": _hierarchy_dicts(loader_class.catalog_hierarchy()),
             "auth_mode": loader_class.auth_mode(),
+            "auth_paths": loader_class.auth_paths(),
             "auth_instructions": loader_class.auth_instructions(),
             "delegated_login": loader_class.delegated_login_config(),
             "source": "plugin" if plugin_path else "builtin",
@@ -1127,6 +1129,7 @@ def list_connectors():
             "hierarchy": cfg["hierarchy"],
             "effective_hierarchy": cfg["effective_hierarchy"],
             "auth_mode": cfg["auth_mode"],
+            "auth_paths": cfg["auth_paths"],
             "delegated_login": cfg.get("delegated_login"),
         })
 

@@ -484,6 +484,16 @@ export interface EncodingDropResult {
     channel: Channel
 }
 
+export interface ConnectorAuthPath {
+    id: string;
+    label: string;
+    description?: string;
+    fields: string[];
+    required_fields?: string[];
+    kind: 'credentials' | 'ambient' | 'delegated_login' | 'token_exchange';
+    default?: boolean;
+}
+
 /** A registered connector instance from GET /api/connectors */
 export interface ConnectorInstance {
     id: string;
@@ -498,11 +508,12 @@ export interface ConnectorInstance {
     /** Backend signals that SSO token exchange can auto-connect this source. */
     sso_auto_connect?: boolean;
     deletable?: boolean;
-    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;
     hierarchy: Array<{key: string; label: string}>;
     effective_hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;
+    auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;
     delegated_login?: { login_url: string; label?: string } | null;
 }

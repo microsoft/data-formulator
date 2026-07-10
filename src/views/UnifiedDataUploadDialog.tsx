@@ -39,7 +39,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
-import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
+import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { AnimatedAgentToyIcon } from './AgentToyIcon';
@@ -851,9 +851,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 interface LoaderType {
     type: string;
     name: string;
-    params: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    params: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;
+    auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;
     delegated_login?: { login_url: string; label?: string } | null;
     source?: 'plugin' | 'builtin';
@@ -879,7 +880,7 @@ const AddConnectionPanel: React.FC<{
     const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
     const [pluginsInfo, setPluginsInfo] = useState<PluginsInfo | null>(null);
     const [selectedType, setSelectedType] = useState<string>('');
-    const [displayName, setDisplayName] = useState('');
+    const displayNameRef = useRef('');
     const dispatch = useDispatch<AppDispatch>();
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     // Track the created connector ID so DataLoaderForm can use it
@@ -899,7 +900,7 @@ const AddConnectionPanel: React.FC<{
                 setPluginsInfo(data.plugins || null);
                 if (data.loaders?.length > 0) {
                     setSelectedType(data.loaders[0].type);
-                    setDisplayName(data.loaders[0].name);
+                    displayNameRef.current = data.loaders[0].name;
                 }
             })
             .catch(() => { /* loader types unavailable — form will be empty */ });
@@ -909,7 +910,7 @@ const AddConnectionPanel: React.FC<{
 
     const handleSelectLoader = (loader: LoaderType) => {
         setSelectedType(loader.type);
-        setDisplayName(loader.name);
+        displayNameRef.current = loader.name;
         createdIdRef.current = null;
     };
 
@@ -923,7 +924,7 @@ const AddConnectionPanel: React.FC<{
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 loader_type: selectedType,
-                display_name: displayName.trim() || selectedLoader?.name || selectedType,
+                display_name: displayNameRef.current.trim() || selectedLoader?.name || selectedType,
                 icon: selectedType,
                 params,
                 persist: true,
@@ -931,7 +932,7 @@ const AddConnectionPanel: React.FC<{
         });
         createdIdRef.current = data.id;
         return data.id;
-    }, [selectedType, displayName, selectedLoader]);
+    }, [selectedType, selectedLoader]);
 
     // After DataLoaderForm successfully connects, fetch full connector info and notify parent
     const handleConnected = useCallback(async () => {
@@ -951,16 +952,6 @@ const AddConnectionPanel: React.FC<{
             // Connection succeeded even if list fetch fails
         }
     }, [onCreated, dispatch]);
-
-    // Shared input style
-    const inputSx = {
-        '& .MuiInput-underline:before': { borderBottomColor: 'rgba(0,0,0,0.15)' },
-        '& .MuiInputBase-root': { fontSize: 12, mt: 1.5 },
-        '& .MuiInputBase-input': { fontSize: 12, py: 0.5, px: 0 },
-        '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.45 },
-        '& .MuiInputLabel-root': { fontSize: 11, color: 'text.secondary', fontWeight: 500 },
-        '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
-    };
 
     // Left sidebar button style
     const sidebarButtonSx = (typeKey: string) => ({
@@ -1089,24 +1080,25 @@ const AddConnectionPanel: React.FC<{
                     />
                 ) : selectedLoader ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        {/* Connection name + DataLoaderForm */}
+                        {/* Connector setup timeline */}
                         <Box sx={{ px: 2, pt: 1.5, pb: 2, flex: 1, minHeight: 0, overflow: 'auto' }}>
-                            <TextField
-                                sx={{ ...inputSx, maxWidth: 300 }}
-                                variant="standard" size="small"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                label={t('upload.connectionNameLabel', { defaultValue: 'connection name' })}
-                                value={displayName}
-                                placeholder={selectedLoader.name}
-                                onChange={(e) => setDisplayName(e.target.value)}
-                                style={{ width: 280, marginBottom: 8 }}
-                            />
                             <DataLoaderForm
                                 dataLoaderType={selectedType}
                                 paramDefs={selectedLoader.params}
                                 authInstructions={selectedLoader.auth_instructions || ''}
                                 delegatedLogin={selectedLoader.delegated_login}
                                 authMode={selectedLoader.auth_mode}
+                                authPaths={selectedLoader.auth_paths}
+                                formTitle={t('upload.createConnectionTo', {
+                                    name: selectedLoader.name,
+                                    defaultValue: 'Create a connection to {{name}}',
+                                })}
+                                connectionName={{
+                                    label: t('upload.connectionNameLabel', { defaultValue: 'connection name' }),
+                                    value: displayNameRef.current || selectedLoader.name,
+                                    placeholder: selectedLoader.name,
+                                    onChange: (value) => { displayNameRef.current = value; },
+                                }}
                                 onImport={() => {}}
                                 onFinish={(status, message) => {
                                     dispatch(dfActions.addMessages({
@@ -2317,6 +2309,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 ssoAutoConnect={false}
                                 delegatedLogin={conn.delegated_login}
                                 authMode={conn.auth_mode}
+                                authPaths={conn.auth_paths}
                                 hasStoredCredentials={conn.has_stored_credentials}
                                 onImport={() => {}}
                                 onFinish={(status, message) => {

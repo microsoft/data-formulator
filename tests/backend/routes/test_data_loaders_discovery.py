@@ -109,6 +109,7 @@ def test_plugin_appears_in_discovery_endpoint(client_with_plugin):
     assert "table_filter" in param_names
     # Auth instructions surface verbatim.
     assert "Test plugin" in plugin["auth_instructions"]
+    assert plugin["auth_paths"] == []
 
 
 def test_builtin_loader_marked_as_builtin(client_with_plugin):
@@ -123,6 +124,17 @@ def test_builtin_loader_marked_as_builtin(client_with_plugin):
 
     assert builtin["source"] == "builtin"
     assert builtin["source_path"] is None
+
+
+def test_mysql_auth_path_surfaces_in_discovery(client_with_plugin):
+    resp = client_with_plugin.get("/api/data-loaders")
+    loaders = _loaders_by_type(resp.get_json())
+    if "mysql" not in loaders:
+        pytest.skip("MySQL optional dependency unavailable")
+
+    paths = loaders["mysql"]["auth_paths"]
+    assert [path["id"] for path in paths] == ["password"]
+    assert paths[0]["fields"] == ["user", "password"]
 
 
 def test_display_name_default_titlecases_registry_key(tmp_path, monkeypatch):

@@ -551,6 +551,31 @@ class ExternalDataLoader(ABC):
         When *skip_auth_tier* is True, parameters with ``tier="auth"`` are
         not checked (useful for SSO/token flows where auth comes externally).
         """
+        # Apply declared defaults before validation. Historically defaults were
+        # only placeholders in the frontend, which made required fields such as
+        # MySQL's default user fail unless the user retyped them.
+        effective = {
+            pdef["name"]: pdef["default"]
+            for pdef in cls.list_params()
+            if "default" in pdef
+        }
+        effective.update(params)
+        for name, value in effective.items():
+            params.setdefault(name, value)
+
+        paths = cls.auth_paths()
+        selected_path = str(effective.get("_auth_path") or "").strip()
+        if paths:
+            if not selected_path:
+                selected_path = cls.infer_auth_path(effective)
+                effective["_auth_path"] = selected_path
+                params.setdefault("_auth_path", selected_path)
+            path = next((item for item in paths if item.get("id") == selected_path), None)
+            if path is None:
+                raise ConnectorParamError(["_auth_path"], cls.__name__)
+        else:
+            path = None
+
         missing: list[str] = []
         for pdef in cls.list_params():
             name = pdef.get("name", "")
@@ -558,11 +583,53 @@ class ExternalDataLoader(ABC):
                 continue
             if skip_auth_tier and pdef.get("tier") == "auth":
                 continue
-            val = params.get(name)
+            val = effective.get(name)
             if val is None or (isinstance(val, str) and not val.strip()):
                 missing.append(name)
+        if path is not None:
+            for name in path.get("required_fields", []):
+                val = effective.get(name)
+                if val is None or (isinstance(val, str) and not val.strip()):
+                    missing.append(name)
         if missing:
-            raise ConnectorParamError(missing, cls.__name__)
+            raise ConnectorParamError(list(dict.fromkeys(missing)), cls.__name__)
+
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        """Declare mutually exclusive authentication paths for the form.
+
+        The compatibility adapter exposes existing auth-tier fields as one
+        credentials path. Loaders with alternatives should override this.
+        """
+        auth_fields = [
+            pdef["name"]
+            for pdef in cls.list_params()
+            if pdef.get("tier") == "auth"
+        ]
+        if not auth_fields:
+            return []
+        return [{
+            "id": "credentials",
+            "label": "Credentials",
+            "description": "Enter credentials for this data source.",
+            "fields": auth_fields,
+            "required_fields": [
+                pdef["name"]
+                for pdef in cls.list_params()
+                if pdef.get("tier") == "auth" and pdef.get("required")
+            ],
+            "kind": "credentials",
+            "default": True,
+        }]
+
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        """Choose a path for legacy callers that do not send ``_auth_path``."""
+        paths = cls.auth_paths()
+        return next(
+            (str(path["id"]) for path in paths if path.get("default")),
+            str(paths[0]["id"]) if paths else "",
+        )
 
     @classmethod
     def discover_param_options(

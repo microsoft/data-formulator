@@ -35,6 +35,18 @@ class MySQLDataLoader(ExternalDataLoader):
         ]
         return params_list
 
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [{
+            "id": "password",
+            "label": "Username and password",
+            "description": "Connect with a MySQL user. Password may be blank.",
+            "fields": ["user", "password"],
+            "required_fields": ["user"],
+            "kind": "credentials",
+            "default": True,
+        }]
+
     @staticmethod
     def auth_instructions() -> str:
         return """**Example:** user: `root` · host: `localhost` · port: `3306` · database: `mydb`

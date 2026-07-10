@@ -50,6 +50,34 @@ class KustoDataLoader(ExternalDataLoader):
         ]
         return params_list
 
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "ambient",
+                "label": "Azure default identity",
+                "description": "Use Azure CLI, managed identity, VS Code, or environment credentials.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+                "default": True,
+            },
+            {
+                "id": "service_principal",
+                "label": "Service principal",
+                "description": "Use an Entra application client ID, secret, and tenant ID.",
+                "fields": ["client_id", "client_secret", "tenant_id"],
+                "required_fields": ["client_id", "client_secret", "tenant_id"],
+                "kind": "credentials",
+            },
+        ]
+
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        if all(params.get(name) for name in ("client_id", "client_secret", "tenant_id")):
+            return "service_principal"
+        return "ambient"
+
     @staticmethod
     def auth_instructions() -> str:
         return """**Option 1 — Azure Default Identity (recommended):** Leave the auth fields empty. DF connects using the host's ambient Azure credentials — your Azure CLI login (`az login`) when running locally, or a Managed Identity when deployed to Azure. That identity must be granted access to the cluster.
@@ -58,6 +86,7 @@ class KustoDataLoader(ExternalDataLoader):
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
+        self.auth_path = params.get("_auth_path") or self.infer_auth_path(params)
         self.kusto_cluster = params.get("kusto_cluster", None)
         self.kusto_database = params.get("kusto_database", None)
 
@@ -96,7 +125,7 @@ class KustoDataLoader(ExternalDataLoader):
                 self.kusto_cluster, self.access_token)
 
         # 2. Service principal.
-        if self.client_id and self.client_secret and self.tenant_id:
+        if self.auth_path == "service_principal":
             logger.info("Using service principal authentication for Kusto client.")
             return KustoConnectionStringBuilder.with_aad_application_key_authentication(
                 self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id)

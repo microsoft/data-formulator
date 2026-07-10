@@ -12,6 +12,8 @@ import {
   IconButton,
   Tooltip,
     Autocomplete,
+    Radio,
+    RadioGroup,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
@@ -24,6 +26,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
 import { DataFormulatorState } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { ConnectorAuthPath } from '../components/ComponentType';
 
 const KUSTO_HELP_CLUSTER = 'https://help.kusto.windows.net';
 
@@ -38,13 +41,45 @@ function extractConnectError(body: any, fallback: string): string {
     return body.message ?? fallback;
 }
 
+type DraftTextFieldProps = Omit<React.ComponentProps<typeof TextField>, 'value' | 'onChange'> & {
+    value: string;
+    onDraftChange: (value: string) => void;
+    onCommit: (value: string) => void;
+};
+
+// Keep keystroke state inside the active field. Connector-wide state is
+// committed on blur, avoiding a Redux update and full form render per key.
+const DraftTextField = React.memo(function DraftTextField({
+    value,
+    onDraftChange,
+    onCommit,
+    ...props
+}: DraftTextFieldProps) {
+    const [draft, setDraft] = useState(value);
+
+    useEffect(() => setDraft(value), [value]);
+
+    return (
+        <TextField
+            {...props}
+            value={draft}
+            onChange={(event) => {
+                const nextValue = event.target.value;
+                setDraft(nextValue);
+                onDraftChange(nextValue);
+            }}
+            onBlur={() => onCommit(draft)}
+        />
+    );
+});
+
 // ---------------------------------------------------------------------------
 
 export const DataLoaderForm: React.FC<{
     dataLoaderType: string,
     /** Loader registry key (e.g. "mysql") for i18n lookups. Falls back to dataLoaderType. */
     loaderType?: string,
-    paramDefs: {name: string, default?: string, type: string, required: boolean, description?: string, sensitive?: boolean, tier?: 'connection' | 'auth' | 'filter'}[],
+    paramDefs: {name: string, default?: string | number | boolean, type: string, required: boolean, description?: string, sensitive?: boolean, tier?: 'connection' | 'auth' | 'filter'}[],
     authInstructions: string,
     connectorId?: string,
     autoConnect?: boolean,
@@ -52,6 +87,14 @@ export const DataLoaderForm: React.FC<{
     ssoAutoConnect?: boolean,
     delegatedLogin?: { login_url: string; label?: string } | null,
     authMode?: string,
+    authPaths?: ConnectorAuthPath[],
+    connectionName?: {
+        label: string,
+        value: string,
+        placeholder: string,
+        onChange: (value: string) => void,
+    },
+    formTitle?: React.ReactNode,
     onImport: () => void,
     onFinish: (status: "success" | "error" | "warning", message: string, importedTables?: string[]) => void,
     onConnected?: () => void,
@@ -64,11 +107,11 @@ export const DataLoaderForm: React.FC<{
      *  user knows credentials are stored on the server (and sees the field
      *  is intentionally empty for security, not a missing config). */
     hasStoredCredentials?: boolean,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials}) => {
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], connectionName, formTitle, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const loaderTypeKey = loaderType || dataLoaderType;
-    const getParamPlaceholder = (paramDef: {name: string; default?: string; description?: string}) => {
+    const getParamPlaceholder = (paramDef: {name: string; default?: string | number | boolean; description?: string}) => {
         // Sensitive fields whose stored credentials we have on the server
         // get a masked dot placeholder — signals "a value is set, leave
         // blank to keep, type to replace."
@@ -92,6 +135,29 @@ export const DataLoaderForm: React.FC<{
     const connectorIdRef = useRef(connectorId);
     useEffect(() => { connectorIdRef.current = connectorId; }, [connectorId]);
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
+
+    // Materialize declared defaults and the default authentication path as
+    // actual form values rather than placeholders. Existing user-entered or
+    // pinned values always win.
+    useEffect(() => {
+        for (const paramDef of paramDefs) {
+            if (params[paramDef.name] === undefined && paramDef.default !== undefined) {
+                dispatch(dfActions.updateDataLoaderConnectParam({
+                    dataLoaderType,
+                    paramName: paramDef.name,
+                    paramValue: String(paramDef.default),
+                }));
+            }
+        }
+        if (authPaths.length > 0 && !params._auth_path) {
+            const defaultPath = authPaths.find(path => path.default) || authPaths[0];
+            dispatch(dfActions.updateDataLoaderConnectParam({
+                dataLoaderType,
+                paramName: '_auth_path',
+                paramValue: defaultPath.id,
+            }));
+        }
+    }, [authPaths, dataLoaderType, dispatch, paramDefs, params]);
 
     let [isConnecting, setIsConnecting] = useState(false);
     const [persistCredentials, setPersistCredentials] = useState(true);
@@ -121,9 +187,29 @@ export const DataLoaderForm: React.FC<{
         () => ({ ...params, ...sensitiveParams }),
         [params, sensitiveParams]
     );
+    const draftParamsRef = useRef<Record<string, string>>({});
+    useEffect(() => { draftParamsRef.current = {}; }, [dataLoaderType]);
+    const getCurrentParams = useCallback(
+        () => ({ ...mergedParams, ...draftParamsRef.current }),
+        [mergedParams],
+    );
+    const updateParamDraft = useCallback((name: string, value: string) => {
+        draftParamsRef.current[name] = value;
+    }, []);
+    const commitParamDraft = useCallback((name: string, value: string) => {
+        if (sensitiveParamNames.has(name)) {
+            setSensitiveParams(previous => ({ ...previous, [name]: value }));
+        } else {
+            dispatch(dfActions.updateDataLoaderConnectParam({
+                dataLoaderType,
+                paramName: name,
+                paramValue: value,
+            }));
+        }
+    }, [dataLoaderType, dispatch, sensitiveParamNames]);
 
     const loadKustoDatabases = useCallback(async (paramOverrides?: Record<string, any>) => {
-        const discoveryParams = { ...mergedParams, ...paramOverrides };
+        const discoveryParams = { ...getCurrentParams(), ...paramOverrides };
         if (!String(discoveryParams.kusto_cluster || '').trim() || isLoadingDatabases) return;
         setDatabaseMenuOpen(true);
         setIsLoadingDatabases(true);
@@ -150,7 +236,7 @@ export const DataLoaderForm: React.FC<{
         } finally {
             setIsLoadingDatabases(false);
         }
-    }, [isLoadingDatabases, loaderTypeKey, mergedParams, t]);
+    }, [getCurrentParams, isLoadingDatabases, loaderTypeKey, t]);
 
     // Connection timeout in milliseconds (30 seconds)
     const CONNECTION_TIMEOUT_MS = 30_000;
@@ -182,7 +268,7 @@ export const DataLoaderForm: React.FC<{
         const progressTimer = setInterval(pollProgress, 700);
         try {
             // Strip table_filter from params sent to connect (it's a catalog-side filter)
-            const { table_filter: _tf, ...connectParams } = mergedParams as Record<string, any>;
+            const { table_filter: _tf, ...connectParams } = getCurrentParams() as Record<string, any>;
             // If onBeforeConnect is provided (e.g. AddConnectionPanel), create the connector first
             if (onBeforeConnect) {
                 connectorIdRef.current = await onBeforeConnect(connectParams);
@@ -211,7 +297,7 @@ export const DataLoaderForm: React.FC<{
             setConnectProgress('');
             setIsConnecting(false);
         }
-    }, [mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+    }, [getCurrentParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -219,10 +305,11 @@ export const DataLoaderForm: React.FC<{
     const handleDelegatedLogin = useCallback(async () => {
         if (!delegatedLogin?.login_url) return;
         setIsConnecting(true);
+        const currentParams = getCurrentParams();
         try {
             // If onBeforeConnect is provided (e.g. AddConnectionPanel), create the connector first
             if (onBeforeConnect) {
-                const { table_filter: _tf, ...connectParams } = mergedParams as Record<string, any>;
+                const { table_filter: _tf, ...connectParams } = currentParams as Record<string, any>;
                 connectorIdRef.current = await onBeforeConnect(connectParams);
             }
             if (!connectorIdRef.current) return;
@@ -236,8 +323,8 @@ export const DataLoaderForm: React.FC<{
         url.searchParams.set('df_origin', window.location.origin);
         // Pass auth-tier form params (e.g. client_id, tenant_id) to the login endpoint
         for (const p of paramDefs) {
-            if (p.tier === 'auth' && !p.sensitive && p.type !== 'password' && mergedParams[p.name]) {
-                url.searchParams.set(p.name, mergedParams[p.name]);
+            if (p.tier === 'auth' && !p.sensitive && p.type !== 'password' && currentParams[p.name]) {
+                url.searchParams.set(p.name, currentParams[p.name]);
             }
         }
 
@@ -288,7 +375,7 @@ export const DataLoaderForm: React.FC<{
                             access_token,
                             refresh_token,
                             user,
-                            params: mergedParams,  // include any filled-in params (e.g. url)
+                            params: getCurrentParams(),  // include any filled-in params (e.g. url)
                             persist: persistCredentials,
                         }),
                     });
@@ -312,7 +399,7 @@ export const DataLoaderForm: React.FC<{
                 setIsConnecting(false);
             }
         }, 1000);
-    }, [delegatedLogin, mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+    }, [delegatedLogin, getCurrentParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
 
 
     // Auto-connect on mount from vault credentials or SSO token passthrough.
@@ -374,6 +461,11 @@ export const DataLoaderForm: React.FC<{
                 the data-source sidebar — this dialog is for create / edit /
                 re-auth only. */}
             <>
+                {formTitle && (
+                    <Typography sx={{ fontSize: 14, lineHeight: 1.4, fontWeight: 600, color: 'text.primary', mb: 1 }}>
+                        {formTitle}
+                    </Typography>
+                )}
                 {!onBeforeConnect && (
                     <Typography variant="body2" sx={{fontSize: 12, color: 'secondary.main', fontWeight: 600, mt: 1}}>
                         {dataLoaderType}
@@ -381,32 +473,84 @@ export const DataLoaderForm: React.FC<{
                     )}
                     {(() => {
                         const hasTiers = paramDefs.some(p => p.tier);
-                        // Section wrapper: subtle background, rounded, with label
-                        const sectionSx = { mt: 1, px: 1.5, pt: 0.75, pb: 1.5, borderRadius: 1, backgroundColor: 'rgba(0,0,0,0.025)' };
-                        // Shared input style: standard variant (underline), label always shrunk so placeholder is visible
+                        const renderTimelineStep = (
+                            step: number,
+                            title: React.ReactNode,
+                            content: React.ReactNode,
+                            isLast = false,
+                        ) => (
+                            <Box sx={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', columnGap: 1.25 }}>
+                                <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+                                    <Box sx={{
+                                        mt: 0.1,
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        bgcolor: 'background.paper',
+                                        border: '1px solid',
+                                        borderColor: 'primary.main',
+                                        color: 'primary.main',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        zIndex: 1,
+                                    }}>
+                                        <Typography
+                                            component="span"
+                                            variant="caption"
+                                            sx={(theme) => ({
+                                                fontFamily: theme.typography.fontFamily,
+                                                fontSize: 10,
+                                                lineHeight: 1,
+                                                fontWeight: theme.typography.fontWeightMedium,
+                                                fontVariantNumeric: 'tabular-nums',
+                                            })}
+                                        >
+                                            {step}
+                                        </Typography>
+                                    </Box>
+                                    {!isLast && (
+                                        <Box sx={{
+                                            position: 'absolute',
+                                            top: 18,
+                                            bottom: -2,
+                                            width: '1px',
+                                            bgcolor: 'divider',
+                                        }} />
+                                    )}
+                                </Box>
+                                <Box sx={{ pb: isLast ? 0 : 2.25, minWidth: 0 }}>
+                                    {title && (
+                                        <Typography sx={{ fontSize: 12, lineHeight: '18px', fontWeight: 600, color: 'text.primary', mb: 0.5 }}>
+                                            {title}
+                                        </Typography>
+                                    )}
+                                    {content}
+                                </Box>
+                            </Box>
+                        );
+                        // Keep Material UI's native colors, spacing, focus,
+                        // label, and placeholder treatments. Only compact the
+                        // form copy to the surrounding 12px type scale.
                         const inputSx = {
-                            '& .MuiInput-underline:before': { borderBottomColor: 'rgba(0,0,0,0.15)' },
-                            '& .MuiInputBase-root': { fontSize: 12, mt: 1.5 },
-                            '& .MuiInputBase-input': { fontSize: 12, py: 0.5, px: 0 },
-                            '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.45 },
-                            '& .MuiInputLabel-root': { fontSize: 11, color: 'text.secondary', fontWeight: 500 },
-                            '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
+                            '& .MuiInputBase-root': { fontSize: 12 },
+                            '& .MuiInputBase-input': { fontSize: 12 },
+                            '& .MuiInputBase-input::placeholder': { fontSize: 12 },
                         };
                         const labelShrinkSlotProps = { inputLabel: { shrink: true } };
-                        // Pick 2 or 3 columns to minimise orphan fields on the last row
-                        const balancedCols = (n: number) => {
-                            if (n <= 2) return 2;
-                            if (n % 3 === 0) return 3;  // 3,6,9 → perfect 3-col rows
-                            if (n % 2 === 0) return 2;  // 4,8 → perfect 2-col rows
-                            return 3;                    // 5,7 → 3 cols (3+2, 3+3+1) is acceptable
+                        const paramGridSx = {
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, minmax(0, 280px))',
+                            columnGap: 2,
+                            rowGap: 2.25,
+                            maxWidth: 576,
                         };
                         if (!hasTiers) {
                             // Legacy: no tier field, render flat grid
-                            const cols = balancedCols(paramDefs.length);
                             return (
-                                <Box sx={{ ...sectionSx, display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 350px))`, gap: 2 }}>
+                                <Box sx={{ ...paramGridSx, mt: 1 }}>
                                     {paramDefs.map((paramDef) => (
-                                        <TextField
+                                        <DraftTextField
                                             key={paramDef.name}
                                             sx={inputSx}
                                             variant="standard" size="small" fullWidth
@@ -416,13 +560,8 @@ export const DataLoaderForm: React.FC<{
                                             required={paramDef.required}
                                             value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
                                             placeholder={getParamPlaceholder(paramDef)}
-                                            onChange={(event: any) => {
-                                                if (sensitiveParamNames.has(paramDef.name)) {
-                                                    setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
-                                                } else {
-                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: event.target.value }));
-                                                }
-                                            }}
+                                            onDraftChange={(value) => updateParamDraft(paramDef.name, value)}
+                                            onCommit={(value) => commitParamDraft(paramDef.name, value)}
                                         />
                                     ))}
                                 </Box>
@@ -430,7 +569,6 @@ export const DataLoaderForm: React.FC<{
                         }
 
                         const renderParamGrid = (tierParams: typeof paramDefs) => {
-                            const cols = balancedCols(tierParams.length);
                             // Kusto cluster field: manual URL input plus a
                             // public sample-cluster hint. The hint is never
                             // prefilled; selecting it explicitly starts database
@@ -440,7 +578,7 @@ export const DataLoaderForm: React.FC<{
                             const isKustoDatabase = (name: string) =>
                                 loaderTypeKey === 'kusto' && name === 'kusto_database';
                             return (
-                            <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 350px))`, gap: 2 }}>
+                            <Box sx={paramGridSx}>
                                 {tierParams.map((paramDef) => (
                                     isKustoCluster(paramDef.name) ? (
                                         <Autocomplete
@@ -566,7 +704,7 @@ export const DataLoaderForm: React.FC<{
                                             }}
                                         />
                                     ) : (
-                                    <TextField
+                                    <DraftTextField
                                         key={paramDef.name}
                                         sx={inputSx}
                                         variant="standard" size="small" fullWidth
@@ -576,13 +714,8 @@ export const DataLoaderForm: React.FC<{
                                         required={paramDef.required}
                                         value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
                                         placeholder={getParamPlaceholder(paramDef)}
-                                        onChange={(event: any) => {
-                                            if (sensitiveParamNames.has(paramDef.name)) {
-                                                setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
-                                            } else {
-                                                dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: event.target.value }));
-                                            }
-                                        }}
+                                        onDraftChange={(value) => updateParamDraft(paramDef.name, value)}
+                                        onCommit={(value) => commitParamDraft(paramDef.name, value)}
                                     />
                                     )
                                 ))}
@@ -593,40 +726,89 @@ export const DataLoaderForm: React.FC<{
                         const connectionParams = paramDefs.filter(p => p.tier === 'connection');
                         const filterParams = paramDefs.filter(p => p.tier === 'filter');
                         const authParams = paramDefs.filter(p => p.tier === 'auth');
+                        const selectedAuthPath = authPaths.find(path => path.id === params._auth_path)
+                            || authPaths.find(path => path.default)
+                            || authPaths[0];
+                        const selectedAuthFieldNames = new Set(selectedAuthPath?.fields || authParams.map(p => p.name));
+                        const selectedAuthParams = authParams.filter(p => selectedAuthFieldNames.has(p.name));
                         const hasDelegated = !!delegatedLogin?.login_url;
                         const connectLabel = onBeforeConnect
                             ? t('db.createConnector', { defaultValue: 'Create Connector' })
                             : t('db.connect', { suffix: (params.table_filter || '').trim() ? t('db.withFilter') : '' });
+                        let stepNumber = 0;
+                        const nameStep = connectionName ? ++stepNumber : 0;
+                        const connectionStep = connectionParams.length > 0 ? ++stepNumber : 0;
+                        const authStep = ++stepNumber;
+                        const scopeStep = filterParams.length > 0 ? ++stepNumber : 0;
+                        const actionStep = ++stepNumber;
 
                         return (
-                            <>
+                            <Box sx={{ mt: 1.5, maxWidth: 1120 }}>
+                                {connectionName && renderTimelineStep(
+                                    nameStep,
+                                    null,
+                                    <Box sx={{ maxWidth: 280 }}>
+                                        <DraftTextField
+                                            key={`connection-name-${dataLoaderType}`}
+                                            sx={inputSx}
+                                            variant="standard" size="small" fullWidth
+                                            slotProps={labelShrinkSlotProps}
+                                            label={connectionName.label}
+                                            value={connectionName.value}
+                                            placeholder={connectionName.placeholder}
+                                            onDraftChange={connectionName.onChange}
+                                            onCommit={connectionName.onChange}
+                                        />
+                                    </Box>,
+                                )}
+
                                 {/* Tier 1: Connection */}
                                 {connectionParams.length > 0 && (
-                                    <Box sx={sectionSx}>
-                                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
-                                            {t('db.tierConnection')}
-                                        </Typography>
-                                        {renderParamGrid(connectionParams)}
-                                    </Box>
+                                    renderTimelineStep(
+                                        connectionStep,
+                                        t('db.tierConnection'),
+                                        renderParamGrid(connectionParams),
+                                    )
                                 )}
 
-                                {/* Tier 2: Scope */}
-                                {filterParams.length > 0 && (
-                                    <Box sx={sectionSx}>
-                                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
-                                            {t('db.tierFilter')}
+                                {/* Tier 2: choose an authentication path, then
+                                    reveal only that path's credential fields. */}
+                                {renderTimelineStep(
+                                    authStep,
+                                    t('db.tierAuth'),
+                                    <>
+                                    {authPaths.length > 1 && (
+                                        <RadioGroup
+                                            row
+                                            value={selectedAuthPath?.id || ''}
+                                            onChange={(event) => dispatch(dfActions.updateDataLoaderConnectParam({
+                                                dataLoaderType,
+                                                paramName: '_auth_path',
+                                                paramValue: event.target.value,
+                                            }))}
+                                            sx={{ gap: 1, mb: selectedAuthParams.length > 0 ? 1 : 0 }}
+                                        >
+                                            {authPaths.map(path => (
+                                                <FormControlLabel
+                                                    key={path.id}
+                                                    value={path.id}
+                                                    control={<Radio size="small" />}
+                                                    label={(
+                                                        <Typography sx={{ fontSize: 11.5, fontWeight: 500 }}>{path.label}</Typography>
+                                                    )}
+                                                    sx={{ mr: 2 }}
+                                                />
+                                            ))}
+                                        </RadioGroup>
+                                    )}
+
+                                    {authPaths.length > 1 && selectedAuthPath?.description && (
+                                        <Typography sx={{ fontSize: 11, lineHeight: 1.4, color: 'text.secondary', mb: selectedAuthParams.length > 0 ? 0.5 : 0 }}>
+                                            {selectedAuthPath.description}
                                         </Typography>
-                                        {renderParamGrid(filterParams)}
-                                    </Box>
-                                )}
+                                    )}
 
-                                {/* Tier 3: Sign in */}
-                                <Box sx={sectionSx}>
-                                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
-                                        {t('db.tierAuth')}
-                                    </Typography>
-
-                                    {hasDelegated && authParams.length > 0 ? (
+                                    {hasDelegated && selectedAuthParams.length > 0 ? (
                                         /* Left/right split: delegated | or | credentials */
                                         <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'stretch' }}>
                                             {/* Left: delegated login */}
@@ -644,9 +826,9 @@ export const DataLoaderForm: React.FC<{
                                             </Box>
                                             {/* Right: credential fields + connect */}
                                             <Box sx={{ flex: 1 }}>
-                                                <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${authParams.length}, minmax(0, 350px))`, gap: 2 }}>
-                                                    {authParams.map((paramDef) => (
-                                                        <TextField
+                                                <Box sx={paramGridSx}>
+                                                    {selectedAuthParams.map((paramDef) => (
+                                                        <DraftTextField
                                                             key={paramDef.name}
                                                             sx={inputSx}
                                                             variant="standard" size="small" fullWidth
@@ -655,13 +837,8 @@ export const DataLoaderForm: React.FC<{
                                                             type={paramDef.type === 'password' ? 'password' : 'text'}
                                                             value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
                                                             placeholder={getParamPlaceholder(paramDef)}
-                                                            onChange={(event: any) => {
-                                                                if (sensitiveParamNames.has(paramDef.name)) {
-                                                                    setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
-                                                                } else {
-                                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: event.target.value }));
-                                                                }
-                                                            }}
+                                                            onDraftChange={(value) => updateParamDraft(paramDef.name, value)}
+                                                            onCommit={(value) => commitParamDraft(paramDef.name, value)}
                                                         />
                                                     ))}
                                                 </Box>
@@ -679,48 +856,64 @@ export const DataLoaderForm: React.FC<{
                                         </Button>
                                     ) : (
                                         /* Manual credentials only */
-                                        renderParamGrid(authParams)
+                                        renderParamGrid(selectedAuthParams)
                                     )}
-                                </Box>
+                                    </>,
+                                )}
+
+                                {/* Tier 3: general scope options remain
+                                    available after every authentication path. */}
+                                {filterParams.length > 0 && (
+                                    renderTimelineStep(
+                                        scopeStep,
+                                        t('db.tierFilter'),
+                                        renderParamGrid(filterParams),
+                                    )
+                                )}
 
                                 {/* Primary submit action is separate from all
                                     parameter sections. Delegated-only sources
                                     complete through their sign-in button. */}
-                                {(!hasDelegated || authParams.length > 0) && (
-                                    <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'flex-start' }}>
-                                        <Button
-                                            variant="contained" color="primary" size="small"
-                                            disabled={isConnecting}
-                                            sx={{ textTransform: "none", minWidth: 80, height: 30, fontSize: 12 }}
-                                            onClick={() => connectAndListTables()}>
-                                            {connectLabel}
-                                        </Button>
-                                    </Box>
+                                {renderTimelineStep(
+                                    actionStep,
+                                    null,
+                                    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                                        {(!hasDelegated || selectedAuthParams.length > 0) && (
+                                            <Button
+                                                variant="contained" color="primary" size="small"
+                                                disabled={isConnecting}
+                                                sx={{ textTransform: "none", minWidth: 80, height: 30, fontSize: 12 }}
+                                                onClick={() => connectAndListTables()}>
+                                                {connectLabel}
+                                            </Button>
+                                        )}
+                                        {paramDefs.length > 0 && (
+                                            <FormControlLabel
+                                                sx={{ m: 0 }}
+                                                control={(
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={persistCredentials}
+                                                        onChange={(event) => setPersistCredentials(event.target.checked)}
+                                                        sx={{ p: 0.5 }}
+                                                    />
+                                                )}
+                                                label={(
+                                                    <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                                        {t('db.rememberCredentials')}
+                                                    </Typography>
+                                                )}
+                                            />
+                                        )}
+                                    </Box>,
+                                    true,
                                 )}
-                            </>
+                            </Box>
                         );
                     })()}
-                    {paramDefs.length > 0 && (
-                        <FormControlLabel
-                            sx={{ mt: 0.5, ml: 0 }}
-                            control={
-                                <Checkbox
-                                    size="small"
-                                    checked={persistCredentials}
-                                    onChange={(e) => setPersistCredentials(e.target.checked)}
-                                    sx={{ p: 0.5 }}
-                                />
-                            }
-                            label={
-                                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                    {t('db.rememberCredentials')}
-                                </Typography>
-                            }
-                        />
-                    )}
                     {localizedAuthInstructions && (
                         <Box sx={(theme) => ({
-                            mt: 2, px: 1.5, py: 1, 
+                            mt: 3, px: 1.5, py: 1, 
                             backgroundColor: 'rgba(0,0,0,0.02)',
                             borderRadius: 1,
                             border: '1px solid rgba(0,0,0,0.06)',

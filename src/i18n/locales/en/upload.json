@@ -102,6 +102,7 @@
     "loadingData": "Loading data...",
     "loadingDataset": "Loading {{name}}...",
     "connect": "Connect",
+    "createConnectionTo": "Create a connection to {{name}}",
     "connectionNameLabel": "connection name",
     "dataSourceTypes": "Data Sources",
     "folderPathPlaceholder": "/path/to/your/data/folder",
