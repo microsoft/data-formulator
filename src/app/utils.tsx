@@ -97,6 +97,7 @@ export interface SourceTableRef {
  * All action routes accept `connector_id` in the JSON body.
  */
 export const CONNECTOR_ACTION_URLS = {
+    DISCOVER_OPTIONS: '/api/data-loaders/discover-options',
     CONNECT: '/api/connectors/connect',
     DISCONNECT: '/api/connectors/disconnect',
     GET_STATUS: '/api/connectors/get-status',

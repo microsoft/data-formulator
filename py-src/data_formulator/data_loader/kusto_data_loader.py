@@ -43,7 +43,7 @@ class KustoDataLoader(ExternalDataLoader):
     def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "kusto_cluster", "type": "string", "required": True, "tier": "connection", "description": "e.g., https://mycluster.region.kusto.windows.net"}, 
-            {"name": "kusto_database", "type": "string", "required": False, "tier": "filter", "description": "Database name (leave empty to browse all databases)"}, 
+            {"name": "kusto_database", "type": "string", "required": True, "tier": "connection", "description": "Database name (required)"}, 
             {"name": "client_id", "type": "string", "required": False, "tier": "auth", "description": "Service principal only"}, 
             {"name": "client_secret", "type": "string", "required": False, "sensitive": True, "tier": "auth", "description": "Service principal only"}, 
             {"name": "tenant_id", "type": "string", "required": False, "tier": "auth", "description": "Service principal only"}
@@ -497,48 +497,40 @@ class KustoDataLoader(ExternalDataLoader):
             return self.kusto_database, source_table
         return None, source_table
 
-    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List tables from the Kusto cluster.
+    @classmethod
+    def discover_param_options(
+        cls,
+        param_name: str,
+        params: dict[str, Any],
+    ) -> list[str]:
+        """List accessible databases only when explicitly requested."""
+        if param_name != "kusto_database":
+            return []
+        if not str(params.get("kusto_cluster") or "").strip():
+            raise ValueError("kusto_cluster is required to load databases")
+        loader = cls(params)
+        result = loader.client.execute(None, ".show databases")
+        df = dataframe_from_result_table(result.primary_results[0])
+        if "DatabaseName" not in df.columns:
+            return []
+        return sorted({
+            str(name).strip()
+            for name in df["DatabaseName"].dropna().tolist()
+            if str(name).strip()
+        }, key=str.casefold)
 
-        When a database is pinned (``kusto_database`` supplied at connect
-        time), lists tables within that database and returns ``path =
-        [table]``. Otherwise enumerates every database on the cluster and
-        returns ``path = [database, table]`` so the catalog groups tables by
-        database — matching ``catalog_hierarchy()``.
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List tables from the configured Kusto database.
 
         Uses `.show tables details` for lightweight metadata (name, DocString).
-        When a single database is pinned, a bulk `.show database schema as json`
-        also fetches every table's columns in one control command. A
-        full-cluster scan (no pinned database) skips columns — running a bulk
-        schema query against *every* database is what caused connection
-        timeouts on large clusters; columns load lazily per database instead.
+        A bulk `.show database schema as json` also fetches every table's
+        columns in one control command.
         """
-        if self.kusto_database:
-            return self._list_tables_in_db(
-                self.kusto_database, table_filter,
-                path_prefix=[], fetch_columns=True)
-
-        # No database pinned: enumerate all databases on the cluster. Columns
-        # are intentionally NOT fetched here — a bulk schema query per database
-        # across the whole cluster is expensive and times out. They load lazily
-        # per database (see ``get_metadata`` / pinned-database browsing).
-        tables: list[dict[str, Any]] = []
-        self._report_progress("Listing databases on the cluster…")
-        db_df = self.query(".show databases")
-        db_names = [
-            rec.get("DatabaseName")
-            for rec in db_df.to_dict(orient="records")
-            if rec.get("DatabaseName")
-        ]
-        total = len(db_names)
-        self._report_progress(f"Found {total} databases; listing tables…")
-        for idx, db_name in enumerate(db_names, start=1):
-            self._report_progress(
-                f"Querying database '{db_name}' ({idx}/{total})…")
-            tables.extend(self._list_tables_in_db(
-                db_name, table_filter,
-                path_prefix=[db_name], fetch_columns=False))
-        return tables
+        if not self.kusto_database:
+            raise ValueError("kusto_database is required")
+        return self._list_tables_in_db(
+            self.kusto_database, table_filter,
+            path_prefix=[], fetch_columns=True)
 
     def _fetch_db_columns_bulk(self, db_name: str) -> dict[str, list[dict[str, str]]]:
         """Fetch column schemas for *every* table in a database with a single
@@ -739,8 +731,23 @@ class KustoDataLoader(ExternalDataLoader):
             self.kusto_database = old_db
 
     def test_connection(self) -> bool:
+        """Verify live cluster access without invoking result conversion.
+
+        Connection testing must not use :meth:`query`: that method converts
+        the response to pandas and normalizes its columns, so a local result
+        conversion failure could incorrectly mark a successful Kusto request
+        as a failed connection. Catalog information may also exist in the disk
+        cache and is not evidence that this live probe succeeded.
+        """
         try:
-            self.query(".show databases | take 1")
+            self.client.execute(self.kusto_database, ".show tables")
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Kusto connection probe failed for cluster %s (database %s): %s",
+                self.kusto_cluster,
+                self.kusto_database,
+                exc,
+                exc_info=True,
+            )
             return False

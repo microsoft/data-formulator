@@ -148,15 +148,14 @@
           },
           "message": {
             "type": "string",
-            "description": "Short note to the user that you're handing off, e.g. 'I'll hand this to the data loading agent — pick a search:'."
+            "description": "Short note to the user that you're handing off, e.g. 'I'll hand this to the data loading agent to find the data you need.'"
           },
-          "options": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "1–2 seed prompts for the target agent. Each becomes a one-click button (label == seed prompt); if two, make them meaningfully distinct."
+          "delegate_prompt": {
+            "type": "string",
+            "description": "A single, complete instruction for the target agent describing exactly what data to find/load (sources, tables, columns, filters, time ranges as relevant). Write a full sentence or two — be specific, not a short search phrase."
           }
         },
-        "required": ["target", "options"]
+        "required": ["target", "delegate_prompt"]
       }
     }
   }

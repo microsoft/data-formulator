@@ -2,25 +2,25 @@
 // Licensed under the MIT License.
 
 // Shared, human-friendly formatting for source-filter operators and chips.
-// Backend operators are terse enums (EQ, GTE, ILIKE, ...); the UI should show
-// familiar symbols (=, >=, contains) instead. Kept in one place so every
-// surface that renders a filter chip stays consistent.
+// Backend operators are query syntax (EQ, GTE, ILIKE, ...); user-facing chips
+// follow the conventional compact label–value pattern for common filters
+// (`Grade: regular`) and spell out an operator only when it changes meaning.
 
 /** Maps a backend filter operator enum to a readable symbol/word. */
 export const FILTER_OPERATOR_SYMBOLS: Record<string, string> = {
-    EQ: '=',
-    NEQ: '≠',
+    EQ: ':',
+    NEQ: 'is not',
     GT: '>',
     GTE: '≥',
     LT: '<',
     LTE: '≤',
-    IN: 'in',
-    NOT_IN: 'not in',
+    IN: ':',
+    NOT_IN: 'excludes',
     LIKE: 'contains',
     ILIKE: 'contains',
-    BETWEEN: 'between',
-    IS_NULL: 'is null',
-    IS_NOT_NULL: 'is not null',
+    BETWEEN: ':',
+    IS_NULL: 'is empty',
+    IS_NOT_NULL: 'is not empty',
 };
 
 /** Operators that carry no value (rendered as "column is null"). */
@@ -36,23 +36,33 @@ const formatFilterValue = (value: any): string => {
     return String(value);
 };
 
+/** Turn technical column identifiers into compact display labels. */
+const formatFilterColumn = (column: string): string => {
+    const readable = String(column || '').replace(/[_-]+/g, ' ').trim();
+    return readable ? readable.charAt(0).toUpperCase() + readable.slice(1) : '';
+};
+
 /**
  * Build a compact, readable chip label for a single filter, e.g.
  *   { column: 'timestamp', operator: 'GTE', value: '2022-12-12' }
- *   → "timestamp ≥ 2022-12-12"
- *   { column: 'name', operator: 'IS_NULL' } → "name is null"
- *   { column: 'ts', operator: 'BETWEEN', value: [1, 5] } → "ts between 1 – 5"
+ *   → "Timestamp ≥ 2022-12-12"
+ *   { column: 'grade', operator: 'EQ', value: 'regular' } → "Grade: regular"
+ *   { column: 'name', operator: 'IS_NULL' } → "Name is empty"
+ *   { column: 'date', operator: 'BETWEEN', value: [1, 5] } → "Date: 1 – 5"
  */
 export const formatFilterChipLabel = (
     column: string,
     operator: string,
     value?: any,
 ): string => {
+    const label = formatFilterColumn(column);
     const op = formatFilterOperator(operator);
-    if (VALUELESS_OPERATORS.has(operator)) return `${column} ${op}`;
+    if (VALUELESS_OPERATORS.has(operator)) return `${label} ${op}`;
     if (operator === 'BETWEEN' && Array.isArray(value) && value.length === 2) {
-        return `${column} ${op} ${value[0]} – ${value[1]}`;
+        return `${label}${op} ${value[0]} – ${value[1]}`;
     }
     const val = formatFilterValue(value);
-    return val ? `${column} ${op} ${val}` : `${column} ${op}`;
+    if (!val) return `${label} ${op}`;
+    if (operator === 'EQ' || operator === 'IN') return `${label}${op} ${val}`;
+    return `${label} ${op} ${val}`;
 };

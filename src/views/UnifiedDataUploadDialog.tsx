@@ -1832,19 +1832,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 const hasText = prompt.trim().length > 0;
                                 const hasImages = images.length > 0;
                                 const hasAttachments = attachments.length > 0;
-                                // Always surface the chat. If the user
-                                // is starting a fresh query, clear any
-                                // prior conversation and enqueue the new
-                                // submission as a redux `pending` slot
-                                // — `DataLoadingChat` consumes it on
-                                // render and auto-sends. Doing both
-                                // dispatches in the same tick keeps the
-                                // handoff atomic; there's no prop race.
+                                // Always surface the chat. Preserve any prior
+                                // conversation (Option A): `queueDataLoadingTask`
+                                // drops a "new request" divider when a thread
+                                // already exists, then enqueues the submission
+                                // as a redux `pending` slot — `DataLoadingChat`
+                                // consumes it on render and auto-sends. The
+                                // header reset button starts a blank slate.
                                 if (hasText || hasImages || hasAttachments) {
-                                    if (dataLoadingChatMessages.length > 0) {
-                                        dispatch(dfActions.clearChatMessages());
-                                    }
-                                    dispatch(dfActions.setDataLoadingChatPending({
+                                    dispatch(dfActions.queueDataLoadingTask({
                                         text: prompt, images, attachments,
                                     }));
                                 }

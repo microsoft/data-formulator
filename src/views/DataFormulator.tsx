@@ -312,7 +312,16 @@ export const DataFormulatorFC = ({ }) => {
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
-        setUploadDialogInitialTab(tab);
+        // Compact mode: when opening the generic menu but a data-loading
+        // conversation is already in progress, land directly on the chat so
+        // the prior history (and any in-progress extractions / load plan) is
+        // visible instead of the empty menu hero. Explicit tab requests
+        // (connector, upload, paste, …) are respected as-is; the menu's
+        // connectors / direct-load options stay one back-arrow click away.
+        const resolvedTab = (tab === 'menu' && dataLoadingChatMessages.length > 0)
+            ? 'extract'
+            : tab;
+        setUploadDialogInitialTab(resolvedTab);
         setUploadDialogOpen(true);
     };
 
@@ -324,11 +333,11 @@ export const DataFormulatorFC = ({ }) => {
     // survived if their name was baked into the prompt text).
     const startDataLoadingChat = (text: string, images: string[] = [], attachments: string[] = []) => {
         if (text.trim().length > 0 || images.length > 0 || attachments.length > 0) {
-            // Fresh query replaces any prior conversation.
-            if (dataLoadingChatMessages.length > 0) {
-                dispatch(dfActions.clearChatMessages());
-            }
-            dispatch(dfActions.setDataLoadingChatPending({ text, images, attachments }));
+            // Preserve any prior conversation (Option A). `queueDataLoadingTask`
+            // drops a "new request" divider when a thread already exists, then
+            // enqueues the submission; the user resets explicitly via the
+            // header reset button when they want a blank slate.
+            dispatch(dfActions.queueDataLoadingTask({ text, images, attachments }));
         }
         openUploadDialog('extract');
     };

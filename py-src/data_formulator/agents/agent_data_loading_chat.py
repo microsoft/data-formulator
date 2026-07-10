@@ -84,6 +84,10 @@ Three workflows:
    full table use propose_load_plan, never probe_data.
 5. Call propose_load_plan(candidates=[...], reasoning="...") — the UI shows a
    confirmation card.
+    Set `selected=true` for every table jointly needed to satisfy the request
+    (for example, all members of an explicitly requested group). When candidates
+    are alternatives or the match is ambiguous, select only the best match and
+    leave the other useful alternatives unselected for the user to review.
 6. Keep your text brief after propose_load_plan. The UI handles the rest.
 
 Workflow selection rubric (apply in order):
@@ -410,6 +414,10 @@ TOOLS = [
                                 "source_id": {"type": "string"},
                                 "table_key": {"type": "string"},
                                 "display_name": {"type": "string"},
+                                "selected": {
+                                    "type": "boolean",
+                                    "description": "Whether this candidate should be checked by default. Select all tables jointly needed for the request; when candidates are ambiguous alternatives, select only the best match."
+                                },
                                 "source_table": {"type": "string", "description": "Optional legacy import id. Prefer source_id + table_key; the backend resolves the real import id."},
                                 "filters": {
                                     "type": "array",
@@ -425,7 +433,7 @@ TOOLS = [
                                 "sort_by": {"type": "string"},
                                 "sort_order": {"type": "string", "enum": ["asc", "desc"]},
                             },
-                            "required": ["source_id", "table_key", "display_name"],
+                            "required": ["source_id", "table_key", "display_name", "selected"],
                         },
                     },
                     "reasoning": {"type": "string", "description": "Brief explanation of why these tables are recommended"},
@@ -1280,6 +1288,15 @@ class DataLoadingAgent:
                 )
             }
 
+        # A valid, unconfirmed plan must have at least one checked candidate.
+        # Besides preventing a dead-end zero-selection card, this matters
+        # because the persisted frontend model uses all-selected-false to mean
+        # "this plan was already loaded". Respect the agent's recommendation
+        # when it selected anything; otherwise choose the first resolvable
+        # candidate as the conservative fallback.
+        if resolvable and not any(c.get("selected") for c in resolvable):
+            resolvable[0]["selected"] = True
+
         actions = [{
             "type": "load_plan",
             "candidates": candidates,
@@ -1349,6 +1366,9 @@ class DataLoadingAgent:
         result["display_name"] = str(display_name)
         result["source_table"] = str(import_id)
         result["source_table_name"] = str(source_name)
+        # Agent recommendation for the initial checkbox state. Default true
+        # for legacy callers / cached schemas that predate this field.
+        result["selected"] = result.get("selected") is not False
         result["filters"] = self._normalize_load_plan_filters(result.get("filters"))
         if resolution_error:
             result["resolution_error"] = resolution_error

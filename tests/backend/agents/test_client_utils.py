@@ -277,8 +277,8 @@ def _core_action_tools():
             "name": "delegate",
             "parameters": {"type": "object",
                            "properties": {"target": {"type": "string"},
-                                          "options": {"type": "array"}},
-                           "required": ["target", "options"]}}},
+                                          "delegate_prompt": {"type": "string"}},
+                           "required": ["target", "delegate_prompt"]}}},
     ]
 
 

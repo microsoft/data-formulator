@@ -1223,58 +1223,35 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // the same UI position above the input box.
             if (result.type === "delegate") {
                 const message = String(result.message || '').trim();
-                const rawOptions = Array.isArray(result.options) ? result.options : [];
-                const options: string[] = rawOptions
-                    .map((o: any) => (typeof o === 'string' ? o.trim() : ''))
-                    .filter((s: string) => s.length > 0)
-                    .slice(0, 2);
+                // The agent now emits a single `delegate_prompt` (auto-sent —
+                // the user no longer picks from choices). Fall back to the
+                // legacy `options[]` shape for older backends / cached specs.
+                const delegatePrompt = String(result.delegate_prompt || '').trim();
+                const legacyOption = Array.isArray(result.options)
+                    ? String(result.options.find((o: any) => typeof o === 'string' && o.trim()) || '').trim()
+                    : '';
                 const target = (result.target === 'report_gen' ? 'report_gen' : 'data_loading') as 'data_loading' | 'report_gen';
 
-                if (target === 'report_gen') {
-                    // Auto-delegate to the report flow — no user approval gate.
-                    // When the user asks for a report, jumping straight into
-                    // report generation is the expected behavior, so we pick the
-                    // agent's first seed prompt (falling back to its message) and
-                    // hand off directly. The report_gen handoff useEffect picks
-                    // this up and re-runs the analyst with the seeded prompt. The
-                    // placeholder draft has no role in the report view, so we
-                    // drop it like a normal completion would.
-                    if (currentDraftId) {
-                        thinkingSteps = [];
-                        pendingThought = '';
-                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
-                        dispatch(dfActions.removeDraftNode(currentDraftId));
-                        currentDraftId = null;
-                    }
-                    const seedPrompt = options[0] || message;
-                    if (seedPrompt) {
-                        dispatch(dfActions.requestAgentHandoff({ target: 'report_gen', prompt: seedPrompt }));
-                    }
-                } else if (currentDraftId) {
-                    // data_loading: keep the one-click approval panel — that's a
-                    // different agent / context the user should confirm.
-                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                // Auto-delegate for both targets — no user approval gate. When
+                // the agent decides a peer agent should take over (report gen
+                // for a narrative, data loading when the workspace lacks the
+                // needed data), we hand off directly using the agent's
+                // delegate prompt (falling back to a legacy option, then its
+                // message). The matching handoff consumer (SimpleChartRecBox
+                // for report_gen, DataFormulator for data_loading) picks it up
+                // and starts the target agent with the seeded prompt. The
+                // placeholder draft has no role once we hand off, so we drop it
+                // like a normal completion would.
+                if (currentDraftId) {
                     thinkingSteps = [];
                     pendingThought = '';
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
-
-                    const pauseEntry: InteractionEntry = {
-                        from: 'data-agent', to: 'user',
-                        role: 'delegate',
-                        plan: priorSteps || result.thought || undefined,
-                        content: message,
-                        delegateTarget: target,
-                        delegateOptions: options,
-                        timestamp: Date.now(),
-                    };
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
-                    currentDraftInteraction.push(pauseEntry);
-                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
-                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
-                        trajectory: result.trajectory || [],
-                        completedStepCount: result.completed_step_count || 0,
-                        lastCreatedTableId,
-                    }}));
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                    currentDraftId = null;
+                }
+                const seedPrompt = delegatePrompt || legacyOption || message;
+                if (seedPrompt) {
+                    dispatch(dfActions.requestAgentHandoff({ target, prompt: seedPrompt }));
                 }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;

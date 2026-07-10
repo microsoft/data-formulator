@@ -3,13 +3,15 @@
 
 import React, { useState } from 'react';
 import {
-    Box, Button, Checkbox, Chip, CircularProgress, Typography,
+    Box, Button, Checkbox, Chip, CircularProgress, Tooltip, Typography,
     alpha, useTheme,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
+import { getConnectorIcon } from '../icons';
 import { transition } from '../app/tokens';
 import { TablePreviewRow, TablePreviewData } from './TablePreviewRow';
 import { formatFilterChipLabel } from './filterFormat';
@@ -27,10 +29,10 @@ interface LoadPlanCardProps {
     canLoadInNewWorkspace?: boolean;
 }
 
-// Plans this small auto-expand each row's preview on first render so the
-// user can see what they're loading without an extra click. Larger plans
-// (4+) stay collapsed to avoid overwhelming the chat surface.
-const AUTO_PREVIEW_THRESHOLD = 3;
+// Reserve a stable area while a remote preview request is in flight. Resolved
+// previews return to natural height: five data rows plus a quiet row-count
+// caption provide enough validation without making multi-candidate plans tall.
+const LOAD_PLAN_LOADING_HEIGHT = 158;
 
 interface PreviewState {
     loading: boolean;
@@ -54,19 +56,20 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
     const theme = useTheme();
     const { t } = useTranslation();
     const [selection, setSelection] = useState<Record<number, boolean>>(
-        () => Object.fromEntries(plan.candidates.map((c, i) => [i, !c.resolutionError]))
+        () => Object.fromEntries(plan.candidates.map((c, i) => [
+            i,
+            !c.resolutionError && c.selected !== false,
+        ]))
     );
     const [loading, setLoading] = useState(false);
-    // Auto-expand previews for small plans. We seed the map with empty
-    // expanded entries; the actual data fetch happens lazily inside the
-    // Collapse's first paint via the same code path as a manual click.
-    const shouldAutoPreview = plan.candidates.length <= AUTO_PREVIEW_THRESHOLD;
+    // Every resolvable candidate preview is always open. Seed loading state on
+    // the first render so the fixed-height spinner area is reserved before the
+    // asynchronous preview requests begin.
     const [previews, setPreviews] = useState<Record<number, PreviewState>>(() => {
-        if (!shouldAutoPreview) return {};
         const seed: Record<number, PreviewState> = {};
         plan.candidates.forEach((c, i) => {
             if (!c.resolutionError) {
-                seed[i] = { loading: false, expanded: true, rows: [], columns: [] };
+                seed[i] = { loading: true, expanded: true, rows: [], columns: [] };
             }
         });
         return seed;
@@ -118,10 +121,9 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         }
     }, [t]);
 
-    // Kick off auto-preview fetches once on mount. We don't await — each
-    // row paints its loading state and resolves independently.
+    // Fetch every preview once on mount. We don't await — each row already
+    // displays its fixed-height spinner and resolves independently.
     React.useEffect(() => {
-        if (!shouldAutoPreview) return;
         plan.candidates.forEach((c, i) => {
             if (!c.resolutionError) {
                 fetchPreview(c, i);
@@ -130,20 +132,6 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         // Intentionally run once; the plan doesn't mutate after mount.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    const handlePreview = (candidate: LoadPlanCandidate, idx: number) => {
-        const current = previews[idx];
-        // Toggle if we already have data or are currently fetching.
-        if (current?.expanded) {
-            setPreviews(prev => ({ ...prev, [idx]: { ...current, expanded: false } }));
-            return;
-        }
-        if (current?.rows.length) {
-            setPreviews(prev => ({ ...prev, [idx]: { ...current, expanded: true } }));
-            return;
-        }
-        fetchPreview(candidate, idx);
-    };
 
     const handleConfirm = async (newWorkspace = false) => {
         const selected = plan.candidates.filter((c, i) => selection[i] && !c.resolutionError);
@@ -155,12 +143,6 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
             setLoading(false);
         }
     };
-
-    // Whether all candidates resolve to a single source — used to decide
-    // if the per-row source label is informative or just redundant.
-    const sources = new Set(plan.candidates.map(c => c.sourceId));
-    const showSourceLabel = sources.size > 1;
-    const sharedSourceId = sources.size === 1 ? plan.candidates[0].sourceId : undefined;
 
     const isDark = theme.palette.mode === 'dark';
     const borderColorBase = confirmed
@@ -203,18 +185,44 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                     : { state: 'idle' };
 
                 return (
-                    <TablePreviewRow
-                        key={i}
+                    <Box key={i} sx={{
+                        ...(i > 0 ? {
+                            mt: 0.75,
+                            pt: 0.75,
+                            borderTop: '1px solid',
+                            borderColor: 'divider',
+                        } : {}),
+                    }}>
+                      <TablePreviewRow
                         name={c.displayName}
                         leading={confirmed
                             ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} />
                             : <Checkbox size="small" checked={!!selection[i]} disabled={unresolved}
                                 onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
-                        trailing={showSourceLabel
-                            ? <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>({c.sourceId})</Typography>
-                            : undefined}
+                        trailing={!unresolved ? (
+                            <Tooltip title={`${t('dataLoading.loadPlan.fromSource', { defaultValue: 'from' })} ${c.sourceId}`}>
+                                <Box sx={{
+                                    display: 'flex', alignItems: 'center', gap: 0.4,
+                                    maxWidth: 180, minWidth: 0, flexShrink: 0,
+                                    color: 'text.secondary',
+                                }}>
+                                    {getConnectorIcon(c.sourceId.split(':', 1)[0], {
+                                        sx: { fontSize: 13, flexShrink: 0, color: 'text.secondary' },
+                                    })}
+                                    <Typography noWrap sx={{ fontSize: 10.5, color: 'text.secondary' }}>
+                                        {c.sourceId}
+                                    </Typography>
+                                </Box>
+                            </Tooltip>
+                        ) : undefined}
                         filterChips={hasFilters ? (
                             <>
+                                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, mr: 0.25, color: 'text.secondary' }}>
+                                    <FilterAltOutlinedIcon sx={{ fontSize: 12 }} />
+                                    <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'text.secondary' }}>
+                                        {t('dataLoading.loadPlan.filtersLabel', { defaultValue: 'Filters:' })}
+                                    </Typography>
+                                </Box>
                                 {c.filters?.map((f, fi) => (
                                     <Chip key={fi}
                                         label={formatFilterChipLabel(f.column, f.operator, f.value)}
@@ -229,8 +237,8 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             </>
                         ) : undefined}
                         preview={previewData}
-                        expanded={!!preview?.expanded}
-                        onTogglePreview={unresolved ? undefined : () => handlePreview(c, i)}
+                        expanded={!unresolved}
+                        loadingHeight={LOAD_PLAN_LOADING_HEIGHT}
                         dim={unresolved}
                         unresolved={unresolved ? {
                             message: t('dataLoading.loadPlan.unresolved', {
@@ -238,19 +246,13 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             }),
                             detail: c.resolutionError,
                         } : undefined}
-                    />
+                      />
+                    </Box>
                 );
             })}
 
-            {/* Footer: action button (unconfirmed) or quiet caption (confirmed).
-                When every candidate shares one source, surface it once down
-                here instead of duplicating it on each row. */}
+            {/* Footer: action button (unconfirmed) or quiet caption (confirmed). */}
             <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
-                {!showSourceLabel && sharedSourceId && (
-                    <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
-                        {t('dataLoading.loadPlan.fromSource', { defaultValue: 'from' })} {sharedSourceId}
-                    </Typography>
-                )}
                 <Box sx={{ flex: 1 }} />
                 {confirmed ? (
                     <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>

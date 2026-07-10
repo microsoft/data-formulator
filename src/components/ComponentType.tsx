@@ -194,6 +194,7 @@ export interface ChatMessage {
     codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
     pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
     loadPlan?: LoadPlan;                // Agent-proposed data loading plan
+    divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
     timestamp: number;
 }
 

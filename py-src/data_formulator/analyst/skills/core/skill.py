@@ -230,7 +230,7 @@ class CoreSkill:
         try:
             payload = self._normalize_delegate_action(action)
         except ValueError as exc:
-            msg = str(exc) or "delegate action requires target and options."
+            msg = str(exc) or "delegate action requires target and delegate_prompt."
             yield {
                 "type": "error",
                 "message": msg,
@@ -380,15 +380,20 @@ class CoreSkill:
                 f"delegate action requires 'target' ∈ {_DELEGATE_TARGETS}, got {target!r}"
             )
         message = str(action.get("message") or "").strip()
-        raw_options = action.get("options")
-        cleaned: list[str] = []
-        if isinstance(raw_options, list):
-            for opt in raw_options:
-                if isinstance(opt, str) and opt.strip():
-                    cleaned.append(opt.strip())
-        if not cleaned:
-            raise ValueError("delegate action requires non-empty 'options[]'")
-        payload: dict[str, Any] = {"target": target, "options": cleaned[:2]}
+        # The agent writes a single complete instruction in `delegate_prompt`.
+        # Fall back to the legacy `options[]` shape so older callers / cached
+        # specs still hand off gracefully.
+        delegate_prompt = str(action.get("delegate_prompt") or "").strip()
+        if not delegate_prompt:
+            raw_options = action.get("options")
+            if isinstance(raw_options, list):
+                for opt in raw_options:
+                    if isinstance(opt, str) and opt.strip():
+                        delegate_prompt = opt.strip()
+                        break
+        if not delegate_prompt:
+            raise ValueError("delegate action requires a non-empty 'delegate_prompt'")
+        payload: dict[str, Any] = {"target": target, "delegate_prompt": delegate_prompt}
         if message:
             payload["message"] = message
         return payload

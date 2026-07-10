@@ -920,6 +920,40 @@ def list_data_loaders():
     return json_ok({"loaders": loaders, "disabled": disabled, "plugins": plugins_info})
 
 
+@connectors_bp.route("/api/data-loaders/discover-options", methods=["POST"])
+def discover_data_loader_options():
+    """Discover values for one loader parameter after an explicit UI action."""
+    from data_formulator.data_loader import DATA_LOADERS
+
+    data = request.get_json() or {}
+    loader_type = str(data.get("loader_type") or "").strip()
+    param_name = str(data.get("param_name") or "").strip()
+    loader_class = DATA_LOADERS.get(loader_type)
+    if loader_class is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, f"Unknown loader type: {loader_type}")
+    if not param_name:
+        raise AppError(ErrorCode.INVALID_REQUEST, "param_name is required")
+
+    params = dict(data.get("params") or {})
+    connector_id = data.get("connector_id")
+    if connector_id:
+        source = _resolve_connector({"connector_id": connector_id})
+        if source._loader_class is not loader_class:
+            raise AppError(ErrorCode.INVALID_REQUEST, "Connector type does not match loader type")
+        identity = source._get_identity()
+        stored = source._vault_retrieve(identity) or {}
+        supplied = {k: v for k, v in params.items() if v not in (None, "")}
+        params = {**source._default_params, **stored, **supplied}
+
+    try:
+        options = loader_class.discover_param_options(param_name, params)
+        return json_ok({"param_name": param_name, "options": options})
+    except AppError:
+        raise
+    except Exception as exc:
+        classify_and_raise_connector_error(exc, operation="connect")
+
+
 @connectors_bp.route("/api/local/pick-directory", methods=["POST"])
 def pick_local_directory():
     """Open a native OS directory picker and return the selected path.

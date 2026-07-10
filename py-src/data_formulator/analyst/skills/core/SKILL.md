@@ -116,9 +116,10 @@ Hand off to a peer agent when the question needs work outside your scope.
 
 - `target` — `"data_loading"` (the user's question needs data not in the
   workspace).
-- `options` — 1–2 seed prompts for the target agent; each becomes a one-click
-  button (label == seed prompt). If two, make them meaningfully distinct (e.g.
-  `'monthly orders 2024'`).
+- `delegate_prompt` — a single, complete instruction for the target agent:
+  describe exactly what data to find/load — sources, tables, columns, filters,
+  and time ranges as relevant. Write a full sentence or two, not a bare search
+  phrase.
 - `message` — a short note to the user that you're handing off.
 
 Only delegate if the workspace tables genuinely can't cover the question.

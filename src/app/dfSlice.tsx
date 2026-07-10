@@ -1777,6 +1777,32 @@ export const dataFormulatorSlice = createSlice({
         ) => {
             state.dataLoadingChatPending = action.payload;
         },
+        queueDataLoadingTask: (
+            state,
+            action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
+        ) => {
+            // Start a new data-loading task while PRESERVING the prior
+            // conversation (Option A). Retriggers (agent delegate, a fresh
+            // query from the menu, a sample-task click) no longer wipe the
+            // thread — instead, when history exists we drop a lightweight
+            // "new request" divider so the boundary between tasks is clear,
+            // then queue the submission for `DataLoadingChat` to auto-send.
+            // The explicit reset button (`clearChatMessages`) remains the way
+            // to start from a blank slate.
+            if (state.dataLoadingChatMessages.length > 0) {
+                state.dataLoadingChatMessages = [
+                    ...state.dataLoadingChatMessages,
+                    {
+                        id: `divider-${Date.now()}`,
+                        role: 'assistant',
+                        content: '',
+                        divider: true,
+                        timestamp: Date.now(),
+                    },
+                ];
+            }
+            state.dataLoadingChatPending = action.payload;
+        },
         clearDataLoadingChatPending: (state) => {
             state.dataLoadingChatPending = null;
         },

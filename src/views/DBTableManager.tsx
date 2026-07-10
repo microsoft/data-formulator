@@ -9,9 +9,9 @@ import {
   CircularProgress,
   Checkbox,
   FormControlLabel,
-  Autocomplete,
   IconButton,
   Tooltip,
+    Autocomplete,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
@@ -25,6 +25,8 @@ import { dfActions } from '../app/dfSlice';
 import { DataFormulatorState } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 
+const KUSTO_HELP_CLUSTER = 'https://help.kusto.windows.net';
+
 /** Extract a user-visible error message from a connector data payload. */
 function extractConnectError(body: any, fallback: string): string {
     if (body.connection_error && typeof body.connection_error === 'object' && body.connection_error.code) {
@@ -35,19 +37,6 @@ function extractConnectError(body: any, fallback: string): string {
     }
     return body.message ?? fallback;
 }
-
-// Public Azure Data Explorer sample clusters users can try when they don't have
-// their own cluster. The ADX "help" cluster is readable by any AAD-authenticated
-// user (az login / Managed Identity), so it also avoids the ARM cluster-search
-// permission. Connecting lists its sample databases (Samples, ContosoSales, …).
-const KUSTO_SAMPLE_CLUSTERS: { name: string; uri: string; subscription_name?: string; location?: string }[] = [
-    {
-        name: 'ADX help cluster — samples (StormEvents, ContosoSales, …)',
-        uri: 'https://help.kusto.windows.net',
-        subscription_name: 'Public Microsoft sample',
-    },
-];
-
 
 // ---------------------------------------------------------------------------
 
@@ -111,6 +100,10 @@ export const DataLoaderForm: React.FC<{
     // database it's currently listing). Polled from the backend during the
     // connect request; cleared when it resolves.
     const [connectProgress, setConnectProgress] = useState('');
+    const [databaseOptions, setDatabaseOptions] = useState<string[]>([]);
+    const [isLoadingDatabases, setIsLoadingDatabases] = useState(false);
+    const [databaseDiscoveryError, setDatabaseDiscoveryError] = useState('');
+    const [databaseMenuOpen, setDatabaseMenuOpen] = useState(false);
 
     // Sensitive params (passwords, tokens, secrets) live in component state only —
     // never persisted to Redux / localStorage.
@@ -121,17 +114,43 @@ export const DataLoaderForm: React.FC<{
     );
     const [sensitiveParams, setSensitiveParams] = useState<Record<string, string>>({});
 
-    // Kusto cluster suggestions: public sample clusters users can try. Finding
-    // their own cluster is done via the Azure portal link on the field (no ARM
-    // discovery, so only impersonation permission is needed).
-    type ClusterOption = { name: string; uri: string; subscription_name?: string; location?: string };
-    const clusterOptions: ClusterOption[] = KUSTO_SAMPLE_CLUSTERS;
+
 
     // Merged params: Redux (non-sensitive) + component state (sensitive)
     const mergedParams = useMemo(
         () => ({ ...params, ...sensitiveParams }),
         [params, sensitiveParams]
     );
+
+    const loadKustoDatabases = useCallback(async (paramOverrides?: Record<string, any>) => {
+        const discoveryParams = { ...mergedParams, ...paramOverrides };
+        if (!String(discoveryParams.kusto_cluster || '').trim() || isLoadingDatabases) return;
+        setDatabaseMenuOpen(true);
+        setIsLoadingDatabases(true);
+        setDatabaseDiscoveryError('');
+        setDatabaseOptions([]);
+        try {
+            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.DISCOVER_OPTIONS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    loader_type: loaderTypeKey,
+                    connector_id: connectorIdRef.current,
+                    param_name: 'kusto_database',
+                    params: discoveryParams,
+                }),
+            });
+            setDatabaseOptions(data.options || []);
+        } catch (error: any) {
+            setDatabaseDiscoveryError(
+                error?.apiError?.message
+                || error?.message
+                || t('db.loadDatabasesFailed', { defaultValue: 'Could not load databases; enter the name manually.' }),
+            );
+        } finally {
+            setIsLoadingDatabases(false);
+        }
+    }, [isLoadingDatabases, loaderTypeKey, mergedParams, t]);
 
     // Connection timeout in milliseconds (30 seconds)
     const CONNECTION_TIMEOUT_MS = 30_000;
@@ -412,43 +431,42 @@ export const DataLoaderForm: React.FC<{
 
                         const renderParamGrid = (tierParams: typeof paramDefs) => {
                             const cols = balancedCols(tierParams.length);
-                            // Kusto cluster field: render with sample suggestions + an Azure portal link.
-                            const isDiscoverableCluster = (name: string) =>
-                                dataLoaderType === 'kusto' && name === 'kusto_cluster';
+                            // Kusto cluster field: manual URL input plus a
+                            // public sample-cluster hint. The hint is never
+                            // prefilled; selecting it explicitly starts database
+                            // discovery and moves the user to the next field.
+                            const isKustoCluster = (name: string) =>
+                                loaderTypeKey === 'kusto' && name === 'kusto_cluster';
+                            const isKustoDatabase = (name: string) =>
+                                loaderTypeKey === 'kusto' && name === 'kusto_database';
                             return (
                             <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 350px))`, gap: 2 }}>
                                 {tierParams.map((paramDef) => (
-                                    isDiscoverableCluster(paramDef.name) ? (
+                                    isKustoCluster(paramDef.name) ? (
                                         <Autocomplete
                                             key={paramDef.name}
                                             freeSolo
-                                            options={clusterOptions}
-                                            noOptionsText={<Typography sx={{ fontSize: 12 }}>{t('db.noClustersOption', { defaultValue: 'Enter your cluster URL, or use the link to find it in the Azure portal' })}</Typography>}
-                                            getOptionLabel={(o) => typeof o === 'string' ? o : o.uri}
-                                            isOptionEqualToValue={(o, v) =>
-                                                (typeof o === 'string' ? o : o.uri) === (typeof v === 'string' ? v : v.uri)}
+                                            options={[KUSTO_HELP_CLUSTER]}
                                             value={params[paramDef.name] ?? ''}
-                                            onChange={(_e, val) => {
-                                                const uri = val == null ? '' : (typeof val === 'string' ? val : val.uri);
-                                                dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: uri }));
-                                            }}
-                                            onInputChange={(_e, val, reason) => {
-                                                if (reason === 'input') {
-                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: val ?? '' }));
+                                            onChange={(_event, value) => {
+                                                dispatch(dfActions.updateDataLoaderConnectParam({
+                                                    dataLoaderType,
+                                                    paramName: paramDef.name,
+                                                    paramValue: value ?? '',
+                                                }));
+                                                if (value === KUSTO_HELP_CLUSTER) {
+                                                    void loadKustoDatabases({ kusto_cluster: value });
                                                 }
                                             }}
-                                            renderOption={(optProps, option) => {
-                                                const o = option as ClusterOption;
-                                                return (
-                                                    <li {...optProps} key={o.uri}>
-                                                        <Box>
-                                                            <Typography sx={{ fontSize: 12 }}>{o.name}</Typography>
-                                                            <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>
-                                                                {o.uri}{o.subscription_name ? ` · ${o.subscription_name}` : ''}
-                                                            </Typography>
-                                                        </Box>
-                                                    </li>
-                                                );
+                                            onInputChange={(_event, value, reason) => {
+                                                if (reason === 'input') {
+                                                    setDatabaseOptions([]);
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({
+                                                        dataLoaderType,
+                                                        paramName: paramDef.name,
+                                                        paramValue: value,
+                                                    }));
+                                                }
                                             }}
                                             renderInput={(inputParams) => (
                                                 <TextField
@@ -462,15 +480,90 @@ export const DataLoaderForm: React.FC<{
                                                     InputProps={{
                                                         ...inputParams.InputProps,
                                                         endAdornment: (
-                                                            <Tooltip title={t('db.findClusterPortal', { defaultValue: 'Find your cluster in the Azure portal' })}>
-                                                                <IconButton size="small" component="a" href="https://portal.azure.com/#browse/Microsoft.Kusto%2Fclusters" target="_blank" rel="noopener noreferrer">
-                                                                    <OpenInNewIcon sx={{ fontSize: 16 }} />
-                                                                </IconButton>
-                                                            </Tooltip>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                {inputParams.InputProps.endAdornment}
+                                                                <Tooltip title={t('db.findClusterPortal', { defaultValue: 'Find your cluster in the Azure portal' })}>
+                                                                    <IconButton size="small" component="a" href="https://portal.azure.com/#browse/Microsoft.Kusto%2Fclusters" target="_blank" rel="noopener noreferrer">
+                                                                        <OpenInNewIcon sx={{ fontSize: 16 }} />
+                                                                    </IconButton>
+                                                                </Tooltip>
+                                                            </Box>
                                                         ),
                                                     }}
                                                 />
                                             )}
+                                            slotProps={{
+                                                paper: {
+                                                    sx: {
+                                                        '& .MuiAutocomplete-option': { fontSize: 12, minHeight: 32, py: 0.5 },
+                                                    },
+                                                },
+                                            }}
+                                        />
+                                    ) : isKustoDatabase(paramDef.name) ? (
+                                        <Autocomplete
+                                            key={paramDef.name}
+                                            freeSolo
+                                            open={databaseMenuOpen}
+                                            onOpen={() => {
+                                                setDatabaseMenuOpen(true);
+                                                if (databaseOptions.length === 0 && !isLoadingDatabases) {
+                                                    void loadKustoDatabases();
+                                                }
+                                            }}
+                                            onClose={(_event, reason) => {
+                                                if (!isLoadingDatabases && reason !== 'blur') {
+                                                    setDatabaseMenuOpen(false);
+                                                }
+                                            }}
+                                            options={databaseOptions}
+                                            loading={isLoadingDatabases}
+                                            loadingText={(
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, fontSize: 12 }}>
+                                                    <CircularProgress size={14} />
+                                                    {t('db.loadingDatabases', { defaultValue: 'Loading databases…' })}
+                                                </Box>
+                                            )}
+                                            noOptionsText={databaseDiscoveryError || t('db.noDatabasesFound', { defaultValue: 'No databases found; enter a name manually.' })}
+                                            value={params[paramDef.name] ?? ''}
+                                            onChange={(_event, value) => {
+                                                dispatch(dfActions.updateDataLoaderConnectParam({
+                                                    dataLoaderType,
+                                                    paramName: paramDef.name,
+                                                    paramValue: value ?? '',
+                                                }));
+                                            }}
+                                            onInputChange={(_event, value, reason) => {
+                                                if (reason === 'input') {
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({
+                                                        dataLoaderType,
+                                                        paramName: paramDef.name,
+                                                        paramValue: value,
+                                                    }));
+                                                }
+                                            }}
+                                            renderInput={(inputParams) => (
+                                                <TextField
+                                                    {...inputParams}
+                                                    sx={inputSx}
+                                                    variant="standard" size="small" fullWidth
+                                                    slotProps={labelShrinkSlotProps}
+                                                    label={paramDef.name}
+                                                    required={paramDef.required}
+                                                    placeholder={getParamPlaceholder(paramDef)}
+                                                    error={!!databaseDiscoveryError}
+                                                    helperText={databaseDiscoveryError}
+                                                />
+                                            )}
+                                            slotProps={{
+                                                paper: {
+                                                    sx: {
+                                                        '& .MuiAutocomplete-option': { fontSize: 12, minHeight: 32, py: 0.5 },
+                                                        '& .MuiAutocomplete-noOptions': { fontSize: 12, py: 1 },
+                                                        '& .MuiAutocomplete-loading': { fontSize: 12, py: 1 },
+                                                    },
+                                                },
+                                            }}
                                         />
                                     ) : (
                                     <TextField
@@ -527,14 +620,14 @@ export const DataLoaderForm: React.FC<{
                                     </Box>
                                 )}
 
-                                {/* Tier 3: Sign in — Connect lives here */}
+                                {/* Tier 3: Sign in */}
                                 <Box sx={sectionSx}>
                                     <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
                                         {t('db.tierAuth')}
                                     </Typography>
 
                                     {hasDelegated && authParams.length > 0 ? (
-                                        /* Left/right split: delegated | or | credentials + connect */
+                                        /* Left/right split: delegated | or | credentials */
                                         <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'stretch' }}>
                                             {/* Left: delegated login */}
                                             <Box sx={{ display: 'flex', alignItems: 'center', pr: 2.5, borderRight: '1px solid', borderColor: 'divider' }}>
@@ -572,12 +665,6 @@ export const DataLoaderForm: React.FC<{
                                                         />
                                                     ))}
                                                 </Box>
-                                                <Button
-                                                    variant="contained" color="primary" size="small"
-                                                    sx={{ textTransform: "none", minWidth: 80, height: 30, mt: 1.5, fontSize: 12 }}
-                                                    onClick={() => connectAndListTables()}>
-                                                    {connectLabel}
-                                                </Button>
                                             </Box>
                                         </Box>
                                     ) : hasDelegated ? (
@@ -591,18 +678,25 @@ export const DataLoaderForm: React.FC<{
                                             {delegatedLogin!.label || t('db.delegatedLogin')}
                                         </Button>
                                     ) : (
-                                        /* Manual credentials only + connect */
-                                        <>
-                                            {renderParamGrid(authParams)}
-                                            <Button
-                                                variant="contained" color="primary" size="small"
-                                                sx={{ textTransform: "none", minWidth: 80, height: 30, mt: 1.5, fontSize: 12 }}
-                                                onClick={() => connectAndListTables()}>
-                                                {connectLabel}
-                                            </Button>
-                                        </>
+                                        /* Manual credentials only */
+                                        renderParamGrid(authParams)
                                     )}
                                 </Box>
+
+                                {/* Primary submit action is separate from all
+                                    parameter sections. Delegated-only sources
+                                    complete through their sign-in button. */}
+                                {(!hasDelegated || authParams.length > 0) && (
+                                    <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'flex-start' }}>
+                                        <Button
+                                            variant="contained" color="primary" size="small"
+                                            disabled={isConnecting}
+                                            sx={{ textTransform: "none", minWidth: 80, height: 30, fontSize: 12 }}
+                                            onClick={() => connectAndListTables()}>
+                                            {connectLabel}
+                                        </Button>
+                                    </Box>
+                                )}
                             </>
                         );
                     })()}

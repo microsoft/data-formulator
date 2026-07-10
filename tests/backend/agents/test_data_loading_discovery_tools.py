@@ -253,12 +253,14 @@ class TestProposeLoadPlan:
                     "table_key": "public.orders",
                     "display_name": "orders",
                     "source_table": "public.orders",
+                    "selected": True,
                 },
                 {
                     "source_id": "pg_prod",
                     "table_key": "public.customers",
                     "display_name": "customers",
                     "source_table": "public.customers",
+                    "selected": False,
                 },
             ],
             "reasoning": "Orders + customer dimension",
@@ -269,12 +271,27 @@ class TestProposeLoadPlan:
         assert action["type"] == "load_plan"
         assert len(action["candidates"]) == 2
         assert action["reasoning"] == "Orders + customer dimension"
+        assert [candidate["selected"] for candidate in action["candidates"]] == [True, False]
 
     def test_empty_candidates_returns_empty_action(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace())
         result = agent._tool_propose_load_plan({"candidates": []})
         assert result["actions"][0]["type"] == "load_plan"
         assert result["actions"][0]["candidates"] == []
+
+    def test_selects_first_resolvable_when_agent_selects_none(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", [
+            {"name": "orders", "table_key": "public.orders", "metadata": {}},
+            {"name": "returns", "table_key": "public.returns", "metadata": {}},
+        ])
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        result = agent._tool_propose_load_plan({"candidates": [
+            {"source_id": "pg_prod", "table_key": "public.orders", "display_name": "orders", "selected": False},
+            {"source_id": "pg_prod", "table_key": "public.returns", "display_name": "returns", "selected": False},
+        ]})
+
+        candidates = result["actions"][0]["candidates"]
+        assert [candidate["selected"] for candidate in candidates] == [True, False]
 
     def test_resolves_superset_dataset_id_from_catalog(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace("/tmp/home"))
@@ -307,6 +324,8 @@ class TestProposeLoadPlan:
         assert candidate["filters"] == [
             {"column": "brand", "operator": "EQ", "value": "Pantum"},
         ]
+        # Legacy callers that omit `selected` retain select-all behavior.
+        assert candidate["selected"] is True
         assert "row_limit" not in candidate
 
 

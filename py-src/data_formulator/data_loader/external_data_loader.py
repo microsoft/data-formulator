@@ -564,6 +564,21 @@ class ExternalDataLoader(ABC):
         if missing:
             raise ConnectorParamError(missing, cls.__name__)
 
+    @classmethod
+    def discover_param_options(
+        cls,
+        param_name: str,
+        params: dict[str, Any],
+    ) -> list[str]:
+        """Discover selectable parameter values after an explicit request.
+
+        Loaders may override this for fields whose options require a live,
+        lightweight service call. Discovery is never run automatically.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} does not support options for {param_name}"
+        )
+
     @staticmethod
     @abstractmethod
     def auth_instructions() -> str:

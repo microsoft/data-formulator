@@ -66,7 +66,7 @@
     },
     "kusto": {
       "kusto_cluster": "e.g., https://mycluster.region.kusto.windows.net",
-      "kusto_database": "Database name (leave empty to browse all databases)",
+      "kusto_database": "Database name (required)",
       "client_id": "Service principal only",
       "client_secret": "Service principal only",
       "tenant_id": "Service principal only",

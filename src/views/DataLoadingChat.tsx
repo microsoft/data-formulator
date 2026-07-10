@@ -2,13 +2,13 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import Markdown from 'react-markdown';
 
 import {
     Box, Button, Chip, CircularProgress, IconButton,
     Paper, Stack, Tooltip, Typography,
-    alpha, useTheme, Collapse,
+    alpha, useTheme, Collapse, Divider,
 } from '@mui/material';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -304,29 +304,55 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
                         {block.code}
                     </Typography>
                 </Box>
+                {block.stdout && (
+                    <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
+                        <Typography component="pre" sx={{
+                            fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                            whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto', color: 'text.secondary', lineHeight: 1.5,
+                        }}>
+                            {block.stdout}
+                        </Typography>
+                    </Box>
+                )}
+                {block.error && (
+                    <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
+                        <Typography component="pre" sx={{
+                            fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                            whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.5,
+                        }}>
+                            {block.error}
+                        </Typography>
+                    </Box>
+                )}
+                {block.resultTable && (
+                    <Box sx={{ px: 1 }}>
+                        <InlineTablePreviewView preview={block.resultTable} />
+                    </Box>
+                )}
             </Collapse>
-            {block.stdout && (
-                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
-                    <Typography component="pre" sx={{
-                        fontFamily: CODE_FONT, fontSize: 11, m: 0,
-                        whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto', color: 'text.secondary', lineHeight: 1.5,
-                    }}>
-                        {block.stdout}
-                    </Typography>
-                </Box>
-            )}
-            {block.error && (
-                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
-                    <Typography component="pre" sx={{
-                        fontFamily: CODE_FONT, fontSize: 11, m: 0,
-                        whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.5,
-                    }}>
-                        {block.error}
-                    </Typography>
-                </Box>
-            )}
-            {block.resultTable && <InlineTablePreviewView preview={block.resultTable} />}
         </Paper>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// New-request divider
+// ---------------------------------------------------------------------------
+
+// Rendered between the previous conversation and a freshly-started task
+// (agent delegate, a new query from the menu, or a sample-task click).
+// Preserving history keeps prior extractions recoverable; this separator
+// makes the boundary between tasks obvious. Excluded from the agent history
+// payload (see `sendMessage`).
+const TaskDivider: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{ my: 1.5 }}>
+            <Divider>
+                <Typography variant="caption" sx={{ fontSize: 10, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {t('dataLoading.newRequestDivider', 'New request')}
+                </Typography>
+            </Divider>
+        </Box>
     );
 };
 
@@ -812,11 +838,64 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     const lastResetRef = useRef(chatResetCounter);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    // The scrollable messages viewport and its inner content. Load-plan rows
+    // reserve a stable spinner area while fetching, then resize once to the
+    // result's natural height (compact for short tables; five preview rows plus
+    // a count caption when truncated). Track whether the view is "pinned" so
+    // that resize follows the bottom without yanking users who scrolled up.
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const messagesContentRef = useRef<HTMLDivElement>(null);
+    const pinnedToBottomRef = useRef(true);
 
-    // Auto-scroll to bottom
+    const scrollToBottom = () => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        // Keep follow-mode synchronous. Smooth scrolling emits intermediate
+        // positions that can look user-initiated and incorrectly clear the
+        // pinned state while other dynamic content is still settling.
+        el.scrollTop = el.scrollHeight;
+    };
+    const updatePinned = () => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        // Treat "within 80px of the bottom" as pinned so a slightly-short
+        // scroll still counts and content growth keeps following.
+        pinnedToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+
+    // Auto-scroll to bottom on new messages / streaming text — but only when
+    // the user is pinned to the bottom.
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (pinnedToBottomRef.current) scrollToBottom();
     }, [chatMessages, streamingContent]);
+
+    // On mount (this component remounts each time the chat surface opens),
+    // jump straight to the latest message with no animation so landing on an
+    // existing conversation starts at the bottom.
+    useLayoutEffect(() => {
+        pinnedToBottomRef.current = true;
+        scrollToBottom();
+        // A second pass after paint catches content that measures its height
+        // asynchronously (markdown, table previews).
+        const id = requestAnimationFrame(() => {
+            if (pinnedToBottomRef.current) scrollToBottom();
+        });
+        return () => cancelAnimationFrame(id);
+    }, []);
+
+    // Follow content that changes size AFTER paint: load-plan previews settling
+    // from their fixed loading slot to natural result height, uploaded images,
+    // and inline extraction tables. The synchronous scroll avoids a smooth-
+    // scroll race, and the pinned guard preserves deliberate upward scrolling.
+    useEffect(() => {
+        const content = messagesContentRef.current;
+        if (!content || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => {
+            if (pinnedToBottomRef.current) scrollToBottom();
+        });
+        ro.observe(content);
+        return () => ro.disconnect();
+    }, []);
 
     // Auto-focus input
     useEffect(() => { inputRef.current?.focus(); }, []);
@@ -891,7 +970,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         setStreamingContent('');
         setStreamingToolSteps([]);
 
-        const allMessages = [...chatMessages, userMsg].map(m => {
+        const allMessages = [...chatMessages, userMsg].filter(m => !m.divider).map(m => {
             // Re-hydrate `[Uploaded: name]` mentions from file attachments
             // so the backend still sees them as text references, while
             // the chat UI shows clean text + chips.
@@ -948,7 +1027,10 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                 sortBy: c.sort_by,
                                 sortOrder: c.sort_order,
                                 resolutionError: c.resolution_error,
-                                selected: !c.resolution_error,
+                                // Honor the agent's recommendation. Missing
+                                // `selected` means an older backend, so retain
+                                // the historical select-all fallback.
+                                selected: !c.resolution_error && c.selected !== false,
                             })),
                             reasoning: action.reasoning,
                         };
@@ -1111,18 +1193,18 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     // Reuse the shared sample-task list so this in-session panel stays in
     // sync with the upload-dialog entry point (`UnifiedDataUploadDialog`).
     // Auto-run is wired through the redux pending slot so the click —
-    // even on a chat with prior history — atomically clears the thread
-    // and queues the new submission.
+    // even on a chat with prior history — preserves the thread, appends a
+    // "new request" divider, and queues the new submission.
     const focusSuggestions = React.useMemo(() => buildDataLoadingSuggestions({
         t,
         setInput: setPrompt,
         setImages: setUserImages,
         setAttachments: setUserAttachments,
         requestAutoSend: (payload) => {
-            if (chatMessages.length > 0) {
-                dispatch(dfActions.clearChatMessages());
-            }
-            dispatch(dfActions.setDataLoadingChatPending(payload));
+            // Preserve prior history (Option A): a sample-task click on a chat
+            // with existing messages appends a "new request" divider and queues
+            // the submission rather than wiping the thread.
+            dispatch(dfActions.queueDataLoadingTask(payload));
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [t, dispatch]);
@@ -1139,19 +1221,26 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     return (
         <Box sx={{
             display: 'flex', flexDirection: 'column',
-            height: '100%', width: '100%', overflow: 'hidden',
+            height: '100%', minHeight: 0, width: '100%', overflow: 'hidden',
         }}>
             {/* ── Messages area ─────────────────────────────────── */}
-            <Box sx={{
-                flex: 1, overflow: 'auto',
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-            }}>
-              <Box sx={{
-                width: '100%', maxWidth: 640,
-                px: 2, py: 2,
-                display: 'flex', flexDirection: 'column',
-                ...(isEmpty ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}),
-              }}>
+            <Box
+                ref={scrollContainerRef}
+                onScroll={updatePinned}
+                sx={{
+                    flex: 1, minHeight: 0, overflow: 'auto',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                }}
+            >
+              <Box
+                ref={messagesContentRef}
+                sx={{
+                    width: '100%', maxWidth: 640,
+                    px: 2, py: 2,
+                    display: 'flex', flexDirection: 'column',
+                    ...(isEmpty ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}),
+                }}
+              >
                 {isEmpty ? (
                     <Box sx={{ maxWidth: 520, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
@@ -1187,7 +1276,14 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 ) : (
                     <>
                         {chatMessages.map((msg) => (
-                            <ChatBubble key={msg.id} message={msg} existingNames={existingNames} onTableLoaded={handleTableLoaded} />
+                            msg.divider
+                                ? <TaskDivider key={msg.id} />
+                                : <ChatBubble
+                                    key={msg.id}
+                                    message={msg}
+                                    existingNames={existingNames}
+                                    onTableLoaded={handleTableLoaded}
+                                />
                         ))}
                         {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
                         {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}

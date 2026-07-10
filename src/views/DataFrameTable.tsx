@@ -14,6 +14,7 @@
 
 import React from 'react';
 import { Box, Tooltip, Typography, useTheme } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 
 const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
 
@@ -38,6 +39,9 @@ export interface DataFrameTableProps {
     showIndex?: boolean;
     /** Optional column descriptions keyed by column name, shown as header tooltips. */
     columnDescriptions?: Record<string, string>;
+    /** How to indicate that the preview omits additional rows. Defaults to the
+     *  historical ellipsis row; `caption` renders an explicit count below. */
+    truncationIndicator?: 'row' | 'caption' | 'none';
     /**
      * When true, columns size to content (CSS `tableLayout: auto`,
      * `width: max-content`) instead of stretching to fill the container.
@@ -60,12 +64,18 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     headerFontSize = 10,
     showIndex = false,
     columnDescriptions,
+    truncationIndicator = 'row',
     autoWidth = false,
 }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const visibleRows = maxRows != null ? rows.slice(0, maxRows) : rows;
-    const hasMore = totalRows == null
-        || totalRows > visibleRows.length
+    // The preview displays at most `maxRows` data rows, followed by one `…`
+    // row only when we know additional rows exist. Unknown total alone is not
+    // evidence of truncation: a three-row result should render three rows, not
+    // a misleading ellipsis. Callers that reserve a fixed preview height keep
+    // short tables layout-stable via whitespace instead of fake rows.
+    const hasMore = (totalRows != null && totalRows > visibleRows.length)
         || (maxRows != null && rows.length > maxRows);
 
     // Abbreviate columns: first half + … + last half
@@ -171,7 +181,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                             })}
                         </tr>
                     ))}
-                    {hasMore && (
+                    {hasMore && truncationIndicator === 'row' && (
                         <tr>
                             {showIndex && (
                                 <Typography component="td" variant="caption"
@@ -189,6 +199,25 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     )}
                 </tbody>
             </Box>
+            {hasMore && truncationIndicator === 'caption' && (
+                <Typography sx={{
+                    mt: 0.4,
+                    px: 0.25,
+                    fontSize: 10,
+                    lineHeight: 1.4,
+                    color: 'text.disabled',
+                    textAlign: 'right',
+                }}>
+                    {totalRows != null
+                        ? t('dataLoading.previewShowingRows', {
+                            shown: visibleRows.length,
+                            total: totalRows.toLocaleString(),
+                        })
+                        : t('dataLoading.previewShowingFirstRows', {
+                            shown: visibleRows.length,
+                        })}
+                </Typography>
+            )}
         </Box>
     );
 };
