@@ -82,11 +82,32 @@ class TestOIDCLogin:
 
     def test_login_sets_state_in_session(self, client):
         with client.session_transaction() as sess:
-            assert "_oauth_state" not in sess
+            assert "_oauth_states" not in sess
         client.get("/api/auth/oidc/login")
         with client.session_transaction() as sess:
-            assert "_oauth_state" in sess
-            assert len(sess["_oauth_state"]) > 10
+            assert len(sess["_oauth_states"]) == 1
+            assert len(next(iter(sess["_oauth_states"]))) > 10
+
+    def test_two_pending_login_states_are_stored_independently(self, client):
+        client.get("/api/auth/oidc/login")
+        client.get("/api/auth/oidc/login")
+
+        with client.session_transaction() as sess:
+            assert len(sess["_oauth_states"]) == 2
+
+    def test_denied_callback_consumes_only_its_pending_state(self, client):
+        from urllib.parse import parse_qs, urlparse
+
+        first = client.get("/api/auth/oidc/login")
+        second = client.get("/api/auth/oidc/login")
+        first_state = parse_qs(urlparse(first.location).query)["state"][0]
+        second_state = parse_qs(urlparse(second.location).query)["state"][0]
+
+        client.get(f"/auth/callback?error=access_denied&state={first_state}")
+
+        with client.session_transaction() as sess:
+            assert first_state not in sess["_oauth_states"]
+            assert second_state in sess["_oauth_states"]
 
     def test_login_disabled_without_secret(self, app, monkeypatch):
         monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)

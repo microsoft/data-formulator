@@ -13,7 +13,8 @@ Tests cover the pure-logic parts that don't require a live LLM:
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -249,3 +250,95 @@ class TestPing:
             client.ping()
 
         assert completion.call_args.kwargs["max_tokens"] == 64
+
+
+class _HttpError(Exception):
+    def __init__(self, status_code: int, *, retry_after: str | None = None):
+        super().__init__(f"HTTP {status_code}")
+        headers = {"Retry-After": retry_after} if retry_after is not None else {}
+        self.status_code = status_code
+        self.response = SimpleNamespace(status_code=status_code, headers=headers)
+
+
+class TestCompletionRetries:
+    @pytest.mark.parametrize("status_code", [429, 500, 502, 503, 504])
+    def test_retries_transient_http_failures(self, status_code):
+        client = Client("openai", "gpt-4o", api_key="k")
+        success = MagicMock(name="success")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=[_HttpError(status_code), success],
+        ) as completion, patch("data_formulator.agents.client_utils.time.sleep"):
+            result = client.get_completion([{"role": "user", "content": "hi"}])
+
+        assert result is success
+        assert completion.call_count == 2
+
+    def test_stops_after_bounded_retry_budget(self):
+        client = Client("openai", "gpt-4o", api_key="k")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=_HttpError(429),
+        ) as completion, patch("data_formulator.agents.client_utils.time.sleep"):
+            with pytest.raises(_HttpError):
+                client.get_completion([{"role": "user", "content": "hi"}])
+
+        assert completion.call_count == 3
+
+    def test_honors_retry_after_header(self):
+        client = Client("openai", "gpt-4o", api_key="k")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=[_HttpError(429, retry_after="2"), MagicMock()],
+        ), patch("data_formulator.agents.client_utils.time.sleep") as sleep:
+            client.get_completion([{"role": "user", "content": "hi"}])
+
+        sleep.assert_called_once_with(2.0)
+
+    def test_does_not_retry_non_transient_http_error(self):
+        client = Client("openai", "gpt-4o", api_key="k")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=_HttpError(400),
+        ) as completion:
+            with pytest.raises(_HttpError):
+                client.get_completion([{"role": "user", "content": "hi"}])
+
+        assert completion.call_count == 1
+
+    def test_throttling_never_triggers_image_fallback(self):
+        client = Client("openai", "gpt-4o", api_key="k")
+        messages = [{"role": "user", "content": [
+            {"type": "text", "text": "inspect"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+        ]}]
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=_HttpError(429),
+        ) as completion, patch("data_formulator.agents.client_utils.time.sleep"):
+            with pytest.raises(_HttpError):
+                client.get_completion(messages)
+
+        assert completion.call_count == 3
+        assert all(call.kwargs["messages"] == messages for call in completion.call_args_list)
+
+    def test_tool_completion_uses_same_retry_policy(self):
+        client = Client("openai", "gpt-4o", api_key="k")
+        success = MagicMock(name="success")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=[_HttpError(503), success],
+        ) as completion, patch("data_formulator.agents.client_utils.time.sleep"):
+            result = client.get_completion_with_tools(
+                [{"role": "user", "content": "hi"}],
+                [{"type": "function", "function": {"name": "noop"}}],
+            )
+
+        assert result is success
+        assert completion.call_count == 2

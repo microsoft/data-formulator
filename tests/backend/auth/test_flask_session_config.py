@@ -10,6 +10,8 @@ pytestmark = [pytest.mark.backend]
 def _clean_env(monkeypatch):
     """Ensure FLASK_SECRET_KEY is unset unless a test explicitly sets it."""
     monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+    monkeypatch.delenv("DEV_MODE", raising=False)
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
 
 
 def _reload_app():
@@ -35,6 +37,16 @@ class TestFlaskSecretKey:
 
 
 class TestSessionConfig:
+
+    def test_session_cookie_secure_in_production(self):
+        app = _reload_app()
+        assert app.config["SESSION_COOKIE_SECURE"] is True
+
+    def test_local_http_requires_explicit_dev_override(self, monkeypatch):
+        monkeypatch.setenv("DEV_MODE", "true")
+        monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+        app = _reload_app()
+        assert app.config["SESSION_COOKIE_SECURE"] is False
 
     def test_permanent_session_lifetime_is_one_year(self):
         from data_formulator.app import app

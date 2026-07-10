@@ -47,6 +47,7 @@ from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
 )
+from data_formulator.errors import ErrorCode
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
 
@@ -519,6 +520,31 @@ class TestLoadConnectors:
             "database": "analytics",
             "user": "alice",
         }
+
+    def test_create_connector_rolls_back_when_persistence_fails(self, app):
+        from data_formulator.error_handler import register_error_handlers
+
+        app.register_blueprint(connectors_bp)
+        register_error_handlers(app)
+        mock_loaders = {"stub": _CredentialStubLoader}
+
+        with patch.object(DataConnector, "_get_identity", return_value="user:alice"), \
+             patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders), \
+             patch(
+                 "data_formulator.data_connector._persist_user_connector",
+                 side_effect=OSError("disk full"),
+             ):
+            resp = app.test_client().post("/api/connectors", json={
+                "loader_type": "stub",
+                "display_name": "Private DB",
+                "params": {"host": "db.local"},
+            })
+
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["status"] == "error"
+        assert body["error"]["code"] == ErrorCode.STORAGE_FULL
+        assert _user_connector_key("user:alice", "stub:private-db") not in DATA_CONNECTORS
 
 
 # ==================================================================

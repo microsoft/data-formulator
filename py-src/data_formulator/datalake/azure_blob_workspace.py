@@ -27,6 +27,7 @@ import logging
 import shutil
 import tempfile
 import threading
+import time
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -37,6 +38,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
+from azure.core import MatchConditions
+from azure.core.exceptions import ResourceModifiedError
 
 from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
@@ -60,6 +63,9 @@ if TYPE_CHECKING:
     from azure.storage.blob import ContainerClient
 
 logger = logging.getLogger(__name__)
+
+_METADATA_UPDATE_MAX_ATTEMPTS = 5
+_METADATA_RETRY_BASE_SECONDS = 0.01
 
 
 class AzureBlobWorkspace(Workspace):
@@ -248,6 +254,11 @@ class AzureBlobWorkspace(Workspace):
         if self._metadata_cache is not None:
             return self._metadata_cache
         raw = self._download_bytes(METADATA_FILENAME)
+        self._metadata_cache = self._parse_metadata(raw)
+        return self._metadata_cache
+
+    @staticmethod
+    def _parse_metadata(raw: bytes) -> WorkspaceMetadata:
         try:
             parsed = yaml.safe_load(raw)
         except yaml.YAMLError as e:
@@ -256,8 +267,16 @@ class AzureBlobWorkspace(Workspace):
             ) from e
         if parsed is None:
             raise ValueError("Metadata blob parsed to None")
-        self._metadata_cache = WorkspaceMetadata.from_dict(parsed)
-        return self._metadata_cache
+        return WorkspaceMetadata.from_dict(parsed)
+
+    def _download_metadata_with_etag(self) -> tuple[WorkspaceMetadata, str]:
+        blob = self._get_blob(METADATA_FILENAME)
+        etag = blob.get_blob_properties().etag
+        raw = blob.download_blob(
+            etag=etag,
+            match_condition=MatchConditions.IfNotModified,
+        ).readall()
+        return self._parse_metadata(raw), etag
 
     def save_metadata(self, metadata: WorkspaceMetadata) -> None:
         metadata.updated_at = datetime.now(timezone.utc)
@@ -281,16 +300,38 @@ class AzureBlobWorkspace(Workspace):
     ) -> WorkspaceMetadata:
         """Atomically read → update → write blob-backed metadata.
 
-        Uses a per-instance :class:`threading.Lock` to serialise
-        concurrent in-process metadata modifications.  This prevents
-        lost-update races when the frontend sends parallel requests.
+        Uses ETag optimistic concurrency so independent workspace instances
+        and replicas cannot silently overwrite each other's updates.
         """
         with self._metadata_lock:
-            self._metadata_cache = None  # force fresh read from blob
-            metadata = self.get_metadata()
-            updater(metadata)
-            self.save_metadata(metadata)
-            return metadata
+            for attempt in range(_METADATA_UPDATE_MAX_ATTEMPTS):
+                try:
+                    metadata, etag = self._download_metadata_with_etag()
+                    updater(metadata)
+                    metadata.updated_at = datetime.now(timezone.utc)
+                    content = yaml.safe_dump(
+                        metadata.to_dict(),
+                        default_flow_style=False,
+                        allow_unicode=True,
+                        sort_keys=False,
+                    )
+                    self._get_blob(METADATA_FILENAME).upload_blob(
+                        content,
+                        overwrite=True,
+                        etag=etag,
+                        match_condition=MatchConditions.IfNotModified,
+                    )
+                    self._blob_data_cache.pop(METADATA_FILENAME, None)
+                    self._metadata_cache = metadata
+                    return metadata
+                except ResourceModifiedError:
+                    self._metadata_cache = None
+                    self._blob_data_cache.pop(METADATA_FILENAME, None)
+                    if attempt == _METADATA_UPDATE_MAX_ATTEMPTS - 1:
+                        raise
+                    time.sleep(_METADATA_RETRY_BASE_SECONDS * (2 ** attempt))
+
+        raise RuntimeError("Metadata update retry loop exited unexpectedly")
 
     # ------------------------------------------------------------------
     # File / table operations

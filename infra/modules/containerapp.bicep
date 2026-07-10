@@ -116,7 +116,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       ]
       scale: {
         minReplicas: 1
-        maxReplicas: 3
+        // Sessions, connector state, credentials, and catalogs are currently
+        // instance-local. Keep a single replica until those stores are shared.
+        maxReplicas: 1
       }
     }
   }

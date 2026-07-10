@@ -1,5 +1,5 @@
 [build-system]
-requires = [ "setuptools >= 75.0" ]
+requires = ["setuptools >= 75.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,8 +8,8 @@ version = "0.7.0"
 
 requires-python = ">=3.11"
 authors = [
-  {name = "Chenglong Wang", email = "chenglong.wang@microsoft.com"},
-  {name = "Dan Marshall", email = "danmar@microsoft.com"},
+  { name = "Chenglong Wang", email = "chenglong.wang@microsoft.com" },
+  { name = "Dan Marshall", email = "danmar@microsoft.com" },
 ]
 readme = "README.md"
 license = "MIT"
@@ -17,45 +17,46 @@ description = "Data Formulator is research protoype data visualization tool powe
 keywords = ["data visualization", "LLM", "AI"]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Programming Language :: Python"
+  "Programming Language :: Python",
 ]
 
 dependencies = [
-    "pandas",
-    "flask",
-    "flask-cors",
-    "flask-limiter",
-    "openai",
-    "python-dotenv",
-    "litellm",
-    "duckdb",
-    "numpy",
-    "vl-convert-python",
-    "beautifulsoup4",
-    "scikit-learn",
-    "pyyaml",
-    "pyarrow>=13.0.0",
-    "xlrd",
-    "openpyxl>=3.1.0",
-    "yfinance",
-    # Data-loader deps (all included by default; try/except keeps things safe)
-    "pymongo",                  # mongodb
-    "azure-cosmos",             # cosmosdb
-    "azure-storage-blob",       # azure_blob
-    "azure-identity",           # azure_blob, kusto
-    "azure-kusto-data",         # kusto
-    "azure-keyvault-secrets",   # kusto
-    "pymysql",                  # mysql
-    "pyodbc",                   # mssql
-    "psycopg2-binary",          # postgresql
-    "boto3",                    # s3, athena
-    "google-cloud-bigquery",    # bigquery
-    "google-auth",              # bigquery
-    "db-dtypes",                # bigquery
-    # SSO / Auth deps
-    "PyJWT[crypto]>=2.8.0",     # OIDC JWT verification (includes cryptography)
-    "requests",                 # GitHub OAuth code exchange, Superset API calls
-    "flask-session>=0.8.0",     # Server-side session (SQLite) for TokenStore
+  "pandas",
+  "flask",
+  "flask-cors",
+  "flask-limiter",
+  "openai",
+  "python-dotenv",
+  "litellm",
+  "duckdb",
+  "numpy",
+  "vl-convert-python",
+  "beautifulsoup4",
+  "scikit-learn",
+  "pyyaml",
+  "pyarrow>=13.0.0",
+  "xlrd",
+  "openpyxl>=3.1.0",
+  "yfinance",
+  # Data-loader deps (all included by default; try/except keeps things safe)
+  "pymongo",                # mongodb
+  "azure-cosmos",           # cosmosdb
+  "azure-storage-blob",     # azure_blob
+  "azure-identity",         # azure_blob, kusto
+  "azure-kusto-data",       # kusto
+  "azure-keyvault-secrets", # kusto
+  "pymysql",                # mysql
+  "pyodbc",                 # mssql
+  "psycopg2-binary",        # postgresql
+  "boto3",                  # s3, athena
+  "google-cloud-bigquery",  # bigquery
+  "google-auth",            # bigquery
+  "db-dtypes",              # bigquery
+  # SSO / Auth deps
+  "PyJWT[crypto]>=2.8.0", # OIDC JWT verification (includes cryptography)
+  "requests",             # GitHub OAuth code exchange, Superset API calls
+  "flask-session>=0.8.0", # Server-side session (SQLite) for TokenStore
+  "gunicorn>=23.0.0",     # Production WSGI server for container runtime
 ]
 
 [project.urls]
@@ -64,14 +65,11 @@ Repository = "https://github.com/microsoft/data-formulator.git"
 "Bug Tracker" = "https://github.com/microsoft/data-formulator/issues"
 
 [tool.setuptools]
-package-dir = {"" = "py-src"}
+package-dir = { "" = "py-src" }
 include-package-data = true
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"
 
 [tool.uv]
-dev-dependencies = [
-    "build",
-    "pytest",
-]
+dev-dependencies = ["build", "pytest"]

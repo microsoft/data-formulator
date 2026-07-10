@@ -62,7 +62,6 @@ EXPOSE 5567
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:5567/ || exit 1
 
-# Run the app on all interfaces so Docker port-forwarding works.
-# We do not pass --dev so Flask runs in production mode (no debugger/reloader).
-# webbrowser.open() fails silently in a headless container, which is harmless.
-ENTRYPOINT ["python", "-m", "data_formulator", "--host", "0.0.0.0", "--port", "5567"]
+# Keep one process while session and connector state remain process-local;
+# threads provide bounded concurrency without splitting that state.
+ENTRYPOINT ["gunicorn", "--bind", "0.0.0.0:5567", "--workers", "1", "--threads", "4", "--timeout", "120", "--graceful-timeout", "30", "data_formulator.app:app"]

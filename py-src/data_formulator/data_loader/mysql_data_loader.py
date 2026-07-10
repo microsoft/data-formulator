@@ -14,6 +14,7 @@ from data_formulator.data_loader.external_data_loader import (
     build_where_clause_inline,
     _esc_id,
     _esc_str,
+    _quote_dotted_identifier,
 )
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
@@ -26,9 +27,9 @@ class MySQLDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "user", "type": "string", "required": True, "default": "root", "tier": "auth", "description": "MySQL username"}, 
-            {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"}, 
-            {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "server address"}, 
+            {"name": "user", "type": "string", "required": True, "default": "root", "tier": "auth", "description": "MySQL username"},
+            {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"},
+            {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "server address"},
             {"name": "port", "type": "int", "required": False, "default": 3306, "tier": "connection", "description": "server port"},
             {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Database name (leave empty to browse all databases)"}
         ]
@@ -66,13 +67,13 @@ class MySQLDataLoader(ExternalDataLoader):
             self.port = 3306
         else:
             self.port = int(port)
-        
+
         # Build pymysql connection
         # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
         host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
-        
+
         self._sanitized_url = f"mysql://{self.user}:***@{self.host}:{self.port}/{self.database or '(all)'}"
-        
+
         # Connect — database is optional (can be None for server-level browsing)
         connect_kwargs: dict[str, Any] = {
             "host": host_for_conn,
@@ -82,7 +83,7 @@ class MySQLDataLoader(ExternalDataLoader):
         }
         if self.database:
             connect_kwargs["database"] = self.database
-        
+
         try:
             self._conn = pymysql.connect(**connect_kwargs)
         except Exception as e:
@@ -100,6 +101,12 @@ class MySQLDataLoader(ExternalDataLoader):
             self._conn = pymysql.connect(**self._connect_kwargs)
         return self._conn
 
+    def close(self) -> None:
+        connection = getattr(self, "_conn", None)
+        if connection is not None:
+            connection.close()
+            self._conn = None
+
     # MySQL types that may need special handling
     _GEOMETRY_TYPES = {'geometry', 'point', 'linestring', 'polygon',
                            'multipoint', 'multilinestring', 'multipolygon',
@@ -109,7 +116,7 @@ class MySQLDataLoader(ExternalDataLoader):
 
     def _read_sql(self, query: str) -> pa.Table:
         """Execute a query and return results as a PyArrow Table (no pandas).
-        
+
         Caller must hold self._lock if thread safety is needed.
         """
         conn = self._get_conn()
@@ -181,45 +188,46 @@ class MySQLDataLoader(ExternalDataLoader):
 
         if not source_table:
             raise ValueError("source_table must be provided")
-        
+
         # Handle table names and build safe column list
+        quoted_source = _quote_dotted_identifier(source_table.strip('`'), '`')
         if '.' in source_table:
             parts = source_table.split('.', 1)
             col_list = self._safe_select_list(parts[0].strip('`'), parts[1].strip('`'))
-            base_query = f"SELECT {col_list} FROM {source_table}"
+            base_query = f"SELECT {col_list} FROM {quoted_source}"
         else:
             col_list = self._safe_select_list(self.database, source_table.strip('`'))
-            base_query = f"SELECT {col_list} FROM `{source_table}`"
-        
+            base_query = f"SELECT {col_list} FROM {quoted_source}"
+
         # Add WHERE clause from source filters, falling back to legacy conditions.
         where_clause = build_source_filter_where_clause_inline(
             source_filters, quote_char='`', dialect="mysql"
         ) or build_where_clause_inline(conditions, quote_char='`')
         if where_clause:
             base_query = f"{base_query} {where_clause}"
-        
+
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
             sanitized_cols = [f'{_esc_id(col, "`")} {order_direction}' for col in sort_columns]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
-        
+
         query = f"{base_query}{order_by_clause} LIMIT {int(size)}"
-        
+
         logger.info(f"Executing MySQL query: {query[:200]}...")
-        
+
         arrow_table = self._read_sql(query)
-        
+
         logger.info(f"Fetched {arrow_table.num_rows} rows from MySQL")
-        
+
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List available tables from MySQL database."""
         with self._lock:
             return self._list_tables(table_filter)
-    
+
     def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List tables from MySQL database(s) within pinned scope.
 
@@ -235,7 +243,7 @@ class MySQLDataLoader(ExternalDataLoader):
             # Fetch tables with TABLE_COMMENT
             tables_query = f"""
                 SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COMMENT
-                FROM information_schema.tables 
+                FROM information_schema.tables
                 WHERE {db_filter}
                 AND TABLE_TYPE = 'BASE TABLE'
             """

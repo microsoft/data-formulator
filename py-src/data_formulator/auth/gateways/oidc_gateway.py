@@ -26,6 +26,10 @@ import urllib.parse
 import requests as http
 from flask import Blueprint, Response, redirect, request, session
 
+from data_formulator.auth.oauth_state import (
+    consume_pending_state,
+    store_pending_state,
+)
 from data_formulator.auth.providers.oidc import is_backend_oidc_mode
 from data_formulator.auth.token_store import TokenStore
 from data_formulator.error_handler import json_ok
@@ -87,7 +91,7 @@ def oidc_login():
         )
 
     state = secrets.token_urlsafe(32)
-    session["_oauth_state"] = state
+    store_pending_state("_oauth_states", state)
 
     params = {
         "response_type": "code",
@@ -118,7 +122,11 @@ def oidc_callback():
     idp_error = request.args.get("error")
     if idp_error:
         logger.warning("OIDC callback: IdP returned error=%s", idp_error)
-        session.pop("_oauth_state", None)
+        state = request.args.get("state")
+        consume_pending_state("_oauth_states", state)
+        legacy_state = session.get("_oauth_state")
+        if state and legacy_state and secrets.compare_digest(state, legacy_state):
+            session.pop("_oauth_state", None)
         return _error_redirect(
             "access_denied" if idp_error == "access_denied" else "token_exchange_failed",
         )
@@ -126,7 +134,11 @@ def oidc_callback():
     code = request.args.get("code")
     state = request.args.get("state")
 
-    if not code or state != session.pop("_oauth_state", None):
+    legacy_state = session.pop("_oauth_state", None)
+    valid_state = consume_pending_state("_oauth_states", state) or (
+        bool(state) and bool(legacy_state) and secrets.compare_digest(state, legacy_state)
+    )
+    if not code or not valid_state:
         logger.warning("OIDC callback: invalid or missing state")
         return _error_redirect("invalid_state")
 

@@ -3,6 +3,7 @@ pandas
 flask
 flask-cors
 flask-limiter
+gunicorn>=23.0.0
 openai
 python-dotenv
 litellm

@@ -468,7 +468,6 @@ def data_agent_streaming():
     if resume_trajectory is not None and not str(user_question or "").strip():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "user_question is required to resume after clarification"))
 
-    logger.setLevel(logging.INFO)
     logger.info("# data-agent-streaming request")
     logger.debug("== input tables ===>")
     for table in input_tables:
@@ -525,7 +524,6 @@ def data_agent_streaming():
             logger.error("Error in data-agent-streaming", exc_info=e)
             yield stream_error_event(classify_and_wrap_llm_error(e))
 
-        logger.setLevel(logging.WARNING)
 
     return Response(
         stream_with_context(_with_warnings(generate())),

@@ -23,6 +23,7 @@ import dataclasses
 import inspect
 import json as _json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,10 @@ from data_formulator.errors import AppError, ErrorCode
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
+    MAX_IMPORT_BYTES,
+    MAX_PREVIEW_BYTES,
     SENSITIVE_PARAMS,
+    enforce_arrow_byte_limit,
 )
 from data_formulator.data_loader.connector_errors import classify_connector_error
 from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type, df_to_safe_records
@@ -515,6 +519,18 @@ class DataConnector:
         identity = identity or self._get_identity()
         return self._loaders.get(identity)
 
+    def _set_loader(self, identity: str, loader: ExternalDataLoader) -> None:
+        previous = self._loaders.get(identity)
+        if previous is not None and previous is not loader:
+            previous.close()
+        self._loaders[identity] = loader
+
+    def _remove_loader(self, identity: str) -> ExternalDataLoader | None:
+        loader = self._loaders.pop(identity, None)
+        if loader is not None:
+            loader.close()
+        return loader
+
     def _connect(self, user_params: dict[str, Any], persist: bool = True) -> ExternalDataLoader:
         """Instantiate a loader with merged params (default + user).
 
@@ -531,7 +547,7 @@ class DataConnector:
 
         loader = self._loader_class(merged)
         identity = self._get_identity()
-        self._loaders[identity] = loader
+        self._set_loader(identity, loader)
         return loader
 
     def _persist_credentials(self, user_params: dict[str, Any]) -> bool:
@@ -542,14 +558,15 @@ class DataConnector:
     def _delete_credentials(self) -> None:
         """Delete: clear in-memory loader AND vault credentials."""
         identity = self._get_identity()
-        self._loaders.pop(identity, None)
+        self._remove_loader(identity)
         self._vault_delete(identity)
 
     def _try_auto_reconnect(self, identity: str) -> ExternalDataLoader | None:
         """Attempt to restore a connection from vault credentials.
 
-        Returns the loader on success, or None (and cleans up stale vault
-        entry) on failure.
+        Returns the loader on success or ``None`` on failure. Automatic
+        failures never delete stored credentials because a failed health check
+        cannot distinguish invalid credentials from a temporary outage.
         """
         stored_params = self._vault_retrieve(identity)
         if stored_params is None:
@@ -560,18 +577,17 @@ class DataConnector:
             self._inject_credentials(merged)
             loader = self._loader_class(merged)
             if loader.test_connection():
-                self._loaders[identity] = loader
+                self._set_loader(identity, loader)
                 logger.info("Auto-reconnected '%s' for %s", self._source_id, identity[:16])
                 return loader
             else:
-                logger.info("Auto-reconnect test failed for '%s'/%s, clearing stale credentials",
+                loader.close()
+                logger.info("Auto-reconnect test failed for '%s'/%s; preserving credentials",
                             self._source_id, identity[:16])
-                self._vault_delete(identity)
                 return None
         except Exception as exc:
             logger.warning("Auto-reconnect failed for '%s'/%s: %s",
                            self._source_id, identity[:16], exc)
-            self._vault_delete(identity)
             return None
 
     def _inject_credentials(self, params: dict[str, Any]) -> None:
@@ -643,7 +659,7 @@ class DataConnector:
         try:
             loader = self._loader_class(merged)
             if loader.test_connection():
-                self._loaders[identity] = loader
+                self._set_loader(identity, loader)
                 logger.info("Auto-connect succeeded for '%s'/%s",
                             self._source_id, identity[:16])
                 return loader
@@ -1020,10 +1036,13 @@ def create_connector():
             source="user",
         ))
     except Exception as e:
-        logger.warning("Failed to persist connector '%s' to user config: %s", instance_id, e)
-        persist_warning = "Connector created but could not be saved to config"
-    else:
-        persist_warning = None
+        DATA_CONNECTORS.pop(registry_key, None)
+        logger.error("Failed to persist connector '%s'", instance_id, exc_info=e)
+        raise AppError(
+            ErrorCode.STORAGE_FULL,
+            "Connector could not be saved. Check server storage and retry.",
+            retry=True,
+        ) from e
 
     # Auto-connect if params were provided
     result_data: dict[str, Any] = {
@@ -1045,7 +1064,7 @@ def create_connector():
                 result_data["connected"] = True
             else:
                 identity_c = connector._get_identity()
-                connector._loaders.pop(identity_c, None)
+                connector._remove_loader(identity_c)
                 result_data["connected"] = False
                 result_data["connect_error"] = "Connection test failed"
                 result_data["connection_error"] = {
@@ -1056,16 +1075,13 @@ def create_connector():
         except Exception as e:
             try:
                 identity_c = connector._get_identity()
-                connector._loaders.pop(identity_c, None)
+                connector._remove_loader(identity_c)
             except Exception:
                 pass
             result_data["connected"] = False
             error_info = classify_connector_error(e, operation="connect")
             result_data["connect_error"] = error_info.message
             result_data["connection_error"] = error_info.to_error_dict()
-
-    if persist_warning:
-        result_data["persist_warning"] = persist_warning
 
     logger.info("Created user connector '%s' (type=%s)", instance_id, loader_type)
     return json_ok(result_data, status_code=201)
@@ -1096,6 +1112,7 @@ def _persist_user_connector(identity: str, spec: "SourceSpec") -> None:
     """Write a single connector spec to ``connectors/<source_id>.json``."""
     jail = _connectors_jail(identity)
     path = jail.resolve(f"{_safe_source_filename(spec.source_id)}.json")
+    temp_path = path.with_suffix(path.suffix + ".tmp")
     entry = {
         "source_id": spec.source_id,
         "loader_type": spec.loader_type,
@@ -1104,11 +1121,16 @@ def _persist_user_connector(identity: str, spec: "SourceSpec") -> None:
         "icon": spec.icon,
     }
     try:
-        with open(path, "w", encoding="utf-8") as f:
+        with open(temp_path, "w", encoding="utf-8") as f:
             _json.dump(entry, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
         logger.info("Persisted connector spec '%s' to %s", spec.source_id, path)
     except Exception as e:
-        logger.warning("Failed to persist connector spec '%s': %s", spec.source_id, e)
+        temp_path.unlink(missing_ok=True)
+        logger.error("Failed to persist connector spec '%s'", spec.source_id, exc_info=e)
+        raise
 
 
 def _remove_user_connector(identity: str, connector_id: str) -> None:
@@ -1227,7 +1249,7 @@ def connector_connect():
 
         if not loader.test_connection():
             identity = source._get_identity()
-            source._loaders.pop(identity, None)
+            source._remove_loader(identity)
             raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection test failed")
 
         persisted = False
@@ -1284,7 +1306,7 @@ def connector_connect():
     except Exception as e:
         try:
             identity = source._get_identity()
-            source._loaders.pop(identity, None)
+            source._remove_loader(identity)
         except Exception:
             pass
         classify_and_raise_connector_error(e, operation="connect")
@@ -1311,7 +1333,7 @@ def connector_disconnect():
 
     try:
         identity = source._get_identity()
-        source._loaders.pop(identity, None)
+        source._remove_loader(identity)
         source._vault_delete(identity)
         try:
             from data_formulator.auth.token_store import TokenStore
@@ -1377,7 +1399,7 @@ def connector_get_status():
         alive = False
         error_info = classify_connector_error(e, operation="status")
     if not alive:
-        source._loaders.pop(identity, None)
+        source._remove_loader(identity)
         result = {
             "connected": False,
             "has_stored_credentials": source.has_stored_credentials(identity),
@@ -1741,6 +1763,7 @@ def connector_refresh_data():
             source_table=meta.source_table,
             import_options=meta.import_options,
         )
+        enforce_arrow_byte_limit(arrow_table, MAX_IMPORT_BYTES)
         new_meta, data_changed = workspace.refresh_parquet_from_arrow(table_name, arrow_table)
 
         # Best-effort: refresh source metadata (table/column descriptions).
@@ -1786,6 +1809,7 @@ def connector_preview_data():
             source_table=source_id,
             import_options=import_options,
         )
+        enforce_arrow_byte_limit(arrow_table, MAX_PREVIEW_BYTES)
         df = arrow_table.to_pandas()
         rows = df_to_safe_records(df)
         columns = [{"name": col, "type": normalize_dtype_to_app_type(str(df[col].dtype))} for col in df.columns]

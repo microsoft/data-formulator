@@ -51,7 +51,7 @@ class TestGitHubOAuthContract:
         with app.test_client() as client:
             client.get("/api/auth/github/login")
             with client.session_transaction() as sess:
-                assert sess["_github_oauth_state"]
+                assert len(sess["_github_oauth_states"]) == 1
 
     def test_callback_exchanges_code_and_stores_github_session(self, app):
         token_resp = MagicMock()

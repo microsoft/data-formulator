@@ -8,15 +8,17 @@ import logging
 from data_formulator.datalake.table_names import sanitize_external_loader_table_name
 
 MAX_IMPORT_ROWS = 2_000_000
+MAX_IMPORT_BYTES = 256 * 1024 * 1024
+MAX_PREVIEW_BYTES = 32 * 1024 * 1024
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 15
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
+DEFAULT_QUERY_TIMEOUT_SECONDS = 120
 
 if TYPE_CHECKING:
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.datalake.workspace_metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
-
-MAX_IMPORT_ROWS = 2_000_000
-
 
 class ConnectorParamError(ValueError):
     """Raised when required connector parameters are missing or empty."""
@@ -51,6 +53,16 @@ def _merge_source_metadata(
         src = src_cols.get(col.name)
         if src and "description" in src:
             col.description = src["description"] or None
+
+
+def enforce_arrow_byte_limit(table: pa.Table, max_bytes: int) -> None:
+    """Reject Arrow results that exceed a pre-materialization byte budget."""
+    if max_bytes <= 0:
+        raise ValueError("Arrow byte limit must be positive")
+    if table.nbytes > max_bytes:
+        raise ValueError(
+            f"Arrow result exceeds byte limit ({table.nbytes} > {max_bytes})"
+        )
 
 # Sensitive parameter names that should be excluded from stored metadata
 SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_token', 'refresh_token', 'access_key', 'secret_key'}
@@ -94,6 +106,31 @@ def _esc_id(name: str, quote_char: str) -> str:
         raise ValueError(f"Invalid identifier: {name!r}")
     escaped = name.replace(quote_char, quote_char * 2)
     return f"{quote_char}{escaped}{quote_char}"
+
+
+def _quote_dotted_identifier(name: str, quote_char: str) -> str:
+    """Quote every segment of a dotted SQL identifier."""
+    parts = name.split(".")
+    if not parts or any(not part or quote_char in part for part in parts):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return ".".join(_esc_id(part, quote_char) for part in parts)
+
+
+def _quote_mssql_identifier(name: str) -> str:
+    """Quote a SQL Server identifier, escaping closing brackets."""
+    if not name or "]" in name or _DANGEROUS_IDENT_RE.search(name):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return f"[{name}]"
+
+
+_KUSTO_IDENTIFIER_RE = re.compile(r"^[\w .-]+$", re.UNICODE)
+
+
+def _quote_kusto_identifier(name: str) -> str:
+    """Return a bracketed Kusto entity identifier after strict validation."""
+    if not name or not _KUSTO_IDENTIFIER_RE.fullmatch(name):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return "['" + name + "']"
 
 
 def _esc_str(value: str) -> str:
@@ -352,42 +389,42 @@ class CatalogNode:
 class ExternalDataLoader(ABC):
     """
     Abstract base class for external data loaders.
-    
+
     Data loaders fetch data from external sources (databases, cloud storage, etc.)
     and store data as parquet files in the workspace. DuckDB is not used for storage;
     it is only the computation engine elsewhere in the application.
-    
+
     Ingest flow: External Source → PyArrow Table → Parquet (workspace).
-    
+
     - `fetch_data_as_arrow()`: each loader must implement; fetches data as PyArrow Table.
     - `ingest_to_workspace()`: fetches via Arrow and writes parquet to the given workspace.
     """
-    
+
     def get_safe_params(self) -> dict[str, Any]:
         """
         Get connection parameters with sensitive values removed.
-        
+
         Uses the ``sensitive`` flag from :meth:`list_params` as the primary
         source of truth, falling back to the ``SENSITIVE_PARAMS`` name set
         for params not declared in ``list_params``.
-        
+
         Returns:
             Dictionary of parameters safe to store in metadata
         """
         if not hasattr(self, 'params'):
             return {}
-        
+
         # Build set of sensitive names from list_params declarations
         declared_sensitive = {
             p["name"] for p in self.list_params()
             if p.get("sensitive") or p.get("type") == "password"
         }
-        
+
         return {
             k: v for k, v in self.params.items()
             if k not in declared_sensitive and k.lower() not in SENSITIVE_PARAMS
         }
-    
+
     @abstractmethod
     def fetch_data_as_arrow(
         self,
@@ -396,12 +433,12 @@ class ExternalDataLoader(ABC):
     ) -> pa.Table:
         """
         Fetch data from the external source as a PyArrow Table.
-        
+
         This is the primary method for data fetching. Each loader must implement
         this method to fetch data directly as Arrow format for optimal performance.
         Only source_table is supported (no raw query strings) to avoid security
         and dialect diversity issues across loaders.
-        
+
         Args:
             source_table: Full table name (or table identifier) to fetch from
             import_options: Optional dict controlling what/how data is fetched:
@@ -411,15 +448,15 @@ class ExternalDataLoader(ABC):
                 - sort_order (str): 'asc' or 'desc'
                 - filters (list[dict]): Standard SPJ filters
                 - source_filters (dict): Source-defined filters (BI tools)
-            
+
         Returns:
             PyArrow Table with the fetched data
-            
+
         Raises:
             ValueError: If source_table is not provided
         """
         pass
-    
+
     def fetch_data_as_dataframe(
         self,
         source_table: str,
@@ -427,7 +464,7 @@ class ExternalDataLoader(ABC):
     ) -> pd.DataFrame:
         """
         Fetch data from the external source as a pandas DataFrame.
-        
+
         This method converts the Arrow table to pandas. For better performance,
         prefer using `fetch_data_as_arrow()` directly when possible.
         """
@@ -435,8 +472,13 @@ class ExternalDataLoader(ABC):
             source_table=source_table,
             import_options=import_options,
         )
+        requested_max = (import_options or {}).get("max_bytes", MAX_IMPORT_BYTES)
+        enforce_arrow_byte_limit(
+            arrow_table,
+            min(int(requested_max), MAX_IMPORT_BYTES),
+        )
         return arrow_table.to_pandas()
-    
+
     def ingest_to_workspace(
         self,
         workspace: "Workspace",
@@ -446,27 +488,32 @@ class ExternalDataLoader(ABC):
     ) -> "TableMetadata":
         """
         Fetch data from external source and store as parquet in workspace.
-        
+
         Uses PyArrow for efficient data transfer: External Source → Arrow → Parquet.
         This avoids pandas conversion overhead entirely.
-        
+
         After writing the parquet file, performs a best-effort metadata
         enrichment: pulls table/column descriptions from the source system
         via ``get_column_types()`` and merges them into the persisted
         ``TableMetadata``.  Metadata failures never block the import.
-        
+
         Args:
             workspace: The workspace to store data in
             table_name: Name for the table in the workspace
             source_table: Full table name to fetch from
             import_options: See fetch_data_as_arrow for details.
-            
+
         Returns:
             TableMetadata for the created parquet file
         """
         arrow_table = self.fetch_data_as_arrow(
             source_table=source_table,
             import_options=import_options,
+        )
+        requested_max = (import_options or {}).get("max_bytes", MAX_IMPORT_BYTES)
+        enforce_arrow_byte_limit(
+            arrow_table,
+            min(int(requested_max), MAX_IMPORT_BYTES),
         )
 
         source_info = {
@@ -563,6 +610,13 @@ class ExternalDataLoader(ABC):
         Returns ``None`` by default (not supported).
         """
         return None
+
+    def close(self) -> None:
+        """Release resources held by this loader.
+
+        Stateless loaders may keep the default no-op implementation. Loaders
+        that own connections, sessions, or SDK clients must override it.
+        """
 
     @abstractmethod
     def __init__(self, params: dict[str, Any]):

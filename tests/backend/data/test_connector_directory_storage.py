@@ -164,6 +164,29 @@ class TestPersistAndRemove:
             data = json.load(f)
         assert data["display_name"] == "PG Dev v2"
 
+    def test_persist_failure_propagates_and_preserves_existing(self, tmp_path: Path) -> None:
+        user_dir = tmp_path / "users" / "alice"
+        original = SourceSpec(
+            source_id="pg:dev", loader_type="postgresql",
+            display_name="PG Dev v1", source="user",
+        )
+        replacement = SourceSpec(
+            source_id="pg:dev", loader_type="postgresql",
+            display_name="PG Dev v2", source="user",
+        )
+
+        with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
+            _persist_user_connector("alice", original)
+            with patch("os.replace", side_effect=OSError("disk full")):
+                with pytest.raises(OSError, match="disk full"):
+                    _persist_user_connector("alice", replacement)
+
+        json_file = user_dir / "connectors" / "pg--dev.json"
+        with open(json_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        assert data["display_name"] == "PG Dev v1"
+        assert list(json_file.parent.glob("*.tmp")) == []
+
     def test_remove_deletes_file(self, tmp_path: Path) -> None:
         user_dir = tmp_path / "users" / "alice"
         spec = SourceSpec(

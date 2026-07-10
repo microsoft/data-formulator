@@ -56,10 +56,20 @@ app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(16)
 app.json.sort_keys = False
 app.json.ensure_ascii = False
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_REQUEST_BYTES', 100 * 1024 * 1024))
+app.config['MAX_JSON_REQUEST_BYTES'] = int(os.environ.get('MAX_JSON_REQUEST_BYTES', 25 * 1024 * 1024))
+app.config['MAX_EPHEMERAL_TABLE_BYTES'] = int(os.environ.get('MAX_EPHEMERAL_TABLE_BYTES', 20 * 1024 * 1024))
+app.config['MAX_INLINE_IMAGE_BYTES'] = int(os.environ.get('MAX_INLINE_IMAGE_BYTES', 10 * 1024 * 1024))
 app.config['PERMANENT_SESSION_LIFETIME'] = 60 * 60 * 24 * 365
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+_dev_mode = os.environ.get('DEV_MODE', 'false').lower() == 'true'
+_secure_cookie_setting = os.environ.get('SESSION_COOKIE_SECURE')
+app.config['SESSION_COOKIE_SECURE'] = (
+    _secure_cookie_setting.lower() != 'false'
+    if _secure_cookie_setting is not None
+    else not _dev_mode
+)
 
 # Server-side session via flask-session (filesystem / cachelib backend).
 # Stores SSO tokens + service tokens without hitting the 4 KB cookie limit.
@@ -115,7 +125,7 @@ app.config['CLI_ARGS'] = {
     'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
     'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
-    'dev': os.environ.get('DEV_MODE', 'false').lower() == 'true',
+    'dev': _dev_mode,
     'workspace_backend': _default_ws_backend,
     'azure_blob_connection_string': os.environ.get('AZURE_BLOB_CONNECTION_STRING', None),
     'azure_blob_account_url': os.environ.get('AZURE_BLOB_ACCOUNT_URL', None),
@@ -176,6 +186,8 @@ def _register_blueprints():
     # Register unified error handlers and request-id middleware
     from data_formulator.error_handler import register_error_handlers
     register_error_handlers(app)
+    from data_formulator.security.request_limits import register_request_limits
+    register_request_limits(app)
 
     from data_formulator._startup_spinner import spinner
 

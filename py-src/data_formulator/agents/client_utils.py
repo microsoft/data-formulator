@@ -1,4 +1,6 @@
 import litellm
+import random
+import time
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 
@@ -7,6 +9,9 @@ class Client(object):
     Returns a LiteLLM client configured for the specified endpoint and model.
     Supports OpenAI, Azure, Ollama, and other providers via LiteLLM.
     """
+    _MAX_ATTEMPTS = 3
+    _MAX_RETRY_DELAY_SECONDS = 30.0
+
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None):
 
         self.endpoint = endpoint
@@ -100,6 +105,49 @@ class Client(object):
             and "high" in lowered
         )
 
+    @staticmethod
+    def _status_code(error: Exception) -> int | None:
+        status = getattr(error, "status_code", None)
+        if isinstance(status, int):
+            return status
+        response = getattr(error, "response", None)
+        status = getattr(response, "status_code", None)
+        return status if isinstance(status, int) else None
+
+    @classmethod
+    def _is_retryable_transport_error(cls, error: Exception) -> bool:
+        status = cls._status_code(error)
+        if status is not None:
+            return status == 408 or status == 429 or 500 <= status <= 599
+        return isinstance(error, (ConnectionError, TimeoutError))
+
+    @classmethod
+    def _retry_delay(cls, error: Exception, attempt: int) -> float:
+        response = getattr(error, "response", None)
+        headers = getattr(response, "headers", {}) or {}
+        retry_after = headers.get("Retry-After") or headers.get("retry-after")
+        if retry_after is not None:
+            try:
+                return min(float(retry_after), cls._MAX_RETRY_DELAY_SECONDS)
+            except (TypeError, ValueError):
+                pass
+        base = min(2 ** attempt, cls._MAX_RETRY_DELAY_SECONDS)
+        return min(base + random.uniform(0, 0.25), cls._MAX_RETRY_DELAY_SECONDS)
+
+    def _completion_with_retry(self, **kwargs):
+        for attempt in range(self._MAX_ATTEMPTS):
+            try:
+                return litellm.completion(**kwargs)
+            except Exception as error:
+                if (
+                    attempt == self._MAX_ATTEMPTS - 1
+                    or not self._is_retryable_transport_error(error)
+                ):
+                    raise
+                time.sleep(self._retry_delay(error, attempt))
+
+        raise RuntimeError("Completion retry loop exited unexpectedly")
+
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
         """
@@ -150,7 +198,7 @@ class Client(object):
         params["reasoning_effort"] = reasoning_effort
         params.update(kwargs)
         try:
-            return litellm.completion(
+            return self._completion_with_retry(
                 model=self.model, messages=messages,
                 drop_params=True, stream=stream, **params,
             )
@@ -158,13 +206,13 @@ class Client(object):
             err = str(e)
             if self._is_reasoning_effort_error(err):
                 params.pop("reasoning_effort", None)
-                return litellm.completion(
+                return self._completion_with_retry(
                     model=self.model, messages=messages,
                     drop_params=True, stream=stream, **params,
                 )
             if self._is_image_deserialize_error(err):
                 sanitized = self._strip_images_from_messages(messages)
-                return litellm.completion(
+                return self._completion_with_retry(
                     model=self.model, messages=sanitized,
                     drop_params=True, stream=stream, **params,
                 )
@@ -180,7 +228,7 @@ class Client(object):
         params = self.params.copy()
         params["reasoning_effort"] = reasoning_effort
         try:
-            return litellm.completion(
+            return self._completion_with_retry(
                 model=self.model, messages=messages, tools=tools,
                 drop_params=True, stream=stream, **params, **kwargs,
             )
@@ -188,13 +236,13 @@ class Client(object):
             err = str(e)
             if self._is_reasoning_effort_error(err):
                 params.pop("reasoning_effort", None)
-                return litellm.completion(
+                return self._completion_with_retry(
                     model=self.model, messages=messages, tools=tools,
                     drop_params=True, stream=stream, **params, **kwargs,
                 )
             if self._is_image_deserialize_error(err):
                 sanitized = self._strip_images_from_messages(messages)
-                return litellm.completion(
+                return self._completion_with_retry(
                     model=self.model, messages=sanitized, tools=tools,
                     drop_params=True, stream=stream, **params, **kwargs,
                 )

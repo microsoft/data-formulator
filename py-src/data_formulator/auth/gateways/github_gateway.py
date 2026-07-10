@@ -19,6 +19,7 @@ import urllib.parse
 import requests as http_requests
 from flask import Blueprint, redirect, request, session
 
+from data_formulator.auth.oauth_state import consume_pending_state, store_pending_state
 from data_formulator.error_handler import json_ok
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def github_login():
     redirect_uri = request.url_root.rstrip("/") + "/api/auth/github/callback"
     scope = "read:user user:email"
     state = secrets.token_urlsafe(32)
-    session["_github_oauth_state"] = state
+    store_pending_state("_github_oauth_states", state)
     params = urllib.parse.urlencode({
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -83,7 +84,11 @@ def github_callback():
     if not code:
         return _error_redirect("missing_authorization_code")
     state = request.args.get("state")
-    if state != session.pop("_github_oauth_state", None):
+    legacy_state = session.pop("_github_oauth_state", None)
+    valid_state = consume_pending_state("_github_oauth_states", state) or (
+        bool(state) and bool(legacy_state) and secrets.compare_digest(state, legacy_state)
+    )
+    if not valid_state:
         logger.warning("GitHub OAuth callback: invalid or missing state")
         return _error_redirect("invalid_state")
 

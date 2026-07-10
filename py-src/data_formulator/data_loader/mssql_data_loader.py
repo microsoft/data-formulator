@@ -6,7 +6,7 @@ from typing import Any
 import pyarrow as pa
 import pyodbc
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, _quote_mssql_identifier, sanitize_table_name
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 log = logging.getLogger(__name__)
@@ -164,6 +164,12 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
     _CX_OTHER_UNSUPPORTED = {'hierarchyid', 'xml', 'sql_variant', 'image', 'timestamp'}
     _CX_UNSUPPORTED_TYPES = _CX_SPATIAL_TYPES | _CX_OTHER_UNSUPPORTED
 
+    def close(self) -> None:
+        connection = getattr(self, "_conn", None)
+        if connection is not None:
+            connection.close()
+            self._conn = None
+
     def _safe_select_list(self, schema: str, table_name: str) -> str:
         """Build a SELECT column list that converts unsupported types to text.
         Uses .STAsText() for spatial types, CAST(... AS NVARCHAR(MAX)) for others.
@@ -235,32 +241,39 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
 
         if not source_table:
             raise ValueError("source_table must be provided")
-        
+
         # Parse table name
         if "." in source_table:
             schema, table = source_table.split(".", 1)
         else:
             schema = "dbo"
             table = source_table
-        
-        col_list = self._safe_select_list(schema.strip('[]'), table.strip('[]'))
-        base_query = f"SELECT {col_list} FROM [{schema}].[{table}]"
-        
+
+        schema = schema.strip('[]')
+        table = table.strip('[]')
+        quoted_schema = _quote_mssql_identifier(schema)
+        quoted_table = _quote_mssql_identifier(table)
+        col_list = self._safe_select_list(schema, table)
+        base_query = f"SELECT {col_list} FROM {quoted_schema}.{quoted_table}"
+
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'[{col}] {order_direction}' for col in sort_columns]
+            sanitized_cols = [
+                f'{_quote_mssql_identifier(col)} {order_direction}'
+                for col in sort_columns
+            ]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
-        
+
         # SQL Server uses TOP instead of LIMIT
         query = f"SELECT TOP {size} * FROM ({base_query}{order_by_clause}) AS limited"
-        
+
         log.info(f"Executing SQL Server query: {query[:200]}...")
-        
+
         arrow_table = self._execute_query(query)
         log.info(f"Fetched {arrow_table.num_rows} rows from SQL Server")
-        
+
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
@@ -272,8 +285,8 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         try:
             tables_query = """
                 SELECT TABLE_SCHEMA, TABLE_NAME
-                FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_TYPE = 'BASE TABLE' 
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE'
                 AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             """

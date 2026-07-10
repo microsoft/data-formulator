@@ -4,10 +4,10 @@ from typing import Any
 import pandas as pd
 import pyarrow as pa
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import DEFAULT_QUERY_TIMEOUT_SECONDS, ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, _quote_kusto_identifier, sanitize_table_name
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
-from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+from azure.kusto.data import ClientRequestProperties, KustoClient, KustoConnectionStringBuilder
 from azure.kusto.data.helpers import dataframe_from_result_table
 
 logger = logging.getLogger(__name__)
@@ -15,13 +15,19 @@ logger = logging.getLogger(__name__)
 class KustoDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Kusto"
 
+    def close(self) -> None:
+        client = getattr(self, "client", None)
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "kusto_cluster", "type": "string", "required": True, "tier": "connection", "description": "e.g., https://mycluster.region.kusto.windows.net"}, 
-            {"name": "kusto_database", "type": "string", "required": False, "tier": "filter", "description": "Database name (leave empty to browse all databases)"}, 
-            {"name": "client_id", "type": "string", "required": False, "tier": "auth", "description": "Service principal only"}, 
-            {"name": "client_secret", "type": "string", "required": False, "sensitive": True, "tier": "auth", "description": "Service principal only"}, 
+            {"name": "kusto_cluster", "type": "string", "required": True, "tier": "connection", "description": "e.g., https://mycluster.region.kusto.windows.net"},
+            {"name": "kusto_database", "type": "string", "required": False, "tier": "filter", "description": "Database name (leave empty to browse all databases)"},
+            {"name": "client_id", "type": "string", "required": False, "tier": "auth", "description": "Service principal only"},
+            {"name": "client_secret", "type": "string", "required": False, "sensitive": True, "tier": "auth", "description": "Service principal only"},
             {"name": "tenant_id", "type": "string", "required": False, "tier": "auth", "description": "Service principal only"}
         ]
         return params_list
@@ -67,17 +73,17 @@ class KustoDataLoader(ExternalDataLoader):
         """Convert Kusto datetime columns to proper pandas datetime format"""
         logger.info(f"Processing DataFrame with columns: {list(df.columns)}")
         logger.info(f"Column dtypes before conversion: {dict(df.dtypes)}")
-        
+
         for col in df.columns:
             original_dtype = df[col].dtype
-            
+
             if df[col].dtype == 'object':
                 # Try to identify datetime columns by checking sample values
                 sample_values = df[col].dropna().head(3)
                 if len(sample_values) > 0:
                     # Check if values look like datetime strings or timestamp numbers
                     first_val = sample_values.iloc[0]
-                    
+
                     # Handle Kusto datetime format (ISO 8601 strings)
                     if isinstance(first_val, str) and ('T' in first_val or '-' in first_val):
                         try:
@@ -87,7 +93,7 @@ class KustoDataLoader(ExternalDataLoader):
                             df[col] = pd.to_datetime(df[col], errors='coerce', utc=True).dt.tz_localize(None)
                         except Exception as e:
                             logger.debug(f"Failed to convert column '{col}' as string datetime: {e}")
-                    
+
                     # Handle numeric timestamps (Unix timestamps in various formats)
                     elif isinstance(first_val, (int, float)) and first_val > 1000000000:
                         try:
@@ -103,30 +109,35 @@ class KustoDataLoader(ExternalDataLoader):
                                 df[col] = pd.to_datetime(df[col], unit='s', errors='coerce', utc=True).dt.tz_localize(None)
                         except Exception as e:
                             logger.debug(f"Failed to convert column '{col}' as numeric timestamp: {e}")
-                            
+
             # Handle datetime64 columns that might have timezone info
             elif pd.api.types.is_datetime64_any_dtype(df[col]):
                 # Ensure timezone-aware datetimes are properly handled
                 if hasattr(df[col].dt, 'tz') and df[col].dt.tz is not None:
                     logger.info(f"Converting timezone-aware datetime column '{col}' to UTC")
                     df[col] = df[col].dt.tz_convert('UTC').dt.tz_localize(None)
-            
+
             # Log if conversion happened
             if original_dtype != df[col].dtype:
                 logger.info(f"Column '{col}' converted from {original_dtype} to {df[col].dtype}")
-        
+
         logger.info(f"Column dtypes after conversion: {dict(df.dtypes)}")
         return df
 
     def query(self, kql: str) -> pd.DataFrame:
         logger.info(f"Executing KQL query: {kql} on database {self.kusto_database}")
-        result = self.client.execute(self.kusto_database, kql)
+        properties = ClientRequestProperties()
+        properties.set_option(
+            ClientRequestProperties.request_timeout_option_name,
+            DEFAULT_QUERY_TIMEOUT_SECONDS,
+        )
+        result = self.client.execute(self.kusto_database, kql, properties)
         logger.info(f"Query executed successfully, returning results.")
         df = dataframe_from_result_table(result.primary_results[0])
-        
+
         # Convert datetime columns properly
         df = self._convert_kusto_datetime_columns(df)
-        
+
         return df
 
     def fetch_data_as_arrow(
@@ -136,9 +147,9 @@ class KustoDataLoader(ExternalDataLoader):
     ) -> pa.Table:
         """
         Fetch data from Kusto/Azure Data Explorer as a PyArrow Table.
-        
+
         Kusto SDK returns pandas, so we convert to Arrow format.
-        
+
         Args:
             source_table: Kusto table name
             size: Maximum number of rows to fetch
@@ -152,29 +163,32 @@ class KustoDataLoader(ExternalDataLoader):
 
         if not source_table:
             raise ValueError("source_table must be provided")
-        
-        base_query = f"['{source_table}']"
-        
+
+        base_query = _quote_kusto_identifier(source_table)
+
         # Add sort if specified (KQL syntax)
         sort_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "desc" if sort_order == 'desc' else "asc"
-            sort_cols_with_order = [f"{col} {order_direction}" for col in sort_columns]
+            sort_cols_with_order = [
+                f"{_quote_kusto_identifier(col)} {order_direction}"
+                for col in sort_columns
+            ]
             sort_clause = f" | sort by {', '.join(sort_cols_with_order)}"
-        
+
         # Add take limit
         kql_query = f"{base_query}{sort_clause} | take {size}"
-        
+
         logger.info(f"Executing Kusto query: {kql_query[:200]}...")
-        
+
         # Execute query
         df = self.query(kql_query)
-        
+
         # Convert to Arrow
         arrow_table = pa.Table.from_pandas(df, preserve_index=False)
-        
+
         logger.info(f"Fetched {arrow_table.num_rows} rows from Kusto")
-        
+
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:

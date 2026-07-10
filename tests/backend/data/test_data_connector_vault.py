@@ -323,8 +323,8 @@ class TestAutoReconnect:
             # Should now be in memory too
             assert source._get_loader(IDENTITY) is not None
 
-    def test_auto_reconnect_cleans_stale_creds(self, source, vault):
-        """If stored credentials fail to connect, delete them."""
+    def test_auto_reconnect_false_preserves_credentials(self, source, vault):
+        """A false health check may be transient and preserves credentials."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=vault):
             # Store creds that will fail (test_connection patched to False)
@@ -337,11 +337,10 @@ class TestAutoReconnect:
             with patch.object(MockLoader, "test_connection", return_value=False):
                 loader = source._try_auto_reconnect(IDENTITY)
                 assert loader is None
-                # Stale credentials should be deleted
-                assert vault.retrieve(IDENTITY, "test_db") is None
+                assert vault.retrieve(IDENTITY, "test_db") is not None
 
-    def test_auto_reconnect_exception_cleans_stale_creds(self, source, vault):
-        """If auto-reconnect raises, delete stale creds."""
+    def test_auto_reconnect_exception_preserves_credentials(self, source, vault):
+        """An auto-reconnect exception preserves credentials for retry."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=vault):
             vault.store(IDENTITY, "test_db", {
@@ -352,7 +351,7 @@ class TestAutoReconnect:
             with patch.object(MockLoader, "__init__", side_effect=RuntimeError("bad creds")):
                 loader = source._try_auto_reconnect(IDENTITY)
                 assert loader is None
-                assert vault.retrieve(IDENTITY, "test_db") is None
+                assert vault.retrieve(IDENTITY, "test_db") is not None
 
     def test_status_reports_stored_credentials(self, client, source, vault):
         """POST /get-status is side-effect-free: reports has_stored_credentials but does not reconnect."""

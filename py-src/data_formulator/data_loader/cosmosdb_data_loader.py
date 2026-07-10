@@ -7,7 +7,7 @@ import pyarrow as pa
 from azure.cosmos import CosmosClient, exceptions as cosmos_exceptions
 from azure.cosmos.partition_key import PartitionKey
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import DEFAULT_CONNECT_TIMEOUT_SECONDS, ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from typing import Any
 
@@ -64,6 +64,7 @@ class CosmosDBDataLoader(ExternalDataLoader):
             self.client = CosmosClient(
                 url=self.endpoint,
                 credential=self.key,
+                connection_timeout=DEFAULT_CONNECT_TIMEOUT_SECONDS,
                 **connection_kwargs,
             )
             self.db = self.client.get_database_client(self.database_name)

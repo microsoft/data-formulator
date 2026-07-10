@@ -8,6 +8,45 @@ It also records changes made against the original upstream Data Formulator
 codebase. Copilot and Agency brain assets are excluded from the change ledger
 because they do not alter product runtime behavior.
 
+Readiness requirements and objective evidence are maintained in
+`docs/plans/2026-07-09-connector-implementation-requirements.md`.
+
+## Implementation Tracker
+
+Work in ascending order. A row may start only after its dependencies and exit
+gate are complete. Rows marked parallel may proceed concurrently with each
+other, but not before their shared prerequisite row.
+
+| Order | Workstream | Issues | Depends on | Current state | Exit gate |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Prevent Azure metadata loss | DF-011 | None | Resolved; focused and adjacent tests pass | Concurrent metadata updates cannot overwrite one another |
+| 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | DF-012 resolved; DF-001 source green, deployment blocked by unrelated what-if drift | Request memory is bounded and state remains consistent across replicas |
+| 3 | Secure connector query boundaries | DF-002 | DF-001 | Resolved; focused and adjacent loader tests pass | Request-controlled identifiers are validated or parameterized |
+| 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004 | DF-001, DF-002 | Resolved; lifecycle and reconnect suites pass | Connections close predictably and transient failures preserve credentials |
+| 5 | Complete model transport resilience | DF-009 | DF-012 | Resolved; retry and compatibility suites pass | Bounded 429 retry behavior passes focused tests |
+| 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015 | DF-001 through DF-004 | Resolved in source; image/runtime deployment checks remain | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests |
+| 7 | Reassess connector readiness, then build shared Fabric discovery and delegated auth | DF-017 | DF-001 deployment strategy, completed source fixes, readiness requirements | Ready for reassessment; implementation paused | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and shared sessions are verified |
+| 8 | Add Azure SQL delegated Entra authentication | DF-016 | DF-001 deployment strategy and shared delegated-auth/session foundation | Planned; blocked pending reassessment | Entra token connects through ODBC while SQL and Windows auth remain green |
+| 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Planned; blocked | Delta and supported file imports pass catalog, limit, and audience tests |
+| 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Planned; blocked | Delegated RLS-safe query results pass API, limit, and serialization tests |
+
+Orders 9A and 9B are parallel. Update the tracker state and exit-gate evidence
+whenever an issue is resolved, superseded, or split.
+
+### Reassessment checkpoint (2026-07-09)
+
+- Source fixes through order 6 are implemented; DF-001 remains deployment
+  pending because the subscription what-if includes unsafe unrelated drift.
+- Consolidated issue-fix suite: 150 passed, 1 skipped.
+- OAuth gateway/provider subset: 101 passed, 1 skipped.
+- Full backend suite: 1,952 passed, 12 skipped, 1 xpassed; five failures and
+  two setup errors are pre-existing Windows/stale-test issues (plugin fixture
+  encoding, symlink privilege, and `sample_datasets` parameter assumptions).
+- No connector implementation begins until the readiness requirements and
+  remaining DF-001 deployment strategy are reassessed.
+- **Next action**: reassess connector readiness and choose the narrow DF-001
+  deployment path; do not run the current full Bicep deployment as-is.
+
 ## Implemented Changes
 
 ### Source changes on 2026-07-09
@@ -163,16 +202,31 @@ committed, redeployed, superseded, or rolled back.
   and authentication modules.
 - Confirmed no VS Code diagnostics in the audited connector, authentication,
   and Container Apps files.
-- Backend tests could not be executed locally because this Windows Python
-  environment does not have the project dependencies or `pytest` installed.
+- Created an isolated `.venv` and installed the project plus pytest.
+- Focused and adjacent backend suites now execute locally. The broad
+  security/error/route run exposed four unrelated Windows fixture-encoding
+  failures in plugin-discovery tests; the request-limit and affected route
+  slices remain green.
 
 ## High Priority
 
 ### DF-001: Replica-local state conflicts with multi-replica scaling
 
-**Status**: Open \
+**Status**: In progress; source mitigation green, deployment blocked by unsafe what-if drift \
 **Severity**: High \
 **Area**: Deployment, sessions, connectors, workspaces
+
+Progress evidence (2026-07-09):
+
+- Added a deployment regression test requiring one replica while sessions,
+  connectors, credentials, catalogs, and workspaces remain instance-local.
+- Confirmed RED against the prior `maxReplicas: 3` declaration.
+- Updated the Bicep source to cap the Container App at one replica.
+- Subscription-scoped what-if confirms the intended `maxReplicas: 3 -> 1`,
+  but also predicts unsafe unrelated drift: placeholder image replacement,
+  custom-domain and traffic removal, and other resource modifications.
+- Deployment was not applied. Reconcile live Container App properties or use a
+  narrowly scoped update before marking this resolved.
 
 The Container App permits up to three replicas, but its stateful services use
 the container's local filesystem and no persistent volume is configured.
@@ -209,9 +263,23 @@ Acceptance criteria:
 
 ### DF-002: Request-controlled identifiers are interpolated into queries
 
-**Status**: Open \
+**Status**: Resolved; focused and adjacent loader tests pass \
 **Severity**: High \
 **Area**: Data loaders, query safety
+
+Progress evidence (2026-07-09):
+
+- Added cross-loader source-table and sort-column safety tests for MySQL,
+  SQL Server, Kusto, and BigQuery.
+- Confirmed unsafe source identifiers reach query construction in all four
+  loaders; MySQL sort columns already use the shared escaping helper.
+- Added shared dotted SQL, SQL Server bracket, and Kusto entity identifier
+  validation helpers and routed source/sort identifiers through them before
+  upstream schema or query calls.
+- Focused safety suite passes: 8 tests.
+- Adjacent loader suite: 48 tests pass; two unrelated existing failures assert
+  that the intentional no-auth `sample_datasets` loader must declare required
+  connection parameters.
 
 Several loaders construct native queries using `source_table` or sort-column
 values received from connector API request bodies without consistently applying
@@ -254,9 +322,20 @@ Acceptance criteria:
 
 ### DF-003: Cached loader connections lack a complete lifecycle contract
 
-**Status**: Open \
+**Status**: Resolved; lifecycle and vault regression suites pass \
 **Severity**: High \
 **Area**: Connector lifecycle, database stability
+
+Progress evidence (2026-07-09):
+
+- Added an idempotent base `close()` contract and connector-owned loader
+  replacement/removal helpers.
+- Added cleanup for persistent MySQL, PostgreSQL, SQL Server, BigQuery, and
+  Kusto resources.
+- Replacement, disconnect, failed validation, status failure, delete, and
+  connector-creation rollback paths close loaders through one owner.
+- Focused lifecycle tests pass: 3 tests.
+- Connector framework, vault, and lifecycle regression suites pass: 76 tests.
 
 `DataConnector` caches one live loader per identity. Disconnect, delete, failed
 connection tests, and replacement paths remove loaders from dictionaries but do
@@ -290,9 +369,19 @@ Acceptance criteria:
 
 ### DF-004: Auto-reconnect deletes credentials on transient failures
 
-**Status**: Open \
+**Status**: Resolved; credential preservation and lifecycle suites pass \
 **Severity**: High \
 **Area**: Credential lifecycle, resilience
+
+Progress evidence (2026-07-09):
+
+- Added regression coverage for false health checks and temporary connection
+  exceptions during vault auto-reconnect.
+- Confirmed both paths currently delete the stored credential entry.
+- Automatic reconnect now preserves vault credentials for false health checks
+  and exceptions; explicit disconnect/delete remains the deletion boundary.
+- Failed temporary loaders are closed before returning.
+- Reconnect, lifecycle, vault, and framework suites pass: 78 tests.
 
 `DataConnector._try_auto_reconnect()` deletes the stored vault entry whenever
 `test_connection()` returns false or raises. The failure is not first classified
@@ -322,7 +411,7 @@ Acceptance criteria:
 
 ### DF-009: Default LLM deployment exhausts rate limits without retry
 
-**Status**: Mitigated; retry handling remains open \
+**Status**: Resolved; bounded transport retry and compatibility suites pass \
 **Severity**: High \
 **Area**: Azure OpenAI, LLM client resilience
 
@@ -352,6 +441,18 @@ Remaining remediation:
 3. Avoid immediate modality fallback when the original failure is throttling.
 4. Emit per-model request, token, throttle, retry, and latency metrics.
 
+Implementation evidence (2026-07-09):
+
+- Added one centralized completion retry policy used by ordinary and
+  tool-enabled calls.
+- Retries 408, 429, retryable 5xx, connection, and timeout failures with three
+  total attempts, exponential backoff with jitter, and capped `Retry-After`.
+- Auth/validation and other non-transient HTTP failures are not retried.
+- Throttling retries preserve image payloads and do not trigger modality
+  fallback.
+- Focused retry tests pass: 10 tests; client compatibility suite passes:
+  74 tests.
+
 Acceptance criteria:
 
 - A burst within allocated quota does not produce user-visible 429 failures.
@@ -361,9 +462,18 @@ Acceptance criteria:
 
 ### DF-011: Azure Blob metadata updates can lose concurrent changes
 
-**Status**: Open \
+**Status**: Resolved; focused and adjacent tests pass \
 **Severity**: High \
 **Area**: Azure Blob workspaces, metadata concurrency
+
+Progress evidence (2026-07-09):
+
+- Added a regression test with two independent `AzureBlobWorkspace` instances.
+- Confirmed the pre-fix lost update: only one of two table entries survived.
+- Added bounded ETag compare-and-swap retry in the Blob metadata update path;
+  conflicts reload the latest metadata and reapply the updater.
+- Focused concurrency test passes with two separate workspace instances.
+- Adjacent workspace regression suite passes: 37 tests.
 
 `workspace_factory.get_workspace()` opens a workspace per request, and
 `AzureBlobWorkspaceManager.open_workspace()` returns a new
@@ -395,7 +505,7 @@ Acceptance criteria:
 
 ### DF-012: Request limits permit memory amplification beyond container safety
 
-**Status**: Open \
+**Status**: Resolved; request boundaries enforced and regression suites pass \
 **Severity**: High \
 **Area**: Request handling, memory safety
 
@@ -408,6 +518,22 @@ images are base64 strings.
 `write_parquet()` creates Arrow and compressed serialization buffers. A valid
 near-limit request can therefore exist simultaneously as raw bytes, decoded
 JSON and Python objects, pandas data, Arrow data, and output buffers.
+
+Progress evidence (2026-07-09):
+
+- Added pre-route JSON wire-size enforcement and decoded aggregate limits for
+  `_workspace_tables` and inline base64 images.
+- Reduced the configurable global default from 500 MiB to 100 MiB; added
+  25 MiB JSON, 20 MiB ephemeral-table, and 10 MiB decoded-image defaults.
+- Focused request-limit tests pass: 4 tests.
+- Added proof that rejected ephemeral payloads never reach route
+  materialization.
+- Focused request-limit, unified 413, and image-bearing route tests pass:
+  60 tests.
+- Combined prior-fix regression set passes: 43 tests.
+- Broader security/error/route validation is otherwise green; four unrelated
+  plugin fixture tests fail on Windows because a CP1252 dash is written then
+  imported as UTF-8.
 
 Impact:
 
@@ -438,7 +564,7 @@ Acceptance criteria:
 
 ### DF-005: Connector persistence failures are hidden from callers
 
-**Status**: Open \
+**Status**: Resolved; atomic persistence and rollback tests pass \
 **Severity**: Medium \
 **Area**: Connector configuration durability
 
@@ -462,9 +588,19 @@ Acceptance criteria:
 - The API never reports a durable connector when persistence failed.
 - Interrupted writes cannot leave a truncated connector specification.
 
+Implementation evidence (2026-07-09):
+
+- Connector specs write to a temporary file, flush and fsync, then atomically
+  replace the destination.
+- Persistence failures propagate, remove temporary files, preserve the last
+  valid specification, and roll back the process registry entry.
+- The API returns a structured `STORAGE_FULL` error instead of a misleading
+  creation response.
+- Focused persistence and creation suites pass: 16 tests, 1 skipped.
+
 ### DF-006: The production container runs Flask's development server
 
-**Status**: Open \
+**Status**: Resolved in source; image verification pending Docker-enabled CI \
 **Severity**: Medium \
 **Area**: Runtime stability
 
@@ -489,9 +625,19 @@ Acceptance criteria:
 - The production container starts through a supported production WSGI server.
 - Health probes, graceful termination, and stuck-request recovery are tested.
 
+Implementation evidence (2026-07-09):
+
+- Added Gunicorn as a runtime dependency and switched the Linux container
+  entrypoint from Flask's development server.
+- Configured one worker and four threads while state remains process-local,
+  with explicit 120-second request and 30-second graceful timeouts.
+- Infrastructure source guards pass: 2 tests; package metadata installs
+  successfully.
+- Local image build was not run because Docker is unavailable on this host.
+
 ### DF-007: Connector timeout behavior is inconsistent
 
-**Status**: Open \
+**Status**: Resolved; finite timeout contracts and loader regressions pass \
 **Severity**: Medium \
 **Area**: External integrations, availability
 
@@ -514,9 +660,18 @@ Acceptance criteria:
 - Slow-source tests fail within the configured bound and return a structured,
   retryable error.
 
+Implementation evidence (2026-07-09):
+
+- Added shared 15-second connect, 60-second request, and 120-second query
+  timeout defaults.
+- Applied finite MongoDB server/connect/socket, Cosmos connection, Kusto
+  server, and BigQuery metadata/query timeouts.
+- Focused timeout tests pass: 4 tests; adjacent loader regressions pass:
+  30 tests.
+
 ### DF-008: Row limits do not cap memory consumption
 
-**Status**: Open \
+**Status**: Resolved; shared Arrow byte budgets and regressions pass \
 **Severity**: Medium \
 **Area**: Import stability, memory use
 
@@ -537,6 +692,14 @@ Acceptance criteria:
 - Imports operate within a documented memory budget.
 - Oversized sources fail cleanly before container OOM termination.
 - Preview memory use is bounded independently of import limits.
+
+Implementation evidence (2026-07-09):
+
+- Added a 256 MiB hard Arrow import/refresh budget and 32 MiB preview budget,
+  enforced before Parquet writes or pandas conversion.
+- Per-import `max_bytes` may lower but cannot raise the hard import cap.
+- Wide-value rejection confirms workspace writes are not reached.
+- Ingest, preview, metadata, connector, and row-limit suites pass: 103 tests.
 
 ### DF-010: Model connectivity probe and classifier report false failures
 
@@ -582,7 +745,7 @@ Acceptance criteria:
 
 ### DF-013: Production session cookies do not require secure transport
 
-**Status**: Open \
+**Status**: Resolved; secure cookie configuration tests pass \
 **Severity**: Medium \
 **Area**: Security, authentication, session cookies
 
@@ -609,9 +772,15 @@ Acceptance criteria:
 - Local HTTP development requires an explicit documented override.
 - Tests verify the effective cookie attributes in production and development.
 
+Implementation evidence (2026-07-09):
+
+- Production defaults session cookies to `Secure`; local HTTP requires
+  `DEV_MODE=true` and an explicit `SESSION_COOKIE_SECURE=false` override.
+- Session configuration and route regression suite passes: 12 tests.
+
 ### DF-014: Streaming requests mutate a module-global logger level
 
-**Status**: Open \
+**Status**: Resolved; streaming logger isolation tests pass \
 **Severity**: Medium \
 **Area**: Agent streaming, logging, concurrency
 
@@ -641,9 +810,15 @@ Acceptance criteria:
 - Normal completion and disconnect preserve the exact prior logger level.
 - Tests cover overlapping streams and interrupted generators.
 
+Implementation evidence (2026-07-09):
+
+- Removed request-scoped mutation of the process-global agent route logger.
+- Static isolation and streaming route regressions pass in the 12-test session
+  and route suite.
+
 ### DF-015: OAuth state supports only one pending login per provider
 
-**Status**: Open \
+**Status**: Resolved; bounded state maps and provider contracts pass \
 **Severity**: Medium \
 **Area**: Authentication, OAuth state management
 
@@ -670,6 +845,182 @@ Acceptance criteria:
 - Two same-provider login attempts can complete independently in either order.
 - Each state is single-use, timestamped, bounded, and removed only on match.
 - Expired, unknown, and replayed states return `invalid_state`.
+
+Implementation evidence (2026-07-09):
+
+- Added provider-specific pending state maps capped at eight entries with a
+  ten-minute TTL and constant-time state comparison.
+- OIDC and GitHub callbacks consume only the matching state; a one-release
+  legacy single-slot callback fallback preserves active sessions during
+  migration.
+- OAuth gateway and provider contract suites pass: 111 tests, 1 skipped.
+
+## Planned Connector Work
+
+### DF-016: Azure SQL connector lacks delegated Microsoft Entra MFA
+
+**Status**: Planned; design verification blocked on shared auth/session prerequisites \
+**Severity**: Medium \
+**Area**: SQL Server connector, authentication, Azure SQL
+
+The current MSSQL loader path supports SQL username/password and
+`Trusted_Connection` modes, but does not yet support delegated Microsoft Entra
+access-token authentication via `SQL_COPT_SS_ACCESS_TOKEN`.
+
+Evidence:
+
+- `py-src/data_formulator/data_loader/mssql_data_loader.py` uses connection
+  strings and no `SQL_COPT_SS_ACCESS_TOKEN` handoff.
+- Planned design work is tracked in
+  `docs/plans/2026-07-09-azure-sql-entra-mfa.md`.
+- MFA enforcement is performed by Microsoft Entra Conditional Access at token
+  issuance time, not by Data Formulator.
+
+Impact:
+
+- Users and organizations requiring delegated Entra MFA for Azure SQL cannot
+  use this connector path.
+- Auth mode selection remains incomplete for mixed SQL auth and delegated
+  identity deployments.
+
+Recommended remediation:
+
+1. Add audience-aware connector-instance `TokenStore` support for
+   `https://database.windows.net/` delegated tokens.
+2. Implement fail-closed auth-mode selection that rejects ambiguous or mixed
+   credential/token states.
+3. Ensure secure shared session handling for delegated tokens across worker
+   replicas.
+4. Install and validate ODBC Driver 18 in the runtime container for token-based
+   Azure SQL connectivity.
+
+Acceptance criteria:
+
+- Delegated user tokens are requested with the
+  `https://database.windows.net/` audience.
+- The ODBC connection path passes the token through
+  `SQL_COPT_SS_ACCESS_TOKEN`.
+- No browser-side storage or credential-vault persistence exposes delegated
+  tokens.
+- Existing SQL authentication and Windows authentication regression tests pass.
+
+### DF-017: Fabric workspace and item discovery are not available
+
+**Status**: Planned \
+**Severity**: Medium \
+**Area**: Fabric, connector discovery, authentication
+
+Fabric workspace and item discovery are not yet available. This is shared
+discovery and authentication infrastructure work, not a placeholder generic
+tabular loader.
+
+Planned implementation work is tracked in
+`docs/plans/2026-07-09-fabric-workspaces.md`.
+
+Impact:
+
+- Users cannot enumerate accessible Fabric workspaces and items through a
+  delegated per-user path.
+- Downstream Fabric connectors cannot rely on a shared discovery surface.
+
+Recommended remediation:
+
+1. Implement Fabric REST delegated scopes and audience-aware token routing for
+   discovery APIs.
+2. Enforce strict popup `state`, `origin`, and `source` validation for auth
+   callback handling.
+3. Add a shared multi-replica session backend with a high-entropy Flask secret
+   and secure cookie policy.
+4. Implement continuation-token pagination and bounded `Retry-After` handling.
+
+Acceptance criteria:
+
+- The connector can list only workspaces and items available to the delegated
+  user.
+- Discovery does not claim import support where import paths are not yet
+  implemented.
+- Popup authentication flow does not expose tokens to browser storage.
+- API and auth errors are returned through sanitized structured responses.
+
+### DF-018: Fabric Lakehouse tables and files cannot be imported
+
+**Status**: Planned; blocked by DF-017 and data-plane spike \
+**Severity**: Medium \
+**Area**: Fabric Lakehouse, OneLake, data loaders
+
+Fabric Lakehouse import is not yet implemented for either Delta tables or file
+objects. This work is blocked by DF-017 discovery/auth foundations and a
+data-plane correctness spike.
+
+Planned implementation work is tracked in
+`docs/plans/2026-07-09-fabric-lakehouse.md`.
+
+Impact:
+
+- Users can neither browse Lakehouse data-plane assets nor import supported
+  table/file data to workspaces.
+- Lakehouse source identity and import safety guarantees are currently absent.
+
+Recommended remediation:
+
+1. Implement dual-token handling: Fabric metadata token and Storage-audience
+   OneLake token with fail-closed audience checks.
+2. Use GUID-based source identifiers for workspace, item, and table/file
+   references.
+3. Complete a Delta snapshot correctness spike comparing `delta-rs` against DFS
+   and Delta log semantics.
+4. Define first supported file formats, enforce confined paths, and apply byte
+   and row limits.
+5. Validate regional and private-endpoint behavior for OneLake access paths.
+
+Acceptance criteria:
+
+- A `FabricLakehouseDataLoader` is registered through the connector system.
+- Catalog browsing works for supported Lakehouse tables and files.
+- Delta and first-slice supported file imports succeed.
+- Import enforcement applies `MAX_IMPORT_ROWS` plus a documented byte cap.
+- Token audience checks fail closed.
+- Automated tests cover discovery, import, limits, and error handling.
+
+### DF-019: Fabric semantic models cannot be queried or imported
+
+**Status**: Planned; blocked by DF-017 and metadata/API-selection spikes \
+**Severity**: Medium \
+**Area**: Fabric semantic models, Power BI APIs, RLS
+
+Fabric semantic model querying and import are not yet implemented. Delivery is
+blocked by DF-017 shared discovery/auth work and metadata/API-selection spikes.
+
+Planned implementation work is tracked in
+`docs/plans/2026-07-09-fabric-semantic-models.md`.
+
+Impact:
+
+- Users cannot query semantic models through delegated permissions.
+- Data Formulator cannot import safe semantic-model result slices into
+  workspaces.
+
+Recommended remediation:
+
+1. Use Fabric discovery plus delegated Power BI `Dataset.Read.All` token flow
+   with strict audience and permission checks.
+2. Implement JSON `executeQueries` as the first query path, with Arrow support
+   gated behind explicit validation.
+3. Preserve existing RLS semantics and avoid service-principal equivalence for
+   delegated user flows.
+4. Disallow arbitrary DAX and `impersonatedUserName`; provide safe server query
+   templates.
+5. Enforce documented API limits and throttling controls.
+
+Acceptance criteria:
+
+- A semantic-model loader is registered and integrated with discovery.
+- Query results can be safely materialized to Arrow and Parquet through the
+  approved path.
+- RLS is preserved for delegated user queries.
+- Limits enforce 15 MB response size, 100K rows per query, 1M values per query,
+  and 120 queries per minute.
+- Errors are sanitized and returned through the unified error format.
 
 ## Confirmed Strengths
 
@@ -702,17 +1053,3 @@ implementation:
   updates because each update creates a new revision and process.
 - The `CachedAzureBlobWorkspace` executor concern is not on the current manager
   path because `AzureBlobWorkspaceManager` returns `AzureBlobWorkspace`.
-- A random Flask secret is not a deployed issue because the Container App Bicep
-  supplies the stable `flask-secret-key` secret.
-
-## Suggested Order
-
-1. Resolve DF-011 to prevent concurrent Azure metadata loss.
-2. Resolve DF-012 and DF-001 together as container memory and deployment
-   safety work.
-3. Resolve DF-002 before expanding connector access to untrusted users.
-4. Resolve DF-003 and DF-004 together as the connector lifecycle hardening
-   pass.
-5. Complete DF-009 transport-level retry handling.
-6. Address DF-005 through DF-008 and DF-013 through DF-015 as medium-priority
-   production hardening work.

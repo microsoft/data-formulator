@@ -30,9 +30,9 @@ class PostgreSQLDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "user", "type": "string", "required": True, "default": "postgres", "tier": "auth", "description": "PostgreSQL username"}, 
-            {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"}, 
-            {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "PostgreSQL host"}, 
+            {"name": "user", "type": "string", "required": True, "default": "postgres", "tier": "auth", "description": "PostgreSQL username"},
+            {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"},
+            {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "PostgreSQL host"},
             {"name": "port", "type": "string", "required": False, "default": "5432", "tier": "connection", "description": "PostgreSQL port"},
             {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Database name (leave empty to browse all databases)"}
         ]
@@ -111,6 +111,12 @@ class PostgreSQLDataLoader(ExternalDataLoader):
     _UNSUPPORTED_TYPES = _SPATIAL_TYPES | _OTHER_UNSUPPORTED
 
     _CONNECT_TIMEOUT = 10  # seconds — prevents hangs on unreachable databases
+
+    def close(self) -> None:
+        connection = getattr(self, "_conn", None)
+        if connection is not None:
+            connection.close()
+            self._conn = None
 
     def _connection_kwargs(self, dbname: str) -> dict[str, Any]:
         # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
@@ -213,7 +219,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
 
         if not source_table:
             raise ValueError("source_table must be provided")
-        
+
         db, schema, table = self._resolve_source_table(source_table)
 
         col_list = self._safe_select_list(schema, table, dbname=db)
@@ -226,23 +232,23 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         ) or build_where_clause_inline(conditions, quote_char='"')
         if where_clause:
             base_query = f"{base_query} {where_clause}"
-        
+
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
             sanitized_cols = [f'{_esc_id(col, chr(34))} {order_direction}' for col in sort_columns]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
-        
+
         # Build full query with limit
         query = f"{base_query}{order_by_clause} LIMIT {int(size)}"
-        
+
         logger.info(f"Executing PostgreSQL query: {query[:200]}...")
-        
+
         arrow_table = self._read_sql_on(query, db) if db else self._read_sql(query)
-        
+
         logger.info(f"Fetched {arrow_table.num_rows} rows from PostgreSQL")
-        
+
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
@@ -266,12 +272,12 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         """
         try:
             query = """
-                SELECT table_schema as schemaname, table_name as tablename 
-                FROM information_schema.tables 
-                WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast') 
+                SELECT table_schema as schemaname, table_name as tablename
+                FROM information_schema.tables
+                WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
                 AND table_schema !~ '^pg_temp_[0-9]+$'
                 AND table_schema !~ '^pg_toast_temp_[0-9]+$'
-                AND table_schema NOT LIKE '%_intern%' 
+                AND table_schema NOT LIKE '%_intern%'
                 AND table_schema NOT LIKE '%timescaledb%'
                 AND table_name NOT LIKE '%/%'
                 AND table_type = 'BASE TABLE'
