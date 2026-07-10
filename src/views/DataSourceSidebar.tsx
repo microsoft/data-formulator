@@ -42,6 +42,7 @@ import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 import StorageIcon from '@mui/icons-material/Storage';
 import AddIcon from '@mui/icons-material/Add';
+import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -314,7 +315,7 @@ export const DataSourceSidebar: React.FC<{
                         borderRadius: 1,
                         '&:hover': { bgcolor: 'action.hover' },
                     }}>
-                        <AddIcon fontSize="small" />
+                        <AddCircleIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
