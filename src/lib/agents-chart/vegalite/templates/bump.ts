@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { ChartTemplateDef } from '../../core/types';
+import { toTypeString } from '../../core/field-semantics';
 import { defaultBuildEncodings } from './utils';
 
 /** Semantic types that indicate a rank-like field */
@@ -33,8 +34,8 @@ export const bumpChartDef: ChartTemplateDef = {
         // --- Decide which axis is rank ---
         let rankAxis: 'x' | 'y';
 
-        const xSemType = (xEnc.field && semanticTypes?.[xEnc.field]) || '';
-        const ySemType = (yEnc.field && semanticTypes?.[yEnc.field]) || '';
+        const xSemType = xEnc.field ? toTypeString(semanticTypes?.[xEnc.field]) : '';
+        const ySemType = yEnc.field ? toTypeString(semanticTypes?.[yEnc.field]) : '';
         const xIsRank = RANK_SEMANTIC_TYPES.has(xSemType);
         const yIsRank = RANK_SEMANTIC_TYPES.has(ySemType);
 

@@ -185,6 +185,20 @@ export interface LoadPlan {
     reasoning?: string;
 }
 
+/**
+ * Agent-proposed inline connection form (design 38). Rendered as a card in the
+ * data-loading chat so the user can enter credentials and connect without
+ * leaving the conversation. One prompt === one form card === one new connection.
+ */
+export interface ConnectorFormPrompt {
+    sourceType: string;                 // loader registry key, e.g. "postgresql"
+    prefilled?: Record<string, string>; // non-sensitive, high-confidence seed values
+    status?: 'pending' | 'connected';   // pending = awaiting connect; connected = done
+    connectorId?: string;               // set once connected
+    connectionName?: string;            // display name of the created connection
+    tableCount?: number;                // optional: tables discovered on connect
+}
+
 export interface ChatMessage {
     id: string;
     role: 'user' | 'assistant';
@@ -194,7 +208,9 @@ export interface ChatMessage {
     codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
     pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
     loadPlan?: LoadPlan;                // Agent-proposed data loading plan
+    connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
     divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
+    hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
     timestamp: number;
 }
 

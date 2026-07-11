@@ -116,6 +116,15 @@ export const DataFormulatorFC = ({ }) => {
         setConnectorRefreshKey(k => k + 1);
         refreshPageConnectors();
     }, [refreshPageConnectors]);
+    // A connector created from a non-sidebar surface (e.g. the inline
+    // connection form in the data-loading chat, design 38) bumps this redux
+    // counter; refresh the connector list so the new source appears.
+    const connectorRefreshRequest = useSelector((state: DataFormulatorState) => state.connectorRefreshRequest);
+    useEffect(() => {
+        if (connectorRefreshRequest > 0) {
+            handleConnectorsChanged();
+        }
+    }, [connectorRefreshRequest, handleConnectorsChanged]);
     useEffect(() => {
         setPageConnectors([]);
         refreshPageConnectors();

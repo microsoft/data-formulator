@@ -623,7 +623,8 @@ class TestCatalogRoutes:
         assert data["data"]["tree"] == []
 
     def test_search_catalog_not_connected_returns_error(self, client):
-        with patch.object(DataConnector, "_get_identity", return_value="nobody"):
+        with patch.object(DataConnector, "_get_identity", return_value="nobody"), \
+             patch.object(DataConnector, "_try_ambient_reconnect", return_value=None):
             resp = client.post("/api/connectors/search-catalog", json={
                 "connector_id": "mock_db",
                 "query": "users",

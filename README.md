@@ -40,6 +40,15 @@ https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
 ## News 🔥🔥🔥
 
+[07-10-2026] **Data Formulator 0.8 alpha 1** — a preview of a more connected, agent-driven data workflow:
+
+- **Smarter agent handoffs.** Analysis can delegate directly to data loading while preserving the conversation and request context.
+- **A redesigned connector experience.** Progressive setup, explicit authentication paths, database discovery, clearer scope controls, and improved credential handling make data sources easier to configure safely.
+- **Better loading plans.** Recommended selections, compact previews, readable filters, provenance, and more reliable history and scrolling improve review before import.
+- **Stronger enterprise foundations.** Unified connector metadata, session-scoped knowledge and distillation improvements, model routing, and additional isolation guardrails prepare Data Formulator for larger deployments.
+
+> Preview with `pip install --pre data_formulator==0.8.0a1` or `uvx --from data_formulator==0.8.0a1 data_formulator`.
+
 [05-28-2026] **Data Formulator 0.7** — turn ANY data into insights in five easy steps:
 
 1.  **Connect.** Governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Need a custom source? Point your coding agent at the [data loader plugin guide](examples/plugins/README.md).

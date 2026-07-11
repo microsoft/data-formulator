@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class CosmosDBDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Cosmos DB"
+    DESCRIPTION = "Connect to Azure Cosmos DB and load items from containers."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

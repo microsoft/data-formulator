@@ -42,6 +42,7 @@ class SupersetLoader(ExternalDataLoader):
     """
 
     DISPLAY_NAME = "Superset"
+    DESCRIPTION = "Load datasets exposed by an Apache Superset instance."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

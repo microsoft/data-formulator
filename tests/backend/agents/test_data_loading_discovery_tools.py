@@ -540,3 +540,87 @@ class TestProbeData:
             })
         assert result == {"error": "bad column"}
         assert "note" not in result  # no cap note on error results
+
+
+# ------------------------------------------------------------------
+# Connector discovery + inline connection proposal (design 38)
+# ------------------------------------------------------------------
+
+
+class TestConnectorTools:
+    def test_list_connectors_returns_available(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        result = agent._tool_list_connectors({})
+
+        assert "connectors" in result
+        assert "unavailable" in result
+        by_type = {c["type"]: c for c in result["connectors"]}
+        # sqlite/local_folder are hidden from the connector form flow.
+        assert "local_folder" not in by_type
+        assert "sample_datasets" not in by_type
+        # Every entry is high-level only: no per-parameter detail leaks here.
+        for c in result["connectors"]:
+            assert set(c.keys()) == {"type", "name", "summary", "auth_mode", "available"}
+            assert c["available"] is True
+        # Calling the tool arms the propose_connection precondition.
+        assert agent._connectors_listed is True
+
+    def test_describe_connector_returns_full_detail(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        available = {c["type"] for c in agent._tool_list_connectors({})["connectors"]}
+        if not available:
+            pytest.skip("no connectors available in this environment")
+        source_type = next(iter(sorted(available)))
+
+        result = agent._tool_describe_connector({"source_type": source_type})
+        assert "error" not in result
+        assert result["type"] == source_type
+        assert isinstance(result["params"], list)
+        for p in result["params"]:
+            assert set(p.keys()) == {"name", "required", "tier", "sensitive", "description"}
+
+    def test_describe_connector_unknown_type(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        result = agent._tool_describe_connector({"source_type": "definitely_not_a_loader"})
+        assert "error" in result
+
+    def test_propose_connection_requires_list_first(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        available = {c["type"] for c in agent._tool_list_connectors({})["connectors"]}
+        if not available:
+            pytest.skip("no connectors available in this environment")
+        source_type = next(iter(sorted(available)))
+
+        # Reset the per-turn guard to simulate proposing without discovery.
+        agent._connectors_listed = False
+        result = agent._tool_propose_connection({"source_type": source_type})
+        assert "error" in result
+        assert "list_connectors" in result["error"]
+
+    def test_propose_connection_emits_connect_form_action(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        available = {c["type"] for c in agent._tool_list_connectors({})["connectors"]}
+        if not available:
+            pytest.skip("no connectors available in this environment")
+        source_type = next(iter(sorted(available)))
+
+        result = agent._tool_propose_connection({
+            "source_type": source_type,
+            "prefilled": {"host": "db.example.com", "empty": ""},
+        })
+        assert "error" not in result
+        actions = result["actions"]
+        assert len(actions) == 1
+        action = actions[0]
+        assert action["type"] == "connect_form"
+        assert action["source_type"] == source_type
+        # Empty values are dropped; real values are coerced to strings.
+        assert action["prefilled"] == {"host": "db.example.com"}
+        # LLM-facing result never echoes prefilled field values.
+        assert "db.example.com" not in result.get("summary", "")
+
+    def test_propose_connection_unknown_type(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        agent._tool_list_connectors({})
+        result = agent._tool_propose_connection({"source_type": "definitely_not_a_loader"})
+        assert "error" in result

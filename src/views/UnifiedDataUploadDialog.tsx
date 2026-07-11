@@ -13,6 +13,7 @@ import {
     Dialog,
     DialogContent,
     DialogTitle,
+    Divider,
     IconButton,
     TextField,
     Typography,
@@ -32,6 +33,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import HistoryIcon from '@mui/icons-material/History';
+import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 
@@ -44,7 +46,7 @@ import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrappe
 import { DataLoadingChat } from './DataLoadingChat';
 import { AnimatedAgentToyIcon } from './AgentToyIcon';
 import { AgentChatInput } from './AgentChatInput';
-import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { buildDataLoadingSuggestions, buildDataLoadingQuickActions } from './dataLoadingSuggestions';
 import { getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { generateUUID } from '../app/identity';
@@ -123,6 +125,12 @@ interface DataSourceCardProps {
     badge?: React.ReactNode;
     /** Optional hover tooltip; useful when `description` is truncated. */
     tooltip?: React.ReactNode;
+    /**
+     * When true the pill icon carries a faint primary accent at rest,
+     * marking it as an active "add data" call-to-action. Navigation pills
+     * (already-connected sources) leave this off to stay fully neutral.
+     */
+    accent?: boolean;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -211,67 +219,63 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
         : card;
 };
 
-// Compact pill variant of DataSourceCard. Used by the chat-focused landing
-// so data sources read as lightweight affordances orbiting the composer,
-// rather than a grid of blocks competing with it. Same click behavior as
-// DataSourceCard — only the visual weight differs. The description is
-// demoted to a hover tooltip so the row stays dense.
-const SourcePill: React.FC<DataSourceCardProps> = ({
+// Text-link variant of a source affordance. Used across the chat-focused
+// landing so every source/action reads as a single, lightweight link style
+// (an existing source, an "add connection" action, or a one-off upload)
+// rather than a mix of pills and links competing with the composer.
+// `accent` marks an entry with a faint primary icon at rest.
+const SourceLink: React.FC<DataSourceCardProps> = ({
     icon,
     title,
     description,
     onClick,
     disabled = false,
-    variant = 'data',
-    badge,
+    accent = false,
     tooltip,
 }) => {
-    const theme = useTheme();
-    const isAction = variant === 'action';
-
-    const pill = (
+    const link = (
         <Box
+            component="button"
+            type="button"
             onClick={disabled ? undefined : onClick}
+            disabled={disabled}
             sx={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 0.75,
-                pl: 0.625,
-                pr: 1.25,
-                py: 0.5,
+                gap: 0.5,
+                p: 0,
+                border: 'none',
+                background: 'none',
+                font: 'inherit',
                 maxWidth: '100%',
+                minWidth: 0,
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                border: `1px ${isAction ? 'dashed' : 'solid'} ${borderColor.divider}`,
-                borderRadius: 5,
                 opacity: disabled ? 0.5 : 1,
-                backgroundColor: 'background.paper',
-                transition: 'background-color 120ms ease, border-color 120ms ease',
+                color: accent ? 'primary.main' : 'text.secondary',
+                transition: 'color 120ms ease',
                 '&:hover': disabled ? {} : {
-                    backgroundColor: 'action.hover',
-                    borderColor: alpha(theme.palette.primary.main, 0.4),
+                    color: 'primary.main',
+                    '& .SourceLink-title': { textDecoration: 'underline', textUnderlineOffset: 2 },
                 },
             }}
         >
             <Box sx={{
-                color: disabled ? 'text.disabled' : 'primary.main',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                width: 22,
-                height: 22,
-                borderRadius: '50%',
-                backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                color: 'inherit',
                 flexShrink: 0,
                 '& .MuiSvgIcon-root': { fontSize: 15 },
             }}>
                 {icon}
             </Box>
             <Typography
-                variant="body2"
+                component="span"
+                className="SourceLink-title"
                 sx={{
-                    fontWeight: 500,
+                    fontWeight: 400,
                     fontSize: '0.8125rem',
-                    color: disabled ? 'text.disabled' : 'text.primary',
+                    lineHeight: 1.4,
+                    color: 'inherit',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -280,14 +284,13 @@ const SourcePill: React.FC<DataSourceCardProps> = ({
             >
                 {title}
             </Typography>
-            {badge}
         </Box>
     );
 
     const tip = tooltip ?? (description || null);
     return tip
-        ? <Tooltip title={tip} placement="top" arrow>{pill}</Tooltip>
-        : pill;
+        ? <Tooltip title={tip} placement="top" arrow>{link}</Tooltip>
+        : link;
 };
 
 const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
@@ -633,6 +636,13 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 tooltip: isLocalFolder && folderTooltip ? folderTooltip : undefined,
             };
         }),
+    ];
+
+    // "Create a new connection" actions (link a local folder, add a database).
+    // These live in the manual "Add data" row — to the right of the one-off
+    // loaders (upload / paste / URL), separated by a divider — rather than
+    // mixed in with the already-connected sources above.
+    const connectorActionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action' }> = [
         // "Local Folder" card (action variant, local mode only)
         ...(serverConfig?.IS_LOCAL_MODE ? [{
             value: 'local-folder' as UploadTabType,
@@ -723,8 +733,45 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             : undefined,
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [t, onStartChat]);
+    const quickActions = useMemo(() => buildDataLoadingQuickActions({
+        t,
+        setInput: setAgentInput,
+        setImages: setAgentImages,
+        setAttachments: setAgentAttachments,
+        requestAutoSend: onStartChat
+            ? (payload) => {
+                  onStartChat(payload.text, payload.images, payload.attachments);
+                  setAgentInput('');
+                  setAgentImages([]);
+                  setAgentAttachments([]);
+              }
+            : undefined,
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, onStartChat]);
     const agentChatBox = (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
+                {quickActions.map((qa) => (
+                    <Chip
+                        key={qa.kind}
+                        icon={<BoltOutlinedIcon />}
+                        label={qa.label}
+                        onClick={qa.onClick}
+                        variant="outlined"
+                        size="small"
+                        sx={{
+                            fontSize: 12, height: 28, borderRadius: 2,
+                            color: 'text.secondary',
+                            borderColor: alpha(theme.palette.text.primary, 0.12),
+                            '& .MuiChip-icon': { fontSize: 15, ml: 0.5, color: 'text.disabled' },
+                            '&:hover': {
+                                bgcolor: 'action.hover',
+                                borderColor: alpha(theme.palette.text.primary, 0.2),
+                            },
+                        }}
+                    />
+                ))}
+            </Box>
             <AgentChatInput
                 value={agentInput}
                 onChange={setAgentInput}
@@ -788,48 +835,68 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 
             {/* Sources — same width as the chat box so they read as part of it */}
             <Box sx={{ width: '100%', maxWidth: 900, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {/* Connected sources status bar — "Connected: xxx, xxx  + connect + link" */}
-                <Box sx={{ 
+                {/* Row 1 — connected data sources (as lightweight links): the
+                    already-connected instances, then a divider, then the
+                    "add a connection" actions (link folder / connect db). */}
+                <Box sx={{
                     display: 'flex',
                     flexWrap: 'wrap',
                     alignItems: 'center',
-                    gap: 0.75,
+                    columnGap: 1.5,
+                    rowGap: 0.75,
                 }}>
                     <Typography
                         variant="body2"
                         sx={{ fontSize: '0.75rem', color: 'text.secondary', opacity: 0.7, mr: 0.25, flexShrink: 0 }}
                     >
-                        {t('upload.connectedLabel', { defaultValue: 'Connected:' })}
+                        {t('upload.dataSourcesLabel', { defaultValue: 'Connected data sources:' })}
                     </Typography>
                     {connectionSources.map((source) => (
-                        <SourcePill
+                        <SourceLink
                             key={source.value}
                             icon={source.icon}
                             title={source.title}
                             description={source.description}
                             onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
-                            variant={source.variant}
                             tooltip={source.tooltip}
+                        />
+                    ))}
+                    {connectionSources.length > 0 && connectorActionSources.length > 0 && (
+                        <Divider
+                            orientation="vertical"
+                            flexItem
+                            sx={{ my: 0.25, borderColor: alpha(theme.palette.text.primary, 0.12) }}
+                        />
+                    )}
+                    {connectorActionSources.map((source) => (
+                        <SourceLink
+                            key={source.value}
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => handleConnectionClick(source.value)}
+                            disabled={source.disabled}
                         />
                     ))}
                 </Box>
 
-                {/* Manual upload — one-off sources (file, paste, URL) */}
-                <Box sx={{ 
+                {/* Row 2 — one-off uploads (file / paste / URL), same link style. */}
+                <Box sx={{
                     display: 'flex',
                     flexWrap: 'wrap',
                     alignItems: 'center',
-                    gap: 0.75,
+                    columnGap: 1.5,
+                    rowGap: 0.75,
                 }}>
                     <Typography
                         variant="body2"
                         sx={{ fontSize: '0.75rem', color: 'text.secondary', opacity: 0.7, mr: 0.25, flexShrink: 0 }}
                     >
-                        {t('upload.loadDirectlyLabel', { defaultValue: 'or load data directly:' })}
+                        {t('upload.uploadDataLabel', { defaultValue: 'Upload data:' })}
                     </Typography>
                     {regularDataSources.map((source) => (
-                        <SourcePill
+                        <SourceLink
                             key={source.value}
                             icon={source.icon}
                             title={source.title}

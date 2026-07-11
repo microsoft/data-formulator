@@ -584,6 +584,11 @@ const DataSourceSidebarPanel: React.FC<{
     }, [dispatch, t]);
 
     const importRef = useRef<HTMLInputElement>(null);
+    // Scroll container element for the connectors list. Held in state (via a
+    // callback ref) so catalog trees re-render once it mounts and can window
+    // against it (react-virtuoso `customScrollParent`) — avoiding a nested
+    // scrollbar per expanded connector.
+    const [connectorScrollEl, setConnectorScrollEl] = useState<HTMLElement | null>(null);
     const handleImportWorkspace = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -1609,7 +1614,7 @@ const DataSourceSidebarPanel: React.FC<{
                         </IconButton>
                     </Tooltip>
                 </Box>
-            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
+            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }} ref={setConnectorScrollEl}>
 
                 {/* Search box: typing filters local cache, Enter/button searches backend. */}
                 <Box sx={{ px: 1.5, pt: 1, pb: 0.5 }}>
@@ -1697,6 +1702,10 @@ const DataSourceSidebarPanel: React.FC<{
                     const catalogError = !serverSearchActive && catalogState?.status === 'error'
                         ? catalogState.error
                         : undefined;
+                    // The catalog body shows its own spinner while the initial
+                    // catalog loads (expanded, no cache yet). Suppress the inline
+                    // refresh spinner in that case so we don't render two.
+                    const bodySpinnerVisible = connector.connected && isExpanded && !displayCache && isLoading;
                     const expanded = treeExpanded[connector.id] || [];
 
                     return (
@@ -1787,10 +1796,10 @@ const DataSourceSidebarPanel: React.FC<{
                                                 color: 'text.disabled', p: 0.25,
                                                 // Stays visible while a refresh is in-flight so the
                                                 // spinner is always shown.
-                                                visibility: isLoading ? 'visible' : 'hidden',
+                                                visibility: (isLoading && !bodySpinnerVisible) ? 'visible' : 'hidden',
                                             }}
                                         >
-                                            {isLoading
+                                            {(isLoading && !bodySpinnerVisible)
                                                 ? <CircularProgress size={12} />
                                                 : <RefreshIcon sx={{ fontSize: 14 }} />}
                                         </IconButton>
@@ -1939,6 +1948,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                 );
                                             }}
                                             maxHeight="none"
+                                            scrollParent={connectorScrollEl}
                                             sx={{ px: 0.5 }}
                                         />
                                     )}

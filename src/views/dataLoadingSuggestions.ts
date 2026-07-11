@@ -6,7 +6,6 @@
 
 import { TFunction } from 'i18next';
 import React from 'react';
-import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
@@ -52,13 +51,9 @@ const EXCEL_SAMPLE_NAME = 'climate-gas-indicator.xlsx';
 export function buildDataLoadingSuggestions(
     { t, setInput, setImages, setAttachments, ensureActiveWorkspace, requestAutoSend }: BuildSuggestionsArgs,
 ): DataLoadingSuggestion[] {
-    const kindAsk = t('upload.agentChatSuggestion.kind.ask', { defaultValue: 'ask' });
     const kindFind = t('upload.agentChatSuggestion.kind.find', { defaultValue: 'find' });
     const kindExtract = t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' });
 
-    const askLabel = t('upload.agentChatSuggestion.askConnected', {
-        defaultValue: 'What datasets do we have from connected sources?',
-    });
     const findLabel = t('upload.agentChatSuggestion.findCPI', {
         defaultValue: 'Help me load consumer price index data',
     });
@@ -88,12 +83,6 @@ export function buildDataLoadingSuggestions(
     };
 
     return [
-        {
-            kind: kindAsk,
-            label: askLabel,
-            icon: React.createElement(QuestionAnswerOutlinedIcon, { sx: iconSx }),
-            onClick: () => fillAndMaybeSend({ text: askLabel, images: [], attachments: [] }),
-        },
         {
             kind: kindFind,
             label: findLabel,
@@ -170,6 +159,50 @@ export function buildDataLoadingSuggestions(
             label: extractTextLabel,
             icon: React.createElement(DescriptionOutlinedIcon, { sx: iconSx }),
             onClick: () => fillAndMaybeSend({ text: extractTextPrompt, images: [], attachments: [] }),
+        },
+    ];
+}
+
+export interface DataLoadingQuickAction {
+    kind: string;
+    label: string;
+    onClick: () => void;
+}
+
+/**
+ * A short list of one-tap "quick actions" surfaced as pills above the
+ * composer (distinct from the `focusSuggestions` dropdown, which holds
+ * example prompts). These are the highest-intent entry points — connect a
+ * source, or see what connected data is already available. Rendered without
+ * icons to keep the empty-state / front page clean.
+ */
+export function buildDataLoadingQuickActions(
+    { t, setInput, setImages, setAttachments, requestAutoSend }: BuildSuggestionsArgs,
+): DataLoadingQuickAction[] {
+    const connectLabel = t('upload.agentChatQuickAction.connect', {
+        defaultValue: 'Help me connect to my data source',
+    });
+    const askLabel = t('upload.agentChatQuickAction.askConnected', {
+        defaultValue: 'What data do we have from connected sources?',
+    });
+
+    const fillAndSend = (text: string) => {
+        setImages([]);
+        setAttachments([]);
+        setInput(text);
+        requestAutoSend?.({ text, images: [], attachments: [] });
+    };
+
+    return [
+        {
+            kind: 'connect',
+            label: connectLabel,
+            onClick: () => fillAndSend(connectLabel),
+        },
+        {
+            kind: 'ask',
+            label: askLabel,
+            onClick: () => fillAndSend(askLabel),
         },
     ];
 }

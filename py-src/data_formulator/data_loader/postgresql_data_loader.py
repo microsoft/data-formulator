@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class PostgreSQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "PostgreSQL"
+    DESCRIPTION = "Connect to a PostgreSQL database server to query tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

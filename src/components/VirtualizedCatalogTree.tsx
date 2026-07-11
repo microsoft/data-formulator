@@ -2,10 +2,14 @@
 // Licensed under the MIT License.
 
 /**
- * VirtualizedCatalogTree — react-window FixedSizeList backed virtualized tree
- * for large catalogs (5000+ nodes).
+ * VirtualizedCatalogTree — virtualized catalog tree for large catalogs
+ * (5000+ nodes).
  *
- * Drop-in replacement for SimpleTreeView + renderCatalogTreeItems.
+ * Windows against an ancestor scroll element via react-virtuoso
+ * `customScrollParent` when a `scrollParent` is supplied (avoids a nested
+ * scrollbar); otherwise falls back to a self-contained react-window
+ * `FixedSizeList`. Small trees render flat (non-virtualized).
+ *
  * Preserves lazy-load expand, load-more pagination, drag-to-import,
  * and source_metadata_status hints.
  */
@@ -13,6 +17,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
+import { Virtuoso } from 'react-virtuoso';
 import { Box, Tooltip, Typography, useTheme } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
@@ -91,6 +96,10 @@ export interface VirtualizedCatalogTreeProps {
     /** Max height when auto-sizing (default 600). Pass "none" for unconstrained. */
     maxHeight?: number | 'none';
     rowHeight?: number;
+    /** When provided, virtualization windows against this ancestor scroll
+     *  element (via react-virtuoso `customScrollParent`) instead of creating
+     *  its own inner scroll container — avoids a nested scrollbar. */
+    scrollParent?: HTMLElement | null;
     sx?: Record<string, any>;
 }
 
@@ -146,10 +155,9 @@ const ITEM_LABEL_GAP = 4;
 /** Left padding for the row's content (slot + label). */
 const rowPadLeft = (depth: number) => depth * INDENT_PER_LEVEL;
 
-function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>) {
-    const { rows, loadedMap, onToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId,
+function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSSProperties; data: RowContext }) {
+    const { loadedMap, onToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId,
         selectionEnabled, selectedIds, onToggleSelectTable, onToggleSelectNamespace, renderHoverCard } = data;
-    const row = rows[index];
     const { node, depth, isExpanded, isLazyPlaceholder } = row;
     const theme = useTheme();
     const { t } = useTranslation();
@@ -374,6 +382,12 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
     );
 }
 
+// react-window adapter: resolves the row by index and delegates to the shared
+// row renderer. Used by the FixedSizeList fallback (no scrollParent).
+function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>) {
+    return <CatalogRowInner row={data.rows[index]} style={style} data={data} />;
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 const ROW_HEIGHT = 24;
@@ -397,6 +411,7 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
     onToggleSelectNamespace,
     maxHeight: maxHeightProp = 600,
     rowHeight = ROW_HEIGHT,
+    scrollParent,
     sx,
 }) => {
     const unconstrained = maxHeightProp === 'none';
@@ -449,14 +464,34 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
         const boxMaxHeight = unconstrained ? undefined : maxHeightNum;
         return (
             <Box sx={{ maxHeight: boxMaxHeight, overflowY: totalHeight > maxHeightNum ? 'auto' : 'visible', ...sx }}>
-                {flatRows.map((row, index) => (
-                    <CatalogRow
+                {flatRows.map((row) => (
+                    <CatalogRowInner
                         key={row.node.path.join('/')}
-                        index={index}
+                        row={row}
                         style={{ height: rowHeight }}
                         data={rowContext}
                     />
                 ))}
+            </Box>
+        );
+    }
+
+    // When an ancestor scroll element is provided, window against it instead of
+    // creating a bounded inner scroll container — this removes the nested
+    // scrollbar while keeping virtualization. react-virtuoso natively supports
+    // multiple instances sharing one `customScrollParent`.
+    if (scrollParent) {
+        return (
+            <Box sx={sx}>
+                <Virtuoso
+                    customScrollParent={scrollParent}
+                    data={flatRows}
+                    computeItemKey={(_index, row) => row.node.path.join('/')}
+                    itemContent={(_index, row) => (
+                        <CatalogRowInner row={row} style={{ height: rowHeight }} data={rowContext} />
+                    )}
+                    increaseViewportBy={200}
+                />
             </Box>
         );
     }

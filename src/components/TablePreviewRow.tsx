@@ -88,7 +88,7 @@ export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
                             mt: 0.75,
                             // Reserve space only for the asynchronous loading
                             // state. Once resolved, the table uses natural
-                            // height: five rows plus the truncation caption fit
+                            // height: five rows plus the truncation row fit
                             // without a scroller, while short tables stay compact.
                             ...(loadingHeight && preview.state === 'loading' ? {
                                 height: loadingHeight,
@@ -121,7 +121,7 @@ export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
                                     totalRows={preview.totalRows}
                                     maxRows={5} maxColumns={8} maxCellLength={18}
                                     fontSize={10.5} headerFontSize={10}
-                                    truncationIndicator="caption"
+                                    truncationIndicator="row"
                                 />
                             ) : preview.state === 'ready' ? (
                                 <Typography sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>

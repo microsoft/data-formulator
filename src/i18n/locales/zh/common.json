@@ -865,6 +865,7 @@
     "knowledge": "知识库",
     "metadataPartial": "元数据不完整",
     "metadataUnavailable": "元数据不可用",
+    "largeTableChatPrompt": "我想从“{{connector}}”加载以下表：{{tables}}。这些表太大，无法完整导入：{{large}}。请帮我加载经过筛选、抽样或聚合的子集，而不是整个表。",
     "saving": "保存中...",
     "rename": "重命名",
     "exportSession": "导出",

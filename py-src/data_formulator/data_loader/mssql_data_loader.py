@@ -25,6 +25,7 @@ def _is_nan(value) -> bool:
 
 class MSSQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "SQL Server"
+    DESCRIPTION = "Connect to a Microsoft SQL Server database to query tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

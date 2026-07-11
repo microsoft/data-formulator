@@ -38,6 +38,7 @@ def _coerce_int(value: Any) -> int | None:
 
 class KustoDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Kusto"
+    DESCRIPTION = "Query Azure Data Explorer (Kusto) clusters and databases with KQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

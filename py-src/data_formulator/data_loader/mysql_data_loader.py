@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 class MySQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "MySQL"
+    DESCRIPTION = "Connect to a MySQL database server to query tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

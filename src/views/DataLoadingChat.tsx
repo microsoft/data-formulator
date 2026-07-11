@@ -15,6 +15,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import CheckIcon from '@mui/icons-material/Check';
+import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import LanguageIcon from '@mui/icons-material/Language';
@@ -29,13 +30,14 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
-import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { buildDataLoadingSuggestions, buildDataLoadingQuickActions } from './dataLoadingSuggestions';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, streamRequest } from '../app/apiClient';
-import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate } from '../components/ComponentType';
+import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate, ConnectorFormPrompt } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
 import { LoadPlanCard, PendingLoadsCard } from '../components/LoadPlanCard';
+import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
 import { formatFilterChipLabel } from '../components/filterFormat';
 import { AgentChatInput } from './AgentChatInput';
@@ -369,7 +371,8 @@ const ChatBubble = React.memo<{
     message: ChatMessage;
     existingNames: Set<string>;
     onTableLoaded?: () => void;
-}>(({ message, existingNames, onTableLoaded }) => {
+    isLatestPendingConnector?: boolean;
+}>(({ message, existingNames, onTableLoaded, isLatestPendingConnector }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
@@ -560,6 +563,20 @@ const ChatBubble = React.memo<{
                                 onTableLoaded?.();
                             }
                         }}
+                    />
+                )}
+                {/* Inline connection form — Agent-proposed via propose_connection.
+                    Only the latest still-pending form stays expanded; older ones
+                    collapse to a header the user can reopen (design 38). */}
+                {message.connectorForm && (
+                    <ConnectorFormCard
+                        messageId={message.id}
+                        prompt={message.connectorForm}
+                        defaultExpanded={
+                            message.connectorForm.status === 'connected'
+                                ? false
+                                : (isLatestPendingConnector ?? true)
+                        }
                     />
                 )}
                 {/* Timestamp + debug — always reserves space, content visible on hover */}
@@ -822,6 +839,16 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         [existingTables],
     );
 
+    // Id of the last message whose inline connection form is still pending, so
+    // only that card stays expanded (older forms auto-collapse) — design 38.
+    const latestPendingConnectorMsgId = React.useMemo(() => {
+        for (let i = chatMessages.length - 1; i >= 0; i--) {
+            const cf = chatMessages[i].connectorForm;
+            if (cf && cf.status !== 'connected') return chatMessages[i].id;
+        }
+        return undefined;
+    }, [chatMessages]);
+
     const [prompt, setPrompt] = useState('');
     const [userImages, setUserImages] = useState<string[]>([]);
     const [userAttachments, setUserAttachments] = useState<string[]>([]);
@@ -928,12 +955,16 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     // Reading via the `prompt`/`userImages`/`userAttachments` closures
     // alone would be racy with batching and could submit the previous
     // round's values on a fresh handoff.
-    const sendMessage = useCallback((explicit?: { text: string; images: string[]; attachments: string[] }) => {
+    const sendMessage = useCallback((explicit?: { text: string; images: string[]; attachments: string[]; hidden?: boolean }) => {
         const text = (explicit?.text ?? prompt).trim();
         const imgs = explicit?.images ?? userImages;
         const atts = explicit?.attachments ?? userAttachments;
         if (!text && imgs.length === 0 && atts.length === 0) return;
         if (chatInProgress) return;
+        // A hidden trigger (e.g. a post-connect continuation) is sent to the
+        // agent as context but never rendered as a user bubble, and it must
+        // not disturb whatever the user may be typing in the input box.
+        const hidden = explicit?.hidden ?? false;
         const imageAttachments: ChatAttachment[] = imgs.map((url, i) => ({
             type: 'image' as const, name: `image-${i + 1}`, url,
         }));
@@ -952,6 +983,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
             id: `msg-${Date.now()}-user`, role: 'user',
             content: displayText,
             attachments: attachments.length > 0 ? attachments : undefined,
+            hidden: hidden || undefined,
             timestamp: Date.now(),
         };
 
@@ -964,9 +996,11 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
 
         dispatch(dfActions.addChatMessage(userMsg));
         dispatch(dfActions.setDataLoadingChatInProgress(true));
-        setPrompt('');
-        setUserImages([]);
-        setUserAttachments([]);
+        if (!hidden) {
+            setPrompt('');
+            setUserImages([]);
+            setUserAttachments([]);
+        }
         setStreamingContent('');
         setStreamingToolSteps([]);
 
@@ -994,6 +1028,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 const tables: InlineTablePreview[] = [];
                 const pendingLoads: PendingTableLoad[] = [];
                 let loadPlanRef: LoadPlan | undefined;
+                let connectorFormRef: ConnectorFormPrompt | undefined;
                 const rawEvents: any[] = [];
                 let streamingToolStepsRef: ToolStep[] = [];
 
@@ -1033,6 +1068,12 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                 selected: !c.resolution_error && c.selected !== false,
                             })),
                             reasoning: action.reasoning,
+                        };
+                    } else if (action.type === 'connect_form') {
+                        connectorFormRef = {
+                            sourceType: action.source_type,
+                            prefilled: action.prefilled || undefined,
+                            status: 'pending',
                         };
                     }
                 }
@@ -1122,6 +1163,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 tables: tables.length > 0 && pendingLoads.length === 0 ? tables : undefined,
                 pendingLoads: pendingLoads.length > 0 ? pendingLoads : undefined,
                 loadPlan: loadPlanRef,
+                connectorForm: connectorFormRef,
                 timestamp: Date.now(),
             };
             dispatch(dfActions.addChatMessage(assistantMsg));
@@ -1209,6 +1251,17 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [t, dispatch]);
 
+    const quickActions = React.useMemo(() => buildDataLoadingQuickActions({
+        t,
+        setInput: setPrompt,
+        setImages: setUserImages,
+        setAttachments: setUserAttachments,
+        requestAutoSend: (payload) => {
+            dispatch(dfActions.queueDataLoadingTask(payload));
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, dispatch]);
+
     const isEmpty = chatMessages.length === 0 && !streamingContent;
 
     const capabilities = [
@@ -1278,12 +1331,15 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                         {chatMessages.map((msg) => (
                             msg.divider
                                 ? <TaskDivider key={msg.id} />
-                                : <ChatBubble
-                                    key={msg.id}
-                                    message={msg}
-                                    existingNames={existingNames}
-                                    onTableLoaded={handleTableLoaded}
-                                />
+                                : msg.hidden
+                                    ? null
+                                    : <ChatBubble
+                                        key={msg.id}
+                                        message={msg}
+                                        existingNames={existingNames}
+                                        onTableLoaded={handleTableLoaded}
+                                        isLatestPendingConnector={msg.id === latestPendingConnectorMsgId}
+                                    />
                         ))}
                         {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
                         {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}
@@ -1296,6 +1352,30 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
             {/* ── Input area ─────────────────────────────────────── */}
             <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, pb: 1.5, pt: 0.75 }}>
                 <Box sx={{ width: '100%', maxWidth: 640 }}>
+                    {isEmpty && quickActions.length > 0 && (
+                        <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
+                            {quickActions.map((qa) => (
+                                <Chip
+                                    key={qa.kind}
+                                    icon={<BoltOutlinedIcon />}
+                                    label={qa.label}
+                                    onClick={qa.onClick}
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{
+                                        fontSize: 11.5, height: 26, borderRadius: 2,
+                                        color: 'text.secondary',
+                                        borderColor: alpha(theme.palette.text.primary, 0.12),
+                                        '& .MuiChip-icon': { fontSize: 14, ml: 0.5, color: 'text.disabled' },
+                                        '&:hover': {
+                                            bgcolor: 'action.hover',
+                                            borderColor: alpha(theme.palette.text.primary, 0.2),
+                                        },
+                                    }}
+                                />
+                            ))}
+                        </Box>
+                    )}
                     <AgentChatInput
                         value={prompt}
                         onChange={setPrompt}

@@ -107,7 +107,13 @@ export const DataLoaderForm: React.FC<{
      *  user knows credentials are stored on the server (and sees the field
      *  is intentionally empty for security, not a missing config). */
     hasStoredCredentials?: boolean,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], connectionName, formTitle, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials}) => {
+    /** When true, lay parameters out in a single column and tighten spacing
+     *  so the form fits inside a chat card (design 38). */
+    compact?: boolean,
+    /** When true, suppress the connector's built-in authInstructions block so
+     *  agent-authored setup guidance can replace it (design 38). */
+    hideInstructions?: boolean,
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], connectionName, formTitle, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const loaderTypeKey = loaderType || dataLoaderType;
@@ -540,10 +546,13 @@ export const DataLoaderForm: React.FC<{
                         const labelShrinkSlotProps = { inputLabel: { shrink: true } };
                         const paramGridSx = {
                             display: 'grid',
-                            gridTemplateColumns: 'repeat(2, minmax(0, 280px))',
-                            columnGap: 2,
-                            rowGap: 2.25,
-                            maxWidth: 576,
+                            // Compact (inline chat) mode packs related fields two-up
+                            // (host|port, user|password, database|table_filter) so
+                            // the form stays short; the tier headers group each pair.
+                            gridTemplateColumns: compact ? 'repeat(2, minmax(0, 150px))' : 'repeat(2, minmax(0, 280px))',
+                            columnGap: compact ? 1.5 : 2,
+                            rowGap: compact ? 1.25 : 2.25,
+                            maxWidth: compact ? 320 : 576,
                         };
                         if (!hasTiers) {
                             // Legacy: no tier field, render flat grid
@@ -911,7 +920,7 @@ export const DataLoaderForm: React.FC<{
                             </Box>
                         );
                     })()}
-                    {localizedAuthInstructions && (
+                    {localizedAuthInstructions && !hideInstructions && (
                         <Box sx={(theme) => ({
                             mt: 3, px: 1.5, py: 1, 
                             backgroundColor: 'rgba(0,0,0,0.02)',

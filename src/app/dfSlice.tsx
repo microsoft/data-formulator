@@ -238,7 +238,14 @@ export interface DataFormulatorState {
      * cross-tick race where the parent's pre-clear would otherwise
      * cancel the auto-send for the new prompt. Transient — not persisted.
      */
-    dataLoadingChatPending: { text: string; images: string[]; attachments: string[] } | null;
+    dataLoadingChatPending: { text: string; images: string[]; attachments: string[]; hidden?: boolean } | null;
+    /**
+     * Monotonic counter bumped whenever a connector is created/changed from a
+     * surface that is not the sidebar itself (e.g. the inline connection form
+     * in the data-loading chat, design 38). `DataFormulator` watches it and
+     * refreshes the connector list so the new source appears. Transient.
+     */
+    connectorRefreshRequest: number;
     /**
      * Pending hand-off from the Data Agent to a peer agent. Set by the
      * Data Agent's `delegate` action card; consumed by `DataFormulator`
@@ -343,6 +350,7 @@ const initialState: DataFormulatorState = {
     dataLoadingChatInProgress: false,
     dataLoadingChatResetCounter: 0,
     dataLoadingChatPending: null,
+    connectorRefreshRequest: 0,
     agentHandoffRequest: null,
 
     generatedReports: [],
@@ -909,6 +917,7 @@ export const dataFormulatorSlice = createSlice({
                 cleanInProgress: false,
                 dataLoadingChatInProgress: false,
                 dataLoadingChatResetCounter: 0,
+                connectorRefreshRequest: 0,
                 agentHandoffRequest: null,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
@@ -1773,7 +1782,7 @@ export const dataFormulatorSlice = createSlice({
         },
         setDataLoadingChatPending: (
             state,
-            action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
+            action: PayloadAction<{ text: string; images: string[]; attachments: string[]; hidden?: boolean }>,
         ) => {
             state.dataLoadingChatPending = action.payload;
         },
@@ -1820,6 +1829,33 @@ export const dataFormulatorSlice = createSlice({
             if (msg?.loadPlan) {
                 msg.loadPlan.candidates.forEach(c => { c.selected = false; });
             }
+        },
+        resolveConnectorForm: (
+            state,
+            action: PayloadAction<{
+                messageId: string;
+                status: 'pending' | 'connected';
+                connectorId?: string;
+                connectionName?: string;
+                tableCount?: number;
+            }>,
+        ) => {
+            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
+            if (msg?.connectorForm) {
+                msg.connectorForm.status = action.payload.status;
+                if (action.payload.connectorId !== undefined) {
+                    msg.connectorForm.connectorId = action.payload.connectorId;
+                }
+                if (action.payload.connectionName !== undefined) {
+                    msg.connectorForm.connectionName = action.payload.connectionName;
+                }
+                if (action.payload.tableCount !== undefined) {
+                    msg.connectorForm.tableCount = action.payload.tableCount;
+                }
+            }
+        },
+        requestConnectorRefresh: (state) => {
+            state.connectorRefreshRequest = (state.connectorRefreshRequest ?? 0) + 1;
         },
         setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
             state.dataLoadingChatInProgress = action.payload;

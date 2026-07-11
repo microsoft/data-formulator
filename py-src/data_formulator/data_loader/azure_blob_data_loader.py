@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class AzureBlobDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Azure Blob"
+    DESCRIPTION = "Load CSV, JSON, or Parquet files from an Azure Blob Storage container."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

@@ -15,6 +15,7 @@ class BigQueryDataLoader(ExternalDataLoader):
     """BigQuery data loader implementation"""
 
     DISPLAY_NAME = "BigQuery"
+    DESCRIPTION = "Query Google BigQuery datasets and tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

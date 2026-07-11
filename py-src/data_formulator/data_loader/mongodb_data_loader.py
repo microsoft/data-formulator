@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class MongoDBDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "MongoDB"
+    DESCRIPTION = "Connect to a MongoDB database and load documents from collections."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

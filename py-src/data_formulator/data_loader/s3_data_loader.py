@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class S3DataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Amazon S3"
+    DESCRIPTION = "Load CSV, JSON, or Parquet files from an Amazon S3 bucket."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

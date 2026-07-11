@@ -659,6 +659,12 @@ class ExternalDataLoader(ABC):
     #: ``"Mysql"``).
     DISPLAY_NAME: str | None = None
 
+    #: One-line, human-readable summary of what this connector is for.
+    #: Surfaced to the data-loading agent by ``list_connectors`` so it can
+    #: reason about which source a user means.  When ``None``, callers fall
+    #: back to ``DISPLAY_NAME``.  This is NOT the verbose ``auth_instructions``.
+    DESCRIPTION: str | None = None
+
     @staticmethod
     def delegated_login_config() -> dict[str, Any] | None:
         """Return config for delegated (popup-based) token login, or None.
