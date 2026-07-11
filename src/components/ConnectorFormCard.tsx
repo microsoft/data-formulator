@@ -225,7 +225,8 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
         borderRadius: 1.5,
         bgcolor: 'background.paper',
         overflow: 'hidden',
-        maxWidth: 420,
+        width: '100%',
+        maxWidth: 640,
     } as const;
 
     // Connected: a compact, borderless button that expands to reveal the

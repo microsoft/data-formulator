@@ -26,8 +26,6 @@ import {
 
 import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import ContentPasteIcon from '@mui/icons-material/ContentPaste';
-import LinkIcon from '@mui/icons-material/Link';
 import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -584,34 +582,12 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: 'Untitled Session' }));
         return wsId;
     };
-    // Data source configurations (upload-style entries — file, paste,
-    // URL). The "Data Loading Agent" entry is surfaced separately as a
-    // chat box at the top of the menu. Sample datasets are no longer
-    // listed here — they're now exposed as the built-in `sample_datasets`
-    // connector in the Data Connectors section below.
-    const regularDataSources = [
-        { 
-            value: 'upload' as UploadTabType, 
-            title: t('upload.uploadFile'), 
-            description: t('upload.uploadFileDesc'),
-            icon: <UploadFileIcon />, 
-            disabled: false
-        },
-        { 
-            value: 'paste' as UploadTabType, 
-            title: t('upload.pasteData'), 
-            description: t('upload.pasteDataDesc'),
-            icon: <ContentPasteIcon />, 
-            disabled: false
-        },
-        { 
-            value: 'url' as UploadTabType, 
-            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL' }), 
-            description: t('upload.loadFromUrlDesc'),
-            icon: <LinkIcon />, 
-            disabled: false,
-        },
-    ];
+    // One-off file upload is surfaced as an "Upload data" action in the
+    // connected-sources row (see `connectorActionSources`). Paste Data and
+    // Load from URL used to live here too, but they are now subsumed by the
+    // Data Loading Agent chat box at the top of the menu (paste text into the
+    // prompt; the agent's fetch_url loads any URL). Sample datasets are
+    // exposed as the built-in `sample_datasets` connector below.
 
     // Data connections — persistent configured sources (databases, services, etc.)
     const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action'; tooltip?: React.ReactNode }> = [
@@ -638,11 +614,18 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         }),
     ];
 
-    // "Create a new connection" actions (link a local folder, add a database).
-    // These live in the manual "Add data" row — to the right of the one-off
-    // loaders (upload / paste / URL), separated by a divider — rather than
-    // mixed in with the already-connected sources above.
+    // "Add data" actions shown to the right of the connected sources (after a
+    // divider): one-off file upload, link a local folder, add a database.
     const connectorActionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action' }> = [
+        // One-off file upload — fast, deterministic path that skips the agent.
+        {
+            value: 'upload' as UploadTabType,
+            title: t('upload.uploadData', { defaultValue: 'Upload data' }),
+            description: t('upload.uploadFileDesc'),
+            icon: <UploadFileIcon />,
+            disabled: false,
+            variant: 'action' as const,
+        },
         // "Local Folder" card (action variant, local mode only)
         ...(serverConfig?.IS_LOCAL_MODE ? [{
             value: 'local-folder' as UploadTabType,
@@ -870,40 +853,30 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         />
                     )}
                     {connectorActionSources.map((source) => (
-                        <SourceLink
+                        <Button
                             key={source.value}
-                            icon={source.icon}
-                            title={source.title}
-                            description={source.description}
+                            variant="outlined"
+                            color="primary"
+                            size="small"
+                            disableElevation
+                            startIcon={source.icon}
                             onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
-                        />
-                    ))}
-                </Box>
-
-                {/* Row 2 — one-off uploads (file / paste / URL), same link style. */}
-                <Box sx={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    columnGap: 1.5,
-                    rowGap: 0.75,
-                }}>
-                    <Typography
-                        variant="body2"
-                        sx={{ fontSize: '0.75rem', color: 'text.secondary', opacity: 0.7, mr: 0.25, flexShrink: 0 }}
-                    >
-                        {t('upload.uploadDataLabel', { defaultValue: 'Upload data:' })}
-                    </Typography>
-                    {regularDataSources.map((source) => (
-                        <SourceLink
-                            key={source.value}
-                            icon={source.icon}
-                            title={source.title}
-                            description={source.description}
-                            onClick={() => onSelectTab(source.value)}
-                            disabled={source.disabled}
-                        />
+                            title={source.description}
+                            sx={{
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                fontSize: '0.8125rem',
+                                py: 0.375,
+                                px: 1.25,
+                                borderRadius: 1.5,
+                                whiteSpace: 'nowrap',
+                                '& .MuiButton-startIcon': { mr: 0.5 },
+                                '& .MuiSvgIcon-root': { fontSize: 16 },
+                            }}
+                        >
+                            {source.title}
+                        </Button>
                     ))}
                 </Box>
             </Box>

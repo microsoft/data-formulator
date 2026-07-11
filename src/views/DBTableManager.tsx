@@ -549,10 +549,10 @@ export const DataLoaderForm: React.FC<{
                             // Compact (inline chat) mode packs related fields two-up
                             // (host|port, user|password, database|table_filter) so
                             // the form stays short; the tier headers group each pair.
-                            gridTemplateColumns: compact ? 'repeat(2, minmax(0, 150px))' : 'repeat(2, minmax(0, 280px))',
+                            gridTemplateColumns: compact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(2, minmax(0, 280px))',
                             columnGap: compact ? 1.5 : 2,
                             rowGap: compact ? 1.25 : 2.25,
-                            maxWidth: compact ? 320 : 576,
+                            maxWidth: compact ? '100%' : 576,
                         };
                         if (!hasTiers) {
                             // Legacy: no tier field, render flat grid
