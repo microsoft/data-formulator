@@ -32,4 +32,9 @@ boto3
 google-cloud-bigquery
 google-auth
 db-dtypes
+
+# SSO / Auth deps
+PyJWT[crypto]>=2.8.0
+requests
+flask-session>=0.8.0
 -e .

@@ -771,6 +771,15 @@ const AppShell: FC = () => {
     const isGalleryPage = location.pathname === '/gallery';
     const isAppPage = !isAboutPage && !isGalleryPage;
 
+    // The canvas (threads, encoding shelf, viz cards) genuinely needs room, so
+    // the app shell floors content at 1000px and scrolls horizontally below
+    // that. The landing page (app route with no tables yet) has none of that —
+    // its hero, chips, connected-sources row and demo grid all reflow — so we
+    // relax its floor to 640px, a comfortable width where everything still
+    // wraps cleanly before a horizontal scrollbar appears.
+    const isLandingView = isAppPage && tables.length === 0;
+    const shellMinWidth = isLandingView ? '640px' : '1000px';
+
     return (
         <Box sx={{
             position: 'absolute',
@@ -781,7 +790,7 @@ const AppShell: FC = () => {
             bottom: 0,
             overflow: 'auto',
             '& > *': {
-                minWidth: '1000px',
+                minWidth: shellMinWidth,
                 minHeight: '600px'
             },
         }}>
