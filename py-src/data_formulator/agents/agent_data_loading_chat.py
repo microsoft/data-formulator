@@ -1828,6 +1828,25 @@ class DataLoadingAgent:
     # Connector discovery + inline connection proposal (design 38)
     # ------------------------------------------------------------------
 
+    def _connectors_disabled(self) -> bool:
+        """True when external data connectors are turned off for this deployment
+        (e.g. ephemeral / --disable-database). In that mode there are NO
+        database/cloud connectors to offer — only file upload and the built-in
+        sample datasets remain — so the connector tools must not advertise or
+        open any connection form.
+        """
+        try:
+            from flask import current_app
+            return bool(current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors'))
+        except Exception:
+            return False
+
+    _CONNECTORS_DISABLED_NOTE = (
+        "External data connectors are disabled in this deployment. No "
+        "database or cloud connectors are available — only file upload and the "
+        "built-in sample datasets can be used. Point the user to those instead."
+    )
+
     def _tool_list_connectors(self, args):
         """List creatable connector TYPES with high-level metadata only.
 
@@ -1837,6 +1856,12 @@ class DataLoadingAgent:
         return NO per-parameter detail here to keep context small; the model
         calls describe_connector when it needs field-level info.
         """
+        # When connectors are disabled there is nothing to offer — return an
+        # empty set with a note so the model steers the user to upload / samples.
+        if self._connectors_disabled():
+            self._connectors_listed = True
+            return {"connectors": [], "unavailable": [], "note": self._CONNECTORS_DISABLED_NOTE}
+
         from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
         connectors = []
@@ -1873,6 +1898,9 @@ class DataLoadingAgent:
 
     def _tool_describe_connector(self, args):
         """Return full setup detail (params + auth) for ONE connector type."""
+        if self._connectors_disabled():
+            return {"error": self._CONNECTORS_DISABLED_NOTE}
+
         from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
         source_type = str(args.get("source_type") or "").strip()
@@ -1937,6 +1965,9 @@ class DataLoadingAgent:
         never leak back into context, and the frontend never persists prefilled
         values to storage.
         """
+        if self._connectors_disabled():
+            return {"error": self._CONNECTORS_DISABLED_NOTE}
+
         from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
         source_type = str(args.get("source_type") or "").strip()

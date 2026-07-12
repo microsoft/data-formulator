@@ -359,6 +359,37 @@ const TaskDivider: React.FC = () => {
 };
 
 // ---------------------------------------------------------------------------
+// "Continue from this section" affordance
+// ---------------------------------------------------------------------------
+
+// Rendered at the end of each older (non-latest) section. Between sections the
+// "New request" separator is hidden to keep history uncluttered; this button
+// is the only visible boundary, and clicking it promotes that section back to
+// the latest position so the user can continue the conversation from there
+// (non-destructive — nothing is deleted).
+const ContinueSectionButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 1.25 }}>
+            <Button
+                size="small"
+                variant="text"
+                onClick={onClick}
+                startIcon={<QuestionAnswerOutlinedIcon sx={{ fontSize: 14 }} />}
+                sx={{
+                    fontSize: 11, textTransform: 'none', color: 'text.secondary',
+                    py: 0.25, px: 1, minHeight: 0, borderRadius: radius.pill,
+                    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+                }}
+            >
+                {t('dataLoading.continueFromSection', 'Continue from this section')}
+            </Button>
+        </Box>
+    );
+};
+
+
+// ---------------------------------------------------------------------------
 // Single chat message bubble
 // ---------------------------------------------------------------------------
 
@@ -815,6 +846,15 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         onTableLoadedRef.current?.();
     }, []);
 
+    // "Continue from this section": move an older task section back to the end
+    // so it becomes the active one, then focus the input. Non-destructive — the
+    // whole thread is preserved; the top-pin effect scrolls the promoted
+    // section into view once the reordered messages render.
+    const handleContinueSection = useCallback((anchorId: string) => {
+        dispatch(dfActions.promoteDataLoadingChatSection({ anchorId }));
+        requestAnimationFrame(() => inputRef.current?.focus());
+    }, [dispatch]);
+
     const chatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const chatInProgress = useSelector((state: DataFormulatorState) => state.dataLoadingChatInProgress);
     // External reset signal — bumped by `clearChatMessages` (manual
@@ -849,6 +889,29 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         return undefined;
     }, [chatMessages]);
 
+    // Group the flat message list into task "sections" split on the "new
+    // request" dividers. Each section is anchored by the id of its first
+    // message (the divider for tasks after the first, else the opening bubble).
+    // The last section is the active one; older sections can be promoted back
+    // to latest via their "Continue from this section" button.
+    const sections = React.useMemo(() => {
+        const result: { anchorId: string; dividerId: string | null; items: ChatMessage[] }[] = [];
+        let current: { anchorId: string; dividerId: string | null; items: ChatMessage[] } | null = null;
+        for (const msg of chatMessages) {
+            if (msg.divider) {
+                current = { anchorId: msg.id, dividerId: msg.id, items: [] };
+                result.push(current);
+            } else {
+                if (!current) {
+                    current = { anchorId: msg.id, dividerId: null, items: [] };
+                    result.push(current);
+                }
+                current.items.push(msg);
+            }
+        }
+        return result;
+    }, [chatMessages]);
+
     const [prompt, setPrompt] = useState('');
     const [userImages, setUserImages] = useState<string[]>([]);
     const [userAttachments, setUserAttachments] = useState<string[]>([]);
@@ -873,6 +936,23 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const messagesContentRef = useRef<HTMLDivElement>(null);
     const pinnedToBottomRef = useRef(true);
+    // Refs for the "scroll new section to top" behaviour. When a task section
+    // becomes the active (latest) one — either a fresh request or an older
+    // section promoted back via "Continue from this section" — we align its top
+    // with the viewport top and let the answer stream downward, ChatGPT-style.
+    // A bottom spacer reserves just enough space so a short section can still
+    // reach the top; it's sized imperatively (no React state churn per frame).
+    const latestSectionRef = useRef<HTMLDivElement>(null);
+    const bottomSpacerRef = useRef<HTMLDivElement>(null);
+    const latestHasDividerRef = useRef(false);
+    const lastPinnedAnchorRef = useRef<string | null>(null);
+    const TOP_GAP = 8;
+
+    // Keep the "does the latest section start with a divider" flag in sync so
+    // the imperative spacer/scroll helpers (invoked from observers) never read
+    // stale section state.
+    const latestSection = sections[sections.length - 1];
+    latestHasDividerRef.current = !!latestSection?.dividerId;
 
     const scrollToBottom = () => {
         const el = scrollContainerRef.current;
@@ -881,6 +961,27 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         // positions that can look user-initiated and incorrectly clear the
         // pinned state while other dynamic content is still settling.
         el.scrollTop = el.scrollHeight;
+    };
+    // Size the bottom spacer so the active section can sit flush against the
+    // top of the viewport (spacer = viewport height − section height). Only
+    // sections that begin with a divider get a spacer; the very first task
+    // keeps the original bottom-follow behaviour and needs none.
+    const syncBottomSpacer = () => {
+        const scrollEl = scrollContainerRef.current;
+        const spacerEl = bottomSpacerRef.current;
+        if (!scrollEl || !spacerEl) return;
+        if (!latestHasDividerRef.current) { spacerEl.style.height = '0px'; return; }
+        const secEl = latestSectionRef.current;
+        if (!secEl) { spacerEl.style.height = '0px'; return; }
+        const h = Math.max(0, scrollEl.clientHeight - secEl.offsetHeight - TOP_GAP);
+        spacerEl.style.height = `${h}px`;
+    };
+    const scrollLatestSectionToTop = () => {
+        const scrollEl = scrollContainerRef.current;
+        const secEl = latestSectionRef.current;
+        if (!scrollEl || !secEl) return;
+        const delta = secEl.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top - TOP_GAP;
+        scrollEl.scrollTop += delta;
     };
     const updatePinned = () => {
         const el = scrollContainerRef.current;
@@ -895,6 +996,31 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     useEffect(() => {
         if (pinnedToBottomRef.current) scrollToBottom();
     }, [chatMessages, streamingContent]);
+
+    // When a section with a divider becomes the active one, pin its top to the
+    // viewport top instead of following the bottom. Keyed on the latest
+    // section's anchor id so it fires once per new/promoted section (not on
+    // every streaming delta), and skips the opening (divider-less) task.
+    useLayoutEffect(() => {
+        const latest = sections[sections.length - 1];
+        if (!latest || !latest.dividerId) {
+            lastPinnedAnchorRef.current = latest?.anchorId ?? null;
+            return;
+        }
+        if (lastPinnedAnchorRef.current === latest.anchorId) return;
+        lastPinnedAnchorRef.current = latest.anchorId;
+        pinnedToBottomRef.current = false;
+        syncBottomSpacer();
+        scrollLatestSectionToTop();
+        // A second pass after paint catches async height (markdown, previews).
+        const id = requestAnimationFrame(() => {
+            syncBottomSpacer();
+            scrollLatestSectionToTop();
+        });
+        return () => cancelAnimationFrame(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sections]);
+
 
     // On mount (this component remounts each time the chat surface opens),
     // jump straight to the latest message with no animation so landing on an
@@ -914,14 +1040,20 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     // from their fixed loading slot to natural result height, uploaded images,
     // and inline extraction tables. The synchronous scroll avoids a smooth-
     // scroll race, and the pinned guard preserves deliberate upward scrolling.
+    // Also re-sizes the top-pin spacer so a growing active section stays flush
+    // against the viewport top.
     useEffect(() => {
         const content = messagesContentRef.current;
+        const scrollEl = scrollContainerRef.current;
         if (!content || typeof ResizeObserver === 'undefined') return;
         const ro = new ResizeObserver(() => {
+            syncBottomSpacer();
             if (pinnedToBottomRef.current) scrollToBottom();
         });
         ro.observe(content);
+        if (scrollEl) ro.observe(scrollEl);
         return () => ro.disconnect();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Auto-focus input
@@ -1328,10 +1460,10 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                     </Box>
                 ) : (
                     <>
-                        {chatMessages.map((msg) => (
-                            msg.divider
-                                ? <TaskDivider key={msg.id} />
-                                : msg.hidden
+                        {sections.map((section, idx) => {
+                            const isLatest = idx === sections.length - 1;
+                            const bubbles = section.items.map((msg) => (
+                                msg.hidden
                                     ? null
                                     : <ChatBubble
                                         key={msg.id}
@@ -1340,9 +1472,37 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                         onTableLoaded={handleTableLoaded}
                                         isLatestPendingConnector={msg.id === latestPendingConnectorMsgId}
                                     />
-                        ))}
-                        {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
-                        {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}
+                            ));
+                            if (isLatest) {
+                                // Active section: wrapped so its height/top can be
+                                // measured for the "scroll to top" behaviour. Only
+                                // this section shows its "New request" boundary.
+                                return (
+                                    <Box
+                                        key={section.anchorId}
+                                        ref={latestSectionRef}
+                                        sx={{ display: 'flex', flexDirection: 'column' }}
+                                    >
+                                        {section.dividerId && <TaskDivider />}
+                                        {bubbles}
+                                        {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
+                                        {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}
+                                    </Box>
+                                );
+                            }
+                            // Older section: no divider; a "Continue from this
+                            // section" button marks the boundary and promotes it.
+                            const hasVisible = section.items.some((m) => !m.hidden);
+                            return (
+                                <React.Fragment key={section.anchorId}>
+                                    {bubbles}
+                                    {hasVisible && (
+                                        <ContinueSectionButton onClick={() => handleContinueSection(section.anchorId)} />
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
+                        <div ref={bottomSpacerRef} style={{ flexShrink: 0 }} />
                         <div ref={messagesEndRef} />
                     </>
                 )}

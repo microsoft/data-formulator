@@ -1810,6 +1810,44 @@ export const dataFormulatorSlice = createSlice({
             }
             state.dataLoadingChatPending = action.payload;
         },
+        // Move an earlier task "section" to the end so it becomes the latest
+        // one the user continues from — a lightweight, NON-destructive way to
+        // resume a prior conversation. `anchorId` is the id of the section's
+        // first message (a divider for tasks after the first, or the first
+        // bubble for the opening task). Nothing is deleted: the whole thread is
+        // preserved (and any tables already loaded stay in the workspace); only
+        // the order changes. The promoted block is guaranteed to start with a
+        // divider so it reads as the current section's boundary at the top.
+        promoteDataLoadingChatSection: (
+            state,
+            action: PayloadAction<{ anchorId: string }>,
+        ) => {
+            const msgs = state.dataLoadingChatMessages;
+            const startIdx = msgs.findIndex(m => m.id === action.payload.anchorId);
+            if (startIdx < 0) return;
+            // Section ends just before the next divider (or at the array end).
+            let endIdx = msgs.length;
+            for (let i = startIdx + 1; i < msgs.length; i += 1) {
+                if (msgs[i].divider) { endIdx = i; break; }
+            }
+            // Already the last section — nothing to promote.
+            if (endIdx === msgs.length) return;
+            const block = msgs.slice(startIdx, endIdx);
+            const rest = [...msgs.slice(0, startIdx), ...msgs.slice(endIdx)];
+            const promoted = block[0]?.divider
+                ? block
+                : [
+                    {
+                        id: `divider-${Date.now()}`,
+                        role: 'assistant' as const,
+                        content: '',
+                        divider: true,
+                        timestamp: Date.now(),
+                    },
+                    ...block,
+                ];
+            state.dataLoadingChatMessages = [...rest, ...promoted];
+        },
         clearDataLoadingChatPending: (state) => {
             state.dataLoadingChatPending = null;
         },

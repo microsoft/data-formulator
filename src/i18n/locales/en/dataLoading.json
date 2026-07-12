@@ -8,6 +8,7 @@
     "capabilityExtractFile": "Extract data from PDFs or pasted text",
     "capabilityHint": "Focus the input below to see example prompts.",
     "newRequestDivider": "New request",
+    "continueFromSection": "Continue from this section",
     "previewShowingRows": "Showing {{shown}} of {{total}} rows",
     "previewShowingFirstRows": "Showing first {{shown}} rows",
     "sectionTry": "Try a task",
