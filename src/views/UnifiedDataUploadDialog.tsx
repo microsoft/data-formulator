@@ -13,7 +13,6 @@ import {
     Dialog,
     DialogContent,
     DialogTitle,
-    Divider,
     IconButton,
     TextField,
     Typography,
@@ -56,6 +55,7 @@ import {
     Switch,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
@@ -631,7 +631,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             value: 'local-folder' as UploadTabType,
             title: t('upload.localFolder', { defaultValue: 'Link local folder' }),
             description: t('upload.localFolderDesc', { defaultValue: 'Connect to a local folder for fast imports' }),
-            icon: <AddIcon />,
+            icon: <CreateNewFolderIcon />,
             disabled: false,
             variant: 'action' as const,
         }] : []),
@@ -733,7 +733,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     }), [t, onStartChat]);
     const agentChatBox = (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 900, alignSelf: 'center' }}>
-            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
+            <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
                 {quickActions.map((qa) => (
                     <Chip
                         key={qa.kind}
@@ -743,7 +743,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         variant="outlined"
                         size="small"
                         sx={{
-                            fontSize: 12, height: 28, borderRadius: 2,
+                            fontSize: 13, height: 28, borderRadius: 2,
                             color: 'text.secondary',
                             borderColor: alpha(theme.palette.text.primary, 0.12),
                             '& .MuiChip-icon': { fontSize: 15, ml: 0.5, color: 'text.disabled' },
@@ -762,6 +762,17 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 onImagesChange={setAgentImages}
                 onSend={submitAgentChat}
                 layout="stacked"
+                sx={{
+                    // Landing hero: a gentle lift + faint primary-tinted
+                    // border so it reads as the focal point without visually
+                    // crowding the chips above / source rows below. Focus-within
+                    // still escalates to the component's default primary ring.
+                    borderColor: alpha(theme.palette.primary.main, 0.22),
+                    boxShadow: '0 4px 16px rgba(32, 33, 36, 0.08), 0 1px 4px rgba(32, 33, 36, 0.05)',
+                    '&:hover': {
+                        boxShadow: '0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)',
+                    },
+                }}
                 leadingSlot={hasPriorConversation && onResumeChat ? (
                     <Tooltip title={t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation' })}>
                         <IconButton size="small" onClick={onResumeChat} sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
@@ -809,7 +820,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            gap: 2.5,
+            gap: 3.5,
             mx: 0,
             textAlign: 'left',
         }}>
@@ -818,9 +829,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 
             {/* Sources — same width as the chat box so they read as part of it */}
             <Box sx={{ width: '100%', maxWidth: 900, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {/* Row 1 — connected data sources (as lightweight links): the
-                    already-connected instances, then a divider, then the
-                    "add a connection" actions (link folder / connect db). */}
+                {/* Row 1 — connected data sources (as lightweight links):
+                    the already-connected instances. The "add a connection"
+                    actions live on their own row below so they read as
+                    primary calls-to-action rather than list items. */}
                 <Box sx={{
                     display: 'flex',
                     flexWrap: 'wrap',
@@ -830,9 +842,9 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.75rem', color: 'text.secondary', opacity: 0.7, mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'text.secondary', mr: 0.25, flexShrink: 0 }}
                     >
-                        {t('upload.dataSourcesLabel', { defaultValue: 'Connected data sources:' })}
+                        {t('upload.dataSourcesLabel', { defaultValue: 'View connected data sources:' })}
                     </Typography>
                     {connectionSources.map((source) => (
                         <SourceLink
@@ -845,38 +857,67 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             tooltip={source.tooltip}
                         />
                     ))}
-                    {connectionSources.length > 0 && connectorActionSources.length > 0 && (
-                        <Divider
-                            orientation="vertical"
-                            flexItem
-                            sx={{ my: 0.25, borderColor: alpha(theme.palette.text.primary, 0.12) }}
-                        />
-                    )}
+                </Box>
+
+                {/* Row 2 — add-a-source actions: same muted link family as the
+                    connected sources, differentiated only by a subtle shaded
+                    background chip (no primary color). */}
+                <Box sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    columnGap: 1,
+                    rowGap: 0.75,
+                }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'text.secondary', mr: 0.25, flexShrink: 0 }}
+                    >
+                        {t('upload.addSourceLabel', { defaultValue: 'Or add data directly:' })}
+                    </Typography>
                     {connectorActionSources.map((source) => (
-                        <Button
+                        <Box
                             key={source.value}
-                            variant="outlined"
-                            color="primary"
-                            size="small"
-                            disableElevation
-                            startIcon={source.icon}
-                            onClick={() => handleConnectionClick(source.value)}
+                            component="button"
+                            type="button"
+                            onClick={source.disabled ? undefined : () => handleConnectionClick(source.value)}
                             disabled={source.disabled}
                             title={source.description}
                             sx={{
-                                textTransform: 'none',
-                                fontWeight: 500,
-                                fontSize: '0.8125rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                px: 1,
                                 py: 0.375,
-                                px: 1.25,
-                                borderRadius: 1.5,
+                                border: 'none',
+                                borderRadius: 1,
+                                font: 'inherit',
                                 whiteSpace: 'nowrap',
-                                '& .MuiButton-startIcon': { mr: 0.5 },
-                                '& .MuiSvgIcon-root': { fontSize: 16 },
+                                cursor: source.disabled ? 'not-allowed' : 'pointer',
+                                opacity: source.disabled ? 0.5 : 1,
+                                color: 'text.secondary',
+                                bgcolor: alpha(theme.palette.text.primary, 0.05),
+                                transition: 'background-color 120ms ease, color 120ms ease',
+                                '&:hover': source.disabled ? {} : {
+                                    bgcolor: alpha(theme.palette.text.primary, 0.09),
+                                    color: 'text.primary',
+                                },
+                                '& .MuiSvgIcon-root': { fontSize: 15 },
                             }}
                         >
-                            {source.title}
-                        </Button>
+                            {source.icon}
+                            <Typography
+                                component="span"
+                                sx={{
+                                    fontWeight: 400,
+                                    fontSize: '0.8125rem',
+                                    lineHeight: 1.4,
+                                    color: 'inherit',
+                                }}
+                            >
+                                {source.title}
+                            </Typography>
+                        </Box>
                     ))}
                 </Box>
             </Box>
@@ -911,7 +952,8 @@ interface PluginsInfo {
 
 const AddConnectionPanel: React.FC<{
     onCreated: (connector: ConnectorInstance) => void;
-}> = ({ onCreated }) => {
+    initialType?: string;
+}> = ({ onCreated, initialType }) => {
     const { t } = useTranslation();
     const disableConnectors = useSelector(
         (state: DataFormulatorState) => state.serverConfig.DISABLE_DATA_CONNECTORS,
@@ -939,12 +981,19 @@ const AddConnectionPanel: React.FC<{
                 setDisabledLoaders(data.disabled || {});
                 setPluginsInfo(data.plugins || null);
                 if (data.loaders?.length > 0) {
-                    setSelectedType(data.loaders[0].type);
-                    displayNameRef.current = data.loaders[0].name;
+                    // Honor a requested pre-selection (e.g. the "Link local
+                    // folder" entry point) when that loader is available;
+                    // otherwise fall back to the first loader.
+                    const preferred = initialType
+                        ? data.loaders.find((l: LoaderType) => l.type === initialType)
+                        : undefined;
+                    const chosen = preferred || data.loaders[0];
+                    setSelectedType(chosen.type);
+                    displayNameRef.current = chosen.name;
                 }
             })
             .catch(() => { /* loader types unavailable — form will be empty */ });
-    }, [disableConnectors]);
+    }, [disableConnectors, initialType]);
 
     const selectedLoader = loaderTypes.find(l => l.type === selectedType);
 
@@ -1188,7 +1237,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const existingNames = new Set(existingTables.map(t => t.id));
 
-    const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
+    // 'local-folder' is no longer a dedicated tab — it opens the Add Connection
+    // panel with the local_folder loader pre-selected.
+    const [activeTab, setActiveTab] = useState<UploadTabType>(
+        initialTab === 'menu' ? 'menu' : (initialTab === 'local-folder' ? 'add-connection' : initialTab)
+    );
+    const [addConnectionInitialType, setAddConnectionInitialType] = useState<string | undefined>(
+        initialTab === 'local-folder' ? 'local_folder' : undefined,
+    );
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
 
@@ -1248,7 +1304,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Update active tab when initialTab changes
     useEffect(() => {
         if (open) {
-            setActiveTab(initialTab === 'menu' ? 'menu' : initialTab);
+            setActiveTab(initialTab === 'menu' ? 'menu' : (initialTab === 'local-folder' ? 'add-connection' : initialTab));
+            setAddConnectionInitialType(initialTab === 'local-folder' ? 'local_folder' : undefined);
         }
     }, [initialTab, open]);
 
@@ -1756,7 +1813,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             'extract': t('upload.dataAssistant'),
             'url': t('upload.loadFromUrl'),
             'database': t('upload.database'),
-            'local-folder': t('upload.localFolder', { defaultValue: 'Link local folder' }),
         };
         return tabTitles[activeTab] || t('upload.addData');
     };
@@ -2395,6 +2451,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {/* Add Connection Tab */}
                 <TabPanel value={activeTab} index="add-connection">
                     <AddConnectionPanel
+                        initialType={addConnectionInitialType}
                         onCreated={(newConnector) => {
                             // Update connector list — card will appear on menu
                             setConnectorInstances(prev => {
@@ -2418,24 +2475,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     <DataLoadingChat onTableLoaded={handleClose} />
                 </TabPanel>
 
-                {/* Local Folder Tab */}
-                {serverConfig.IS_LOCAL_MODE && (
-                    <TabPanel value={activeTab} index="local-folder">
-                        <LocalFolderPanel
-                            onConnectorCreated={(newConn) => {
-                                setConnectorInstances(prev => {
-                                    const exists = prev.find(c => c.id === newConn.id);
-                                    if (exists) return prev.map(c => c.id === newConn.id ? newConn : c);
-                                    return [...prev, newConn];
-                                });
-                                onConnectorsChanged?.();
-                                // Hand off to the data-source sidebar.
-                                handleClose();
-                                dispatch(dfActions.focusConnector(newConn.id));
-                            }}
-                        />
-                    </TabPanel>
-                )}
+                {/* Local folder is no longer a dedicated tab — the "Link local
+                    folder" entry points open the Add Connection panel above
+                    with the local_folder loader pre-selected. */}
 
             </DialogContent>
         </Dialog>

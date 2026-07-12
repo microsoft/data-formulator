@@ -57,7 +57,6 @@ export interface ServerConfig {
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
-    PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
     AVAILABLE_LANGUAGES: string[];
     DATA_FORMULATOR_HOME?: string;
@@ -324,7 +323,6 @@ const initialState: DataFormulatorState = {
         DISABLE_DISPLAY_KEYS: false,
         DISABLE_DATA_CONNECTORS: false,
         DISABLE_CUSTOM_MODELS: false,
-        PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
         AVAILABLE_LANGUAGES: ['en', 'zh'],
         DEV_MODE: false,

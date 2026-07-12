@@ -117,8 +117,10 @@ def test_builtin_loader_marked_as_builtin(client_with_plugin):
     resp = client_with_plugin.get("/api/data-loaders")
     loaders = _loaders_by_type(resp.get_json())
 
-    # Find any built-in that's available in the test env.
-    builtin_candidates = ["sample_datasets", "mysql", "postgresql", "s3"]
+    # Find any built-in that's available in the test env. sample_datasets and
+    # local_folder are intentionally hidden from discovery, so use superset
+    # (requests-only, always available) as the guaranteed fallback.
+    builtin_candidates = ["mysql", "postgresql", "s3", "superset"]
     builtin = next((loaders[k] for k in builtin_candidates if k in loaders), None)
     assert builtin is not None, "no built-in loader available in test env"
 

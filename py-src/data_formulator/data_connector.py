@@ -879,9 +879,16 @@ def list_data_loaders():
 
     loaders = []
     plugin_loaded_summary = []
+    is_local = is_local_mode()
     for key, loader_class in DATA_LOADERS.items():
-        # local_folder has its own dedicated card — hide from Add Connection list
-        if key == "local_folder":
+        # sample_datasets is a built-in, always-available admin connector with
+        # nothing to configure — it's surfaced as a connected source elsewhere,
+        # so there's no connection to "create". Hide it from the catalog.
+        if key == "sample_datasets":
+            continue
+        # local_folder browses a folder on the host machine, so it only makes
+        # sense in local mode — hide it in hosted/shared deployments.
+        if key == "local_folder" and not is_local:
             continue
         params = loader_class.list_params()
         # Append common table_filter param (same as DataConnector.get_frontend_config)

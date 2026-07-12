@@ -7,13 +7,14 @@
  * tool; the resulting `connectorForm` prompt on a chat message is rendered here.
  *
  * One card === one new connection. The card fetches the connector's parameter /
- * auth schema itself (from /api/data-loaders), seeds any high-confidence,
- * non-sensitive prefilled values, and — on connect — creates the connector
+ * auth schema itself (from /api/data-loaders), seeds any prefilled values the
+ * agent was given (non-sensitive into redux, credentials the user shared into
+ * the form's transient state only), and — on connect — creates the connector
  * (create-on-connect via `onBeforeConnect`), marks the prompt connected, and
  * asks the app to refresh the data-source sidebar so the new source appears.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, CircularProgress, Collapse, Typography, alpha, useTheme } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -99,10 +100,10 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
         return () => { cancelled = true; };
     }, [sourceType]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Seed high-confidence, non-sensitive prefilled values once. Sensitive
-    // params never live in redux, so a malicious prefill of a password key is
-    // ignored downstream — but as defense in depth we also skip params the
-    // loader marks sensitive/password.
+    // Seed prefilled values once. Non-sensitive fields (host, port, database, …)
+    // go into redux like any typed value. Sensitive fields are handled
+    // separately via `sensitivePrefill` below — they must never enter redux
+    // (which is persisted), so we skip them here.
     useEffect(() => {
         if (!meta || seededRef.current || isConnected) return;
         seededRef.current = true;
@@ -119,6 +120,22 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
             }));
         }
     }, [meta, isConnected, prompt.prefilled, sourceType, dispatch]);
+
+    // Credentials the user shared with the agent (e.g. a password). Passed to
+    // the form as a one-time seed for its transient sensitive state — never
+    // redux, never persisted. Only keys the loader marks sensitive are kept.
+    const sensitivePrefill = useMemo(() => {
+        if (!meta || isConnected) return undefined;
+        const prefilled = prompt.prefilled || {};
+        const out: Record<string, string> = {};
+        for (const [name, value] of Object.entries(prefilled)) {
+            const def = meta.params.find(p => p.name === name);
+            if (!def || !(def.sensitive || def.type === 'password')) continue;
+            if (value === undefined || value === null || value === '') continue;
+            out[name] = String(value);
+        }
+        return Object.keys(out).length > 0 ? out : undefined;
+    }, [meta, isConnected, prompt.prefilled]);
 
     // Once connected, fetch the registered connector so the collapsible panel
     // can show its non-sensitive configuration (host, port, database, …).
@@ -348,6 +365,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                             }}
                             onConnected={handleConnected}
                             onBeforeConnect={handleBeforeConnect}
+                            initialSensitiveParams={sensitivePrefill}
                         />
                     ) : null}
                 </Box>

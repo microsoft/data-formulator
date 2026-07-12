@@ -145,9 +145,14 @@ or when Workflow 3 found nothing because the relevant source simply isn't connec
 2. Optionally call describe_connector(source_type) when you need field-level detail
    to guide the user or to decide which fields are safe to pre-fill.
 3. Call propose_connection(source_type, prefilled?) to render the inline form.
-   - Pre-fill ONLY high-confidence, non-sensitive fields: values the user explicitly
-     stated (a host, region, database name) or values known from the environment.
-   - NEVER pre-fill passwords, tokens, secrets, or guessed values.
+   - Pre-fill whatever the user has already given you anywhere in the conversation —
+     a host, region, database name, and, if they shared them, the username /
+     password / token too. It can come from any part of the context: typed
+     directly, pasted (e.g. a connection string or config snippet), or in an
+     attached file. Filling it in just saves the user re-typing; the values only
+     populate the live form and are never stored until they click Connect.
+   - Just don't make up values the user never provided — leave anything you don't
+     actually have blank for the user to fill in.
 4. After proposing, write a SHORT setup hint in your reply (the form shows no built-in
    guidance) — e.g. what to enter, where to find a credential. Keep it to a couple lines.
 5. One propose_connection call renders one form. Don't propose the same connector twice.
@@ -174,6 +179,15 @@ Workflow selection rubric (apply in order):
   synthesize data when the user actually wants to connect a real source.
 
 Rules:
+- Broad, open-ended questions ("what data do we have?", "help me connect", "how do I get
+  started?", "what can you do?") deserve a fuller, orienting answer than a narrow task reply.
+  First run the relevant tool — list_data() for what's available, list_connectors for connecting —
+  then give concrete guidance grounded in what you found: briefly summarize it (e.g. the connected
+  sources with a couple of example tables, or the connector types this deployment offers), and
+  suggest 2-3 specific next steps the user could take ("I can pull the orders table", "tell me your
+  Postgres host and I'll set up the form"). Don't reply with a bare list or a plain "what do you
+  want?" — help them see their options and move forward. (This does NOT override the brevity rule
+  below, which applies only after a preview/plan card is shown.)
 - After show_user_data_preview or propose_load_plan, keep text VERY brief. The UI shows the preview automatically.
 - show_user_data_preview is ONLY for: (a) DataFrames you actually produced with execute_python via saved_dfs=, or (b) tables you literally extracted from a user-provided image or pasted text via tables=. NEVER use show_user_data_preview(tables=...) to narrate, describe, or invent contents of a connector-sourced table. To load ANY table from a connected source (including sample_datasets), you MUST use propose_load_plan.
 - For sample datasets, NEVER use execute_python or write_file to recreate them — use Workflow 3.
@@ -565,13 +579,10 @@ TOOLS = [
             "description": (
                 "Show the user an inline connection form for ONE connector type so "
                 "they can fill in credentials and connect without leaving the chat. "
-                "PRECONDITION: you must have called list_connectors this turn and the "
-                "source_type must be in its available set. Each call renders a NEW "
-                "form card. After calling, write a SHORT setup hint in your reply "
-                "(the form has no built-in guidance text). Optionally pass `prefilled` "
-                "to pre-populate ONLY high-confidence, non-sensitive fields (e.g. a "
-                "host/region the user stated, or a value known from the environment). "
-                "NEVER pre-fill passwords, tokens, secrets, or guessed values."
+                "PRECONDITION: call list_connectors this turn; source_type must be in "
+                "its available set. Each call renders a NEW form card; afterwards write "
+                "a SHORT setup hint in your reply (the form has no built-in guidance). "
+                "Optionally pass `prefilled` with values the user already provided."
             ),
             "parameters": {
                 "type": "object",
@@ -579,7 +590,7 @@ TOOLS = [
                     "source_type": {"type": "string", "description": "Connector type key from list_connectors (e.g. 'postgresql')."},
                     "prefilled": {
                         "type": "object",
-                        "description": "Optional map of param name -> value to pre-populate. Non-sensitive, high-confidence values only. Never credentials.",
+                        "description": "Optional map of param name -> value to pre-fill the form. Use values the user already provided anywhere in the conversation (typed, pasted, or attached, including any credentials they shared) — just don't make up values they never gave.",
                         "additionalProperties": {"type": "string"},
                     },
                 },
@@ -1919,10 +1930,12 @@ class DataLoadingAgent:
     def _tool_propose_connection(self, args):
         """Emit a connect_form action so the UI renders an inline setup form.
 
-        The action carries only source_type + prefilled (non-sensitive hints);
-        the frontend fetches the full param/auth schema itself from
-        /api/data-loaders. The LLM-facing result is a summary WITHOUT the
-        prefilled values so credentials/hints never leak back into context.
+        The action carries source_type + prefilled (values the user provided this
+        conversation, which may include credentials they chose to share). The
+        frontend fetches the full param/auth schema itself from /api/data-loaders.
+        The LLM-facing result is a summary WITHOUT the prefilled values so they
+        never leak back into context, and the frontend never persists prefilled
+        values to storage.
         """
         from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
@@ -1955,8 +1968,11 @@ class DataLoadingAgent:
         prefilled_raw = args.get("prefilled") or {}
         prefilled = {}
         if isinstance(prefilled_raw, dict):
-            # Coerce to strings; drop empties. Sensitive-field filtering happens
-            # again on the frontend, but never seed obviously-secret keys here.
+            # Coerce to strings; drop empties. These are values the user gave the
+            # agent (possibly credentials they chose to share) — they seed the
+            # live form only and are stripped before any chat state is persisted
+            # (see the redux-persist transform in store.ts), so nothing is saved
+            # to disk until the user actually clicks Connect.
             for k, v in prefilled_raw.items():
                 if v is None or v == "":
                     continue

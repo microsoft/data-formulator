@@ -192,7 +192,7 @@ export interface LoadPlan {
  */
 export interface ConnectorFormPrompt {
     sourceType: string;                 // loader registry key, e.g. "postgresql"
-    prefilled?: Record<string, string>; // non-sensitive, high-confidence seed values
+    prefilled?: Record<string, string>; // seed values the user gave the agent (incl. shared credentials); never persisted
     status?: 'pending' | 'connected';   // pending = awaiting connect; connected = done
     connectorId?: string;               // set once connected
     connectionName?: string;            // display name of the created connection

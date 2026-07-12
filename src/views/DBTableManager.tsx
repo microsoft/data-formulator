@@ -113,7 +113,11 @@ export const DataLoaderForm: React.FC<{
     /** When true, suppress the connector's built-in authInstructions block so
      *  agent-authored setup guidance can replace it (design 38). */
     hideInstructions?: boolean,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], connectionName, formTitle, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false}) => {
+    /** One-time seed for sensitive fields (passwords/tokens) the user handed to
+     *  the agent in chat. Populates the transient sensitive state so the user
+     *  needn't retype; never persisted (see the redux-persist transform). */
+    initialSensitiveParams?: Record<string, string>,
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], connectionName, formTitle, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false, initialSensitiveParams}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const loaderTypeKey = loaderType || dataLoaderType;
@@ -185,6 +189,25 @@ export const DataLoaderForm: React.FC<{
         [paramDefs]
     );
     const [sensitiveParams, setSensitiveParams] = useState<Record<string, string>>({});
+
+    // One-time seed of sensitive fields the user explicitly gave the agent
+    // (e.g. a password shared in chat). Lives in component state only — never
+    // Redux/localStorage — and only for params the loader actually marks
+    // sensitive, so a stray key can't smuggle a value into a non-secret field.
+    const seededSensitiveRef = useRef(false);
+    useEffect(() => {
+        if (seededSensitiveRef.current || !initialSensitiveParams) return;
+        const seed: Record<string, string> = {};
+        for (const [name, value] of Object.entries(initialSensitiveParams)) {
+            if (value === undefined || value === null || value === '') continue;
+            if (!sensitiveParamNames.has(name)) continue;
+            seed[name] = String(value);
+        }
+        if (Object.keys(seed).length > 0) {
+            seededSensitiveRef.current = true;
+            setSensitiveParams(previous => ({ ...seed, ...previous }));
+        }
+    }, [initialSensitiveParams, sensitiveParamNames]);
 
 
 

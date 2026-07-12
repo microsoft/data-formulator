@@ -19,6 +19,24 @@ export const PANEL_PADDING = 32;
 export const MAX_THREAD_COLUMNS = 3;
 
 /**
+ * Slack (px) allowed when deciding how many columns fit.
+ *
+ * The pane is snapped to exactly `threadPaneWidth(n)`, but the width we
+ * actually measure can land a hair *under* that target for two reasons:
+ *   1. Fractional browser zoom (Cmd +/-) makes ResizeObserver report
+ *      sub-pixel widths (e.g. 535.6 instead of 536).
+ *   2. The snap deadzone in DataFormulator lets the pane rest up to ~2px
+ *      off the snapped value.
+ * Without slack, a width of 535.6 would floor down to n-1 columns, so the
+ * thread collapses from 2 columns to 1 on zoom even though the pane is
+ * visually wide enough. This tolerance is safe because the rendered column
+ * strip only uses PANEL_PADDING/2 of horizontal padding — well under the
+ * PANEL_PADDING reserved by `threadPaneWidth` — so counting n here never
+ * clips the nth column.
+ */
+export const COLUMN_FIT_TOLERANCE = 4;
+
+/**
  * Pixel width required to display exactly `n` columns:
  *   n cards + (n-1) gaps + panel padding.
  */
@@ -34,6 +52,6 @@ export const fittableThreadColumns = (containerWidth: number): number =>
         1,
         Math.min(
             MAX_THREAD_COLUMNS,
-            Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / (CARD_WIDTH + CARD_GAP)),
+            Math.floor((containerWidth - PANEL_PADDING + CARD_GAP + COLUMN_FIT_TOLERANCE) / (CARD_WIDTH + CARD_GAP)),
         ),
     );
