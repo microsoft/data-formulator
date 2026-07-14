@@ -139,7 +139,7 @@ describe('agent metadata thunks', () => {
             { type: fetchAvailableModels.rejected.type, error: { name: 'Error', message: 'boom' } },
         );
 
-        expect(state.testedModels[0]).toEqual({ id: 'global-1', status: 'configured', message: '' });
+        expect(state.testedModels[0]).toEqual({ id: 'global-1', status: 'unknown', message: '' });
         expect(state.messages.at(-1)?.value).toBe('messages.availableModelsFailed');
     });
 

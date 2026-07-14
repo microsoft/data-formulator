@@ -4,17 +4,17 @@
 /**
  * Chart Templates with UI icons.
  *
- * This module wraps the reusable agents-chart template definitions
+ * This module wraps the reusable flint-chart template definitions
  * with React icon components for display in the Data Formulator UI.
  * The pure template logic (mark, encoding paths, post-processors) lives
- * in src/lib/agents-chart/templates/.
+ * in the flint-chart package.
  */
 
 import { ChartTemplate } from "./ComponentType";
 import {
     vlTemplateDefs,
     vlGetTemplateChannels,
-} from "../lib/agents-chart";
+} from "flint-chart";
 import InsightsIcon from '@mui/icons-material/Insights';
 import React from "react";
 
@@ -99,25 +99,11 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
 // Build CHART_TEMPLATES by adding icons to library template defs
 // ---------------------------------------------------------------------------
 
-/** Global properties injected into any template that supports column/row faceting. */
-const FACET_AXIS_PROPERTIES = [
-    {
-        key: 'independentYAxis', label: 'Independent Y-Axis', type: 'binary' as const,
-        visibleWhen: { channels: ['column', 'row'] },
-    },
-];
-
-function addIcons(defs: { chart: string; channels?: string[]; properties?: any[] }[]): ChartTemplate[] {
-    return defs.map(def => {
-        const hasFacetChannels = def.channels?.some(ch => ch === 'column' || ch === 'row');
-        const extraProps = hasFacetChannels ? FACET_AXIS_PROPERTIES : [];
-        const mergedProperties = [...(def.properties || []).filter((p: any) => p.key !== 'independentYAxis'), ...extraProps];
-        return {
-            ...def,
-            properties: mergedProperties,
-            icon: CHART_ICONS[def.chart] || <InsightsIcon />,
-        };
-    }) as ChartTemplate[];
+function addIcons(defs: { chart: string }[]): ChartTemplate[] {
+    return defs.map(def => ({
+        ...def,
+        icon: CHART_ICONS[def.chart] || <InsightsIcon />,
+    })) as ChartTemplate[];
 }
 
 export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = Object.fromEntries(
@@ -135,7 +121,7 @@ export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = Object.fromEn
 export {
     channels,
     channelGroups,
-} from '../lib/agents-chart';
+} from 'flint-chart';
 
 export function getChartTemplate(chartType: string): ChartTemplate | undefined {
     return Object.values(CHART_TEMPLATES).flat().find(t => t.chart === chartType);

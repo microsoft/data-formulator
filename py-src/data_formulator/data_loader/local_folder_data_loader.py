@@ -18,7 +18,8 @@ import pyarrow as pa
 import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.security.path_safety import ConfinedDir
 
@@ -250,7 +251,13 @@ class LocalFolderDataLoader(ExternalDataLoader):
         if ext == ".parquet":
             table = pq.read_table(str(resolved))
         elif ext in (".csv", ".tsv"):
-            table = pa_csv.read_csv(str(resolved))
+            # ``.tsv`` is tab-separated; pyarrow's read_csv defaults to a comma
+            # delimiter, so without this a TSV collapses into a single column
+            # (e.g. "id\trate" stays one field). Keep comma for ``.csv``.
+            parse_options = (
+                pa_csv.ParseOptions(delimiter="\t") if ext == ".tsv" else None
+            )
+            table = pa_csv.read_csv(str(resolved), parse_options=parse_options)
         elif ext in (".json", ".jsonl"):
             import pyarrow.json as pa_json
             table = pa_json.read_json(str(resolved))
@@ -271,6 +278,10 @@ class LocalFolderDataLoader(ExternalDataLoader):
             table.num_rows, source_table,
         )
         return table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Read the file into DuckDB and compute the SPJQ there."""
+        return probe_utils.run_probe_on_duckdb(self, path, query, scan_size=MAX_IMPORT_ROWS)
 
     # -- Helpers -----------------------------------------------------------
 

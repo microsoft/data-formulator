@@ -83,8 +83,8 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { AgentToyIcon } from './AgentToyIcon';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ArticleIcon from '@mui/icons-material/Article';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
@@ -97,6 +97,7 @@ import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor 
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, ResolvedConversationCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
+import { CARD_WIDTH, CARD_GAP, PANEL_PADDING, fittableThreadColumns } from './threadLayout';
 
 /** Pick the icon component for a step line based on known prefixes. */
 // Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
@@ -149,13 +150,13 @@ const LiveStatus: React.FC<{ startTime?: number; resetKey?: string }> = ({ start
  *  ThinkingBanner — rather than right-flushed in a separate column.
  *  The timer resets whenever the active step changes so it shows the time
  *  spent on the **current** action, not the cumulative wait. */
-export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number) => {
+export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number, active: boolean = true) => {
     const activeStep = steps.length > 0 ? steps[steps.length - 1] : '';
     return (
         <Box sx={{ ...sx }}>
             <PlanStepsView
                 steps={steps}
-                activeLastStep
+                activeLastStep={active}
                 trailing={startTime != null ? <LiveStatus startTime={startTime} resetKey={activeStep} /> : undefined}
             />
         </Box>
@@ -1177,7 +1178,7 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string; gutterIcon?: React.ReactNode };
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string; gutterIcon?: React.ReactNode };
     let timelineItems: TimelineItem[] = [];
 
     // Each running/clarifying draft should produce at most ONE banner per
@@ -1332,17 +1333,6 @@ let SingleThreadGroupView: FC<{
             const mergeIds = derivedTable?.derive?.source as string[] | undefined;
             if (entry.role === 'instruction' && mergeNames && mergeNames.length > 0 && mergeIds && mergeIds.length > 0) {
                 const nextKey = sourceSetKey(mergeIds);
-                // eslint-disable-next-line no-console
-                console.log('[merge-node check]', {
-                    tableId,
-                    parentTableId: parentTable?.id,
-                    initialSourceIds,
-                    prevSourceKey,
-                    mergeIds,
-                    mergeNames,
-                    nextKey,
-                    fires: nextKey !== prevSourceKey,
-                });
                 if (nextKey !== prevSourceKey) {
                     const mergeColor = highlighted ? theme.palette.primary.main : theme.palette.text.secondary;
                     timelineItems.push({
@@ -1423,7 +1413,7 @@ let SingleThreadGroupView: FC<{
                     type: triggerType,
                     highlighted,
                     isRunning,
-                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, isRunning ? lastUserTs : undefined),
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, isRunning ? lastUserTs : undefined, isRunning),
                 });
                 return;
             }
@@ -1447,7 +1437,7 @@ let SingleThreadGroupView: FC<{
                         type: triggerType,
                         highlighted,
                         isRunning: false,
-                        element: ThinkingStepsBanner(priorLines, { px: 1, py: 0.5 }),
+                        element: ThinkingStepsBanner(priorLines, { px: 1, py: 0.5 }, undefined, false),
                     });
                 }
             }
@@ -1475,23 +1465,50 @@ let SingleThreadGroupView: FC<{
             }
             if (runningDraft) renderedDraftIds.add(runningDraft.id);
             const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            // Once a report is streaming for this table, the generating report
+            // card (with its own spinner + "composing…" text) is the live
+            // indicator — so we drop the thinking banner entirely to avoid a
+            // second running state. We still render the prompt entries.
+            const generatingReports = (reportsByTriggerTable.get(tableId) || [])
+                .filter(r => r.status === 'generating');
+            const hasGeneratingReport = generatingReports.length > 0;
             if (draftInteraction && draftInteraction.length > 0) {
-                renderSplitByClarity(
-                    draftInteraction,
-                    runningDraft?.derive?.runningPlan,
-                    true,
-                    'agent-running-entry',
-                );
-            } else {
+                if (hasGeneratingReport) {
+                    // Just the prompt/clarity entries — no thinking banner.
+                    pushInteractionEntries(draftInteraction, tableId, triggerType, highlighted, 'agent-running-entry');
+                } else {
+                    renderSplitByClarity(
+                        draftInteraction,
+                        runningDraft?.derive?.runningPlan,
+                        true,
+                        'agent-running-entry',
+                    );
+                }
+            } else if (!hasGeneratingReport) {
                 const runningAction = runningAgentTableIds.get(tableId);
-                const message = runningAction?.description || t('dataThread.working');
+                // `description` is the running plan: steps joined by STEP_SEP
+                // ('\x1E'), which renders invisibly. Split it back into discrete
+                // steps and render through the per-step banner (icons + ✓), the
+                // same way the interaction-present path does — otherwise the
+                // steps collapse into one run-on blob.
+                const planLines = (runningAction?.description || '')
+                    .split('\x1E').map(s => s.trim()).filter(Boolean);
                 timelineItems.push({
                     key: `agent-running-${tableId}`,
                     type: 'chart',
                     highlighted,
                     isRunning: true,
-                    element: ThinkingBanner(message, { px: 1, py: 0.5 }, true, true),
+                    element: planLines.length > 0
+                        ? ThinkingStepsBanner(planLines, { px: 1, py: 0.5 })
+                        : ThinkingBanner(t('dataThread.working'), { px: 1, py: 0.5 }, true, true),
                 });
+            }
+            // Live generating report card: rendered here (after the prompt,
+            // inside the running draft block) so it appears below the prompt
+            // while the report streams in — never above it. Completed reports
+            // render in the artifact slot via pushReportItems.
+            for (const report of generatingReports) {
+                timelineItems.push(buildReportTimelineItem(report, highlighted));
             }
         } else if (clarifyAgentTableIds.has(tableId)) {
             const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
@@ -1555,80 +1572,92 @@ let SingleThreadGroupView: FC<{
             });
         }
     };
-
-    // Push report cards triggered from the given table
-    const pushReportItems = (tableId: string, highlighted: boolean) => {
+    // Build a single report's timeline item. Shared by pushReportItems
+    // (completed reports, in the artifact slot) and pushAgentDraftItems (the
+    // live generating card, rendered inside the running draft block so it sits
+    // below the prompt + thinking steps rather than above them).
+    const buildReportTimelineItem = (report: GeneratedReport, highlighted: boolean) => {
+        const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
+        const rowHL = highlighted || isFocused;
+        const isGenerating = report.status === 'generating';
+        const gutterIcon = isGenerating
+            ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />
+            : <ArticleIcon sx={{ width: 14, height: 14, color: rowHL ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+        const card = (
+            <Card className={`data-thread-card ${isFocused ? 'selected-report-card' : ''}`} elevation={0}
+                sx={{
+                    width: '100%', backgroundColor: theme.palette.secondary.bgcolor,
+                    ...ComponentBorderStyle,
+                    ...(rowHL ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
+                    borderRadius: '6px', cursor: 'pointer',
+                }}
+                onClick={() => dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }))}
+            >
+                <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
+                    '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                    '&:hover .report-delete-btn': { opacity: 1 },
+                }}>
+                    <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
+                        <Typography sx={{
+                            fontSize: 11, fontWeight: 500, color: 'text.primary',
+                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden', wordBreak: 'break-all',
+                        }}>
+                            {report.title || t('report.untitled')}
+                        </Typography>
+                        {isGenerating && (
+                            <Typography sx={{ fontSize: 9, color: 'text.disabled', lineHeight: 1.3, mt: 0.25 }}>
+                                {t('report.composing')}
+                            </Typography>
+                        )}
+                    </Box>
+                    <Tooltip title={t('dataThread.deleteReport')}>
+                        <IconButton className="report-delete-btn" size="small" color="error"
+                            sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
+                            onClick={(e) => { e.stopPropagation(); dispatch(dfActions.deleteGeneratedReport(report.id)); }}
+                        >
+                            <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+            </Card>
+        );
+        return {
+            key: `report-${report.id}`, type: 'artifact' as const, highlighted: rowHL,
+            reportId: report.id, gutterIcon, element: card,
+        };
+    };
+    // Push report artifacts triggered from the given table. A report is an
+    // *output card* of the run (like a chart) that OWNS its closing summary:
+    // the card renders, then the report's own summary renders right below it
+    // (from `report.summary`, not a table-anchored interaction entry), so the
+    // report and its summary live and die together.
+    //
+    // Only COMPLETED (non-generating) reports render here. A still-generating
+    // report is rendered live inside the running draft block (see
+    // pushAgentDraftItems) so it appears below the prompt, not above it.
+    const pushReportItems = (
+        tableId: string,
+        highlighted: boolean,
+        triggerType: 'trigger' | 'leaf-trigger',
+    ) => {
         const reports = reportsByTriggerTable.get(tableId);
         if (!reports) return;
         for (const report of reports) {
-                const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
-                const isGenerating = report.status === 'generating';
-                const selectedClassName = isFocused ? 'selected-report-card' : '';
-                timelineItems.push({
-                    key: `report-${report.id}`,
-                    type: 'report',
-                    reportId: report.id,
-                    highlighted: highlighted || isFocused,
-                    element: (
-                        <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
-                            sx={{
-                                width: '100%',
-                                backgroundColor: theme.palette.secondary.bgcolor,
-                                ...ComponentBorderStyle,
-                                ...(highlighted ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                            }}
-                            onClick={() => {
-                                dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
-                            }}
-                        >
-                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
-                                '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                                '&:hover .report-delete-btn': { opacity: 1 },
-                            }}>
-                                <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
-                                    <Typography sx={{
-                                        fontSize: 11,
-                                        fontWeight: 500,
-                                        color: 'text.primary',
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: 'vertical',
-                                        overflow: 'hidden',
-                                        wordBreak: 'break-all',
-                                    }}>
-                                        {report.title || t('report.untitled')}
-                                    </Typography>
-                                    {isGenerating && (
-                                        <Typography sx={{
-                                            fontSize: 9,
-                                            color: 'text.disabled',
-                                            lineHeight: 1.3,
-                                            mt: 0.25,
-                                        }}>
-                                            {t('report.composing')}
-                                        </Typography>
-                                    )}
-                                </Box>
-                                <Tooltip title={t('dataThread.deleteReport')}>
-                                    <IconButton
-                                        className="report-delete-btn"
-                                        size="small"
-                                        color="error"
-                                        sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            dispatch(dfActions.deleteGeneratedReport(report.id));
-                                        }}
-                                    >
-                                        <DeleteIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                </Tooltip>
-                            </Box>
-                        </Card>
-                    ),
-                });
+            if (report.status === 'generating') continue;
+            timelineItems.push(buildReportTimelineItem(report, highlighted));
+            if (report.summary) {
+                const summaryEntry: InteractionEntry = {
+                    from: 'data-agent', to: 'user', role: 'summary',
+                    plan: report.summaryThought,
+                    content: report.summary,
+                    timestamp: report.updatedAt,
+                };
+                pushInteractionEntries(
+                    [summaryEntry], tableId, triggerType, highlighted,
+                    `report-summary-${report.id}`,
+                );
+            }
         }
     };
 
@@ -1696,10 +1725,14 @@ let SingleThreadGroupView: FC<{
         // Add table card and its charts
         pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
 
-        // Add report cards anchored to charts of this table
-        pushReportItems(tableId, isHighlighted);
+        // Add report cards anchored to this table. Reports are output cards of
+        // the run (like charts), so they sit with the other outputs, BEFORE the
+        // run's closing summary.
+        pushReportItems(tableId, isHighlighted, 'trigger');
 
-        // After-table entries (e.g. summary)
+        // After-table entries (e.g. summary). The run's closing summary is the
+        // final word and must follow the LAST artifact (table, chart, or
+        // report), so it is pushed after pushReportItems.
         const afterTable = afterTableMap.get(tableId);
         if (afterTable && afterTable.length > 0) {
             pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
@@ -1733,10 +1766,14 @@ let SingleThreadGroupView: FC<{
 
         pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
 
-        // Add report cards anchored to charts of this leaf table
-        pushReportItems(lt.id, isHL);
+        // Add report cards anchored to this leaf table. Reports are output cards
+        // of the run (like charts), so they sit with the other outputs, BEFORE
+        // the run's closing summary.
+        pushReportItems(lt.id, isHL, 'leaf-trigger');
 
-        // After-table entries (e.g. summary)
+        // After-table entries (e.g. summary). The run's closing summary is the
+        // final word and must follow the LAST artifact (table, chart, or
+        // report), so it is pushed after pushReportItems.
         const leafAfterEntries = leafAfterTableMap.get(lt.id);
         if (leafAfterEntries && leafAfterEntries.length > 0) {
             pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
@@ -1751,6 +1788,9 @@ let SingleThreadGroupView: FC<{
     const TIMELINE_GAP = '4px'; // gap between timeline and card content
     const DOT_SIZE = 6;
     const CARD_PY = '6px'; // vertical padding for each timeline row
+    // Mirror the left timeline gutter on the right so cards sit visually
+    // centred in their column instead of hugging the right edge.
+    const CARD_CONTENT_PR = `${TIMELINE_WIDTH}px`;
 
     // CSS `border-style: dashed` stretches dashes to fit each element's
     // height, so stacked segments end up with mismatched dash lengths.  A
@@ -1791,13 +1831,10 @@ let SingleThreadGroupView: FC<{
             ? theme.palette.primary.main
             : 'rgba(0,0,0,0.15)';
 
-        // For report items, show an article icon or spinner if generating
-        if (item.type === 'report') {
-            const report = item.reportId ? generatedReports.find(r => r.id === item.reportId) : undefined;
-            if (report?.status === 'generating') {
-                return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />;
-            }
-            return <ArticleIcon sx={{ width: 14, height: 14, color: item.highlighted ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+        // Artifact output rows (reports today, future skill outputs) carry
+        // their own precomputed gutter dot from the artifact factory.
+        if (item.type === 'artifact') {
+            return item.gutterIcon ?? <Box sx={{ width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', backgroundColor: color }} />;
         }
 
         // For running agent items, show a spinner instead of a dot
@@ -1907,7 +1944,7 @@ let SingleThreadGroupView: FC<{
                         {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
                         {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, display: 'flex', alignItems: 'center' }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, pr: CARD_CONTENT_PR, display: 'flex', alignItems: 'center' }}>
                         {item.element}
                     </Box>
                 </Box>
@@ -1983,7 +2020,7 @@ let SingleThreadGroupView: FC<{
                         {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
                         {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
                         {item.element}
                     </Box>
                 </Box>
@@ -2006,7 +2043,7 @@ let SingleThreadGroupView: FC<{
                         {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
                         {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
                         {item.element}
                     </Box>
                 </Box>
@@ -2054,7 +2091,7 @@ let SingleThreadGroupView: FC<{
                     )}
                     {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
-                <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: TIMELINE_GAP,
+                <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR,
                     ...(item.type === 'used-table' && { display: 'flex', alignItems: 'center' }),
                 }}>
                     {item.element}
@@ -3117,13 +3154,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // only one column fits, splitting a long thread into segments adds visual
     // overhead (continuation headers + ghost parents) without any layout
     // benefit, since the segments would just stack in the same single column.
-    const CARD_GAP = 12; // padding + spacing between cards in a column
-    const PANEL_PADDING = 16;
-    const CARD_WIDTH = 220;
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
-    // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
-    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
+    // Column geometry (CARD_WIDTH / CARD_GAP / PANEL_PADDING) is defined once
+    // in ./threadLayout and shared with DataFormulator's pane snapping.
+    const fittableColumns = fittableThreadColumns(containerWidth);
 
     // Adaptively split long derivation chains so the resulting segments fill
     // the available columns evenly.  See `computeSplitExtraLeaves` for the
@@ -3410,7 +3443,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 display: 'flex',
                 flexDirection: 'row',
                 flexWrap: 'nowrap',
-                justifyContent: 'center',
+                justifyContent: 'flex-start',
                 gap: `${CARD_GAP}px`,
                 py: 1,
                 // Bottom padding leaves room so the scroll handler can position

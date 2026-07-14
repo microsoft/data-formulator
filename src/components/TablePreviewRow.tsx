@@ -26,6 +26,9 @@ export interface TablePreviewRowProps {
     filterChips?: React.ReactNode;   // optional chip row under header
     preview: TablePreviewData;
     expanded: boolean;
+    /** Optional height reserved only while a remote preview is loading.
+     *  Ready/error/empty states return to their natural content height. */
+    loadingHeight?: number;
     onTogglePreview?: () => void;
     unresolved?: { message: string; detail?: string };
     dim?: boolean;
@@ -33,7 +36,7 @@ export interface TablePreviewRowProps {
 
 export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
     name, meta, leading, trailing, filterChips,
-    preview, expanded, onTogglePreview, unresolved, dim = false,
+    preview, expanded, loadingHeight, onTogglePreview, unresolved, dim = false,
 }) => {
     const { t } = useTranslation();
     const showPreviewButton = !!onTogglePreview && !unresolved;
@@ -51,10 +54,10 @@ export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {leading}
                 {unresolved && <ErrorOutlineIcon sx={{ fontSize: 14, color: 'warning.main' }} />}
-                <Typography sx={{ fontSize: 12, fontWeight: 500, minWidth: 0 }} noWrap>{name}</Typography>
+                <Typography title={name} sx={{ fontSize: 12, fontWeight: 500, minWidth: 0 }} noWrap>{name}</Typography>
                 {meta && <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>{meta}</Typography>}
-                {trailing}
                 <Box sx={{ flex: 1 }} />
+                {trailing}
                 {showPreviewButton && (
                     <Button size="small" variant="text" disabled={isLoading} onClick={onTogglePreview}
                         sx={{ textTransform: 'none', fontSize: 10, py: 0, px: 0.75, minHeight: 0 }}>
@@ -75,14 +78,33 @@ export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
             ) : (
                 <>
                     {filterChips && (
-                        <Box sx={{ pl: indent, mt: 0.25, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        <Box sx={{ pl: indent, mt: 0.3, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                             {filterChips}
                         </Box>
                     )}
                     <Collapse in={expanded}>
-                        <Box sx={{ pl: indent, mt: 0.75 }}>
+                        <Box sx={{
+                            pl: indent,
+                            mt: 0.75,
+                            // Reserve space only for the asynchronous loading
+                            // state. Once resolved, the table uses natural
+                            // height: five rows plus the truncation row fit
+                            // without a scroller, while short tables stay compact.
+                            ...(loadingHeight && preview.state === 'loading' ? {
+                                height: loadingHeight,
+                                overflow: 'hidden',
+                                boxSizing: 'border-box',
+                            } : {
+                                overflowX: 'auto',
+                                overflowY: 'visible',
+                            }),
+                        }}>
                             {preview.state === 'loading' ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
+                                <Box sx={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1,
+                                    height: loadingHeight ? '100%' : undefined,
+                                    py: loadingHeight ? 0 : 1,
+                                }}>
                                     <CircularProgress size={14} />
                                     <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
                                         {t('dataLoading.loadPlan.previewing')}
@@ -99,6 +121,7 @@ export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
                                     totalRows={preview.totalRows}
                                     maxRows={5} maxColumns={8} maxCellLength={18}
                                     fontSize={10.5} headerFontSize={10}
+                                    truncationIndicator="row"
                                 />
                             ) : preview.state === 'ready' ? (
                                 <Typography sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>

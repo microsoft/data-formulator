@@ -2,17 +2,16 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
-import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
+import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash } from './utils';
 import { apiRequest } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
-import { getChartPngDataUrl } from './chartCache';
 import i18n from '../i18n';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporalType } from '../data/utils';
@@ -58,7 +57,6 @@ export interface ServerConfig {
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
-    PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
     AVAILABLE_LANGUAGES: string[];
     DATA_FORMULATOR_HOME?: string;
@@ -118,6 +116,7 @@ export interface ClientConfig {
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 2.0)
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
     paletteKey: string; // active color palette key from tokens.ts
+    miniMode: boolean; // when true, run the single-turn MiniAnalystAgent (for small/local models)
 }
 
 export interface GeneratedReport {
@@ -131,6 +130,25 @@ export interface GeneratedReport {
     contentSnapshotHash?: string;
     prompt?: string;
     status?: 'generating' | 'completed' | 'error';
+    // The run's closing answer (the agent's summary of what the report covers).
+    // Owned by the report — not borrowed onto a table's interaction log — so it
+    // is rendered and deleted together with the report (no cross-collection
+    // tagging). `summaryThought` is the agent's reasoning behind that summary.
+    summary?: string;
+    summaryThought?: string;
+    generatingPhase?: 'inspecting' | 'writing';  // transient: which phase the agent is in while generating
+    // transient: accumulated inspect steps, flipped to done on completion.
+    // `charts` carries lightweight descriptors (chartType for the icon + a
+    // display name) so the editor can render a chart-type icon next to a title
+    // or field list. Kept serializable (no React nodes) for redux-persist.
+    inspectionSteps?: {
+        label: string;
+        doneLabel?: string;   // past-tense label shown once the step completes
+        done: boolean;
+        charts?: { chartType: string; name: string }[];
+        startedAt?: number;   // epoch ms when the tool call started
+        durationMs?: number;  // wall time once the step is done
+    }[];
 }
 
 export interface DataFormulatorState {
@@ -167,7 +185,6 @@ export interface DataFormulatorState {
     viewMode: 'editor' | 'report';
 
     chartSynthesisInProgress: string[];
-    chartInsightInProgress: string[];
 
     /**
      * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
@@ -211,6 +228,24 @@ export interface DataFormulatorState {
      */
     dataLoadingChatResetCounter: number;
     /**
+     * Pending submission queued for the data-loading chat. Set by any
+     * surface that wants to hand a prompt off to the chat (the menu
+     * agent input box, suggestion auto-run, external dialog callers).
+     * `DataLoadingChat` consumes it on render: it clears the slot and
+     * sends the carried payload as a fresh user message. Using a single
+     * redux slot (instead of props + a reset counter) eliminates the
+     * cross-tick race where the parent's pre-clear would otherwise
+     * cancel the auto-send for the new prompt. Transient — not persisted.
+     */
+    dataLoadingChatPending: { text: string; images: string[]; attachments: string[]; hidden?: boolean } | null;
+    /**
+     * Monotonic counter bumped whenever a connector is created/changed from a
+     * surface that is not the sidebar itself (e.g. the inline connection form
+     * in the data-loading chat, design 38). `DataFormulator` watches it and
+     * refreshes the connector list so the new source appears. Transient.
+     */
+    connectorRefreshRequest: number;
+    /**
      * Pending hand-off from the Data Agent to a peer agent. Set by the
      * Data Agent's `delegate` action card; consumed by `DataFormulator`
      * (for `data_loading` → opens the upload dialog) or
@@ -234,12 +269,26 @@ export interface DataFormulatorState {
     /** Whether the data source sidebar is expanded (true) or collapsed to rail (false) */
     dataSourceSidebarOpen: boolean;
 
+    /** Which data source sidebar tab is active. Persisted so it survives session refresh. */
+    dataSourceSidebarTab: 'sources' | 'sessions' | 'knowledge';
+
     /**
      * One-shot signal asking the sidebar to focus a specific connector
      * (open the sidebar, switch to sources tab, expand + scroll-into-view
      * + briefly highlight). Cleared by the sidebar after consumption.
      */
     focusedConnectorId?: string;
+
+    /**
+     * AI-generated starter exploration questions, stored per root table.
+     * Keyed by table id; each entry's `questions` are tailored to that table
+     * (plus optional cross-table questions when other tables exist).
+     * `signature` is the root-table-set signature the questions were generated
+     * for (so they refresh when the set of tables changes). Persisted;
+     * `starterQuestionsStatus` is transient.
+     */
+    starterQuestions: { [tableId: string]: { questions: string[]; signature: string } };
+    starterQuestionsStatus: { [tableId: string]: 'idle' | 'loading' | 'error' };
 }
 
 // Define the initial state using that type
@@ -267,7 +316,6 @@ const initialState: DataFormulatorState = {
     viewMode: 'editor',
 
     chartSynthesisInProgress: [],
-    chartInsightInProgress: [],
     chartThumbnails: {},
     displayRowsTick: 0,
 
@@ -275,7 +323,6 @@ const initialState: DataFormulatorState = {
         DISABLE_DISPLAY_KEYS: false,
         DISABLE_DATA_CONNECTORS: false,
         DISABLE_CUSTOM_MODELS: false,
-        PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
         AVAILABLE_LANGUAGES: ['en', 'zh'],
         DEV_MODE: false,
@@ -289,6 +336,7 @@ const initialState: DataFormulatorState = {
         maxStretchFactor: 2.0,
         frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
+        miniMode: false,
     },
 
     dataLoaderConnectParams: {},
@@ -299,6 +347,8 @@ const initialState: DataFormulatorState = {
     dataLoadingChatMessages: [],
     dataLoadingChatInProgress: false,
     dataLoadingChatResetCounter: 0,
+    dataLoadingChatPending: null,
+    connectorRefreshRequest: 0,
     agentHandoffRequest: null,
 
     generatedReports: [],
@@ -310,9 +360,13 @@ const initialState: DataFormulatorState = {
 
     dataSourceSidebarOpen: false,
 
-    focusedConnectorId: undefined,
-}
+    dataSourceSidebarTab: 'sources',
 
+    focusedConnectorId: undefined,
+
+    starterQuestions: {},
+    starterQuestionsStatus: {},
+}
 /**
  * Non-memoized equivalent of `dfSelectors.getAllCharts` for use inside
  * reducers. Reducers receive an Immer draft `state`; passing a draft into
@@ -326,6 +380,27 @@ const collectAllCharts = (state: DataFormulatorState): Chart[] => {
         .filter(t => t.derive?.trigger?.chart)
         .map(t => t.derive?.trigger?.chart) as Chart[];
     return [...state.charts, ...triggerCharts];
+};
+
+// Category-B encoding-action overrides (e.g. heatmap color scheme) are stored in
+// chart.config keyed by the action key, and composed onto the encoding by the
+// Flint compiler at assemble time (applyEncodingOverrides). When the user
+// re-binds, clears, or swaps a channel that an override declares as a
+// `dependency`, the stored value is stale, so we drop it here. This reset is
+// host-side policy only; Flint never resets — it just composes
+// "override + current encoding". The action's declared dependencies live in the
+// template's EncodingActionDef.
+const resetDependentEncodingOverrides = (chart: Chart, ...changedChannels: Channel[]) => {
+    if (!chart.config) return;
+    const actions = getChartTemplate(chart.chartType)?.encodingActions;
+    if (!actions || actions.length === 0) return;
+    for (const action of actions) {
+        const deps = action.dependencies;
+        if (!deps) continue;
+        if (changedChannels.some(ch => deps.includes(ch)) && chart.config[action.key] !== undefined) {
+            delete chart.config[action.key];
+        }
+    }
 };
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -474,6 +549,10 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     // Delete reports triggered from this table
     state.generatedReports = state.generatedReports.filter(r => r.triggerTableId !== tableId);
 
+    // Drop this table's starter questions / generation status
+    delete state.starterQuestions[tableId];
+    delete state.starterQuestionsStatus[tableId];
+
     if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
         state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
     }
@@ -505,6 +584,60 @@ export const fetchFieldSemanticType = createAsyncThunk(
             }),
         });
         return data;
+    }
+);
+
+/**
+ * Generate a few short, table-tailored starter exploration questions for the
+ * currently focused root table. Called (debounced) when a root table is
+ * focused and it has no fresh questions for the current table-set signature.
+ * The focused table is the "primary" table; all root tables are passed as
+ * context so the agent can add a cross-table question when relevant.
+ * Dispatches `startStarterQuestions` up front, then `setStarterQuestions` /
+ * `setStarterQuestionsError`. Results are only applied if the signature is
+ * still current (guards against stale responses when data changed mid-flight).
+ */
+export const generateStarterQuestions = createAsyncThunk(
+    "dataFormulatorSlice/generateStarterQuestions",
+    async (arg: { tableId: string; signature: string; tableIds: string[] }, { getState, dispatch }) => {
+        const state = getState() as DataFormulatorState;
+
+        dispatch(dfActions.startStarterQuestions({ tableId: arg.tableId, signature: arg.signature }));
+
+        const inputTables = arg.tableIds
+            .map(id => state.tables.find(t => t.id === id))
+            .filter((t): t is DictTable => !!t)
+            .map(t => ({
+                name: t.id,
+                columns: t.names,
+                sample_rows: (t.rows || []).slice(0, 10),
+                description: typeof t.description === 'string' ? t.description : '',
+            }));
+
+        if (inputTables.length === 0) {
+            dispatch(dfActions.setStarterQuestions({ tableId: arg.tableId, signature: arg.signature, questions: [] }));
+            return;
+        }
+
+        try {
+            const { data } = await apiRequest(getUrls().DERIVE_STARTER_QUESTIONS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    input_tables: inputTables,
+                    primary_table: arg.tableId,
+                    model: dfSelectors.getActiveModel(state),
+                    n: 2,
+                }),
+            });
+            const questions: string[] = Array.isArray(data?.result)
+                ? data.result.map((q: any) => String(q)).filter((q: string) => q.trim() !== '')
+                : [];
+            dispatch(dfActions.setStarterQuestions({ tableId: arg.tableId, signature: arg.signature, questions: questions.slice(0, 2) }));
+        } catch (err) {
+            console.warn('generateStarterQuestions failed', err);
+            dispatch(dfActions.setStarterQuestionsError({ tableId: arg.tableId, signature: arg.signature }));
+        }
     }
 );
 
@@ -555,97 +688,6 @@ export const fetchCodeExpl = createAsyncThunk(
         return data;
     }
 );
-
-export const fetchChartInsight = createAsyncThunk(
-    "dataFormulatorSlice/fetchChartInsight",
-    async (args: { chartId: string; tableId: string }, { getState }) => {
-        console.log(">>> call agent to generate chart insight <<<");
-
-        const state = getState() as DataFormulatorState;
-        const chart = collectAllCharts(state).find(c => c.id === args.chartId);
-        if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
-
-        // Wait for chart image to be available in cache (replaces fixed 1.5s delay at call site)
-        const chartImage = await waitForChartImage(args.chartId);
-        if (!chartImage) {
-            throw new DOMException('Chart image not ready after waiting', 'ChartImageNotReady');
-        }
-
-        // Strip the data:image/png;base64, prefix for the backend
-        const base64Prefix = 'data:image/png;base64,';
-        const imagePayload = chartImage.startsWith(base64Prefix)
-            ? chartImage.substring(base64Prefix.length)
-            : chartImage;
-
-        // Collect field names from the encoding map
-        const fieldNames = Object.values(chart.encodingMap)
-            .map(enc => enc.fieldID)
-            .filter((id): id is string => !!id)
-            .map(id => {
-                const field = state.conceptShelfItems.find(f => f.id === id);
-                return field?.name || id;
-            });
-
-        // Collect input table info (include source tables for derived tables)
-        const table = state.tables.find(t => t.id === args.tableId);
-        const tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
-        const inputTables = [...new Set(tableIds)]
-            .map(tId => state.tables.find(t => t.id === tId))
-            .filter((t): t is DictTable => !!t)
-            .map(t => ({
-                name: t.id,
-                rows: t.rows,
-            }));
-
-        // Use unified timeout from user config
-        const timeoutSeconds = state.config.formulateTimeoutSeconds;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-            controller.abort(new DOMException(
-                `Chart insight timed out after ${timeoutSeconds}s`,
-                'TimeoutError',
-            ));
-        }, timeoutSeconds * 1000);
-
-        try {
-            const { data } = await apiRequest(getUrls().CHART_INSIGHT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chart_image: imagePayload,
-                    chart_type: chart.chartType,
-                    field_names: fieldNames,
-                    input_tables: inputTables,
-                    model: dfSelectors.getActiveModel(state),
-                }),
-                signal: controller.signal,
-            });
-
-            return { title: data.title, takeaways: data.takeaways,
-                     chartId: args.chartId, insightKey: computeInsightKey(chart) };
-        } finally {
-            clearTimeout(timeoutId);
-        }
-    }
-);
-
-/**
- * Wait for a chart image to appear in chartCache.
- * Polls at short intervals up to a maximum timeout.
- */
-async function waitForChartImage(
-    chartId: string,
-    timeoutMs: number = 8000,
-    intervalMs: number = 250,
-): Promise<string | undefined> {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-        const image = await getChartPngDataUrl(chartId);
-        if (image) return image;
-        await new Promise(r => setTimeout(r, intervalMs));
-    }
-    return undefined;
-}
 
 /** Fast fetch: returns the list of server-configured models instantly (no
  *  connectivity check).  The UI renders them immediately with a "testing"
@@ -710,7 +752,6 @@ export const dataFormulatorSlice = createSlice({
             state.viewMode = 'editor';
 
             state.chartSynthesisInProgress = [];
-            state.chartInsightInProgress = [];
 
             // Preserve serverConfig ??it reflects the actual server state, not user state
 
@@ -720,6 +761,7 @@ export const dataFormulatorSlice = createSlice({
             state.dataLoadingChatMessages = [];
             state.dataLoadingChatInProgress = false;
             state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
+            state.dataLoadingChatPending = null;
 
             state.generatedReports = [];
 
@@ -749,11 +791,15 @@ export const dataFormulatorSlice = createSlice({
                 viewMode: state.viewMode,
                 dataLoaderConnectParams: state.dataLoaderConnectParams,
                 dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+                dataSourceSidebarTab: state.dataSourceSidebarTab,
                 activeWorkspace: action.payload,
             };
         },
         setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
             state.dataSourceSidebarOpen = action.payload;
+        },
+        setDataSourceSidebarTab: (state, action: PayloadAction<'sources' | 'sessions' | 'knowledge'>) => {
+            state.dataSourceSidebarTab = action.payload;
         },
         /**
          * Ask the data-source sidebar to focus a specific connector.
@@ -767,6 +813,27 @@ export const dataFormulatorSlice = createSlice({
         /** Sidebar calls this once it has consumed a focus request. */
         clearFocusedConnector: (state) => {
             state.focusedConnectorId = undefined;
+        },
+        /** Mark a starter-questions generation as started for a table. */
+        startStarterQuestions: (state, action: PayloadAction<{ tableId: string; signature: string }>) => {
+            state.starterQuestions[action.payload.tableId] = {
+                questions: [],
+                signature: action.payload.signature,
+            };
+            state.starterQuestionsStatus[action.payload.tableId] = 'loading';
+        },
+        /** Store generated starter questions (only if signature still current). */
+        setStarterQuestions: (state, action: PayloadAction<{ tableId: string; signature: string; questions: string[] }>) => {
+            const cur = state.starterQuestions[action.payload.tableId];
+            if (!cur || cur.signature !== action.payload.signature) return;
+            cur.questions = action.payload.questions;
+            state.starterQuestionsStatus[action.payload.tableId] = 'idle';
+        },
+        /** Mark starter-questions generation as failed (only if signature current). */
+        setStarterQuestionsError: (state, action: PayloadAction<{ tableId: string; signature: string }>) => {
+            const cur = state.starterQuestions[action.payload.tableId];
+            if (!cur || cur.signature !== action.payload.signature) return;
+            state.starterQuestionsStatus[action.payload.tableId] = 'error';
         },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
@@ -837,6 +904,7 @@ export const dataFormulatorSlice = createSlice({
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
+                dataLoadingChatPending: null,
                 generatedReports: saved.generatedReports || [],
 
                 // Reset transient fields
@@ -844,10 +912,10 @@ export const dataFormulatorSlice = createSlice({
                 displayedMessageIdx: -1,
                 viewMode: saved.viewMode || 'editor',
                 chartSynthesisInProgress: [],
-                chartInsightInProgress: [],
                 cleanInProgress: false,
                 dataLoadingChatInProgress: false,
                 dataLoadingChatResetCounter: 0,
+                connectorRefreshRequest: 0,
                 agentHandoffRequest: null,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
@@ -856,6 +924,7 @@ export const dataFormulatorSlice = createSlice({
                 activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
 
                 dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+                dataSourceSidebarTab: state.dataSourceSidebarTab,
 
                 // Reset display-rows tick so dependent components re-fetch.
                 displayRowsTick: 0,
@@ -864,6 +933,10 @@ export const dataFormulatorSlice = createSlice({
                 // repopulates this slice from the module cache / fresh
                 // renders after load.
                 chartThumbnails: {},
+
+                // Restore persisted starter questions (status is transient).
+                starterQuestions: saved.starterQuestions ?? {},
+                starterQuestionsStatus: {},
             };
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
@@ -1245,10 +1318,13 @@ export const dataFormulatorSlice = createSlice({
         bumpDisplayRowsTick: (state) => {
             state.displayRowsTick = (state.displayRowsTick || 0) + 1;
         },
-        updateChartInsight: (state, action: PayloadAction<{chartId: string, insight: ChartInsight}>) => {
+        // Zoom level applied by the resizer. Stored on the Chart (not in
+        // config, which is for template-defined properties) so it persists
+        // with the chart across focus changes and session save/load.
+        updateChartScaleFactor: (state, action: PayloadAction<{chartId: string, scaleFactor: number}>) => {
             let chart = collectAllCharts(state).find(c => c.id == action.payload.chartId);
             if (chart) {
-                chart.insight = action.payload.insight;
+                chart.scaleFactor = action.payload.scaleFactor === 1 ? undefined : action.payload.scaleFactor;
             }
         },
         // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
@@ -1293,14 +1369,35 @@ export const dataFormulatorSlice = createSlice({
         // Replace a variant's spec in place — used by the "refresh stale variant"
         // flow (overlay in VisualizationView). The variant id stays the same so
         // the chip doesn't visibly disappear and re-appear.
-        updateStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, vlSpec: any, rationale?: string, encodingFingerprint?: string}>) => {
-            const { chartId, variantId, vlSpec, rationale, encodingFingerprint } = action.payload;
+        updateStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, vlSpec: any, rationale?: string, encodingFingerprint?: string, configUI?: ChartStyleVariant['configUI']}>) => {
+            const { chartId, variantId, vlSpec, rationale, encodingFingerprint, configUI } = action.payload;
             const chart = collectAllCharts(state).find(c => c.id === chartId);
             const v = chart?.styleVariants?.find(v => v.id === variantId);
             if (!v) return;
             v.vlSpec = vlSpec;
             if (rationale !== undefined) v.rationale = rationale;
             if (encodingFingerprint !== undefined) v.encodingFingerprint = encodingFingerprint;
+            // The agent re-authored the controls; replace them and reset values
+            // so stale keys don't linger.
+            if (configUI !== undefined) {
+                v.configUI = configUI && configUI.length > 0 ? configUI : undefined;
+                v.configValues = undefined;
+            }
+        },
+        // Set the value of a single generative-UI control on a style variant.
+        // value === undefined removes the override (falls back to the control's
+        // defaultValue at render time).
+        updateVariantConfigValue: (state, action: PayloadAction<{chartId: string, variantId: string, key: string, value: any}>) => {
+            const { chartId, variantId, key, value } = action.payload;
+            const chart = collectAllCharts(state).find(c => c.id === chartId);
+            const v = chart?.styleVariants?.find(v => v.id === variantId);
+            if (!v) return;
+            if (value === undefined) {
+                if (v.configValues) delete v.configValues[key];
+            } else {
+                if (!v.configValues) v.configValues = {};
+                v.configValues[key] = value;
+            }
         },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
@@ -1309,6 +1406,9 @@ export const dataFormulatorSlice = createSlice({
             let chart = collectAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 chart.encodingMap[channel] = encoding;
+                // The channel's binding changed — drop any Category-B override
+                // that depended on it (see resetDependentEncodingOverrides).
+                resetDependentEncodingOverrides(chart, channel);
                 // Auto-revert to default whenever the user edits the encoding so
                 // the canvas reflects what they're editing. Existing variants
                 // stay in the chip strip (now stale). See
@@ -1362,6 +1462,11 @@ export const dataFormulatorSlice = createSlice({
                     if (encoding.dtype !== value) changed = true;
                     encoding.dtype = value;
                 }
+                // When the user actually edits a channel in the shelf, drop any
+                // Category-B override computed against it (declared via the
+                // action's `dependencies`) so a stale override can't keep
+                // winning over the shelf edit. See resetDependentEncodingOverrides.
+                if (changed) resetDependentEncodingOverrides(chart, channel);
                 // Auto-revert to default when the encoding actually changes
                 // (see above). No-op updates must NOT clear the variant.
                 if (changed && chart.activeVariantId) chart.activeVariantId = undefined;
@@ -1379,6 +1484,8 @@ export const dataFormulatorSlice = createSlice({
 
                 chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy, sortOrder: enc2.sortOrder };
                 chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy, sortOrder: enc1.sortOrder };
+                // Both channels' bindings changed — drop dependent overrides.
+                resetDependentEncodingOverrides(chart, channel1, channel2);
                 // Auto-revert to default when the encoding changes (see above).
                 if (chart.activeVariantId) chart.activeVariantId = undefined;
             }
@@ -1665,6 +1772,84 @@ export const dataFormulatorSlice = createSlice({
             state.dataLoadingChatMessages = [];
             state.dataLoadingChatInProgress = false;
             state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
+            // Note: `dataLoadingChatPending` is intentionally left
+            // alone. Callers that want "fresh slate + auto-send the
+            // new prompt" dispatch `clearChatMessages` followed by
+            // `setDataLoadingChatPending` in the same tick — clearing
+            // pending here would race with that ordering.
+        },
+        setDataLoadingChatPending: (
+            state,
+            action: PayloadAction<{ text: string; images: string[]; attachments: string[]; hidden?: boolean }>,
+        ) => {
+            state.dataLoadingChatPending = action.payload;
+        },
+        queueDataLoadingTask: (
+            state,
+            action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
+        ) => {
+            // Start a new data-loading task while PRESERVING the prior
+            // conversation (Option A). Retriggers (agent delegate, a fresh
+            // query from the menu, a sample-task click) no longer wipe the
+            // thread — instead, when history exists we drop a lightweight
+            // "new request" divider so the boundary between tasks is clear,
+            // then queue the submission for `DataLoadingChat` to auto-send.
+            // The explicit reset button (`clearChatMessages`) remains the way
+            // to start from a blank slate.
+            if (state.dataLoadingChatMessages.length > 0) {
+                state.dataLoadingChatMessages = [
+                    ...state.dataLoadingChatMessages,
+                    {
+                        id: `divider-${Date.now()}`,
+                        role: 'assistant',
+                        content: '',
+                        divider: true,
+                        timestamp: Date.now(),
+                    },
+                ];
+            }
+            state.dataLoadingChatPending = action.payload;
+        },
+        // Move an earlier task "section" to the end so it becomes the latest
+        // one the user continues from — a lightweight, NON-destructive way to
+        // resume a prior conversation. `anchorId` is the id of the section's
+        // first message (a divider for tasks after the first, or the first
+        // bubble for the opening task). Nothing is deleted: the whole thread is
+        // preserved (and any tables already loaded stay in the workspace); only
+        // the order changes. The promoted block is guaranteed to start with a
+        // divider so it reads as the current section's boundary at the top.
+        promoteDataLoadingChatSection: (
+            state,
+            action: PayloadAction<{ anchorId: string }>,
+        ) => {
+            const msgs = state.dataLoadingChatMessages;
+            const startIdx = msgs.findIndex(m => m.id === action.payload.anchorId);
+            if (startIdx < 0) return;
+            // Section ends just before the next divider (or at the array end).
+            let endIdx = msgs.length;
+            for (let i = startIdx + 1; i < msgs.length; i += 1) {
+                if (msgs[i].divider) { endIdx = i; break; }
+            }
+            // Already the last section — nothing to promote.
+            if (endIdx === msgs.length) return;
+            const block = msgs.slice(startIdx, endIdx);
+            const rest = [...msgs.slice(0, startIdx), ...msgs.slice(endIdx)];
+            const promoted = block[0]?.divider
+                ? block
+                : [
+                    {
+                        id: `divider-${Date.now()}`,
+                        role: 'assistant' as const,
+                        content: '',
+                        divider: true,
+                        timestamp: Date.now(),
+                    },
+                    ...block,
+                ];
+            state.dataLoadingChatMessages = [...rest, ...promoted];
+        },
+        clearDataLoadingChatPending: (state) => {
+            state.dataLoadingChatPending = null;
         },
         confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
             const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
@@ -1680,6 +1865,33 @@ export const dataFormulatorSlice = createSlice({
             if (msg?.loadPlan) {
                 msg.loadPlan.candidates.forEach(c => { c.selected = false; });
             }
+        },
+        resolveConnectorForm: (
+            state,
+            action: PayloadAction<{
+                messageId: string;
+                status: 'pending' | 'connected';
+                connectorId?: string;
+                connectionName?: string;
+                tableCount?: number;
+            }>,
+        ) => {
+            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
+            if (msg?.connectorForm) {
+                msg.connectorForm.status = action.payload.status;
+                if (action.payload.connectorId !== undefined) {
+                    msg.connectorForm.connectorId = action.payload.connectorId;
+                }
+                if (action.payload.connectionName !== undefined) {
+                    msg.connectorForm.connectionName = action.payload.connectionName;
+                }
+                if (action.payload.tableCount !== undefined) {
+                    msg.connectorForm.tableCount = action.payload.tableCount;
+                }
+            }
+        },
+        requestConnectorRefresh: (state) => {
+            state.connectorRefreshRequest = (state.connectorRefreshRequest ?? 0) + 1;
         },
         setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
             state.dataLoadingChatInProgress = action.payload;
@@ -1741,15 +1953,49 @@ export const dataFormulatorSlice = createSlice({
                 state.viewMode = 'editor';
             }
         },
-        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string }>) => {
-            const { id, content, status, title } = action.payload;
+        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string; triggerTableId?: string; summary?: string; summaryThought?: string }>) => {
+            const { id, content, status, title, triggerTableId, summary, summaryThought } = action.payload;
             const report = state.generatedReports.find(r => r.id === id);
             if (report) {
                 report.content = content;
                 if (title) report.title = title;
                 if (status) report.status = status;
+                // The run's closing answer is owned by the report (rendered and
+                // deleted with it), not appended to a table's interaction log.
+                if (summary !== undefined) report.summary = summary;
+                if (summaryThought !== undefined) report.summaryThought = summaryThought;
+                // Re-anchor the report to the latest table produced during the
+                // run so it renders against the newest thread item (like charts).
+                if (triggerTableId) report.triggerTableId = triggerTableId;
+                // Once real report text starts streaming, switch the indicator to
+                // the "writing" phase. When generation ends, clear transient state.
+                if (content) report.generatingPhase = 'writing';
+                if (status === 'completed' || status === 'error') {
+                    report.generatingPhase = undefined;
+                    report.inspectionSteps = undefined;
+                }
                 report.updatedAt = Date.now();
             }
+        },
+        updateGeneratedReportProgress: (state, action: PayloadAction<{ id: string; kind: 'start' | 'end'; label?: string; doneLabel?: string; charts?: { chartType: string; name: string }[] }>) => {
+            const { id, kind, label, doneLabel, charts } = action.payload;
+            const report = state.generatedReports.find(r => r.id === id);
+            if (!report) return;
+            report.generatingPhase = 'inspecting';
+            const steps = report.inspectionSteps ?? [];
+            if (kind === 'start' && label) {
+                steps.push({ label, doneLabel, done: false, charts, startedAt: Date.now() });
+            } else if (kind === 'end') {
+                // Flip the first still-pending step to done (FIFO matches the
+                // order the backend emits start/end), so concurrent tool calls
+                // each resolve independently rather than adding a new message.
+                const pending = steps.find(s => !s.done);
+                if (pending) {
+                    pending.done = true;
+                    if (pending.startedAt) pending.durationMs = Date.now() - pending.startedAt;
+                }
+            }
+            report.inspectionSteps = steps;
         },
         clearGeneratedReports: (state) => {
             state.generatedReports = [];
@@ -1799,8 +2045,8 @@ export const dataFormulatorSlice = createSlice({
                 });
             }
             // Reset other transient in-progress flags that snuck into the
-            // persisted blob (chartSynthesisInProgress / chartInsightInProgress
-            // are already blacklisted in store.ts).
+            // persisted blob (chartSynthesisInProgress is already blacklisted
+            // in store.ts).
             incoming.cleanInProgress = false;
             incoming.dataLoadingChatInProgress = false;
             incoming.sessionLoading = false;
@@ -1972,58 +2218,6 @@ export const dataFormulatorSlice = createSlice({
                     value: 'Failed to infer field semantic types',
                 });
             }
-        })
-        .addCase(fetchChartInsight.pending, (state, action) => {
-            let chartId = action.meta.arg.chartId;
-            if (!state.chartInsightInProgress.includes(chartId)) {
-                state.chartInsightInProgress.push(chartId);
-            }
-        })
-        .addCase(fetchChartInsight.fulfilled, (state, action) => {
-            let { chartId, insightKey, title, takeaways } = action.payload;
-            let chart = collectAllCharts(state).find(c => c.id === chartId);
-            if (chart && (title || (takeaways && takeaways.length > 0))) {
-                chart.insight = { title, takeaways: takeaways || [], key: insightKey };
-            }
-            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
-            console.log("fetched chart insight", action.payload);
-        })
-        .addCase(fetchChartInsight.rejected, (state, action) => {
-            const chartId = action.meta.arg.chartId;
-            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
-
-            const errorName = action.error?.name;
-
-            if (errorName === 'AbortError') {
-                // User cancelled — no feedback needed
-                return;
-            }
-
-            if (errorName === 'TimeoutError') {
-                state.messages.push({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'chart insight',
-                    value: i18n.t('messages.chartInsightTimedOut', {
-                        seconds: state.config.formulateTimeoutSeconds,
-                    }),
-                });
-                return;
-            }
-
-            if (errorName === 'ChartImageNotReady') {
-                state.messages.push({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'chart insight',
-                    value: i18n.t('messages.chartInsightImageNotReady'),
-                });
-                return;
-            }
-
-            state.messages.push({
-                timestamp: Date.now(), type: 'warning',
-                component: 'chart insight',
-                value: action.error?.message || i18n.t('messages.chartInsightFailed'),
-            });
         })
     },
 })

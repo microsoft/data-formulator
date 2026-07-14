@@ -9,7 +9,7 @@ import { DictTable } from "../components/ComponentType";
 import { Type } from "../data/types";
 import * as d3 from 'd3';
 
-import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "../lib/agents-chart";
+import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "flint-chart";
 import { getBrowserId } from './identity';
 
 export function getUrls() {
@@ -28,12 +28,9 @@ export function getUrls() {
         SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,
         
         CODE_EXPL_URL: `/api/agent/code-expl`,
-        CHART_INSIGHT_URL: `/api/agent/chart-insight`,
         SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
 
-        DERIVE_DATA: `/api/agent/derive-data`,
-        REFINE_DATA: `/api/agent/refine-data`,
-        DATA_AGENT_STREAMING: `/api/agent/data-agent-streaming`,
+        ANALYST_STREAMING: `/api/agent/analyst-streaming`,
 
         // these functions involves database
         UPLOAD_DB_FILE: `/api/tables/upload-db-file`,
@@ -51,7 +48,9 @@ export function getUrls() {
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
-        GENERATE_REPORT_CHAT: `/api/agent/generate-report-chat`,
+
+        // Starter exploration questions (generated on data load)
+        DERIVE_STARTER_QUESTIONS: `/api/agent/derive-starter-questions`,
 
         // Workspace display name (auto-naming)
         WORKSPACE_NAME: `/api/agent/workspace-name`,
@@ -98,11 +97,13 @@ export interface SourceTableRef {
  * All action routes accept `connector_id` in the JSON body.
  */
 export const CONNECTOR_ACTION_URLS = {
+    DISCOVER_OPTIONS: '/api/data-loaders/discover-options',
     CONNECT: '/api/connectors/connect',
     DISCONNECT: '/api/connectors/disconnect',
     GET_STATUS: '/api/connectors/get-status',
     GET_CATALOG: '/api/connectors/get-catalog',
     GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
+    GET_CATALOG_PROGRESS: '/api/connectors/get-catalog-progress',
     SEARCH_CATALOG: '/api/connectors/search-catalog',
     SYNC_CATALOG_METADATA: '/api/connectors/sync-catalog-metadata',
     GET_CACHED_CATALOG_TREE: '/api/connectors/get-cached-catalog-tree',
@@ -599,28 +600,15 @@ export const assembleVegaChart = (
         }
     }
 
-    // Hack: pie-like radial charts grow too large because the circumference
-    // pressure model + VL's auto-radius both amplify the canvas size.
-    // Apply two dampening levers:
-    //   1. Shrink the base canvas so VL's arc radius starts smaller
-    //   2. Cap maxStretch more aggressively so pressure growth is limited
-    const PIE_LIKE_TYPES = new Set([
-        'Pie Chart', 'Rose Chart', 'Sunburst Chart',
-        'Radar Chart', 'Gauge Chart',
-    ]);
-    const isPieLike = PIE_LIKE_TYPES.has(chartType);
+    const effectiveW = Math.round(baseChartWidth * scaleFactor);
+    const effectiveH = Math.round(baseChartHeight * scaleFactor);
 
-    // Lever 1: reduce base canvas for pie-like charts (0.75× → smaller pie)
-    const canvasShrink = isPieLike ? 0.75 : 1;
-    const effectiveW = Math.round(baseChartWidth * scaleFactor * canvasShrink);
-    const effectiveH = Math.round(baseChartHeight * scaleFactor * canvasShrink);
-
-    // Lever 2: tighter stretch cap for pie-like charts
-    let effectiveMaxStretch = maxStretchFactor;
-    if (effectiveMaxStretch != null && isPieLike) {
-        // Compress toward 1: e.g. 2.0 → 1.3, 3.0 → 1.6, 5.0 → 2.2
-        effectiveMaxStretch = 1 + (effectiveMaxStretch - 1) * 0.3;
-    }
+    // Flint 0.2.x sizing: `baseSize` is the target the chart aims for; `canvasSize`
+    // is the hard ceiling (= base × stretch). DF's `maxStretchFactor` is that
+    // multiplier; fall back to 1.5 so the ceiling is always set explicitly rather
+    // than relying on flint's default. (Radial charts — pie/rose/etc. — render at the
+    // target like any other type under flint 0.2.1, so no pie-specific damping.)
+    const stretch = maxStretchFactor ?? 1.5;
 
     const fieldDisplayNames: Record<string, string> = {};
     for (const [name, meta] of Object.entries(tableMetadata)) {
@@ -633,12 +621,19 @@ export const assembleVegaChart = (
         chart_spec: {
             chartType,
             encodings,
-            canvasSize: { width: effectiveW, height: effectiveH },
+            // DF's default chart width/height is the *target* size → flint `baseSize`.
+            // The hard ceiling is base × stretch (see `stretch` above), so charts render
+            // at the configured size and only grow under pressure up to that ceiling.
+            baseSize: { width: effectiveW, height: effectiveH },
+            canvasSize: {
+                width: Math.round(effectiveW * stretch),
+                height: Math.round(effectiveH * stretch),
+            },
             chartProperties,
         },
         options: {
             addTooltips,
-            ...(effectiveMaxStretch != null ? { maxStretch: effectiveMaxStretch } : {}),
+            ...(maxStretchFactor != null ? { maxStretch: maxStretchFactor } : {}),
             ...assembleOptions,
         },
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),

@@ -7,6 +7,11 @@
     "capabilityExtractImage": "Extract structured data from images",
     "capabilityExtractFile": "Extract data from PDFs or pasted text",
     "capabilityHint": "Focus the input below to see example prompts.",
+    "newRequestDivider": "New request",
+    "continueFromSection": "Continue from this section",
+    "continueTask": "Continue",
+    "previewShowingRows": "Showing {{shown}} of {{total}} rows",
+    "previewShowingFirstRows": "Showing first {{shown}} rows",
     "sectionTry": "Try a task",
     "sectionChat": "Or just ask",
     "chatHint": "",
@@ -36,8 +41,11 @@
     "metadataStatusNotSynced": "Not synced",
     "loadPlan": {
       "filters": "Filters",
+      "filtersLabel": "Filters:",
       "rowLimit": "Row limit",
       "loadSelected": "Load selected",
+      "loadInNewWorkspace": "Load in new workspace",
+      "addToCurrent": "Add to current workspace",
       "loadedCount": "✓ Loaded {{count}} table",
       "loadedCount_plural": "✓ Loaded {{count}} tables",
       "preview": "Preview",
@@ -51,7 +59,12 @@
       "writingFile": "Writing file",
       "listingFiles": "Listing files",
       "runningPython": "Running Python",
-      "preparingPreview": "Preparing preview"
+      "preparingPreview": "Preparing preview",
+      "browsingCatalog": "Browsing catalog",
+      "searchingData": "Searching data",
+      "describingData": "Reading table metadata",
+      "probingData": "Probing data",
+      "proposingLoadPlan": "Proposing load plan"
     },
     "examples": {
       "extractFromImage": "Extract data from an image",

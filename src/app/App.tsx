@@ -51,8 +51,6 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
-    Switch,
-    FormControlLabel,
 } from '@mui/material';
 
 
@@ -79,7 +77,6 @@ import {
     useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
-import ChartGallery from '../gallery/ChartGallery';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
@@ -709,7 +706,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey, miniMode: config.miniMode ?? false}));
                             setOpen(false);
                         }}
                     >
@@ -770,8 +767,16 @@ const AppShell: FC = () => {
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
 
     const isAboutPage = location.pathname === '/about';
-    const isGalleryPage = location.pathname === '/gallery';
-    const isAppPage = !isAboutPage && !isGalleryPage;
+    const isAppPage = !isAboutPage;
+
+    // The canvas (threads, encoding shelf, viz cards) genuinely needs room, so
+    // the app shell floors content at 1000px and scrolls horizontally below
+    // that. The landing page (app route with no tables yet) has none of that —
+    // its hero, chips, connected-sources row and demo grid all reflow — so we
+    // relax its floor to 640px, a comfortable width where everything still
+    // wraps cleanly before a horizontal scrollbar appears.
+    const isLandingView = isAppPage && tables.length === 0;
+    const shellMinWidth = isLandingView ? '640px' : '1000px';
 
     return (
         <Box sx={{
@@ -783,7 +788,7 @@ const AppShell: FC = () => {
             bottom: 0,
             overflow: 'auto',
             '& > *': {
-                minWidth: '1000px',
+                minWidth: shellMinWidth,
                 minHeight: '600px'
             },
         }}>
@@ -823,10 +828,9 @@ const AppShell: FC = () => {
                         >
                             <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
                             <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
-                            <TopNavButton to="/gallery" label={t('appBar.gallery')} selected={isGalleryPage} />
                         </Box>
                         {tables.length === 0 && !activeWorkspace && (
-                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.secondary', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                                 {t('appBar.microsoftResearch')}
                             </Typography>
                         )}
@@ -848,28 +852,6 @@ const AppShell: FC = () => {
                                         <ExitSessionButton />
                                     </>
                                 )}
-                            </Box>
-                        )}
-                        {isGalleryPage && (
-                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, alignItems: 'center' }}>
-                                <LanguageSwitcher />
-                                <Tooltip title={t('appBar.viewOnGitHub')}>
-                                    <IconButton
-                                        component="a"
-                                        href="https://github.com/microsoft/data-formulator"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={t('appBar.viewOnGitHub')}
-                                        sx={{
-                                            color: 'inherit',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                            }
-                                        }}
-                                    >
-                                        <GitHubIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
                             </Box>
                         )}
                         {isAboutPage && (
@@ -1237,10 +1219,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     element: <About />,
                 },
                 {
-                    path: "gallery",
-                    element: <ChartGallery />,
-                },
-                {
                     path: "*",
                     element: <DataFormulatorFC />,
                 },
@@ -1253,7 +1231,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             {configLoaded && authChecked ? (
                 <RouterProvider router={router} />
             ) : (
-                <AnvilLoader />
+                <AnvilLoader label="loading data formulator..." />
             )}
             {migrationBrowserId && (
                 <IdentityMigrationDialog

@@ -35,7 +35,7 @@
         "dompurify": "^3.4.0",
         "echarts": "^6.0.0",
         "exceljs": "^4.4.0",
-        "gofish-graphics": "^0.0.22",
+        "flint-chart": "^0.2.1",
         "html2canvas": "^1.4.1",
         "i18next": "^26.0.1",
         "i18next-browser-languagedetector": "^8.2.1",

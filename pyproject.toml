@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.7.0"
+version = "0.8.0a1"
 
 requires-python = ">=3.11"
 authors = [
@@ -37,6 +37,7 @@ dependencies = [
     "pyarrow>=13.0.0",
     "xlrd",
     "openpyxl>=3.1.0",
+    "lxml",                     # pandas.read_html web table extraction
     "yfinance",
     # Data-loader deps (all included by default; try/except keeps things safe)
     "pymongo",                  # mongodb
@@ -58,6 +59,13 @@ dependencies = [
     "flask-session>=0.8.0",     # Server-side session (SQLite) for TokenStore
 ]
 
+[project.optional-dependencies]
+# Headless-browser rendering for the data-loading agent's fetch_url(render=true).
+# Needed for JavaScript single-page apps and pages behind a browser-verification
+# challenge that a plain HTTP fetch cannot pass. After installing, also run:
+#   python -m playwright install chromium
+browser = ["playwright>=1.40"]
+
 [project.urls]
 Homepage = "https://github.com/microsoft/data-formulator"
 Repository = "https://github.com/microsoft/data-formulator.git"
@@ -66,6 +74,18 @@ Repository = "https://github.com/microsoft/data-formulator.git"
 [tool.setuptools]
 package-dir = {"" = "py-src"}
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["py-src"]
+include = ["data_formulator*"]
+
+# Non-Python resources that must ship inside the installed package. The Azure
+# build runs `pip install .` from a zip (no VCS), so include-package-data alone
+# does not pick these up — declare them explicitly. Analyst skills load their
+# `SKILL.md` body and `tools.json` schemas at runtime from the package dir.
+# Scoped to the exact skill filenames so unrelated data JSON is not bundled.
+[tool.setuptools.package-data]
+"*" = ["SKILL.md", "tools.json"]
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"

@@ -41,6 +41,7 @@ const PlanStepItem: React.FC<{
     showShimmer: boolean;
     trailing?: React.ReactNode;
 }> = ({ step, showShimmer, trailing }) => {
+    const theme = useTheme();
     const [expanded, setExpanded] = useState(false);
     const isChecked = step.startsWith('✓');
     const isFailed = step.startsWith('✗');
@@ -49,8 +50,14 @@ const PlanStepItem: React.FC<{
     const displayLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
     const IconComp = getStepIconComponent(step);
 
-    const stepColor = isFailed ? 'error.main' : isWarning ? 'warning.main' : isInfo ? 'info.main'
-        : showShimmer ? 'text.secondary' : 'text.disabled';
+    // Text stays in the normal muted color even for failed/warning steps — the
+    // icon already signals the state, so loud red/orange body text is overkill.
+    const textColor = showShimmer ? 'text.secondary' : 'text.disabled';
+    // The icon carries the state hint, lightly tinted (not full-strength).
+    const iconColor = isFailed ? alpha(theme.palette.error.main, 0.7)
+        : isWarning ? alpha(theme.palette.warning.main, 0.7)
+        : isInfo ? alpha(theme.palette.info.main, 0.7)
+        : textColor;
 
     return (
         <Box sx={{
@@ -74,10 +81,10 @@ const PlanStepItem: React.FC<{
         }}
         onClick={() => setExpanded(prev => !prev)}
         >
-            <IconComp sx={{ width: 10, height: 10, color: stepColor, flexShrink: 0, mt: '2px' }} />
+            <IconComp sx={{ width: 10, height: 10, color: iconColor, flexShrink: 0, mt: '2px' }} />
             <Typography component="span" sx={{
                 fontSize: '10px',
-                color: stepColor,
+                color: textColor,
                 fontStyle: 'italic',
                 lineHeight: 1.4,
                 ...(!expanded ? {
@@ -242,6 +249,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 // so they should read stronger than the agent's bubbles.
                 backgroundColor: palette.bgcolor,
                 border: `1px solid ${borderColor.component}`,
+                // Cap very long instructions (e.g. a replayed workflow) so the
+                // card stays compact; the full text scrolls within the cap.
+                maxHeight: 160,
+                overflowY: 'auto',
+                overscrollBehavior: 'contain',
                 ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
                 ...clickSx,
             }}>
@@ -294,7 +306,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 break;
             }
             case 'summary':
-                color = theme.palette.text.primary;
+                // Chrome-less prose trailing the turn — recede into ambient
+                // text (matching `instruction`); the gutter icon carries the
+                // "finding" cue, not a heavier text color.
+                color = theme.palette.text.secondary;
                 break;
             case 'error':
                 color = theme.palette.error.main;
@@ -380,9 +395,12 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         const bubbleHover = bubbleAccent
             ? alpha(bubbleAccent, 0.09)
             : alpha(theme.palette.text.primary, 0.05);
-        // Conversational bubbles get card chrome, except resolved pauses
-        // which render as a chrome-less compact trace.
-        const bubbleSx = (isConversational && !isResolvedPause) ? {
+        // Conversational bubbles get card chrome, except resolved pauses and
+        // summaries — both render chrome-less. A summary is the agent's
+        // closing remark on a turn; reading it as plain prose (no box, no
+        // fill) keeps the timeline foregrounding charts/data rather than
+        // persisting the remark as a card.
+        const bubbleSx = (isConversational && !isResolvedPause && !isSummary) ? {
             py: 0.5, px: 1,
             borderRadius: radius.sm,
             backgroundColor: bubbleBg,
@@ -392,6 +410,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             // the gutter icon and adjacent bubbles. No bg, no border.
             py: '2px', px: '4px',
             opacity: 0.7,
+        } : isSummary ? {
+            // Summary as flowing prose: no card chrome, just inline padding
+            // so it aligns with the gutter icon and adjacent bubbles.
+            py: '2px', px: '4px',
         } : {};
 
         return (
@@ -409,7 +431,12 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         mx: '-2px',
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
                     } : {}),
-                    ...(isCollapsible && isConversational ? {
+                    ...(isCollapsible && isSummary ? {
+                        // Gentle hover that doesn't reintroduce a card fill.
+                        borderRadius: '4px',
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
+                    } : {}),
+                    ...(isCollapsible && isConversational && !isSummary ? {
                         '&:hover': { backgroundColor: bubbleHover },
                     } : {}),
                 }}

@@ -15,8 +15,11 @@ const EXCLUDED_FIELDS = new Set([
     'models', 'selectedModelId', 'testedModels',
     'dataLoaderConnectParams', 'identity', 'serverConfig',
     // Transient fields that shouldn't trigger or be included in saves
-    'chartSynthesisInProgress', 'chartInsightInProgress',
+    'chartSynthesisInProgress',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
+    // Starter-questions status is transient (loading/error); the questions
+    // themselves are persisted, but the fetch status should reset on reload.
+    'starterQuestionsStatus',
     // Thumbnails are derived from chart specs + table data; re-rendered
     // from the module cache on reload, so don't waste bandwidth saving them.
     'chartThumbnails',

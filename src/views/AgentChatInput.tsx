@@ -22,10 +22,11 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
-import { borderColor, transition } from '../app/tokens';
+import { borderColor, transition, radius } from '../app/tokens';
 
 export interface AgentChatInputProps {
     value: string;
@@ -164,6 +165,55 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
 
     const canSend = (value.trim().length > 0 || images.length > 0) && !inProgress;
 
+    // Shared file intake: images become inline previews, everything else is
+    // handed to `onNonImageFile` (scratch upload → attachment chip). Used by
+    // paste, the + attach button, and drag-and-drop so all three behave the
+    // same.
+    const processFiles = (files: File[]) => {
+        files.forEach(file => {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (reader.result) onImagesChange(prev => [...prev, reader.result as string]);
+                };
+                reader.readAsDataURL(file);
+            } else if (onNonImageFile) {
+                onNonImageFile(file);
+            }
+        });
+    };
+
+    const [isDragActive, setIsDragActive] = useState(false);
+
+    const dragHasFiles = (e: React.DragEvent) =>
+        Array.from(e.dataTransfer?.types ?? []).includes('Files');
+
+    const handleDragOver = (e: React.DragEvent) => {
+        if (!dragHasFiles(e) || inProgress) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    };
+
+    const handleDragEnter = (e: React.DragEvent) => {
+        if (!dragHasFiles(e) || inProgress) return;
+        e.preventDefault();
+        setIsDragActive(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        // Ignore leaves that bubble up from child elements.
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setIsDragActive(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        if (!dragHasFiles(e) || inProgress) return;
+        e.preventDefault();
+        setIsDragActive(false);
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 0) processFiles(Array.from(files));
+    };
+
     const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
         if (e.clipboardData?.files?.length) {
             const imageFiles = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
@@ -183,15 +233,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = () => {
-                if (reader.result) onImagesChange(prev => [...prev, reader.result as string]);
-            };
-            reader.readAsDataURL(file);
-        } else if (onNonImageFile) {
-            onNonImageFile(file);
-        }
+        processFiles([file]);
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -236,6 +278,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         <Tooltip title={sendTooltip ?? t('dataLoading.sendTooltip')} placement="top">
             <span>
                 <IconButton size="small" onClick={onSend} disabled={!canSend}
+                    aria-label={sendTooltip ?? t('dataLoading.sendTooltip')}
                     sx={{
                         width: 28, height: 28,
                         bgcolor: canSend ? 'primary.main' : 'transparent',
@@ -277,7 +320,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                 width: '100%',
                 px: 1,
                 py: 0.75,
-                fontSize: 13,
+                fontSize: 14,
                 lineHeight: 1.5,
                 alignItems: 'flex-start',
                 '& .MuiInputBase-input': { width: '100%' },
@@ -289,7 +332,12 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     return (
         <Box sx={{ position: 'relative', width: '100%' }}>
             <Box
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
                 sx={{
+                    position: 'relative',
                     border: `1px solid ${borderColor.divider}`,
                     borderRadius: '12px',
                     bgcolor: theme.palette.background.paper,
@@ -308,6 +356,36 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                     ...sx,
                 }}
             >
+                {/* Drag-and-drop overlay — shown while a file is dragged over
+                    the composer. Uses the Data Formulator drop-zone language
+                    (2px dashed primary, tinted fill) inset from the container
+                    edge so it nests cleanly inside the border. Pointer events
+                    are disabled so the drop still lands on the container. */}
+                {isDragActive && (
+                    <Box sx={{
+                        position: 'absolute',
+                        inset: 4,
+                        zIndex: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 1,
+                        pointerEvents: 'none',
+                        border: `2px dashed ${theme.palette.primary.main}`,
+                        borderRadius: radius.md,
+                        // Opaque paper base with a primary wash on top, so the
+                        // placeholder text underneath is fully masked while the
+                        // tint identity is preserved.
+                        bgcolor: theme.palette.background.paper,
+                        backgroundImage: `linear-gradient(${alpha(theme.palette.primary.main, 0.08)}, ${alpha(theme.palette.primary.main, 0.08)})`,
+                        transition: transition.normal,
+                    }}>
+                        <UploadFileIcon sx={{ fontSize: 22, color: 'primary.main' }} />
+                        <Typography variant="body2" sx={{ fontWeight: 500, color: 'primary.main' }}>
+                            {t('dataLoading.dropToAttach', { defaultValue: 'Drop file to attach' })}
+                        </Typography>
+                    </Box>
+                )}
                 {/* Top slot (e.g. data-source chip bar) sits flush with the
                     input area below — no divider, same background. */}
                 {topSlot && (
@@ -469,7 +547,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 px: 1.5,
                                 py: 0.5,
                                 cursor: 'pointer',
-                                color: 'text.secondary',
+                                color: 'text.primary',
                                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
                             }}
                         >
@@ -481,7 +559,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         width: 16, flexShrink: 0,
-                                        color: 'text.disabled',
+                                        color: 'text.secondary',
                                     }}
                                 >
                                     {s.icon}
@@ -491,7 +569,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 variant="body2"
                                 sx={{
                                     flex: 1, minWidth: 0,
-                                    fontSize: 13,
+                                    fontSize: 14,
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
                                     whiteSpace: 'nowrap',
@@ -508,20 +586,6 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                             >
                                 {s.label}
                             </Typography>
-                            {s.kind && (
-                                <Typography
-                                    variant="caption"
-                                    sx={{
-                                        flexShrink: 0,
-                                        fontSize: 10,
-                                        letterSpacing: '0.04em',
-                                        textTransform: 'uppercase',
-                                        color: 'text.disabled',
-                                    }}
-                                >
-                                    {s.kind}
-                                </Typography>
-                            )}
                         </Box>
                     ))}
                 </Box>

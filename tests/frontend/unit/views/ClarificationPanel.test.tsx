@@ -16,6 +16,8 @@ vi.mock('react-i18next', () => ({
         'chartRec.clarificationQuestionLabel': `${params?.index}.`,
         'chartRec.optionalClarification': '(optional)',
         'chartRec.freeTextClarificationPlaceholder': 'Type your answer...',
+        'chartRec.customAnswerPlaceholder': 'Or type your own answer...',
+        'chartRec.confirmAnswer': 'Confirm answer',
         'chartRec.freeTextClarificationHint': 'Type your answer in the chat box below.',
       };
       return labels[key] || key;
@@ -82,7 +84,7 @@ describe('ClarificationPanel', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('shows a chat-box hint for free-text questions and renders no input', () => {
+  it('renders an inline input under a free-text question and submits it tagged to that question', () => {
     const onSubmit = vi.fn();
 
     render(
@@ -96,8 +98,116 @@ describe('ClarificationPanel', () => {
       />,
     );
 
-    expect(screen.getByText('Type your answer in the chat box below.')).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText('Type your answer...')).toBeNull();
+    // No "use the chat box" hint anymore — the panel is self-contained.
+    expect(screen.queryByText('Type your answer in the chat box below.')).toBeNull();
+
+    // The input sits inline under the question (its own answer field), not the
+    // choice-only override.
+    const input = screen.getByPlaceholderText('Type your answer...');
+    expect(input).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Or type your own answer...')).toBeNull();
+
+    // Empty input → nothing to submit yet.
     expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: 'Focus on 2024.' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Tagged to the question it answers (index 0), not a generic freeform blob.
+    expect(onSubmit).toHaveBeenCalledWith([{
+      question_index: 0,
+      answer: 'Focus on 2024.',
+      source: 'free_text',
+    }]);
+  });
+
+  it('lets a single-choice question take a typed answer instead of a chip', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <ClarificationPanel
+        questions={[{
+          text: 'Which metric?',
+          responseType: 'single_choice',
+          options: [{ label: 'Revenue' }],
+        }]}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    // single_choice now offers BOTH the chip and its own freeform field.
+    expect(screen.getByRole('button', { name: 'Revenue' })).toBeInTheDocument();
+    const input = screen.getByPlaceholderText('Or type your own answer...');
+
+    fireEvent.change(input, { target: { value: 'Actually, profit margin.' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Tagged to question 0 as a free_text answer (not a generic -1 override).
+    expect(onSubmit).toHaveBeenCalledWith([{
+      question_index: 0,
+      answer: 'Actually, profit margin.',
+      source: 'free_text',
+    }]);
+  });
+
+  it('supersedes a selected option when the user types a custom answer', () => {
+    const onSelectAnswer = vi.fn();
+    const onClearAnswer = vi.fn();
+
+    render(
+      <ClarificationPanel
+        questions={[{
+          text: 'Which metric?',
+          responseType: 'single_choice',
+          options: [{ label: 'Revenue' }],
+        }]}
+        selectedAnswers={{ 0: { question_index: 0, answer: 'Revenue', source: 'option' } }}
+        onSelectAnswer={onSelectAnswer}
+        onClearAnswer={onClearAnswer}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('Or type your own answer...');
+    fireEvent.change(input, { target: { value: 'profit margin' } });
+
+    // Typing records a free_text answer (autoSubmit=false) that overrides the
+    // prior option pick.
+    expect(onSelectAnswer).toHaveBeenCalledWith(
+      0,
+      { question_index: 0, answer: 'profit margin', source: 'free_text' },
+      false,
+    );
+
+    // Clearing the field removes the answer entirely.
+    fireEvent.change(input, { target: { value: '' } });
+    expect(onClearAnswer).toHaveBeenCalledWith(0);
+  });
+
+  it('records a typed answer live and submits it on Enter', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <ClarificationPanel
+        questions={[{
+          text: 'Anything else?',
+          responseType: 'free_text',
+        }]}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('Type your answer...');
+    fireEvent.change(input, { target: { value: 'Focus on 2024.' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSubmit).toHaveBeenCalledWith([{
+      question_index: 0,
+      answer: 'Focus on 2024.',
+      source: 'free_text',
+    }]);
   });
 });

@@ -66,7 +66,7 @@
     },
     "kusto": {
       "kusto_cluster": "例如 https://mycluster.region.kusto.windows.net",
-      "kusto_database": "数据库名称（留空可浏览所有数据库）",
+      "kusto_database": "数据库名称（必填）",
       "client_id": "仅服务主体",
       "client_secret": "仅服务主体",
       "tenant_id": "仅服务主体",

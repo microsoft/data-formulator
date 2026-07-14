@@ -25,12 +25,12 @@ import {
 
 import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import ContentPasteIcon from '@mui/icons-material/ContentPaste';
-import LinkIcon from '@mui/icons-material/Link';
 import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
+import HistoryIcon from '@mui/icons-material/History';
+import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 
@@ -38,12 +38,12 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
-import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
+import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { AnimatedAgentToyIcon } from './AgentToyIcon';
 import { AgentChatInput } from './AgentChatInput';
-import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { buildDataLoadingSuggestions, buildDataLoadingQuickActions } from './dataLoadingSuggestions';
 import { getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { generateUUID } from '../app/identity';
@@ -55,6 +55,7 @@ import {
     Switch,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
@@ -122,6 +123,12 @@ interface DataSourceCardProps {
     badge?: React.ReactNode;
     /** Optional hover tooltip; useful when `description` is truncated. */
     tooltip?: React.ReactNode;
+    /**
+     * When true the pill icon carries a faint primary accent at rest,
+     * marking it as an active "add data" call-to-action. Navigation pills
+     * (already-connected sources) leave this off to stay fully neutral.
+     */
+    accent?: boolean;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -208,6 +215,80 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     return tooltip
         ? <Tooltip title={tooltip} placement="top" arrow>{card}</Tooltip>
         : card;
+};
+
+// Text-link variant of a source affordance. Used across the chat-focused
+// landing so every source/action reads as a single, lightweight link style
+// (an existing source, an "add connection" action, or a one-off upload)
+// rather than a mix of pills and links competing with the composer.
+// `accent` marks an entry with a faint primary icon at rest.
+const SourceLink: React.FC<DataSourceCardProps> = ({
+    icon,
+    title,
+    description,
+    onClick,
+    disabled = false,
+    accent = false,
+    tooltip,
+}) => {
+    const link = (
+        <Box
+            component="button"
+            type="button"
+            onClick={disabled ? undefined : onClick}
+            disabled={disabled}
+            sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.5,
+                p: 0,
+                border: 'none',
+                background: 'none',
+                font: 'inherit',
+                maxWidth: '100%',
+                minWidth: 0,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.5 : 1,
+                color: accent ? 'primary.main' : 'text.secondary',
+                transition: 'color 120ms ease',
+                '&:hover': disabled ? {} : {
+                    color: 'primary.main',
+                    '& .SourceLink-title': { textDecoration: 'underline', textUnderlineOffset: 2 },
+                },
+            }}
+        >
+            <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+                flexShrink: 0,
+                '& .MuiSvgIcon-root': { fontSize: 15 },
+            }}>
+                {icon}
+            </Box>
+            <Typography
+                component="span"
+                className="SourceLink-title"
+                sx={{
+                    fontWeight: 400,
+                    fontSize: '0.8125rem',
+                    lineHeight: 1.4,
+                    color: 'inherit',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    minWidth: 0,
+                }}
+            >
+                {title}
+            </Typography>
+        </Box>
+    );
+
+    const tip = tooltip ?? (description || null);
+    return tip
+        ? <Tooltip title={tip} placement="top" arrow>{link}</Tooltip>
+        : link;
 };
 
 const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
@@ -448,12 +529,14 @@ export interface DataLoadMenuProps {
     onSelectConnector?: (connector: ConnectorInstance) => void;
     /**
      * Called when the user submits a prompt from the top-level Data Loading
-     * Agent chat box. Implementations should open the agent chat surface
-     * with the prompt (and optional pasted/attached images) pre-filled —
-     * typically auto-sent. If not provided, the chat box falls back to
-     * `onSelectTab('extract')`.
+     * Agent chat box. Implementations should hand the payload off to the
+     * agent chat surface, which will auto-send it as a fresh user
+     * message. Attachments are file names (already uploaded to the
+     * session scratch space) — the chat surface re-injects them as
+     * `[Uploaded: name]` mentions when building the backend payload.
+     * If not provided, the chat box falls back to `onSelectTab('extract')`.
      */
-    onStartChat?: (prompt: string, images?: string[]) => void;
+    onStartChat?: (prompt: string, images: string[], attachments: string[]) => void;
     /**
      * True when a prior data-loading agent conversation exists in
      * state. When set together with `onResumeChat`, the menu renders
@@ -499,39 +582,12 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: 'Untitled Session' }));
         return wsId;
     };
-    // Data source configurations (upload-style entries — file, paste,
-    // URL). The "Data Loading Agent" entry is surfaced separately as a
-    // chat box at the top of the menu. Sample datasets are no longer
-    // listed here — they're now exposed as the built-in `sample_datasets`
-    // connector in the Data Connectors section below.
-    const regularDataSources = [
-        { 
-            value: 'upload' as UploadTabType, 
-            title: t('upload.uploadFile'), 
-            description: t('upload.uploadFileDesc'),
-            icon: <UploadFileIcon />, 
-            disabled: false
-        },
-        { 
-            value: 'paste' as UploadTabType, 
-            title: t('upload.pasteData'), 
-            description: t('upload.pasteDataDesc'),
-            icon: <ContentPasteIcon />, 
-            disabled: false
-        },
-        { 
-            value: 'url' as UploadTabType, 
-            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL (live)' }), 
-            description: t('upload.loadFromUrlDesc'),
-            icon: <LinkIcon />, 
-            disabled: false,
-            badge: <StreamIcon sx={{ fontSize: 14, color: 'success.main', animation: 'pulse 2s infinite', '@keyframes pulse': {
-                '0%': { opacity: 1 },
-                '50%': { opacity: 0.4 },
-                '100%': { opacity: 1 },
-            } }} />,
-        },
-    ];
+    // One-off file upload is surfaced as an "Upload data" action in the
+    // connected-sources row (see `connectorActionSources`). Paste Data and
+    // Load from URL used to live here too, but they are now subsumed by the
+    // Data Loading Agent chat box at the top of the menu (paste text into the
+    // prompt; the agent's fetch_url loads any URL). Sample datasets are
+    // exposed as the built-in `sample_datasets` connector below.
 
     // Data connections — persistent configured sources (databases, services, etc.)
     const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action'; tooltip?: React.ReactNode }> = [
@@ -556,12 +612,26 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 tooltip: isLocalFolder && folderTooltip ? folderTooltip : undefined,
             };
         }),
+    ];
+
+    // "Add data" actions shown to the right of the connected sources (after a
+    // divider): one-off file upload, link a local folder, add a database.
+    const connectorActionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action' }> = [
+        // One-off file upload — fast, deterministic path that skips the agent.
+        {
+            value: 'upload' as UploadTabType,
+            title: t('upload.uploadData', { defaultValue: 'Upload data' }),
+            description: t('upload.uploadFileDesc'),
+            icon: <UploadFileIcon />,
+            disabled: false,
+            variant: 'action' as const,
+        },
         // "Local Folder" card (action variant, local mode only)
         ...(serverConfig?.IS_LOCAL_MODE ? [{
             value: 'local-folder' as UploadTabType,
             title: t('upload.localFolder', { defaultValue: 'Link local folder' }),
             description: t('upload.localFolderDesc', { defaultValue: 'Connect to a local folder for fast imports' }),
-            icon: <AddIcon />,
+            icon: <CreateNewFolderIcon />,
             disabled: false,
             variant: 'action' as const,
         }] : []),
@@ -605,22 +675,17 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     const submitAgentChat = () => {
         const text = agentInput.trim();
         if (text.length === 0 && agentImages.length === 0 && agentAttachments.length === 0) {
-            // Empty submission — just open the chat surface.
-            if (onStartChat) onStartChat('', []);
+            // Empty submission — just surface the chat.
+            if (onStartChat) onStartChat('', [], []);
             else onSelectTab('extract');
             return;
         }
-        // Augment the outgoing prompt with `[Uploaded: name]` lines so the
-        // agent sees attachments as text references, without polluting
-        // the editable input the user sees.
-        const mentions = agentAttachments
-            .map(name => t('dataLoading.uploaded', { name }))
-            .join('\n');
-        const finalText = mentions
-            ? (text ? `${text}\n${mentions}` : mentions)
-            : text;
+        // Pass payload pieces unchanged — the chat surface builds the
+        // backend mentions itself. We deliberately do NOT pre-inject
+        // `[Uploaded: name]` into `text` here, so the visible message
+        // bubble stays clean and the file chips render uniformly.
         if (onStartChat) {
-            onStartChat(finalText, agentImages);
+            onStartChat(text, agentImages, agentAttachments);
         } else {
             onSelectTab('extract');
         }
@@ -631,65 +696,64 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 
     // Suggestions surfaced as a focus-time dropdown — sourced from a shared
     // factory so the in-session `DataLoadingChat` panel renders the exact
-    // same list. See `dataLoadingSuggestions.ts`.
+    // same list. See `dataLoadingSuggestions.ts`. Auto-run is routed
+    // through `onStartChat` so the parent dialog can dispatch its
+    // `clearChatMessages` + `setDataLoadingChatPending` sequence
+    // atomically — same path as a manual submit.
     const agentChatSuggestions = useMemo(() => buildDataLoadingSuggestions({
         t,
         setInput: setAgentInput,
         setImages: setAgentImages,
         setAttachments: setAgentAttachments,
         ensureActiveWorkspace,
-    }), [t]);
+        requestAutoSend: onStartChat
+            ? (payload) => {
+                  onStartChat(payload.text, payload.images, payload.attachments);
+                  setAgentInput('');
+                  setAgentImages([]);
+                  setAgentAttachments([]);
+              }
+            : undefined,
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, onStartChat]);
+    const quickActions = useMemo(() => buildDataLoadingQuickActions({
+        t,
+        setInput: setAgentInput,
+        setImages: setAgentImages,
+        setAttachments: setAgentAttachments,
+        requestAutoSend: onStartChat
+            ? (payload) => {
+                  onStartChat(payload.text, payload.images, payload.attachments);
+                  setAgentInput('');
+                  setAgentImages([]);
+                  setAgentAttachments([]);
+              }
+            : undefined,
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, onStartChat]);
     const agentChatBox = (
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 640 }}>
-            <Box
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    mb: 1.5,
-                }}
-            >
-                <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                        textAlign: 'left',
-                        opacity: 0.6,
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.02em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                    }}
-                >
-                    <AnimatedAgentToyIcon sx={{ fontSize: 14 }} />
-                    {t('upload.dataLoadingAgent', { defaultValue: 'Data Loading Agent' })}
-                </Typography>
-                {hasPriorConversation && onResumeChat && (
-                    <Typography
-                        variant="body2"
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+            <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
+                {quickActions.map((qa) => (
+                    <Chip
+                        key={qa.kind}
+                        icon={<BoltOutlinedIcon />}
+                        label={qa.label}
+                        onClick={qa.onClick}
+                        variant="outlined"
+                        size="small"
                         sx={{
-                            fontSize: '0.75rem',
-                            letterSpacing: '0.02em',
+                            fontSize: 13, height: 28, borderRadius: 2,
+                            color: 'text.secondary',
+                            borderColor: alpha(theme.palette.text.primary, 0.12),
+                            '& .MuiChip-icon': { fontSize: 15, ml: 0.5, color: 'text.disabled' },
+                            '&:hover': {
+                                bgcolor: 'action.hover',
+                                borderColor: alpha(theme.palette.text.primary, 0.2),
+                            },
                         }}
-                    >
-                        <Link
-                            component="button"
-                            type="button"
-                            onClick={onResumeChat}
-                            underline="hover"
-                            sx={{
-                                fontSize: 'inherit',
-                                letterSpacing: 'inherit',
-                                color: 'text.secondary',
-                                opacity: 0.7,
-                                '&:hover': { opacity: 1 },
-                            }}
-                        >
-                            {t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation →' })}
-                        </Link>
-                    </Typography>
-                )}
+                    />
+                ))}
             </Box>
             <AgentChatInput
                 value={agentInput}
@@ -697,6 +761,25 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 images={agentImages}
                 onImagesChange={setAgentImages}
                 onSend={submitAgentChat}
+                layout="stacked"
+                sx={{
+                    // Landing hero: a gentle lift + faint primary-tinted
+                    // border so it reads as the focal point without visually
+                    // crowding the chips above / source rows below. Focus-within
+                    // still escalates to the component's default primary ring.
+                    borderColor: alpha(theme.palette.primary.main, 0.22),
+                    boxShadow: '0 4px 16px rgba(32, 33, 36, 0.08), 0 1px 4px rgba(32, 33, 36, 0.05)',
+                    '&:hover': {
+                        boxShadow: '0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)',
+                    },
+                }}
+                leadingSlot={hasPriorConversation && onResumeChat ? (
+                    <Tooltip title={t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation' })}>
+                        <IconButton size="small" onClick={onResumeChat} sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
+                            <HistoryIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
+                ) : undefined}
                 onNonImageFile={(file) => {
                     // Upload non-image files (Excel, CSV, JSON, …) to the
                     // session scratch space. The filename is shown as a
@@ -708,13 +791,17 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     formData.append('file', file);
                     apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
                         method: 'POST', body: formData,
-                    }).then(() => {
-                        setAgentAttachments(prev => [...prev, file.name]);
+                    }).then(({ data }) => {
+                        // The backend hash-suffixes the filename; store the
+                        // server-assigned name so the `[Uploaded:]` mention
+                        // resolves to the real scratch file.
+                        const scratchName = (data?.path || `scratch/${file.name}`).replace(/^scratch\//, '');
+                        setAgentAttachments(prev => [...prev, scratchName]);
                     }).catch(err => console.error('Upload failed:', err));
                 }}
                 attachments={agentAttachments}
                 onAttachmentsChange={setAgentAttachments}
-                minRows={1}
+                minRows={4}
                 tabSuggestion={t('upload.agentChatTabSuggestion', {
                     defaultValue: 'What dataset do we have here?',
                 })}
@@ -733,86 +820,104 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            gap: 3,
+            gap: 3.5,
             mx: 0,
             textAlign: 'left',
         }}>
-            {/* Data Loading Agent quick-chat */}
+            {/* Data Loading Agent quick-chat — the hero of this surface */}
             {agentChatBox}
 
-            {/* Upload data */}
-            <Box>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
-                        textAlign: 'left',
-                        mb: 1.5,
-                        opacity: 0.6,
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.02em'
-                    }}
-                >
-                    {t('upload.uploadData', { defaultValue: 'Upload data' })}
-                </Typography>
-                <Box sx={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                    gap: 1.5,
+            {/* Sources — same width as the chat box so they read as part of it */}
+            <Box sx={{ width: '100%', maxWidth: 900, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {/* Row 1 — connected data sources (as lightweight links):
+                    the already-connected instances. The "add a connection"
+                    actions live on their own row below so they read as
+                    primary calls-to-action rather than list items. */}
+                <Box sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    columnGap: 1.5,
+                    rowGap: 0.75,
                 }}>
-                    {regularDataSources.map((source) => (
-                        <DataSourceCard
-                            key={source.value}
-                            icon={source.icon}
-                            title={source.title}
-                            description={source.description}
-                            onClick={() => onSelectTab(source.value)}
-                            disabled={source.disabled}
-                            badge={source.badge}
-                        />
-                    ))}
-                </Box>
-            </Box>
-
-            {/* Data Connections */}
-            <Box>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
-                        textAlign: 'left',
-                        mb: 1.5,
-                        opacity: 0.6,
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.02em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                    }}
-                >
-                    <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                        '0%': { opacity: 1 },
-                        '50%': { opacity: 0.4 },
-                        '100%': { opacity: 1 },
-                    } }} />
-                    {t('upload.dataConnections')}
-                </Typography>
-                <Box sx={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                    gap: 1.5,
-                }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'text.secondary', mr: 0.25, flexShrink: 0 }}
+                    >
+                        {t('upload.dataSourcesLabel', { defaultValue: 'View connected data sources:' })}
+                    </Typography>
                     {connectionSources.map((source) => (
-                        <DataSourceCard
+                        <SourceLink
                             key={source.value}
                             icon={source.icon}
                             title={source.title}
                             description={source.description}
                             onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
-                            variant={source.variant}
                             tooltip={source.tooltip}
                         />
+                    ))}
+                </Box>
+
+                {/* Row 2 — add-a-source actions: same muted link family as the
+                    connected sources, differentiated only by a subtle shaded
+                    background chip (no primary color). */}
+                <Box sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    columnGap: 1,
+                    rowGap: 0.75,
+                }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'text.secondary', mr: 0.25, flexShrink: 0 }}
+                    >
+                        {t('upload.addSourceLabel', { defaultValue: 'Or add data directly:' })}
+                    </Typography>
+                    {connectorActionSources.map((source) => (
+                        <Box
+                            key={source.value}
+                            component="button"
+                            type="button"
+                            onClick={source.disabled ? undefined : () => handleConnectionClick(source.value)}
+                            disabled={source.disabled}
+                            title={source.description}
+                            sx={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                px: 1,
+                                py: 0.375,
+                                border: 'none',
+                                borderRadius: 1,
+                                font: 'inherit',
+                                whiteSpace: 'nowrap',
+                                cursor: source.disabled ? 'not-allowed' : 'pointer',
+                                opacity: source.disabled ? 0.5 : 1,
+                                color: 'text.secondary',
+                                bgcolor: alpha(theme.palette.text.primary, 0.05),
+                                transition: 'background-color 120ms ease, color 120ms ease',
+                                '&:hover': source.disabled ? {} : {
+                                    bgcolor: alpha(theme.palette.text.primary, 0.09),
+                                    color: 'text.primary',
+                                },
+                                '& .MuiSvgIcon-root': { fontSize: 15 },
+                            }}
+                        >
+                            {source.icon}
+                            <Typography
+                                component="span"
+                                sx={{
+                                    fontWeight: 400,
+                                    fontSize: '0.8125rem',
+                                    lineHeight: 1.4,
+                                    color: 'inherit',
+                                }}
+                            >
+                                {source.title}
+                            </Typography>
+                        </Box>
                     ))}
                 </Box>
             </Box>
@@ -827,9 +932,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 interface LoaderType {
     type: string;
     name: string;
-    params: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    params: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;
+    auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;
     delegated_login?: { login_url: string; label?: string } | null;
     source?: 'plugin' | 'builtin';
@@ -846,7 +952,8 @@ interface PluginsInfo {
 
 const AddConnectionPanel: React.FC<{
     onCreated: (connector: ConnectorInstance) => void;
-}> = ({ onCreated }) => {
+    initialType?: string;
+}> = ({ onCreated, initialType }) => {
     const { t } = useTranslation();
     const disableConnectors = useSelector(
         (state: DataFormulatorState) => state.serverConfig.DISABLE_DATA_CONNECTORS,
@@ -855,7 +962,7 @@ const AddConnectionPanel: React.FC<{
     const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
     const [pluginsInfo, setPluginsInfo] = useState<PluginsInfo | null>(null);
     const [selectedType, setSelectedType] = useState<string>('');
-    const [displayName, setDisplayName] = useState('');
+    const displayNameRef = useRef('');
     const dispatch = useDispatch<AppDispatch>();
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     // Track the created connector ID so DataLoaderForm can use it
@@ -874,18 +981,25 @@ const AddConnectionPanel: React.FC<{
                 setDisabledLoaders(data.disabled || {});
                 setPluginsInfo(data.plugins || null);
                 if (data.loaders?.length > 0) {
-                    setSelectedType(data.loaders[0].type);
-                    setDisplayName(data.loaders[0].name);
+                    // Honor a requested pre-selection (e.g. the "Link local
+                    // folder" entry point) when that loader is available;
+                    // otherwise fall back to the first loader.
+                    const preferred = initialType
+                        ? data.loaders.find((l: LoaderType) => l.type === initialType)
+                        : undefined;
+                    const chosen = preferred || data.loaders[0];
+                    setSelectedType(chosen.type);
+                    displayNameRef.current = chosen.name;
                 }
             })
             .catch(() => { /* loader types unavailable — form will be empty */ });
-    }, [disableConnectors]);
+    }, [disableConnectors, initialType]);
 
     const selectedLoader = loaderTypes.find(l => l.type === selectedType);
 
     const handleSelectLoader = (loader: LoaderType) => {
         setSelectedType(loader.type);
-        setDisplayName(loader.name);
+        displayNameRef.current = loader.name;
         createdIdRef.current = null;
     };
 
@@ -899,7 +1013,7 @@ const AddConnectionPanel: React.FC<{
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 loader_type: selectedType,
-                display_name: displayName.trim() || selectedLoader?.name || selectedType,
+                display_name: displayNameRef.current.trim() || selectedLoader?.name || selectedType,
                 icon: selectedType,
                 params,
                 persist: true,
@@ -907,7 +1021,7 @@ const AddConnectionPanel: React.FC<{
         });
         createdIdRef.current = data.id;
         return data.id;
-    }, [selectedType, displayName, selectedLoader]);
+    }, [selectedType, selectedLoader]);
 
     // After DataLoaderForm successfully connects, fetch full connector info and notify parent
     const handleConnected = useCallback(async () => {
@@ -927,16 +1041,6 @@ const AddConnectionPanel: React.FC<{
             // Connection succeeded even if list fetch fails
         }
     }, [onCreated, dispatch]);
-
-    // Shared input style
-    const inputSx = {
-        '& .MuiInput-underline:before': { borderBottomColor: 'rgba(0,0,0,0.15)' },
-        '& .MuiInputBase-root': { fontSize: 12, mt: 1.5 },
-        '& .MuiInputBase-input': { fontSize: 12, py: 0.5, px: 0 },
-        '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.45 },
-        '& .MuiInputLabel-root': { fontSize: 11, color: 'text.secondary', fontWeight: 500 },
-        '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
-    };
 
     // Left sidebar button style
     const sidebarButtonSx = (typeKey: string) => ({
@@ -1065,24 +1169,25 @@ const AddConnectionPanel: React.FC<{
                     />
                 ) : selectedLoader ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        {/* Connection name + DataLoaderForm */}
+                        {/* Connector setup timeline */}
                         <Box sx={{ px: 2, pt: 1.5, pb: 2, flex: 1, minHeight: 0, overflow: 'auto' }}>
-                            <TextField
-                                sx={{ ...inputSx, maxWidth: 300 }}
-                                variant="standard" size="small"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                label={t('upload.connectionNameLabel', { defaultValue: 'connection name' })}
-                                value={displayName}
-                                placeholder={selectedLoader.name}
-                                onChange={(e) => setDisplayName(e.target.value)}
-                                style={{ width: 280, marginBottom: 8 }}
-                            />
                             <DataLoaderForm
                                 dataLoaderType={selectedType}
                                 paramDefs={selectedLoader.params}
                                 authInstructions={selectedLoader.auth_instructions || ''}
                                 delegatedLogin={selectedLoader.delegated_login}
                                 authMode={selectedLoader.auth_mode}
+                                authPaths={selectedLoader.auth_paths}
+                                formTitle={t('upload.createConnectionTo', {
+                                    name: selectedLoader.name,
+                                    defaultValue: 'Create a connection to {{name}}',
+                                })}
+                                connectionName={{
+                                    label: t('upload.connectionNameLabel', { defaultValue: 'connection name' }),
+                                    value: displayNameRef.current || selectedLoader.name,
+                                    placeholder: selectedLoader.name,
+                                    onChange: (value) => { displayNameRef.current = value; },
+                                }}
                                 onImport={() => {}}
                                 onFinish={(status, message) => {
                                     dispatch(dfActions.addMessages({
@@ -1112,14 +1217,6 @@ export interface UnifiedDataUploadDialogProps {
     open: boolean;
     onClose: () => void;
     initialTab?: UploadTabType;
-    /**
-     * Optional initial prompt to hand off to the Data Loading Agent. When
-     * non-empty and `initialTab === 'extract'`, the prompt is pre-filled
-     * and auto-sent in the chat panel.
-     */
-    initialChatPrompt?: string;
-    /** Optional images (data URLs) to seed the chat alongside `initialChatPrompt`. */
-    initialChatImages?: string[];
     onConnectorsChanged?: () => void;
 }
 
@@ -1127,8 +1224,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     open,
     onClose,
     initialTab = 'menu',
-    initialChatPrompt,
-    initialChatImages,
     onConnectorsChanged,
 }) => {
     const theme = useTheme();
@@ -1142,21 +1237,13 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const existingNames = new Set(existingTables.map(t => t.id));
 
-    const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
-    // Prompt to seed the agent chat with. Sourced from the `initialChatPrompt`
-    // prop when the dialog opens directly on 'extract', or set internally
-    // when the user submits the in-menu agent chat box.
-    const [seededChatPrompt, setSeededChatPrompt] = useState<string | undefined>(
-        initialTab === 'extract' ? initialChatPrompt : undefined,
+    // 'local-folder' is no longer a dedicated tab — it opens the Add Connection
+    // panel with the local_folder loader pre-selected.
+    const [activeTab, setActiveTab] = useState<UploadTabType>(
+        initialTab === 'menu' ? 'menu' : (initialTab === 'local-folder' ? 'add-connection' : initialTab)
     );
-    const [seededChatImages, setSeededChatImages] = useState<string[] | undefined>(
-        initialTab === 'extract' ? initialChatImages : undefined,
-    );
-    const [autoSendSeededPrompt, setAutoSendSeededPrompt] = useState<boolean>(
-        initialTab === 'extract' && (
-            (!!initialChatPrompt && initialChatPrompt.trim().length > 0)
-            || (!!initialChatImages && initialChatImages.length > 0)
-        ),
+    const [addConnectionInitialType, setAddConnectionInitialType] = useState<string | undefined>(
+        initialTab === 'local-folder' ? 'local_folder' : undefined,
     );
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
@@ -1175,27 +1262,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (open) {
             setConnectorInstances([]);
             refreshConnectors();
-            // Re-seed chat prompt/images from props each time the dialog opens.
-            if (initialTab === 'extract') {
-                setSeededChatPrompt(initialChatPrompt);
-                setSeededChatImages(initialChatImages);
-                const hasText = !!initialChatPrompt && initialChatPrompt.trim().length > 0;
-                const hasImages = !!initialChatImages && initialChatImages.length > 0;
-                setAutoSendSeededPrompt(hasText || hasImages);
-                // Opening the dialog with a fresh prompt/images means the
-                // user wants a new data-loading conversation; clear any
-                // stale messages from a previous session so the new query
-                // isn't appended to an unrelated thread.
-                if ((hasText || hasImages) && dataLoadingChatMessages.length > 0) {
-                    dispatch(dfActions.clearChatMessages());
-                }
-            } else {
-                setSeededChatPrompt(undefined);
-                setSeededChatImages(undefined);
-                setAutoSendSeededPrompt(false);
-            }
         }
-    }, [open, refreshConnectors, identityKey, initialTab, initialChatPrompt, initialChatImages]);
+    }, [open, refreshConnectors, identityKey]);
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
@@ -1236,7 +1304,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Update active tab when initialTab changes
     useEffect(() => {
         if (open) {
-            setActiveTab(initialTab === 'menu' ? 'menu' : initialTab);
+            setActiveTab(initialTab === 'menu' ? 'menu' : (initialTab === 'local-folder' ? 'add-connection' : initialTab));
+            setAddConnectionInitialType(initialTab === 'local-folder' ? 'local_folder' : undefined);
         }
     }, [initialTab, open]);
 
@@ -1744,7 +1813,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             'extract': t('upload.dataAssistant'),
             'url': t('upload.loadFromUrl'),
             'database': t('upload.database'),
-            'local-folder': t('upload.localFolder', { defaultValue: 'Link local folder' }),
         };
         return tabTitles[activeTab] || t('upload.addData');
     };
@@ -1848,29 +1916,28 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     setActiveTab(`connector:${conn.id}` as UploadTabType);
                                 }
                             }}
-                            onStartChat={(prompt, images) => {
+                            onStartChat={(prompt, images, attachments) => {
                                 const hasText = prompt.trim().length > 0;
-                                const hasImages = !!images && images.length > 0;
-                                // If a prior conversation exists, treat a
-                                // new query from the menu as a fresh data
-                                // reload and reset the chat. Without this
-                                // the new prompt would be appended onto an
-                                // unrelated thread, confusing the agent.
-                                if ((hasText || hasImages) && dataLoadingChatMessages.length > 0) {
-                                    dispatch(dfActions.clearChatMessages());
+                                const hasImages = images.length > 0;
+                                const hasAttachments = attachments.length > 0;
+                                // Always surface the chat. Preserve any prior
+                                // conversation (Option A): `queueDataLoadingTask`
+                                // drops a "new request" divider when a thread
+                                // already exists, then enqueues the submission
+                                // as a redux `pending` slot — `DataLoadingChat`
+                                // consumes it on render and auto-sends. The
+                                // header reset button starts a blank slate.
+                                if (hasText || hasImages || hasAttachments) {
+                                    dispatch(dfActions.queueDataLoadingTask({
+                                        text: prompt, images, attachments,
+                                    }));
                                 }
-                                setSeededChatPrompt(prompt);
-                                setSeededChatImages(images);
-                                setAutoSendSeededPrompt(hasText || hasImages);
                                 setActiveTab('extract');
                             }}
                             hasPriorConversation={dataLoadingChatMessages.length > 0}
                             onResumeChat={() => {
                                 // Reopen the existing thread without
                                 // clearing messages or auto-sending.
-                                setSeededChatPrompt(undefined);
-                                setSeededChatImages(undefined);
-                                setAutoSendSeededPrompt(false);
                                 setActiveTab('extract');
                             }}
                             serverConfig={serverConfig}
@@ -2338,6 +2405,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 ssoAutoConnect={false}
                                 delegatedLogin={conn.delegated_login}
                                 authMode={conn.auth_mode}
+                                authPaths={conn.auth_paths}
                                 hasStoredCredentials={conn.has_stored_credentials}
                                 onImport={() => {}}
                                 onFinish={(status, message) => {
@@ -2383,6 +2451,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {/* Add Connection Tab */}
                 <TabPanel value={activeTab} index="add-connection">
                     <AddConnectionPanel
+                        initialType={addConnectionInitialType}
                         onCreated={(newConnector) => {
                             // Update connector list — card will appear on menu
                             setConnectorInstances(prev => {
@@ -2403,31 +2472,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 {/* Extract Data Tab */}
                 <TabPanel value={activeTab} index="extract">
-                    <DataLoadingChat
-                        initialPrompt={seededChatPrompt}
-                        initialImages={seededChatImages}
-                        autoSendInitialPrompt={autoSendSeededPrompt}
-                    />
+                    <DataLoadingChat onTableLoaded={handleClose} />
                 </TabPanel>
 
-                {/* Local Folder Tab */}
-                {serverConfig.IS_LOCAL_MODE && (
-                    <TabPanel value={activeTab} index="local-folder">
-                        <LocalFolderPanel
-                            onConnectorCreated={(newConn) => {
-                                setConnectorInstances(prev => {
-                                    const exists = prev.find(c => c.id === newConn.id);
-                                    if (exists) return prev.map(c => c.id === newConn.id ? newConn : c);
-                                    return [...prev, newConn];
-                                });
-                                onConnectorsChanged?.();
-                                // Hand off to the data-source sidebar.
-                                handleClose();
-                                dispatch(dfActions.focusConnector(newConn.id));
-                            }}
-                        />
-                    </TabPanel>
-                )}
+                {/* Local folder is no longer a dedicated tab — the "Link local
+                    folder" entry points open the Add Connection panel above
+                    with the local_folder loader pre-selected. */}
 
             </DialogContent>
         </Dialog>

@@ -114,6 +114,23 @@ def _sanitize_identity_id(identity_id: str) -> str:
     return sanitize_identity_dirname(identity_id)
 
 
+# LRU-evicted size cap for the per-workspace scratch dir (agent intermediates:
+# execute_python DataFrames, fetch_url payloads, uploads). See Workspace.prune_scratch.
+# Default; overridable per server start via --scratch-max-size-mb (CLI_ARGS['scratch_max_bytes']).
+SCRATCH_MAX_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB
+
+
+def _configured_scratch_max_bytes() -> int:
+    """Total scratch cap from the server's CLI_ARGS, falling back to the default."""
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            return int(current_app.config.get('CLI_ARGS', {}).get('scratch_max_bytes', SCRATCH_MAX_BYTES))
+    except Exception:
+        pass
+    return SCRATCH_MAX_BYTES
+
+
 def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> int:
     """
     Remove stale temporary files from workspace directory.
@@ -262,6 +279,63 @@ class Workspace:
     def confined_scratch(self) -> ConfinedDir:
         """ConfinedDir jail for the ``scratch/`` sub-directory."""
         return self._confined_scratch
+
+    def prune_scratch(self, max_bytes: Optional[int] = None) -> int:
+        """Cap the scratch directory's total size via LRU eviction.
+
+        Scratch accumulates agent intermediates (execute_python DataFrames,
+        fetch_url payloads, uploads) and is otherwise only cleared when the
+        workspace is deleted. When the total exceeds ``max_bytes``, the
+        least-recently-used files are removed (by most-recent access/modify
+        time) until back under the cap. Confined to ``scratch/`` — never
+        touches committed ``data/``.
+
+        ``max_bytes`` defaults to the server's configured scratch cap
+        (``--scratch-max-size-mb`` / ``CLI_ARGS['scratch_max_bytes']``), then
+        to ``SCRATCH_MAX_BYTES``.
+
+        Returns the number of bytes freed.
+        """
+        if max_bytes is None:
+            max_bytes = _configured_scratch_max_bytes()
+        scratch = self._path / "scratch"
+        if not scratch.exists():
+            return 0
+        try:
+            entries: list[tuple[float, int, Path]] = []
+            total = 0
+            for f in scratch.rglob("*"):
+                if not f.is_file():
+                    continue
+                try:
+                    st = f.stat()
+                except OSError:
+                    continue
+                # "last used" = newest of access/modify time, so a file that was
+                # re-read (read_file) counts as recently used, not just written.
+                entries.append((max(st.st_atime, st.st_mtime), st.st_size, f))
+                total += st.st_size
+            if total <= max_bytes:
+                return 0
+            entries.sort(key=lambda e: e[0])  # oldest last-used first
+            freed = 0
+            for _last_used, size, f in entries:
+                if total - freed <= max_bytes:
+                    break
+                try:
+                    f.unlink()
+                    freed += size
+                except OSError as e:
+                    logger.warning(f"prune_scratch: could not remove {f}: {e}")
+            if freed:
+                logger.info(
+                    f"prune_scratch: evicted {freed / 1e6:.1f} MB from scratch "
+                    f"(LRU; cap {max_bytes / 1e6:.0f} MB)"
+                )
+            return freed
+        except Exception as e:
+            logger.warning(f"prune_scratch failed for {scratch}: {e}")
+            return 0
 
     def _init_metadata(self) -> None:
         """Initialize a new workspace with empty metadata."""

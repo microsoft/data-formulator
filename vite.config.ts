@@ -10,14 +10,15 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Advanced dev only: point `flint-chart` at a local checkout for HMR co-dev.
+      //   FLINT_CHART_LOCAL=../flint-chart/packages/flint-js/src yarn start
+      // Unset (default) → the bare `flint-chart` import resolves to the installed npm package.
+      ...(process.env.FLINT_CHART_LOCAL
+        ? { 'flint-chart': path.resolve(__dirname, process.env.FLINT_CHART_LOCAL) }
+        : {}),
     },
-  },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        api: 'modern-compiler',
-      },
-    },
+    // Keep a single copy of Flint's (optional) peer deps when aliased to local source.
+    dedupe: ['vega', 'vega-lite', 'echarts', 'chart.js'],
   },
   build: {
     outDir: path.join(__dirname, 'py-src', 'data_formulator', "dist"),

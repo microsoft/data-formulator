@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { Type } from '../data/types';
-import { channels, type ChartTemplateDef } from '../lib/agents-chart';
+import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 
 export type FieldSource = "custom" | "original";
@@ -185,6 +185,20 @@ export interface LoadPlan {
     reasoning?: string;
 }
 
+/**
+ * Agent-proposed inline connection form (design 38). Rendered as a card in the
+ * data-loading chat so the user can enter credentials and connect without
+ * leaving the conversation. One prompt === one form card === one new connection.
+ */
+export interface ConnectorFormPrompt {
+    sourceType: string;                 // loader registry key, e.g. "postgresql"
+    prefilled?: Record<string, string>; // seed values the user gave the agent (incl. shared credentials); never persisted
+    status?: 'pending' | 'connected';   // pending = awaiting connect; connected = done
+    connectorId?: string;               // set once connected
+    connectionName?: string;            // display name of the created connection
+    tableCount?: number;                // optional: tables discovered on connect
+}
+
 export interface ChatMessage {
     id: string;
     role: 'user' | 'assistant';
@@ -194,6 +208,10 @@ export interface ChatMessage {
     codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
     pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
     loadPlan?: LoadPlan;                // Agent-proposed data loading plan
+    connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
+    divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
+    hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
+    canContinue?: boolean;              // agent paused at the tool-call limit — show a "Continue" button to resume the task
     timestamp: number;
 }
 
@@ -335,12 +353,6 @@ export function createDictTable(
     }
 }
 
-export interface ChartInsight {
-    title: string;
-    takeaways: string[];
-    key: string;  // "chartType|sortedFieldIds" — used to detect staleness
-}
-
 /**
  * A user-authored "skin" of a chart: a Vega-Lite spec edited via the
  * style/restyle agent. Variants share the chart's encoding and data — they
@@ -359,7 +371,44 @@ export interface ChartStyleVariant {
     encodingFingerprint: string,  // see computeEncodingFingerprint(); used to detect staleness
     createdAt: number,
     rationale?: string,           // optional one-line explanation from the agent
+    // Generative UI: a few simple knobs the restyle agent attaches to the
+    // variant so the user can keep tweaking the agent-authored spec without
+    // re-prompting. While a variant is active these replace the chart-template
+    // config. See VariantConfigControl and applyVariantConfigUI in app/restyle.ts.
+    configUI?: VariantConfigControl[],
+    // Current value for each control, keyed by control.key. Missing key → use
+    // the control's defaultValue.
+    configValues?: Record<string, any>,
 }
+
+/**
+ * A single generative-UI control authored by the restyle agent for a style
+ * variant. Mirrors the shape of ChartPropertyDef (so it can reuse the same
+ * renderers) but instead of arbitrary code it carries a `path`: the location
+ * inside the Vega-Lite spec to write the chosen value to.
+ *
+ * Applying a control is a pure, declarative "set value at path" operation
+ * (see applyVariantConfigUI / setAtPath). There is NO code execution — the
+ * agent only chooses which knob, where it writes, and the allowed values.
+ * The written value may be a scalar OR a whole object (e.g. a full mark/axis
+ * sub-spec), which keeps the door open for richer restyle edits while staying
+ * safe.
+ */
+export type VariantConfigControl = {
+    key: string;
+    label: string;
+    /**
+     * Path into the vlSpec where the chosen value is written, as an array of
+     * object keys / array indices, e.g. ["mark","opacity"] or
+     * ["encoding","x","axis","labelAngle"]. Intermediate objects are created
+     * as needed. Prototype-polluting segments are rejected at apply time.
+     */
+    path: (string | number)[];
+} & (
+    | { type: 'continuous'; min: number; max: number; step?: number; defaultValue: number }
+    | { type: 'discrete';  options: { value: any; label: string }[]; defaultValue: any }
+    | { type: 'binary';    defaultValue: boolean }
+);
 
 export type Chart = { 
     id: string, 
@@ -368,13 +417,15 @@ export type Chart = {
     tableRef: string, 
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
-    insight?: ChartInsight,  // AI-generated insight about the visualization
+    title?: string,  // AI-generated chart title (from the analyst's visualize action)
+    titleKey?: string,  // "chartType|sortedFieldIds" snapshot when title was set; used to detect staleness
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
+    scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)
     unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
 
-/** Compute a string key for insight invalidation: chartType|sortedFieldIds */
+/** Compute a string key for title-staleness invalidation: chartType|sortedFieldIds */
 export function computeInsightKey(chart: Chart): string {
     const fieldIds = Object.values(chart.encodingMap)
         .map(enc => enc.fieldID)
@@ -409,6 +460,7 @@ export let duplicateChart = (chart: Chart) : Chart => {
         tableRef: chart.tableRef,
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
+        scaleFactor: chart.scaleFactor,
         // styleVariants are intentionally NOT copied: they are user-authored
         // refinements tied to the chart they were created on. A duplicate is a
         // fresh canvas. (See design-docs/28-chart-style-refinement-agent.md.)
@@ -449,6 +501,16 @@ export interface EncodingDropResult {
     channel: Channel
 }
 
+export interface ConnectorAuthPath {
+    id: string;
+    label: string;
+    description?: string;
+    fields: string[];
+    required_fields?: string[];
+    kind: 'credentials' | 'ambient' | 'delegated_login' | 'token_exchange';
+    default?: boolean;
+}
+
 /** A registered connector instance from GET /api/connectors */
 export interface ConnectorInstance {
     id: string;
@@ -463,11 +525,12 @@ export interface ConnectorInstance {
     /** Backend signals that SSO token exchange can auto-connect this source. */
     sso_auto_connect?: boolean;
     deletable?: boolean;
-    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;
     hierarchy: Array<{key: string; label: string}>;
     effective_hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;
+    auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;
     delegated_login?: { login_url: string; label?: string } | null;
 }

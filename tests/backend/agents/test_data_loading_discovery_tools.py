@@ -253,12 +253,14 @@ class TestProposeLoadPlan:
                     "table_key": "public.orders",
                     "display_name": "orders",
                     "source_table": "public.orders",
+                    "selected": True,
                 },
                 {
                     "source_id": "pg_prod",
                     "table_key": "public.customers",
                     "display_name": "customers",
                     "source_table": "public.customers",
+                    "selected": False,
                 },
             ],
             "reasoning": "Orders + customer dimension",
@@ -269,12 +271,27 @@ class TestProposeLoadPlan:
         assert action["type"] == "load_plan"
         assert len(action["candidates"]) == 2
         assert action["reasoning"] == "Orders + customer dimension"
+        assert [candidate["selected"] for candidate in action["candidates"]] == [True, False]
 
     def test_empty_candidates_returns_empty_action(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace())
         result = agent._tool_propose_load_plan({"candidates": []})
         assert result["actions"][0]["type"] == "load_plan"
         assert result["actions"][0]["candidates"] == []
+
+    def test_selects_first_resolvable_when_agent_selects_none(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", [
+            {"name": "orders", "table_key": "public.orders", "metadata": {}},
+            {"name": "returns", "table_key": "public.returns", "metadata": {}},
+        ])
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        result = agent._tool_propose_load_plan({"candidates": [
+            {"source_id": "pg_prod", "table_key": "public.orders", "display_name": "orders", "selected": False},
+            {"source_id": "pg_prod", "table_key": "public.returns", "display_name": "returns", "selected": False},
+        ]})
+
+        candidates = result["actions"][0]["candidates"]
+        assert [candidate["selected"] for candidate in candidates] == [True, False]
 
     def test_resolves_superset_dataset_id_from_catalog(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace("/tmp/home"))
@@ -307,6 +324,8 @@ class TestProposeLoadPlan:
         assert candidate["filters"] == [
             {"column": "brand", "operator": "EQ", "value": "Pantum"},
         ]
+        # Legacy callers that omit `selected` retain select-all behavior.
+        assert candidate["selected"] is True
         assert "row_limit" not in candidate
 
 
@@ -417,3 +436,191 @@ class TestBuildSystemPromptConnectorSummary:
         now = datetime.now()
         assert f"Current date and time: {now.strftime('%Y-%m-%d')}" in prompt
         assert f"({now.strftime('%A')})" in prompt
+
+
+# ------------------------------------------------------------------
+# probe_data (design 37 §4.2 / §7)
+# ------------------------------------------------------------------
+
+class _StubLoader:
+    """Records the probe call and returns a canned result."""
+
+    def __init__(self, result=None):
+        self.result = result if result is not None else {
+            "rows": [{"n": 3}], "columns": ["n"], "row_count": 1, "exact": True,
+        }
+        self.calls = []
+
+    def probe(self, path, query):
+        self.calls.append((path, query))
+        return self.result
+
+
+class TestProbeData:
+    def test_missing_ids_returns_error(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+        assert "error" in agent._tool_probe_data({"table_key": "k_orders"})
+        assert "error" in agent._tool_probe_data({"source_id": "pg_prod"})
+
+    def test_unknown_table_key_returns_error(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+
+        result = agent._tool_probe_data({
+            "source_id": "pg_prod", "table_key": "nope", "query": {},
+        })
+        assert "error" in result
+        assert "not found" in result["error"]
+
+    def test_budget_exhaustion_returns_error(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 0
+
+        result = agent._tool_probe_data({
+            "source_id": "pg_prod", "table_key": "k_orders", "query": {},
+        })
+        assert "error" in result
+        assert "budget" in result["error"].lower()
+
+    def test_resolves_path_and_delegates_to_loader(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+        stub = _StubLoader()
+
+        with patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            return_value=stub,
+        ):
+            result = agent._tool_probe_data({
+                "source_id": "pg_prod",
+                "table_key": "k_orders",
+                "query": {"aggregates": [{"op": "count", "as": "n"}]},
+            })
+
+        # The model-facing table_key is mapped to the catalog path.
+        assert stub.calls == [(["Sales", "monthly_orders"],
+                               {"aggregates": [{"op": "count", "as": "n"}]})]
+        assert result["rows"] == [{"n": 3}]
+        assert "note" in result  # row-cap guidance attached
+        assert agent._probe_budget == 4  # decremented once
+
+    def test_not_connected_source_returns_error(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+
+        with patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            side_effect=RuntimeError("no such connector"),
+        ):
+            result = agent._tool_probe_data({
+                "source_id": "pg_prod", "table_key": "k_orders", "query": {},
+            })
+        assert "error" in result
+        assert "not connected" in result["error"]
+        # Budget is not consumed when the loader can't be resolved.
+        assert agent._probe_budget == 5
+
+    def test_loader_error_result_passes_through(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        agent._probe_budget = 5
+        stub = _StubLoader(result={"error": "bad column"})
+
+        with patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            return_value=stub,
+        ):
+            result = agent._tool_probe_data({
+                "source_id": "pg_prod", "table_key": "k_orders", "query": {},
+            })
+        assert result == {"error": "bad column"}
+        assert "note" not in result  # no cap note on error results
+
+
+# ------------------------------------------------------------------
+# Connector discovery + inline connection proposal (design 38)
+# ------------------------------------------------------------------
+
+
+class TestConnectorTools:
+    def test_list_connectors_returns_available(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        result = agent._tool_list_connectors({})
+
+        assert "connectors" in result
+        assert "unavailable" in result
+        by_type = {c["type"]: c for c in result["connectors"]}
+        # sqlite/local_folder are hidden from the connector form flow.
+        assert "local_folder" not in by_type
+        assert "sample_datasets" not in by_type
+        # Every entry is high-level only: no per-parameter detail leaks here.
+        for c in result["connectors"]:
+            assert set(c.keys()) == {"type", "name", "summary", "auth_mode", "available"}
+            assert c["available"] is True
+        # Calling the tool arms the propose_connection precondition.
+        assert agent._connectors_listed is True
+
+    def test_describe_connector_returns_full_detail(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        available = {c["type"] for c in agent._tool_list_connectors({})["connectors"]}
+        if not available:
+            pytest.skip("no connectors available in this environment")
+        source_type = next(iter(sorted(available)))
+
+        result = agent._tool_describe_connector({"source_type": source_type})
+        assert "error" not in result
+        assert result["type"] == source_type
+        assert isinstance(result["params"], list)
+        for p in result["params"]:
+            assert set(p.keys()) == {"name", "required", "tier", "sensitive", "description"}
+
+    def test_describe_connector_unknown_type(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        result = agent._tool_describe_connector({"source_type": "definitely_not_a_loader"})
+        assert "error" in result
+
+    def test_propose_connection_requires_list_first(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        available = {c["type"] for c in agent._tool_list_connectors({})["connectors"]}
+        if not available:
+            pytest.skip("no connectors available in this environment")
+        source_type = next(iter(sorted(available)))
+
+        # Reset the per-turn guard to simulate proposing without discovery.
+        agent._connectors_listed = False
+        result = agent._tool_propose_connection({"source_type": source_type})
+        assert "error" in result
+        assert "list_connectors" in result["error"]
+
+    def test_propose_connection_emits_connect_form_action(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        available = {c["type"] for c in agent._tool_list_connectors({})["connectors"]}
+        if not available:
+            pytest.skip("no connectors available in this environment")
+        source_type = next(iter(sorted(available)))
+
+        result = agent._tool_propose_connection({
+            "source_type": source_type,
+            "prefilled": {"host": "db.example.com", "empty": ""},
+        })
+        assert "error" not in result
+        actions = result["actions"]
+        assert len(actions) == 1
+        action = actions[0]
+        assert action["type"] == "connect_form"
+        assert action["source_type"] == source_type
+        # Empty values are dropped; real values are coerced to strings.
+        assert action["prefilled"] == {"host": "db.example.com"}
+        # LLM-facing result never echoes prefilled field values.
+        assert "db.example.com" not in result.get("summary", "")
+
+    def test_propose_connection_unknown_type(self) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
+        agent._tool_list_connectors({})
+        result = agent._tool_propose_connection({"source_type": "definitely_not_a_loader"})
+        assert "error" in result

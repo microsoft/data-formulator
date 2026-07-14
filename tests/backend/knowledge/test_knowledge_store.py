@@ -5,11 +5,11 @@
 
 Covers:
 - list_all, read, write, delete for each category
-- path depth constraints (rules=flat, experiences=1 sub-dir)
+- path depth constraints (rules=flat, workflows=1 sub-dir)
 - .md extension enforcement
 - ConfinedDir traversal rejection
 - front matter parsing and graceful degradation
-- search: title, tags, filename, body matching + ranking + limit
+- search: title, filename, body matching + ranking + limit
 - search skips alwaysApply rules (they are injected via system prompt)
 - tokenization: English stopwords, CJK/ASCII mixed splitting
 - scoring: partial token match, source discount, table_names boost
@@ -73,21 +73,20 @@ class TestListAll:
         items = store.list_all("rules")
         assert len(items) == 1
         assert items[0]["title"] == "ROI Calculation"
-        assert items[0]["tags"] == ["finance", "computation"]
         assert items[0]["path"] == "roi.md"
         assert items[0]["source"] == "manual"
 
-    def test_lists_experiences_in_subdirs(self, store, tmp_path):
-        exp_dir = tmp_path / "knowledge" / "experiences" / "cleaning"
+    def test_lists_workflows_in_subdirs(self, store, tmp_path):
+        exp_dir = tmp_path / "knowledge" / "workflows" / "cleaning"
         exp_dir.mkdir(parents=True)
         (exp_dir / "missing.md").write_text(SAMPLE_MD_SKILL, encoding="utf-8")
 
-        items = store.list_all("experiences")
+        items = store.list_all("workflows")
         assert len(items) == 1
         assert items[0]["path"] == "cleaning/missing.md"
 
     def test_empty_category_returns_empty(self, store):
-        items = store.list_all("experiences")
+        items = store.list_all("workflows")
         assert items == []
 
     def test_front_matter_title_fallback_to_stem(self, store, tmp_path):
@@ -139,9 +138,9 @@ class TestWrite:
         content = store.read("rules", "fm.md")
         assert "title: ROI Calculation" in content
 
-    def test_writes_experiences_in_subdir(self, store, tmp_path):
-        store.write("experiences", "cleaning/handle-missing.md", SAMPLE_MD_SKILL)
-        assert (tmp_path / "knowledge" / "experiences" / "cleaning" / "handle-missing.md").exists()
+    def test_writes_workflows_in_subdir(self, store, tmp_path):
+        store.write("workflows", "cleaning/handle-missing.md", SAMPLE_MD_SKILL)
+        assert (tmp_path / "knowledge" / "workflows" / "cleaning" / "handle-missing.md").exists()
 
 
 # ── CRUD: delete ──────────────────────────────────────────────────────────
@@ -169,12 +168,12 @@ class TestValidatePath:
         with pytest.raises(ValueError, match="sub-directories"):
             KnowledgeStore.validate_path("rules", "sub/file.md")
 
-    def test_experiences_one_subdir_ok(self):
-        KnowledgeStore.validate_path("experiences", "cat/file.md")
+    def test_workflows_one_subdir_ok(self):
+        KnowledgeStore.validate_path("workflows", "cat/file.md")
 
-    def test_experiences_two_subdirs_rejected(self):
+    def test_workflows_two_subdirs_rejected(self):
         with pytest.raises(ValueError, match="one level"):
-            KnowledgeStore.validate_path("experiences", "cat/sub/file.md")
+            KnowledgeStore.validate_path("workflows", "cat/sub/file.md")
 
     def test_skills_rejected_as_invalid(self):
         with pytest.raises(ValueError, match="Invalid category"):
@@ -228,17 +227,12 @@ class TestSearch:
         rules_dir = tmp_path / "knowledge" / "rules"
         (rules_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
 
-        exp_dir = tmp_path / "knowledge" / "experiences" / "cleaning"
+        exp_dir = tmp_path / "knowledge" / "workflows" / "cleaning"
         exp_dir.mkdir(parents=True)
         (exp_dir / "missing.md").write_text(SAMPLE_MD_SKILL, encoding="utf-8")
 
     def test_search_by_title(self, store):
         results = store.search("Handle Missing")
-        assert len(results) >= 1
-        assert results[0]["title"] == "Handle Missing Values"
-
-    def test_search_by_tags(self, store):
-        results = store.search("pandas")
         assert len(results) >= 1
         assert results[0]["title"] == "Handle Missing Values"
 
@@ -269,7 +263,7 @@ class TestSearch:
         assert len(results) <= 5
 
     def test_search_filters_by_category(self, store):
-        results = store.search("ROI", categories=["experiences"])
+        results = store.search("ROI", categories=["workflows"])
         assert len(results) == 0
 
     def test_search_skips_always_apply_rules(self, store, tmp_path):
@@ -304,13 +298,12 @@ class TestSearch:
         assert results[0]["title"] == "Handle Missing Values"
 
     def test_table_names_boost(self, store, tmp_path):
-        """Entries tagged with a session table name get boosted."""
-        exp_dir = tmp_path / "knowledge" / "experiences" / "analysis"
+        """Entries mentioning a session table name (title/body) get boosted."""
+        exp_dir = tmp_path / "knowledge" / "workflows" / "analysis"
         exp_dir.mkdir(parents=True)
         (exp_dir / "sales-tip.md").write_text(
-            "---\ntitle: Sales Analysis Tips\n"
-            "tags: [sales_data, revenue]\nsource: manual\n---\n"
-            "When analysing sales, check for seasonality.\n",
+            "---\ntitle: Sales Analysis Tips\nsource: manual\n---\n"
+            "When analysing sales_data, check for seasonality.\n",
             encoding="utf-8",
         )
         results = store.search("analysis tips", table_names=["sales_data"])
@@ -319,7 +312,7 @@ class TestSearch:
 
     def test_non_manual_source_discounted(self, store, tmp_path):
         """Non-manual entries score lower than equivalent manual entries."""
-        exp_dir = tmp_path / "knowledge" / "experiences"
+        exp_dir = tmp_path / "knowledge" / "workflows"
         (exp_dir / "auto-tip.md").write_text(
             "---\ntitle: Tip One\ntags: [tip]\nsource: distill\n---\nSome tip.\n",
             encoding="utf-8",
@@ -328,7 +321,7 @@ class TestSearch:
             "---\ntitle: Tip One\ntags: [tip]\nsource: manual\n---\nSome tip.\n",
             encoding="utf-8",
         )
-        results = store.search("Tip One", categories=["experiences"])
+        results = store.search("Tip One", categories=["workflows"])
         assert len(results) == 2
         assert results[0]["source"] == "manual"
         assert results[1]["source"] == "distill"
@@ -472,7 +465,7 @@ class TestTokenizeQuery:
 class TestMatchScore:
     def test_single_token_title_hit(self):
         score = KnowledgeStore._match_score(
-            "ROI", "ROI Calculation", [], "roi", "",
+            "ROI", "ROI Calculation", "roi", "",
         )
         assert score > 0
 
@@ -481,49 +474,49 @@ class TestMatchScore:
         score = KnowledgeStore._match_score(
             "quarterly sales trend",
             "Sales Trend Analysis",
-            [], "analysis", "",
+            "analysis", "",
         )
         assert score > 0
 
     def test_whole_string_bonus(self):
         full = KnowledgeStore._match_score(
-            "ROI", "ROI Calculation", [], "roi", "",
+            "ROI", "ROI Calculation", "roi", "",
         )
         no_title = KnowledgeStore._match_score(
-            "ROI", "Something Else", [], "roi", "",
+            "ROI", "Something Else", "roi", "",
         )
         assert full > no_title
 
     def test_source_discount(self):
         manual = KnowledgeStore._match_score(
-            "ROI", "ROI Guide", ["finance"], "roi", "",
+            "ROI", "ROI Guide", "roi", "",
             source="manual",
         )
         auto = KnowledgeStore._match_score(
-            "ROI", "ROI Guide", ["finance"], "roi", "",
+            "ROI", "ROI Guide", "roi", "",
             source="distill",
         )
         assert auto == pytest.approx(manual * 0.9)
 
     def test_table_names_boost(self):
         without = KnowledgeStore._match_score(
-            "analysis", "Analysis Tips", ["sales_data"], "tips", "",
+            "analysis", "Analysis Tips", "tips", "about sales_data",
         )
         with_tn = KnowledgeStore._match_score(
-            "analysis", "Analysis Tips", ["sales_data"], "tips", "",
+            "analysis", "Analysis Tips", "tips", "about sales_data",
             table_names=["sales_data"],
         )
         assert with_tn > without
 
     def test_no_match_returns_zero(self):
         score = KnowledgeStore._match_score(
-            "xyznonexistent", "ROI Calculation", ["finance"], "roi", "body text",
+            "xyznonexistent", "ROI Calculation", "roi", "body text",
         )
         assert score == 0
 
     def test_cjk_mixed_query_matches(self):
         """Chinese+English query should match via extracted ASCII tokens."""
         score = KnowledgeStore._match_score(
-            "帮我分析ROI", "ROI Calculation", ["finance"], "roi", "",
+            "帮我分析ROI", "ROI Calculation", "roi", "",
         )
         assert score > 0

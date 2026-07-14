@@ -18,10 +18,8 @@ import json
 import html
 import pandas as pd
 
-from data_formulator.agents.agent_data_transform import DataTransformationAgent
-from data_formulator.agents.agent_data_rec import DataRecAgent
-
 from data_formulator.agents.agent_sort_data import SortDataAgent
+from data_formulator.agents.agent_starter_questions import StarterQuestionsAgent
 from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
@@ -31,14 +29,12 @@ from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
-from data_formulator.agents.agent_chart_insight import ChartInsightAgent
-from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
-from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
 
-from data_formulator.agents.data_agent import DataAgent
+from data_formulator.analyst.agent import AnalystAgent
+from data_formulator.analyst.mini_agent import MiniAnalystAgent
 from data_formulator.agents.agent_language import build_language_instruction
 from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 from data_formulator.error_handler import json_ok, stream_preflight_error, classify_and_wrap_llm_error
@@ -72,29 +68,6 @@ def _get_knowledge_store(identity_id: str) -> KnowledgeStore | None:
 
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
-
-
-def _try_parse_explore_line(raw_line: str) -> str | None:
-    """Parse a single line from the exploration agent into an NDJSON line.
-
-    The LLM is prompted to output one JSON object per line.  Older prompts
-    used an SSE-style ``data: `` prefix which we strip for compatibility.
-    Non-JSON lines (thinking text, blank lines) are silently dropped.
-    """
-    line = raw_line.strip()
-    if not line:
-        return None
-    if line.startswith("data:"):
-        line = line[5:].lstrip()
-    if not line.startswith("{"):
-        return None
-    try:
-        obj = json.loads(line)
-        if "type" not in obj:
-            obj = {"type": "question", **obj}
-        return json.dumps(obj, ensure_ascii=False) + "\n"
-    except (json.JSONDecodeError, ValueError):
-        return None
 
 
 def _with_warnings(gen):
@@ -317,124 +290,48 @@ def sort_data_request():
         logger.error("Error in sort-data", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
 
-@agent_bp.route('/derive-data', methods=['GET', 'POST'])
-def derive_data():
+@agent_bp.route('/derive-starter-questions', methods=['GET', 'POST'])
+def derive_starter_questions_request():
+    """Generate a few short, data-tailored starter exploration questions.
+
+    Called once when a workspace's set of root tables changes (e.g. after
+    data is loaded). Input: ``input_tables`` (list of {name, columns,
+    sample_rows, description}) and ``model``. Returns ``{"result": [..]}``.
+    """
     if not request.is_json:
         raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-    logger.info("# derive-data request")
-    content = request.get_json()        
-
-    client = get_client(content['model'])
-
-    input_tables = content["input_tables"]
-
-    instruction = content["extra_prompt"]
-
-    max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
-    agent_coding_rules = content.get("agent_coding_rules", "")
-    current_visualization = content.get("current_visualization", None)
-    expected_visualization = content.get("expected_visualization", None)
-
-    if "additional_messages" in content:
-        prev_messages = content["additional_messages"]
-    else:
-        prev_messages = []
-
-    logger.debug("== input tables ===>")
-    for table in input_tables:
-        logger.debug(f"===> Table: {table['name']} (first 5 rows)")
-        logger.debug(table['rows'][:5])
-
-    logger.debug("== user spec ===")
-    logger.debug(instruction)
-
-    mode = "transform" if current_visualization or expected_visualization else "recommendation"
-    primary_tables = content.get("primary_tables", None)
+    logger.info("# derive-starter-questions request")
+    content = request.get_json()
 
     try:
-        identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
-        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
+        client = get_client(content['model'])
 
+        n = content.get('n', 2)
         language_instruction = get_language_instruction(mode="compact")
+        agent = StarterQuestionsAgent(client=client, language_instruction=language_instruction)
+        questions = agent.run(content.get('input_tables', []), primary_table=content.get('primary_table'), n=n)
 
-        model_info = {
-            "model": content['model'].get("model", ""),
-            "endpoint": content['model'].get("endpoint", ""),
-            "api_base": content['model'].get("api_base", ""),
-        }
-
-        knowledge_store = _get_knowledge_store(identity_id)
-
-        if mode == "recommendation":
-            agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
-            results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, primary_tables=primary_tables)
-        else:
-            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
-            results = agent.run(input_tables, instruction, prev_messages,
-                                current_visualization=current_visualization, expected_visualization=expected_visualization)
-
-        repair_attempts = 0
-        while (
-            isinstance(results, list)
-            and len(results) > 0
-            and results[0].get('status') in ('error', 'other error')
-            and repair_attempts < max_repair_attempts
-        ):
-            error_message = results[0].get('content', 'Unknown error')
-            logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
-            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-
-            prev_dialog = results[0].get('dialog', [])
-
-            try:
-                if mode == "transform":
-                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                if mode == "recommendation":
-                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-            except Exception as followup_exc:
-                logger.exception("derive_data followup failed")
-                results = [{
-                    "status": "error",
-                    "content": classify_llm_error(followup_exc),
-                    "code": "",
-                    "dialog": [],
-                }]
-                break
-
-            repair_attempts += 1
-            logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
-
-        if repair_attempts > 0:
-            logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
-
-        for r in results:
-            if r.get("status") in ("error", "other error") and r.get("content"):
-                r["content"] = sanitize_error_message(r["content"])
-            sign_result(r)
-
-        return json_ok({"results": results})
+        questions = questions if questions is not None else []
+        return json_ok({"result": questions})
     except Exception as e:
-        logger.error("Error in derive-data", exc_info=e)
+        logger.error("Error in derive-starter-questions", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
 
-@agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
-def data_agent_streaming():
-    """Streaming tool-calling data exploration agent endpoint.
+@agent_bp.route('/analyst-streaming', methods=['GET', 'POST'])
+def analyst_streaming():
+    """Unified AnalystAgent streaming endpoint (design-docs/35 + /36).
 
-    The agent streams events as newline-delimited JSON:
-        text_delta  – streamed text from the agent (narration)
-        tool_start  – agent is about to call a tool (explore/visualize/clarify)
-        tool_result – tool execution result (visualize results match DataRecAgent format)
-        clarify     – clarification question (loop pauses)
-        done        – turn complete
-        error       – error information
+    The single ``AnalystAgent`` subsumes both data exploration and report
+    writing: it gathers with inspection tools, commits one action per turn
+    (``visualize`` / ``ask_user`` / ``delegate`` / ``write_report``), and streams
+    the report live on the ``report`` channel (same ``text_delta`` event the
+    frontend already routes).
 
-    To resume after a clarification, the client sends:
-        - trajectory: the trajectory list returned in the clarify event
-        - user_question: the user's reply (selections + freeform), already
-          assembled by the frontend (the same string shown in the timeline)
+    Streams newline-delimited JSON. Terminal events: ``completion`` (the run
+    finished or hit its budget), ``interact`` (a question widget pauses the run),
+    and ``error``. To resume after ``interact`` the client sends ``trajectory``
+    (from the event) plus ``user_question`` (the assembled reply).
     """
     from data_formulator.error_handler import stream_error_event
 
@@ -454,20 +351,24 @@ def data_agent_streaming():
     user_question = content.get("user_question", "")
     max_iterations = content.get("max_iterations", 5)
     max_repair_attempts = content.get("max_repair_attempts", 1)
+    # "mini" swaps in the single-decision MiniAnalystAgent (one visualize/explain
+    # per run) for small/local models; anything else uses the standard agent.
+    agent_mode = content.get("agent_mode", "standard")
     agent_exploration_rules = content.get("agent_exploration_rules", "")
     agent_coding_rules = content.get("agent_coding_rules", "")
     focused_thread = content.get("focused_thread", None)
     other_threads = content.get("other_threads", None)
     primary_tables = content.get("primary_tables", None)
     attached_images = content.get("attached_images", None)
+    charts = content.get("charts", None)
     resume_trajectory = content.get("trajectory", None)
     completed_step_count = content.get("completed_step_count", 0)
 
     if resume_trajectory is not None and not str(user_question or "").strip():
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "user_question is required to resume after clarification"))
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "user_question is required to resume after interaction"))
 
     logger.setLevel(logging.INFO)
-    logger.info("# data-agent-streaming request")
+    logger.info(f"# analyst-streaming request (agent_mode={agent_mode})")
     logger.debug("== input tables ===>")
     for table in input_tables:
         logger.debug(f"===> Table: {table['name']}")
@@ -479,30 +380,42 @@ def data_agent_streaming():
 
     def generate():
         try:
-            agent = DataAgent(
-                client=client,
-                workspace=workspace,
-                agent_exploration_rules=agent_exploration_rules,
-                agent_coding_rules=agent_coding_rules,
-                language_instruction=language_instruction,
-                max_iterations=max_iterations,
-                max_repair_attempts=max_repair_attempts,
-                identity_id=identity_id,
-            )
+            if agent_mode == "mini":
+                # Single-decision agent; it forces max_iterations=1 internally and
+                # may run one optional data inspection before answering.
+                agent = MiniAnalystAgent(
+                    client=client,
+                    workspace=workspace,
+                    agent_exploration_rules=agent_exploration_rules,
+                    agent_coding_rules=agent_coding_rules,
+                    language_instruction=language_instruction,
+                    max_repair_attempts=max_repair_attempts,
+                    identity_id=identity_id,
+                )
+            else:
+                agent = AnalystAgent(
+                    client=client,
+                    workspace=workspace,
+                    agent_exploration_rules=agent_exploration_rules,
+                    agent_coding_rules=agent_coding_rules,
+                    language_instruction=language_instruction,
+                    max_iterations=max_iterations,
+                    max_repair_attempts=max_repair_attempts,
+                    identity_id=identity_id,
+                )
 
             trajectory = None
             if resume_trajectory:
                 # Append the user's reply (already assembled by the frontend
-                # from option clicks + any typed instructions) as a normal
-                # user message. The LLM correlates numbered selections back
-                # to the questions in the immediately preceding assistant
-                # message.
+                # from option clicks + any typed instructions) as a normal user
+                # message; the LLM correlates the selections back to the
+                # questions in the immediately preceding assistant turn.
                 trajectory = list(resume_trajectory)
                 trajectory.append({
                     "role": "user",
                     "content": user_question,
                 })
-                logger.debug("== resuming after clarification ===>")
+                logger.debug("== resuming after interaction ===>")
 
             for event in agent.run(
                 input_tables=input_tables,
@@ -513,14 +426,15 @@ def data_agent_streaming():
                 completed_step_count=completed_step_count,
                 primary_tables=primary_tables,
                 attached_images=attached_images,
+                charts=charts,
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 
-                if event.get("type") in ("completion", "clarify", "explain"):
+                if event.get("type") in ("completion", "interact"):
                     break
 
         except Exception as e:
-            logger.error("Error in data-agent-streaming", exc_info=e)
+            logger.error("Error in analyst-streaming", exc_info=e)
             yield stream_error_event(classify_and_wrap_llm_error(e))
 
         logger.setLevel(logging.WARNING)
@@ -530,92 +444,6 @@ def data_agent_streaming():
         mimetype='application/x-ndjson',
     )
 
-
-@agent_bp.route('/refine-data', methods=['GET', 'POST'])
-def refine_data():
-    if not request.is_json:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
-
-    logger.info("# refine-data request")
-    content = request.get_json()
-
-    client = get_client(content['model'])
-
-    input_tables = content["input_tables"]
-    dialog = content["dialog"]
-
-    new_instruction = content["new_instruction"]
-    latest_data_sample = content["latest_data_sample"]
-    max_repair_attempts = content.get("max_repair_attempts", 1)
-    agent_coding_rules = content.get("agent_coding_rules", "")
-    current_visualization = content.get("current_visualization", None)
-    expected_visualization = content.get("expected_visualization", None)
-
-    logger.debug("== input tables ===>")
-    for table in input_tables:
-        logger.debug(f"===> Table: {table['name']} (first 5 rows)")
-        logger.debug(table['rows'][:5])
-
-    logger.debug("== user spec ===>")
-    logger.debug(new_instruction)
-
-    try:
-        identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
-        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
-
-        language_instruction = get_language_instruction(mode="compact")
-
-        model_info = {
-            "model": content['model'].get("model", ""),
-            "endpoint": content['model'].get("endpoint", ""),
-            "api_base": content['model'].get("api_base", ""),
-        }
-
-        knowledge_store = _get_knowledge_store(identity_id)
-        agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
-        results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
-                                current_visualization=current_visualization, expected_visualization=expected_visualization)
-
-        repair_attempts = 0
-        while (
-            isinstance(results, list)
-            and len(results) > 0
-            and results[0].get('status') in ('error', 'other error')
-            and repair_attempts < max_repair_attempts
-        ):
-            error_message = results[0].get('content', 'Unknown error')
-            logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
-            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-            prev_dialog = results[0].get('dialog', [])
-
-            try:
-                results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-            except Exception as followup_exc:
-                logger.exception("refine_data followup failed")
-                results = [{
-                    "status": "error",
-                    "content": classify_llm_error(followup_exc),
-                    "code": "",
-                    "dialog": [],
-                }]
-                break
-
-            repair_attempts += 1
-            logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
-
-        if repair_attempts > 0:
-            logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
-
-        for r in results:
-            if r.get("status") in ("error", "other error") and r.get("content"):
-                r["content"] = sanitize_error_message(r["content"])
-            sign_result(r)
-
-        return json_ok({"results": results})
-    except Exception as e:
-        logger.error("Error in refine-data", exc_info=e)
-        raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/code-expl', methods=['GET', 'POST'])
 def request_code_expl():
@@ -648,191 +476,6 @@ def request_code_expl():
     except Exception as e:
         logger.error("Error in code-expl", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
-
-@agent_bp.route('/chart-insight', methods=['GET', 'POST'])
-def request_chart_insight():
-    from data_formulator.error_handler import classify_and_wrap_llm_error
-    from data_formulator.errors import AppError, ErrorCode
-
-    if not request.is_json:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
-
-    logger.info("# chart insight request")
-    content = request.get_json()
-
-    chart_image = content.get("chart_image", "")
-    chart_type = content.get("chart_type", "")
-    field_names = content.get("field_names", [])
-    input_tables = content.get("input_tables", [])
-
-    if not chart_image:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "Chart image not available. Please retry.")
-
-    model_config = content.get("model")
-    if not model_config:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Model configuration is required")
-
-    client = get_client(model_config)
-    identity_id = get_identity_id()
-    workspace = get_workspace(identity_id)
-
-    try:
-        knowledge_store = _get_knowledge_store(identity_id)
-        agent = ChartInsightAgent(client=client, workspace=workspace,
-                                  language_instruction=get_language_instruction(),
-                                  knowledge_store=knowledge_store)
-        candidates = agent.run(chart_image, chart_type, field_names, input_tables)
-
-        if not candidates or len(candidates) == 0:
-            logger.warning("[chart-insight] failed request_id=%s reason=no_candidates",
-                           getattr(flask.g, 'request_id', ''))
-            raise AppError(ErrorCode.AGENT_ERROR, "Unable to generate chart insight")
-
-        result = candidates[0]
-        if result.get('status') != 'ok':
-            reason = result.get('content', result.get('status', 'unknown'))
-            logger.warning("[chart-insight] failed request_id=%s reason=candidate_error detail=%s",
-                           getattr(flask.g, 'request_id', ''), reason)
-            raise AppError(ErrorCode.AGENT_ERROR, "Unable to generate chart insight")
-
-        logger.info("[chart-insight] done request_id=%s takeaway_count=%d",
-                    getattr(flask.g, 'request_id', ''),
-                    len(result.get('takeaways', [])))
-        return json_ok({"title": result.get("title", ""),
-                        "takeaways": result.get("takeaways", [])})
-
-    except AppError:
-        raise
-    except Exception as e:
-        logger.error("Error in chart-insight", exc_info=e)
-        raise classify_and_wrap_llm_error(e) from e
-
-@agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
-def get_recommendation_questions():
-    from data_formulator.error_handler import stream_error_event
-
-    if not request.is_json:
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
-
-    logger.info("# get recommendation questions request")
-    content = request.get_json()
-
-    client = get_client(content['model'])
-    input_tables = content.get("input_tables", [])
-    identity_id = get_identity_id()
-    workspace = get_workspace(identity_id)
-
-    agent_exploration_rules = content.get("agent_exploration_rules", "")
-    start_question = content.get("start_question", None)
-    current_chart = content.get("current_chart", None)
-    focused_thread = content.get("focused_thread", None)
-    other_threads = content.get("other_threads", None)
-    primary_tables = content.get("primary_tables", None)
-    exploration_thread = content.get("exploration_thread", None)
-    current_data_sample = content.get("current_data_sample", None)
-
-    knowledge_store = _get_knowledge_store(identity_id)
-
-    def generate():
-        agent = InteractiveExploreAgent(client=client, workspace=workspace,
-                                        agent_exploration_rules=agent_exploration_rules,
-                                        language_instruction=get_language_instruction(),
-                                        knowledge_store=knowledge_store)
-        try:
-            text_buf = ""
-            for chunk in agent.run(
-                input_tables,
-                start_question=start_question,
-                focused_thread=focused_thread,
-                other_threads=other_threads,
-                primary_tables=primary_tables,
-                current_chart=current_chart,
-                exploration_thread=exploration_thread,
-                current_data_sample=current_data_sample,
-            ):
-                if isinstance(chunk, dict):
-                    # Flush pending text before emitting structured event
-                    while "\n" in text_buf:
-                        line, text_buf = text_buf.split("\n", 1)
-                        ndjson_line = _try_parse_explore_line(line)
-                        if ndjson_line:
-                            yield ndjson_line
-                    if "type" not in chunk:
-                        chunk = {"type": "question", **chunk}
-                    yield json.dumps(chunk, ensure_ascii=False) + "\n"
-                    continue
-                text_buf += chunk
-                while "\n" in text_buf:
-                    line, text_buf = text_buf.split("\n", 1)
-                    ndjson_line = _try_parse_explore_line(line)
-                    if ndjson_line:
-                        yield ndjson_line
-            if text_buf.strip():
-                ndjson_line = _try_parse_explore_line(text_buf)
-                if ndjson_line:
-                    yield ndjson_line
-        except Exception as e:
-            logger.exception("get-recommendation-questions failed")
-            yield stream_error_event(classify_and_wrap_llm_error(e))
-
-    return Response(
-        stream_with_context(_with_warnings(generate())),
-        mimetype='application/x-ndjson',
-    )
-
-
-@agent_bp.route('/generate-report-chat', methods=['POST'])
-def generate_report_chat():
-    """Chat-driven report generation via @report-agent.
-
-    Accepts lightweight context + user prompt.  The agent inspects
-    charts/data on demand via tool calls and streams the report with
-    embed_chart / embed_table events.
-    """
-    from data_formulator.error_handler import stream_error_event
-
-    if not request.is_json:
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
-
-    logger.info("# generate report chat request")
-    content = request.get_json()
-
-    client = get_client(content['model'])
-    identity_id = get_identity_id()
-    workspace = get_workspace(identity_id)
-
-    input_tables = content.get("input_tables", [])
-    charts = content.get("charts", [])
-    user_prompt = content.get("user_prompt", "Create a report summarizing the exploration.")
-    focused_thread = content.get("focused_thread", None)
-    other_threads = content.get("other_threads", None)
-    primary_tables = content.get("primary_tables", None)
-
-    def generate():
-        agent = ReportGenAgent(
-            client=client,
-            workspace=workspace,
-            language_instruction=get_language_instruction(),
-        )
-        try:
-            for event in agent.run(
-                input_tables,
-                charts,
-                user_prompt=user_prompt,
-                focused_thread=focused_thread,
-                other_threads=other_threads,
-                primary_tables=primary_tables,
-            ):
-                yield json.dumps(event, ensure_ascii=False) + '\n'
-        except Exception as e:
-            logger.exception("generate-report-chat failed")
-            yield stream_error_event(classify_and_wrap_llm_error(e))
-
-    return Response(
-        stream_with_context(_with_warnings(generate())),
-        mimetype='application/x-ndjson',
-    )
-
 
 @agent_bp.route('/refresh-derived-data', methods=['POST'])
 def refresh_derived_data():

@@ -13,8 +13,8 @@ import {
     CircularProgress,
     Card,
     LinearProgress,
-    Button,
     Chip,
+    Collapse,
     Popper,
     Paper,
     MenuList,
@@ -22,34 +22,79 @@ import {
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
+import { persistEphemeralDerivedTable } from '../app/tableThunks';
+import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
-import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import BoltIcon from '@mui/icons-material/Bolt';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
 
-import AutoGraphIcon from '@mui/icons-material/AutoGraph';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
-import { transition } from '../app/tokens';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import { borderColor, transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
-import { ClarificationPanel, DelegatePanel } from './AgentPausePanel';
+import { ClarificationPanel, DelegatePanel, ExplanationPanel } from './AgentPausePanel';
+import { CARD_WIDTH } from './threadLayout';
+
+// Approx footprint of the leading lightning-bolt IconButton (size small,
+// p:0.5 + 16px icon). Used to cap a starter chip so a single chip fits
+// within one thread-column width alongside the toggle icon.
+const STARTER_ICON_WIDTH = 28;
+
+// Seed prompt used when the user invokes "report" mode (or a report hand-off)
+// without typing an explicit instruction. The unified analyst loads its
+// `report` skill and emits `write_report` within a normal explore run.
+const REPORT_SEED_PROMPT = 'Write a report summarizing the exploration.';
+
+// A starter-question chip that only shows a tooltip when its label is
+// truncated (i.e. the text is too long to fit within the capped width).
+const StarterChip: FC<{ label: string; onClick: () => void; sx: any }> = ({ label, onClick, sx }) => {
+    const labelRef = useRef<HTMLSpanElement | null>(null);
+    const [isClipped, setIsClipped] = useState(false);
+    const checkClipped = () => {
+        // The MUI `.MuiChip-label` element (parent of our span) is the one that
+        // applies overflow:hidden + ellipsis, so measure that container.
+        const el = labelRef.current?.parentElement;
+        if (el) setIsClipped(el.scrollWidth > el.clientWidth);
+    };
+    return (
+        <Tooltip title={isClipped ? label : ''} placement="top" enterDelay={400}>
+            <Chip
+                size="small"
+                clickable
+                label={<span ref={labelRef}>{label}</span>}
+                onClick={onClick}
+                onMouseEnter={checkClipped}
+                sx={sx}
+            />
+        </Tooltip>
+    );
+};
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
     const { t } = useTranslation();
-    const latestMessage = message || t('dataThread.thinking');
+    // `message` is the running plan: steps joined by the STEP_SEP control char
+    // ('\x1E'), which renders invisibly and would otherwise collapse every step
+    // into one run-on blob. This overlay is a compact status, so show only the
+    // latest (active) step rather than the whole accumulated trace.
+    const latestStep = (message ?? '')
+        .split('\x1E')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .pop();
+    const latestMessage = latestStep || t('dataThread.thinking');
     const elapsedSuffix = elapsed != null && elapsed > 0 ? ` (${elapsed}s)` : '';
     const progressColor = color === 'warning' ? theme.palette.warning.main : theme.palette.primary.main;
     return (
@@ -70,7 +115,7 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
         }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
                 <WritingPencil size={12} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, fontSize: 12, lineHeight: 1.5 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 11.5, lineHeight: 1.4 }}>
                     {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
@@ -96,13 +141,13 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             )}
             <Typography variant="body2" sx={{
                 color: 'text.disabled',
-                fontSize: 12,
+                fontSize: 11,
                 textAlign: 'center',
                 display: '-webkit-box',
                 WebkitLineClamp: 3,
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                lineHeight: 1.35,
+                lineHeight: 1.45,
                 wordBreak: 'break-word',
             }}>
                 {latestMessage}{elapsedSuffix}
@@ -121,11 +166,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const charts = useSelector(dfSelectors.getAllCharts);
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const starterQuestions = useSelector((state: DataFormulatorState) => state.starterQuestions);
+    const starterQuestionsStatus = useSelector((state: DataFormulatorState) => state.starterQuestionsStatus);    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const activeModel = useSelector(dfSelectors.getActiveModel);
+    const workspaceBackend = useSelector((state: DataFormulatorState) => state.serverConfig.WORKSPACE_BACKEND);
+    const activeWorkspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
-    const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -146,12 +193,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // clears). Tracks the draftId we've already auto-submitted for.
     const clarifySubmittedRef = useRef<string | null>(null);
     const [isChatFormulating, setIsChatFormulating] = useState(false);
+    // Whether the getting-started starter questions are collapsed (click the
+    // lightning bolt to expand/collapse).
+    const [starterCollapsed, setStarterCollapsed] = useState(false);
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
-    const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
-    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
-    const [selectedAgent, setSelectedAgent] = useState<'explore' | 'report'>('explore');
+    const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
     const [attachedImages, setAttachedImages] = useState<string[]>([]);
-    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
     const lastAutoFocusedChartIdRef = useRef<string | null>(null);
@@ -184,6 +233,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Stale draft detection is handled by loadState in dfSlice (marks running/clarifying drafts as interrupted)
 
     const inputCardRef = useRef<HTMLDivElement>(null);
+    // Ref to the chat textarea so getting-started starter prompts can seed
+    // the input and immediately focus it for editing.
+    const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+    const seedChatPrompt = useCallback((text: string) => {
+        setChatPrompt(text);
+        requestAnimationFrame(() => chatInputRef.current?.focus());
+    }, []);
 
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
 
@@ -256,6 +313,35 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         setMentionHighlightIdx(0);
     }, [mentionFilter]);
 
+    // ── Starter-questions generation trigger ─────────────────────────
+    // Questions are stored per root table (each table has its own, plus an
+    // optional cross-table question). When a root table is focused and it has
+    // no fresh questions for the current table set, generate them lazily. The
+    // signature (all root table ids) refreshes questions when tables change;
+    // the 500ms debounce collapses batch loads into a single call.
+    const rootTableSignature = React.useMemo(
+        () => rootTables.map(t => t.id).sort().join('|'),
+        [rootTables]
+    );
+    const focusedRootTableId = (focusedTableId && rootTables.some(t => t.id === focusedTableId))
+        ? focusedTableId
+        : undefined;
+    React.useEffect(() => {
+        if (!focusedRootTableId) return;
+        const entry = starterQuestions[focusedRootTableId];
+        if (entry && entry.signature === rootTableSignature) return;        // already fresh
+        if (starterQuestionsStatus[focusedRootTableId] === 'loading') return; // in flight
+        const timer = setTimeout(() => {
+            dispatch(generateStarterQuestions({
+                tableId: focusedRootTableId,
+                signature: rootTableSignature,
+                tableIds: rootTableSignature.split('|'),
+            }));
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [focusedRootTableId, rootTableSignature, starterQuestions, starterQuestionsStatus, dispatch]);
+
+
     // Helper: confirm selection of a mention (table only)
     const confirmMention = (optionId: string) => {
         const tbl = tables.find(t => t.id === optionId);
@@ -294,6 +380,31 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 reader.readAsDataURL(file);
             }
         }
+    }, []);
+
+    // Attach files as conversation context. Images become reference images
+    // (sent to the model as attachments); text-like files are read as text
+    // and folded into the agent prompt as context.
+    const handleAttachFiles = React.useCallback((fileList: FileList | null) => {
+        if (!fileList) return;
+        const MAX_TEXT_CHARS = 50000;
+        Array.from(fileList).forEach(file => {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = () => setAttachedImages(prev => [...prev, reader.result as string]);
+                reader.readAsDataURL(file);
+            } else {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    let content = (reader.result as string) || '';
+                    if (content.length > MAX_TEXT_CHARS) {
+                        content = content.slice(0, MAX_TEXT_CHARS) + '\n…[truncated]';
+                    }
+                    setAttachedFiles(prev => [...prev, { name: file.name, content }]);
+                };
+                reader.readAsText(file);
+            }
+        });
     }, []);
 
     // Collect table IDs from root up to (and including) the focused table for agent action matching
@@ -359,11 +470,133 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     kind: 'clarification' as const,
                     questions: entry.clarificationQuestions || null,
                     variant: entry.role === 'explain' ? 'explain' as const : 'clarify' as const,
+                    content: entry.content || '',
                 };
             }
         }
         return null;
     }, [pendingClarification, draftNodes]);
+
+    // ── Shared structured thread context builder (Tier 2 + Tier 3) ──
+    // Produces the focused/peripheral thread context used by the analyst
+    // (exploreFromChat), so the report has the actual exploration narrative —
+    // user questions, agent thinking, findings — instead of just a flat list
+    // of charts.
+    const buildThreadContext = useCallback((targetTableId: string): {
+        focusedThread: any[] | undefined;
+        otherThreads: any[] | undefined;
+    } => {
+        // Tier 2: Focused thread — detailed per-step info
+        const focusedSteps: any[] = [];
+        let walkTable = tables.find(t => t.id === targetTableId);
+        const visited = new Set<string>();
+        const focusedChainIds = new Set<string>();
+        while (walkTable?.derive?.trigger) {
+            if (visited.has(walkTable.id)) break;
+            visited.add(walkTable.id);
+            focusedChainIds.add(walkTable.id);
+            const trigger = walkTable.derive.trigger;
+            const interaction = trigger.interaction || [];
+            const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
+            const instruction = interaction.find(e => e.role === 'instruction');
+            const summary = interaction.find(e => e.role === 'summary');
+
+            // Find the actual resolved chart (not the trigger's "Auto" stub)
+            const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
+                || charts.find(c => c.tableRef === walkTable!.id);
+            const chartType = resolvedChart?.chartType || '';
+            // Map field IDs to field names for readable context
+            const encodings = resolvedChart?.encodingMap
+                ? Object.fromEntries(
+                    Object.entries(resolvedChart.encodingMap)
+                        .filter(([, v]: [string, any]) => v?.fieldID)
+                        .map(([k, v]: [string, any]) => {
+                            const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                            return [k, field?.name || v.fieldID];
+                        })
+                  )
+                : {};
+
+            const step: any = {
+                table_name: walkTable.virtual?.tableId || walkTable.id,
+                columns: walkTable.names,
+                row_count: walkTable.virtual?.rowCount ?? walkTable.rows.length,
+                user_question: userPrompt || '',
+                agent_thinking: instruction?.plan || '',
+                display_instruction: instruction?.displayContent || instruction?.content || '',
+                chart_type: chartType,
+                encodings,
+                agent_summary: summary?.content || '',
+            };
+
+            focusedSteps.unshift(step);
+
+            walkTable = tables.find(t => t.id === trigger.tableId);
+        }
+        const focusedThread = focusedSteps.length > 0 ? focusedSteps : undefined;
+
+        // Tier 3: Peripheral threads — one-line summary per step
+        // Find all leaf tables (no children or all children are anchored)
+        const leafTables = tables.filter(t => {
+            const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
+            return children.length === 0 || children.every(c => c.anchored);
+        });
+
+        const peripheralThreads: any[] = [];
+        for (const leaf of leafTables) {
+            // Skip the focused thread's leaf
+            if (focusedChainIds.has(leaf.id)) continue;
+            // Skip root/source tables
+            if (!leaf.derive) continue;
+
+            const triggers = getTriggers(leaf, tables);
+            if (triggers.length === 0) continue;
+
+            const STEP_FINDING_CHAR_LIMIT = 200;
+            const steps: string[] = [];
+            for (const trig of triggers) {
+                const instr = trig.interaction?.find((e: InteractionEntry) => e.role === 'instruction');
+                const label = instr?.displayContent || instr?.content || '';
+                // Look up the actual resolved chart from state, not the trigger's "Auto" stub
+                const chartForStep = charts.find(c => c.tableRef === trig.resultTableId && c.source === 'trigger')
+                    || charts.find(c => c.tableRef === trig.resultTableId);
+                const chartType = chartForStep?.chartType || '';
+                const encStr = chartForStep?.encodingMap
+                    ? Object.entries(chartForStep.encodingMap)
+                        .filter(([, v]: [string, any]) => v?.fieldID)
+                        .map(([k, v]: [string, any]) => {
+                            const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                            return `${k}: ${field?.name || v.fieldID}`;
+                        })
+                        .join(', ')
+                    : '';
+                // Per-step agent commentary: the `summary` entry that the
+                // visualize action emits after running this step.
+                let finding = trig.interaction?.find(
+                    (e: InteractionEntry) => e.role === 'summary',
+                )?.content?.trim() || '';
+                if (finding.length > STEP_FINDING_CHAR_LIMIT) {
+                    finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
+                }
+                const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
+                steps.push(finding ? `${head} — finding: ${finding}` : head);
+            }
+
+            if (steps.length > 0) {
+                const sourceTableId = triggers[0].tableId;
+                const sourceTable = tables.find(t => t.id === sourceTableId);
+                peripheralThreads.push({
+                    source_table: sourceTable?.virtual?.tableId || sourceTableId,
+                    leaf_table: leaf.virtual?.tableId || leaf.id,
+                    step_count: steps.length,
+                    steps,
+                });
+            }
+        }
+        const otherThreads = peripheralThreads.length > 0 ? peripheralThreads : undefined;
+
+        return { focusedThread, otherThreads };
+    }, [tables, charts, conceptShelfItems]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
@@ -372,6 +605,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         lastCreatedTableId: string | null;
     }, displayPrompt?: string) => {
         if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
+
+        // Fold attached reference files into the prompt the agent sees, while
+        // keeping the timeline bubble (displayContent) clean for the user.
+        const fileContext = attachedFiles.length > 0
+            ? '\n\n' + attachedFiles.map(f => `[Attached file: ${f.name}]\n${f.content}`).join('\n\n')
+            : '';
+        const agentPrompt = prompt + fileContext;
+        const cleanDisplay = displayPrompt ?? (fileContext ? prompt : undefined);
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
         const currentTable = tables.find(t => t.id === focusedTableId);
@@ -404,8 +645,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // 'clarifying' status and pendingClarification storage.
         if (isResume && pendingClarification?.draftId) {
             dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
-                from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
-                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
+                ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
                 timestamp: Date.now()
             }}));
             dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
@@ -413,124 +654,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
 
         // ── Build structured thread context (Tier 2 + Tier 3) ──
-        let focusedThread: any[] | undefined = undefined;
-        let otherThreads: any[] | undefined = undefined;
-        if (!isResume) {
-            // Tier 2: Focused thread — detailed per-step info
-            const focusedSteps: any[] = [];
-            let walkTable = tables.find(t => t.id === focusedTableId);
-            const visited = new Set<string>();
-            const focusedChainIds = new Set<string>();
-            while (walkTable?.derive?.trigger) {
-                if (visited.has(walkTable.id)) break;
-                visited.add(walkTable.id);
-                focusedChainIds.add(walkTable.id);
-                const trigger = walkTable.derive.trigger;
-                const interaction = trigger.interaction || [];
-                const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
-                const instruction = interaction.find(e => e.role === 'instruction');
-                const summary = interaction.find(e => e.role === 'summary');
-
-                // Find the actual resolved chart (not the trigger's "Auto" stub)
-                const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
-                    || charts.find(c => c.tableRef === walkTable!.id);
-                const chartType = resolvedChart?.chartType || '';
-                // Map field IDs to field names for readable context
-                const encodings = resolvedChart?.encodingMap
-                    ? Object.fromEntries(
-                        Object.entries(resolvedChart.encodingMap)
-                            .filter(([, v]: [string, any]) => v?.fieldID)
-                            .map(([k, v]: [string, any]) => {
-                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
-                                return [k, field?.name || v.fieldID];
-                            })
-                      )
-                    : {};
-
-                const step: any = {
-                    table_name: walkTable.virtual?.tableId || walkTable.id,
-                    columns: walkTable.names,
-                    row_count: walkTable.virtual?.rowCount ?? walkTable.rows.length,
-                    user_question: userPrompt || '',
-                    agent_thinking: instruction?.plan || '',
-                    display_instruction: instruction?.displayContent || instruction?.content || '',
-                    chart_type: chartType,
-                    encodings,
-                    agent_summary: summary?.content || '',
-                };
-
-                // Include chart thumbnail for the focused leaf table (the one the user is looking at)
-                if (walkTable.id === focusedTableId && resolvedChart && chartThumbnails[resolvedChart.id]) {
-                    step.chart_thumbnail = chartThumbnails[resolvedChart.id];
-                }
-
-                focusedSteps.unshift(step);
-
-                walkTable = tables.find(t => t.id === trigger.tableId);
-            }
-            if (focusedSteps.length > 0) focusedThread = focusedSteps;
-
-            // Tier 3: Peripheral threads — one-line summary per step
-            // Find all leaf tables (no children or all children are anchored)
-            const leafTables = tables.filter(t => {
-                const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
-                return children.length === 0 || children.every(c => c.anchored);
-            });
-
-            const peripheralThreads: any[] = [];
-            for (const leaf of leafTables) {
-                // Skip the focused thread's leaf
-                if (focusedChainIds.has(leaf.id)) continue;
-                // Skip root/source tables
-                if (!leaf.derive) continue;
-
-                const triggers = getTriggers(leaf, tables);
-                if (triggers.length === 0) continue;
-
-                const STEP_FINDING_CHAR_LIMIT = 200;
-                const steps: string[] = [];
-                for (const trig of triggers) {
-                    const tt = tables.find(t2 => t2.id === trig.resultTableId);
-                    const instr = trig.interaction?.find((e: InteractionEntry) => e.role === 'instruction');
-                    const label = instr?.displayContent || instr?.content || '';
-                    // Look up the actual resolved chart from state, not the trigger's "Auto" stub
-                    const chartForStep = charts.find(c => c.tableRef === trig.resultTableId && c.source === 'trigger')
-                        || charts.find(c => c.tableRef === trig.resultTableId);
-                    const chartType = chartForStep?.chartType || '';
-                    const encStr = chartForStep?.encodingMap
-                        ? Object.entries(chartForStep.encodingMap)
-                            .filter(([, v]: [string, any]) => v?.fieldID)
-                            .map(([k, v]: [string, any]) => {
-                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
-                                return `${k}: ${field?.name || v.fieldID}`;
-                            })
-                            .join(', ')
-                        : '';
-                    // Per-step agent commentary: the `summary` entry that the
-                    // visualize action emits after running this step.
-                    let finding = trig.interaction?.find(
-                        (e: InteractionEntry) => e.role === 'summary',
-                    )?.content?.trim() || '';
-                    if (finding.length > STEP_FINDING_CHAR_LIMIT) {
-                        finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
-                    }
-                    const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
-                    steps.push(finding ? `${head} — finding: ${finding}` : head);
-                }
-
-                if (steps.length > 0) {
-                    const sourceTableId = triggers[0].tableId;
-                    const sourceTable = tables.find(t => t.id === sourceTableId);
-                    peripheralThreads.push({
-                        source_table: sourceTable?.virtual?.tableId || sourceTableId,
-                        leaf_table: leaf.virtual?.tableId || leaf.id,
-                        step_count: steps.length,
-                        steps,
-                    });
-                }
-            }
-            if (peripheralThreads.length > 0) otherThreads = peripheralThreads;
-        }
+        // Skip on resume — the trajectory already carries the prior context.
+        const { focusedThread, otherThreads } = isResume
+            ? { focusedThread: undefined, otherThreads: undefined }
+            : buildThreadContext(focusedTableId);
 
         // Resolve primary table names from primaryTableIds (includes defaults + @-mentioned)
         const primaryTableNames = primaryTableIds.map(id => {
@@ -545,17 +672,48 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             model: activeModel,
             max_iterations: 10,
+            agent_mode: config.miniMode ? 'mini' : 'standard',
         };
+
+        // ── Route through the unified AnalystAgent (design-35/36) ──
+        // The unified agent can also write reports inside the same run, so we
+        // ship the available charts (same shape the report flow gets) for the
+        // report skill's inspect_chart.
+        const streamUrl = getUrls().ANALYST_STREAMING;
+        const availableCharts = charts
+            .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
+            .filter(c => tables.some(t => t.id === c.tableRef))
+            .map(c => {
+                const tbl = tables.find(t => t.id === c.tableRef);
+                const encodings: Record<string, string> = {};
+                if (c.encodingMap) {
+                    for (const [ch, enc] of Object.entries(c.encodingMap)) {
+                        if ((enc as any)?.fieldID) {
+                            const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
+                            if (field) encodings[ch] = field.name;
+                        }
+                    }
+                }
+                return {
+                    chart_id: c.id,
+                    chart_type: c.chartType,
+                    encodings,
+                    table_ref: tbl?.virtual?.tableId || c.tableRef,
+                    code: tbl?.derive?.code || '',
+                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
+                };
+            });
+        requestBody.charts = availableCharts;
 
         if (isResume) {
             // Resume: just send the assembled prompt as user_question. The
             // backend appends it to the trajectory as a normal user message.
             // No special clarification payload needed.
             requestBody.trajectory = clarificationContext!.trajectory;
-            requestBody.user_question = prompt;
+            requestBody.user_question = agentPrompt;
             requestBody.completed_step_count = clarificationContext!.completedStepCount;
         } else {
-            requestBody.user_question = prompt;
+            requestBody.user_question = agentPrompt;
             if (focusedThread) requestBody.focused_thread = focusedThread;
             if (otherThreads) requestBody.other_threads = otherThreads;
         }
@@ -603,20 +761,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             currentDraftParentTableId = existingDraft?.derive?.trigger?.tableId || null;
             currentDraftInteraction = [...(existingDraft?.derive?.trigger?.interaction || [])];
             // The user reply was already appended above, add to local accumulator too
-            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
-                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
+                ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
                 timestamp: Date.now() });
         } else {
             const initialEntries: InteractionEntry[] = [
-                { from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
-                    ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                { from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
+                    ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
                     timestamp: Date.now() }
             ];
             createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
         }
 
-        // Track the last agent thought and display_instruction (from "action" events)
-        let lastAgentThought: string | null = null;
+        // Track the last agent display_instruction (from "action" events)
         let lastAgentDisplayInstruction: string | null = null;
         let lastAgentInputTables: string[] = [];
 
@@ -636,7 +793,96 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let thinkingSteps: string[] = [];
         let pendingThought: string = '';
 
-        const processStreamingResult = (result: any) => {
+        // ── Live report streaming (AnalystAgent only) ──
+        // The unified agent can write a report inside the same run: it emits an
+        // `action`(write_report) commitment followed by `text_delta` events on
+        // channel "report". We create a GeneratedReport on first signal, switch
+        // to the report view, and stream the markdown in — coalescing (90ms
+        // flush so Tiptap re-parses ~10×/sec instead of per-token).
+        let reportId: string | null = null;
+        let accumulatedReportMarkdown = '';
+        let reportLastDispatched = '';
+        let reportFlushTimer: ReturnType<typeof setTimeout> | null = null;
+        // Ids of charts created during THIS run, adopted from the backend's
+        // forwarded chart_id. Merged into the report's selectedChartIds so a
+        // same-run report can embed them via chart://<id>.
+        const runCreatedChartIds: string[] = [];
+        const reportFlushNow = () => {
+            if (reportFlushTimer) { clearTimeout(reportFlushTimer); reportFlushTimer = null; }
+            if (!reportId || accumulatedReportMarkdown === reportLastDispatched) return;
+            reportLastDispatched = accumulatedReportMarkdown;
+            const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
+            dispatch(dfActions.updateGeneratedReportContent({
+                id: reportId,
+                content: accumulatedReportMarkdown,
+                title: titleMatch ? titleMatch[1].trim() : undefined,
+            }));
+        };
+        const reportScheduleFlush = () => {
+            if (reportFlushTimer) return;
+            reportFlushTimer = setTimeout(() => { reportFlushTimer = null; reportFlushNow(); }, 90);
+        };
+        const ensureReport = () => {
+            if (reportId) return reportId;
+            const newId = `report-${Date.now()}`;
+            const inProgressReport: GeneratedReport = {
+                id: newId,
+                content: '',
+                selectedChartIds: Array.from(new Set([
+                    ...availableCharts.map(c => c.chart_id),
+                    ...runCreatedChartIds,
+                ])),
+                createdAt: Date.now(),
+                status: 'generating',
+                prompt: agentPrompt,
+                // Anchor to the run's current table (the draft's table) so the
+                // thread can render the generating card. While streaming, the
+                // card is rendered INSIDE the draft block (after the thinking
+                // steps) — never via pushReportItems — so it sits below the
+                // prompt, not above it. On completion it flips to 'completed'
+                // and pushReportItems renders it in the artifact slot.
+                triggerTableId: lastCreatedTableId || focusedTableId,
+            };
+            dispatch(dfActions.saveGeneratedReport(inProgressReport));
+            dispatch(dfActions.setFocused({ type: 'report', reportId: newId }));
+            dispatch(dfActions.setViewMode('report'));
+            reportId = newId;
+            return newId;
+        };
+
+        const processStreamingResult = async (result: any) => {
+            // ── interact: the unified agent's clarify/explain pause ──
+            // Alias to the legacy clarify path (same questions[] shape + the
+            // backend now stamps trajectory/completed_step_count for resume).
+            if (result.type === "interact") {
+                result = { ...result, type: "clarify" };
+            }
+
+            // ── report streaming (AnalystAgent only) ──
+            // write_report commitment → create the report + switch view.
+            if (result.type === "action" && result.action === "write_report") {
+                ensureReport();
+                // Flush any buffered agent reasoning as its own step. We do NOT
+                // add an "outputting write_report" step — the live generating
+                // report card already indicates that the report is being
+                // written, so the explicit step would be redundant.
+                if (pendingThought) {
+                    thinkingSteps.push(pendingThought);
+                    pendingThought = '';
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                    }
+                }
+                return;
+            }
+            // report-channel markdown deltas → stream into the report content.
+            if (result.type === "text_delta" && result.channel === "report") {
+                ensureReport();
+                accumulatedReportMarkdown += result.content || '';
+                reportScheduleFlush();
+                return;
+            }
+
             // ── context_info: show injected rules/knowledge at the top ──
             // Rendered as already-completed tool-style steps (✓ prefix) so they
             // visually match the rest of the agent's tool-call timeline.
@@ -678,7 +924,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     thinkingSteps.push(pendingThought);
                     pendingThought = '';
                 }
-                if (result.tool === "explore") {
+                if (result.tool === "explore" || result.tool === "execute_python_script") {
                     const purpose = result.purpose || '';
                     if (purpose) {
                         thinkingSteps.push(t('dataThread.runningCode') + ' ' + purpose);
@@ -690,6 +936,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 } else if (result.tool === "inspect_source_data") {
                     const tableNames = result.table_names?.join(', ') || '';
                     thinkingSteps.push(t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : ''));
+                } else if (result.tool === "inspect_chart") {
+                    thinkingSteps.push(t('dataThread.inspectingChart'));
+                } else if (result.tool === "load_skill") {
+                    thinkingSteps.push(t('dataThread.loadingSkill', { skill: result.skill || '' }));
                 } else if (result.tool === "search_data_tables" || result.tool === "search_knowledge") {
                     const query = result.query || '';
                     thinkingSteps.push(t('dataThread.searching') + (query ? ` "${query}"` : ''));
@@ -721,7 +971,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
             // ── action: agent chose what to do ──
             if (result.type === "action") {
-                lastAgentThought = result.thought || null;
                 lastAgentInputTables = result.input_tables || [];
                 if (result.action === "visualize") {
                     lastAgentDisplayInstruction = result.display_instruction || null;
@@ -784,7 +1033,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             ...currentDraftInteraction,
                             {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
-                                plan: [lastAgentThought, pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\x1E') || undefined,
+                                plan: [pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\x1E') || undefined,
                                 content: question || displayInstruction,
                                 displayContent: displayInstruction,
                                 inputTableNames: resolvedSourceNames,
@@ -793,7 +1042,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         ],
                     }
                 };
-                lastAgentThought = null;
                 lastAgentDisplayInstruction = null;
                 lastAgentInputTables = [];
                 thinkingSteps = []; // reset for next chart
@@ -831,6 +1079,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 createdTables.push(candidateTable);
                 lastCreatedTableId = candidateTableId;
 
+                // Ephemeral mode: persist full rows to IndexedDB (keeps only a
+                // sample + virtual marker in Redux). Other backends store on the server.
+                if (workspaceBackend === 'ephemeral' && activeWorkspaceId) {
+                    const persisted = await persistEphemeralDerivedTable(activeWorkspaceId, candidateTable);
+                    candidateTable.rows = persisted.rows;
+                    candidateTable.virtual = persisted.virtual;
+                }
+
                 const names = candidateTable.names;
                 const missingNames = names.filter(name =>
                     !conceptShelfItems.some(field => field.name === name) &&
@@ -852,6 +1108,24 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                 const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
                 let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                // Adopt the backend's forwarded chart_id so the agent and the
+                // frontend share one id (it can embed/inspect this chart in the
+                // same run). Guard against an id that somehow already exists.
+                const forwardedChartId = transformResult.chart_id;
+                if (forwardedChartId
+                    && !charts.some(c => c.id === forwardedChartId)
+                    && !createdCharts.some(c => c.id === forwardedChartId)) {
+                    newChart.id = forwardedChartId;
+                }
+                // Title comes from the analyst's visualize action (read from the
+                // chart data + spec). Stored on the chart so the canvas renders
+                // it as the chart heading; keyed for staleness on edit.
+                const insightTitle = refinedGoal?.title;
+                if (typeof insightTitle === 'string' && insightTitle.trim()) {
+                    newChart.title = insightTitle.trim();
+                    newChart.titleKey = computeInsightKey(newChart);
+                }
+                runCreatedChartIds.push(newChart.id);
                 // Mark as unread by default; cleared below if we auto-focus it
                 // (i.e. it's the first artifact this run) or by setFocused when
                 // the user clicks the card.
@@ -876,11 +1150,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     currentDraftId = null;
                 }
                 createNextDraft(candidateTableId, []);
-
-                if (createdCharts.length > 0) {
-                    const lastChart = createdCharts[createdCharts.length - 1];
-                    dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
-                }
             }
 
             // ── clarify / explain: pause and let user respond ──
@@ -940,6 +1209,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 clearTimeout(timeoutId);
                 setChatPrompt("");
                 setAttachedImages([]);
+                setAttachedFiles([]);
                 isCompleted = true;
             }
 
@@ -953,51 +1223,77 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // the same UI position above the input box.
             if (result.type === "delegate") {
                 const message = String(result.message || '').trim();
-                const rawOptions = Array.isArray(result.options) ? result.options : [];
-                const options: string[] = rawOptions
-                    .map((o: any) => (typeof o === 'string' ? o.trim() : ''))
-                    .filter((s: string) => s.length > 0)
-                    .slice(0, 2);
+                // The agent now emits a single `delegate_prompt` (auto-sent —
+                // the user no longer picks from choices). Fall back to the
+                // legacy `options[]` shape for older backends / cached specs.
+                const delegatePrompt = String(result.delegate_prompt || '').trim();
+                const legacyOption = Array.isArray(result.options)
+                    ? String(result.options.find((o: any) => typeof o === 'string' && o.trim()) || '').trim()
+                    : '';
                 const target = (result.target === 'report_gen' ? 'report_gen' : 'data_loading') as 'data_loading' | 'report_gen';
+
+                // Auto-delegate for both targets — no user approval gate. When
+                // the agent decides a peer agent should take over (report gen
+                // for a narrative, data loading when the workspace lacks the
+                // needed data), we hand off directly using the agent's
+                // delegate prompt (falling back to a legacy option, then its
+                // message). The matching handoff consumer (SimpleChartRecBox
+                // for report_gen, DataFormulator for data_loading) picks it up
+                // and starts the target agent with the seeded prompt. The
+                // placeholder draft has no role once we hand off, so we drop it
+                // like a normal completion would.
                 if (currentDraftId) {
-                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
                     thinkingSteps = [];
                     pendingThought = '';
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
-
-                    const pauseEntry: InteractionEntry = {
-                        from: 'data-agent', to: 'user',
-                        role: 'delegate',
-                        plan: priorSteps || result.thought || undefined,
-                        content: message,
-                        delegateTarget: target,
-                        delegateOptions: options,
-                        timestamp: Date.now(),
-                    };
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
-                    currentDraftInteraction.push(pauseEntry);
-                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
-                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
-                        trajectory: result.trajectory || [],
-                        completedStepCount: result.completed_step_count || 0,
-                        lastCreatedTableId,
-                    }}));
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                    currentDraftId = null;
+                }
+                const seedPrompt = delegatePrompt || legacyOption || message;
+                if (seedPrompt) {
+                    dispatch(dfActions.requestAgentHandoff({ target, prompt: seedPrompt }));
                 }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
                 clearTimeout(timeoutId);
                 setChatPrompt("");
                 setAttachedImages([]);
+                setAttachedFiles([]);
                 isCompleted = true;
             }
 
             // ── completion: final summary ──
             if (result.type === "completion") {
-                if (lastCreatedTableId) {
-                    const rawSummary = result.content?.summary || "";
-                    const summary = result.status === "max_iterations"
-                        ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
-                        : rawSummary;
+                const rawSummary = result.content?.summary || "";
+                const summary = result.status === "max_iterations"
+                    ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
+                    : rawSummary;
+                // Finalize any report streamed during this run. A report is an
+                // artifact that OWNS its closing summary: it anchors to the
+                // newest table created this run, or falls back to the focused
+                // table when the run only summarized existing exploration (no
+                // new table) — never detached.
+                const reportAnchorTableId = reportId ? (lastCreatedTableId || focusedTableId) : null;
+                if (reportId) {
+                    reportFlushNow();
+                    const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
+                    dispatch(dfActions.updateGeneratedReportContent({
+                        id: reportId,
+                        content: accumulatedReportMarkdown,
+                        status: 'completed',
+                        title: titleMatch ? titleMatch[1].trim() : undefined,
+                        triggerTableId: reportAnchorTableId || undefined,
+                        // The closing answer lives on the report (rendered below
+                        // its card, deleted with it) — not on a table.
+                        summary: summary || undefined,
+                        summaryThought: result.content?.thought || undefined,
+                    }));
+                }
+                // For a NON-report run, the closing answer renders once as the
+                // created table's after-summary entry — exactly like a chart's
+                // summary. (Report runs own their summary; see above.)
+                const summaryAnchorTableId = reportId ? null : lastCreatedTableId;
+                if (summaryAnchorTableId) {
                     if (summary) {
                         const entry: InteractionEntry = {
                             from: 'data-agent', to: 'user', role: 'summary',
@@ -1005,8 +1301,36 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             content: summary,
                             timestamp: Date.now(),
                         };
-                        dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries: [entry] }));
+                        dispatch(dfActions.appendTriggerInteraction({ tableId: summaryAnchorTableId, entries: [entry] }));
                     }
+                } else if (!reportId && summary && currentDraftId) {
+                    // Pure Q&A run — the agent committed no action and answered in
+                    // plain text (e.g. the user just asked a question). There's no
+                    // table to anchor to. Treat the closing answer as an `explain`
+                    // pause: the draft enters the pause phase with the answer text,
+                    // so it surfaces in the explanation panel above the chat box
+                    // and the user can reply to continue the conversation (resume).
+                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    thinkingSteps = [];
+                    pendingThought = '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+
+                    const pauseEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user', role: 'explain',
+                        plan: priorSteps || result.content?.thought || undefined,
+                        content: summary,
+                        timestamp: Date.now(),
+                    };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
+                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
+                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
+                        trajectory: result.trajectory || result.content?.trajectory || [],
+                        completedStepCount: result.completed_step_count || result.content?.completed_step_count || 0,
+                        lastCreatedTableId,
+                    }}));
+                    // Keep the node; clear the handle so handleCompletion's draft
+                    // cleanup doesn't remove the pause we just persisted.
+                    currentDraftId = null;
                 }
             }
         };
@@ -1017,6 +1341,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             setIsChatFormulating(false);
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
+            if (reportFlushTimer) { clearTimeout(reportFlushTimer); reportFlushTimer = null; }
 
             // Clean up any remaining draft (the last step created a new draft that was never filled)
             if (currentDraftId) {
@@ -1028,12 +1353,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (completionResult) {
                 setChatPrompt("");
                 setAttachedImages([]);
+                setAttachedFiles([]);
             }
         };
 
         (async () => {
             try {
-                for await (const data of streamRequest(getUrls().DATA_AGENT_STREAMING, {
+                for await (const data of streamRequest(streamUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: messageBody,
@@ -1050,6 +1376,20 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             timestamp: Date.now(), type: 'error',
                             component: 'data-agent', value: errMsg,
                         }));
+                        // Finalize and anchor any report streamed so far so a
+                        // partial report isn't left unanchored (invisible in the
+                        // thread) and stuck in the 'generating' state.
+                        if (reportId) {
+                            reportFlushNow();
+                            const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
+                            dispatch(dfActions.updateGeneratedReportContent({
+                                id: reportId,
+                                content: accumulatedReportMarkdown,
+                                status: 'completed',
+                                title: titleMatch ? titleMatch[1].trim() : undefined,
+                                triggerTableId: lastCreatedTableId || focusedTableId || undefined,
+                            }));
+                        }
                         if (currentDraftId) {
                             dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                                 from: 'data-agent', to: 'user', role: 'error',
@@ -1071,8 +1411,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
 
                     allResults.push(data);
-                    processStreamingResult(data);
-                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "delegate") {
+                    await processStreamingResult(data);
+                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "interact" || data.type === "delegate") {
                         handleCompletion();
                         return;
                     }
@@ -1110,164 +1450,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
             }
         })();
-    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t]);
-
-    // ── Report generation via report agent ──────────────────────────
-
-    const reportFromChat = useCallback(async (prompt: string) => {
-        if (!focusedTableId) return;
-
-        const cleanPrompt = prompt.trim() || 'Create a report summarizing the exploration.';
-
-        setChatPrompt('');
-        lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
-        firstFocusedThisRunRef.current = false;
-        userChartFocusLockedRef.current = false;
-        setIsChatFormulating(true);
-
-        // Build available charts list
-        const availableCharts = charts
-            .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
-            .filter(c => tables.some(t => t.id === c.tableRef))
-            .map(c => {
-                const tbl = tables.find(t => t.id === c.tableRef);
-                const encodings: Record<string, string> = {};
-                if (c.encodingMap) {
-                    for (const [ch, enc] of Object.entries(c.encodingMap)) {
-                        if ((enc as any)?.fieldID) {
-                            const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
-                            if (field) encodings[ch] = field.name;
-                        }
-                    }
-                }
-                return {
-                    chart_id: c.id,
-                    chart_type: c.chartType,
-                    encodings,
-                    table_ref: tbl?.virtual?.tableId || c.tableRef,
-                    code: tbl?.derive?.code || '',
-                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
-                };
-            });
-
-        const selectedChartIds = availableCharts.map(c => c.chart_id);
-
-        // Create a report entry and switch to report view
-        const reportId = `report-${Date.now()}`;
-        const inProgressReport: GeneratedReport = {
-            id: reportId,
-            content: '',
-            selectedChartIds,
-            createdAt: Date.now(),
-            status: 'generating',
-            prompt: cleanPrompt,
-            triggerTableId: focusedTableId,
-        };
-        dispatch(dfActions.saveGeneratedReport(inProgressReport));
-        dispatch(dfActions.setFocused({ type: 'report', reportId }));
-        dispatch(dfActions.setViewMode('report'));
-
-        const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable).filter(Boolean);
-
-        const body = JSON.stringify({
-            model: activeModel,
-            input_tables: actionTables.map(t => ({
-                name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ''),
-            })),
-            primary_tables: primaryTableIds.map(id => {
-                const t = tables.find(tbl => tbl.id === id);
-                return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, '');
-            }),
-            charts: availableCharts,
-            user_prompt: cleanPrompt,
-        });
-
-        const controller = new AbortController();
-        agentAbortRef.current = controller;
-        let accumulatedMarkdown = '';
-
-        // Coalesce per-token updates: dispatching on every text_delta forces the
-        // Tiptap editor to re-parse the entire document each time, which makes
-        // the stream feel chunky / non-streaming. Batch updates on a short
-        // timer so the editor refreshes ~10×/sec while the wire still streams.
-        const FLUSH_INTERVAL_MS = 90;
-        let lastDispatched = '';
-        let flushTimer: ReturnType<typeof setTimeout> | null = null;
-        const flushNow = () => {
-            if (flushTimer) {
-                clearTimeout(flushTimer);
-                flushTimer = null;
-            }
-            if (accumulatedMarkdown === lastDispatched) return;
-            lastDispatched = accumulatedMarkdown;
-            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
-            dispatch(dfActions.updateGeneratedReportContent({
-                id: reportId,
-                content: accumulatedMarkdown,
-                title: titleMatch ? titleMatch[1].trim() : undefined,
-            }));
-        };
-        const scheduleFlush = () => {
-            if (flushTimer) return;
-            flushTimer = setTimeout(() => {
-                flushTimer = null;
-                flushNow();
-            }, FLUSH_INTERVAL_MS);
-        };
-
-        try {
-            for await (const event of streamRequest(getUrls().GENERATE_REPORT_CHAT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body,
-            }, controller.signal)) {
-                if (event.type === 'text_delta') {
-                    accumulatedMarkdown += (event as any).content;
-                    scheduleFlush();
-                } else if (event.type === 'error') {
-                    const errMsg = event.error ? getErrorMessage(event.error) : t('messages.error');
-                    accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'error',
-                        component: 'report-agent', value: errMsg,
-                    }));
-                    flushNow();
-                } else if (event.type === 'warning') {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'warning',
-                        component: 'report-agent',
-                        value: (event as any).warning?.message ?? 'Warning from server',
-                    }));
-                }
-            }
-
-            // Final update with completed status — make sure the latest content
-            // is in state before we mark it complete.
-            flushNow();
-            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
-            dispatch(dfActions.updateGeneratedReportContent({
-                id: reportId,
-                content: accumulatedMarkdown,
-                status: 'completed',
-                title: titleMatch ? titleMatch[1].trim() : undefined,
-            }));
-        } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                dispatch(dfActions.updateGeneratedReportContent({
-                    id: reportId,
-                    content: accumulatedMarkdown + `\n\n**Error:** ${error.message}`,
-                    status: 'error',
-                }));
-            }
-        } finally {
-            if (flushTimer) {
-                clearTimeout(flushTimer);
-                flushTimer = null;
-            }
-            agentAbortRef.current = null;
-            setIsChatFormulating(false);
-        }
-    }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch]);
+    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles]);
 
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').
@@ -1278,19 +1461,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (agentHandoffRequest && agentHandoffRequest.target === 'report_gen') {
             const promptText = agentHandoffRequest.prompt;
             dispatch(dfActions.clearAgentHandoffRequest());
-            // Fire-and-forget: reportFromChat manages its own streaming
-            // state via Redux dispatches.
-            reportFromChat(promptText);
+            // The unified analyst writes reports in-run via its `report`
+            // skill, so a report hand-off is just an explore run seeded with
+            // a report instruction.
+            exploreFromChat(promptText.trim() || REPORT_SEED_PROMPT);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [agentHandoffRequest]);
 
     // ── Unified submit handler ───────────────────────────────────────
     const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string) => {
-        if (selectedAgent === 'report') {
-            reportFromChat(prompt);
-            return;
-        }
         if (clarificationCtx) {
             // Build the structured response payload. The backend assembles
             // the final LLM-facing text ("Selected answers: 1. xxx; 2. yyy\n
@@ -1315,7 +1495,40 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return;
         }
         exploreFromChat(prompt, undefined, displayPrompt);
-    }, [reportFromChat, exploreFromChat, selectedAgent, clarificationQuestions, clarifyAnswers]);
+    }, [exploreFromChat, clarificationQuestions, clarifyAnswers]);
+
+    // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
+    // with a prompt describing the captured workflow; we hand it straight to
+    // the data agent on the currently focused dataset. v1 is deliberately
+    // simple — one request, let the agent reproduce the analysis on its own.
+    // See discussion/replayable-experience-workflow.md.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const prompt = (e as CustomEvent).detail?.prompt as string | undefined;
+            if (!prompt) return;
+            if (isChatFormulating) {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data-agent', value: t('knowledge.replayBusy'),
+                }));
+                return;
+            }
+            if (!focusedTableId) {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data-agent', value: t('knowledge.replayNoData'),
+                }));
+                return;
+            }
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'info',
+                component: 'data-agent', value: t('knowledge.replayStarted'),
+            }));
+            exploreFromChat(prompt);
+        };
+        window.addEventListener('df-replay-workflow', handler);
+        return () => window.removeEventListener('df-replay-workflow', handler);
+    }, [exploreFromChat, isChatFormulating, focusedTableId, dispatch, t]);
 
     const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
         if (!pendingClarification) return;
@@ -1343,11 +1556,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return chatPrompt.trim().length > 0;
     }, [chatPrompt, focusedTableId]);
 
-    // Handle a single clicked option (or free-text Enter) inside the
-    // ClarificationPanel. We just record the selection by question index
-    // — the chat box is NOT mutated. Auto-submit fires only when EVERY
-    // question is answered.
-    const handleSelectAnswer = useCallback((questionIndex: number, response: ClarificationResponse) => {
+    // Handle a single clicked option (or confirmed free-text) inside the
+    // ClarificationPanel. We record the selection by question index — the
+    // chat box is NOT mutated. `autoSubmit` (default true) lets an explicit
+    // confirm (option click / check button / Enter) fire the whole panel once
+    // every question is answered; an implicit confirm (blur auto-record)
+    // passes false so it records but never submits.
+    const handleSelectAnswer = useCallback((questionIndex: number, response: ClarificationResponse, autoSubmit: boolean = true) => {
         const questions = clarificationQuestions?.questions;
         if (!questions || !pendingClarification) return;
         if (clarifySubmittedRef.current === pendingClarification.draftId) return;
@@ -1355,15 +1570,30 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const newAnswers = { ...clarifyAnswers, [questionIndex]: response };
         setClarifyAnswers(newAnswers);
 
-        // Auto-submit only when ALL questions are answered. Otherwise we
-        // wait for the user to either answer the rest or hit Send manually.
+        // Auto-submit only when EVERY question is answered by a clicked option
+        // AND this was an explicit confirm. If any answer is typed text, we
+        // never auto-fire — the user submits via the shared panel button — so a
+        // stray option click can't sweep up an unfinished typed answer.
         const allAnswered = questions.every((_q, idx) => !!newAnswers[idx]);
-        if (allAnswered) {
+        const allOptions = questions.every((_q, idx) => newAnswers[idx]?.source === 'option');
+        if (allAnswered && allOptions && autoSubmit) {
             clarifySubmittedRef.current = pendingClarification.draftId;
             const responses: ClarificationResponse[] = questions.map((_q, idx) => newAnswers[idx]);
             resumeFromClarification(responses);
         }
     }, [clarificationQuestions, pendingClarification, clarifyAnswers, resumeFromClarification]);
+
+    // Clear a question's recorded answer (the user started editing its field,
+    // which invalidates a prior option pick or confirmed free-text reply).
+    const handleClearAnswer = useCallback((questionIndex: number) => {
+        setClarifyAnswers(prev => {
+            if (!(questionIndex in prev)) return prev;
+            const next = { ...prev };
+            delete next[questionIndex];
+            return next;
+        });
+    }, []);
+
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
@@ -1379,52 +1609,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, [pendingClarification, dispatch, t]);
 
-    const isReportMode = selectedAgent === 'report';
-    const gradientBorder = isReportMode
-        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.6)}, ${alpha(theme.palette.warning.dark, 0.5)})`
-        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
-    const workingBorder = isReportMode
-        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.3)}, ${alpha(theme.palette.warning.dark, 0.25)})`
-        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
-
-    // Landing / "no thread yet" highlight: when the user has loaded data
-    // but hasn't started an exploration on the focused table (no real
-    // charts AND the table isn't part of a derivation chain), gently pulse
-    // a colored ring around the input card to anchor the eye here.
-    // Suppressed once they start typing, while an agent is running, or
-    // while a clarification is pending — anything that already draws focus.
-    const focusedTableHasCharts = !!focusedTableId && charts.some(c =>
-        c.tableRef === focusedTableId
-        && c.chartType !== '?'
-        && c.chartType !== 'Auto'
-        && c.source !== 'trigger'
-    );
-    const focusedTableObj = focusedTableId ? tables.find(t => t.id === focusedTableId) : undefined;
-    const focusedTableHasDerivation = !!focusedTableObj && (
-        focusedTableObj.derive !== undefined
-        || tables.some(t => t.derive?.trigger?.tableId === focusedTableId)
-    );
-    const isLandingHighlight = (
-        !!focusedTableId
-        && !focusedTableHasCharts
-        && !focusedTableHasDerivation
-        && !isChatFormulating
-        && !pendingClarification
-        && chatPrompt.trim() === ''
-    );
-
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
             mx: 1, mb: 1, mt: 0.5,
             px: 1.25, pt: 1, pb: 0.5,
             borderRadius: '12px',
-            // The 2-tone border is drawn by the `::before` gradient
-            // overlay below (works through border-radius + masks). We
-            // intentionally leave the Card's own border off so the two
-            // don't fight; focus state uses a shadow halo instead of a
-            // border-color shift.
-            border: 'none',
+            // Standard single-tone input style (matches AgentChatInput): a
+            // solid divider border that turns the accent color on focus.
+            border: `1px solid ${borderColor.divider}`,
             outline: 'none',
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
@@ -1432,45 +1625,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             transition: transition.fast,
             backgroundColor: isChatFormulating
                 ? alpha(theme.palette.action.disabledBackground, 0.06)
-                : isReportMode
-                    ? alpha(theme.palette.warning.main, 0.04)
-                    : theme.palette.background.paper,
+                : theme.palette.background.paper,
             // Neutral elevation shadow recipe shared with AgentChatInput;
             // hover lifts the card a touch without shifting any colors.
             boxShadow: '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
             '&:hover': {
                 boxShadow: '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
             },
-            ...(isLandingHighlight ? {
-                animation: 'df-chatinput-landing-pulse 2.4s ease-in-out infinite',
-                '@keyframes df-chatinput-landing-pulse': {
-                    '0%, 100%': {
-                        boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0.0)}, 0 4px 14px ${alpha(theme.palette.common.black, 0.06)}`,
-                    },
-                    '50%': {
-                        boxShadow: `0 0 0 6px ${alpha(theme.palette.primary.main, 0.14)}, 0 4px 18px ${alpha(theme.palette.common.black, 0.08)}`,
-                    },
-                },
-            } : {}),
             '&:focus-within': {
-                animation: 'none',
-                boxShadow: `0 0 0 2px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
-            },
-            // Gradient border via pseudo-element (works with border-radius)
-            '&::before': {
-                content: '""',
-                position: 'absolute',
-                inset: 0,
-                borderRadius: 'inherit',
-                padding: '1.5px',
-                background: isChatFormulating 
-                    ? workingBorder 
-                    : gradientBorder,
-                WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                WebkitMaskComposite: 'xor',
-                maskComposite: 'exclude',
-                pointerEvents: 'none',
-                zIndex: 3,
+                borderColor: theme.palette.primary.main,
+                boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
             },
         }}
         >
@@ -1480,7 +1644,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     variant={clarificationQuestions.variant}
                     selectedAnswers={clarifyAnswers}
                     onSelectAnswer={handleSelectAnswer}
+                    onClearAnswer={handleClearAnswer}
                     onSubmit={resumeFromClarification}
+                    onCancel={cancelAgent}
+                />
+            )}
+            {clarificationQuestions?.kind === 'clarification' && !clarificationQuestions.questions && clarificationQuestions.variant === 'explain' && clarificationQuestions.content && pendingClarification && !isChatFormulating && (
+                // Plain-text closing answer surfaced as an explanation pause:
+                // read-only, no questions. The user can still type a followup
+                // in the chat box below (which resumes the conversation).
+                <ExplanationPanel
+                    content={clarificationQuestions.content}
                     onCancel={cancelAgent}
                 />
             )}
@@ -1497,7 +1671,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             {/* @-mention table chips and image attachments.
                 Skip the table-chip row entirely when there's only one root table —
                 there's nothing else the user could @-mention, so the chip is noise. */}
-            {((primaryTableIds.length > 0 && rootTables.length > 1) || attachedImages.length > 0) && !isChatFormulating && (
+            {((primaryTableIds.length > 0 && rootTables.length > 1) || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
                     {rootTables.length > 1 && primaryTableIds.map(id => {
                         const tbl = tables.find(t => t.id === id);
@@ -1536,6 +1710,27 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 border: 'none',
                                 borderRadius: '4px',
                                 '& .MuiChip-label': { px: '4px' },
+                                '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
+                                '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
+                            }}
+                        />
+                    ))}
+                    {attachedFiles.map((file, idx) => (
+                        <Chip
+                            key={`file-${idx}`}
+                            size="small"
+                            icon={<InsertDriveFileOutlinedIcon sx={{ fontSize: 14 }} />}
+                            label={file.name}
+                            onDelete={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))}
+                            sx={{
+                                height: 20,
+                                fontSize: 10,
+                                maxWidth: 160,
+                                color: theme.palette.text.secondary,
+                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                border: 'none',
+                                borderRadius: '4px',
+                                '& .MuiChip-label': { px: '4px', overflow: 'hidden', textOverflow: 'ellipsis' },
                                 '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
                                 '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
                             }}
@@ -1629,7 +1824,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
                     if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
                         event.preventDefault();
-                        setChatPrompt(isReportMode ? t('chartRec.threadReportPrompt') : t('chartRec.threadExplorePrompt'));
+                        setChatPrompt(t('chartRec.threadExplorePrompt'));
                     }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -1653,13 +1848,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     inputLabel: { shrink: true },
                     input: { readOnly: isChatFormulating },
                 }}
+                inputRef={chatInputRef}
                 value={chatPrompt}
                 placeholder={
                     pendingClarification
                         ? t('chartRec.replyPlaceholder')
-                        : isReportMode
-                            ? t(rootTables.length <= 1 ? 'chartRec.reportPlaceholderSingleTable' : 'chartRec.reportPlaceholder')
-                            : t(rootTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
+                        : t(rootTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
                 }
                 fullWidth
                 multiline
@@ -1669,10 +1863,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.5, overflow: 'hidden', flex: 1 }}>
-                    <Tooltip title={t('chartRec.addMoreData')}>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => { handleAttachFiles(e.target.files); if (e.target) e.target.value = ''; }}
+                    />
+                    <Tooltip title={t('chartRec.attachContext', { defaultValue: 'Attach context (image or file)' })}>
                         <IconButton
                             size="small"
-                            onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
+                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
                             sx={{
                                 p: 0.5,
                                 color: theme.palette.text.secondary,
@@ -1683,44 +1884,31 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             <AddIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                     </Tooltip>
-                    {/* Agent mode toggle */}
-                    <Tooltip title={selectedAgent === 'explore' ? t('chartRec.switchToReport') : t('chartRec.switchToExplore')}>
-                        <Button
-                            size="small"
-                            onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
-                            sx={{
-                                textTransform: 'none',
-                                fontSize: 11,
-                                minWidth: 0,
-                                px: 0.875,
-                                py: 0,
-                                height: 26,
-                                color: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                '&:hover': { backgroundColor: alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.08) },
-                            }}
-                        >
-                            {selectedAgent === 'explore'
-                                ? <AutoGraphIcon sx={{ fontSize: '14px !important' }} />
-                                : <DescriptionOutlinedIcon sx={{ fontSize: '14px !important' }} />}
-                            {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
-                        </Button>
-                    </Tooltip>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                 {isChatFormulating ? (
                     <CircularProgress size={18} sx={{ m: 0.5 }} />
                 ) : (
                     <>
-                        {!isReportMode && (
+                        <Tooltip title={t('chartRec.generateReport')}>
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    sx={{ p: 0.5, color: theme.palette.text.secondary }}
+                                    aria-label={t('chartRec.generateReport')}
+                                    disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
+                                    onClick={() => submitChat(t('chartRec.reportPrompt'), undefined, t('chartRec.askedForReport'))}
+                                >
+                                    <EditOutlinedIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                         <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>
                                 <IconButton
                                     size="small"
-                                    sx={{ p: 0.5, color: theme.palette.secondary.main }}
+                                    sx={{ p: 0.5, color: theme.palette.primary.main }}
+                                    aria-label={t('chartRec.getIdeaSuggestions')}
                                     disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
                                     onClick={() => submitChat(t('chartRec.exploreIdeasPrompt'), undefined, t('chartRec.askedForRecommendations'))}
                                 >
@@ -1728,11 +1916,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        )}
                         <Tooltip title={t('chartRec.explore')}>
                             <span>
                                 <IconButton
                                     size="small"
+                                    aria-label={t('chartRec.explore')}
                                     disabled={!canSend}
                                     onClick={() => {
                                         if (pendingClarification) {
@@ -1775,22 +1963,105 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     message={draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
                             ?.derive?.runningPlan}
                     theme={theme}
-                    color={isReportMode ? 'warning' : 'primary'}
+                    color={'primary'}
                     onCancel={cancelAgent}
                 />
             )}
         </Card>
     );
 
+    // ── Getting-started guidance ─────────────────────────────────────
+    // When a root table is focused, show a muted row of AI-generated starter
+    // questions tailored to that table (see the trigger effect above — each
+    // table has its own set, plus an optional cross-table question). Clicking
+    // a chip runs it; clicking the lightning bolt collapses/expands the row.
+    const focusedStarterEntry = focusedRootTableId ? starterQuestions[focusedRootTableId] : undefined;
+    const focusedStarterStatus = focusedRootTableId ? starterQuestionsStatus[focusedRootTableId] : undefined;
+    const focusedStarterFresh = !!focusedStarterEntry && focusedStarterEntry.signature === rootTableSignature;
+    const starterLoading = !!focusedRootTableId && (!focusedStarterFresh || focusedStarterStatus === 'loading');
+
+    const showGettingStarted = !!focusedRootTableId
+        && !isChatFormulating
+        && !pendingClarification
+        && (starterLoading || (focusedStarterEntry?.questions?.length ?? 0) > 0);
+
+    const starterChipSx = {
+        height: 24, borderRadius: '6px', fontSize: 11,
+        color: 'text.secondary',
+        backgroundColor: 'transparent',
+        border: `1px solid ${borderColor.divider}`,
+        // Cap a single chip to one column width minus the toggle icon, and
+        // allow it to shrink (flex) when the row would otherwise overflow.
+        maxWidth: CARD_WIDTH - STARTER_ICON_WIDTH,
+        minWidth: 0,
+        flexShrink: 1,
+        '& .MuiChip-label': {
+            px: '8px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+        },
+        '&:hover': {
+            backgroundColor: alpha(theme.palette.text.primary, 0.04),
+            color: 'text.primary',
+            borderColor: alpha(theme.palette.text.primary, 0.24),
+        },
+    } as const;
+
+    const gettingStartedBlock = showGettingStarted ? (
+        <Box sx={{ mx: 1, mb: 0.75, px: 0.5, display: 'flex', alignItems: 'center', gap: 0.25, overflow: 'hidden' }}>
+            <Tooltip title={t(starterCollapsed ? 'chartRec.expandStarters' : 'chartRec.collapseStarters', { defaultValue: starterCollapsed ? 'Show suggestions' : 'Hide suggestions' })}>
+                <IconButton
+                    size="small"
+                    onClick={() => setStarterCollapsed(c => !c)}
+                    sx={{
+                        flexShrink: 0,
+                        p: 0.5, borderRadius: '6px', color: 'text.disabled',
+                        transition: 'background-color 0.15s, color 0.15s',
+                        '&:hover': { color: 'text.secondary', backgroundColor: alpha(theme.palette.text.primary, 0.06) },
+                    }}
+                >
+                    <BoltIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+            </Tooltip>
+            {starterCollapsed && (
+                <Typography
+                    onClick={() => setStarterCollapsed(false)}
+                    sx={{ fontSize: 11, color: 'text.disabled', cursor: 'pointer', '&:hover': { color: 'text.secondary' } }}
+                >
+                    {t('chartRec.expandStarters', { defaultValue: 'Show suggestions' })}
+                </Typography>
+            )}
+            <Collapse
+                orientation="horizontal"
+                in={!starterCollapsed}
+                timeout={200}
+                sx={{
+                    minWidth: 0,
+                    flexShrink: 1,
+                    '& .MuiCollapse-wrapperInner': { display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'nowrap', minWidth: 0 },
+                }}
+            >
+                {starterLoading
+                    ? <CircularProgress size={13} thickness={5} sx={{ color: 'text.disabled', mx: 0.5 }} />
+                    : (focusedStarterEntry?.questions ?? []).map((q, i) => (
+                        <StarterChip
+                            key={i}
+                            label={q}
+                            onClick={() => submitChat(q)}
+                            sx={starterChipSx}
+                        />
+                    ))
+                }
+            </Collapse>
+        </Box>
+    ) : null;
+
     return (
         <Box>
+            {gettingStartedBlock}
             {/* The input box */}
             {inputBox}
-            <UnifiedDataUploadDialog
-                open={uploadDialogOpen}
-                onClose={() => setUploadDialogOpen(false)}
-                initialTab="menu"
-            />
         </Box>
     );
 };

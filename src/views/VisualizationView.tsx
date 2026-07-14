@@ -15,28 +15,29 @@ import {
     ListItemIcon,
     ListItemText,
     MenuItem,
-    LinearProgress,
     Card,
     ListSubheader,
     Menu,
     CardContent,
     Slider,
     Dialog,
+    DialogTitle,
     DialogContent,
     TextField,
-    CircularProgress,
     Popover,
+    Popper,
+    Paper,
+    ClickAwayListener,
     Snackbar,
     Alert,
     Fade,
     Grow,
-    alpha,
+    CircularProgress,
 } from '@mui/material';
 
 import _ from 'lodash';
 
-import { borderColor, transition } from '../app/tokens';
-import { WritingIndicator } from '../components/FunComponents';
+import { floatingPillSx } from '../app/tokens';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
@@ -44,26 +45,26 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
-import { buildEmbeddedDataForChart } from '../app/restyle';
+import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
-import { DictTable } from "../components/ComponentType";
 
-import AddchartIcon from '@mui/icons-material/Addchart';
-import DeleteIcon from '@mui/icons-material/Delete';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
+import TuneIcon from '@mui/icons-material/Tune';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import FunctionsIcon from '@mui/icons-material/Functions';
 import CasinoIcon from '@mui/icons-material/Casino';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import CloseIcon from '@mui/icons-material/Close';
+import AddchartIcon from '@mui/icons-material/Addchart';
+import * as d3dsv from 'd3-dsv';
 import { AgentToyIcon, AnimatedAgentToyIcon } from './AgentToyIcon';
 
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
@@ -78,17 +79,16 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 import { useTranslation } from 'react-i18next';
 
 import { ChatDialog } from './ChatDialog';
-import { PlanStepsView } from './InteractionEntryCard';
-import { EncodingShelfThread } from './EncodingShelfThread';
+import { EncodingShelfCard } from './EncodingShelfCard';
+import { ChartQuickConfig } from './ChartQuickConfig';
+import { ChartVariantStrip } from './ChartVariantStrip';
 import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
-import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { FreeDataViewFC } from './DataView';
 import { formatCellValue } from './ViewUtils';
 
 
 import { dfSelectors } from '../app/dfSlice';
-import { ChartRecBox } from './ChartRecBox';
 import { CodeExplanationCard, ConceptExplCards, extractConceptExplanations } from './ExplComponents';
 import CodeIcon from '@mui/icons-material/Code';
 
@@ -239,6 +239,46 @@ export let SampleSizeEditor: FC<{
     </Box>
 }
 
+/**
+ * Recursively scale every width/height in a Vega-Lite spec by `factor`.
+ * Used to apply the zoom resizer to style-variant specs, which bypass the
+ * compiler's canvas sizing. Handles numeric sizes, `{step: N}` band sizes,
+ * `config.view.continuousWidth/Height` (how continuous-scale charts encode
+ * their plot size), and nested view-composition specs (spec / layer /
+ * concat / facet).
+ */
+const scaleSpecSize = (node: any, factor: number): void => {
+    if (!node || typeof node !== 'object') return;
+    for (const dim of ['width', 'height'] as const) {
+        const v = node[dim];
+        if (typeof v === 'number') {
+            node[dim] = Math.round(v * factor);
+        } else if (v && typeof v === 'object' && typeof v.step === 'number') {
+            node[dim] = { ...v, step: Math.round(v.step * factor) };
+        }
+    }
+    // Continuous-scale charts (e.g. line/area with quantitative or temporal
+    // axes) carry no top-level numeric width/height; their plot size lives in
+    // config.view.continuousWidth / continuousHeight. Scale those too so the
+    // zoom resizer affects continuous variant charts, not just discrete ones.
+    const view = node.config?.view;
+    if (view && typeof view === 'object') {
+        for (const dim of ['continuousWidth', 'continuousHeight'] as const) {
+            if (typeof view[dim] === 'number') {
+                view[dim] = Math.round(view[dim] * factor);
+            }
+        }
+    }
+    for (const key of ['spec', 'layer', 'concat', 'hconcat', 'vconcat', 'facet'] as const) {
+        const child = node[key];
+        if (Array.isArray(child)) {
+            child.forEach(c => scaleSpecSize(c, factor));
+        } else if (child && typeof child === 'object') {
+            scaleSpecSize(child, factor);
+        }
+    }
+};
+
 /** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
@@ -291,6 +331,22 @@ const VegaChartRenderer: FC<{
             );
             spec.data = { values: variantValues };
 
+            // Apply the variant's generative-UI controls (agent-authored simple
+            // knobs) onto the spec using the user's current values. This is a
+            // pure "set value at path" transform (no code execution) and runs
+            // before size scaling so a control that touches width/height is
+            // still scaled by the resizer. See applyVariantConfigUI.
+            spec = applyVariantConfigUI(spec, activeVariant.configUI, activeVariant.configValues);
+
+            // Variants bypass assembleVegaChart, so the zoom resizer's
+            // scaleFactor (which normally flows through the compiler's canvas
+            // sizing) wouldn't affect them. Apply it directly by scaling every
+            // width/height in the stored spec — numeric sizes and {step: N}
+            // band sizes alike — so the resizer works on restyled charts too.
+            if (scaleFactor !== 1) {
+                scaleSpecSize(spec, scaleFactor);
+            }
+
         } else {
             spec = assembleVegaChart(
                 chart.chartType,
@@ -310,17 +366,6 @@ const VegaChartRenderer: FC<{
         if (!spec || spec === "Table") {
             onSpecReady?.(null);
             return;
-        }
-
-        // Seed chart config with heuristic-computed defaults for properties
-        // the user hasn't explicitly set (e.g. independentYAxis toggle).
-        // Variants don't carry computed config — the agent's spec is final.
-        if (!activeVariant && spec._computedConfig) {
-            for (const [key, value] of Object.entries(spec._computedConfig)) {
-                if (chart.config?.[key] === undefined) {
-                    dispatch(dfActions.updateChartConfig({ chartId: chart.id, key, value }));
-                }
-            }
         }
 
         spec['background'] = 'white';
@@ -351,7 +396,7 @@ const VegaChartRenderer: FC<{
         const embedResult: { current?: Awaited<ReturnType<typeof embed>> } = {};
 
         el.innerHTML = '';
-        embed(el, { ...spec }, { actions: true, renderer: 'canvas' })
+        embed(el, { ...spec }, { actions: false, renderer: 'canvas' })
             .then((result) => {
                 if (cancelled) {
                     result.finalize();
@@ -405,8 +450,19 @@ const VegaChartRenderer: FC<{
                 id={elementId}
                 sx={{
                     maxWidth: '100%',
-                    overflow: 'visible',
-                    '& .vega-embed': { margin: 'auto', overflow: 'visible' },
+                    overflow: 'hidden',
+                    // vega-embed adds its `.vega-embed` class to THIS element (the
+                    // div we pass to embed()) and renders the <canvas>/<svg> as a
+                    // direct child. Vega writes explicit inline width/height (in CSS
+                    // px) on that canvas/svg, so we must override them with
+                    // !important to let the chart shrink to the panel width while
+                    // keeping its aspect ratio (height: auto). A descendant
+                    // `.vega-embed` selector would NOT match — the class is on this
+                    // element itself, not a child.
+                    '& > canvas, & > svg': {
+                        maxWidth: '100%',
+                        height: 'auto !important',
+                    },
                 }}
             />
         </Box>
@@ -430,9 +486,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
-
-    let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
-    let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
 
     // Track the assembled Vega-Lite spec from the renderer so we can open it in the Vega Editor
     const [renderedSpec, setRenderedSpec] = useState<any | null>(null);
@@ -470,15 +523,30 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    const [bottomTab, setBottomTab] = useState<string>('data');
+    const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
+    // Floating encoding-shelf popover. The button lives in the stable outer
+    // panel (not inside the chart's <Fade>), so it never remounts or shifts
+    // when the chart re-renders. We anchor the popover to that button via a ref.
+    const [encodingOpen, setEncodingOpen] = useState<boolean>(false);
+    const editButtonRef = useRef<HTMLButtonElement | null>(null);
+
+    // State for the compact action dock that sits below the chart-mode data
+    // table (mirrors the table-focus dock; replaces the grid's inline footer).
+    const [chartTableGridReport, setChartTableGridReport] = useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null>(null);
+    const [chartRandomizeToken, setChartRandomizeToken] = useState(0);
+    const [chartResetOrderToken, setChartResetOrderToken] = useState(0);
 
     // Reset local UI state when focused chart changes
     useEffect(() => {
-        setBottomTab('data');
-        setLocalScaleFactor(1);
+        setCodeDialogOpen(false);
+        // Restore the persisted zoom for the newly focused chart (stored on
+        // the Chart object so it survives switching charts and session
+        // save/load). Falls back to 1 for charts that have never been zoomed.
+        setLocalScaleFactor(focusedChart?.scaleFactor ?? 1);
         setChatDialogOpen(false);
+        setEncodingOpen(false);
     }, [focusedChartId]);
 
 
@@ -661,11 +729,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let triggerTable = tables.find(t => t.derive?.trigger?.chart?.id == focusedChart?.id);
 
-    // Chart insight
-    const chartInsightInProgress = useSelector((state: DataFormulatorState) => state.chartInsightInProgress) || [];
-    const insightLoading = chartInsightInProgress.includes(focusedChart.id);
-    const currentInsightKey = computeInsightKey(focusedChart);
-    const insightFresh = focusedChart.insight?.key === currentInsightKey;
+    // Chart title: surfaced as the rendered chart heading. The title is kept
+    // only while its key matches the chart's current encoded fields (chartType
+    // + field ids), so it stays through property edits (e.g. sort order) but is
+    // dropped once the encoded fields change.
+    const titleFresh = !!focusedChart.title && focusedChart.titleKey === computeInsightKey(focusedChart);
     
     const actionBtnSx = {
         padding: '4px',
@@ -681,18 +749,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         },
     };
 
-    let deleteButton = (
-        <Tooltip title={t('chart.delete')} key="delete-btn-tooltip">
-            <span>
-                <IconButton size="small" disabled={trigger != undefined}
-                    sx={{ ...actionBtnSx, color: 'error.main', '&:hover': { backgroundColor: 'rgba(211, 47, 47, 0.08)', color: 'error.main' } }}
-                    onClick={() => { handleDeleteChart() }}>
-                    <DeleteIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-            </span>
-        </Tooltip>
-    );
-
     let transformCode = "";
     if (table.derive?.code) {
         transformCode = `${table.derive.code}`
@@ -707,6 +763,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Tooltip key="vega-editor-tooltip" title={t('chart.openInVegaEditor')}>
             <span>
                 <IconButton key="vega-editor-btn" size="small" sx={actionBtnSx}
+                    aria-label={t('chart.openInVegaEditor')}
                     disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
                     onClick={handleOpenInVegaEditor}>
                     <OpenInNewIcon sx={{ fontSize: 18 }} />
@@ -714,85 +771,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </span>
         </Tooltip>
     );
-
-    // Toggle buttons for bottom-panel content (icon + text label)
-    const toggleBtnSx = (active: boolean) => ({
-        textTransform: 'none' as const,
-        fontSize: '0.7rem',
-        padding: '2px 8px',
-        borderRadius: '6px',
-        color: active ? 'primary.main' : 'text.secondary',
-        backgroundColor: active ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
-        transition: 'all 0.15s ease',
-        minWidth: 'auto',
-        '& .MuiButton-startIcon': { mr: 0.5 },
-        '&:hover': {
-            backgroundColor: 'rgba(25, 118, 210, 0.08)',
-            color: 'primary.main',
-        },
-    });
-
-    let dataButton = (
-        <Button key="data-btn" size="small"
-            sx={toggleBtnSx(bottomTab === 'data')}
-            startIcon={<TableChartOutlinedIcon sx={{ fontSize: 14 }} />}
-            onClick={() => setBottomTab('data')}>
-            {t('chart.data')}
-        </Button>
-    );
-
-    let derivedTableItems = hasDerived ? [
-        <Button key="code-btn" size="small"
-            sx={toggleBtnSx(bottomTab === 'code')}
-            startIcon={<TerminalIcon sx={{ fontSize: 14 }} />}
-            onClick={() => setBottomTab('code')}>
-            {t('chart.code')}
-        </Button>,
-        ...(hasConcepts ? [
-            <Button key="concepts-btn" size="small"
-                sx={toggleBtnSx(bottomTab === 'concepts')}
-                startIcon={<FunctionsIcon sx={{ fontSize: 14 }} />}
-                onClick={() => setBottomTab('concepts')}>
-                {t('chart.concepts')}
-            </Button>
-        ] : []),
-    ] : [];
-
-    let logButton = hasDerived ? (
-        <Tooltip key="log-btn-tooltip" title={t('chart.log')}>
-            <span>
-                <IconButton key="log-btn" size="small" sx={actionBtnSx}
-                    onClick={() => setChatDialogOpen(true)}>
-                    <QuestionAnswerIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-            </span>
-        </Tooltip>
-    ) : null;
-
-    let insightButton = (!chartUnavailable && focusedChart.chartType !== "Table") ? (
-        <Button key="insight-btn" size="small"
-            sx={toggleBtnSx(bottomTab === 'insight')}
-            startIcon={insightLoading ? <CircularProgress size={12} /> : <InsightIcon sx={{ fontSize: 14 }} />}
-            onClick={() => {
-                if (bottomTab !== 'insight' && !insightFresh && !insightLoading) {
-                    dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                }
-                setBottomTab('insight');
-            }}>
-            {t('chart.insight')}
-        </Button>
-    ) : null;
-
-    let chartActionButtons = [
-        dataButton,
-        insightButton,
-        ...derivedTableItems,
-        <Divider key="action-divider" orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />,
-        logButton,
-        // vegaEditorButton,
-        deleteButton,
-    ]
-
 
     let chartMessage = "";
     if (focusedChart.chartType == "Table") {
@@ -808,7 +786,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     } else if (table.derive) {
         chartMessage = t('chart.msgWarning');
     }
-
     let chartActionItems = isDataStale ? [] : (
         <Box sx={{display: "flex", flexDirection: "column", flex: 1, my: 1}}>
             {(table.virtual ? activeVisTableTotalRowCount > serverConfig.MAX_DISPLAY_ROWS : table.rows.length > serverConfig.MAX_DISPLAY_ROWS) && !(chartUnavailable || encodingShelfEmpty) ? (
@@ -844,8 +821,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     
     let focusedComponent = [];
 
-    let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
-                            in={!isDataStale} timeout={600}>    
+    let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`}
+                            in={!isDataStale} timeout={600}>
                             <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
                                 {/*
                                   Chart container chrome
@@ -854,12 +831,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                     positioned zoom-slider overlay (chartResizer, ~32px tall
                                     anchored top-left) never covers chart content. Without this,
                                     full-width charts like KPI grids run right up under the slider.
-                                  - pr: 28  → reserves a strip on the right for vega-embed's
-                                    actions menu ("..."), which floats at the top-right of the
-                                    Vega canvas and can otherwise hug / extend past the panel edge.
-                                  - minHeight: 280 → guarantees the Vega actions menu and its
-                                    dropdown have vertical room to render even when a chart's
-                                    intrinsic height is very small (e.g. one row of compact cards).
+                                  - pr: 28  → reserves a strip on the right for the floating
+                                    "edit chart" button overlay (see the focused-box in `content`).
+                                  - minHeight: 280 → guarantees the chart has vertical room to
+                                    render even when a chart's intrinsic height is very small
+                                    (e.g. one row of compact cards).
                                   These are view-level concerns and intentionally NOT solved per
                                   chart template.
                                 */}
@@ -875,45 +851,51 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         scaleFactor={localScaleFactor}
                                         maxStretchFactor={config.maxStretchFactor}
                                         chartUnavailable={chartUnavailable}
-                                        insightTitle={insightFresh && focusedChart.insight?.title ? focusedChart.insight.title : undefined}
+                                        insightTitle={titleFresh ? focusedChart.title : undefined}
                                         onSpecReady={handleSpecReady}
                                     />
                                 </Box>
+                                {/* Quick chart-config controls (toggles/sliders/selects) for
+                                    fast in-place tweaks without opening the full encoding
+                                    popover. Kept INSIDE the chart-box so it reads as part of
+                                    the same chart component rather than drifting down toward
+                                    the data panel below. The bar also hosts the built-in
+                                    delete-chart action, so it always renders even when there
+                                    are no property controls (e.g. Table/Auto charts or while
+                                    synthesis is running — in which case property controls are
+                                    suppressed but delete stays reachable). */}
+                                <ChartQuickConfig
+                                    chartId={focusedChart.id}
+                                    tableMetadata={table.metadata}
+                                    options={(!chartUnavailable && !chartSynthesisInProgress.includes(focusedChart.id) && focusedChart.chartType !== "Table" && focusedChart.chartType !== "Auto") ? renderedSpec?._options : undefined}
+                                    deleteDisabled={trigger != undefined}
+                                />
                                 {chartActionItems}
-                            </Box>                        
+                            </Box>
                         </Fade>;
 
     focusedComponent = [
         <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: 'min(75vh, 800px)', width: "100%", display: "flex", flexDirection: "column", flexShrink: 0}}>
+            {/* Style-variant switcher now lives in the floating top toolbar
+                (see vis-view-canvas return) so it stays pinned alongside the
+                zoom resizer instead of scrolling with the chart content. */}
             <Box sx={{ my: 'auto' }}>
                 {focusedElement}
-            </Box>
-            <Box key='chart-action-buttons' sx={{ 
-                display: 'flex', flexShrink: 0, flexDirection: "row", alignItems: 'center',
-                mx: "auto", py: 0.5, gap: 0.25,
-            }}>
-                {chartActionButtons}
             </Box>
         </Box>,
         <React.Fragment key="bottom-panels">
             {(() => {
-                const panelBoxSx = {
-                    margin: '8px auto 24px auto', padding: '8px', borderRadius: '8px',
-                    border: `1px solid ${borderColor.divider}`,
-                    transition: 'box-shadow 0.2s ease',
-                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
-                };
                 return <Box sx={{ px: 2 }}>
-                    {bottomTab === 'data' && (() => {
+                    {(() => {
                         const ROW_HEIGHT = 25;
                         const HEADER_HEIGHT = 32;
-                        const FOOTER_HEIGHT = 32;
-                        const MIN_TABLE_HEIGHT = 150;
+                        const MIN_TABLE_HEIGHT = 60;
                         const MAX_TABLE_HEIGHT = 400;
                         const MIN_TABLE_WIDTH = 300;
                         const MAX_TABLE_WIDTH = 900;
                         const rowCount = table.virtual?.rowCount || table.rows?.length || 0;
-                        const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
+                        // Footer is hidden in chart mode (hideFooter), so don't reserve its height.
+                        const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 12;
                         const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
 
                         // Estimate total width from columns (generous: account for type icons, sort arrows, padding)
@@ -932,107 +914,31 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                             return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
                         }, ROW_ID_COL_WIDTH);
                         const SCROLLBAR_WIDTH = 17;
-                        const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+                        // +34px gutter so the maximize button can sit just outside the table on the right.
+                        const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
 
                         return (
-                            <Box sx={{ ...panelBoxSx, padding: 0, height: adaptiveHeight, width: adaptiveWidth, overflow: 'hidden', flexShrink: 0 }}>
-                                <FreeDataViewFC />
+                            <Box sx={{ margin: '8px auto 0 auto', padding: 0, height: adaptiveHeight, width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, overflow: 'hidden' }}>
+                                <FreeDataViewFC
+                                    maximizable
+                                    hideFooter
+                                    randomizeToken={chartRandomizeToken}
+                                    resetOrderToken={chartResetOrderToken}
+                                    onStateReport={setChartTableGridReport}
+                                />
                             </Box>
                         );
                     })()}
-                    {bottomTab === 'code' && hasDerived && (
-                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
-                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
-                                {(() => {
-                                    const derive = triggerTable?.derive || table.derive;
-                                    const interaction = derive?.trigger?.interaction;
-                                    const lastEntry = interaction?.[interaction.length - 1];
-                                    const plan = lastEntry?.plan || '';
-                                    const planSteps = plan ? (plan.includes('\x1E') ? plan.split('\x1E') : plan.split('\n')).filter((s: string) => s.trim()) : [];
-                                    if (planSteps.length > 0) {
-                                        return (
-                                            <Box sx={{ px: 1.5, pt: 1, pb: 0.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                                                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
-                                                    {t('chart.agentLog')}
-                                                </Typography>
-                                                <PlanStepsView steps={planSteps} />
-                                            </Box>
-                                        );
-                                    }
-                                    return null;
-                                })()}
-                                <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
-                            </Box>
-                        </Box>
-                    )}
-                    {bottomTab === 'concepts' && hasConcepts && (
-                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
-                            <ConceptExplCards
-                                concepts={extractConceptExplanations(table)}
-                                title={t('chart.derivedConcepts')}
-                                maxCards={8}
-                            />
-                        </Box>
-                    )}
-                    {bottomTab === 'insight' && (
-                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
-                            {insightLoading ? (
-                                <Box sx={{ p: 2 }}>
-                                    <WritingIndicator label={t('chart.analyzingChart')} />
-                                </Box>
-                            ) : insightFresh && focusedChart.insight ? (
-                                <Box sx={{ p: 1.5 }}>
-                                    <Box sx={{ 
-                                        display: 'grid', 
-                                        gridTemplateColumns: 'repeat(2, 1fr)',
-                                        gap: 1,
-                                    }}>
-                                        {(focusedChart.insight.takeaways || []).map((takeaway, i) => (
-                                            <Box key={i} sx={{
-                                                padding: '8px 12px',
-                                                borderLeft: '3px solid',
-                                                borderLeftColor: 'primary.light',
-                                                borderRadius: '2px',
-                                                backgroundColor: (theme) => alpha(theme.palette.background.paper, 0.5),
-                                                transition: transition.normal,
-                                                '&:hover': {
-                                                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.04),
-                                                },
-                                            }}>
-                                                <Typography sx={{ fontSize: '12px', lineHeight: 1.5, color: 'text.primary' }}>
-                                                    {takeaway}
-                                                </Typography>
-                                            </Box>
-                                        ))}
-                                    </Box>
-                                    <Button
-                                        size="small"
-                                        sx={{ mt: 1.5, textTransform: 'none', fontSize: '0.7rem' }}
-                                        onClick={() => {
-                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                                        }}
-                                    >
-                                        {t('chart.regenerate')}
-                                    </Button>
-                                </Box>
-                            ) : (
-                                <Box sx={{ p: 1.5 }}>
-                                    <Typography fontSize="small" color="text.secondary">
-                                        {t('chart.noInsightAvailable')}
-                                    </Typography>
-                                    <Button
-                                        size="small"
-                                        sx={{ mt: 0.5, textTransform: 'none', fontSize: '0.7rem' }}
-                                        onClick={() => {
-                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                                        }}
-                                    >
-                                        {t('chart.generateInsight')}
-                                    </Button>
-                                </Box>
-                            )}
-                        </Box>
-                    )}
+                    <TableActionDock
+                        compact
+                        tableId={table.id}
+                        tableName={table.displayId || table.id || 'table'}
+                        rows={table.rows || []}
+                        virtual={!!table.virtual}
+                        gridReport={chartTableGridReport}
+                        onRandomize={() => setChartRandomizeToken(x => x + 1)}
+                        onResetOrder={() => setChartResetOrderToken(x => x + 1)}
+                    />
                 </Box>;
             })()}
         </React.Fragment>,
@@ -1041,69 +947,210 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             handleCloseDialog={() => setChatDialogOpen(false)}
             code={transformCode}
             dialog={triggerTable?.derive?.dialog || table.derive?.dialog as any[]} /> : null,
+        // Code inspector: derivation code + formula/concept metadata, opened from
+        // the floating top-right cluster. A clickaway/close dialog (not a bottom
+        // tab) so the bottom panel stays a pure data table.
+        hasDerived ? (
+            <Dialog key="code-dialog-overlay" open={codeDialogOpen} onClose={() => setCodeDialogOpen(false)}
+                sx={{ '& .MuiDialog-paper': { maxHeight: '90%' } }}
+                maxWidth="md" fullWidth>
+                <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.25 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <TerminalIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{t('chart.code')}</Typography>
+                    </Box>
+                    <IconButton size="small" aria-label={t('app.close')} onClick={() => setCodeDialogOpen(false)}>
+                        <CloseIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                </DialogTitle>
+                <DialogContent sx={{ overflowY: 'auto', overflowX: 'hidden' }} dividers>
+                    {hasConcepts && (
+                        <Box sx={{ pb: 1.5, mb: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                            <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 }}>
+                                {t('chart.derivedConcepts')}
+                            </Typography>
+                            <ConceptExplCards
+                                concepts={extractConceptExplanations(table)}
+                                maxCards={8}
+                            />
+                        </Box>
+                    )}
+                    <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
+                </DialogContent>
+            </Dialog>
+        ) : null,
     ]
     
-    const ENCODING_SHELF_WIDTH = 240;
-
     let content = [
-        <Box key='focused-box' className="vega-focused vis-scroll" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
+        <Box key='focused-box' className="vega-focused vis-scroll" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', position: 'relative', flex: 1 }}>
             {focusedComponent}
         </Box>,
-        /* Floating encoding shelf panel */
-        <Box key='encoding-shelf' sx={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            zIndex: 10,
-            height: '100%',
-            pointerEvents: 'none',
-        }}>
-            <Box sx={{ pointerEvents: 'auto' }}>
-                <EncodingShelfThread chartId={focusedChart.id} />
-            </Box>
-        </Box>
+        /* Encoding shelf popover, anchored to the floating "edit chart" button.
+           Rendered as a non-modal Popper (not a Modal-based Popover) so it does
+           NOT mount a full-viewport backdrop/focus-trap. That backdrop used to
+           swallow pointer events outside the panel, which broke dragging fields
+           from the data table into the encoding channels while the shelf is
+           open. A ClickAwayListener keeps the "click outside closes it"
+           behavior. It listens on `onMouseUp` (mirroring EncodingBox): MUI
+           menus/selects portal to document.body but remain REACT descendants of
+           this listener, so their events bubble through the React tree on
+           mouseUp (before the menu closes on click) and are correctly treated as
+           "inside" — picking a chart type therefore does not collapse the shelf.
+           A native HTML5 drag from the table fires no mouseUp, so dragging a
+           field in does not close the shelf either. */
+        <Popper
+            key='encoding-popover'
+            open={encodingOpen && Boolean(editButtonRef.current)}
+            anchorEl={editButtonRef.current}
+            placement='bottom-end'
+            style={{ zIndex: 1300 }}
+        >
+            <ClickAwayListener
+                mouseEvent="onMouseUp"
+                touchEvent="onTouchStart"
+                onClickAway={() => setEncodingOpen(false)}
+            >
+                <Paper
+                    elevation={8}
+                    sx={{ width: 280, maxHeight: '78vh', overflowY: 'auto', mt: 0.5, py: 0.5, borderRadius: '10px', overflowX: 'visible' }}
+                >
+                    <EncodingShelfCard chartId={focusedChart.id} />
+                    {/* Footer: low-emphasis link to inspect the assembled
+                        Vega-Lite spec in the external Vega editor. */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', px: 1.5, pb: 1 }}>
+                        <Button
+                            size="small"
+                            startIcon={<OpenInNewIcon sx={{ fontSize: 13 }} />}
+                            disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
+                            onClick={handleOpenInVegaEditor}
+                            sx={{ textTransform: 'none', fontSize: '0.65rem', color: 'text.disabled', minWidth: 'auto', py: 0, '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' } }}
+                        >
+                            {t('chart.openInVegaEditor')}
+                        </Button>
+                    </Box>
+                </Paper>
+            </ClickAwayListener>
+        </Popper>
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]
 
+    // Persist the zoom onto the chart so it survives switching charts.
+    // Called on commit (button click / slider release) rather than on every
+    // drag tick, to avoid churning the charts array ref mid-drag.
+    const persistScaleFactor = React.useCallback((value: number) => {
+        if (!focusedChartId) return;
+        dispatch(dfActions.updateChartScaleFactor({
+            chartId: focusedChartId,
+            scaleFactor: value,
+        }));
+    }, [dispatch, focusedChartId]);
+
     // Memoize chart resizer to avoid re-creating Material-UI components on every render
     let chartResizer = useMemo(() => <Stack spacing={1} direction="row" sx={{ 
-        margin: 1, width: 160, position: "absolute", zIndex: 10, 
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: '4px',
+        width: 160, flexShrink: 0,
     }} alignItems="center">
         <Tooltip key="zoom-out-tooltip" title={t('chart.zoomOut')}>
             <span>
-                <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
-                    setLocalScaleFactor(s => Math.max(scaleMin, Math.round((s - 0.1) * 10) / 10));
+                <IconButton color="primary" size='small' aria-label={t('chart.zoomOut')} disabled={localScaleFactor <= scaleMin} onClick={() => {
+                    const next = Math.max(scaleMin, Math.round((localScaleFactor - 0.1) * 10) / 10);
+                    setLocalScaleFactor(next);
+                    persistScaleFactor(next);
                 }}>
                     <ZoomOutIcon fontSize="small" />
                 </IconButton>
             </span>
         </Tooltip>
         <Slider aria-label={t('chart.resizeSliderAria')} size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
-                value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
-            setLocalScaleFactor(newValue as number);
-        }} />
+                value={localScaleFactor}
+                onChange={(event: Event, newValue: number | number[]) => {
+                    setLocalScaleFactor(newValue as number);
+                }}
+                onChangeCommitted={(event, newValue) => {
+                    persistScaleFactor(newValue as number);
+                }} />
         <Tooltip key="zoom-in-tooltip" title={t('chart.zoomIn')}>
             <span>
-                <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
-                    setLocalScaleFactor(s => Math.min(scaleMax, Math.round((s + 0.1) * 10) / 10));
+                <IconButton color="primary" size='small' aria-label={t('chart.zoomIn')} disabled={localScaleFactor >= scaleMax} onClick={() => {
+                    const next = Math.min(scaleMax, Math.round((localScaleFactor + 0.1) * 10) / 10);
+                    setLocalScaleFactor(next);
+                    persistScaleFactor(next);
                 }}>
                     <ZoomInIcon fontSize="small" />
                 </IconButton>
             </span>
         </Tooltip>
-    </Stack>, [localScaleFactor, t]);
+    </Stack>, [localScaleFactor, t, persistScaleFactor]);
 
-    return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
-        {synthesisRunning ? <Box sx={{
-                position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
-                backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
-            }}>
-                <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-            </Box> : ''}
-        {chartUnavailable ? "" : chartResizer}
+    return <Box ref={componentRef} id="vis-view-canvas" sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
+        {/* No full-screen block while the agent works: the previous chart
+            stays visible, and progress is signaled non-intrusively on the
+            chat box + encoding shelf (see EncodingShelfCard). */}
+        {/* Floating top toolbar: zoom resizer + style-variant strip live
+            together here (NOT inside the scrolling chart content), so every
+            control stays pinned to the top of the panel instead of some
+            floating and some scrolling away. pointerEvents are disabled on the
+            empty bar area so it never blocks chart interaction underneath. */}
+        <Box sx={{
+            position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: '8px',
+            backgroundColor: '#fff',
+            pointerEvents: 'none', '& > *': { pointerEvents: 'auto' },
+        }}>
+            {chartResizer}
+            {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
+                <ChartVariantStrip chartId={focusedChart.id} />
+            )}
+            {/* Right-aligned floating cluster near the top-right: "inspect /
+                edit this chart" controls grouped together (agent log + code +
+                encoding shelf). Chart deletion lives in the chart property-config
+                bar below the chart. */}
+            <Box sx={{ ml: 'auto', mr: '8px', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {hasDerived && (
+                    <Tooltip title={t('chart.log')} placement="bottom">
+                        <IconButton
+                            size="small"
+                            onClick={() => setChatDialogOpen(true)}
+                            sx={floatingPillSx}>
+                            <QuestionAnswerIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+                {/* Code inspector button — opens the derivation code + formula
+                    metadata in a dialog. Only shown for derived tables. */}
+                {hasDerived && (
+                    <Tooltip title={t('chart.code')} placement="bottom">
+                        <IconButton
+                            size="small"
+                            onClick={() => setCodeDialogOpen(true)}
+                            sx={floatingPillSx}>
+                            <TerminalIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+                {/* Edit-chart (encoding shelf) button — opens the encoding shelf
+                    popover; stays available even when the chart can't render yet,
+                    so users can fix the encoding. */}
+                {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
+                    <Tooltip title={t('chart.editChart')} placement="left">
+                        <IconButton
+                            ref={editButtonRef}
+                            size="small"
+                            onClick={() => setEncodingOpen(o => !o)}
+                            sx={{
+                                ...floatingPillSx,
+                                ...(encodingOpen ? {
+                                    backgroundColor: 'primary.main',
+                                    color: 'primary.contrastText',
+                                    '&:hover': { backgroundColor: 'primary.dark', color: 'primary.contrastText' },
+                                } : {}),
+                            }}>
+                            <TuneIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+            </Box>
+        </Box>
         {content}
     </Box>
 }
@@ -1139,6 +1186,152 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
     );
 };
 
+// Content-first action dock shown when a *table* (not a chart) is focused.
+// The table becomes the primary content at the top of the canvas; this
+// sticky bottom bar keeps a lightweight "pick a chart" affordance and a
+// pointer to the chat available without a wall of buttons dominating the
+// page. The full CHART_TEMPLATES palette lives inside the popover.
+// NOTE: designed to extend to multi-table selection — when several tables
+// are highlighted this dock can summarize the selection and offer actions
+// that span them (e.g. "combine", "chart each").
+const TableActionDock: FC<{
+    chartSelectionBox?: React.ReactNode;
+    tableId: string;
+    tableName: string;
+    rows: any[];
+    virtual: boolean;
+    // Compact variant (smaller paddings) used below the chart-mode data table.
+    compact?: boolean;
+    gridReport?: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null;
+    onRandomize?: () => void;
+    onResetOrder?: () => void;
+}> = ({ chartSelectionBox, tableId, tableName, rows, virtual, compact, gridReport, onRandomize, onResetOrder }) => {
+    const { t } = useTranslation();
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
+    const open = Boolean(anchorEl);
+    // The Quick chart action only renders when a template picker is supplied.
+    const showQuickChart = !!chartSelectionBox;
+
+    const handleDownload = async () => {
+        if (isDownloading) return;
+        setIsDownloading(true);
+        try {
+            if (virtual) {
+                const response = await fetchWithIdentity(getUrls().EXPORT_TABLE_CSV, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ table_name: tableId, delimiter: ',' }),
+                });
+                if (!response.ok) throw new Error('Export failed');
+                const blob = await response.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${tableName}.csv`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } else {
+                const csvContent = d3dsv.dsvFormat(',').format(rows);
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${tableName}.csv`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            }
+        } catch (error) {
+            console.error('Error downloading table:', error);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    return (
+        <Box sx={{
+            position: 'static',
+            display: 'flex', justifyContent: 'center',
+            px: 2, pt: compact ? 1.5 : 1.5, pb: compact ? 1 : 3,
+            backgroundColor: 'background.paper',
+        }}>
+            <Box sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                px: 1, py: compact ? 0.25 : 0.5, borderRadius: '8px',
+                backgroundColor: 'background.paper',
+                border: '1px solid', borderColor: 'divider',
+            }}>
+                {showQuickChart && (
+                    <>
+                        <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<AddchartIcon />}
+                            onClick={(e) => setAnchorEl(e.currentTarget)}
+                            sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main' }}
+                        >
+                            {t('chart.quickChart', { defaultValue: 'Quick chart' })}
+                        </Button>
+                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                    </>
+                )}
+                <Button
+                    size="small"
+                    variant="text"
+                    startIcon={isDownloading ? <CircularProgress size={14} /> : <SaveAltIcon />}
+                    onClick={handleDownload}
+                    disabled={isDownloading}
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: 12 } : {}) }}
+                >
+                    {t('dataGrid.downloadCsv', { defaultValue: 'Download CSV' })}
+                </Button>
+                <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                    {gridReport?.virtual
+                        ? (gridReport.loadedCount < gridReport.rowCount
+                            ? t('dataGrid.loadedOfTotal', { loaded: gridReport.loadedCount, total: gridReport.rowCount })
+                            : t('dataGrid.rowCount', { count: gridReport.rowCount }))
+                        : t('dataGrid.rowCount', { count: rows.length })}
+                </Typography>
+                {gridReport?.virtual && gridReport.canRandomize && (
+                    <Tooltip title={gridReport.isRandom
+                        ? t('dataGrid.restoreOrder', { defaultValue: 'Restore original order' })
+                        : t('dataGrid.viewRandomRows')}>
+                        <IconButton
+                            size="small"
+                            color={gridReport.isRandom ? 'primary' : 'default'}
+                            onClick={gridReport.isRandom ? onResetOrder : onRandomize}
+                        >
+                            <CasinoIcon sx={{
+                                fontSize: 18,
+                                color: gridReport.isRandom ? 'primary.main' : 'text.secondary',
+                                transform: gridReport.isRandom ? 'rotate(15deg)' : 'none',
+                                transition: 'transform 0.2s, color 0.2s',
+                                '&:hover': { transform: 'rotate(180deg)' },
+                            }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+            </Box>
+            {showQuickChart && (
+                <Popover
+                    open={open}
+                    anchorEl={anchorEl}
+                    onClose={() => setAnchorEl(null)}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+                    transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                    slotProps={{ paper: { sx: { p: 2, maxWidth: 'min(90vw, 1140px)' } } }}
+                >
+                    {/* Clicking a template creates the chart and this whole
+                        empty-state unmounts; closing the popover here keeps
+                        things tidy in the transient frame. */}
+                    <Box onClickCapture={() => setAnchorEl(null)}>
+                        {chartSelectionBox}
+                    </Box>
+                </Popover>
+            )}
+        </Box>
+    );
+};
+
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
     const { t } = useTranslation();
@@ -1157,6 +1350,12 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const dispatch = useDispatch();
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+
+    // Virtual-pagination state reported up from the focused-table grid, so the
+    // bottom toolbar can show the loaded/total count and drive the random dice.
+    const [tableGridReport, setTableGridReport] = React.useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null>(null);
+    const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
+    const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
@@ -1209,10 +1408,12 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                 ))
             }
         </Box>
+        const isTableFocus = focusedId?.type === 'table' && !!focusedTableId;
         return (
-            <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+            <Box id="vis-view-canvas" sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row", position: 'relative' }}>
                 <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
                     <Box className="vis-scroll" sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', flex: 1 }}>
+                        {!isTableFocus && (
                         <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                             <Box sx={{ margin: 'auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                 {(() => {
@@ -1239,22 +1440,13 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                     const hasThread = hasRealCharts || hasDerivation;
 
                                     if (hasThread) {
-                                        return (
-                                            <>
-                                                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
-                                                <Divider sx={{my: 4, width: '100%', maxWidth: 720}} textAlign='left'>
-                                                    <Typography sx={{fontSize: 11, color: "text.secondary"}}>
-                                                        {t('chart.orStartWithChartType')}
-                                                    </Typography>
-                                                </Divider>
-                                                {chartSelectionBox}
-                                            </>
-                                        );
+                                        return chartSelectionBox;
                                     }
                                     return <EmptyStateHero chartSelectionBox={chartSelectionBox} />;
                                 })()}
                             </Box>
                         </Box>
+                        )}
                         {focusedId?.type === 'table' && focusedTableId && (() => {
                             const focusedTable = tables.find(t => t.id === focusedTableId);
                             if (!focusedTable) return null;
@@ -1262,12 +1454,10 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             const HEADER_HEIGHT = 32;
                             const FOOTER_HEIGHT = 32;
                             const MIN_TABLE_HEIGHT = 150;
-                            const MAX_TABLE_HEIGHT = 400;
                             const MIN_TABLE_WIDTH = 300;
                             const MAX_TABLE_WIDTH = 900;
                             const rowCount = focusedTable.virtual?.rowCount || focusedTable.rows?.length || 0;
                             const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
-                            const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
                             const ROW_ID_COL_WIDTH = 56;
                             const sampleSize = Math.min(29, focusedTable.rows.length);
                             const step = focusedTable.rows.length > sampleSize ? focusedTable.rows.length / sampleSize : 1;
@@ -1281,19 +1471,41 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                 return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
                             }, ROW_ID_COL_WIDTH);
                             const SCROLLBAR_WIDTH = 17;
-                            const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+                            // +34px gutter so the maximize button can sit just outside the table on the right.
+                            const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16)) + 34;
+                            // Single card that fills the available canvas height as much
+                            // as possible (tall tables scroll inside), but never grows past
+                            // its own content so short tables stay compact and centered.
+                            // Width fills up to adaptiveWidth with an 80% floor. +48px is
+                            // the focused-view header bar.
+                            const HEADER_BAR_HEIGHT = 48;
+                            const maxCardHeight = contentHeight + HEADER_BAR_HEIGHT;
                             return (
                                 <Box sx={{
-                                    margin: '8px auto 24px auto', padding: 0,
-                                    height: adaptiveHeight, width: adaptiveWidth,
-                                    borderRadius: '8px',
-                                    border: `1px solid ${borderColor.divider}`,
-                                    transition: 'box-shadow 0.2s ease',
-                                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
-                                    overflow: 'hidden', flexShrink: 0,
+                                    flex: 1, minHeight: 0, width: '100%',
+                                    display: 'flex', flexDirection: 'column',
+                                    justifyContent: 'center', alignItems: 'center',
+                                    px: 3, pt: 2, pb: 2, boxSizing: 'border-box',
                                 }}>
-                                    <FreeDataViewFC />
+                                    <Box sx={{ width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, flex: '1 1 auto', minHeight: MIN_TABLE_HEIGHT, maxHeight: maxCardHeight }}>
+                                        <FreeDataViewFC maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} resetOrderToken={tableResetOrderToken} onStateReport={setTableGridReport} />
+                                    </Box>
                                 </Box>
+                            );
+                        })()}
+                        {isTableFocus && focusedTableId && (() => {
+                            const ft = tables.find(t => t.id === focusedTableId);
+                            return (
+                                <TableActionDock
+                                    chartSelectionBox={chartSelectionBox}
+                                    tableId={focusedTableId}
+                                    tableName={ft?.displayId || ft?.id || 'table'}
+                                    rows={ft?.rows || []}
+                                    virtual={!!ft?.virtual}
+                                    gridReport={tableGridReport}
+                                    onRandomize={() => setTableRandomizeToken(x => x + 1)}
+                                    onResetOrder={() => setTableResetOrderToken(x => x + 1)}
+                                />
                             );
                         })()}
                     </Box>

@@ -12,12 +12,14 @@ import {
 		Dialog,
         DialogTitle,
         DialogContent,
-        DialogActions,
         Button,
+        IconButton,
         styled,
         CardContent,
 } from '@mui/material';
 
+import CloseIcon from '@mui/icons-material/Close';
+import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import React from 'react';
 import { alpha, useTheme } from '@mui/material/styles';
 import { CodeBox } from './VisualizationView';
@@ -423,18 +425,25 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
 
     return (
         <Dialog
-            sx={{ '& .MuiDialog-paper': { maxWidth: '95%', maxHeight: '90%', minWidth: 300 } }}
-            maxWidth={false}
+            sx={{ '& .MuiDialog-paper': { maxHeight: '90%' } }}
+            maxWidth="md"
+            fullWidth
             open={open}
+            onClose={() => { handleCloseDialog() }}
             key="chat-dialog-dialog"
         >
-            <DialogTitle><Typography>{t('chatDialog.agentLog')}</Typography></DialogTitle>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.25 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <QuestionAnswerIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                    <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{t('chatDialog.agentLog')}</Typography>
+                </Box>
+                <IconButton size="small" aria-label={t('app.close')} onClick={() => { handleCloseDialog() }}>
+                    <CloseIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+            </DialogTitle>
             <DialogContent ref={dialogContentRef} sx={{overflowY: "auto", overflowX: "hidden"}} dividers>
                 {body}
             </DialogContent>
-            <DialogActions>
-                <Button onClick={()=>{ handleCloseDialog() }}>{t('app.close')}</Button>
-            </DialogActions>
         </Dialog>
     );
 }

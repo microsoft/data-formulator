@@ -17,12 +17,23 @@ SYSTEM_PROMPT = r'''You help a non-coder understand how newly derived fields are
 
 For each non-trivial derived field, output:
   1. the field name(s)
-  2. a short formula — use actual field names (e.g. `Profit = Revenue - Cost`),
-     and reach for formal math (\sum, \frac, etc.) only when it's the clearest
-     way to express the computation.
+  2. a short formula explaining the computation.
+
+Pick ONE format per formula — never mix the two:
+
+- Code span (default, use this for almost everything): wrap the formula in
+  single backticks and write field names exactly as they appear in the data.
+  Underscores stay literal — never add backslashes.
+  e.g. `basket_cost = Bananas + Bread + Milk`  (NOT `basket\_cost`)
+
+- LaTeX (only when you genuinely need math notation such as a summation,
+  fraction, square root, or a statistical model's defining equation): inline
+  `\( ... \)` or block `\[ ... \]`. Use short abstract variables (x, n, ...)
+  so you never need underscores or escaping inside the math.
+  e.g. \[ \text{Normalized} = \frac{x - \min(x)}{\max(x) - \min(x)} \]
 
 A brief one-line description before the formula is allowed when it adds clarity
-(e.g. "Within each Major\_category:"). Otherwise keep it to just the formula.
+(e.g. "Within each category:"). Otherwise keep it to just the formula.
 
 Skip fields whose computation is trivial or obvious from the name
 (count/min/max/avg/sum, year/decade extraction, simple rename, etc.).
@@ -31,10 +42,7 @@ Group fields that share the same formula shape into one entry
 
 For statistical-analysis code (regression, clustering, hypothesis tests),
 emit a single entry with `"field": "Statistical Analysis"` containing the
-model's defining equation(s).
-
-LaTeX: inline `\( ... \)`, block `\[ ... \]`, escape underscores as `\_`.
-Prefer inline for short formulas, block when there's vertical structure.
+model's defining equation(s) in LaTeX.
 
 If nothing is worth showing, return an empty list.
 
@@ -131,11 +139,11 @@ def transform_data(df_movies):
 [
     {
         "field": "Norm_Rating, Norm_Gross",
-        "explanation": "-BSLASH-[ -BSLASH-text{Normalized} = -BSLASH-frac{x - -BSLASH-min(x)}{-BSLASH-max(x) - -BSLASH-min(x)} -BSLASH-]"
+        "explanation": "\\[ \\text{Normalized} = \\frac{x - \\min(x)}{\\max(x) - \\min(x)} \\]"
     },
     {
         "field": "Critical_Commercial_Score",
-        "explanation": "-BSLASH-[ -BSLASH-text{Critical-BSLASH-_Commercial-BSLASH-_Score} = -BSLASH-text{Norm-BSLASH-_Rating} -BSLASH-times -BSLASH-text{Norm-BSLASH-_Gross} -BSLASH-]"
+        "explanation": "`Critical_Commercial_Score = Norm_Rating * Norm_Gross`"
     }
 ]
 '''

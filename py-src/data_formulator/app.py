@@ -106,8 +106,9 @@ app.config['CLI_ARGS'] = {
     'disable_display_keys': _disable_database or os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
     'disable_data_connectors': _disable_database or os.environ.get('DISABLE_DATA_CONNECTORS', 'false').lower() == 'true',
     'disable_custom_models': _disable_database or os.environ.get('DISABLE_CUSTOM_MODELS', 'false').lower() == 'true',
-    'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
+    'scratch_max_bytes': int(os.environ.get('SCRATCH_MAX_SIZE_MB', '1024')) * 1024 * 1024,
+    'scratch_max_file_bytes': int(os.environ.get('SCRATCH_MAX_FILE_SIZE_MB', '20')) * 1024 * 1024,
     'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
     'dev': os.environ.get('DEV_MODE', 'false').lower() == 'true',
     'workspace_backend': _default_ws_backend,
@@ -219,7 +220,7 @@ def _register_blueprints():
     from data_formulator.routes.credentials import credential_bp
     app.register_blueprint(credential_bp)
 
-    # Register knowledge management API (rules, skills, experiences)
+    # Register knowledge management API (rules, skills, workflows)
     from data_formulator.routes.knowledge import knowledge_bp
     app.register_blueprint(knowledge_bp)
 
@@ -286,7 +287,6 @@ def get_app_config():
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
         "DISABLE_DATA_CONNECTORS": args.get('disable_data_connectors', False),
         "DISABLE_CUSTOM_MODELS": args.get('disable_custom_models', False),
-        "PROJECT_FRONT_PAGE": args['project_front_page'],
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": workspace_backend,
@@ -376,11 +376,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-custom-models", action='store_true', default=False,
         help="Prevent users from adding custom LLM endpoints via the UI. "
              "Only server-configured models will be available.")
-    parser.add_argument("--project-front-page", action='store_true', default=False,
-        help="Project the front page as the main page instead of the app.")
     parser.add_argument("--max-display-rows", type=int,
         default=int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
         help="Maximum number of rows to send to the frontend for display (default: 10000)")
+    parser.add_argument("--scratch-max-size-mb", type=int,
+        default=int(os.environ.get('SCRATCH_MAX_SIZE_MB', '1024')),
+        help="Max total size (MB) of a workspace's agent scratch dir before LRU eviction (default: 1024)")
+    parser.add_argument("--scratch-max-file-size-mb", type=int,
+        default=int(os.environ.get('SCRATCH_MAX_FILE_SIZE_MB', '20')),
+        help="Max size (MB) of a single agent-written scratch file, e.g. a fetch_url download (default: 20)")
     parser.add_argument("--data-dir", type=str, default=None,
         help="Data Formulator home directory for workspaces and sessions (default: ~/.data_formulator)")
     parser.add_argument("--dev", action='store_true', default=False,
@@ -428,8 +432,9 @@ def run_app():
         'disable_display_keys': args.disable_display_keys,
         'disable_data_connectors': args.disable_data_connectors,
         'disable_custom_models': args.disable_custom_models,
-        'project_front_page': args.project_front_page,
         'max_display_rows': args.max_display_rows,
+        'scratch_max_bytes': args.scratch_max_size_mb * 1024 * 1024,
+        'scratch_max_file_bytes': args.scratch_max_file_size_mb * 1024 * 1024,
         'data_dir': args.data_dir,
         'dev': args.dev,
         'workspace_backend': workspace_backend,

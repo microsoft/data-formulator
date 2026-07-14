@@ -308,7 +308,7 @@ def print_report(all_results, latency_ms=None):
     print("  * full_derive_data -- the two above combined (dominates latency)")
     print("  * warm cache       -- blob_data_cache avoids re-downloads for reads")
     print("  * local_dir always bypasses the blob_data_cache")
-    print("  * CachedAzureBlobWorkspace keeps a local mirror => local_dir is free")
+    print("  * blob_disk_cache keeps an ETag-validated local copy => reads avoid re-download")
     print()
 
 
@@ -418,11 +418,11 @@ def _run_simulated(args, all_results):
             except Exception:
                 pass
 
-    # -- 5. CachedAzureBlobWorkspace simulation ------------------------------
-    # The CachedAzureBlobWorkspace uses a LOCAL file mirror so reads
-    # are at filesystem speed.  We simulate it here by wrapping the
+    # -- 5. Local-mirror cache simulation ------------------------------------
+    # AzureBlobWorkspace + blob_disk_cache keeps an ETag-validated local copy
+    # so reads are at filesystem speed.  We simulate it here by wrapping the
     # SimulatedBlobWorkspace with the same write-through-to-cache pattern.
-    print(f"\n[5/5] CachedAzureBlobWorkspace pattern (local mirror)")
+    print(f"\n[5/5] Local-mirror cache pattern (blob_disk_cache)")
     with tempfile.TemporaryDirectory(prefix="df_bench_cached_") as tmpdir:
         ws_cached = Workspace("bench_cached", root_dir=tmpdir)
         all_results["Cached Azure"] = run_benchmark(

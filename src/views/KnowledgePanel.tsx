@@ -4,16 +4,16 @@
 /**
  * KnowledgePanel — panel for browsing and editing knowledge items.
  *
- * Shows two collapsible sections: Rules (flat) and Experiences (flat).
+ * Shows two collapsible sections: Rules (flat) and Workflows (flat).
  * Items are tagged for organization; no subdirectory grouping.
  * Supports search, edit, and delete. Rules can be created directly by
- * the user via the "+" affordance; experiences are produced by the
+ * the user via the "+" affordance; workflows are produced by the
  * agent's distillation flow (see SessionDistill).
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import {
     Box,
     Typography,
@@ -26,7 +26,6 @@ import {
     DialogContent,
     DialogActions,
     CircularProgress,
-    Chip,
     Divider,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
@@ -34,6 +33,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Editor from 'react-simple-code-editor';
 
@@ -41,9 +41,9 @@ import { useKnowledgeStore } from '../app/useKnowledgeStore';
 import { deleteKnowledge, type KnowledgeCategory } from '../api/knowledgeApi';
 import type { KnowledgeItem } from '../api/knowledgeApi';
 import { borderColor, radius } from '../app/tokens';
-import { type DataFormulatorState } from '../app/dfSlice';
-import { isLeafDerivedTable, buildLeafEvents } from './experienceContext';
-import { SessionDistillDialog, findSessionExperience } from './SessionDistill';
+import { dfActions, type DataFormulatorState } from '../app/dfSlice';
+import { isLeafDerivedTable, buildLeafEvents } from './workflowContext';
+import { SessionDistillDialog, findSessionWorkflow } from './SessionDistill';
 
 // Default file name and seed body for a brand-new rule. Rules are plain
 // Markdown — the user just edits the body; no front matter is required.
@@ -58,19 +58,18 @@ Describe the constraints or conventions the agent should follow.
 interface ActionRowProps {
     icon: React.ReactNode;
     label: string;
-    hint: string;
     onClick: () => void;
 }
 
-const ActionRow: React.FC<ActionRowProps> = ({ icon, label, hint, onClick }) => (
+const ActionRow: React.FC<ActionRowProps> = ({ icon, label, onClick }) => (
     <Box
         onClick={onClick}
         role="button"
         tabIndex={0}
         sx={{
-            display: 'flex', alignItems: 'flex-start', gap: 0.75,
+            display: 'flex', alignItems: 'center', gap: 0.75,
             mx: 1.5, my: 0.5,
-            px: 1, py: 0.6,
+            px: 1, py: 0.5,
             cursor: 'pointer',
             color: 'primary.main',
             border: theme => `1px solid ${alpha(theme.palette.primary.main, 0.5)}`,
@@ -88,22 +87,12 @@ const ActionRow: React.FC<ActionRowProps> = ({ icon, label, hint, onClick }) => 
             userSelect: 'none',
         }}
     >
-        <Box sx={{ color: 'inherit', display: 'flex', mt: 0.125 }}>{icon}</Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{
-                fontSize: 12, fontWeight: 500, color: 'inherit', wordBreak: 'break-word',
-            }}>
-                {label}
-            </Typography>
-            <Typography
-                className="placeholder-hint"
-                sx={{
-                    fontSize: 10.5, mt: 0.125, color: 'primary.main', opacity: 0.6, wordBreak: 'break-word',
-                }}
-            >
-                {hint}
-            </Typography>
-        </Box>
+        <Box sx={{ color: 'inherit', display: 'flex' }}>{icon}</Box>
+        <Typography sx={{
+            fontSize: 12, fontWeight: 500, color: 'inherit', wordBreak: 'break-word',
+        }}>
+            {label}
+        </Typography>
     </Box>
 );
 
@@ -112,9 +101,13 @@ const ActionRow: React.FC<ActionRowProps> = ({ icon, label, hint, onClick }) => 
 export const KnowledgePanel: React.FC = () => {
     const { t } = useTranslation();
     const store = useKnowledgeStore();
+    const dispatch = useDispatch();
 
-    // For the "distill from this session" placeholder under EXPERIENCES.
+    // For the "distill from this session" placeholder under WORKFLOWS.
     const tables = useSelector((s: DataFormulatorState) => s.tables);
+    // Workflow replay needs data to run on — disable replay when the
+    // workspace has no tables loaded.
+    const hasTables = tables.length > 0;
     const charts = useSelector((s: DataFormulatorState) => s.charts);
     const conceptShelfItems = useSelector((s: DataFormulatorState) => s.conceptShelfItems);
     const selectedModelId = useSelector((s: DataFormulatorState) => s.selectedModelId);
@@ -183,35 +176,6 @@ export const KnowledgePanel: React.FC = () => {
         setEditorLoading(false);
     }, [store]);
 
-    // Pending request to auto-open an entry once it appears in the store
-    // (e.g. after the SessionDistillDialog finishes distilling).
-    const pendingOpenRef = useRef<{ category: KnowledgeCategory; path: string } | null>(null);
-
-    useEffect(() => {
-        const handler = (e: Event) => {
-            const detail = (e as CustomEvent).detail || {};
-            const category = (detail.category as KnowledgeCategory | undefined) ?? 'experiences';
-            const path = detail.path as string | undefined;
-            if (path) {
-                pendingOpenRef.current = { category, path };
-            }
-        };
-        window.addEventListener('open-knowledge-panel', handler);
-        return () => window.removeEventListener('open-knowledge-panel', handler);
-    }, []);
-
-    // When the requested entry shows up in the store, open its editor.
-    useEffect(() => {
-        const pending = pendingOpenRef.current;
-        if (!pending) return;
-        const cat = store.stateMap[pending.category];
-        if (!cat?.loaded) return;
-        const item = cat.items.find(i => i.path === pending.path);
-        if (!item) return;
-        pendingOpenRef.current = null;
-        openEditDialog(pending.category, item);
-    }, [store.stateMap, openEditDialog]);
-
     const handleSave = useCallback(async () => {
         if (!editorPath.trim() || !editorContent.trim()) return;
         setEditorSaving(true);
@@ -237,9 +201,9 @@ export const KnowledgePanel: React.FC = () => {
     }, [deleteTarget, store]);
 
     // ── Distill from current session ────────────────────────────────────
-    // The EXPERIENCES placeholder under EXPERIENCES is bound to the
+    // The WORKFLOWS placeholder is bound to the
     // active workspace. When the workspace already has a distilled
-    // experience (matched by `sourceWorkspaceId` in front matter) we
+    // workflow (matched by `sourceWorkspaceId` in front matter) we
     // expose an inline ⟳ Update affordance on the existing entry;
     // otherwise the placeholder opens the dialog in *create* mode.
     // See design-docs/24-session-scoped-distillation.md.
@@ -265,9 +229,9 @@ export const KnowledgePanel: React.FC = () => {
     const selectedModel = allModels.find(m => m.id === selectedModelId);
     const canDistillFromSession = hasDistillableSession && !!selectedModel && !!activeWorkspace;
 
-    const sessionExperience = React.useMemo(
-        () => findSessionExperience(
-            store.stateMap['experiences'].items,
+    const sessionWorkflow = React.useMemo(
+        () => findSessionWorkflow(
+            store.stateMap['workflows'].items,
             activeWorkspace?.id,
         ),
         [store.stateMap, activeWorkspace?.id],
@@ -278,6 +242,21 @@ export const KnowledgePanel: React.FC = () => {
         setSessionDialogOpen(true);
     }, []);
 
+    // ── Replay a workflow ────────────────────────────────────────────
+    // Reads the workflow body and asks the data agent (in SimpleChartRecBox)
+    // to reproduce the captured workflow on the currently loaded data. v1 is
+    // deliberately simple: we hand the whole workflow to the agent in one
+    // request via a window event and let it figure out the rest.
+    // See discussion/replayable-experience-workflow.md.
+    const handleReplay = useCallback(async (item: KnowledgeItem) => {
+        const content = await store.read('workflows', item.path);
+        if (content == null) return;
+        const prompt = t('knowledge.replayPrompt', { content });
+        window.dispatchEvent(new CustomEvent('df-replay-workflow', {
+            detail: { prompt, title: item.title },
+        }));
+    }, [store, t]);
+
     // ── Render section ──────────────────────────────────────────────────
 
 
@@ -285,81 +264,90 @@ export const KnowledgePanel: React.FC = () => {
         category: KnowledgeCategory,
         item: KnowledgeItem,
     ) => {
-        const displayName = item.path || item.title;
+        const displayTitle = (item.title || '').replace(/^\s*(?:Workflow|Experience) from .+?:\s*/i, '').trim();
+        const primary = displayTitle || item.title || item.path;
         return (
             <Box
                 key={`${category}/${item.path}`}
                 onClick={() => openEditDialog(category, item)}
                 sx={{
                     display: 'flex', alignItems: 'flex-start', gap: 0.75,
-                    px: 1.5, py: 0.75,
+                    px: 1.5, py: 0.625,
                     cursor: 'pointer',
                     color: 'text.primary',
                     '&:hover': { bgcolor: 'action.hover' },
-                    '&:hover .item-actions': { visibility: 'visible' },
+                    '&:hover .item-actions': { display: 'inline-flex' },
                     userSelect: 'none',
                 }}
             >
-                <DescriptionOutlinedIcon sx={{ fontSize: 16, color: 'text.primary', mt: 0.125 }} />
+                <DescriptionOutlinedIcon sx={{ fontSize: 16, color: 'text.primary', mt: 0.25 }} />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 12.5, fontWeight: 500, wordBreak: 'break-word', color: 'text.primary' }}>
-                        {displayName}
+                    <Typography sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.45, wordBreak: 'break-word', color: 'text.primary' }}>
+                        {primary}
                     </Typography>
-                    {item.tags.length > 0 && (
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.25, mt: 0.25 }}>
-                            {item.tags.map(tag => (
-                                <Chip
-                                    key={tag}
-                                    label={tag}
-                                    size="small"
-                                    variant="outlined"
-                                    sx={{ fontSize: 9.5, height: 15, '& .MuiChip-label': { px: 0.5 } }}
-                                />
-                            ))}
-                        </Box>
-                    )}
                 </Box>
                 {item.source === 'agent_summarized' && (
                     <Tooltip title={t('knowledge.sourceAgent')}>
                         <SmartToyOutlinedIcon sx={{ fontSize: 13, color: 'text.secondary', mt: 0.25 }} />
                     </Tooltip>
                 )}
-                <Box className="item-actions" sx={{ display: 'flex', visibility: 'hidden', mt: 0.125 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'stretch', flexShrink: 0 }}>
+                    {category === 'workflows' && (
+                        <Tooltip title={hasTables ? t('knowledge.replayTooltip') : t('knowledge.replayNoData')}>
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    aria-label={hasTables ? t('knowledge.replayTooltip') : t('knowledge.replayNoData')}
+                                    disabled={!hasTables}
+                                    onClick={(e) => { e.stopPropagation(); handleReplay(item); }}
+                                    sx={{
+                                        p: 0.25,
+                                        color: 'primary.main',
+                                        '&:hover': { bgcolor: theme => alpha(theme.palette.primary.main, 0.08) },
+                                    }}
+                                >
+                                    <PlayArrowIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                    )}
                     <IconButton
+                        className="item-actions"
                         size="small"
+                        aria-label={t('knowledge.deleteItem')}
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget({ category, path: item.path, title: item.title }); }}
-                        sx={{ p: 0.25, color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+                        sx={{ p: 0.25, mt: 'auto', display: 'none', color: 'text.secondary', '&:hover': { color: 'error.main' } }}
                     >
-                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                        <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                 </Box>
             </Box>
         );
-    }, [openEditDialog, t]);
+    }, [openEditDialog, t, handleReplay, hasTables]);
 
     const renderCategorySection = useCallback((
         category: KnowledgeCategory,
         label: string,
+        hint: string,
     ) => {
         const state = store.stateMap[category];
 
         // Persistent action row at the top of the section. Rules: opens
-        // the create dialog. Experiences: opens the session distill
+        // the create dialog. Workflows: opens the session distill
         // dialog in create or update mode depending on whether the active
-        // workspace already has a distilled experience.
+        // workspace already has a distilled workflow.
         // See design-docs/24-session-scoped-distillation.md.
         const renderActionRow = () => {
             if (category === 'rules') {
                 return (
                     <ActionRow
-                        icon={<AddIcon sx={{ fontSize: 18, mt: 0.125 }} />}
+                        icon={<AddIcon sx={{ fontSize: 18 }} />}
                         label={t('knowledge.addNewRule', { defaultValue: 'Add new rule' })}
-                        hint={t('knowledge.addNewRuleHint', { defaultValue: 'Set a convention for the agent' })}
                         onClick={() => openCreateDialog('rules')}
                     />
                 );
             }
-            // experiences
+            // workflows
             if (!canDistillFromSession) {
                 // No active workspace, no model, or no distillable thread
                 // yet — show a passive hint instead of a dead action.
@@ -370,15 +358,12 @@ export const KnowledgePanel: React.FC = () => {
                     </Typography>
                 );
             }
-            const updateMode = !!sessionExperience;
+            const updateMode = !!sessionWorkflow;
             if (sessionDistilling) {
                 return (
                     <ActionRow
-                        icon={<CircularProgress size={14} sx={{ mt: 0.25 }} />}
-                        label={t('knowledge.distilling', { defaultValue: 'Distilling experience…' })}
-                        hint={updateMode
-                            ? t('knowledge.updateFromSessionHint', { defaultValue: 'Refresh with new lessons' })
-                            : t('knowledge.experiencePlaceholderHint', { defaultValue: 'Save lessons learned' })}
+                        icon={<CircularProgress size={14} />}
+                        label={t('knowledge.distilling', { defaultValue: 'Distilling workflow…' })}
                         onClick={() => openSessionDistillDialog(updateMode)}
                     />
                 );
@@ -386,29 +371,41 @@ export const KnowledgePanel: React.FC = () => {
             return (
                 <ActionRow
                     icon={updateMode
-                        ? <RefreshIcon sx={{ fontSize: 18, mt: 0.125 }} />
-                        : <AddIcon sx={{ fontSize: 18, mt: 0.125 }} />}
+                        ? <RefreshIcon sx={{ fontSize: 18 }} />
+                        : <AddIcon sx={{ fontSize: 18 }} />}
                     label={updateMode
                         ? t('knowledge.updateFromSession', { defaultValue: 'Update from this session' })
                         : t('knowledge.distillFromSession', { defaultValue: 'Distill from this session' })}
-                    hint={updateMode
-                        ? t('knowledge.updateFromSessionHint', { defaultValue: 'Refresh with new lessons' })
-                        : t('knowledge.experiencePlaceholderHint', { defaultValue: 'Save lessons learned' })}
                     onClick={() => openSessionDistillDialog(updateMode)}
                 />
             );
         };
 
         return (
-            <Box key={category}>
+            <Box key={category} sx={{ pb: 1 }}>
                 <Box
                     sx={{
                         display: 'flex', alignItems: 'center',
-                        px: 1.5, pt: 1, pb: 0.25,
+                        px: 1.5, pt: 2, pb: 0.75,
                     }}
                 >
-                    <Typography sx={{ flex: 1, fontSize: 10.5, fontWeight: 600, color: 'text.primary', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.secondary', letterSpacing: 0.6, textTransform: 'uppercase' }}>
                         {label}
+                    </Typography>
+                </Box>
+
+                {/* Always-visible guidance for the section, set off by a
+                    subtle left accent line below the title. */}
+                <Box
+                    sx={{
+                        mx: 1.5, mb: 0.75,
+                        pl: 1, py: 0.25,
+                        borderLeft: '2px solid',
+                        borderColor: theme => alpha(theme.palette.primary.main, 0.25),
+                    }}
+                >
+                    <Typography sx={{ fontSize: 11, color: 'text.disabled', lineHeight: 1.55 }}>
+                        {hint}
                     </Typography>
                 </Box>
 
@@ -421,36 +418,18 @@ export const KnowledgePanel: React.FC = () => {
                 {state.items.map(item => renderItem(category, item))}
             </Box>
         );
-    }, [store.stateMap, renderItem, openCreateDialog, t, canDistillFromSession, sessionExperience, sessionDistilling, openSessionDistillDialog]);
+    }, [store.stateMap, renderItem, openCreateDialog, t, canDistillFromSession, sessionWorkflow, sessionDistilling, openSessionDistillDialog]);
 
     // ── Main render ─────────────────────────────────────────────────────
 
     return (
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Persistent hint — explains Rules vs Experiences without
-                requiring the user to scroll past empty-state messages. */}
-            <Box
-                sx={{
-                    mx: 1.5, mt: 1, mb: 0.75,
-                    px: 1, py: 0.75,
-                    bgcolor: 'action.hover',
-                    borderRadius: 1,
-                    flexShrink: 0,
-                }}
-            >
-                <Typography sx={{ fontSize: 11.5, color: 'text.primary', lineHeight: 1.5 }}>
-                    {t('knowledge.rulesHint')}
-                </Typography>
-                <Typography sx={{ fontSize: 11.5, color: 'text.primary', lineHeight: 1.5, mt: 0.5 }}>
-                    {t('knowledge.experiencesHint')}
-                </Typography>
-            </Box>
-
-            {/* Content area */}
+            {/* Content area. Rules vs Workflows guidance is surfaced via an
+                info icon next to each section title (see renderCategorySection). */}
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
                 <Box>
-                    {renderCategorySection('rules', t('knowledge.rules'))}
-                    {renderCategorySection('experiences', t('knowledge.experiences'))}
+                    {renderCategorySection('rules', t('knowledge.rules'), t('knowledge.rulesHint'))}
+                    {renderCategorySection('workflows', t('knowledge.workflows'), t('knowledge.workflowsHint'))}
                 </Box>
             </Box>
 
@@ -515,22 +494,6 @@ export const KnowledgePanel: React.FC = () => {
                                     }}
                                 />
                             </Box>
-                            {(() => {
-                                const bodyLimit = store.limits[editorCategory as keyof typeof store.limits] as number | undefined;
-                                if (!bodyLimit) return null;
-                                const bodyLen = editorContent.trim().length;
-                                const exceeded = bodyLen > bodyLimit;
-                                return (
-                                    <Typography sx={{
-                                        fontSize: 10, textAlign: 'right',
-                                        color: exceeded ? 'error.main' : bodyLen > bodyLimit * 0.9 ? 'warning.main' : 'text.disabled',
-                                    }}>
-                                        {exceeded
-                                            ? t('knowledge.charCountExceeded', { max: bodyLimit, current: bodyLen })
-                                            : t('knowledge.charCount', { max: bodyLimit, current: bodyLen })}
-                                    </Typography>
-                                );
-                            })()}
                         </>
                     )}
                 </DialogContent>
@@ -555,7 +518,6 @@ export const KnowledgePanel: React.FC = () => {
                             editorSaving
                             || !editorContent.trim()
                             || !editorPath.trim()
-                            || editorContent.trim().length > (store.limits[editorCategory as keyof typeof store.limits] as number ?? Infinity)
                         }
                         variant="contained"
                         sx={{ textTransform: 'none', fontSize: 12 }}

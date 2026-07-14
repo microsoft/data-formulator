@@ -225,6 +225,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                         target="_blank"
                         rel="noopener noreferrer"
                         underline="hover"
+                        sx={{ mx: 0.25, fontWeight: 600 }}
                     >
                         uv
                     </Link>

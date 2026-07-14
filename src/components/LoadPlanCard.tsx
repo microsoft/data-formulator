@@ -3,27 +3,36 @@
 
 import React, { useState } from 'react';
 import {
-    Box, Button, Checkbox, Chip, Typography,
+    Box, Button, Checkbox, Chip, CircularProgress, Tooltip, Typography,
     alpha, useTheme,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
+import { getConnectorIcon } from '../icons';
 import { transition } from '../app/tokens';
 import { TablePreviewRow, TablePreviewData } from './TablePreviewRow';
+import { formatFilterChipLabel } from './filterFormat';
 import type { LoadPlan, LoadPlanCandidate, PendingTableLoad } from './ComponentType';
 
 interface LoadPlanCardProps {
     plan: LoadPlan;
-    onConfirm: (selected: LoadPlanCandidate[]) => void;
+    onConfirm: (selected: LoadPlanCandidate[], opts?: { newWorkspace?: boolean }) => void;
     confirmed?: boolean;
+    /** When true, a workspace with existing data is already open, so the
+     *  destination of the load is ambiguous. We then offer two explicit
+     *  actions: add to the current workspace, or load into a fresh one.
+     *  When false (empty/new workspace), a single "Load selected" button
+     *  loads directly with no ambiguity. */
+    canLoadInNewWorkspace?: boolean;
 }
 
-// Plans this small auto-expand each row's preview on first render so the
-// user can see what they're loading without an extra click. Larger plans
-// (4+) stay collapsed to avoid overwhelming the chat surface.
-const AUTO_PREVIEW_THRESHOLD = 3;
+// Reserve a stable area while a remote preview request is in flight. Resolved
+// previews return to natural height: five data rows plus a quiet row-count
+// caption provide enough validation without making multi-candidate plans tall.
+const LOAD_PLAN_LOADING_HEIGHT = 158;
 
 interface PreviewState {
     loading: boolean;
@@ -43,28 +52,24 @@ const buildImportOptions = (candidate: LoadPlanCandidate, size: number) => ({
     } : {}),
 });
 
-const formatFilterValue = (value: any) => {
-    if (value === undefined || value === null || value === '') return '';
-    return Array.isArray(value) ? value.join(', ') : String(value);
-};
-
-export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed }) => {
+export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed, canLoadInNewWorkspace }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const [selection, setSelection] = useState<Record<number, boolean>>(
-        () => Object.fromEntries(plan.candidates.map((c, i) => [i, !c.resolutionError]))
+        () => Object.fromEntries(plan.candidates.map((c, i) => [
+            i,
+            !c.resolutionError && c.selected !== false,
+        ]))
     );
     const [loading, setLoading] = useState(false);
-    // Auto-expand previews for small plans. We seed the map with empty
-    // expanded entries; the actual data fetch happens lazily inside the
-    // Collapse's first paint via the same code path as a manual click.
-    const shouldAutoPreview = plan.candidates.length <= AUTO_PREVIEW_THRESHOLD;
+    // Every resolvable candidate preview is always open. Seed loading state on
+    // the first render so the fixed-height spinner area is reserved before the
+    // asynchronous preview requests begin.
     const [previews, setPreviews] = useState<Record<number, PreviewState>>(() => {
-        if (!shouldAutoPreview) return {};
         const seed: Record<number, PreviewState> = {};
         plan.candidates.forEach((c, i) => {
             if (!c.resolutionError) {
-                seed[i] = { loading: false, expanded: true, rows: [], columns: [] };
+                seed[i] = { loading: true, expanded: true, rows: [], columns: [] };
             }
         });
         return seed;
@@ -116,10 +121,9 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         }
     }, [t]);
 
-    // Kick off auto-preview fetches once on mount. We don't await — each
-    // row paints its loading state and resolves independently.
+    // Fetch every preview once on mount. We don't await — each row already
+    // displays its fixed-height spinner and resolves independently.
     React.useEffect(() => {
-        if (!shouldAutoPreview) return;
         plan.candidates.forEach((c, i) => {
             if (!c.resolutionError) {
                 fetchPreview(c, i);
@@ -129,36 +133,16 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const handlePreview = (candidate: LoadPlanCandidate, idx: number) => {
-        const current = previews[idx];
-        // Toggle if we already have data or are currently fetching.
-        if (current?.expanded) {
-            setPreviews(prev => ({ ...prev, [idx]: { ...current, expanded: false } }));
-            return;
-        }
-        if (current?.rows.length) {
-            setPreviews(prev => ({ ...prev, [idx]: { ...current, expanded: true } }));
-            return;
-        }
-        fetchPreview(candidate, idx);
-    };
-
-    const handleConfirm = async () => {
+    const handleConfirm = async (newWorkspace = false) => {
         const selected = plan.candidates.filter((c, i) => selection[i] && !c.resolutionError);
         if (selected.length === 0) return;
         setLoading(true);
         try {
-            await onConfirm(selected);
+            await onConfirm(selected, { newWorkspace });
         } finally {
             setLoading(false);
         }
     };
-
-    // Whether all candidates resolve to a single source — used to decide
-    // if the per-row source label is informative or just redundant.
-    const sources = new Set(plan.candidates.map(c => c.sourceId));
-    const showSourceLabel = sources.size > 1;
-    const sharedSourceId = sources.size === 1 ? plan.candidates[0].sourceId : undefined;
 
     const isDark = theme.palette.mode === 'dark';
     const borderColorBase = confirmed
@@ -201,34 +185,60 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                     : { state: 'idle' };
 
                 return (
-                    <TablePreviewRow
-                        key={i}
+                    <Box key={i} sx={{
+                        ...(i > 0 ? {
+                            mt: 0.75,
+                            pt: 0.75,
+                            borderTop: '1px solid',
+                            borderColor: 'divider',
+                        } : {}),
+                    }}>
+                      <TablePreviewRow
                         name={c.displayName}
                         leading={confirmed
                             ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} />
                             : <Checkbox size="small" checked={!!selection[i]} disabled={unresolved}
                                 onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
-                        trailing={showSourceLabel
-                            ? <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>({c.sourceId})</Typography>
-                            : undefined}
+                        trailing={!unresolved ? (
+                            <Tooltip title={`${t('dataLoading.loadPlan.fromSource', { defaultValue: 'from' })} ${c.sourceId}`}>
+                                <Box sx={{
+                                    display: 'flex', alignItems: 'center', gap: 0.4,
+                                    maxWidth: 180, minWidth: 0, flexShrink: 0,
+                                    color: 'text.secondary',
+                                }}>
+                                    {getConnectorIcon(c.sourceId.split(':', 1)[0], {
+                                        sx: { fontSize: 13, flexShrink: 0, color: 'text.secondary' },
+                                    })}
+                                    <Typography noWrap sx={{ fontSize: 10.5, color: 'text.secondary' }}>
+                                        {c.sourceId}
+                                    </Typography>
+                                </Box>
+                            </Tooltip>
+                        ) : undefined}
                         filterChips={hasFilters ? (
                             <>
+                                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, mr: 0.25, color: 'text.secondary' }}>
+                                    <FilterAltOutlinedIcon sx={{ fontSize: 12 }} />
+                                    <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'text.secondary' }}>
+                                        {t('dataLoading.loadPlan.filtersLabel', { defaultValue: 'Filters:' })}
+                                    </Typography>
+                                </Box>
                                 {c.filters?.map((f, fi) => (
                                     <Chip key={fi}
-                                        label={`${f.column} ${f.operator}${formatFilterValue(f.value) ? ` ${formatFilterValue(f.value)}` : ''}`}
+                                        label={formatFilterChipLabel(f.column, f.operator, f.value)}
                                         size="small" variant="outlined"
                                         sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
                                 ))}
                                 {c.sortBy && (
-                                    <Chip label={`${c.sortBy} ${c.sortOrder || 'asc'}`}
+                                    <Chip label={`${c.sortBy} ${c.sortOrder === 'desc' ? '↓' : '↑'}`}
                                         size="small" variant="outlined"
                                         sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
                                 )}
                             </>
                         ) : undefined}
                         preview={previewData}
-                        expanded={!!preview?.expanded}
-                        onTogglePreview={unresolved ? undefined : () => handlePreview(c, i)}
+                        expanded={!unresolved}
+                        loadingHeight={LOAD_PLAN_LOADING_HEIGHT}
                         dim={unresolved}
                         unresolved={unresolved ? {
                             message: t('dataLoading.loadPlan.unresolved', {
@@ -236,19 +246,13 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             }),
                             detail: c.resolutionError,
                         } : undefined}
-                    />
+                      />
+                    </Box>
                 );
             })}
 
-            {/* Footer: action button (unconfirmed) or quiet caption (confirmed).
-                When every candidate shares one source, surface it once down
-                here instead of duplicating it on each row. */}
+            {/* Footer: action button (unconfirmed) or quiet caption (confirmed). */}
             <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
-                {!showSourceLabel && sharedSourceId && (
-                    <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
-                        {t('dataLoading.loadPlan.fromSource', { defaultValue: 'from' })} {sharedSourceId}
-                    </Typography>
-                )}
                 <Box sx={{ flex: 1 }} />
                 {confirmed ? (
                     <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
@@ -257,22 +261,53 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             defaultValue: '✓ Loaded',
                         })}
                     </Typography>
+                ) : canLoadInNewWorkspace ? (
+                    // A workspace with data is already open — make the load
+                    // destination explicit rather than silently appending.
+                    <>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            disabled={selectedCount === 0 || loading}
+                            onClick={() => handleConfirm(true)}
+                            startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
+                            sx={{
+                                textTransform: 'none', fontSize: 12,
+                                py: 0.5, px: 1.5, minHeight: 0,
+                                borderRadius: 1.5,
+                            }}
+                        >
+                            {t('dataLoading.loadPlan.loadInNewWorkspace', { defaultValue: 'Load in new workspace' })}
+                        </Button>
+                        <Button
+                            size="small"
+                            variant="contained"
+                            disabled={selectedCount === 0 || loading}
+                            onClick={() => handleConfirm(false)}
+                            startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
+                            sx={{
+                                textTransform: 'none', fontSize: 12,
+                                py: 0.5, px: 2, minHeight: 0,
+                                borderRadius: 1.5, boxShadow: 'none',
+                            }}
+                        >
+                            {`${t('dataLoading.loadPlan.addToCurrent', { defaultValue: 'Add to current workspace' })} (${selectedCount})`}
+                        </Button>
+                    </>
                 ) : (
                     <Button
                         size="small"
                         variant="contained"
                         disabled={selectedCount === 0 || loading}
-                        onClick={handleConfirm}
+                        onClick={() => handleConfirm(false)}
+                        startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                         sx={{
                             textTransform: 'none', fontSize: 12,
                             py: 0.5, px: 2, minHeight: 0,
                             borderRadius: 1.5, boxShadow: 'none',
                         }}
                     >
-                        {loading
-                            ? '...'
-                            : `${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`
-                        }
+                        {`${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
                     </Button>
                 )}
             </Box>
@@ -404,15 +439,14 @@ export const PendingLoadsCard: React.FC<PendingLoadsCardProps> = ({ pendingLoads
                         variant="contained"
                         disabled={selectedCount === 0 || loading}
                         onClick={handleConfirm}
+                        startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                         sx={{
                             textTransform: 'none', fontSize: 12,
                             py: 0.5, px: 2, minHeight: 0,
                             borderRadius: 1.5, boxShadow: 'none',
                         }}
                     >
-                        {loading
-                            ? '...'
-                            : `${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
+                        {`${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
                     </Button>
                 )}
             </Box>

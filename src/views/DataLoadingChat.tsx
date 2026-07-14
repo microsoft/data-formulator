@@ -2,19 +2,20 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import Markdown from 'react-markdown';
 
 import {
     Box, Button, Chip, CircularProgress, IconButton,
     Paper, Stack, Tooltip, Typography,
-    alpha, useTheme, Collapse,
+    alpha, useTheme, Collapse, Divider,
 } from '@mui/material';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import CheckIcon from '@mui/icons-material/Check';
+import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import LanguageIcon from '@mui/icons-material/Language';
@@ -29,15 +30,29 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
-import { buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { buildDataLoadingSuggestions, buildDataLoadingQuickActions } from './dataLoadingSuggestions';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, streamRequest } from '../app/apiClient';
-import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate } from '../components/ComponentType';
+import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate, ConnectorFormPrompt } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
 import { LoadPlanCard, PendingLoadsCard } from '../components/LoadPlanCard';
+import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
+import { formatFilterChipLabel } from '../components/filterFormat';
 import { AgentChatInput } from './AgentChatInput';
+import { generateUUID } from '../app/identity';
+
+// ---------------------------------------------------------------------------
+// Helper: fresh workspace session id (mirrors DataSourceSidebar's scheme)
+// ---------------------------------------------------------------------------
+
+const newWorkspaceSessionId = (): string => {
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    return `session_${date}_${time}_${generateUUID().slice(0, 4)}`;
+};
 
 // ---------------------------------------------------------------------------
 // Helper: generate table name
@@ -60,7 +75,11 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
 // Modern monospace font stack for code blocks
 const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
 
-const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+// Memoized so typing in the chat input (which re-renders the parent
+// `DataLoadingChat` on every keystroke) doesn't re-parse every assistant
+// message through react-markdown. `content` is a stable string per
+// committed message, so the default shallow equality is sufficient.
+const MarkdownContent = React.memo(({ content }: { content: string }) => {
     return (
         <Box sx={{ wordBreak: 'break-word' }}>
             <Markdown
@@ -168,7 +187,7 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
             </Markdown>
         </Box>
     );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Inline table preview — compact notebook-style
@@ -287,40 +306,105 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
                         {block.code}
                     </Typography>
                 </Box>
+                {block.stdout && (
+                    <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
+                        <Typography component="pre" sx={{
+                            fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                            whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto', color: 'text.secondary', lineHeight: 1.5,
+                        }}>
+                            {block.stdout}
+                        </Typography>
+                    </Box>
+                )}
+                {block.error && (
+                    <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
+                        <Typography component="pre" sx={{
+                            fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                            whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.5,
+                        }}>
+                            {block.error}
+                        </Typography>
+                    </Box>
+                )}
+                {block.resultTable && (
+                    <Box sx={{ px: 1 }}>
+                        <InlineTablePreviewView preview={block.resultTable} />
+                    </Box>
+                )}
             </Collapse>
-            {block.stdout && (
-                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
-                    <Typography component="pre" sx={{
-                        fontFamily: CODE_FONT, fontSize: 11, m: 0,
-                        whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto', color: 'text.secondary', lineHeight: 1.5,
-                    }}>
-                        {block.stdout}
-                    </Typography>
-                </Box>
-            )}
-            {block.error && (
-                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
-                    <Typography component="pre" sx={{
-                        fontFamily: CODE_FONT, fontSize: 11, m: 0,
-                        whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.5,
-                    }}>
-                        {block.error}
-                    </Typography>
-                </Box>
-            )}
-            {block.resultTable && <InlineTablePreviewView preview={block.resultTable} />}
         </Paper>
     );
 };
 
 // ---------------------------------------------------------------------------
+// New-request divider
+// ---------------------------------------------------------------------------
+
+// Rendered between the previous conversation and a freshly-started task
+// (agent delegate, a new query from the menu, or a sample-task click).
+// Preserving history keeps prior extractions recoverable; this separator
+// makes the boundary between tasks obvious. Excluded from the agent history
+// payload (see `sendMessage`).
+const TaskDivider: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{ my: 1.5 }}>
+            <Divider>
+                <Typography variant="caption" sx={{ fontSize: 10, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {t('dataLoading.newRequestDivider', 'New request')}
+                </Typography>
+            </Divider>
+        </Box>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// "Continue from this section" affordance
+// ---------------------------------------------------------------------------
+
+// Rendered at the end of each older (non-latest) section. Between sections the
+// "New request" separator is hidden to keep history uncluttered; this button
+// is the only visible boundary, and clicking it promotes that section back to
+// the latest position so the user can continue the conversation from there
+// (non-destructive — nothing is deleted).
+const ContinueSectionButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 1.25 }}>
+            <Button
+                size="small"
+                variant="text"
+                onClick={onClick}
+                startIcon={<QuestionAnswerOutlinedIcon sx={{ fontSize: 14 }} />}
+                sx={{
+                    fontSize: 11, textTransform: 'none', color: 'text.secondary',
+                    py: 0.25, px: 1, minHeight: 0, borderRadius: radius.pill,
+                    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+                }}
+            >
+                {t('dataLoading.continueFromSection', 'Continue from this section')}
+            </Button>
+        </Box>
+    );
+};
+
+
+// ---------------------------------------------------------------------------
 // Single chat message bubble
 // ---------------------------------------------------------------------------
 
-const ChatBubble: React.FC<{
+// Memoized so typing in the chat input doesn't re-render every prior
+// bubble (each one renders MarkdownContent + potentially code blocks /
+// table previews, which is expensive on long threads). The parent
+// stabilises `existingNames` via useMemo so memo equality holds across
+// keystrokes.
+const ChatBubble = React.memo<{
     message: ChatMessage;
     existingNames: Set<string>;
-}> = ({ message, existingNames }) => {
+    onTableLoaded?: () => void;
+    isLatestPendingConnector?: boolean;
+    onContinue?: () => void;
+}>(({ message, existingNames, onTableLoaded, isLatestPendingConnector, onContinue }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
@@ -338,12 +422,24 @@ const ChatBubble: React.FC<{
                 const csvText = await res.text();
                 const table = createTableFromText(unique, csvText);
                 if (table) {
-                    dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } }));
+                    // Only flip to "loaded" once the table is actually in the
+                    // workspace — `.unwrap()` throws if the load thunk rejects,
+                    // so a failure skips confirmTableLoad and keeps the button.
+                    await dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } })).unwrap();
                     dispatch(dfActions.confirmTableLoad({ messageId: message.id, tableName: pending.name }));
+                    // Loading data is a deliberate commit — return the
+                    // user to the canvas (the dialog closes via this hook).
+                    onTableLoaded?.();
                 }
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to load table:', err);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data loader',
+                value: `Failed to load "${pending.name}": ${err?.message || err}`,
+            }));
         }
     };
 
@@ -435,41 +531,99 @@ const ChatBubble: React.FC<{
                     <LoadPlanCard
                         plan={message.loadPlan}
                         confirmed={message.loadPlan.candidates.every(c => c.selected === false)}
-                        onConfirm={async (selected: LoadPlanCandidate[]) => {
-                            for (const item of selected) {
-                                const sourceTableName = item.sourceTableName || item.displayName;
-                                const table = {
-                                    kind: 'table' as const,
-                                    id: item.displayName,
-                                    displayId: item.displayName,
-                                    names: [] as string[],
-                                    metadata: {},
-                                    rows: [] as any[],
-                                    virtual: { tableId: item.displayName, rowCount: 0 },
-                                    anchored: true,
-                                    description: '',
-                                    source: {
-                                        type: 'database' as const,
-                                        databaseTable: sourceTableName,
-                                        canRefresh: true,
-                                        lastRefreshed: Date.now(),
+                        canLoadInNewWorkspace={existingNames.size > 0}
+                        onConfirm={async (selected: LoadPlanCandidate[], opts?: { newWorkspace?: boolean }) => {
+                            // When data already exists, the user may choose to
+                            // start a fresh workspace instead of appending. We
+                            // reset *before* loading so the X-Workspace-Id
+                            // header (read live from the store at fetch time)
+                            // targets the new session.
+                            if (opts?.newWorkspace) {
+                                const displayName = selected[0]?.displayName || 'Untitled Session';
+                                dispatch(dfActions.resetForNewWorkspace({ id: newWorkspaceSessionId(), displayName }));
+                            }
+                            try {
+                                for (const item of selected) {
+                                    const sourceTableName = item.sourceTableName || item.displayName;
+                                    const table = {
+                                        kind: 'table' as const,
+                                        id: item.displayName,
+                                        displayId: item.displayName,
+                                        names: [] as string[],
+                                        metadata: {},
+                                        rows: [] as any[],
+                                        virtual: { tableId: item.displayName, rowCount: 0 },
+                                        anchored: true,
+                                        description: '',
+                                        source: {
+                                            type: 'database' as const,
+                                            databaseTable: sourceTableName,
+                                            canRefresh: true,
+                                            lastRefreshed: Date.now(),
+                                            connectorId: item.sourceId,
+                                        },
+                                    };
+                                    // `.unwrap()` rethrows if the ingest thunk rejects, so a
+                                    // failed load skips markLoadPlanConfirmed below — the card
+                                    // stays actionable instead of falsely showing "Loaded".
+                                    await dispatch(loadTable({
+                                        table,
                                         connectorId: item.sourceId,
-                                    },
-                                };
-                                await dispatch(loadTable({
-                                    table,
-                                    connectorId: item.sourceId,
-                                    sourceTableRef: { id: item.sourceTable, name: item.displayName },
-                                    importOptions: {
-                                        source_filters: item.filters || [],
-                                        sort_columns: item.sortBy ? [item.sortBy] : undefined,
-                                        sort_order: item.sortOrder,
-                                    },
+                                        sourceTableRef: { id: item.sourceTable, name: item.displayName },
+                                        importOptions: {
+                                            source_filters: item.filters || [],
+                                            sort_columns: item.sortBy ? [item.sortBy] : undefined,
+                                            sort_order: item.sortOrder,
+                                        },
+                                    })).unwrap();
+                                }
+                            } catch (err: any) {
+                                console.error('Failed to load plan:', err);
+                                dispatch(dfActions.addMessages({
+                                    timestamp: Date.now(),
+                                    type: 'error',
+                                    component: 'data loader',
+                                    value: `Failed to load data: ${err?.message || err}`,
                                 }));
+                                // Leave the plan unconfirmed so the user can retry.
+                                return;
                             }
                             dispatch(dfActions.markLoadPlanConfirmed({ messageId: message.id }));
+                            if (selected.length > 0) {
+                                // Return the user to the canvas after a
+                                // deliberate batch load.
+                                onTableLoaded?.();
+                            }
                         }}
                     />
+                )}
+                {/* Inline connection form — Agent-proposed via propose_connection.
+                    Only the latest still-pending form stays expanded; older ones
+                    collapse to a header the user can reopen (design 38). */}
+                {message.connectorForm && (
+                    <ConnectorFormCard
+                        messageId={message.id}
+                        prompt={message.connectorForm}
+                        defaultExpanded={
+                            message.connectorForm.status === 'connected'
+                                ? false
+                                : (isLatestPendingConnector ?? true)
+                        }
+                    />
+                )}
+                {/* Continue affordance — agent paused at the tool-call limit and
+                    asked whether to keep going. Clicking resumes the task. */}
+                {message.canContinue && onContinue && (
+                    <Box sx={{ mt: 1 }}>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={onContinue}
+                            sx={{ textTransform: 'none', fontSize: 12, borderRadius: radius.pill, py: 0.25 }}
+                        >
+                            {t('dataLoading.continueTask', 'Continue')}
+                        </Button>
+                    </Box>
                 )}
                 {/* Timestamp + debug — always reserves space, content visible on hover */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, height: 18, opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}>
@@ -493,7 +647,7 @@ const ChatBubble: React.FC<{
             </Box>
         </Box>
     );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Tool call label mapping
@@ -505,6 +659,93 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
     list_directory: 'dataLoading.toolLabels.listingFiles',
     execute_python: 'dataLoading.toolLabels.runningPython',
     show_user_data_preview: 'dataLoading.toolLabels.preparingPreview',
+    list_data: 'dataLoading.toolLabels.browsingCatalog',
+    find_data: 'dataLoading.toolLabels.searchingData',
+    describe_data: 'dataLoading.toolLabels.describingData',
+    probe_data: 'dataLoading.toolLabels.probingData',
+    propose_load_plan: 'dataLoading.toolLabels.proposingLoadPlan',
+};
+
+// Build a short, human-readable summary of a probe SPJQ query so the user
+// can see what the agent is actually asking for (e.g. "sum(revenue) by region").
+const summarizeProbeQuery = (q: any): string => {
+    if (!q || typeof q !== 'object') return '';
+    const parts: string[] = [];
+    if (Array.isArray(q.aggregates) && q.aggregates.length) {
+        parts.push(q.aggregates
+            .map((a: any) => (a.op === 'count' && !a.column) ? 'count' : `${a.op}(${a.column ?? ''})`)
+            .join(', '));
+    }
+    if (Array.isArray(q.group_by) && q.group_by.length) {
+        parts.push(`by ${q.group_by.join(', ')}`);
+    }
+    if (Array.isArray(q.filters) && q.filters.length) {
+        parts.push('where ' + q.filters
+            .map((f: any) => formatFilterChipLabel(f.column, f.op ?? f.operator, f.value))
+            .join(' & '));
+    }
+    if (q.limit) parts.push(`limit ${q.limit}`);
+    return parts.join(' ');
+};
+
+const truncateDetail = (s: string, n = 72): string =>
+    s.length > n ? `${s.slice(0, n - 1)}…` : s;
+
+// Extract the key parameter(s) of a tool call as a compact string, shown next
+// to the tool label so users can follow what each step is actually doing.
+const summarizeToolArgs = (tool: string, args: any): string => {
+    if (!args || typeof args !== 'object') return '';
+    let detail = '';
+    switch (tool) {
+        case 'read_file':
+        case 'write_file':
+        case 'list_directory':
+            detail = args.path ? String(args.path) : '';
+            break;
+        case 'list_data': {
+            const pathStr = Array.isArray(args.path) ? args.path.join('/') : args.path;
+            detail = [args.source_id, pathStr, args.filter && `“${args.filter}”`]
+                .filter(Boolean).join(' / ');
+            break;
+        }
+        case 'find_data': {
+            const scope = args.scope && args.scope !== 'all' ? ` in ${args.scope}` : '';
+            detail = args.query ? `“${args.query}”${scope}` : '';
+            break;
+        }
+        case 'describe_data':
+            detail = [args.source_id, args.table_key].filter(Boolean).join(' · ');
+            break;
+        case 'probe_data':
+            detail = [args.table_key, summarizeProbeQuery(args.query)]
+                .filter(Boolean).join(' · ');
+            break;
+        case 'show_user_data_preview':
+            if (Array.isArray(args.saved_dfs) && args.saved_dfs.length) {
+                detail = args.saved_dfs.join(', ');
+            } else if (Array.isArray(args.tables) && args.tables.length) {
+                detail = args.tables.map((tb: any) => tb?.name).filter(Boolean).join(', ');
+            }
+            break;
+        case 'propose_load_plan':
+            if (Array.isArray(args.candidates)) {
+                detail = args.candidates
+                    .map((c: any) => c?.display_name || c?.table_key)
+                    .filter(Boolean).join(', ');
+            }
+            break;
+        case 'execute_python':
+            // Code is rendered in its own block below — no inline detail.
+            detail = '';
+            break;
+        default: {
+            const firstStr = Object.values(args).find(
+                (v) => typeof v === 'string' && v.length > 0,
+            );
+            detail = firstStr ? String(firstStr) : '';
+        }
+    }
+    return detail ? truncateDetail(detail) : '';
 };
 
 // ---------------------------------------------------------------------------
@@ -515,9 +756,13 @@ interface ToolStep {
     tool: string;
     status: 'running' | 'done';
     label: string;
+    detail?: string;
 }
 
-const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> = ({ content, toolSteps }) => {
+// Memoized so an unrelated parent re-render (e.g. typing) doesn't
+// reflow the shimmer animation. Props are state values that only change
+// during an active stream.
+const StreamingIndicator = React.memo<{ content: string; toolSteps: ToolStep[] }>(({ content, toolSteps }) => {
     const theme = useTheme();
     return (
         <Box sx={{ mb: 2 }}>
@@ -553,6 +798,16 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
                             )}
                             <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
                                 {step.label}
+                                {step.detail ? (
+                                    <Box component="span" sx={{
+                                        ml: 0.75,
+                                        color: 'text.disabled',
+                                        fontFamily: 'monospace',
+                                        fontSize: 10.5,
+                                    }}>
+                                        {step.detail}
+                                    </Box>
+                                ) : null}
                             </Typography>
                         </Box>
                     ))}
@@ -579,55 +834,98 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
             )}
         </Box>
     );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Main chat component
 // ---------------------------------------------------------------------------
 
-export interface DataLoadingChatProps {
-    /**
-     * Optional initial text to pre-fill the chat input when the component
-     * mounts (or when the value changes). Used by external entry points
-     * (e.g. landing page quick-chat box) that want to hand off a prompt
-     * to the agent.
-     */
-    initialPrompt?: string;
-    /**
-     * Optional images (data URLs) to seed alongside `initialPrompt` —
-     * used when an external surface (e.g. landing-page agent box) has
-     * already collected pasted/attached images and is handing them off.
-     */
-    initialImages?: string[];
-    /**
-     * If true, automatically send the `initialPrompt` once on mount/change.
-     * Otherwise the prompt is only pre-filled and the user presses Enter.
-     */
-    autoSendInitialPrompt?: boolean;
+interface DataLoadingChatProps {
+    /** Called after a table is successfully loaded into the app. The
+     *  upload dialog wires this to its close handler so loading data
+     *  returns the user to the canvas. */
+    onTableLoaded?: () => void;
 }
 
-export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
-    initialPrompt,
-    initialImages,
-    autoSendInitialPrompt,
-}) => {
+export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
+    // Keep the latest callback in a ref so the stable `handleTableLoaded`
+    // identity below doesn't bust `ChatBubble`'s memoization even when the
+    // parent passes a fresh closure each render.
+    const onTableLoadedRef = useRef(onTableLoaded);
+    onTableLoadedRef.current = onTableLoaded;
+    const handleTableLoaded = useCallback(() => {
+        onTableLoadedRef.current?.();
+    }, []);
+
+    // "Continue from this section": move an older task section back to the end
+    // so it becomes the active one, then focus the input. Non-destructive — the
+    // whole thread is preserved; the top-pin effect scrolls the promoted
+    // section into view once the reordered messages render.
+    const handleContinueSection = useCallback((anchorId: string) => {
+        dispatch(dfActions.promoteDataLoadingChatSection({ anchorId }));
+        requestAnimationFrame(() => inputRef.current?.focus());
+    }, [dispatch]);
+
     const chatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const chatInProgress = useSelector((state: DataFormulatorState) => state.dataLoadingChatInProgress);
-    // External reset signal — bumped by `clearChatMessages` (manual reset
-    // button, new menu-level query, full session reset). When it changes
-    // we abort any in-flight stream, drop partial UI state, and re-seed
-    // from props if the parent provided a new prompt/images. Without
-    // this, an in-flight stream's eventual dispatches would leak into
-    // the freshly-cleared thread.
+    // External reset signal — bumped by `clearChatMessages` (manual
+    // reset button, fresh menu submission, full session reset). Used
+    // here only to abort an in-flight stream and invalidate any
+    // late-arriving dispatches from that stream via `sessionRef`.
     const chatResetCounter = useSelector((state: DataFormulatorState) => state.dataLoadingChatResetCounter ?? 0);
+    // Pending submission queued by an external surface (menu agent
+    // box, suggestion auto-run, external dialog caller). When set, we
+    // consume it in a useEffect: clear the slot first, then send the
+    // carried payload as a fresh user message via `sendMessage`.
+    // Single redux signal = no prop race.
+    const pendingSubmission = useSelector((state: DataFormulatorState) => state.dataLoadingChatPending);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
-    const existingNames = new Set(existingTables.map(tbl => tbl.id));
+    // Stable reference across renders that don't actually change the
+    // table list — without this, every keystroke in the chat input
+    // would rebuild the Set and bust `ChatBubble`'s memo equality.
+    const existingNames = React.useMemo(
+        () => new Set(existingTables.map(tbl => tbl.id)),
+        [existingTables],
+    );
+
+    // Id of the last message whose inline connection form is still pending, so
+    // only that card stays expanded (older forms auto-collapse) — design 38.
+    const latestPendingConnectorMsgId = React.useMemo(() => {
+        for (let i = chatMessages.length - 1; i >= 0; i--) {
+            const cf = chatMessages[i].connectorForm;
+            if (cf && cf.status !== 'connected') return chatMessages[i].id;
+        }
+        return undefined;
+    }, [chatMessages]);
+
+    // Group the flat message list into task "sections" split on the "new
+    // request" dividers. Each section is anchored by the id of its first
+    // message (the divider for tasks after the first, else the opening bubble).
+    // The last section is the active one; older sections can be promoted back
+    // to latest via their "Continue from this section" button.
+    const sections = React.useMemo(() => {
+        const result: { anchorId: string; dividerId: string | null; items: ChatMessage[] }[] = [];
+        let current: { anchorId: string; dividerId: string | null; items: ChatMessage[] } | null = null;
+        for (const msg of chatMessages) {
+            if (msg.divider) {
+                current = { anchorId: msg.id, dividerId: msg.id, items: [] };
+                result.push(current);
+            } else {
+                if (!current) {
+                    current = { anchorId: msg.id, dividerId: null, items: [] };
+                    result.push(current);
+                }
+                current.items.push(msg);
+            }
+        }
+        return result;
+    }, [chatMessages]);
 
     const [prompt, setPrompt] = useState('');
     const [userImages, setUserImages] = useState<string[]>([]);
@@ -645,104 +943,179 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
     const lastResetRef = useRef(chatResetCounter);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    // The scrollable messages viewport and its inner content. Load-plan rows
+    // reserve a stable spinner area while fetching, then resize once to the
+    // result's natural height (compact for short tables; five preview rows plus
+    // a count caption when truncated). Track whether the view is "pinned" so
+    // that resize follows the bottom without yanking users who scrolled up.
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const messagesContentRef = useRef<HTMLDivElement>(null);
+    const pinnedToBottomRef = useRef(true);
+    // Refs for the "scroll new section to top" behaviour. When a task section
+    // becomes the active (latest) one — either a fresh request or an older
+    // section promoted back via "Continue from this section" — we align its top
+    // with the viewport top and let the answer stream downward, ChatGPT-style.
+    // A bottom spacer reserves just enough space so a short section can still
+    // reach the top; it's sized imperatively (no React state churn per frame).
+    const latestSectionRef = useRef<HTMLDivElement>(null);
+    const bottomSpacerRef = useRef<HTMLDivElement>(null);
+    const latestHasDividerRef = useRef(false);
+    const lastPinnedAnchorRef = useRef<string | null>(null);
+    const TOP_GAP = 8;
 
-    // Auto-scroll to bottom
+    // Keep the "does the latest section start with a divider" flag in sync so
+    // the imperative spacer/scroll helpers (invoked from observers) never read
+    // stale section state.
+    const latestSection = sections[sections.length - 1];
+    latestHasDividerRef.current = !!latestSection?.dividerId;
+
+    const scrollToBottom = () => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        // Keep follow-mode synchronous. Smooth scrolling emits intermediate
+        // positions that can look user-initiated and incorrectly clear the
+        // pinned state while other dynamic content is still settling.
+        el.scrollTop = el.scrollHeight;
+    };
+    // Size the bottom spacer so the active section can sit flush against the
+    // top of the viewport (spacer = viewport height − section height). Only
+    // sections that begin with a divider get a spacer; the very first task
+    // keeps the original bottom-follow behaviour and needs none.
+    const syncBottomSpacer = () => {
+        const scrollEl = scrollContainerRef.current;
+        const spacerEl = bottomSpacerRef.current;
+        if (!scrollEl || !spacerEl) return;
+        if (!latestHasDividerRef.current) { spacerEl.style.height = '0px'; return; }
+        const secEl = latestSectionRef.current;
+        if (!secEl) { spacerEl.style.height = '0px'; return; }
+        const h = Math.max(0, scrollEl.clientHeight - secEl.offsetHeight - TOP_GAP);
+        spacerEl.style.height = `${h}px`;
+    };
+    const scrollLatestSectionToTop = () => {
+        const scrollEl = scrollContainerRef.current;
+        const secEl = latestSectionRef.current;
+        if (!scrollEl || !secEl) return;
+        const delta = secEl.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top - TOP_GAP;
+        scrollEl.scrollTop += delta;
+    };
+    const updatePinned = () => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        // Treat "within 80px of the bottom" as pinned so a slightly-short
+        // scroll still counts and content growth keeps following.
+        pinnedToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+
+    // Auto-scroll to bottom on new messages / streaming text — but only when
+    // the user is pinned to the bottom.
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (pinnedToBottomRef.current) scrollToBottom();
     }, [chatMessages, streamingContent]);
+
+    // When a section with a divider becomes the active one, pin its top to the
+    // viewport top instead of following the bottom. Keyed on the latest
+    // section's anchor id so it fires once per new/promoted section (not on
+    // every streaming delta), and skips the opening (divider-less) task.
+    useLayoutEffect(() => {
+        const latest = sections[sections.length - 1];
+        if (!latest || !latest.dividerId) {
+            lastPinnedAnchorRef.current = latest?.anchorId ?? null;
+            return;
+        }
+        if (lastPinnedAnchorRef.current === latest.anchorId) return;
+        lastPinnedAnchorRef.current = latest.anchorId;
+        pinnedToBottomRef.current = false;
+        syncBottomSpacer();
+        scrollLatestSectionToTop();
+        // A second pass after paint catches async height (markdown, previews).
+        const id = requestAnimationFrame(() => {
+            syncBottomSpacer();
+            scrollLatestSectionToTop();
+        });
+        return () => cancelAnimationFrame(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sections]);
+
+
+    // On mount (this component remounts each time the chat surface opens),
+    // jump straight to the latest message with no animation so landing on an
+    // existing conversation starts at the bottom.
+    useLayoutEffect(() => {
+        pinnedToBottomRef.current = true;
+        scrollToBottom();
+        // A second pass after paint catches content that measures its height
+        // asynchronously (markdown, table previews).
+        const id = requestAnimationFrame(() => {
+            if (pinnedToBottomRef.current) scrollToBottom();
+        });
+        return () => cancelAnimationFrame(id);
+    }, []);
+
+    // Follow content that changes size AFTER paint: load-plan previews settling
+    // from their fixed loading slot to natural result height, uploaded images,
+    // and inline extraction tables. The synchronous scroll avoids a smooth-
+    // scroll race, and the pinned guard preserves deliberate upward scrolling.
+    // Also re-sizes the top-pin spacer so a growing active section stays flush
+    // against the viewport top.
+    useEffect(() => {
+        const content = messagesContentRef.current;
+        const scrollEl = scrollContainerRef.current;
+        if (!content || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => {
+            syncBottomSpacer();
+            if (pinnedToBottomRef.current) scrollToBottom();
+        });
+        ro.observe(content);
+        if (scrollEl) ro.observe(scrollEl);
+        return () => ro.disconnect();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Auto-focus input
     useEffect(() => { inputRef.current?.focus(); }, []);
 
-    // ---- External initial prompt handling -------------------------------
-    // Pre-fill the input (and optionally auto-send) when `initialPrompt`
-    // is provided. Used by external surfaces (e.g. landing-page quick chat
-    // box) to hand off text to the agent. Auto-send only fires for a
-    // fresh conversation — we never auto-resend on remount mid-chat.
-    const hasExistingMessages = chatMessages.length > 0;
-    const [pendingAutoSend, setPendingAutoSend] = useState(false);
+    // ---- Reset handling -------------------------------------------------
+    // On external reset (counter bump from `clearChatMessages`): abort
+    // any in-flight stream, invalidate the current session token, and
+    // clear local input/streaming UI state. We deliberately do NOT
+    // re-seed anything here — a reset means "clean slate"; any new
+    // submission arrives separately via `pendingSubmission`.
     useEffect(() => {
-        // Detect external reset: abort, invalidate in-flight session,
-        // and clear all local UI state before re-seeding. Including
-        // `chatResetCounter` in the dep list also guarantees that an
-        // identical-prompt re-submission (same `initialPrompt` string)
-        // still triggers a fresh auto-send — otherwise the deps would
-        // be unchanged and the effect would skip.
-        const isReset = chatResetCounter !== lastResetRef.current;
-        if (isReset) {
-            lastResetRef.current = chatResetCounter;
-            sessionRef.current += 1;
-            abortControllerRef.current?.abort();
-            abortControllerRef.current = null;
-            setStreamingContent('');
-            setStreamingToolSteps([]);
-            setPrompt('');
-            setUserImages([]);
-            setUserAttachments([]);
-            setPendingAutoSend(false);
-        }
-
-        // Extract `[Uploaded: name]` mentions from the seeded prompt and
-        // surface them as chips. The mention template is locale-aware,
-        // so we build the regex from the current i18n value rather than
-        // hard-coding the English form.
-        const mentionTemplate = t('dataLoading.uploaded', { name: '__DF_NAME__' });
-        const mentionPattern = mentionTemplate
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            .replace('__DF_NAME__', '(.+?)');
-        const mentionRegex = new RegExp(mentionPattern, 'g');
-        let seededPrompt = initialPrompt || '';
-        const extractedNames: string[] = [];
-        if (seededPrompt) {
-            let match: RegExpExecArray | null;
-            while ((match = mentionRegex.exec(seededPrompt)) !== null) {
-                extractedNames.push(match[1]);
-            }
-            if (extractedNames.length > 0) {
-                seededPrompt = seededPrompt
-                    .replace(new RegExp(`\\n?${mentionPattern}`, 'g'), '')
-                    .trim();
-            }
-        }
-
-        const hasText = seededPrompt.trim().length > 0;
-        const hasImages = !!initialImages && initialImages.length > 0;
-        const hasAttachments = extractedNames.length > 0;
-        // Skip re-seeding the input on a user-initiated reset — the
-        // reset is meant to restore a clean slate, not re-populate the
-        // input with the prompt the user just cleared.
-        if (!isReset) {
-            if (hasText) setPrompt(seededPrompt);
-            if (hasAttachments) setUserAttachments(extractedNames);
-            if (hasImages) {
-                // Always replace, never append. The prop is a "seed" — each
-                // change represents a fresh handoff from the parent, not an
-                // additive update. Appending caused the same image to stack
-                // up every time the parent re-rendered with a new array ref.
-                setUserImages([...initialImages!]);
-            }
-        }
-        // Auto-send only on a genuinely fresh open (no prior messages,
-        // and not a user-initiated reset). Resetting means the user wants
-        // a clean slate — re-running the seeded prompt against their will
-        // would defeat the purpose of the reset button.
-        if (autoSendInitialPrompt && !isReset && (hasText || hasImages || hasAttachments) && !hasExistingMessages) {
-            setPendingAutoSend(true);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialPrompt, initialImages, autoSendInitialPrompt, chatResetCounter]);
+        if (chatResetCounter === lastResetRef.current) return;
+        lastResetRef.current = chatResetCounter;
+        sessionRef.current += 1;
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        setStreamingContent('');
+        setStreamingToolSteps([]);
+        setPrompt('');
+        setUserImages([]);
+        setUserAttachments([]);
+    }, [chatResetCounter]);
 
     const stopGeneration = () => { abortControllerRef.current?.abort(); };
 
     // ---- Send message ----
-    const sendMessage = useCallback(() => {
-        const text = prompt.trim();
-        if (!text && userImages.length === 0 && userAttachments.length === 0) return;
+    // Accepts an optional explicit payload so callers (suggestion
+    // auto-run, pending-submission consume) can submit the exact
+    // values they just chose without waiting for React state to flush.
+    // Reading via the `prompt`/`userImages`/`userAttachments` closures
+    // alone would be racy with batching and could submit the previous
+    // round's values on a fresh handoff.
+    const sendMessage = useCallback((explicit?: { text: string; images: string[]; attachments: string[]; hidden?: boolean }) => {
+        const text = (explicit?.text ?? prompt).trim();
+        const imgs = explicit?.images ?? userImages;
+        const atts = explicit?.attachments ?? userAttachments;
+        if (!text && imgs.length === 0 && atts.length === 0) return;
         if (chatInProgress) return;
-        const imageAttachments: ChatAttachment[] = userImages.map((url, i) => ({
+        // A hidden trigger (e.g. a post-connect continuation) is sent to the
+        // agent as context but never rendered as a user bubble, and it must
+        // not disturb whatever the user may be typing in the input box.
+        const hidden = explicit?.hidden ?? false;
+        const imageAttachments: ChatAttachment[] = imgs.map((url, i) => ({
             type: 'image' as const, name: `image-${i + 1}`, url,
         }));
-        const fileAttachments: ChatAttachment[] = userAttachments.map(name => ({
+        const fileAttachments: ChatAttachment[] = atts.map(name => ({
             type: 'file' as const, name,
         }));
         const attachments: ChatAttachment[] = [...imageAttachments, ...fileAttachments];
@@ -751,12 +1124,13 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
         // chips (rendered from `attachments`). The agent payload below
         // re-injects `[Uploaded: name]` mentions so the backend still
         // sees the file references inline.
-        const displayText = text || (userImages.length > 0 ? t('dataLoading.defaultImageMessage') : '');
+        const displayText = text || (imgs.length > 0 ? t('dataLoading.defaultImageMessage') : '');
 
         const userMsg: ChatMessage = {
             id: `msg-${Date.now()}-user`, role: 'user',
             content: displayText,
             attachments: attachments.length > 0 ? attachments : undefined,
+            hidden: hidden || undefined,
             timestamp: Date.now(),
         };
 
@@ -769,13 +1143,15 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
 
         dispatch(dfActions.addChatMessage(userMsg));
         dispatch(dfActions.setDataLoadingChatInProgress(true));
-        setPrompt('');
-        setUserImages([]);
-        setUserAttachments([]);
+        if (!hidden) {
+            setPrompt('');
+            setUserImages([]);
+            setUserAttachments([]);
+        }
         setStreamingContent('');
         setStreamingToolSteps([]);
 
-        const allMessages = [...chatMessages, userMsg].map(m => {
+        const allMessages = [...chatMessages, userMsg].filter(m => !m.divider).map(m => {
             // Re-hydrate `[Uploaded: name]` mentions from file attachments
             // so the backend still sees them as text references, while
             // the chat UI shows clean text + chips.
@@ -799,8 +1175,10 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                 const tables: InlineTablePreview[] = [];
                 const pendingLoads: PendingTableLoad[] = [];
                 let loadPlanRef: LoadPlan | undefined;
+                let connectorFormRef: ConnectorFormPrompt | undefined;
                 const rawEvents: any[] = [];
                 let streamingToolStepsRef: ToolStep[] = [];
+                let continueOffered = false;
 
             // Helper: process action objects (used in both tool_result and actions events)
             const processActions = (actionList: any[]) => {
@@ -832,9 +1210,18 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                                 sortBy: c.sort_by,
                                 sortOrder: c.sort_order,
                                 resolutionError: c.resolution_error,
-                                selected: !c.resolution_error,
+                                // Honor the agent's recommendation. Missing
+                                // `selected` means an older backend, so retain
+                                // the historical select-all fallback.
+                                selected: !c.resolution_error && c.selected !== false,
                             })),
                             reasoning: action.reasoning,
+                        };
+                    } else if (action.type === 'connect_form') {
+                        connectorFormRef = {
+                            sourceType: action.source_type,
+                            prefilled: action.prefilled || undefined,
+                            status: 'pending',
                         };
                     }
                 }
@@ -866,8 +1253,9 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                         break;
                     case 'tool_start': {
                         const label = TOOL_LABEL_KEYS[(event as any).tool] ? t(TOOL_LABEL_KEYS[(event as any).tool]) : (event as any).tool;
+                        const detail = summarizeToolArgs((event as any).tool, (event as any).args);
                         const newSteps = [...streamingToolStepsRef];
-                        newSteps.push({ tool: (event as any).tool, status: 'running', label });
+                        newSteps.push({ tool: (event as any).tool, status: 'running', label, detail });
                         streamingToolStepsRef = newSteps;
                         setStreamingToolSteps(newSteps);
                         if ((event as any).tool === 'execute_python' && (event as any).code) {
@@ -906,6 +1294,9 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                     case 'done':
                         fullText = (event as any).full_text || fullText;
                         break;
+                    case 'continue_prompt':
+                        continueOffered = true;
+                        break;
                     case 'error':
                         fullText += `\n\n**${t('dataLoading.error')}:** ${event.error?.message || t('dataLoading.error')}`;
                         break;
@@ -923,6 +1314,8 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                 tables: tables.length > 0 && pendingLoads.length === 0 ? tables : undefined,
                 pendingLoads: pendingLoads.length > 0 ? pendingLoads : undefined,
                 loadPlan: loadPlanRef,
+                connectorForm: connectorFormRef,
+                canContinue: continueOffered || undefined,
                 timestamp: Date.now(),
             };
             dispatch(dfActions.addChatMessage(assistantMsg));
@@ -967,25 +1360,59 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                 }
             }
         })();
-    }, [prompt, userImages, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent, t]);
+    }, [prompt, userImages, userAttachments, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent, t]);
 
-    // Auto-send the initial prompt once it has been applied to state.
+    // Consume a queued submission from any external surface (menu
+    // agent input, suggestion auto-run, or a cross-component handoff
+    // routed through `startDataLoadingChat`). Single redux signal,
+    // single consumer — no prop race.
+    //
+    // Idempotency note: under React.StrictMode (dev), effects are
+    // intentionally double-invoked on mount with the *same* closure,
+    // so the `clearDataLoadingChatPending` dispatch in the first run
+    // isn't visible to the second run. `lastConsumedRef` tracks the
+    // exact payload object we've already sent, so the second
+    // invocation short-circuits before calling `sendMessage` again.
+    const lastConsumedRef = useRef<typeof pendingSubmission>(null);
     useEffect(() => {
-        if (!pendingAutoSend) return;
+        if (!pendingSubmission) return;
+        if (pendingSubmission === lastConsumedRef.current) return;
         if (chatInProgress) return;
-        if (prompt.trim().length === 0 && userImages.length === 0) return;
-        setPendingAutoSend(false);
-        sendMessage();
-    }, [pendingAutoSend, prompt, userImages, chatInProgress, sendMessage]);
+        lastConsumedRef.current = pendingSubmission;
+        const payload = pendingSubmission;
+        dispatch(dfActions.clearDataLoadingChatPending());
+        sendMessage(payload);
+    }, [pendingSubmission, chatInProgress, sendMessage, dispatch]);
 
     // Reuse the shared sample-task list so this in-session panel stays in
     // sync with the upload-dialog entry point (`UnifiedDataUploadDialog`).
+    // Auto-run is wired through the redux pending slot so the click —
+    // even on a chat with prior history — preserves the thread, appends a
+    // "new request" divider, and queues the new submission.
     const focusSuggestions = React.useMemo(() => buildDataLoadingSuggestions({
         t,
         setInput: setPrompt,
         setImages: setUserImages,
         setAttachments: setUserAttachments,
-    }), [t]);
+        requestAutoSend: (payload) => {
+            // Preserve prior history (Option A): a sample-task click on a chat
+            // with existing messages appends a "new request" divider and queues
+            // the submission rather than wiping the thread.
+            dispatch(dfActions.queueDataLoadingTask(payload));
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, dispatch]);
+
+    const quickActions = React.useMemo(() => buildDataLoadingQuickActions({
+        t,
+        setInput: setPrompt,
+        setImages: setUserImages,
+        setAttachments: setUserAttachments,
+        requestAutoSend: (payload) => {
+            dispatch(dfActions.queueDataLoadingTask(payload));
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [t, dispatch]);
 
     const isEmpty = chatMessages.length === 0 && !streamingContent;
 
@@ -999,19 +1426,26 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
     return (
         <Box sx={{
             display: 'flex', flexDirection: 'column',
-            height: '100%', width: '100%', overflow: 'hidden',
+            height: '100%', minHeight: 0, width: '100%', overflow: 'hidden',
         }}>
             {/* ── Messages area ─────────────────────────────────── */}
-            <Box sx={{
-                flex: 1, overflow: 'auto',
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-            }}>
-              <Box sx={{
-                width: '100%', maxWidth: 640,
-                px: 2, py: 2,
-                display: 'flex', flexDirection: 'column',
-                ...(isEmpty ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}),
-              }}>
+            <Box
+                ref={scrollContainerRef}
+                onScroll={updatePinned}
+                sx={{
+                    flex: 1, minHeight: 0, overflow: 'auto',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                }}
+            >
+              <Box
+                ref={messagesContentRef}
+                sx={{
+                    width: '100%', maxWidth: 640,
+                    px: 2, py: 2,
+                    display: 'flex', flexDirection: 'column',
+                    ...(isEmpty ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}),
+                }}
+              >
                 {isEmpty ? (
                     <Box sx={{ maxWidth: 520, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
@@ -1046,11 +1480,50 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                     </Box>
                 ) : (
                     <>
-                        {chatMessages.map((msg) => (
-                            <ChatBubble key={msg.id} message={msg} existingNames={existingNames} />
-                        ))}
-                        {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
-                        {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}
+                        {sections.map((section, idx) => {
+                            const isLatest = idx === sections.length - 1;
+                            const bubbles = section.items.map((msg) => (
+                                msg.hidden
+                                    ? null
+                                    : <ChatBubble
+                                        key={msg.id}
+                                        message={msg}
+                                        existingNames={existingNames}
+                                        onTableLoaded={handleTableLoaded}
+                                        isLatestPendingConnector={msg.id === latestPendingConnectorMsgId}
+                                        onContinue={() => sendMessage({ text: 'Please continue.', images: [], attachments: [] })}
+                                    />
+                            ));
+                            if (isLatest) {
+                                // Active section: wrapped so its height/top can be
+                                // measured for the "scroll to top" behaviour. Only
+                                // this section shows its "New request" boundary.
+                                return (
+                                    <Box
+                                        key={section.anchorId}
+                                        ref={latestSectionRef}
+                                        sx={{ display: 'flex', flexDirection: 'column' }}
+                                    >
+                                        {section.dividerId && <TaskDivider />}
+                                        {bubbles}
+                                        {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
+                                        {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}
+                                    </Box>
+                                );
+                            }
+                            // Older section: no divider; a "Continue from this
+                            // section" button marks the boundary and promotes it.
+                            const hasVisible = section.items.some((m) => !m.hidden);
+                            return (
+                                <React.Fragment key={section.anchorId}>
+                                    {bubbles}
+                                    {hasVisible && (
+                                        <ContinueSectionButton onClick={() => handleContinueSection(section.anchorId)} />
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
+                        <div ref={bottomSpacerRef} style={{ flexShrink: 0 }} />
                         <div ref={messagesEndRef} />
                     </>
                 )}
@@ -1060,12 +1533,36 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
             {/* ── Input area ─────────────────────────────────────── */}
             <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, pb: 1.5, pt: 0.75 }}>
                 <Box sx={{ width: '100%', maxWidth: 640 }}>
+                    {isEmpty && quickActions.length > 0 && (
+                        <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
+                            {quickActions.map((qa) => (
+                                <Chip
+                                    key={qa.kind}
+                                    icon={<BoltOutlinedIcon />}
+                                    label={qa.label}
+                                    onClick={qa.onClick}
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{
+                                        fontSize: 11.5, height: 26, borderRadius: 2,
+                                        color: 'text.secondary',
+                                        borderColor: alpha(theme.palette.text.primary, 0.12),
+                                        '& .MuiChip-icon': { fontSize: 14, ml: 0.5, color: 'text.disabled' },
+                                        '&:hover': {
+                                            bgcolor: 'action.hover',
+                                            borderColor: alpha(theme.palette.text.primary, 0.2),
+                                        },
+                                    }}
+                                />
+                            ))}
+                        </Box>
+                    )}
                     <AgentChatInput
                         value={prompt}
                         onChange={setPrompt}
                         images={userImages}
                         onImagesChange={setUserImages}
-                        onSend={sendMessage}
+                        onSend={() => sendMessage()}
                         onStop={stopGeneration}
                         inProgress={chatInProgress}
                         placeholder={t('dataLoading.placeholder')}
@@ -1076,8 +1573,13 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                             formData.append('file', file);
                             apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
                                 method: 'POST', body: formData,
-                            }).then(() => {
-                                setUserAttachments(prev => [...prev, file.name]);
+                            }).then(({ data }) => {
+                                // The backend hash-suffixes the filename
+                                // (e.g. `name_a1b2c3d4.xlsx`). Store the
+                                // server-assigned name so the `[Uploaded:]`
+                                // mention points to the real scratch file.
+                                const scratchName = (data?.path || `scratch/${file.name}`).replace(/^scratch\//, '');
+                                setUserAttachments(prev => [...prev, scratchName]);
                             }).catch(err => console.error('Upload failed:', err));
                         }}
                         attachments={userAttachments}

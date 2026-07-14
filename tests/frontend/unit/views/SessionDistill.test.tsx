@@ -6,9 +6,9 @@
  * (design-docs/24-session-scoped-distillation.md).
  *
  * Covers:
- *   - buildSessionExperienceContext: state-independent payload assembly
+ *   - buildSessionWorkflowContext: state-independent payload assembly
  *     (trimming ladder, stat aggregation).
- *   - findSessionExperience: lookup by workspace id.
+ *   - findSessionWorkflow: lookup by workspace id.
  */
 
 import '@testing-library/jest-dom/vitest';
@@ -25,8 +25,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 import {
-    buildSessionExperienceContext,
-    findSessionExperience,
+    buildSessionWorkflowContext,
+    findSessionWorkflow,
     type SessionThread,
 } from '../../../../src/views/SessionDistill';
 import type { KnowledgeItem } from '../../../../src/api/knowledgeApi';
@@ -57,9 +57,9 @@ function toolCall(name: string, args?: string): Record<string, any> {
     };
 }
 
-describe('buildSessionExperienceContext', () => {
+describe('buildSessionWorkflowContext', () => {
     it('returns null when no threads are supplied', () => {
-        const result = buildSessionExperienceContext(WORKSPACE, []);
+        const result = buildSessionWorkflowContext(WORKSPACE, []);
         expect(result).toBeNull();
     });
 
@@ -68,7 +68,7 @@ describe('buildSessionExperienceContext', () => {
             makeThread('a', [userPrompt('load gas prices'), createTable('df_a')]),
             makeThread('b', [userPrompt('filter to 2024'), createTable('df_b')]),
         ];
-        const result = buildSessionExperienceContext(WORKSPACE, threads);
+        const result = buildSessionWorkflowContext(WORKSPACE, threads);
         expect(result).not.toBeNull();
         expect(result!.threads).toHaveLength(2);
         expect(result!.payload.workspace_id).toBe('ws-1');
@@ -81,7 +81,7 @@ describe('buildSessionExperienceContext', () => {
             makeThread('a', [userPrompt('a'), createTable('df_a')]),
             makeThread('b', [userPrompt('b'), createTable('df_b1'), createTable('df_b2')]),
         ];
-        const result = buildSessionExperienceContext(WORKSPACE, threads);
+        const result = buildSessionWorkflowContext(WORKSPACE, threads);
         expect(result!.stats.threadCount).toBe(2);
         expect(result!.stats.stepCount).toBe(3);
     });
@@ -96,7 +96,7 @@ describe('buildSessionExperienceContext', () => {
                 createTable(`df_${i}`),
             ]),
         );
-        const result = buildSessionExperienceContext(WORKSPACE, threads);
+        const result = buildSessionWorkflowContext(WORKSPACE, threads);
         expect(result).not.toBeNull();
         // After tool-call drop the prompts + create_tables fit, so all
         // threads survive but tool calls are gone.
@@ -116,14 +116,14 @@ describe('buildSessionExperienceContext', () => {
                 createTable(`df_${i}`, { columns: wideCols }),
             ]),
         );
-        const result = buildSessionExperienceContext(WORKSPACE, threads);
+        const result = buildSessionWorkflowContext(WORKSPACE, threads);
         expect(result).not.toBeNull();
         expect(result!.threads.length).toBeLessThan(80);
         expect(result!.notes.some(n => n.includes('omitted') && n.includes('thread'))).toBe(true);
     });
 });
 
-describe('findSessionExperience', () => {
+describe('findSessionWorkflow', () => {
     function item(path: string, sourceWorkspaceId?: string): KnowledgeItem {
         return {
             title: path, tags: [], path, source: 'distill', created: '2026-05-06',
@@ -137,17 +137,17 @@ describe('findSessionExperience', () => {
             item('gas.md', 'ws-1'),
             item('bar.md', 'ws-2'),
         ];
-        const m = findSessionExperience(items, 'ws-1');
+        const m = findSessionWorkflow(items, 'ws-1');
         expect(m?.path).toBe('gas.md');
     });
 
     it('returns undefined when nothing matches', () => {
         const items = [item('foo.md', 'ws-9')];
-        expect(findSessionExperience(items, 'ws-1')).toBeUndefined();
+        expect(findSessionWorkflow(items, 'ws-1')).toBeUndefined();
     });
 
     it('returns undefined when workspaceId is empty', () => {
         const items = [item('foo.md', 'ws-1')];
-        expect(findSessionExperience(items, '')).toBeUndefined();
+        expect(findSessionWorkflow(items, '')).toBeUndefined();
     });
 });

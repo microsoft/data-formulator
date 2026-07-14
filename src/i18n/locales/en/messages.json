@@ -68,6 +68,7 @@
       "emptyDataframe": "Output DataFrame is empty (0 rows). Check filters or data loading.",
       "fieldsNotFound": "Chart encoding fields not found in output DataFrame: {{missing}}. Available columns: {{available}}",
       "llmApiError": "LLM API error",
+      "miniNoChart": "I couldn't build a working chart for this request{{error}}. Try rephrasing it, or switch to a more capable model for mini mode.",
       "llmEmptyResponse": "LLM returned empty response",
       "parseActionFailed": "Failed to parse agent action from LLM response",
       "unknownAction": "Unknown action: {{actionType}}",

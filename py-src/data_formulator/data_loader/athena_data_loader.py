@@ -58,6 +58,7 @@ class AthenaDataLoader(ExternalDataLoader):
     """
 
     DISPLAY_NAME = "Athena"
+    DESCRIPTION = "Query data in Amazon S3 using AWS Athena (Presto SQL)."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:

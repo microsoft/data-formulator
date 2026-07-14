@@ -10,6 +10,7 @@ import pyarrow.parquet as pq
 from pyarrow import fs as pa_fs
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class S3DataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Amazon S3"
+    DESCRIPTION = "Load CSV, JSON, or Parquet files from an Amazon S3 bucket."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -111,6 +113,10 @@ class S3DataLoader(ExternalDataLoader):
         logger.info(f"Fetched {arrow_table.num_rows} rows from S3 [Arrow-native]")
         
         return arrow_table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Read the file into DuckDB and compute the SPJQ there."""
+        return probe_utils.run_probe_on_duckdb(self, path, query, scan_size=MAX_IMPORT_ROWS)
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List available files from S3 bucket."""

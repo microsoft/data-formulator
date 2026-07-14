@@ -7,6 +7,7 @@ import pyarrow as pa
 import pyodbc
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 log = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ def _is_nan(value) -> bool:
 
 class MSSQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "SQL Server"
+    DESCRIPTION = "Connect to a Microsoft SQL Server database to query tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -262,6 +264,27 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         log.info(f"Fetched {arrow_table.num_rows} rows from SQL Server")
         
         return arrow_table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to T-SQL (TOP / bracket quoting) and run it."""
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        src = ".".join(str(p) for p in path)
+        if "." in src:
+            schema, table = src.split(".", 1)
+        else:
+            schema, table = "dbo", src
+        dialect = probe_utils.MSSQL
+        try:
+            relation = (
+                f"{probe_utils.quote_ident(schema.strip('[]'), dialect)}."
+                f"{probe_utils.quote_ident(table.strip('[]'), dialect)}"
+            )
+        except ValueError as exc:
+            return {"error": f"invalid table identifier: {exc}"}
+        return probe_utils.probe_via_native_sql(
+            query, relation=relation, dialect=dialect, execute=self._execute_query,
+        )
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List all tables from SQL Server database.

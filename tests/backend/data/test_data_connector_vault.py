@@ -374,7 +374,8 @@ class TestAutoReconnect:
     def test_auth_status_not_connected_no_vault(self, client, source):
         """POST /get-status with no loader and no vault = not connected."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
-             patch.object(DataConnector, "_get_vault", return_value=None):
+               patch.object(DataConnector, "_get_vault", return_value=None), \
+               patch.object(DataConnector, "_try_ambient_reconnect", return_value=None):
             source._loaders.clear()
             resp = client.post("/api/connectors/get-status", json={"connector_id": "test_db"})
             data = resp.get_json()
@@ -411,7 +412,8 @@ class TestNoVaultFallback:
     def test_require_loader_no_vault_raises(self, source):
         """Without vault and without in-memory loader, require_loader raises."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
-             patch.object(DataConnector, "_get_vault", return_value=None):
+             patch.object(DataConnector, "_get_vault", return_value=None), \
+             patch.object(DataConnector, "_try_ambient_reconnect", return_value=None):
             source._loaders.clear()
             with pytest.raises(ValueError, match="Not connected"):
                 source._require_loader()
