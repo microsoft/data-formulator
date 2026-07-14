@@ -360,6 +360,7 @@ def analyst_streaming():
     other_threads = content.get("other_threads", None)
     primary_tables = content.get("primary_tables", None)
     attached_images = content.get("attached_images", None)
+    scratch_files = content.get("scratch_files", None)
     charts = content.get("charts", None)
     resume_trajectory = content.get("trajectory", None)
     completed_step_count = content.get("completed_step_count", 0)
@@ -427,6 +428,7 @@ def analyst_streaming():
                 primary_tables=primary_tables,
                 attached_images=attached_images,
                 charts=charts,
+                scratch_files=scratch_files,
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 

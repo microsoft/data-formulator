@@ -585,6 +585,7 @@
     "placeholderFormulateEmphasis": "✏️ 整理数据",
     "formulateAndOverride": "整理并覆盖",
     "agentWorking": "Agent 努力工作中...",
+    "attachUploadFailed": "附加 {{name}} 失败",
     "replyPlaceholder": "回复 Agent 的问题...",
     "explorePlaceholder": "有什么问题，有什么想要探索的？（用 @ 添加上下文）",
     "explorePlaceholderSingleTable": "有什么问题，有什么想要探索的？",

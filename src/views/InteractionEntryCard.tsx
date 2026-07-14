@@ -17,6 +17,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { InteractionEntry } from '../components/ComponentType';
 import { AgentIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
@@ -164,7 +165,8 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                 ),
                 code: ({ children }) => (
                     <Box component="code" sx={{
-                        fontSize: 'inherit', fontFamily: 'inherit',
+                        fontSize: '0.9em',
+                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
                         bgcolor: 'rgba(0,0,0,0.04)', px: 0.4, py: 0.1, borderRadius: '3px',
                     }}>
                         {children}
@@ -257,9 +259,26 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
                 ...clickSx,
             }}>
-                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                     {renderFieldHighlights(text, palette.main)}
                 </Typography>
+                {entry.attachments && entry.attachments.length > 0 && (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px', mt: 0.5 }}>
+                        {entry.attachments.map((name, i) => (
+                            <Box key={i} sx={{
+                                display: 'inline-flex', alignItems: 'center', gap: '2px',
+                                maxWidth: '100%', fontSize: 10, fontFamily: theme.typography.fontFamily,
+                                color: theme.palette.text.secondary,
+                                backgroundColor: alpha(theme.palette.text.primary, 0.05),
+                                border: `1px solid ${borderColor.divider}`,
+                                borderRadius: '4px', px: '5px', py: '1px',
+                            }}>
+                                <AttachFileIcon sx={{ fontSize: 11, transform: 'rotate(45deg)' }} />
+                                <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
+                            </Box>
+                        ))}
+                    </Box>
+                )}
             </Box>
         );
     }
@@ -487,6 +506,8 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         fontSize: '11px',
                         color,
                         py: '1px',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
                         ...((forceClampText || (canClampText && !expanded)) ? {
                             display: '-webkit-box',
                             WebkitLineClamp: TEXT_CLAMP_LINES,

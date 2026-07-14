@@ -533,6 +533,7 @@
     "placeholderFormulateEmphasis": "✏️ formulate data",
     "formulateAndOverride": "formulate and override",
     "agentWorking": "Agent is working...",
+    "attachUploadFailed": "Failed to attach {{name}}",
     "replyPlaceholder": "Reply to agent's question...",
     "explorePlaceholder": "Ask questions or describe what to explore (add context with @)",
     "explorePlaceholderSingleTable": "Ask questions or describe what to explore",

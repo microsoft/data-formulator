@@ -442,6 +442,7 @@ class MiniAnalystAgent(AnalystAgent):
         primary_tables: list[str] | None = None,
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
+        scratch_files: list[str] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Make a single analytic decision and stop.
 
@@ -486,6 +487,7 @@ class MiniAnalystAgent(AnalystAgent):
                     input_tables, user_question, focused_thread, other_threads,
                     primary_tables=primary_tables,
                     attached_images=attached_images, charts=charts,
+                    scratch_files=scratch_files,
                 )
             else:
                 messages = trajectory

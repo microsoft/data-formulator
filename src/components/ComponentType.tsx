@@ -67,6 +67,10 @@ export interface InteractionEntry {
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
+    /** Names of files / images the user attached with this prompt, surfaced as
+     *  chips in the message bubble (the file bytes live in workspace scratch/,
+     *  not here). */
+    attachments?: string[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
     /** For 'delegate' entries: which peer agent the Data Agent wants to

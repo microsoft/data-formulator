@@ -25,7 +25,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
-import { streamRequest } from '../app/apiClient';
+import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
 import { persistEphemeralDerivedTable } from '../app/tableThunks';
 import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey } from "../components/ComponentType";
@@ -127,11 +127,13 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
                         sx={{
                             position: 'absolute', bottom: 8, right: 8,
                             width: 24, height: 24, p: 0,
-                            bgcolor: 'transparent',
+                            bgcolor: alpha(theme.palette.error.main, 0.08),
                             color: 'error.main',
+                            border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
                             '&:hover': {
-                                bgcolor: alpha(theme.palette.error.main, 0.08),
+                                bgcolor: alpha(theme.palette.error.main, 0.16),
                                 color: 'error.dark',
+                                borderColor: alpha(theme.palette.error.main, 0.35),
                             },
                         }}
                     >
@@ -199,7 +201,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
     const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
     const [attachedImages, setAttachedImages] = useState<string[]>([]);
-    const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
+    // Non-image attachments are uploaded to the workspace scratch/ folder (raw
+    // bytes preserved) so the agent can read them with execute_python_script
+    // (pandas) or hand off to data loading — instead of inlining text (which
+    // breaks on binary/Excel and large files). `scratchPath` is the returned
+    // `scratch/<name>_<hash>.<ext>`.
+    const [attachedFiles, setAttachedFiles] = useState<{ name: string; scratchPath: string }[]>([]);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
@@ -364,48 +371,57 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [focusedTableId]);
 
     // Handle paste events to capture images
-    const handlePaste = React.useCallback((e: React.ClipboardEvent) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.startsWith('image/')) {
-                e.preventDefault();
-                const file = items[i].getAsFile();
-                if (!file) continue;
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const dataUrl = reader.result as string;
-                    setAttachedImages(prev => [...prev, dataUrl]);
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-    }, []);
-
     // Attach files as conversation context. Images become reference images
-    // (sent to the model as attachments); text-like files are read as text
-    // and folded into the agent prompt as context.
-    const handleAttachFiles = React.useCallback((fileList: FileList | null) => {
+    // (sent to the model as attachments); every other file is uploaded to the
+    // workspace scratch/ folder (raw bytes) and referenced by path, so the
+    // agent reads it via execute_python_script / delegate rather than getting
+    // its bytes inlined into the prompt. Accepts a FileList (from the "+"
+    // input) or a File[] (from a paste).
+    const handleAttachFiles = React.useCallback((fileList: FileList | File[] | null) => {
         if (!fileList) return;
-        const MAX_TEXT_CHARS = 50000;
         Array.from(fileList).forEach(file => {
             if (file.type.startsWith('image/')) {
                 const reader = new FileReader();
                 reader.onload = () => setAttachedImages(prev => [...prev, reader.result as string]);
                 reader.readAsDataURL(file);
             } else {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    let content = (reader.result as string) || '';
-                    if (content.length > MAX_TEXT_CHARS) {
-                        content = content.slice(0, MAX_TEXT_CHARS) + '\n…[truncated]';
-                    }
-                    setAttachedFiles(prev => [...prev, { name: file.name, content }]);
-                };
-                reader.readAsText(file);
+                const formData = new FormData();
+                formData.append('file', file);
+                apiRequest(getUrls().SCRATCH_UPLOAD_URL, { method: 'POST', body: formData })
+                    .then(({ data }) => {
+                        const scratchPath = (data as any)?.path || `scratch/${file.name}`;
+                        setAttachedFiles(prev => [...prev, { name: file.name, scratchPath }]);
+                    })
+                    .catch(err => {
+                        console.error('Scratch upload failed:', err);
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(), type: 'error',
+                            component: 'data-agent',
+                            value: t('chartRec.attachUploadFailed', { name: file.name, defaultValue: `Failed to attach ${file.name}` }),
+                        }));
+                    });
             }
         });
-    }, []);
+    }, [dispatch, t]);
+
+    // Paste handler: capture pasted files — images AND other files (CSV, Excel,
+    // etc.) — so the chat box accepts the same attachments as the "+" button,
+    // not just images. When the clipboard holds no files (plain text), we let
+    // the paste fall through to the textarea as normal.
+    const handlePaste = React.useCallback((e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        const files: File[] = [];
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].kind === 'file') {
+                const f = items[i].getAsFile();
+                if (f) files.push(f);
+            }
+        }
+        if (files.length === 0) return;
+        e.preventDefault();
+        handleAttachFiles(files);
+    }, [handleAttachFiles]);
 
     // Collect table IDs from root up to (and including) the focused table for agent action matching
     const threadTableIds = React.useMemo(() => {
@@ -606,13 +622,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, displayPrompt?: string) => {
         if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
-        // Fold attached reference files into the prompt the agent sees, while
-        // keeping the timeline bubble (displayContent) clean for the user.
-        const fileContext = attachedFiles.length > 0
-            ? '\n\n' + attachedFiles.map(f => `[Attached file: ${f.name}]\n${f.content}`).join('\n\n')
-            : '';
-        const agentPrompt = prompt + fileContext;
-        const cleanDisplay = displayPrompt ?? (fileContext ? prompt : undefined);
+        // Non-image attachments live in the workspace scratch/ folder; we pass
+        // their paths to the agent (see requestBody.scratch_files) rather than
+        // inlining their bytes. The prompt/bubble stay clean.
+        const agentPrompt = prompt;
+        const cleanDisplay = displayPrompt;
+        // Names shown as chips on the user's message bubble so the sent message
+        // reflects what was attached (files live in scratch/, images inline).
+        const attachmentNames = [
+            ...attachedFiles.map(f => f.name),
+            ...attachedImages.map((_, i) => attachedImages.length > 1 ? `image ${i + 1}` : 'image'),
+        ];
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
         const currentTable = tables.find(t => t.id === focusedTableId);
@@ -647,6 +667,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
                 from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
                 ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
+                ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                 timestamp: Date.now()
             }}));
             dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
@@ -670,6 +691,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             })),
             primary_tables: primaryTableNames,
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
+            ...(attachedFiles.length > 0 ? { scratch_files: attachedFiles.map(f => f.scratchPath) } : {}),
             model: activeModel,
             max_iterations: 10,
             agent_mode: config.miniMode ? 'mini' : 'standard',
@@ -763,11 +785,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // The user reply was already appended above, add to local accumulator too
             currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
                 ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
+                ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                 timestamp: Date.now() });
         } else {
             const initialEntries: InteractionEntry[] = [
                 { from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
                     ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
+                    ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                     timestamp: Date.now() }
             ];
             createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);

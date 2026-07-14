@@ -371,6 +371,7 @@ class AnalystAgent:
         primary_tables: list[str] | None = None,
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
+        scratch_files: list[str] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -434,6 +435,7 @@ class AnalystAgent:
                     primary_tables=primary_tables,
                     attached_images=attached_images,
                     charts=charts,
+                    scratch_files=scratch_files,
                 )
                 rlog.log(
                     "context_built",
@@ -1246,6 +1248,7 @@ class AnalystAgent:
         primary_tables: list[str] | None = None,
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
+        scratch_files: list[str] | None = None,
     ) -> list[dict]:
         """Build the initial messages with 3-tier context."""
         table_summaries = self._build_lightweight_table_context(input_tables, primary_tables=primary_tables)
@@ -1281,6 +1284,25 @@ class AnalystAgent:
             if always_apply_rules:
                 rules_text = "\n\n".join([f"### {r['title']}\n{r['body']}" for r in always_apply_rules])
                 user_content += f"[USER RULES - MUST FOLLOW]\n\n{rules_text}\n\n"
+
+        # Non-image attachments were uploaded to the workspace scratch/ folder
+        # (raw bytes). Surface them and the two natural uses: read as context
+        # for analysis, or bring into the workspace via data loading (which
+        # shares scratch/ access). Keep it neutral — the agent picks.
+        if scratch_files:
+            file_list = "\n".join(f"- {p}" for p in scratch_files)
+            user_content += (
+                "[ATTACHED FILES]\n\n"
+                "The user attached file(s), saved in the workspace scratch/ "
+                "folder:\n"
+                f"{file_list}\n\n"
+                "You can use them two ways: read a file with execute_python_script "
+                "(e.g. pd.read_excel('scratch/<name>') or "
+                "pd.read_csv('scratch/<name>')) to use as context for your "
+                "analysis, or \u2014 if it's data to bring into the workspace \u2014 "
+                "delegate to data_loading, which can read the same scratch/ "
+                "files.\n\n"
+            )
 
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
