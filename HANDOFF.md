@@ -4,8 +4,9 @@
 
 ## Azure SQL Connector Deployment
 
-- Production revision `ca-dataformulator--7z7e3f1` is healthy at 100% traffic.
-- Image: `recreate-11dfb1fd3d3c` from source commit `11dfb1f`.
+- Production revision `ca-dataformulator--azd-1784046335` is healthy at 100%
+  traffic.
+- Image: `azd-deploy-1784045589` from runtime source commit `f960263`.
 - Public discovery exposes distinct `mssql` (credentials) and `azure_sql`
   (delegated Microsoft Entra) connector types.
 - Entra application `Data Formulator GCX DEV` is configured with the production
@@ -22,27 +23,32 @@
   Cloud Application Administrator or Application Administrator must grant
   tenant-wide consent once for Azure SQL `user_impersonation` on app client ID
   `7cced1c1-4eb6-4adb-a149-9874baab45b0`.
-- DF-020 and DF-021 are deployed: ODBC connection values are hardened and the
-  eight-state OAuth limit is isolated per signed browser session.
+- DF-020, DF-021, DF-024, and DF-025 are deployed: ODBC connection values are
+  hardened, the eight-state OAuth limit is isolated per signed browser session,
+  Example Datasets initializes on first use, and Azure OpenAI calls have bounded
+  timeout/retry/stream behavior on LiteLLM 1.91.1.
 - Azure CLI is scoped to the Microsoft tenant, but the signed-in identity has
   no active direct or transitive Entra directory role and cannot grant consent.
 
 ## Current State
 
-- Current local and `origin/main` runtime baseline is `11dfb1f` on `main`.
+- The deployed runtime source baseline is `f960263` on `main`. Later Agency and
+  documentation commits do not change the product image.
+- `f960263` resolves the built-in no-auth connector lifecycle defect (DF-024)
+  and bounds Azure OpenAI/LiteLLM timeouts, retries, streaming, and dependency
+  versions (DF-025); both are production-verified.
 - `11dfb1f` adds stale browser-workspace reconciliation and removes startup
   console/preload noise; `95465e1` records the meeting and architecture package.
 - PR #376 is open and its CLA check passes.
 - The stale `yarn.lock` fix is `4e185e9`.
-- Preserve unrelated Agency Integration Starter changes in the working tree.
 - `docs/plans/ISSUES.md`, titled Data Formulator Audit and Change Log, contains the validated audit findings and operations record.
 
 ## Last Verified Production State
 
 - Resource group: `rg-data-formulator`
-- Revision: `ca-dataformulator--7z7e3f1`
-- Image: `recreate-11dfb1fd3d3c`
-- Image digest: `sha256:a139f24ddb77ddd6056f12eb69a4a5420e397929f40532bad181a8bd38d45152`
+- Revision: `ca-dataformulator--azd-1784046335`
+- Image: `azd-deploy-1784045589`
+- Image digest: `sha256:34755ba63b62236cf2bb023a00c9b9cae6a89acf361fff5cef8041c17cbbf482`
 - Domain: `data.gcxteam.com`
 - `gpt-5.4-mini`: connected, 260K TPM, default model
 - `gpt-5.4-nano`: connected, 2.009M TPM
@@ -50,6 +56,7 @@
 - All three production models pass connectivity checks.
 - The managed Pro deployment was deleted. Its quota use is 0 of 160.
 - The cross-subscription custom domain and managed TLS certificate are healthy.
+- The immediate rollback image is `recreate-11dfb1fd3d3c` from `11dfb1f`.
 - Live state was verified directly; it does not imply that every committed Bicep declaration has been applied as a full deployment.
 
 ## Initial Publication Scope
@@ -92,7 +99,7 @@ The same publication added:
 - Delegated popup frontend suite: 7 tests passed.
 - Production frontend build completed successfully with existing bundle-size
   and dynamic-import warnings only.
-- Full backend suite: 2,023 passed and 13 skipped.
+- Full backend suite: 2,032 passed and 13 skipped.
 - Full frontend suite: 35 files and 277 tests passed.
 - Five Flask-Session signer deprecation warnings remain and are tracked as
   DF-022; removing the setting without migration would invalidate active
@@ -121,6 +128,19 @@ The same publication added:
   custom and generated endpoints return HTTP 200; fresh sessions contain no
   user connectors or workspaces; production browser reload has zero console
   messages and zero failed requests.
+- The subsequent code-only rollout deployed `f960263` as revision
+  `azd-1784046335` on image `azd-deploy-1784045589`. One ready replica has zero
+  restarts and 100% traffic; the domain, managed identity, environment, port,
+  one-replica cap, and Azure SQL settings remain unchanged.
+- DF-024 production smoke returned 16 Example Datasets catalog nodes. The
+  deployed container reports LiteLLM 1.91.1 and ODBC Driver 18. All three Azure
+  models are connected; non-streaming GPT-5.4 Mini and streaming tool-enabled
+  requests succeeded, with the latter producing `STREAM_OK` and no error/tool
+  events. Disposable smoke workspaces were removed.
+- Browser reload on the new revision has zero console messages, failed
+  requests, or HTTP error responses. Startup logs are clean. One malformed
+  smoke fixture omitted `X-Workspace-Id` and logged a pre-agent `ValueError`;
+  the corrected workspace-bound request passed.
 
 ## Pending Queue
 
@@ -142,10 +162,11 @@ Read these files before changing code:
 - `/memories/repo/azd-deployment-gotchas.md`
 - `docs/dev-guides/9-workspace-storage-architecture.md`
 
-For continued implementation, begin with Entra admin consent and the DF-022
-session-cookie migration strategy. DF-020, DF-021, both full test suites,
-independent maintainer reviews, and production revision `7z7e3f1` are green; do
-not rewrite their tests merely to change implementation behavior.
+For continued implementation, resume Entra admin consent and the DF-022
+session-cookie migration strategy. DF-020, DF-021, DF-024, DF-025, both full
+test suites, independent maintainer reviews, and production revision
+`azd-1784046335` are green; do not rewrite their tests merely to change
+implementation behavior.
 
 Before merging PR #376, confirm its current CI checks and reconcile any
 upstream changes added after baseline `00d0f5e`.

@@ -59,19 +59,21 @@ The questions below require current maintainer or product context.
 
 ## Thirty-Second Status
 
-The adaptation work on branch `main` is published through commit `11dfb1f`.
-That commit is deployed on production revision
-`ca-dataformulator--7z7e3f1`. Core application health is green; Azure SQL code
-is complete but its end-to-end operational gate is not; horizontal scale is
-intentionally blocked by local state. Backend validation passed 2,023 tests
-with 13 skips, frontend validation passed 277 tests, and HTTP health was last
-verified on 2026-07-14.
+The adaptation work on branch `main` is published through source commit
+`f960263`. Production revision `ca-dataformulator--azd-1784046335` runs image
+`azd-deploy-1784045589` from that commit; connector and model-client hardening is
+production-verified. Core application health is green; Azure SQL code is
+complete but its end-to-end operational gate is not; horizontal scale is
+intentionally blocked by local state. Backend validation passed 2,032 tests with
+13 skips, frontend validation passed 35 files and 277 tests, and HTTP/model
+health was last verified on 2026-07-14.
 
 **Table 1:** *Readiness by independently releasable surface*
 
 | Surface | Status | Evidence or gate |
 | --- | --- | --- |
-| Core application | Healthy in production | Revision `7z7e3f1`, one ready replica, both endpoints HTTP 200, clean recent logs and browser console |
+| Core application | Healthy in production | Revision `azd-1784046335`, one ready replica, zero restarts, both endpoints HTTP 200, clean browser console |
+| Post-recreation hardening | Deployed and production-verified | Commit `f960263` resolves no-auth connector initialization and bounds Azure OpenAI/LiteLLM retries and streaming; catalog and model smoke tests pass |
 | Azure SQL implementation | Source and mocked contracts complete | Delegated connector, secure popup, Driver 18 token path, ODBC hardening, and state isolation are tested and deployed |
 | Azure SQL operations | Blocked before end-to-end release sign-off | Tenant admin consent, then interactive Microsoft sign-in/MFA and staging catalog access |
 | Horizontal scale | Not ready by design | Sessions, delegated tokens, connector metadata, credentials, catalogs, and workspaces require approved shared stores |
@@ -123,15 +125,16 @@ change needs maintainer alignment before it should define an upstream contract.
 
 | Classification | Commits | Changes | Discussion position |
 | --- | --- | --- | --- |
-| Upstream-ready candidates | `4e185e9`, `b50d922`, `fcc6fc8`, parts of `ebada59` | Dependency repair; query, lifecycle, persistence, retry, timeout, memory, runtime, cookie, logging, OAuth-state, test-portability, and ODBC safety fixes | Split into focused subsystem pull requests with compatibility tests; do not ask maintainers to review the bundled adaptation commits as one unit |
+| Upstream-ready candidates | `4e185e9`, `b50d922`, `fcc6fc8`, `11dfb1f`, `f960263`, parts of `ebada59` | Dependency repair; query, lifecycle, persistence, retry, timeout, memory, runtime, cookie, logging, OAuth-state, startup-state, model-streaming, test-portability, and ODBC safety fixes | Split into focused subsystem pull requests with compatibility tests; do not ask maintainers to review the bundled adaptation commits as one unit |
 | Generic but design-dependent | `71b1b78`, auth/session parts of `ebada59` | Distinct delegated `azure_sql` connector, connector-plus-audience token ownership, secure popup, Driver 18 token path, shared-session requirements, DF-022 migration | Align with upstream connector/authentication abstractions, token lifecycle, logout/revocation behavior, and scale contract before contribution |
 | Deployment example, maintainer decision | `10040a3`, `14625d4`, reusable parts of `b50d922` | Container Apps/ACR/OpenAI Bicep, Gunicorn/container defaults, managed identity wiring | Retain only portable example infrastructure that maintainers want to own; separate it from product-runtime review |
-| Tenant-specific operations | Live configuration recorded through `e98ee0f` | Entra registration and consent, custom domain, target database, quota allocation, policy-owned networking, PIM-dependent rollout | Keep outside generic product behavior and document as adopter operations |
+| Tenant-specific operations | Live configuration recorded in audit-ledger deployment checkpoints | Entra registration and consent, custom domain, target database, quota allocation, policy-owned networking, PIM-dependent rollout | Keep outside generic product behavior and document as adopter operations |
 | Not product adaptation | `69a3c43`, `f687309` and Agency assets | ACT Edition, Copilot instructions, assistant tooling | Excluded from the runtime changelog and not required for product adoption |
 
 The canonical commit-by-commit map is in the audit ledger. The comparison
 baseline is upstream commit `00d0f5e`; the published adaptation tip is
-`e98ee0f`.
+`f960263`. Tenant-specific live operations are recorded separately through
+`e98ee0f` in Table 2.
 
 ## Open Issues
 
@@ -167,8 +170,8 @@ reviewable integration vehicle or whether the work must be split.
 - The frontend build retains existing bundle-size and dynamic-import warnings.
 - Horizontal scale remains out of scope until sessions, connector metadata,
   credentials, catalogs, and workspaces have approved shared stores.
-- Deleting the Container App removed prior revisions. The immediate rollback
-  path is app-only recreation with retained ACR image `azd-deploy-1783998754`.
+- The immediate rollback path is an image-only update to retained ACR image
+  `recreate-11dfb1fd3d3c` from source commit `11dfb1f`.
 
 ## Decisions To Seek
 

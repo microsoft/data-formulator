@@ -22,8 +22,8 @@ other, but not before their shared prerequisite row.
 | 1 | Prevent Azure metadata loss | DF-011 | None | Resolved; focused and adjacent tests pass | Concurrent metadata updates cannot overwrite one another |
 | 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | Mitigated; request limits are bounded and production is capped at one replica | Request memory is bounded; shared state is required before scale-out |
 | 3 | Secure connector query boundaries | DF-002 | DF-001 | Resolved; focused and adjacent loader tests pass | Request-controlled identifiers are validated or parameterized |
-| 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004, DF-024 | DF-001, DF-002 | DF-003/DF-004 resolved; DF-024 fixed in source and pending deployment | Connections close predictably, transient failures preserve credentials, and no-auth connectors initialize on first use |
-| 5 | Complete model transport resilience | DF-009, DF-025 | DF-012 | Source resolved; DF-025 deployment validation remains | Bounded retries, finite request deadlines, safe stream interruption, and reproducible LiteLLM builds pass focused tests |
+| 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004, DF-024 | DF-001, DF-002 | Resolved and production-verified through `f960263` | Connections close predictably, transient failures preserve credentials, and no-auth connectors initialize on first use |
+| 5 | Complete model transport resilience | DF-009, DF-025 | DF-012 | Resolved and production-verified through `f960263` | Bounded retries, finite request deadlines, safe stream interruption, and reproducible LiteLLM builds pass focused tests |
 | 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015, DF-022 | DF-001 through DF-004 | Original hardening resolved; DF-022 session-cookie migration decision remains | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests without deprecated session configuration |
 | 7 | Decide enterprise direct-versus-MCP data architecture | DF-023 | Completed runtime hardening and connector requirements | Provisional hybrid decision recorded; source-paired spike remains | Direct and MCP paths are compared against one identity, data, provenance, reliability, and operations contract |
 | 8A | Complete Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Implemented shared delegated-auth primitives | Source blockers deployed; Entra consent, durable sessions, and interactive popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
@@ -55,8 +55,8 @@ whenever an issue is resolved, superseded, or split.
   three independent connections, and 25 catalog entries through the
   implemented loader. Smoke tests must select the tenant explicitly because
   the local Azure CLI cache contains multiple tenant contexts.
-- **Next action**: complete production Entra consent and durable sessions, then
-  verify the interactive popup/MFA flow.
+- **Next action at this checkpoint**: complete production Entra consent and
+  durable sessions, then verify the interactive popup/MFA flow.
 
 ### Review checkpoint (2026-07-13)
 
@@ -157,6 +157,34 @@ whenever an issue is resolved, superseded, or split.
 - Prior revisions were removed with the old app. The retained prior ACR image
   `azd-deploy-1783998754` is now the rollback artifact.
 
+### Post-recreation deployment checkpoint (2026-07-14)
+
+- Published source commit `f960263`, which resolves DF-024 and DF-025 in source.
+- Full backend validation passes with 2,032 tests and 13 skips. The five
+  warnings remain the known Flask-Session `use_signer` deprecation tracked by
+  DF-022.
+- ACR remote build produced image `azd-deploy-1784045589` with digest
+  `sha256:34755ba63b62236cf2bb023a00c9b9cae6a89acf361fff5cef8041c17cbbf482`.
+  The initial azd process stopped after publishing the artifact and before a
+  management-plane update; image-only `azd deploy --from-package` completed the
+  rollout without provisioning infrastructure.
+- Production revision `ca-dataformulator--azd-1784046335` is healthy with one
+  ready replica, zero restarts, and 100% traffic. The custom domain, managed
+  certificate, user-assigned identity, managed environment, port 5567,
+  one-replica cap, and Azure SQL environment settings are preserved.
+- DF-024 smoke returned 16 Example Datasets catalog nodes. The container reports
+  LiteLLM 1.91.1 and ODBC Driver 18. All three Azure OpenAI models are connected;
+  non-streaming GPT-5.4 Mini and streaming tool-enabled completion passed. The
+  streaming response emitted `text_delta,text_delta,done`, exact `STREAM_OK`,
+  zero errors, and no tool invocation.
+- Both endpoints and discovery APIs return HTTP 200. Browser reload has zero
+  console messages, failed requests, or HTTP error responses. Disposable smoke
+  workspaces were deleted. One malformed smoke fixture omitted the required
+  workspace header and logged a pre-agent `ValueError`; the corrected request
+  passed.
+- The retained image `recreate-11dfb1fd3d3c` from `11dfb1f` is the immediate
+  rollback artifact.
+
 ## Published Product Change Map
 
 This is the complete commit-level map of product, test, dependency, deployment,
@@ -176,6 +204,10 @@ excluded from this runtime changelog.
 | `71b1b78` | Add delegated Microsoft Entra authentication for Azure SQL | DF-016 |
 | `ebada59` | Resolve ODBC injection and cross-user OAuth-state capacity; complete test stabilization and repository hygiene | DF-020 through DF-022, RF-001, RF-002 |
 | `e98ee0f` | Record production revision `0000010` and exclude local environments and archives from Docker build context | Remediation checkpoint and deployment record |
+| `95465e1` | Record the enterprise data-access architecture and Chenglong adaptation meeting package | DF-023 and meeting preparation |
+| `11dfb1f` | Reconcile stale persisted workspace state and remove startup console/preload noise | Full recreation checkpoint |
+| `b71bfc2` | Record the full Container App recreation and image-based rollback state | Full recreation checkpoint and deployment record |
+| `f960263` | Initialize no-auth connectors and bound Azure OpenAI model retries, streaming, and LiteLLM versions | DF-024 and DF-025 |
 
 The map covers this branch's adaptation work, not the full historical changelog
 of upstream Data Formulator before `00d0f5e`.
@@ -288,8 +320,8 @@ all operational changes are encoded in the original upstream runtime files.
 - Added the `azd-service-name` tag in
   `infra/modules/containerapp.bicep` so `azd` maps the `web` service to
   the Container App.
-- Current live revision: `ca-dataformulator--7z7e3f1`.
-- Current live image: `recreate-11dfb1fd3d3c`.
+- Current live revision: `ca-dataformulator--azd-1784046335`.
+- Current live image: `azd-deploy-1784045589`.
 
 #### OPS-002: Configure managed model comparison set
 
@@ -340,8 +372,8 @@ committed, redeployed, superseded, or rolled back.
 - Confirmed no VS Code diagnostics in the audited connector, authentication,
   and Container Apps files.
 - Created an isolated `.venv` and installed the project plus pytest.
-- Final backend validation passes with 2,023 tests and 13 skips; final frontend
-  validation passes with 33 files and 271 tests. The Windows fixture,
+- Final backend validation passes with 2,032 tests and 13 skips; final frontend
+  validation passes with 35 files and 277 tests. The Windows fixture,
   capability-skip, marker, and stale frontend-contract failures found during
   intermediate runs were resolved before deployment.
 
@@ -612,7 +644,7 @@ Acceptance criteria:
 
 ### DF-025: LiteLLM calls lack finite end-to-end retry and stream boundaries
 
-**Status**: Resolved in source; production deployment pending \
+**Status**: Resolved and production-verified in revision `ca-dataformulator--azd-1784046335` \
 **Severity**: High \
 **Area**: Azure OpenAI, LiteLLM client resilience
 
@@ -649,6 +681,10 @@ Implementation evidence (2026-07-14):
 - `uv lock --check` resolves successfully with LiteLLM 1.91.1.
 - Full backend suite passes: 2,032 tests passed and 13 skipped; the five
   warnings are the existing Flask-Session `use_signer` deprecation.
+- Production runs LiteLLM 1.91.1. All three Azure models pass connectivity
+  probes; GPT-5.4 Mini passes non-streaming and streaming tool-enabled requests.
+  The streaming request completed with exact `STREAM_OK`, no error events, and
+  no tool execution.
 
 Acceptance criteria:
 
@@ -1215,7 +1251,7 @@ the signer implementation for removal. The supported default uses a random
 
 Evidence:
 
-- Full backend validation passes 2,023 tests and skips 13, but five app-reload
+- Full backend validation passes 2,032 tests and skips 13, but five app-reload
   tests emit the same Flask-Session `use_signer` deprecation warning.
 - The installed package signs the random session ID as `sid.signature` when the
   option is enabled and treats the cookie as a raw SID when it is disabled.
@@ -1325,7 +1361,7 @@ Implementation evidence (2026-07-13):
 
 ### DF-024: No-auth connectors report connected without an initialized loader
 
-**Status**: Resolved in source; production deployment pending \
+**Status**: Resolved and production-verified in revision `ca-dataformulator--azd-1784046335` \
 **Severity**: Medium \
 **Area**: Connector lifecycle, built-in sample datasets
 
@@ -1348,6 +1384,8 @@ Evidence:
   loader constructor without its required `params` argument.
 - Connector framework validation: 60 tests passed, including catalog and
   parameterized status regressions for no-auth loaders.
+- Production catalog smoke for `sample_datasets` returned success with 16 tree
+  nodes and the expected `dataset,table` hierarchy.
 
 Acceptance criteria:
 
@@ -1443,8 +1481,8 @@ Evidence:
   token acquisition produced three independent successful connections and 25
   catalog entries.
 - The Dockerfile installs Microsoft ODBC Driver 18 for the production runtime.
-- Production revision `ca-dataformulator--7z7e3f1` runs image
-  `recreate-11dfb1fd3d3c` at 100% traffic with one healthy replica and ODBC
+- Production revision `ca-dataformulator--azd-1784046335` runs image
+  `azd-deploy-1784045589` at 100% traffic with one healthy replica and ODBC
   Driver 18. Public discovery exposes credential-only `mssql` and delegated
   `azure_sql` as distinct connector types.
 - The dedicated `Data Formulator GCX DEV` Entra application has the exact
