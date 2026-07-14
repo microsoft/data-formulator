@@ -44,7 +44,9 @@ Review the target repo's `git status` before committing.
 The installer deep-merges `.mcp.json`, so existing MCP servers stay in place and
 missing starter servers are added under the `servers` object. Agency supplies the
 built-in MCP binaries/proxies; the JSON config is what makes a project discover
-and launch them.
+and launch them. Before applying any writes, the installer validates its source
+manifest and the target JSON files it will merge. Invalid JSON fails the whole
+operation before additive files are copied.
 
 ## Safe Verification
 
@@ -61,6 +63,11 @@ agency copilot --profile-only project-ops --prompt "List available project MCP s
 agency copilot --profile-only meeting-note-taker --prompt "List available meeting MCP servers and exit. Do not read content."
 agency copilot --profile-only project-context --prompt "List available M365 MCP servers and exit. Do not read content."
 ```
+
+The no-flag verifier is read-only and returns a nonzero exit code for missing or
+outdated dependencies, missing extensions, failed auth/config commands, or
+drift from local `agency/VERSION.json`. After reviewing an intentional tool
+change, rerun with `-UpdateVersionFile` to record the new baseline.
 
 ## Tool Selection
 
@@ -121,7 +128,7 @@ routing, use [Project agent roster](project-agent-roster.md) and
   document content.
 - Inspect curated plugins before installing them persistently.
 - Prefer project profiles over always-on global plugins.
-- Refresh [VERSION.json](../VERSION.json) after installing or upgrading tools.
+- Refresh local `agency/VERSION.json` after installing or upgrading tools.
 - `Install-AgencyStarter.ps1` only checks whether a file already exists, not
   whether a project deliberately deleted it. Re-running the installer on a
   project that intentionally removed a starter agent/skill (because that

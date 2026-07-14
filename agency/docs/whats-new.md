@@ -7,6 +7,25 @@
 Changelog for Agency Integration Starter. Track what changed and why, so
 projects that already merged the starter know what to re-pull.
 
+## 2026-07-13 — Hardened install preflight and made verification enforceable
+
+- The installer now validates all required starter files and target JSON before
+  writing anything. Invalid `.mcp.json` or applicable
+  `.vscode/extensions.json` files fail fast instead of leaving a partial
+  installation.
+- Existing `[mcps]` tables that omit `include_mcps_from_workspace` now receive
+  the starter's required `false` value. Ignored, untracked VS Code extension
+  files remain outside the installer's scope.
+- Verification now exits nonzero for missing or outdated dependencies, missing
+  extensions, failed native commands, invalid/missing snapshots, and recorded
+  version drift. Verification-only mode no longer invokes the Agency VS Code
+  updater, and PATH refresh preserves process-local entries.
+- Added Pester regression coverage for dry-run safety, idempotency, merge
+  behavior, preflight failures, ignored files, and verifier exit status. A
+  Windows GitHub Actions workflow runs the suite for pushes and pull requests.
+- Refreshed the starter's `agency/VERSION.json` after verifying Agency
+  `2026.7.9.1`, Azure CLI `2.88.0`, and the remaining recorded toolchain.
+
 ## 2026-07-08 — Added an all-up root README, refreshed the project-facing README
 
 Split the two README audiences cleanly:
@@ -314,7 +333,7 @@ this starter's own tooling actually depends on. Added four extensions and kept
 - `github.vscode-pull-request-github` — `gh` is a required tool, and the ADO spec-agent plugins and marketplace workflows are PR-centric.
 
 Verified all four IDs by running `verify-tooling.ps1 -Install -UpdateVersionFile`;
-all installed successfully and are now reflected in [VERSION.json](../VERSION.json).
+all installed successfully and are now reflected in `agency/VERSION.json`.
 
 ## 2026-07-03 — Harmonization pass across agents, MCPs, and skills
 
@@ -417,7 +436,7 @@ starter.
 - Docs in [agency/docs](.) are internally consistent with [agency.toml](../../agency.toml)
   and the current local agent/skill roster — no stale profile or version
   references found.
-- Tooling snapshot in [VERSION.json](../VERSION.json) was refreshed 2026-07-03
+- Tooling snapshot in `agency/VERSION.json` was refreshed 2026-07-03
   (Agency CLI updated `2026.6.30.10` → `2026.7.2.3`; all other tools and
   extensions already current).
 
@@ -446,7 +465,7 @@ starter.
 - Hardened fresh-machine setup: installs missing Agency tooling dependencies,
   requires Node 24+, deep-merges MCP config during starter install, and
   includes the installer itself in starter installs.
-- Added [VERSION.json](../VERSION.json) to track installed tool and extension
+- Added `agency/VERSION.json` to track installed tool and extension
   versions for drift detection (`agency/scripts/verify-tooling.ps1`).
 
 ### Documentation and positioning

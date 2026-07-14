@@ -60,7 +60,7 @@ MCP/M365/plugin surface by default.
   project can pull tools on need instead of adopting the whole surface.
 - A verification script that checks the local machine without reading private
   M365 content.
-- A version snapshot, [VERSION.json](VERSION.json), for detecting tool drift.
+- A local `agency/VERSION.json` snapshot for detecting tool drift.
 - A root installer, [Install-AgencyStarter.ps1](../Install-AgencyStarter.ps1), that
   merges the starter into existing repos without overwriting project history.
 
@@ -197,6 +197,12 @@ command. The script enforces Node.js 24+.
 ./agency/scripts/verify-tooling.ps1 -UpdateVersionFile
 ```
 
+Verification-only mode does not install or update tools. It exits nonzero when
+a required command or extension is missing, a minimum version is not met, a
+native check fails, or the installed versions drift from local
+`agency/VERSION.json`. Review expected tool changes, then use
+`-UpdateVersionFile` to establish the new verified baseline.
+
 Prefer `--profile-only` so narrow tasks do not load every workspace MCP server.
 
 ```powershell
@@ -283,7 +289,7 @@ approved summaries into the agents.
 | [.mcp.json](../.mcp.json) | Add project-specific MCP servers or Kusto cluster defaults |
 | [agency.toml](../agency.toml) | Tune Agency profiles and optional plugins |
 | [.vscode/extensions.json](../.vscode/extensions.json) | Add project-specific VS Code recommendations |
-| [agency/VERSION.json](VERSION.json) | Refresh tool version snapshots when dependencies move |
+| `agency/VERSION.json` (generated locally) | Refresh tool version snapshots when dependencies move |
 | [agency/docs/tooling-guide.md](docs/tooling-guide.md) | Document project-specific workflows |
 
 ## Merge Into An Existing Project

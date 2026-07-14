@@ -153,6 +153,19 @@ function Merge-JsonObjectFile([string]$RelativePath) {
     }
 }
 
+function Assert-JsonObjectFile([string]$Path, [string]$DisplayPath) {
+    try {
+        $value = Get-Content $Path -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "Invalid JSON in $DisplayPath. Fix it before applying the starter. $($_.Exception.Message)"
+    }
+
+    if (-not (Test-JsonObject $value)) {
+        throw "Invalid JSON in $DisplayPath. The root value must be an object."
+    }
+}
+
 function Test-JsonObject($Value) {
     $null -ne $Value -and $Value -is [pscustomobject]
 }
@@ -224,7 +237,7 @@ function Merge-TomlByAppend([string]$RelativePath) {
     $targetText = Get-Content $target -Raw
     $changed = $false
 
-    if ($targetText -notmatch '(?m)^\[mcps\]\s*$') {
+    if ($targetText -notmatch '(?m)^\[mcps\][ \t]*$') {
         Invoke-Write "append starter MCP base config to agency.toml" {
             Add-Content -Path $target -Value ""
             Add-Content -Path $target -Value "[mcps]"
@@ -232,6 +245,22 @@ function Merge-TomlByAppend([string]$RelativePath) {
         }
         $changed = $true
         $targetText = if ($Apply) { Get-Content $target -Raw } else { $targetText + "`n[mcps]`ninclude_mcps_from_workspace = false`n" }
+    }
+    elseif ($targetText -notmatch '(?m)^include_mcps_from_workspace[ \t]*=') {
+        Invoke-Write "add include_mcps_from_workspace = false to agency.toml" {
+            $currentText = Get-Content $target -Raw
+            $newline = if ($currentText.Contains("`r`n")) { "`r`n" } else { "`n" }
+            $header = [regex]'(?m)^(\[mcps\][ \t]*)$'
+            $updated = $header.Replace($currentText, ('$1' + $newline + 'include_mcps_from_workspace = false'), 1)
+            Set-Content -Path $target -Value $updated -NoNewline
+        }
+        $changed = $true
+        $targetText = if ($Apply) {
+            Get-Content $target -Raw
+        }
+        else {
+            $targetText -replace '(?m)^(\[mcps\][ \t]*)$', "`$1`ninclude_mcps_from_workspace = false"
+        }
     }
     elseif ($targetText -match '(?m)^include_mcps_from_workspace\s*=\s*true\s*$') {
         Invoke-Write "set agency.toml include_mcps_from_workspace = false" {
@@ -299,16 +328,30 @@ function Merge-TomlByAppend([string]$RelativePath) {
     }
 }
 
-function Merge-VsCodeExtensions {
+function Get-VsCodeExtensionsState {
     $relativePath = ".vscode/extensions.json"
 
     Push-Location $targetRoot
-    git check-ignore -q -- $relativePath
-    $ignored = ($LASTEXITCODE -eq 0)
-    $tracked = [bool](git ls-files -- $relativePath)
-    Pop-Location
+    try {
+        git check-ignore -q -- $relativePath
+        $ignored = ($LASTEXITCODE -eq 0)
+        $tracked = [bool](git ls-files -- $relativePath)
+    }
+    finally {
+        Pop-Location
+    }
 
-    if ($ignored -and ($tracked -eq $false)) {
+    return [pscustomobject]@{
+        Ignored = $ignored
+        Tracked = $tracked
+    }
+}
+
+function Merge-VsCodeExtensions {
+    $relativePath = ".vscode/extensions.json"
+    $state = Get-VsCodeExtensionsState
+
+    if ($state.Ignored -and ($state.Tracked -eq $false)) {
         Write-Plan ".vscode/extensions.json is ignored by target repo; document or force-add manually if desired"
         return
     }
@@ -326,6 +369,36 @@ function Assert-GitRepo([string]$Path) {
 function Assert-CommandAvailable([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "$Name is required on PATH for this installer (used for repo detection and .vscode/extensions.json merge). Run agency/scripts/verify-tooling.ps1 -Install first."
+    }
+}
+
+function Assert-InstallPreflight([string[]]$AdditiveFiles) {
+    $requiredSources = @($AdditiveFiles) + @(
+        ".gitignore",
+        ".mcp.json",
+        ".vscode/extensions.json",
+        "agency.toml"
+    )
+
+    foreach ($relativePath in $requiredSources) {
+        $source = Join-Path $starterRoot $relativePath
+        if (-not (Test-Path $source -PathType Leaf)) {
+            throw "Starter file missing: $relativePath"
+        }
+    }
+
+    Assert-JsonObjectFile -Path (Join-Path $starterRoot ".mcp.json") -DisplayPath "starter .mcp.json"
+    Assert-JsonObjectFile -Path (Join-Path $starterRoot ".vscode/extensions.json") -DisplayPath "starter .vscode/extensions.json"
+
+    $targetMcp = Join-Path $targetRoot ".mcp.json"
+    if (Test-Path $targetMcp -PathType Leaf) {
+        Assert-JsonObjectFile -Path $targetMcp -DisplayPath "target .mcp.json"
+    }
+
+    $vscodeState = Get-VsCodeExtensionsState
+    $targetVsCode = Join-Path $targetRoot ".vscode/extensions.json"
+    if ((-not $vscodeState.Ignored -or $vscodeState.Tracked) -and (Test-Path $targetVsCode -PathType Leaf)) {
+        Assert-JsonObjectFile -Path $targetVsCode -DisplayPath "target .vscode/extensions.json"
     }
 }
 
@@ -378,6 +451,8 @@ $additiveFiles = @(
     ".editorconfig",
     ".gitattributes"
 )
+
+Assert-InstallPreflight -AdditiveFiles $additiveFiles
 
 foreach ($file in $additiveFiles) {
     Copy-AdditiveFile $file

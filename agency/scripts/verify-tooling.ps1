@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$verificationFailures = [System.Collections.Generic.List[string]]::new()
 
 # agency/scripts/verify-tooling.ps1 -> repo root is two levels up. Anchoring on
 # $PSScriptRoot (not the caller's working directory) keeps the .mcp.json and
@@ -77,10 +78,29 @@ function Write-Section([string]$Message) {
     Write-Host "`n$Message" -ForegroundColor Cyan
 }
 
+function Add-VerificationFailure([string]$Message) {
+    $verificationFailures.Add($Message)
+    Write-Host "FAILED: $Message" -ForegroundColor Red
+}
+
+function Invoke-CheckedCommand([string]$Description, [scriptblock]$Command) {
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        Add-VerificationFailure "$Description exited with code $LASTEXITCODE"
+    }
+}
+
 function Update-PathFromEnvironment {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path = "$machinePath;$userPath"
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $paths = foreach ($entry in (($machinePath, $userPath, $env:Path) -split ";")) {
+        $trimmed = $entry.Trim()
+        if ($trimmed -and $seen.Add($trimmed)) {
+            $trimmed
+        }
+    }
+    $env:Path = $paths -join ";"
 }
 
 function Assert-WingetAvailable {
@@ -119,12 +139,17 @@ function Install-IfMissing([string]$Name) {
 
         Write-Host "NODE_TOO_OLD: node v$major detected; Node.js 24+ is required" -ForegroundColor Yellow
         if (-not $Install) {
+            Add-VerificationFailure "node v$major is installed; Node.js 24+ is required"
             return
         }
 
         Assert-WingetAvailable
         & $commandInstallers.node
         Update-PathFromEnvironment
+        $updatedMajor = Get-NodeMajorVersion
+        if ($null -eq $updatedMajor -or $updatedMajor -lt 24) {
+            Add-VerificationFailure "Node.js 24+ was not available after installation"
+        }
         return
     }
 
@@ -137,15 +162,20 @@ function Install-IfMissing([string]$Name) {
 
         Write-Host "FUNC_TOO_OLD: func v$major detected; Azure Functions Core Tools 4+ is required" -ForegroundColor Yellow
         if (-not $Install) {
+            Add-VerificationFailure "func v$major is installed; Azure Functions Core Tools 4+ is required"
             return
         }
 
         if (-not (Test-Command "npm")) {
-            Write-Host "Cannot upgrade Azure Functions Core Tools until npm is available" -ForegroundColor Red
+            Add-VerificationFailure "Cannot upgrade Azure Functions Core Tools until npm is available"
             return
         }
 
         npm install -g azure-functions-core-tools@4
+        $updatedMajor = Get-FuncMajorVersion
+        if ($null -eq $updatedMajor -or $updatedMajor -lt 4) {
+            Add-VerificationFailure "Azure Functions Core Tools 4+ was not available after installation"
+        }
         return
     }
 
@@ -157,6 +187,7 @@ function Install-IfMissing([string]$Name) {
     Write-Host "MISSING: $Name" -ForegroundColor Yellow
 
     if (-not $Install) {
+        Add-VerificationFailure "$Name is required but was not found on PATH"
         return
     }
 
@@ -168,17 +199,23 @@ function Install-IfMissing([string]$Name) {
         Write-Host "npm ships with Node.js; installing Node.js LTS (24+)" -ForegroundColor Yellow
         & $commandInstallers.node
         Update-PathFromEnvironment
+        if (-not (Test-Command "npm")) {
+            Add-VerificationFailure "npm was not available after installing Node.js"
+        }
         return
     }
 
     if ($Name -eq "func") {
         Update-PathFromEnvironment
         if (-not (Test-Command "npm")) {
-            Write-Host "Cannot install Azure Functions Core Tools until npm is available" -ForegroundColor Red
+            Add-VerificationFailure "Cannot install Azure Functions Core Tools until npm is available"
             return
         }
 
         npm install -g azure-functions-core-tools@4
+        if (-not (Test-Command "func") -or (Get-FuncMajorVersion) -lt 4) {
+            Add-VerificationFailure "Azure Functions Core Tools 4+ was not available after installation"
+        }
         return
     }
 
@@ -191,10 +228,14 @@ function Install-IfMissing([string]$Name) {
     Update-PathFromEnvironment
 
     if (Test-Command $Name) {
+        if ($Name -eq "node" -and (Get-NodeMajorVersion) -lt 24) {
+            Add-VerificationFailure "Node.js 24+ was not available after installation"
+            return
+        }
         Write-Host "OK after install: $Name" -ForegroundColor Green
     }
     else {
-        Write-Host "Installed $Name, but it is not visible on PATH yet. Open a new terminal and rerun this script." -ForegroundColor Yellow
+        Add-VerificationFailure "Installed $Name, but it is not visible on PATH yet. Open a new terminal and rerun this script."
     }
 }
 
@@ -205,6 +246,11 @@ function Install-VsCodeExtensions {
     }
 
     $installed = @(code --list-extensions)
+    if ($LASTEXITCODE -ne 0) {
+        Add-VerificationFailure "code --list-extensions exited with code $LASTEXITCODE"
+        return
+    }
+
     foreach ($extension in $vscodeExtensions) {
         if ($installed -contains $extension) {
             Write-Host "OK: VS Code extension $extension" -ForegroundColor Green
@@ -214,6 +260,12 @@ function Install-VsCodeExtensions {
         Write-Host "MISSING: VS Code extension $extension" -ForegroundColor Yellow
         if ($Install) {
             code --install-extension $extension --force
+            if ($LASTEXITCODE -ne 0) {
+                Add-VerificationFailure "VS Code extension $extension could not be installed"
+            }
+        }
+        else {
+            Add-VerificationFailure "VS Code extension $extension is required but not installed"
         }
     }
 }
@@ -225,11 +277,19 @@ function Install-AzureExtensions {
     }
 
     $installed = @(az extension list --query "[].name" -o tsv)
+    if ($LASTEXITCODE -ne 0) {
+        Add-VerificationFailure "az extension list exited with code $LASTEXITCODE"
+        return
+    }
+
     foreach ($extension in $azureExtensions) {
         if ($installed -contains $extension) {
             Write-Host "OK: Azure CLI extension $extension" -ForegroundColor Green
             if ($Install) {
                 az extension add --name $extension --upgrade --only-show-errors
+                if ($LASTEXITCODE -ne 0) {
+                    Add-VerificationFailure "Azure CLI extension $extension could not be upgraded"
+                }
             }
             continue
         }
@@ -237,6 +297,12 @@ function Install-AzureExtensions {
         Write-Host "MISSING: Azure CLI extension $extension" -ForegroundColor Yellow
         if ($Install) {
             az extension add --name $extension --upgrade --only-show-errors
+            if ($LASTEXITCODE -ne 0) {
+                Add-VerificationFailure "Azure CLI extension $extension could not be installed"
+            }
+        }
+        else {
+            Add-VerificationFailure "Azure CLI extension $extension is required but not installed"
         }
     }
 }
@@ -299,6 +365,34 @@ function Write-VersionSnapshot {
     Write-Host "Updated $versionPath" -ForegroundColor Green
 }
 
+function Compare-VersionSnapshot {
+    $versionPath = Join-Path $repoRoot "agency/VERSION.json"
+    try {
+        $recorded = Get-Content $versionPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        Add-VerificationFailure "agency/VERSION.json is not valid JSON: $($_.Exception.Message)"
+        return
+    }
+
+    $current = Get-ToolVersionSnapshot
+    foreach ($category in @("tools", "vscodeExtensions", "azureCliExtensions")) {
+        $recordedCategory = $recorded.$category
+        $currentCategory = $current.$category
+        foreach ($name in $currentCategory.Keys) {
+            $recordedValue = if ($recordedCategory.PSObject.Properties.Name -contains $name) { $recordedCategory.$name } else { $null }
+            $currentValue = $currentCategory[$name]
+            if ([string]$recordedValue -ne [string]$currentValue) {
+                Add-VerificationFailure "Version drift for $category.$name (recorded: '$recordedValue'; current: '$currentValue'). Re-run with -UpdateVersionFile after reviewing the change."
+            }
+        }
+    }
+}
+
+Write-Section "MCP JSON parse"
+Get-Content (Join-Path $repoRoot ".mcp.json") -Raw | ConvertFrom-Json | Out-Null
+Write-Host "OK: .mcp.json parses" -ForegroundColor Green
+
 Write-Section "Required commands"
 foreach ($command in $requiredCommands) {
     Install-IfMissing $command
@@ -307,7 +401,7 @@ foreach ($command in $requiredCommands) {
 Write-Section "Agency config"
 if (Test-Command "agency") {
     $env:AGENCY_NO_UPDATE_CHECK = "1"
-    agency config list
+    Invoke-CheckedCommand "agency config list" { agency config list }
 }
 else {
     Write-Host "Skipping Agency config because agency is missing" -ForegroundColor Yellow
@@ -315,7 +409,7 @@ else {
 
 Write-Section "GitHub auth"
 if (Test-Command "gh") {
-    gh auth status
+    Invoke-CheckedCommand "gh auth status" { gh auth status }
 }
 else {
     Write-Host "Skipping GitHub auth because gh is missing" -ForegroundColor Yellow
@@ -323,7 +417,7 @@ else {
 
 Write-Section "Installed Agency plugins"
 if (Test-Command "agency") {
-    agency plugin list
+    Invoke-CheckedCommand "agency plugin list" { agency plugin list }
 }
 else {
     Write-Host "Skipping Agency plugin list because agency is missing" -ForegroundColor Yellow
@@ -332,9 +426,12 @@ else {
 Write-Section "Agency VS Code integration"
 if (Test-Command "agency") {
     if ($Install) {
-        agency vscode install
+        Invoke-CheckedCommand "agency vscode install" { agency vscode install }
+        Invoke-CheckedCommand "agency vscode update" { agency vscode update }
     }
-    agency vscode update
+    else {
+        Write-Host "OK: verification-only mode does not update Agency VS Code integration" -ForegroundColor Green
+    }
 }
 else {
     Write-Host "Skipping Agency VS Code integration because agency is missing" -ForegroundColor Yellow
@@ -346,19 +443,20 @@ Install-VsCodeExtensions
 Write-Section "Azure CLI extensions"
 Install-AzureExtensions
 
-Write-Section "MCP JSON parse"
-Get-Content (Join-Path $repoRoot ".mcp.json") -Raw | ConvertFrom-Json | Out-Null
-Write-Host "OK: .mcp.json parses" -ForegroundColor Green
-
 Write-Section "Version snapshot"
 if ($UpdateVersionFile) {
-    Write-VersionSnapshot
+    if ($verificationFailures.Count -eq 0) {
+        Write-VersionSnapshot
+    }
+    else {
+        Write-Host "Snapshot not updated because verification failed." -ForegroundColor Yellow
+    }
 }
 elseif (Test-Path (Join-Path $repoRoot "agency/VERSION.json")) {
-    Write-Host "OK: agency/VERSION.json exists. Re-run with -UpdateVersionFile to refresh it." -ForegroundColor Green
+    Compare-VersionSnapshot
 }
 else {
-    Write-Host "MISSING: agency/VERSION.json. Re-run with -UpdateVersionFile to create it." -ForegroundColor Yellow
+    Add-VerificationFailure "agency/VERSION.json is missing. Re-run with -UpdateVersionFile to create it."
 }
 
 if ($ConfigureAuth) {
@@ -371,6 +469,15 @@ if ($ConfigureAuth) {
 }
 
 Write-Section "Complete"
-if (-not $Install) {
+if ($verificationFailures.Count -gt 0) {
+    Write-Host "$($verificationFailures.Count) verification failure(s):" -ForegroundColor Red
+    foreach ($failure in $verificationFailures) {
+        Write-Host "- $failure" -ForegroundColor Red
+    }
+    exit 1
+}
+
+Write-Host "All verification checks passed." -ForegroundColor Green
+if (-not $Install -and -not $UpdateVersionFile) {
     Write-Host "Verification-only mode. Re-run with -Install to install missing dependencies." -ForegroundColor Yellow
 }
