@@ -20,14 +20,15 @@ other, but not before their shared prerequisite row.
 | Order | Workstream | Issues | Depends on | Current state | Exit gate |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Prevent Azure metadata loss | DF-011 | None | Resolved; focused and adjacent tests pass | Concurrent metadata updates cannot overwrite one another |
-| 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | Resolved; request limits are bounded and the live app is capped at one replica | Request memory is bounded and state remains consistent across replicas |
+| 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | Mitigated; request limits are bounded and production is capped at one replica | Request memory is bounded; shared state is required before scale-out |
 | 3 | Secure connector query boundaries | DF-002 | DF-001 | Resolved; focused and adjacent loader tests pass | Request-controlled identifiers are validated or parameterized |
 | 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004 | DF-001, DF-002 | Resolved; lifecycle and reconnect suites pass | Connections close predictably and transient failures preserve credentials |
 | 5 | Complete model transport resilience | DF-009 | DF-012 | Resolved; retry and compatibility suites pass | Bounded 429 retry behavior passes focused tests |
 | 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015, DF-022 | DF-001 through DF-004 | Original hardening resolved; DF-022 session-cookie migration decision remains | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests without deprecated session configuration |
-| 7 | Build shared delegated-auth contract and Fabric discovery | DF-017 | Resolved DF-001, completed source fixes, reassessed requirements | Ready to implement shared auth and mocked discovery; real-service release gates remain | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and restart-durable sessions are verified |
-| 8A | Add Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Shared delegated-auth contract from DF-017 | Source blockers deployed; Entra consent, durable sessions, and interactive popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
-| 8B | Complete Fabric discovery integration | DF-017 | Shared delegated-auth contract | May proceed in parallel with DF-016 after shared contract; representative tenant evidence required for release | Bounded delegated workspace/item discovery passes contract and real-service tests |
+| 7 | Decide enterprise direct-versus-MCP data architecture | DF-023 | Completed runtime hardening and connector requirements | Provisional hybrid decision recorded; source-paired spike remains | Direct and MCP paths are compared against one identity, data, provenance, reliability, and operations contract |
+| 8A | Complete Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Implemented shared delegated-auth primitives | Source blockers deployed; Entra consent, durable sessions, and interactive popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
+| 8B | Extend delegated authentication to Fabric discovery | DF-017 | DF-023 and implemented Azure SQL auth foundation | Fabric scopes, discovery, and durable sessions remain | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and restart-durable sessions are verified |
+| 8C | Complete Fabric discovery integration | DF-017 | Shared Fabric delegated-auth contract | Mocked discovery may proceed after DF-023; representative tenant evidence is required for release | Bounded delegated workspace/item discovery passes contract and real-service tests |
 | 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Blocked on DF-017 and data-plane spikes | Delta and supported file imports pass catalog, limit, and audience tests |
 | 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Blocked on DF-017 and metadata/query spikes | Delegated RLS-safe query results pass API, limit, and serialization tests |
 
@@ -137,7 +138,34 @@ whenever an issue is resolved, superseded, or split.
   identity/Azure SQL environment keys, clean recent logs, and secure OAuth
   authorization preparation with disposable-connector cleanup.
 
+## Published Product Change Map
+
+This is the complete commit-level map of product, test, dependency, deployment,
+and audit-record changes on the adaptation branch since upstream baseline
+`00d0f5e`. ACT Edition and other assistant-only assets are intentionally
+excluded from this runtime changelog.
+
+**Table 1:** *Published adaptation changes since the upstream baseline*
+
+| Commit | Change | Detailed record |
+| --- | --- | --- |
+| `10040a3` | Correct Container Apps network declaration and publish workspace settings | OPS-001 |
+| `4e185e9` | Regenerate the frontend dependency lock against the public registry | CHG-003 |
+| `b50d922` | Harden production deployment, model compatibility, static assets, and model diagnostics | CHG-001, CHG-002, CHG-004, OPS-001 through OPS-004, DF-010 |
+| `fcc6fc8` | Harden connector lifecycle, query boundaries, request limits, persistence, retries, runtime, timeouts, memory, cookies, logging, and OAuth state | DF-001 through DF-015 |
+| `14625d4` | Reconcile governed Azure infrastructure state | DF-001 and OPS-001 through OPS-004 |
+| `71b1b78` | Add delegated Microsoft Entra authentication for Azure SQL | DF-016 |
+| `ebada59` | Resolve ODBC injection and cross-user OAuth-state capacity; complete test stabilization and repository hygiene | DF-020 through DF-022, RF-001, RF-002 |
+| `e98ee0f` | Record production revision `0000010` and exclude local environments and archives from Docker build context | Remediation checkpoint and deployment record |
+
+The map covers this branch's adaptation work, not the full historical changelog
+of upstream Data Formulator before `00d0f5e`.
+
 ## Implemented Changes
+
+The per-change verification notes below preserve what was known at each dated
+checkpoint. The later remediation checkpoint and Validation Scope supersede
+earlier statements that the full local test suites were unavailable.
 
 ### Source changes on 2026-07-09
 
@@ -241,8 +269,8 @@ all operational changes are encoded in the original upstream runtime files.
 - Added the `azd-service-name` tag in
   `infra/modules/containerapp.bicep` so `azd` maps the `web` service to
   the Container App.
-- Current live revision: `ca-dataformulator--0000004`.
-- Current live image: `azd-deploy-1783629787`.
+- Current live revision: `ca-dataformulator--0000010`.
+- Current live image: `azd-deploy-1783998754`.
 
 #### OPS-002: Configure managed model comparison set
 
@@ -293,10 +321,10 @@ committed, redeployed, superseded, or rolled back.
 - Confirmed no VS Code diagnostics in the audited connector, authentication,
   and Container Apps files.
 - Created an isolated `.venv` and installed the project plus pytest.
-- Focused and adjacent backend suites now execute locally. The broad
-  security/error/route run exposed four unrelated Windows fixture-encoding
-  failures in plugin-discovery tests; the request-limit and affected route
-  slices remain green.
+- Final backend validation passes with 2,023 tests and 13 skips; final frontend
+  validation passes with 33 files and 271 tests. The Windows fixture,
+  capability-skip, marker, and stale frontend-contract failures found during
+  intermediate runs were resolved before deployment.
 
 ## High Priority
 
@@ -536,7 +564,7 @@ Immediate mitigation applied on 2026-07-09:
 - Ten-request bursts completed without throttling. GPT-5.4 Pro was removed
   from the managed comparison set because its usage cost was too high.
 
-Remaining remediation:
+Remediation implemented:
 
 1. Add bounded retries with exponential backoff and jitter for 429 and retryable
    upstream 5xx responses.
@@ -703,7 +731,7 @@ Implementation evidence (2026-07-09):
 
 ### DF-006: The production container runs Flask's development server
 
-**Status**: Resolved in source; image verification pending Docker-enabled CI \
+**Status**: Resolved and included in healthy production revision `ca-dataformulator--0000010` \
 **Severity**: Medium \
 **Area**: Runtime stability
 
@@ -736,7 +764,9 @@ Implementation evidence (2026-07-09):
   with explicit 120-second request and 30-second graceful timeouts.
 - Infrastructure source guards pass: 2 tests; package metadata installs
   successfully.
-- Local image build was not run because Docker is unavailable on this host.
+- The azd remote build succeeded and the resulting image is healthy in
+  production revision `0000010`; local Docker remained unavailable on this
+  host.
 
 ### DF-007: Connector timeout behavior is inconsistent
 
@@ -1221,6 +1251,64 @@ Implementation evidence (2026-07-13):
   is the canonical path.
 
 ## Planned Connector Work
+
+### DF-023: Enterprise data access lacks a settled direct-versus-MCP architecture
+
+**Status**: Proposed; source-paired decision spike required \
+**Severity**: Medium \
+**Area**: Connector platform, MCP, enterprise data access
+
+The confirmed adaptation need includes enterprise-grade Azure SQL, Microsoft
+Fabric, semantic model, and future governed-source access. The shipped runtime
+currently has a mature `ExternalDataLoader` and `DataConnector` contract but no
+MCP client, server, or tool integration under `py-src/`, `src/`, or `tests/`.
+
+Existing Agency and Fabric MCP capabilities are implementation accelerators.
+They are not product runtime components and do not currently satisfy Data
+Formulator's Arrow, workspace, source identity, refresh, auth, limits, or
+provenance contracts.
+
+Impact:
+
+- Continuing source-by-source without an architecture decision can duplicate
+  authentication, discovery, retry, and paging logic and make future enterprise
+  onboarding deployment-bound.
+- Adopting arbitrary MCP servers as connectors can create a parallel framework
+  without bounded tabular results, stable provenance, refresh semantics,
+  enterprise identity isolation, or operational ownership.
+- Choosing either extreme prematurely can constrain Fabric and semantic-model
+  delivery before representative data-plane evidence exists.
+
+Provisional recommendation:
+
+1. Keep `ExternalDataLoader` and `DataConnector` as the canonical product data
+   boundary.
+2. Use direct adapters for source-native bulk data paths and strict query
+   semantics.
+3. Evaluate a versioned, administrator-approved Data Formulator MCP profile for
+   discovery, governed actions, bounded tabular results, or governed data
+   handles.
+4. Compare direct and MCP paths through a source-paired spike before committing
+   to a generic runtime MCP facility.
+
+Acceptance criteria:
+
+- The architecture decision records direct-only, MCP-first, and hybrid
+  trade-offs and names the selected boundary.
+- A deterministic mock and at least one representative approved MCP server, if
+  available, exercise catalog, schema, auth, limits, cancellation, errors,
+  provenance, and refresh behavior.
+- Direct and MCP paths are compared using common latency, memory, data-volume,
+  reliability, and operational-ownership evidence.
+- An MCP facility is approved only if it passes the existing connector quality
+  contract and removes meaningful provider-specific work or enables otherwise
+  impractical sources.
+- The decision does not expose arbitrary servers or tool output directly to the
+  browser, model prompt, or workspace.
+
+Decision and spike plan:
+
+- `docs/plans/2026-07-14-enterprise-data-access-architecture.md`
 
 ### DF-016: Azure SQL connector lacks delegated Microsoft Entra MFA
 

@@ -29,11 +29,12 @@
 
 ## Current State
 
-- Current local and `origin/main` baseline is `ebada59` on `main`.
-- PR #376 is open.
+- Current local and `origin/main` baseline is `e98ee0f` on `main`.
+- Runtime source commit `ebada59` is deployed; `e98ee0f` records that rollout
+  and tightens Docker build-context exclusions.
+- PR #376 is open and its CLA check passes.
 - The stale `yarn.lock` fix is `4e185e9`.
-- Deployment-record and Docker-context changes are uncommitted. Preserve the
-  unrelated paper archives in the workspace.
+- Preserve the unrelated, untracked paper archives in the workspace.
 - `docs/plans/ISSUES.md`, titled Data Formulator Audit and Change Log, contains the validated audit findings and operations record.
 
 ## Last Verified Production State
@@ -51,9 +52,9 @@
 - The cross-subscription custom domain and managed TLS certificate are healthy.
 - Live state was verified directly; it does not imply that every committed Bicep declaration has been applied as a full deployment.
 
-## Published Files
+## Initial Publication Scope
 
-Files included from the working tree:
+The 2026-07-09 publication included these pre-existing working-tree changes:
 
 - `.vscode/settings.json` (unrelated user change; preserve)
 - `MANIFEST.in`
@@ -70,7 +71,7 @@ Files included from the working tree:
 - `tests/backend/agents/test_client_utils.py`
 - `tests/backend/security/test_global_model_security.py`
 
-Files added by the publication commit:
+The same publication added:
 
 - `docs/plans/ISSUES.md`
 - `tests/backend/agents/test_agent_config.py`
@@ -132,6 +133,7 @@ Files added by the publication commit:
 Read these files before changing code:
 
 - `HANDOFF.md`
+- `docs/plans/2026-07-14-chenglong-adaptation-meeting.md`
 - `docs/plans/ISSUES.md`
 - `docs/plans/2026-07-13-audit-remediation.md`
 - `/memories/repo/azd-deployment-gotchas.md`
@@ -142,7 +144,8 @@ session-cookie migration strategy. DF-020, DF-021, both full test suites,
 independent maintainer reviews, and production revision `0000010` are green; do
 not rewrite their tests merely to change implementation behavior.
 
-Before merging the publication commit, run the backend tests in the devcontainer and review PR #376 checks.
+Before merging PR #376, confirm its current CI checks and reconcile any
+upstream changes added after baseline `00d0f5e`.
 
 ## Safety Notes
 

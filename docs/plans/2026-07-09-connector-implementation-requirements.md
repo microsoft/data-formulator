@@ -95,6 +95,15 @@ Implementation order and issue sequencing remain in `docs/plans/ISSUES.md`. This
 
 Fabric IQ and WorkIQ runtime integration is out of scope unless separately designed, specified, and accepted.
 
+This boundary applies to the existing Agency/Fabric MCP configuration and
+prevents implementation-time tools from being relabeled as product runtime.
+It does not preclude a separately designed Data Formulator MCP-backed connector
+facility. That proposal is tracked as DF-023 and in
+`docs/plans/2026-07-14-enterprise-data-access-architecture.md`. If accepted, it
+must satisfy every auth, identity, limit, Arrow/workspace, provenance, refresh,
+error, observability, and real-service requirement in this document; MCP does
+not waive or replace the connector contract.
+
 ### 3.5 Reassessment decision (2026-07-09)
 
 Connector work now has two distinct readiness thresholds:

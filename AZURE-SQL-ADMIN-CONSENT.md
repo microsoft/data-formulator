@@ -149,5 +149,5 @@ Record these items after approval and testing:
 - Successful Microsoft sign-in/MFA result
 - Successful connection to `CPE_Predictor`
 - Number of catalog entries returned
-- Production revision tested: `ca-dataformulator--0000009`
-- Production image tested: `azure-sql-20260710-1049`
+- Production revision tested: `ca-dataformulator--0000010`
+- Production image tested: `azd-deploy-1783998754`

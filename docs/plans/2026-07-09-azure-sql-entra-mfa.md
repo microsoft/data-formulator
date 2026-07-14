@@ -1,20 +1,15 @@
 # Azure SQL Microsoft Entra MFA Implementation Plan
 
-**Status:** Deployed to production revision `ca-dataformulator--0000009`; loader,
-popup preparation, managed-identity federation, and mocked auth contracts are
-green. The remaining release gates are one interactive Microsoft consent/MFA
-smoke test and restart-durable delegated-token sessions. Previously, loader and
-mocked auth implementation could begin after
-the shared delegated-auth contract is green. The representative Azure SQL
-target, network path, ODBC Driver 18, current-user SQL-audience token, and
-token packing are verified. Explicit active-tenant token acquisition produced
-three successful independent connections, and the implemented loader enumerated
-the catalog. Code and integration review blockers are resolved: one trusted
-proxy hop preserves the public callback/origin, token-mode vault persistence
-excludes tokens, the gateway binds to delegated SQL connectors, and pending
-state consumption is process-atomic under the one-worker deployment. Release
-validation remains blocked on app permission/redirect evidence, the application
-popup flow, and restart-durable delegated-token sessions.
+**Status:** Deployed to production revision `ca-dataformulator--0000010`; loader,
+popup preparation, managed-identity federation, ODBC hardening, per-session
+OAuth-state capacity, and mocked auth contracts are green. The representative
+Azure SQL target, network path, ODBC Driver 18, current-user SQL-audience token,
+and token packing are verified. Explicit active-tenant token acquisition
+produced three successful independent connections, and the implemented loader
+enumerated the catalog. The production permission declaration, callback URI,
+and popup authorization preparation are verified. Remaining release gates are
+tenant-wide admin consent, one interactive Microsoft consent/MFA smoke test,
+and restart-durable delegated-token sessions coordinated with DF-022.
 
 **Goal:** Add hosted, per-user Microsoft Entra authentication for Azure SQL Database so Conditional Access can require MFA and Data Formulator can connect with the resulting delegated access token.
 
