@@ -6,7 +6,10 @@
     "resolutions": {
         "lodash": "^4.18.1",
         "vite": "^7.3.3",
-        "dompurify": "^3.4.2"
+        "dompurify": "^3.4.2",
+        "markdown-it": "^14.3.0",
+        "linkify-it": "^5.0.2",
+        "undici": "^7.28.0"
     },
     "dependencies": {
         "@azure/msal-browser": "^5.6.3",
@@ -60,7 +63,7 @@
         "react-katex": "^3.1.0",
         "react-markdown": "^10.1.0",
         "react-redux": "^8.0.4",
-        "react-router-dom": "^6.22.0",
+        "react-router-dom": "^6.30.4",
         "react-selectable-fast": "^3.4.0",
         "react-simple-code-editor": "^0.13.1",
         "react-vega": "^7.6.0",
