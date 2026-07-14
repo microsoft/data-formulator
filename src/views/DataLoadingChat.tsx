@@ -403,7 +403,8 @@ const ChatBubble = React.memo<{
     existingNames: Set<string>;
     onTableLoaded?: () => void;
     isLatestPendingConnector?: boolean;
-}>(({ message, existingNames, onTableLoaded, isLatestPendingConnector }) => {
+    onContinue?: () => void;
+}>(({ message, existingNames, onTableLoaded, isLatestPendingConnector, onContinue }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
@@ -609,6 +610,20 @@ const ChatBubble = React.memo<{
                                 : (isLatestPendingConnector ?? true)
                         }
                     />
+                )}
+                {/* Continue affordance — agent paused at the tool-call limit and
+                    asked whether to keep going. Clicking resumes the task. */}
+                {message.canContinue && onContinue && (
+                    <Box sx={{ mt: 1 }}>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={onContinue}
+                            sx={{ textTransform: 'none', fontSize: 12, borderRadius: radius.pill, py: 0.25 }}
+                        >
+                            {t('dataLoading.continueTask', 'Continue')}
+                        </Button>
+                    </Box>
                 )}
                 {/* Timestamp + debug — always reserves space, content visible on hover */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, height: 18, opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}>
@@ -1163,6 +1178,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 let connectorFormRef: ConnectorFormPrompt | undefined;
                 const rawEvents: any[] = [];
                 let streamingToolStepsRef: ToolStep[] = [];
+                let continueOffered = false;
 
             // Helper: process action objects (used in both tool_result and actions events)
             const processActions = (actionList: any[]) => {
@@ -1278,6 +1294,9 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                     case 'done':
                         fullText = (event as any).full_text || fullText;
                         break;
+                    case 'continue_prompt':
+                        continueOffered = true;
+                        break;
                     case 'error':
                         fullText += `\n\n**${t('dataLoading.error')}:** ${event.error?.message || t('dataLoading.error')}`;
                         break;
@@ -1296,6 +1315,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 pendingLoads: pendingLoads.length > 0 ? pendingLoads : undefined,
                 loadPlan: loadPlanRef,
                 connectorForm: connectorFormRef,
+                canContinue: continueOffered || undefined,
                 timestamp: Date.now(),
             };
             dispatch(dfActions.addChatMessage(assistantMsg));
@@ -1471,6 +1491,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                         existingNames={existingNames}
                                         onTableLoaded={handleTableLoaded}
                                         isLatestPendingConnector={msg.id === latestPendingConnectorMsgId}
+                                        onContinue={() => sendMessage({ text: 'Please continue.', images: [], attachments: [] })}
                                     />
                             ));
                             if (isLatest) {

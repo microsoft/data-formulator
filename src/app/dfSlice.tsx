@@ -7,7 +7,7 @@ import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
-import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
+import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash } from './utils';
 import { apiRequest } from './apiClient';

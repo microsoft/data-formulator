@@ -1157,7 +1157,7 @@
     "@types/deep-eql" "*"
     assertion-error "^2.0.1"
 
-"@types/d3-array@*", "@types/d3-array@^3.2.1":
+"@types/d3-array@*":
   version "3.2.2"
   resolved "https://registry.npmjs.org/@types/d3-array/-/d3-array-3.2.2.tgz"
   integrity sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==
@@ -2059,11 +2059,6 @@ brace-expansion@^5.0.2:
   dependencies:
     balanced-match "^4.0.2"
 
-bubblesets-js@^3.0.0:
-  version "3.0.1"
-  resolved "https://registry.npmjs.org/bubblesets-js/-/bubblesets-js-3.0.1.tgz"
-  integrity sha512-EKPfysvIU5+u5RLW3mOr94wxzA3nKzqMBX0F95L95BPBDZPVgLBUnT0kJNz4UK/TXbGs8G7yEgl5MvibRBCQoQ==
-
 buffer-crc32@^0.2.1, buffer-crc32@^0.2.13:
   version "0.2.13"
   resolved "https://registry.npmjs.org/buffer-crc32/-/buffer-crc32-0.2.13.tgz"
@@ -2189,11 +2184,6 @@ chownr@^1.1.1:
   version "1.1.4"
   resolved "https://registry.npmjs.org/chownr/-/chownr-1.1.4.tgz"
   integrity sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==
-
-chroma-js@^3.1.2:
-  version "3.2.0"
-  resolved "https://registry.npmjs.org/chroma-js/-/chroma-js-3.2.0.tgz"
-  integrity sha512-os/OippSlX1RlWWr+QDPcGUZs0uoqr32urfxESG9U93lhUfbnlyckte84Q8P1UQY/qth983AS1JONKmLS4T0nw==
 
 classnames@^2.3.0:
   version "2.5.1"
@@ -2342,15 +2332,10 @@ css.escape@^1.5.1:
   resolved "https://registry.npmjs.org/css.escape/-/css.escape-1.5.1.tgz"
   integrity sha512-YUifsXXuknHlUsmlgyY0PKzgPOr7/FjCePfHNt0jxm83wHZi44VDMQ7/fGNkjY3/jV1MC+1CmZbaHzugyeRtpg==
 
-csstype@^3.0.2, csstype@^3.1.0, csstype@^3.2.2, csstype@^3.2.3:
+csstype@^3.0.2, csstype@^3.2.2, csstype@^3.2.3:
   version "3.2.3"
   resolved "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz"
   integrity sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==
-
-culori@^4.0.2:
-  version "4.0.2"
-  resolved "https://registry.npmjs.org/culori/-/culori-4.0.2.tgz"
-  integrity sha512-1+BhOB8ahCn4O0cep0Sh2l9KCOfOdY+BXJnKMHFFzDEouSr/el18QwXEMRlOj9UY5nCeA8UN3a/82rUWRBeyBw==
 
 d3-array@^3.2.0, d3-array@^3.2.4, "d3-array@1 - 3", "d3-array@2 - 3", "d3-array@2.10.0 - 3", "d3-array@2.5.0 - 3", d3-array@3, d3-array@3.2.4:
   version "3.2.4"
@@ -3268,6 +3253,11 @@ flatted@^3.2.9:
   resolved "https://registry.npmjs.org/flatted/-/flatted-3.4.2.tgz"
   integrity sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==
 
+flint-chart@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.npmjs.org/flint-chart/-/flint-chart-0.2.1.tgz"
+  integrity sha512-gtv0bHRlY+zOhM33IKLyNZzh9a29Tn5PZl0FN/CjSnY8ZACysfzUVj0V1GlaxLJ8eMNCq/3BFmrm9ppAlCQvyA==
+
 for-each@^0.3.3, for-each@^0.3.5:
   version "0.3.5"
   resolved "https://registry.npmjs.org/for-each/-/for-each-0.3.5.tgz"
@@ -3411,21 +3401,6 @@ globalthis@^1.0.4:
   dependencies:
     define-properties "^1.2.1"
     gopd "^1.0.1"
-
-gofish-graphics@^0.0.22:
-  version "0.0.22"
-  resolved "https://registry.npmjs.org/gofish-graphics/-/gofish-graphics-0.0.22.tgz"
-  integrity sha512-zRDziOMXIJFAL8Z3mirXKaIC05ZhNd+yWQ3prKsX41MEty+ohs6xH/D43fMhwrKo5AxC8ohdBJ+bvu2m9Z+6cw==
-  dependencies:
-    "@types/d3-array" "^3.2.1"
-    bubblesets-js "^3.0.0"
-    chroma-js "^3.1.2"
-    culori "^4.0.2"
-    d3-array "^3.2.4"
-    lodash "^4.17.21"
-    rybitten "^0.22.0"
-    solid-js "^1.9.5"
-    spectral.js "^2.0.2"
 
 gopd@^1.0.1, gopd@^1.2.0:
   version "1.2.0"
@@ -4185,7 +4160,7 @@ lodash.uniq@^4.5.0:
   resolved "https://registry.npmjs.org/lodash.uniq/-/lodash.uniq-4.5.0.tgz"
   integrity sha512-xfBaXQd9ryd9dlSDvnvI0lvxfLJlYAZzXomUYzLKtUeOQvOP5piqAWuGtrhWeqaXK9hhoM/iyJc5AV+XfsX3HQ==
 
-lodash@^4.17.21, lodash@^4.18.1:
+lodash@^4.18.1:
   version "4.18.1"
   resolved "https://registry.npmjs.org/lodash/-/lodash-4.18.1.tgz"
   integrity sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==
@@ -5593,11 +5568,6 @@ rw@1:
   resolved "https://registry.npmjs.org/rw/-/rw-1.3.3.tgz"
   integrity sha512-PdhdWy89SiZogBLaw42zdeqtRJ//zFd2PgQavcICDUgJT5oW10QCRKbJ6bg4r0/UY2M6BWd5tkxuGFRvCkgfHQ==
 
-rybitten@^0.22.0:
-  version "0.22.0"
-  resolved "https://registry.npmjs.org/rybitten/-/rybitten-0.22.0.tgz"
-  integrity sha512-w9aWDjaIo3YWLTBFiPDLzWWbdiKDkghLKzCeXDsXTqs64Ai0Dw8mHn9d/nnMvnds93GVpRwqjVM5VH+SDJsIsQ==
-
 safe-array-concat@^1.1.3:
   version "1.1.3"
   resolved "https://registry.npmjs.org/safe-array-concat/-/safe-array-concat-1.1.3.tgz"
@@ -5687,16 +5657,6 @@ semver@^7.1.3, semver@^7.3.5, semver@^7.6.3, semver@^7.7.3:
   version "7.7.4"
   resolved "https://registry.npmjs.org/semver/-/semver-7.7.4.tgz"
   integrity sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==
-
-seroval-plugins@~1.5.0:
-  version "1.5.1"
-  resolved "https://registry.npmjs.org/seroval-plugins/-/seroval-plugins-1.5.1.tgz"
-  integrity sha512-4FbuZ/TMl02sqv0RTFexu0SP6V+ywaIe5bAWCCEik0fk17BhALgwvUDVF7e3Uvf9pxmwCEJsRPmlkUE6HdzLAw==
-
-seroval@~1.5.0:
-  version "1.5.1"
-  resolved "https://registry.npmjs.org/seroval/-/seroval-1.5.1.tgz"
-  integrity sha512-OwrZRZAfhHww0WEnKHDY8OM0U/Qs8OTfIDWhUD4BLpNJUfXK4cGmjiagGze086m+mhI+V2nD0gfbHEnJjb9STA==
 
 set-function-length@^1.2.2:
   version "1.2.2"
@@ -5805,15 +5765,6 @@ simple-get@^4.0.0:
     once "^1.3.1"
     simple-concat "^1.0.0"
 
-solid-js@^1.9.5:
-  version "1.9.12"
-  resolved "https://registry.npmjs.org/solid-js/-/solid-js-1.9.12.tgz"
-  integrity sha512-QzKaSJq2/iDrWR1As6MHZQ8fQkdOBf8GReYb7L5iKwMGceg7HxDcaOHk0at66tNgn9U2U7dXo8ZZpLIAmGMzgw==
-  dependencies:
-    csstype "^3.1.0"
-    seroval "~1.5.0"
-    seroval-plugins "~1.5.0"
-
 source-map-js@^1.2.1, "source-map-js@>=0.6.2 <2.0.0":
   version "1.2.1"
   resolved "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz"
@@ -5828,11 +5779,6 @@ space-separated-tokens@^2.0.0:
   version "2.0.2"
   resolved "https://registry.npmjs.org/space-separated-tokens/-/space-separated-tokens-2.0.2.tgz"
   integrity sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==
-
-spectral.js@^2.0.2:
-  version "2.0.2"
-  resolved "https://registry.npmjs.org/spectral.js/-/spectral.js-2.0.2.tgz"
-  integrity sha512-g7NA/GMc2C50ez/foALJW8DcwvwbMgW5WF0/1fmAib5AN8NkJwMVyWgkPeSGAm4D6XAFXdtz9KM4AreuV+hJsg==
 
 stackback@0.0.2:
   version "0.0.2"

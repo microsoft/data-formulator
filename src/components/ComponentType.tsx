@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { Type } from '../data/types';
-import { channels, type ChartTemplateDef } from '../lib/agents-chart';
+import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 
 export type FieldSource = "custom" | "original";
@@ -211,6 +211,7 @@ export interface ChatMessage {
     connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
     divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
     hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
+    canContinue?: boolean;              // agent paused at the tool-call limit — show a "Continue" button to resume the task
     timestamp: number;
 }
 

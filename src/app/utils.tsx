@@ -9,7 +9,7 @@ import { DictTable } from "../components/ComponentType";
 import { Type } from "../data/types";
 import * as d3 from 'd3';
 
-import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "../lib/agents-chart";
+import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "flint-chart";
 import { getBrowserId } from './identity';
 
 export function getUrls() {
@@ -600,28 +600,15 @@ export const assembleVegaChart = (
         }
     }
 
-    // Hack: pie-like radial charts grow too large because the circumference
-    // pressure model + VL's auto-radius both amplify the canvas size.
-    // Apply two dampening levers:
-    //   1. Shrink the base canvas so VL's arc radius starts smaller
-    //   2. Cap maxStretch more aggressively so pressure growth is limited
-    const PIE_LIKE_TYPES = new Set([
-        'Pie Chart', 'Rose Chart', 'Sunburst Chart',
-        'Radar Chart', 'Gauge Chart',
-    ]);
-    const isPieLike = PIE_LIKE_TYPES.has(chartType);
+    const effectiveW = Math.round(baseChartWidth * scaleFactor);
+    const effectiveH = Math.round(baseChartHeight * scaleFactor);
 
-    // Lever 1: reduce base canvas for pie-like charts (0.75× → smaller pie)
-    const canvasShrink = isPieLike ? 0.75 : 1;
-    const effectiveW = Math.round(baseChartWidth * scaleFactor * canvasShrink);
-    const effectiveH = Math.round(baseChartHeight * scaleFactor * canvasShrink);
-
-    // Lever 2: tighter stretch cap for pie-like charts
-    let effectiveMaxStretch = maxStretchFactor;
-    if (effectiveMaxStretch != null && isPieLike) {
-        // Compress toward 1: e.g. 2.0 → 1.3, 3.0 → 1.6, 5.0 → 2.2
-        effectiveMaxStretch = 1 + (effectiveMaxStretch - 1) * 0.3;
-    }
+    // Flint 0.2.x sizing: `baseSize` is the target the chart aims for; `canvasSize`
+    // is the hard ceiling (= base × stretch). DF's `maxStretchFactor` is that
+    // multiplier; fall back to 1.5 so the ceiling is always set explicitly rather
+    // than relying on flint's default. (Radial charts — pie/rose/etc. — render at the
+    // target like any other type under flint 0.2.1, so no pie-specific damping.)
+    const stretch = maxStretchFactor ?? 1.5;
 
     const fieldDisplayNames: Record<string, string> = {};
     for (const [name, meta] of Object.entries(tableMetadata)) {
@@ -634,12 +621,19 @@ export const assembleVegaChart = (
         chart_spec: {
             chartType,
             encodings,
-            canvasSize: { width: effectiveW, height: effectiveH },
+            // DF's default chart width/height is the *target* size → flint `baseSize`.
+            // The hard ceiling is base × stretch (see `stretch` above), so charts render
+            // at the configured size and only grow under pressure up to that ceiling.
+            baseSize: { width: effectiveW, height: effectiveH },
+            canvasSize: {
+                width: Math.round(effectiveW * stretch),
+                height: Math.round(effectiveH * stretch),
+            },
             chartProperties,
         },
         options: {
             addTooltips,
-            ...(effectiveMaxStretch != null ? { maxStretch: effectiveMaxStretch } : {}),
+            ...(maxStretchFactor != null ? { maxStretch: maxStretchFactor } : {}),
             ...assembleOptions,
         },
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),

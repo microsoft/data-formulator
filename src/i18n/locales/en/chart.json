@@ -133,8 +133,6 @@
       "vegaLiteSpec": "Vega-Lite Spec",
       "chartJsLabel": "Chart.js",
       "chartJsConfig": "Chart.js Config",
-      "goFishLabel": "GoFish",
-      "goFishSpec": "GoFish Spec",
       "noSpec": "{{assembler}} returned no spec",
       "noOption": "{{assembler}} returned no option",
       "noConfig": "{{assembler}} returned no config",

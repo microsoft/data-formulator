@@ -18,7 +18,7 @@ import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { Chart, FieldItem, VariantConfigControl } from '../components/ComponentType';
 import { getChartTemplate } from '../components/ChartTemplates';
-import { ChartEncoding, ChartOption, EncodingActionDef } from '../lib/agents-chart';
+import { ChartEncoding, ChartOption, EncodingActionDef } from 'flint-chart';
 import { ConfigSlider } from './EncodingShelfCard';
 
 export interface ChartQuickConfigProps {

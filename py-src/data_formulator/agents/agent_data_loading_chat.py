@@ -799,8 +799,10 @@ class DataLoadingAgent:
         actions = []
         # Safety limit for the agentic loop. Web/scrape tasks (fetch_url -> read_file
         # -> execute_python, repeated) legitimately need several rounds, so keep this
-        # generous; if it is still hit, _forced_summary_turn makes the agent speak.
-        max_iterations = 20
+        # generous. If it is still hit, the agent pauses and asks the user whether to
+        # keep going — the frontend shows a "Continue" button (see the continue_prompt
+        # event emitted after _forced_summary_turn).
+        max_iterations = 30
 
         from data_formulator.sandbox.local_sandbox import SandboxSession
         with SandboxSession() as sandbox_session:
@@ -945,6 +947,13 @@ class DataLoadingAgent:
                     "content": json.dumps(llm_result, default=str),
                 })
 
+            # Bound cumulative scratch growth after each round of tool calls —
+            # LRU-evicts oldest files when the scratch dir exceeds its 1 GiB cap.
+            try:
+                self.workspace.prune_scratch()
+            except Exception:
+                pass
+
             # Loop back for LLM to generate follow-up text
 
         # If we fall out of the for-loop (instead of returning above), the model
@@ -952,6 +961,10 @@ class DataLoadingAgent:
         # tool-free turn so the agent always closes with a message to the user
         # instead of stopping silently right after a tool call.
         yield from self._forced_summary_turn(llm_messages, collected_text)
+        # Surface a user-facing "Continue" affordance. The turn ends here; the user
+        # decides whether to grant another batch of rounds. On continue, the agent
+        # resumes from its summary + the chat history (no server-side loop state).
+        yield {"type": "continue_prompt"}
 
     def _forced_summary_turn(self, llm_messages, collected_text):
         """Elicit a final, tool-free response after the tool-call limit is reached.
@@ -964,11 +977,12 @@ class DataLoadingAgent:
         llm_messages.append({
             "role": "user",
             "content": (
-                "(system notice) You have reached the tool-call limit for this "
-                "turn, so no more tools can run right now. Do NOT attempt any "
-                "tool calls. In a short message, tell the user what you found or "
-                "did so far, note anything still left to do, and suggest how to "
-                "continue."
+                "(system notice) You've used the tool budget for this turn, so no "
+                "more tools can run right now. Do NOT attempt any tool calls. In a "
+                "short, natural message, tell the user what you found or did so far "
+                "and what's still left, then ask whether they'd like you to keep "
+                "going. The user will see a 'Continue' button, so address them "
+                "directly (e.g. \"Want me to keep going?\")."
             ),
         })
         try:

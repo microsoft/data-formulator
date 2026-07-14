@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://arxiv.org/abs/2408.16119"><img src="https://img.shields.io/badge/Paper-arXiv:2408.16119-b31b1b.svg" alt="arXiv"></a>&ensp;
+  <a href="https://pypi.org/project/data_formulator/"><img src="https://img.shields.io/pypi/v/data_formulator.svg?label=pypi%3A%20data_formulator" alt="PyPI"></a>&ensp;
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>&ensp;
   <a href="https://www.youtube.com/watch?v=GfTE2FLyMrs"><img src="https://img.shields.io/badge/YouTube-white?logo=youtube&logoColor=%23FF0000" alt="YouTube"></a>&ensp;
   <a href="https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml"><img src="https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml/badge.svg" alt="build"></a>&ensp;
@@ -38,9 +38,12 @@ Data Formulator makes it simple: **connect any data, ask anything, get charts yo
 
 https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
+> [!TIP]
+> **Love the charts?** They're built on [**Flint**](https://github.com/microsoft/flint-chart) — our open-source visualization language that compiles compact, semantic chart specs into polished Vega-Lite, ECharts, and Chart.js. Explore the [project site](https://microsoft.github.io/flint-chart/) or drop it into your own app.
+
 ## News 🔥🔥🔥
 
-[07-10-2026] **Data Formulator 0.8 alpha 1** — a preview of a more connected, agent-driven data workflow:
+[07-13-2026] **Data Formulator 0.8 alpha 1** — a preview of a more connected, agent-driven data workflow:
 
 - **Smarter agent handoffs.** Analysis can delegate directly to data loading while preserving the conversation and request context.
 - **A redesigned connector experience.** Progressive setup, explicit authentication paths, database discovery, clearer scope controls, and improved credential handling make data sources easier to configure safely.
@@ -49,28 +52,12 @@ https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
 > Preview with `pip install --pre data_formulator==0.8.0a1` or `uvx --from data_formulator==0.8.0a1 data_formulator`.
 
-[05-28-2026] **Data Formulator 0.7** — turn ANY data into insights in five easy steps:
-
-1.  **Connect.** Governed, reusable connections to databases, warehouses, BI systems, object stores, and files (Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, BigQuery, S3, Azure Blob, …). Need a custom source? Point your coding agent at the [data loader plugin guide](examples/plugins/README.md).
-2.  **Load.** Ask the **data-loading agent** to find tables from connected databases, or extract data from Excel files, images, websites, and text.
-3.  **Explore.** A unified **Data Agent** with thread memory inspects data, runs sandboxed code, and weaves explanation, exploration, and recommendation into one fluid conversation — grounded in your context. The **Data Thread** keeps questions, intermediate results, and charts navigable: revisit earlier steps, branch into alternatives, and compare side by side.
-4.  **Refine.** 30+ chart types (area, streamgraph, candlestick, radar, maps, KPI, …) via a new semantic chart engine, plus a **style-refinement agent** that turns rough charts into presentation-ready visuals through natural language.
-5.  **Share.** Build reports and export as image or PDF to tell the story.
-
-➕ **Persistent sessions & workspaces** — identity-isolated, saved across restarts. Data Formulator is your de facto data analysis pane.
-
-**Multilingual UI** — Data Formulator now speaks Chinese in addition to English (没错，DF现在会说中文了！). More languages on the way — [contributions welcome](src/i18n/TRANSLATION_GUIDE.md).
-
-> Install with `pip install data_formulator` or run instantly with `uvx data_formulator`.
-
-> [!TIP]
-> **Are you a developer?** Join us to shape the future of AI-powered data exploration!
-> We're looking for help with new agents, data connectors, chart templates, and more.
-> Check out the [Developers' Guide](DEVELOPMENT.md) and our [open issues](https://github.com/microsoft/data-formulator/issues).
+> Install the latest stable release (0.7) with `pip install data_formulator` or run instantly with `uvx data_formulator`.
 
 ## Previous Updates
 
 Here are milestones that lead to the current design:
+- **v0.7** (05-28-2026): Turn ANY data into insights in five steps — connect governed data sources, load via agents, explore with the unified `DataAgent` + Data Thread, refine 30+ chart types (semantic chart engine powered by [Flint](https://github.com/microsoft/flint-chart)) with a style-refinement agent, and share as reports. Plus persistent sessions & workspaces and a multilingual (English/Chinese) UI.
 - **v0.7 alpha 2** (05-11-2026): Early preview of data connectors, the unified `DataAgent` with thread memory, persistent workspaces, the semantic chart engine, and experimental knowledge distillation.
 - **v0.6** ([Demo](https://github.com/microsoft/data-formulator/releases/tag/0.6)): Real-time insights from live data — connect to URLs and databases with automatic refresh
 - **uv support**: Faster installation with [uv](https://docs.astral.sh/uv/) — `uvx data_formulator` or `uv pip install data_formulator`
@@ -141,31 +128,6 @@ Play with Data Formulator with one of the following options.
 Besides uploading csv, tsv or xlsx files that contain structured data, you can ask Data Formulator to extract data from screenshots, text blocks or websites, or load data from databases use connectors. Then you are ready to explore. Ask visualizaiton questions, edit charts, or delegate some exploration tasks to agents. Then, create reports to share your insights.
 
 https://github.com/user-attachments/assets/164aff58-9f93-4792-b8ed-9944578fbb72
-
-## Research Papers
-* [Data Formulator 2: Iteratively Creating Rich Visualizations with AI](https://arxiv.org/abs/2408.16119)
-
-```
-@article{wang2024dataformulator2iteratively,
-      title={Data Formulator 2: Iteratively Creating Rich Visualizations with AI}, 
-      author={Chenglong Wang and Bongshin Lee and Steven Drucker and Dan Marshall and Jianfeng Gao},
-      year={2024},
-      booktitle={ArXiv preprint arXiv:2408.16119},
-}
-```
-
-* [Data Formulator: AI-powered Concept-driven Visualization Authoring](https://arxiv.org/abs/2309.10094)
-
-```
-@article{wang2023data,
-  title={Data Formulator: AI-powered Concept-driven Visualization Authoring},
-  author={Wang, Chenglong and Thompson, John and Lee, Bongshin},
-  journal={IEEE Transactions on Visualization and Computer Graphics},
-  year={2023},
-  publisher={IEEE}
-}
-```
-
 
 ## Contributing
 

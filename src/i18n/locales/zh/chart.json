@@ -133,8 +133,6 @@
       "vegaLiteSpec": "Vega-Lite 规格",
       "chartJsLabel": "Chart.js",
       "chartJsConfig": "Chart.js 配置",
-      "goFishLabel": "GoFish",
-      "goFishSpec": "GoFish 规格",
       "noSpec": "{{assembler}} 未返回规格",
       "noOption": "{{assembler}} 未返回选项",
       "noConfig": "{{assembler}} 未返回配置",

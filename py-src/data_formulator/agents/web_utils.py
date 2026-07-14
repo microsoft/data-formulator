@@ -306,7 +306,18 @@ def get_html_meta_description(html_content: str) -> str | None:
 
 
 # Default cap on how many bytes we will read from a remote resource (20 MB).
-DEFAULT_MAX_FETCH_BYTES = 20 * 1024 * 1024
+DEFAULT_MAX_FETCH_BYTES = 20 * 1024 * 1024  # default; override via --scratch-max-file-size-mb
+
+
+def _configured_max_fetch_bytes() -> int:
+    """Per-file scratch cap from the server's CLI_ARGS, falling back to the default."""
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            return int(current_app.config.get('CLI_ARGS', {}).get('scratch_max_file_bytes', DEFAULT_MAX_FETCH_BYTES))
+    except Exception:
+        pass
+    return DEFAULT_MAX_FETCH_BYTES
 
 _BROWSER_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -339,7 +350,7 @@ def _ssrf_safe_session() -> requests.Session:
 def fetch_url_bytes(
     url: str,
     timeout: int = 30,
-    max_bytes: int = DEFAULT_MAX_FETCH_BYTES,
+    max_bytes: int | None = None,
     headers: dict | None = None,
 ) -> dict:
     """
@@ -368,6 +379,9 @@ def fetch_url_bytes(
     """
     logger.info(f"Fetching URL: {url}")
     _validate_url_for_ssrf(url)
+
+    if max_bytes is None:
+        max_bytes = _configured_max_fetch_bytes()
 
     if timeout <= 0:
         timeout = 30

@@ -9,6 +9,7 @@
     "capabilityHint": "聚焦下方输入框查看示例提示。",
     "newRequestDivider": "新请求",
     "continueFromSection": "从此处继续对话",
+    "continueTask": "继续",
     "previewShowingRows": "显示 {{total}} 行中的 {{shown}} 行",
     "previewShowingFirstRows": "显示前 {{shown}} 行",
     "sectionTry": "试试这些任务",
