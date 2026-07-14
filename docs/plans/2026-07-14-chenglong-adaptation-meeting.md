@@ -59,19 +59,19 @@ The questions below require current maintainer or product context.
 
 ## Thirty-Second Status
 
-The adaptation work on branch `main` is published through commit `e98ee0f`.
-Runtime source commit `ebada59` is deployed on production revision
-`ca-dataformulator--0000010`. Core application health is green; Azure SQL code
+The adaptation work on branch `main` is published through commit `11dfb1f`.
+That commit is deployed on production revision
+`ca-dataformulator--7z7e3f1`. Core application health is green; Azure SQL code
 is complete but its end-to-end operational gate is not; horizontal scale is
 intentionally blocked by local state. Backend validation passed 2,023 tests
-with 13 skips, frontend validation passed 271 tests, and HTTP health was last
-verified on 2026-07-13.
+with 13 skips, frontend validation passed 277 tests, and HTTP health was last
+verified on 2026-07-14.
 
 **Table 1:** *Readiness by independently releasable surface*
 
 | Surface | Status | Evidence or gate |
 | --- | --- | --- |
-| Core application | Healthy in production | Revision `0000010`, one ready replica, zero restarts, both endpoints HTTP 200, clean recent logs |
+| Core application | Healthy in production | Revision `7z7e3f1`, one ready replica, both endpoints HTTP 200, clean recent logs and browser console |
 | Azure SQL implementation | Source and mocked contracts complete | Delegated connector, secure popup, Driver 18 token path, ODBC hardening, and state isolation are tested and deployed |
 | Azure SQL operations | Blocked before end-to-end release sign-off | Tenant admin consent, then interactive Microsoft sign-in/MFA and staging catalog access |
 | Horizontal scale | Not ready by design | Sessions, delegated tokens, connector metadata, credentials, catalogs, and workspaces require approved shared stores |
@@ -167,8 +167,8 @@ reviewable integration vehicle or whether the work must be split.
 - The frontend build retains existing bundle-size and dynamic-import warnings.
 - Horizontal scale remains out of scope until sessions, connector metadata,
   credentials, catalogs, and workspaces have approved shared stores.
-- Revision `ca-dataformulator--0000009` remains available at zero traffic as
-  the immediate rollback target.
+- Deleting the Container App removed prior revisions. The immediate rollback
+  path is app-only recreation with retained ACR image `azd-deploy-1783998754`.
 
 ## Decisions To Seek
 

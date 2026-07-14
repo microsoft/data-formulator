@@ -1,11 +1,11 @@
 # Session Handoff
 
-**Last updated**: 2026-07-13
+**Last updated**: 2026-07-14
 
 ## Azure SQL Connector Deployment
 
-- Production revision `ca-dataformulator--0000010` is healthy at 100% traffic.
-- Image: `azd-deploy-1783998754` from source commit `ebada59`.
+- Production revision `ca-dataformulator--7z7e3f1` is healthy at 100% traffic.
+- Image: `recreate-11dfb1fd3d3c` from source commit `11dfb1f`.
 - Public discovery exposes distinct `mssql` (credentials) and `azure_sql`
   (delegated Microsoft Entra) connector types.
 - Entra application `Data Formulator GCX DEV` is configured with the production
@@ -29,20 +29,20 @@
 
 ## Current State
 
-- Current local and `origin/main` baseline is `e98ee0f` on `main`.
-- Runtime source commit `ebada59` is deployed; `e98ee0f` records that rollout
-  and tightens Docker build-context exclusions.
+- Current local and `origin/main` runtime baseline is `11dfb1f` on `main`.
+- `11dfb1f` adds stale browser-workspace reconciliation and removes startup
+  console/preload noise; `95465e1` records the meeting and architecture package.
 - PR #376 is open and its CLA check passes.
 - The stale `yarn.lock` fix is `4e185e9`.
-- Preserve the unrelated, untracked paper archives in the workspace.
+- Preserve unrelated Agency Integration Starter changes in the working tree.
 - `docs/plans/ISSUES.md`, titled Data Formulator Audit and Change Log, contains the validated audit findings and operations record.
 
 ## Last Verified Production State
 
 - Resource group: `rg-data-formulator`
-- Revision: `ca-dataformulator--0000010`
-- Image: `azd-deploy-1783998754`
-- Image digest: `sha256:a216e301adda980429fb5dbb6296ee44a9fa7ecadbbb4992369f6d2b89438123`
+- Revision: `ca-dataformulator--7z7e3f1`
+- Image: `recreate-11dfb1fd3d3c`
+- Image digest: `sha256:a139f24ddb77ddd6056f12eb69a4a5420e397929f40532bad181a8bd38d45152`
 - Domain: `data.gcxteam.com`
 - `gpt-5.4-mini`: connected, 260K TPM, default model
 - `gpt-5.4-nano`: connected, 2.009M TPM
@@ -93,7 +93,7 @@ The same publication added:
 - Production frontend build completed successfully with existing bundle-size
   and dynamic-import warnings only.
 - Full backend suite: 2,023 passed and 13 skipped.
-- Full frontend suite: 33 files and 271 tests passed.
+- Full frontend suite: 35 files and 277 tests passed.
 - Five Flask-Session signer deprecation warnings remain and are tracked as
   DF-022; removing the setting without migration would invalidate active
   signed session cookies.
@@ -102,9 +102,10 @@ The same publication added:
 - The obsolete `.github-backup-20260713-212145/` directory was deleted after
   all 202 files were proven recoverable as exact Git blobs; heir-doctor remains
   healthy.
-- Revision `0000010` is healthy and provisioned with one ready replica, zero
-  restarts, and 100% traffic. Revision `0000009` remains available at 0% for
-  rollback.
+- The Container App was fully deleted and recreated from app-only Bicep.
+  Revision `7z7e3f1` is healthy with one ready replica and 100% traffic.
+  Prior revisions were removed by deletion; rollback requires recreating the
+  app with the retained prior ACR image `azd-deploy-1783998754`.
 - Both the generated FQDN and `data.gcxteam.com` return HTTP 200 for HEAD and
   GET. `/api/data-loaders` returns HTTP 200 and exposes distinct `mssql` and
   `azure_sql` types.
@@ -114,10 +115,12 @@ The same publication added:
 - A disposable production connector verified the Microsoft tenant endpoint,
   exact public HTTPS callback, Azure SQL `.default` scope, S256 PKCE, state,
   and challenge; cleanup left no smoke connector behind.
-- The first azd rollout attempt built the image but failed secret synchronization
-  because the default role lacked `listSecrets`. Owner PIM was activated, then
-  the already-built image was rolled out with a narrow Container App image
-  update. No infrastructure provisioning ran.
+- The 2026-07-14 reset prebuilt a clean image from commit `11dfb1f`, deleted
+  only `ca-dataformulator`, and recreated it against the existing environment,
+  certificate, identity, ACR, OpenAI, monitoring, and network resources. The
+  custom and generated endpoints return HTTP 200; fresh sessions contain no
+  user connectors or workspaces; production browser reload has zero console
+  messages and zero failed requests.
 
 ## Pending Queue
 
@@ -141,7 +144,7 @@ Read these files before changing code:
 
 For continued implementation, begin with Entra admin consent and the DF-022
 session-cookie migration strategy. DF-020, DF-021, both full test suites,
-independent maintainer reviews, and production revision `0000010` are green; do
+independent maintainer reviews, and production revision `7z7e3f1` are green; do
 not rewrite their tests merely to change implementation behavior.
 
 Before merging PR #376, confirm its current CI checks and reconcile any

@@ -138,6 +138,25 @@ whenever an issue is resolved, superseded, or split.
   identity/Azure SQL environment keys, clean recent logs, and secure OAuth
   authorization preparation with disposable-connector cleanup.
 
+### Full recreation checkpoint (2026-07-14)
+
+- Published frontend source commit `11dfb1f` and built clean ACR image
+  `recreate-11dfb1fd3d3c` with digest
+  `sha256:a139f24ddb77ddd6056f12eb69a4a5420e397929f40532bad181a8bd38d45152`.
+- Full `azd provision --preview` was rejected because it predicted unrelated
+  changes to the Container Apps environment, OpenAI deployments, Application
+  Insights, and the OpenAI private endpoint.
+- Compiled and what-if validated an app-only Bicep recreation against existing
+  environment, managed certificate, identity, ACR, OpenAI, monitoring, network,
+  and Azure SQL Entra settings.
+- Deleted only `ca-dataformulator` and recreated it as healthy revision
+  `ca-dataformulator--7z7e3f1` at 100% traffic. The custom domain and generated
+  endpoint return HTTP 200, ODBC Driver 18 and both SQL loader types are
+  present, fresh state has zero user connectors/workspaces, startup logs are
+  clean, and a browser reload has zero console messages or failed requests.
+- Prior revisions were removed with the old app. The retained prior ACR image
+  `azd-deploy-1783998754` is now the rollback artifact.
+
 ## Published Product Change Map
 
 This is the complete commit-level map of product, test, dependency, deployment,
@@ -269,8 +288,8 @@ all operational changes are encoded in the original upstream runtime files.
 - Added the `azd-service-name` tag in
   `infra/modules/containerapp.bicep` so `azd` maps the `web` service to
   the Container App.
-- Current live revision: `ca-dataformulator--0000010`.
-- Current live image: `azd-deploy-1783998754`.
+- Current live revision: `ca-dataformulator--7z7e3f1`.
+- Current live image: `recreate-11dfb1fd3d3c`.
 
 #### OPS-002: Configure managed model comparison set
 
@@ -1335,8 +1354,8 @@ Evidence:
   token acquisition produced three independent successful connections and 25
   catalog entries.
 - The Dockerfile installs Microsoft ODBC Driver 18 for the production runtime.
-- Production revision `ca-dataformulator--0000010` runs image
-  `azd-deploy-1783998754` at 100% traffic with one healthy replica and ODBC
+- Production revision `ca-dataformulator--7z7e3f1` runs image
+  `recreate-11dfb1fd3d3c` at 100% traffic with one healthy replica and ODBC
   Driver 18. Public discovery exposes credential-only `mssql` and delegated
   `azure_sql` as distinct connector types.
 - The dedicated `Data Formulator GCX DEV` Entra application has the exact

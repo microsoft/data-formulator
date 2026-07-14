@@ -1,6 +1,6 @@
 # Azure SQL Microsoft Entra MFA Implementation Plan
 
-**Status:** Deployed to production revision `ca-dataformulator--0000010`; loader,
+**Status:** Deployed to production revision `ca-dataformulator--7z7e3f1`; loader,
 popup preparation, managed-identity federation, ODBC hardening, per-session
 OAuth-state capacity, and mocked auth contracts are green. The representative
 Azure SQL target, network path, ODBC Driver 18, current-user SQL-audience token,
