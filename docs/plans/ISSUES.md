@@ -26,7 +26,7 @@ other, but not before their shared prerequisite row.
 | 5 | Complete model transport resilience | DF-009 | DF-012 | Resolved; retry and compatibility suites pass | Bounded 429 retry behavior passes focused tests |
 | 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015, DF-022 | DF-001 through DF-004 | Original hardening resolved; DF-022 session-cookie migration decision remains | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests without deprecated session configuration |
 | 7 | Build shared delegated-auth contract and Fabric discovery | DF-017 | Resolved DF-001, completed source fixes, reassessed requirements | Ready to implement shared auth and mocked discovery; real-service release gates remain | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and restart-durable sessions are verified |
-| 8A | Add Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Shared delegated-auth contract from DF-017 | Review blockers resolved in source; deployment, Entra consent, durable sessions, and popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
+| 8A | Add Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Shared delegated-auth contract from DF-017 | Source blockers deployed; Entra consent, durable sessions, and interactive popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
 | 8B | Complete Fabric discovery integration | DF-017 | Shared delegated-auth contract | May proceed in parallel with DF-016 after shared contract; representative tenant evidence required for release | Bounded delegated workspace/item discovery passes contract and real-service tests |
 | 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Blocked on DF-017 and data-plane spikes | Delta and supported file imports pass catalog, limit, and audience tests |
 | 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Blocked on DF-017 and metadata/query spikes | Delegated RLS-safe query results pass API, limit, and serialization tests |
@@ -54,9 +54,8 @@ whenever an issue is resolved, superseded, or split.
   three independent connections, and 25 catalog entries through the
   implemented loader. Smoke tests must select the tenant explicitly because
   the local Azure CLI cache contains multiple tenant contexts.
-- **Next action**: prepare the reviewed DF-020 and DF-021 source fixes for an
-  approved commit and deployment. Complete production Entra consent and
-  durable sessions, then verify the interactive popup flow.
+- **Next action**: complete production Entra consent and durable sessions, then
+  verify the interactive popup/MFA flow.
 
 ### Review checkpoint (2026-07-13)
 
@@ -120,11 +119,23 @@ whenever an issue is resolved, superseded, or split.
   now share a pure token-manager helper.
 - The five remaining warnings all identify DF-022: Flask-Session 0.8 deprecates
   `SESSION_USE_SIGNER`, whose removal needs an explicit cookie migration.
-- `.github-backup-*` is ignored while the existing recovery directory remains
-  on disk. All active `HANDOFF.md` issue-ledger references now resolve to
-  `docs/plans/ISSUES.md`; heir-doctor remains healthy on Edition v4.1.0.
-- These fixes are local source changes and are not yet committed or deployed.
-  Tenant-wide consent and restart-durable shared sessions remain open gates.
+- `.github-backup-*` is ignored. All 202 files in the existing recovery
+  directory were verified as exact Git blobs before deletion; all active
+  `HANDOFF.md` issue-ledger references resolve to `docs/plans/ISSUES.md`, and
+  heir-doctor remains healthy on Edition v4.1.0.
+- Source commit `ebada59` is deployed to healthy production revision
+  `ca-dataformulator--0000010` on image `azd-deploy-1783998754`. Tenant-wide
+  consent and restart-durable shared sessions remain open gates.
+- The azd remote build produced digest
+  `sha256:a216e301adda980429fb5dbb6296ee44a9fa7ecadbbb4992369f6d2b89438123`.
+  Secret synchronization initially failed under the default role; after Owner
+  PIM activation, a narrow image-only Container App update completed rollout
+  without infrastructure provisioning.
+- Post-deployment verification confirms one healthy ready replica with zero
+  restarts, 100% latest-revision traffic, the custom domain and one-replica cap,
+  HTTP 200 on both endpoints and loader discovery, ODBC Driver 18, managed
+  identity/Azure SQL environment keys, clean recent logs, and secure OAuth
+  authorization preparation with disposable-connector cleanup.
 
 ## Implemented Changes
 
@@ -951,7 +962,7 @@ Implementation evidence (2026-07-09):
 
 ### DF-020: MSSQL connection-string values permit ODBC attribute injection
 
-**Status**: Resolved in source; deployment pending \
+**Status**: Resolved and deployed in revision `ca-dataformulator--0000010` \
 **Severity**: High \
 **Area**: SQL Server, Azure SQL, connection security
 
@@ -1020,7 +1031,7 @@ Implementation evidence (2026-07-13):
 
 ### DF-021: Azure SQL pending-state limit is global across users
 
-**Status**: Resolved in source; deployment pending \
+**Status**: Resolved and deployed in revision `ca-dataformulator--0000010` \
 **Severity**: High \
 **Area**: Azure SQL OAuth, concurrency, availability
 
@@ -1144,9 +1155,9 @@ Acceptance criteria:
 
 ## Repository Review Follow-ups
 
-### RF-001: Transient ACT Edition backup is inside the working tree
+### RF-001: Transient ACT Edition backup was inside the working tree
 
-**Status**: Prevention resolved; existing backup retained pending deletion approval \
+**Status**: Resolved \
 **Severity**: Medium \
 **Area**: Repository hygiene, diagnostics
 
@@ -1174,10 +1185,11 @@ Implementation evidence (2026-07-13):
 
 - Added `.github-backup-*/` to `.gitignore`; `git check-ignore` identifies the
   rule and ordinary `git status` no longer reports the backup.
-- `Test-Path` confirms the existing recovery directory remains on disk.
+- Verified all 202 backup files, totaling 1,231,674 bytes, already exist as
+  exact blobs in Git history; no unique content depended on the directory.
+- Removed only `.github-backup-20260713-212145/`; `Test-Path` returns false and
+  the tracked working tree remains unaffected.
 - Heir-doctor reports a healthy Edition v4.1.0 installation.
-- Deleting the existing backup remains intentionally blocked on explicit
-  approval because it is destructive.
 
 ### RF-002: HANDOFF references a nonexistent root issue ledger
 
@@ -1212,7 +1224,7 @@ Implementation evidence (2026-07-13):
 
 ### DF-016: Azure SQL connector lacks delegated Microsoft Entra MFA
 
-**Status**: Production baseline deployed; local DF-020/DF-021 fixes await deployment, and consent/MFA plus session durability gates remain \
+**Status**: DF-020/DF-021 deployed; consent/MFA and session durability gates remain \
 **Severity**: Medium \
 **Area**: Azure SQL connector, shared MSSQL data plane, authentication
 
@@ -1235,8 +1247,8 @@ Evidence:
   token acquisition produced three independent successful connections and 25
   catalog entries.
 - The Dockerfile installs Microsoft ODBC Driver 18 for the production runtime.
-- Production revision `ca-dataformulator--0000009` runs image
-  `azure-sql-20260710-1049` at 100% traffic with one healthy replica and ODBC
+- Production revision `ca-dataformulator--0000010` runs image
+  `azd-deploy-1783998754` at 100% traffic with one healthy replica and ODBC
   Driver 18. Public discovery exposes credential-only `mssql` and delegated
   `azure_sql` as distinct connector types.
 - The dedicated `Data Formulator GCX DEV` Entra application has the exact
@@ -1260,7 +1272,7 @@ Evidence:
     delegated SQL audience;
   - a lock-backed process-local state registry makes callback consumption
     atomic under the enforced one-worker deployment.
-- The 2026-07-13 review found and the local source now resolves two additional
+- The 2026-07-13 review found and production now resolves two additional
   blockers: DF-020 prevented ODBC attribute injection through
   request-controlled connection-string values, and DF-021 moved the
   eight-state OAuth cap from global process capacity to each browser session.
@@ -1275,8 +1287,6 @@ Impact:
 - Production still requires one interactive popup smoke test to establish user
   consent/MFA and end-to-end callback token exchange. Delegated-token sessions
   also remain restart-ephemeral.
-- The DF-020 and DF-021 fixes require review, commit, and deployment before the
-  production runtime receives them.
 
 Recommended remediation:
 
@@ -1287,8 +1297,6 @@ Recommended remediation:
   verify catalog access through the deployed connector.
 2. Replace restart-ephemeral delegated-token sessions with approved durable
   storage; retain the one-replica cap until a shared backend is available.
-3. Commit and deploy the reviewed DF-020 and DF-021 fixes before the next image
-  release.
 
 Acceptance criteria:
 

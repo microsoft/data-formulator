@@ -4,8 +4,8 @@
 
 ## Azure SQL Connector Deployment
 
-- Production revision `ca-dataformulator--0000009` is healthy at 100% traffic.
-- Image: `azure-sql-20260710-1049`.
+- Production revision `ca-dataformulator--0000010` is healthy at 100% traffic.
+- Image: `azd-deploy-1783998754` from source commit `ebada59`.
 - Public discovery exposes distinct `mssql` (credentials) and `azure_sql`
   (delegated Microsoft Entra) connector types.
 - Entra application `Data Formulator GCX DEV` is configured with the production
@@ -22,26 +22,26 @@
   Cloud Application Administrator or Application Administrator must grant
   tenant-wide consent once for Azure SQL `user_impersonation` on app client ID
   `7cced1c1-4eb6-4adb-a149-9874baab45b0`.
-- Local DF-020 and DF-021 fixes now harden ODBC connection values and isolate
-  the eight-state OAuth limit per signed browser session. These fixes are not
-  committed or deployed yet.
+- DF-020 and DF-021 are deployed: ODBC connection values are hardened and the
+  eight-state OAuth limit is isolated per signed browser session.
 - Azure CLI is scoped to the Microsoft tenant, but the signed-in identity has
   no active direct or transitive Entra directory role and cannot grant consent.
 
 ## Current State
 
-- Current local baseline is `71b1b78` on `main`.
+- Current local and `origin/main` baseline is `ebada59` on `main`.
 - PR #376 is open.
 - The stale `yarn.lock` fix is `4e185e9`.
-- The working tree contains pre-existing Azure SQL and ACT Edition changes plus
-  the current audit remediation. Preserve unrelated user changes.
+- Deployment-record and Docker-context changes are uncommitted. Preserve the
+  unrelated paper archives in the workspace.
 - `docs/plans/ISSUES.md`, titled Data Formulator Audit and Change Log, contains the validated audit findings and operations record.
 
 ## Last Verified Production State
 
 - Resource group: `rg-data-formulator`
-- Revision: `ca-dataformulator--0000009`
-- Image: `azure-sql-20260710-1049`
+- Revision: `ca-dataformulator--0000010`
+- Image: `azd-deploy-1783998754`
+- Image digest: `sha256:a216e301adda980429fb5dbb6296ee44a9fa7ecadbbb4992369f6d2b89438123`
 - Domain: `data.gcxteam.com`
 - `gpt-5.4-mini`: connected, 260K TPM, default model
 - `gpt-5.4-nano`: connected, 2.009M TPM
@@ -98,19 +98,34 @@ Files added by the publication commit:
   signed session cookies.
 - Touched frontend ESLint and the production build pass. Existing bundle-size
   and dynamic-import build warnings remain.
+- The obsolete `.github-backup-20260713-212145/` directory was deleted after
+  all 202 files were proven recoverable as exact Git blobs; heir-doctor remains
+  healthy.
+- Revision `0000010` is healthy and provisioned with one ready replica, zero
+  restarts, and 100% traffic. Revision `0000009` remains available at 0% for
+  rollback.
+- Both the generated FQDN and `data.gcxteam.com` return HTTP 200 for HEAD and
+  GET. `/api/data-loaders` returns HTTP 200 and exposes distinct `mssql` and
+  `azure_sql` types.
+- The deployed container lists ODBC Driver 18, preserves the user-assigned
+  managed identity and all three `AZURE_SQL_ENTRA_*` configuration keys, and
+  recent logs contain no traceback, error, critical, or unhandled match.
+- A disposable production connector verified the Microsoft tenant endpoint,
+  exact public HTTPS callback, Azure SQL `.default` scope, S256 PKCE, state,
+  and challenge; cleanup left no smoke connector behind.
+- The first azd rollout attempt built the image but failed secret synchronization
+  because the default role lacked `listSecrets`. Owner PIM was activated, then
+  the already-built image was rolled out with a narrow Container App image
+  update. No infrastructure provisioning ran.
 
 ## Pending Queue
 
-1. Commit and deploy the approved local fixes; then verify the production image
-  and revision without changing unrelated infrastructure.
-2. Obtain tenant-wide Azure SQL delegated admin consent from an eligible Entra
+1. Obtain tenant-wide Azure SQL delegated admin consent from an eligible Entra
   administrator and complete the interactive popup/MFA smoke test.
-3. Select and implement an approved restart-durable shared session backend;
+2. Select and implement an approved restart-durable shared session backend;
   keep one worker and one replica until that state is shared, and coordinate
   the DF-022 signer-cookie migration with that work.
-4. Monitor PR #376 checks against the full backend and frontend results.
-5. Delete `.github-backup-20260713-212145/` only after explicit approval; it is
-  now ignored and still present as recovery data.
+3. Monitor PR #376 checks against the full backend and frontend results.
 
 ## Resume Point
 
@@ -122,10 +137,10 @@ Read these files before changing code:
 - `/memories/repo/azd-deployment-gotchas.md`
 - `docs/dev-guides/9-workspace-storage-architecture.md`
 
-For continued implementation, begin with the commit/deployment decision and the
-DF-022 session-cookie migration strategy. DF-020, DF-021, both full test suites,
-and independent maintainer reviews are green; do not rewrite their tests merely
-to change implementation behavior.
+For continued implementation, begin with Entra admin consent and the DF-022
+session-cookie migration strategy. DF-020, DF-021, both full test suites,
+independent maintainer reviews, and production revision `0000010` are green; do
+not rewrite their tests merely to change implementation behavior.
 
 Before merging the publication commit, run the backend tests in the devcontainer and review PR #376 checks.
 

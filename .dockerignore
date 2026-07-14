@@ -1,6 +1,9 @@
 .git
 .gitignore
 node_modules
+.venv
+venv
+.azure
 __pycache__
 *.pyc
 .env
@@ -10,3 +13,6 @@ dist
 build
 .pytest_cache
 .mypy_cache
+.github-backup-*
+*.pdf
+*.tar.gz

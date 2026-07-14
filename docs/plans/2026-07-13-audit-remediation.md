@@ -1,7 +1,7 @@
 # Audit Remediation Implementation Plan
 
-**Status:** Local implementation complete; commit, deployment, and external
-gates remain pending.
+**Status:** Local implementation, commit, and production deployment complete;
+external consent and session gates remain pending.
 
 **Goal:** Resolve the locally actionable findings from the 2026-07-13 audit
 without weakening SQL authentication compatibility, OAuth replay protection,
@@ -25,7 +25,8 @@ Locally actionable in this implementation:
 
 - DF-020: ODBC connection-string attribute injection.
 - DF-021: cross-user Azure SQL pending-state eviction.
-- RF-001 prevention: ignore future `.github-backup-*` directories.
+- RF-001: ignore future `.github-backup-*` directories and remove the verified
+  redundant rollback directory.
 - RF-002: repair stale issue-ledger paths in `HANDOFF.md`.
 - Update `docs/plans/ISSUES.md` with test-backed resolution evidence.
 
@@ -37,8 +38,6 @@ Blocked or separately governed:
 - Restart-durable shared sessions require an approved shared backend,
   infrastructure/cost decision, secret handling, migration behavior, and
   deployment validation. Do not silently add a paid cache resource.
-- Removing `.github-backup-20260713-212145/` is destructive. Add the ignore
-  rule now, but delete the existing backup only after explicit approval.
 - Do not commit, push, deploy, or change Azure resources unless explicitly
   requested.
 
@@ -50,13 +49,14 @@ Blocked or separately governed:
 | 2. Implement safe ODBC construction | Complete | 25 focused tests; 90 focused and adjacent tests pass |
 | 3. Pin DF-021 | Complete | Cross-session, per-session capacity, cleanup, replay, and equal-time ordering tests added |
 | 4. Isolate pending-state capacity | Complete | 19 focused tests; 111 focused and adjacent tests pass |
-| 5. Complete non-destructive hygiene | Complete | Backup ignored and retained; handoff paths corrected; heir-doctor healthy |
+| 5. Complete repository hygiene | Complete | Backup ignored, proven recoverable, and deleted; handoff paths corrected; heir-doctor healthy |
 | 6. Update audit ledger | Complete | DF-020, DF-021, RF-001, RF-002, and DF-022 statuses and evidence recorded |
 | 7. Final validation and review | Complete | Backend 2,023 passed/13 skipped; frontend 271 passed; build, lint, diagnostics, diff check, and independent reviews pass |
 
-The completed tasks are local and uncommitted. Production deployment, Entra
-consent, durable shared sessions, the DF-022 cookie migration, and destructive
-backup deletion remain outside this completed implementation scope.
+The completed tasks are committed, pushed in `ebada59`, and deployed to
+production revision `ca-dataformulator--0000010`. Entra consent, durable shared
+sessions, and the DF-022 cookie migration remain outside this completed
+implementation scope.
 
 ## Task 1: Pin DF-020 With Failing Tests
 
@@ -218,10 +218,11 @@ tests:
 .\.venv\Scripts\python.exe -m pytest tests/backend/auth/test_azure_sql_gateway.py tests/backend/auth/test_token_store.py tests/backend/data/test_data_connector_framework.py -q
 ```
 
-## Task 5: Complete Non-Destructive Repository Hygiene
+## Task 5: Complete Repository Hygiene
 
 **Objective:** Resolve stale guidance and prevent transient Edition backups
-from entering future reviews without deleting current recovery data.
+from entering future reviews, then remove rollback data only after proving that
+every file is recoverable.
 
 **Files:**
 
@@ -232,7 +233,7 @@ from entering future reviews without deleting current recovery data.
 ### Step 5.1: Ignore Future Backups
 
 Add `.github-backup-*` to `.gitignore`. Confirm the existing backup disappears
-from ordinary `git status` output while remaining on disk.
+from ordinary `git status` output while it is being evaluated.
 
 ### Step 5.2: Repair Handoff Paths
 
@@ -248,8 +249,13 @@ Run:
 node .github/skills/greeting-checkin/scripts/heir-doctor.cjs
 ```
 
-Expected: healthy Edition v4.1.0. Do not remove the existing backup in this
-task.
+Expected: healthy Edition v4.1.0.
+
+### Step 5.4: Remove The Verified Redundant Backup
+
+Confirm every backup file exists as an exact Git blob or current relocated
+file, remove only `.github-backup-20260713-212145/`, then rerun heir-doctor and
+verify the working tree remains clean.
 
 ## Task 6: Update The Audit Ledger
 
@@ -267,8 +273,9 @@ implemented boundary and exact validation evidence.
 
 ### Step 6.2: Update RF-001 And RF-002
 
-Mark RF-002 resolved after all active handoff paths exist. Mark only the ignore
-portion of RF-001 resolved; keep backup deletion pending explicit approval.
+Mark RF-002 resolved after all active handoff paths exist. Mark RF-001 resolved
+only after the backup is ignored, proven recoverable, deleted, and followed by
+a healthy heir-doctor check.
 
 ### Step 6.3: Preserve External Gates
 
@@ -329,8 +336,9 @@ changes reverted. Report remaining risks and tests not run.
 
 - DF-020 and DF-021 are resolved in local source with focused RED/GREEN
   coverage and deterministic equal-timestamp OAuth eviction ordering.
-- Non-destructive repository hygiene is complete; the ignored Edition backup
-  remains on disk pending explicit deletion approval.
+- Repository hygiene is complete. All 202 backup files were verified as exact
+  Git blobs before the ignored rollback directory was deleted; heir-doctor
+  remains healthy.
 - Full backend validation passes with 2,023 tests and 13 capability/feature
   skips. Five Flask-Session signer deprecation warnings are tracked as DF-022.
 - Full frontend validation passes with 33 files and 271 tests. Production build,
@@ -338,5 +346,8 @@ changes reverted. Report remaining risks and tests not run.
 - OIDC access-token refresh logic is tested through the production-used pure
   `getAccessTokenFromManager()` helper; no mutable test-only singleton exports
   appear in production assets.
-- Tenant-wide Entra consent, restart-durable shared sessions, deployment, and
-  backup deletion remain outside this local remediation.
+- Production revision `ca-dataformulator--0000010` is healthy at 100% traffic on
+  image `azd-deploy-1783998754`; endpoints, loader discovery, Driver 18,
+  managed identity configuration, OAuth preparation, and logs are verified.
+- Tenant-wide Entra consent and restart-durable shared sessions remain outside
+  this remediation.
