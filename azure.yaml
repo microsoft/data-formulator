@@ -10,3 +10,11 @@ services:
       context: .
       remoteBuild: true
     host: containerapp
+  mcp-gateway:
+    project: .
+    language: docker
+    docker:
+      path: ./Dockerfile.mcp-gateway
+      context: .
+      remoteBuild: true
+    host: containerapp

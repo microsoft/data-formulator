@@ -2,6 +2,30 @@
 
 **Last updated**: 2026-07-14
 
+## Governed MCP Gateway
+
+- The local gateway foundation is implemented and validated: profile contract,
+  stateless FastMCP health surface, profile registry, dedicated-caller JWT
+  verifier, FastMCP token adapter, approval gate, late-result barrier, exact
+  upstream tool-drift check, gateway image, and feature-gated internal gateway
+  IaC.
+- Local MCP gateway plus connector framework validation: 124 tests passed.
+  Root Bicep and parameters compile with `enableMcpGateway=false`; no gateway
+  Container App, identity, or other Azure resource has been deployed.
+- A dedicated single-tenant gateway Entra resource application, delegated
+  `access_as_user` scope, and tenant service principal exist. The existing Data
+  Formulator client requests that scope.
+- Current blocker: tenant-wide consent for the gateway scope requires an Entra
+  administrator. The current identity can create app resources but received an
+  administrator-only authorization denial when it attempted consent.
+- Fabric access exists, but the checked personal workspace has no OneLake
+  items. A Fabric owner must nominate a non-sensitive data-agent or ontology
+  fixture and a matching direct comparison source.
+- Resume from `docs/plans/2026-07-14-governed-mcp-adapter-tracker.md` and
+  `docs/plans/2026-07-14-internal-mcp-gateway-provisioning.md`. Do not enable
+  the gateway or run an infrastructure preview until consent and fixture-owner
+  prerequisites are satisfied.
+
 ## Azure SQL Connector Deployment
 
 - Production revision `ca-dataformulator--azd-1784046335` is healthy at 100%

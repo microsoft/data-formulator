@@ -1,0 +1,29 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash appuser
+
+ENV LANG=C.UTF-8
+
+WORKDIR /app
+
+COPY pyproject.toml MANIFEST.in README.md ./
+COPY py-src ./py-src
+
+RUN pip install --no-cache-dir .
+
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+ENTRYPOINT ["uvicorn", "data_formulator.mcp_gateway.server:app", "--host", "0.0.0.0", "--port", "8080"]

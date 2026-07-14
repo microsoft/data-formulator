@@ -32,4 +32,8 @@ boto3
 google-cloud-bigquery
 google-auth
 db-dtypes
+
+# Governed MCP gateway and streamable HTTP client
+mcp[cli]>=1.2.0
+
 -e .

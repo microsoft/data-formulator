@@ -10,8 +10,11 @@ param location string
 @description('azd environment name, used for resource naming.')
 param environmentName string
 
+@description('Optional managed identity name. Defaults to the public application identity.')
+param identityName string = 'id-${environmentName}'
+
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'id-${environmentName}'
+  name: identityName
   location: location
 }
 

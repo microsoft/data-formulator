@@ -35,6 +35,24 @@ param azureSqlEntraTenantId string = ''
 @description('Optional Microsoft Entra application client ID for delegated Azure SQL connections.')
 param azureSqlEntraClientId string = ''
 
+@description('Enables the additive internal MCP gateway resources after Entra configuration and deployment review.')
+param enableMcpGateway bool = false
+
+@description('Gateway container image reference supplied by the mcp-gateway azd service.')
+param mcpGatewayContainerImage string = ''
+
+@description('Dedicated gateway Entra issuer URL.')
+param mcpGatewayIssuerUrl string = ''
+
+@description('Dedicated gateway Entra application audience.')
+param mcpGatewayAudience string = ''
+
+@description('Dedicated gateway Entra JWKS URL.')
+param mcpGatewayJwksUrl string = ''
+
+@description('Gateway MCP resource-server URL used for OAuth protected-resource metadata.')
+param mcpGatewayResourceUrl string = ''
+
 @description('Reference the governed VNet instead of updating it. Use for environments where policy owns VNet metadata.')
 param useExistingVirtualNetwork bool = false
 
@@ -68,6 +86,15 @@ module identity 'modules/identity.bicep' = {
   }
 }
 
+module mcpGatewayIdentity 'modules/identity.bicep' = if (enableMcpGateway) {
+  scope: rg
+  params: {
+    location: location
+    environmentName: environmentName
+    identityName: 'id-${environmentName}-mcp'
+  }
+}
+
 module network 'modules/network.bicep' = {
   name: 'network'
   scope: rg
@@ -86,7 +113,9 @@ module registry 'modules/registry.bicep' = {
   params: {
     location: location
     environmentName: environmentName
-    principalIdForAcrPull: identity.outputs.principalId
+    principalIdsForAcrPull: enableMcpGateway
+      ? [identity.outputs.principalId, mcpGatewayIdentity.?outputs.?principalId ?? '']
+      : [identity.outputs.principalId]
   }
 }
 
@@ -123,8 +152,26 @@ module containerApp 'modules/containerapp.bicep' = {
   }
 }
 
+module mcpGateway 'modules/mcp-gateway.bicep' = if (enableMcpGateway) {
+  scope: rg
+  params: {
+    location: location
+    environmentName: environmentName
+    containerImage: mcpGatewayContainerImage
+    managedEnvironmentId: containerApp.outputs.managedEnvironmentId
+    userAssignedIdentityId: mcpGatewayIdentity.?outputs.?identityId ?? ''
+    containerRegistryLoginServer: registry.outputs.loginServer
+    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
+    gatewayIssuerUrl: mcpGatewayIssuerUrl
+    gatewayAudience: mcpGatewayAudience
+    gatewayJwksUrl: mcpGatewayJwksUrl
+    gatewayResourceUrl: mcpGatewayResourceUrl
+  }
+}
+
 output RESOURCE_GROUP_NAME string = rg.name
 output AZURE_LOCATION string = location
 output SERVICE_WEB_ENDPOINT_URL string = containerApp.outputs.fqdn
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
 output AZURE_OPENAI_ENDPOINT string = openai.outputs.endpoint
+output MCP_GATEWAY_INTERNAL_FQDN string = mcpGateway.?outputs.?internalFqdn ?? ''

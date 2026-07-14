@@ -89,6 +89,62 @@ contracts, and the existing connector/workspace security boundaries.
 This is a provisional decision. A source-paired spike must test whether an MCP
 path can satisfy the same functional and quality contract as a direct adapter.
 
+## Agency Capability Refinement
+
+Agency is an implementation-time MCP and workflow host, not an application
+runtime dependency. Its profile boundaries are useful for discovering and
+testing approved source capabilities, but Data Formulator must not invoke the
+Agency CLI from a deployed request path or inherit its broad developer/workflow
+permissions.
+
+The current local inventory establishes these source-specific boundaries:
+
+| Source | Agency evidence | Product integration decision |
+| --- | --- | --- |
+| Fabric / OneLake | `project-fabric*` profiles reference the Fabric skills plugin, but the profiles are templates and have not been exercised as data-plane servers | First MCP pilot candidate, gated on explicit plugin inspection, a named Fabric workspace/item fixture, and a source-paired direct/MCP contract test |
+| Azure SQL | Agency's Azure MCP router exposes Azure SQL management operations for servers, databases, firewall rules, elastic pools, and Entra administrators; it exposes no table, schema, or query operation | Do not use the management-plane MCP as a data connector. Retain the direct `mssql` connector as the supported product path; evaluate a future approved SQL data-plane MCP only when it passes this plan's contract gates |
+| Microsoft Graph | `m365-people-context` exposes Graph for narrow people/org context; `project-context` is intentionally broad and sensitive | Do not expose generic Graph through a data connector. Consider a separate, source-scoped connector only after its data domain, delegated permissions, and user-visible scope are defined |
+| Kusto | `project-ops` includes an Agency Kusto MCP | Candidate for a separate governed analytical source, not a fallback transport for Fabric or Azure SQL |
+| M365 files, mail, Teams, Planner, and SharePoint | Separate consent-sensitive Agency profiles exist | Not candidates for blanket runtime discovery. Any future connector must use an explicit source type, named scope, least-privilege delegated permissions, and separate review |
+
+Agency's `include_mcps_from_workspace = false` setting is an appropriate
+implementation-time isolation pattern. Mirror its intent in the product with an
+administrator-owned server registry; do not discover or trust ambient MCP
+servers at runtime.
+
+### Agency-Guided Adoption Sequence
+
+1. Run read-only Agency inventory commands with `--profile-only` to confirm
+   effective server and tool names. Do not call tenant data tools during this
+   inventory.
+2. Inspect the Fabric plugin and each exposed tool before enabling a Fabric
+   profile. Confirm whether tool calls are read-only, which identity and tenant
+   scopes they use, and whether the server offers catalog, schema, bounded
+   query, pagination, cancellation, and provenance operations.
+3. Select one administrator-approved Fabric workspace item that is available
+   through both a direct path and the candidate MCP server. Name a server
+   operations owner and a security reviewer before accessing the item.
+4. Implement the deterministic Data Formulator MCP profile mock and contract
+   suite before a real server adapter. Validate capability version, server
+   identity, pagination, row/byte/time limits, cancellation, error
+   sanitization, provenance, and Arrow conversion or governed-handle behavior.
+5. Run the source-paired Fabric spike. Approve a production MCP adapter only if
+   it passes every decision gate in this plan.
+6. Add future source adapters one at a time. Azure SQL, Graph, Kusto, and M365
+   content require separate source contracts and must not be enabled by a broad
+   "other sources" switch.
+
+### Azure SQL Retirement Interaction
+
+The delegated Azure SQL Microsoft Entra connector is being considered for
+retirement because the tenant's MFA/consent flow is not viable. This does not
+make Agency a replacement Azure SQL data transport: the available Azure SQL MCP
+is management-plane only and has no table, schema, or query operation. Keep the
+generic credential-based `mssql` connector independent of that retirement.
+Revisit the SQL MCP option only when an approved data-plane server can meet the
+same identity, schema, bounded transfer, query safety, provenance, refresh,
+cancellation, and operational-ownership requirements as a direct connector.
+
 ## Proposed Runtime Shape
 
 ### Canonical Data Boundary
@@ -107,6 +163,61 @@ A direct provider adapter implements those operations against the provider SDK
 or API. An MCP-backed adapter maps an approved server profile to the same
 operations. Existing connector routes remain shared; provider-specific routes
 require a separate architecture decision.
+
+### Hosted Gateway Topology
+
+The first runtime MCP slice is a dedicated, internal-only gateway service, not
+an extension of the public Data Formulator Container App and not a server that
+hosts every Agency capability. Data Formulator calls the gateway with its
+identity and operation context; the gateway validates the approved profile,
+enforces limits and approval policy, and invokes the configured upstream
+service. The gateway exposes only the product operations `catalog`, `schema`,
+`semantic_query`, `bounded_read`, and `health`.
+
+The pilot topology has these boundaries:
+
+- The public Data Formulator app remains the browser-facing surface.
+- A separate internal Container App hosts the MCP gateway with a distinct
+   managed identity, independent source permissions, and no public ingress. The
+   gateway validates a Data Formulator Entra access token with a gateway-specific
+   audience; managed identity alone does not enforce inbound caller identity.
+- The gateway reaches only profile-allowlisted Foundry Toolbox, Fabric IQ,
+   OneLake, and approved Work IQ endpoints. Agency, VS Code MCP proxies, and
+   arbitrary remote server URLs are never present in the runtime path.
+- The initial gateway profile is Fabric-only. Work IQ remains disabled until
+   tenant policy and explicit read paths are approved; Azure SQL is excluded
+   because the available MCP operations are management-plane only.
+- A later private Foundry or private remote-MCP route requires a separate
+   network decision covering an MCP subnet, DNS, ingress, egress, and identity.
+   The current Container Apps environment does not define that topology.
+
+This deployment boundary makes the gateway a small product service with a
+finite capability surface. It must not become an ambient enterprise-resource
+broker simply because Agency can discover more tools during development.
+
+### Feasibility Confirmation: 2026-07-14
+
+Current Microsoft documentation confirms that Azure Container Apps can host a
+remote MCP server using HTTP GET/POST endpoints, with custom authentication and
+stateless service design. Container Apps internal ingress makes the gateway
+reachable from the public Data Formulator app when both apps share an
+environment, without exposing the gateway to the public internet.
+
+That confirms the internal Data Formulator-to-gateway pilot is technically
+feasible in the existing Container Apps environment. It does **not** confirm
+that Foundry Agent Service can consume that gateway privately: current Foundry
+guidance requires Standard Agent Setup with private networking and a dedicated
+MCP subnet delegated to `Microsoft.App/environments`. The current VNet defines
+only an infrastructure subnet and a private-endpoint subnet, so a Foundry-to-
+gateway private MCP route is a later network implementation, not part of the
+first pilot.
+
+The OneLake Delta table API currently supports read-only schema and table
+metadata operations, including storage locations, but does not document bulk
+table-row reads. The gateway may use it for catalog and schema. Bounded table
+import requires a separate validated data path, such as a source-approved
+OneLake DFS/Delta reader or Fabric SQL endpoint, with its own identity,
+audience, regional, limit, and provenance tests.
 
 ### Data Formulator MCP Profile
 
@@ -152,6 +263,11 @@ and cancellation behavior before approving an MCP data plane.
 - The adapter must fail closed on server/profile mismatch, capability drift,
   audience mismatch, expired credentials, oversized results, and unsupported
   continuation behavior.
+- The first release treats upstream cancellation as best-effort. On caller
+   cancellation, the gateway stops waiting and marks the operation terminal;
+   late upstream results are discarded before they can mutate connector,
+   catalog, workspace, or provenance state. End-to-end upstream task
+   cancellation requires a later, separately validated MCP task design.
 - Every call must be correlated to identity, connector, operation, and server
   profile without logging tokens, source identifiers, queries, or result data.
 

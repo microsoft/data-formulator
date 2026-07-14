@@ -29,6 +29,12 @@ governed production environment. Production-specific values live in
 - OAuth deployments behind Container Apps ingress must produce the public HTTPS
   callback and origin. Configure an exact trusted proxy boundary or a validated
   public OAuth base URL; never trust arbitrary forwarded headers.
+- The internal MCP gateway is present as a separate azd service and Bicep
+  module, but `enableMcpGateway` defaults to `false`. Do not enable it until a
+  dedicated Entra gateway application supplies the issuer, audience, JWKS, and
+  resource-server URL values; then run a reviewed `azd provision --preview`
+  before any deployment. The gateway has its own user-assigned identity and
+  internal ingress, and must not reuse the public application's source roles.
 
 ## Required Preflight
 
@@ -55,6 +61,12 @@ domain, traffic rule, replica cap, subnet NSG associations, VNet flow-log
 metadata, model capacities, or RAI policy bindings. ARM may still report
 response-only fields and symbolic references as modifications; inspect their
 before/after values rather than relying only on the resource-level change type.
+
+For the MCP gateway pilot, also require `enableMcpGateway=true` and a
+`SERVICE_MCP_GATEWAY_IMAGE_NAME` value in the azd environment. Review the
+gateway identity, internal Container App, ACR pull role assignment, and only
+the intended gateway configuration additions. Stop if the preview changes any
+protected public-app property listed above.
 
 ## Post-Deployment Verification
 
