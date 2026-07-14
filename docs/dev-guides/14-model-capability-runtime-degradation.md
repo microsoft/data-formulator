@@ -11,6 +11,8 @@
 2. **`drop_params=True`** — LiteLLM 自动丢弃模型不支持的参数（如 `reasoning_effort`、`parallel_tool_calls`），不会报错。
 3. **图片降级** — 如果模型不支持图片，`_is_image_deserialize_error()` 捕获异常后自动剥离图片重试。
 4. **无前端预检查** — 前端始终允许用户上传图片；后端自动处理。
+5. **有限调用预算** — 单次请求默认 90 秒，包含重试和兼容性降级的总预算为 120 秒。
+6. **流式安全重试** — 仅在首个 chunk 之前重试瞬时错误；已经输出 chunk 后直接传播异常，由 route 转换为结构化 NDJSON error，避免重复输出。
 
 ## Client API
 
@@ -27,9 +29,14 @@ class Client:
 ```
 
 两个方法共享相同的内部逻辑：
+
 - 拷贝 `self.params`，注入 `reasoning_effort`
 - 调用 `litellm.completion(model=..., drop_params=True, ...)`
+- 将每次调用限制在 90 秒，并让所有重试共享 120 秒总 deadline
 - 捕获 image deserialize 错误 → 剥离图片 → 重试
+- 捕获不支持的 `reasoning_effort` → 删除该参数 → 重试
+- 图片和 reasoning 降级各最多执行一次，可以在同一总 deadline 内组合
+- 流式请求只在首个 chunk 之前执行 transport/兼容性重试
 
 ## reasoning_effort 分层
 
@@ -41,7 +48,7 @@ class Client:
 ### 五档定义
 
 | Tier | 适用范围 | 不支持的模型如何降级 |
-|---|---|---|
+| --- | --- | --- |
 | `none` | 仅 GPT-5 `codex` / `pro`（最轻档） | 其它模型回退到 `low` |
 | `minimal` | 仅 OpenAI GPT-5 base / mini / nano / 5.x | GPT-5 codex/pro → `none`；其它 → `low` |
 | `low` / `medium` / `high` | 所有支持 reasoning 的模型（LiteLLM 统一映射） | 不支持 reasoning 的模型由 `drop_params=True` 静默忽略 |
@@ -52,7 +59,7 @@ class Client:
 ### 当前配置（来源：`agent_config.py`）
 
 | Agent ID | Tier | 备注 |
-|---|---|---|
+| --- | --- | --- |
 | `data_transform` | `low` | 生成 Python 转换脚本 |
 | `data_rec` | `low` | 图表 / 转换推荐 |
 | `data_agent` | `low` | 多步探索 agent |
@@ -107,7 +114,7 @@ grep -rn 'reasoning_effort_for' py-src/data_formulator/agents/
 ## 已删除的机制
 
 | 删除项 | 原位置 | 理由 |
-|---|---|---|
+| --- | --- | --- |
 | `import openai` + 直连分支 | `client_utils.py`、5 个 Agent | 统一走 LiteLLM |
 | `get_response()` | `client_utils.py` | 死代码 |
 | `is_likely_text_only_model()` | `model_registry.py` | 硬编码模型名检查 |
@@ -130,7 +137,20 @@ grep -rn 'reasoning_effort_for' py-src/data_formulator/agents/
 ## 厂商映射
 
 | 厂商 | `reasoning_effort` 效果 |
-|---|---|
+| --- | --- |
 | OpenAI (o1/o3/gpt-5) | 直接透传 |
 | Anthropic (Claude) | 映射为 `thinking.budget_tokens` |
 | 其他（Gemini、Ollama 等） | `drop_params=True` 静默忽略 |
+
+## LiteLLM 版本契约
+
+LiteLLM 的 provider routing、reasoning 转换、streaming 和异常映射会随版本
+变化。运行时依赖固定为 `litellm==1.91.1`，并在以下三个位置保持一致：
+
+- `pyproject.toml`：Python 包和 Docker 构建的依赖来源
+- `requirements.txt`：传统 pip 开发流程
+- `uv.lock`：本地和 CI 的可复现解析及制品哈希
+
+升级 LiteLLM 时必须同步更新三个位置，并运行 client、image fallback、
+reasoning 和 model registry 测试。不要让 Docker 在没有版本约束的情况下
+解析当时最新的 LiteLLM。

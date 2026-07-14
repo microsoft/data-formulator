@@ -642,7 +642,7 @@ requires-dist = [
     { name = "google-auth" },
     { name = "google-cloud-bigquery" },
     { name = "gunicorn", specifier = ">=23.0.0" },
-    { name = "litellm" },
+    { name = "litellm", specifier = "==1.91.1" },
     { name = "numpy" },
     { name = "openai" },
     { name = "openpyxl", specifier = ">=3.1.0" },
@@ -1572,7 +1572,7 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.83.14"
+version = "1.91.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1588,9 +1588,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/7c/c095649380adc96c8630273c1768c2ad1e74aa2ee1dd8dd05d218a60569f/litellm-1.83.14.tar.gz", hash = "sha256:24aef9b47cdc424c833e32f3727f411741c690832cd1fe4405e0077144fe09c9", size = 14836599, upload-time = "2026-04-26T03:16:10.176Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/70/1b419158085e0cc1615642dd62c7a5d4c3254db3de77df65dade3b25165b/litellm-1.91.1.tar.gz", hash = "sha256:49a24593df7e37262c52243a8e07572d451d37c100aa1b1f347d80d501d2e386", size = 14872532, upload-time = "2026-07-08T23:07:04.559Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/5c/1b5691575420135e90578543b2bf219497caa33cfd0af64cb38f30288450/litellm-1.83.14-py3-none-any.whl", hash = "sha256:92b11ba2a32cf80707ddf388d18526696c7999a21b418c5e3b6eda1243d2cfdb", size = 16457054, upload-time = "2026-04-26T03:16:05.72Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/52/166a934d194afcff2a7ec4e1928f1865504ade2e26f62e24d49aaec400d1/litellm-1.91.1-py3-none-any.whl", hash = "sha256:bf8e3d23cddf0eb4c05714dffcaafd8a944adf0f9c9b01c6c863b2637309de2e", size = 16670790, upload-time = "2026-07-08T23:07:01.151Z" },
 ]
 
 [[package]]

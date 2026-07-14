@@ -261,6 +261,36 @@ class _HttpError(Exception):
 
 
 class TestCompletionRetries:
+    def test_applies_finite_default_timeout(self):
+        client = Client("azure", "gpt-5.4-mini", api_key="k")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            return_value=MagicMock(),
+        ) as completion:
+            client.get_completion([{"role": "user", "content": "hi"}])
+
+        assert completion.call_args.kwargs["timeout"] == client._DEFAULT_TIMEOUT_SECONDS
+
+    def test_does_not_retry_past_total_deadline(self):
+        client = Client("azure", "gpt-5.4-mini", api_key="k")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=_HttpError(429),
+        ) as completion, patch.object(
+            client,
+            "_retry_delay",
+            return_value=2.0,
+        ), patch(
+            "data_formulator.agents.client_utils.time.monotonic",
+            side_effect=[0.0, 0.0, client._MAX_TOTAL_RETRY_SECONDS - 1.0],
+        ):
+            with pytest.raises(_HttpError):
+                client.get_completion([{"role": "user", "content": "hi"}])
+
+        assert completion.call_count == 1
+
     @pytest.mark.parametrize("status_code", [429, 500, 502, 503, 504])
     def test_retries_transient_http_failures(self, status_code):
         client = Client("openai", "gpt-4o", api_key="k")
@@ -342,3 +372,63 @@ class TestCompletionRetries:
 
         assert result is success
         assert completion.call_count == 2
+
+
+class TestStreamingCompletionRetries:
+    @staticmethod
+    def _stream_failing_before_first_chunk(error):
+        def generate():
+            if False:
+                yield None
+            raise error
+
+        return generate()
+
+    @staticmethod
+    def _stream_failing_after_first_chunk(chunk, error):
+        def generate():
+            yield chunk
+            raise error
+
+        return generate()
+
+    def test_retries_transient_failure_before_first_chunk(self):
+        client = Client("azure", "gpt-5.4-mini", api_key="k")
+        chunk = MagicMock(name="chunk")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            side_effect=[
+                self._stream_failing_before_first_chunk(_HttpError(503)),
+                iter([chunk]),
+            ],
+        ) as completion, patch("data_formulator.agents.client_utils.time.sleep"):
+            stream = client.get_completion(
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+
+            assert list(stream) == [chunk]
+
+        assert completion.call_count == 2
+
+    def test_does_not_retry_after_first_chunk(self):
+        client = Client("azure", "gpt-5.4-mini", api_key="k")
+        chunk = MagicMock(name="chunk")
+
+        with patch(
+            "data_formulator.agents.client_utils.litellm.completion",
+            return_value=self._stream_failing_after_first_chunk(
+                chunk,
+                _HttpError(503),
+            ),
+        ) as completion, patch("data_formulator.agents.client_utils.time.sleep"):
+            stream = client.get_completion(
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+
+            with pytest.raises(_HttpError):
+                list(stream)
+
+        assert completion.call_count == 1

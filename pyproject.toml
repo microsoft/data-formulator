@@ -27,7 +27,7 @@ dependencies = [
   "flask-limiter",
   "openai",
   "python-dotenv",
-  "litellm",
+  "litellm==1.91.1",
   "duckdb",
   "numpy",
   "vl-convert-python",

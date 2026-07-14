@@ -103,6 +103,13 @@ class TestClassifyAndWrapLlmError:
         assert result.code == ErrorCode.LLM_TIMEOUT
         assert result.retry is True
 
+    def test_typed_timeout_without_timeout_text(self) -> None:
+        result = self.classify(TimeoutError("provider stream interrupted"))
+
+        assert result.code == ErrorCode.LLM_TIMEOUT
+        assert result.message == "Request timed out — please check connectivity and try again"
+        assert result.retry is True
+
     def test_service_error_502(self) -> None:
         exc = Exception("502 Bad Gateway")
         result = self.classify(exc)

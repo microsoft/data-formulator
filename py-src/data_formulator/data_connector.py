@@ -685,6 +685,10 @@ class DataConnector:
         loader = self._loaders.get(identity)
         if loader is not None:
             return loader
+        if _loader_auth_mode(self._loader_class) == "none":
+            loader = self._loader_class(dict(self._default_params))
+            self._set_loader(identity, loader)
+            return loader
         # Try auto-reconnect from vault
         loader = self._try_auto_reconnect(identity)
         if loader is not None:
@@ -1373,7 +1377,7 @@ def connector_get_status():
 
     # No-auth connectors are always connected.
     if _loader_auth_mode(source._loader_class) == "none":
-        loader = source._loader_class()
+        loader = source._require_loader()
         return json_ok({
             "connected": True,
             "persisted": False,

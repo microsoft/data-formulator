@@ -156,6 +156,9 @@ def classify_llm_error(exc: Exception) -> str:
     Falls back to a generic ``"Model request failed"`` for unknown errors.
     The caller is responsible for logging the full exception server-side.
     """
+    if isinstance(exc, TimeoutError):
+        return "Request timed out — please check connectivity and try again"
+
     text = str(exc).lower()
     for pattern, safe_msg in _LLM_ERROR_PATTERNS:
         if re.search(pattern, text):

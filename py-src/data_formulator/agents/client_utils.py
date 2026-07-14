@@ -11,6 +11,8 @@ class Client(object):
     """
     _MAX_ATTEMPTS = 3
     _MAX_RETRY_DELAY_SECONDS = 30.0
+    _DEFAULT_TIMEOUT_SECONDS = 90.0
+    _MAX_TOTAL_RETRY_SECONDS = 120.0
 
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None):
 
@@ -134,19 +136,130 @@ class Client(object):
         base = min(2 ** attempt, cls._MAX_RETRY_DELAY_SECONDS)
         return min(base + random.uniform(0, 0.25), cls._MAX_RETRY_DELAY_SECONDS)
 
-    def _completion_with_retry(self, **kwargs):
+    @classmethod
+    def _bounded_call_kwargs(cls, kwargs: dict, deadline: float) -> dict:
+        call_kwargs = dict(kwargs)
+        remaining = max(deadline - time.monotonic(), 0.001)
+        configured_timeout = call_kwargs.get("timeout", cls._DEFAULT_TIMEOUT_SECONDS)
+        if isinstance(configured_timeout, (int, float)):
+            call_kwargs["timeout"] = min(float(configured_timeout), remaining)
+        else:
+            call_kwargs["timeout"] = min(cls._DEFAULT_TIMEOUT_SECONDS, remaining)
+        return call_kwargs
+
+    @classmethod
+    def _can_retry_within_deadline(cls, deadline: float, delay: float) -> bool:
+        return delay < deadline - time.monotonic()
+
+    def _stream_completion_with_retry(self, *, deadline: float, **kwargs):
+        current_kwargs = dict(kwargs)
+        transport_attempt = 0
+        removed_reasoning = False
+        removed_images = False
+
+        while True:
+            emitted_chunk = False
+            try:
+                stream = litellm.completion(
+                    **self._bounded_call_kwargs(current_kwargs, deadline)
+                )
+                for chunk in stream:
+                    emitted_chunk = True
+                    yield chunk
+                return
+            except Exception as error:
+                if emitted_chunk:
+                    raise
+
+                error_text = str(error)
+                if (
+                    not removed_reasoning
+                    and "reasoning_effort" in current_kwargs
+                    and self._is_reasoning_effort_error(error_text)
+                ):
+                    current_kwargs.pop("reasoning_effort", None)
+                    removed_reasoning = True
+                    continue
+                if (
+                    not removed_images
+                    and self._is_image_deserialize_error(error_text)
+                ):
+                    current_kwargs["messages"] = self._strip_images_from_messages(
+                        current_kwargs["messages"]
+                    )
+                    removed_images = True
+                    continue
+
+                transport_attempt += 1
+                if (
+                    transport_attempt >= self._MAX_ATTEMPTS
+                    or not self._is_retryable_transport_error(error)
+                ):
+                    raise
+                delay = self._retry_delay(error, transport_attempt - 1)
+                if not self._can_retry_within_deadline(deadline, delay):
+                    raise
+                time.sleep(delay)
+
+    def _completion_with_retry(self, *, deadline: float | None = None, **kwargs):
+        deadline = deadline or time.monotonic() + self._MAX_TOTAL_RETRY_SECONDS
+        if kwargs.get("stream"):
+            return self._stream_completion_with_retry(deadline=deadline, **kwargs)
+
         for attempt in range(self._MAX_ATTEMPTS):
             try:
-                return litellm.completion(**kwargs)
+                return litellm.completion(
+                    **self._bounded_call_kwargs(kwargs, deadline)
+                )
             except Exception as error:
                 if (
                     attempt == self._MAX_ATTEMPTS - 1
                     or not self._is_retryable_transport_error(error)
                 ):
                     raise
-                time.sleep(self._retry_delay(error, attempt))
+                delay = self._retry_delay(error, attempt)
+                if not self._can_retry_within_deadline(deadline, delay):
+                    raise
+                time.sleep(delay)
 
         raise RuntimeError("Completion retry loop exited unexpectedly")
+
+    def _completion_with_compatibility_fallbacks(
+        self,
+        *,
+        deadline: float,
+        **kwargs,
+    ):
+        current_kwargs = dict(kwargs)
+        removed_reasoning = False
+        removed_images = False
+
+        while True:
+            try:
+                return self._completion_with_retry(
+                    deadline=deadline,
+                    **current_kwargs,
+                )
+            except Exception as error:
+                error_text = str(error)
+                if (
+                    not removed_reasoning
+                    and "reasoning_effort" in current_kwargs
+                    and self._is_reasoning_effort_error(error_text)
+                ):
+                    current_kwargs.pop("reasoning_effort", None)
+                    removed_reasoning = True
+                    continue
+                if (
+                    not removed_images
+                    and self._is_image_deserialize_error(error_text)
+                ):
+                    current_kwargs["messages"] = self._strip_images_from_messages(
+                        current_kwargs["messages"]
+                    )
+                    removed_images = True
+                    continue
+                raise
 
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
@@ -197,26 +310,15 @@ class Client(object):
         params = self.params.copy()
         params["reasoning_effort"] = reasoning_effort
         params.update(kwargs)
-        try:
-            return self._completion_with_retry(
-                model=self.model, messages=messages,
-                drop_params=True, stream=stream, **params,
-            )
-        except Exception as e:
-            err = str(e)
-            if self._is_reasoning_effort_error(err):
-                params.pop("reasoning_effort", None)
-                return self._completion_with_retry(
-                    model=self.model, messages=messages,
-                    drop_params=True, stream=stream, **params,
-                )
-            if self._is_image_deserialize_error(err):
-                sanitized = self._strip_images_from_messages(messages)
-                return self._completion_with_retry(
-                    model=self.model, messages=sanitized,
-                    drop_params=True, stream=stream, **params,
-                )
-            raise
+        deadline = time.monotonic() + self._MAX_TOTAL_RETRY_SECONDS
+        return self._completion_with_compatibility_fallbacks(
+            model=self.model,
+            messages=messages,
+            drop_params=True,
+            stream=stream,
+            deadline=deadline,
+            **params,
+        )
 
     def get_completion_with_tools(self, messages, tools, stream=False,
                                   reasoning_effort="low", **kwargs):
@@ -227,23 +329,14 @@ class Client(object):
         """
         params = self.params.copy()
         params["reasoning_effort"] = reasoning_effort
-        try:
-            return self._completion_with_retry(
-                model=self.model, messages=messages, tools=tools,
-                drop_params=True, stream=stream, **params, **kwargs,
-            )
-        except Exception as e:
-            err = str(e)
-            if self._is_reasoning_effort_error(err):
-                params.pop("reasoning_effort", None)
-                return self._completion_with_retry(
-                    model=self.model, messages=messages, tools=tools,
-                    drop_params=True, stream=stream, **params, **kwargs,
-                )
-            if self._is_image_deserialize_error(err):
-                sanitized = self._strip_images_from_messages(messages)
-                return self._completion_with_retry(
-                    model=self.model, messages=sanitized, tools=tools,
-                    drop_params=True, stream=stream, **params, **kwargs,
-                )
-            raise
+        params.update(kwargs)
+        deadline = time.monotonic() + self._MAX_TOTAL_RETRY_SECONDS
+        return self._completion_with_compatibility_fallbacks(
+            model=self.model,
+            messages=messages,
+            tools=tools,
+            drop_params=True,
+            stream=stream,
+            deadline=deadline,
+            **params,
+        )

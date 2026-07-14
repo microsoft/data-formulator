@@ -161,6 +161,30 @@ class TestIsImageDeserializeError:
 
 class TestGetCompletionRetryLitellm:
     @patch("data_formulator.agents.client_utils.litellm")
+    def test_composes_image_and_reasoning_fallbacks(self, mock_litellm, client):
+        mock_litellm.completion.side_effect = [
+            Exception('unknown variant `image_url`, expected `text`'),
+            Exception("reasoning_effort unsupported"),
+            MagicMock(name="success_response"),
+        ]
+        messages = [
+            {"role": "user", "content": [
+                {"type": "text", "text": "hi"},
+                {"type": "image_url", "image_url": {"url": "x"}},
+            ]},
+        ]
+
+        result = client.get_completion(messages, reasoning_effort="low")
+
+        assert result is not None
+        assert mock_litellm.completion.call_count == 3
+        final_call = mock_litellm.completion.call_args_list[-1].kwargs
+        assert "reasoning_effort" not in final_call
+        assert final_call["messages"][0]["content"] == [
+            {"type": "text", "text": "hi"},
+        ]
+
+    @patch("data_formulator.agents.client_utils.litellm")
     def test_retries_without_unsupported_reasoning_effort(self, mock_litellm, client):
         mock_litellm.completion.side_effect = [
             Exception(

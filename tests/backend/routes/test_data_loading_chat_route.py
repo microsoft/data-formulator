@@ -140,6 +140,36 @@ class TestDataLoadingChatErrors:
     @patch("data_formulator.routes.agents.get_identity_id", return_value="test-user")
     @patch("data_formulator.routes.agents.get_client")
     @patch("data_formulator.routes.agents.DataLoadingAgent")
+    def test_midstream_timeout_emits_one_structured_error_after_existing_event(
+        self, MockAgent, mock_client, mock_id, mock_ws, mock_lang, mock_ks, client,
+    ) -> None:
+        def interrupted_stream():
+            yield {"type": "status", "content": "started"}
+            raise TimeoutError("provider stream interrupted")
+
+        agent_instance = MagicMock()
+        agent_instance.stream.return_value = interrupted_stream()
+        MockAgent.return_value = agent_instance
+
+        resp = client.post("/api/agent/data-loading-chat", json=_valid_body())
+
+        events = [
+            json.loads(line)
+            for line in resp.data.decode().strip().split("\n")
+            if line
+        ]
+        assert events[0] == {"type": "status", "content": "started"}
+        assert len(events) == 2
+        assert events[1]["type"] == "error"
+        assert events[1]["error"]["code"] == ErrorCode.LLM_TIMEOUT
+        assert "provider stream interrupted" not in json.dumps(events[1])
+
+    @patch("data_formulator.routes.agents._get_knowledge_store")
+    @patch("data_formulator.routes.agents.get_language_instruction", return_value="")
+    @patch("data_formulator.routes.agents.get_workspace")
+    @patch("data_formulator.routes.agents.get_identity_id", return_value="test-user")
+    @patch("data_formulator.routes.agents.get_client")
+    @patch("data_formulator.routes.agents.DataLoadingAgent")
     def test_agent_exception_streams_error_event(
         self, MockAgent, mock_client, mock_id, mock_ws, mock_lang, mock_ks, client,
     ) -> None:

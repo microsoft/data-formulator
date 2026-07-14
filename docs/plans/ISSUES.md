@@ -22,8 +22,8 @@ other, but not before their shared prerequisite row.
 | 1 | Prevent Azure metadata loss | DF-011 | None | Resolved; focused and adjacent tests pass | Concurrent metadata updates cannot overwrite one another |
 | 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | Mitigated; request limits are bounded and production is capped at one replica | Request memory is bounded; shared state is required before scale-out |
 | 3 | Secure connector query boundaries | DF-002 | DF-001 | Resolved; focused and adjacent loader tests pass | Request-controlled identifiers are validated or parameterized |
-| 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004 | DF-001, DF-002 | Resolved; lifecycle and reconnect suites pass | Connections close predictably and transient failures preserve credentials |
-| 5 | Complete model transport resilience | DF-009 | DF-012 | Resolved; retry and compatibility suites pass | Bounded 429 retry behavior passes focused tests |
+| 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004, DF-024 | DF-001, DF-002 | DF-003/DF-004 resolved; DF-024 fixed in source and pending deployment | Connections close predictably, transient failures preserve credentials, and no-auth connectors initialize on first use |
+| 5 | Complete model transport resilience | DF-009, DF-025 | DF-012 | Source resolved; DF-025 deployment validation remains | Bounded retries, finite request deadlines, safe stream interruption, and reproducible LiteLLM builds pass focused tests |
 | 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015, DF-022 | DF-001 through DF-004 | Original hardening resolved; DF-022 session-cookie migration decision remains | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests without deprecated session configuration |
 | 7 | Decide enterprise direct-versus-MCP data architecture | DF-023 | Completed runtime hardening and connector requirements | Provisional hybrid decision recorded; source-paired spike remains | Direct and MCP paths are compared against one identity, data, provenance, reliability, and operations contract |
 | 8A | Complete Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Implemented shared delegated-auth primitives | Source blockers deployed; Entra consent, durable sessions, and interactive popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
@@ -609,6 +609,58 @@ Acceptance criteria:
 - Throttled calls retry within a bounded budget and preserve the structured
   `LLM_RATE_LIMIT` error when retries are exhausted.
 - Image fallback does not create a second immediate request after a 429.
+
+### DF-025: LiteLLM calls lack finite end-to-end retry and stream boundaries
+
+**Status**: Resolved in source; production deployment pending \
+**Severity**: High \
+**Area**: Azure OpenAI, LiteLLM client resilience
+
+The shared model client used LiteLLM's 600-second default timeout while adding
+three application-level transport attempts. A stalled Azure OpenAI request
+could therefore occupy a server thread for approximately 30 minutes. Streaming
+errors raised while consuming the iterator were outside the retry wrapper, so
+a transient failure before the first chunk received no retry.
+
+The dependency contract was also not reproducible: `uv.lock` resolved LiteLLM
+1.83.14, the local runtime used 1.91.1, and Docker installed an unconstrained
+version from `pyproject.toml` at build time.
+
+Remediation implemented:
+
+1. Apply a 90-second default timeout to ordinary, tool-enabled, and streaming
+   model calls.
+2. Bound all transport retries and compatibility fallbacks for one logical
+   completion to a shared 120-second deadline.
+3. Retry streaming transport failures only before the first emitted chunk.
+   After output begins, propagate the exception to the existing route-level
+   NDJSON error boundary rather than replaying partial output.
+4. Allow image and unsupported-reasoning fallbacks to compose once each within
+   the same deadline.
+5. Pin LiteLLM 1.91.1 in `pyproject.toml`, `requirements.txt`, and `uv.lock` so
+   local, CI, and Docker builds use the reviewed contract.
+
+Implementation evidence (2026-07-14):
+
+- Focused model client, image fallback, reasoning, and registry suites pass:
+  90 tests.
+- Regressions cover the default timeout, total retry deadline, pre-first-chunk
+  retry, no replay after the first chunk, and combined compatibility fallback.
+- `uv lock --check` resolves successfully with LiteLLM 1.91.1.
+- Full backend suite passes: 2,032 tests passed and 13 skipped; the five
+  warnings are the existing Flask-Session `use_signer` deprecation.
+
+Acceptance criteria:
+
+- No model call uses LiteLLM's 600-second default timeout.
+- One logical completion cannot exceed the 120-second retry budget through
+  application-level retries.
+- A transient stream failure before the first chunk retries; a failure after a
+  chunk never replays emitted content.
+- Rebuilding the container installs the same LiteLLM version exercised by the
+  focused tests.
+- Production Azure OpenAI smoke tests pass for non-streaming, streaming, and
+  tool-enabled calls after deployment.
 
 ### DF-011: Azure Blob metadata updates can lose concurrent changes
 
@@ -1270,6 +1322,43 @@ Implementation evidence (2026-07-13):
   is the canonical path.
 
 ## Planned Connector Work
+
+### DF-024: No-auth connectors report connected without an initialized loader
+
+**Status**: Resolved in source; production deployment pending \
+**Severity**: Medium \
+**Area**: Connector lifecycle, built-in sample datasets
+
+The connector list and status contracts report `auth_mode="none"` connectors as
+always connected, but catalog and data routes previously required a cached
+per-identity loader that no route initialized. On the recreated production app,
+expanding Example Datasets therefore returned the generic `CONNECTOR_ERROR`
+message "Data connector error."
+
+Evidence:
+
+- Production request `20c2ed34-740f-4408-99ed-9136e0391724` failed in
+  `connector_get_catalog_tree()` because `_require_loader()` raised
+  `ValueError("Not connected. Please connect first.")`.
+- Commit `abec152` intentionally introduced the always-connected no-auth
+  contract but did not add the corresponding loader initialization path.
+- `_require_loader()` now lazily constructs no-auth loaders from their default
+  parameters and caches them for the resolved identity.
+- The no-auth status route now uses the same initializer instead of calling the
+  loader constructor without its required `params` argument.
+- Connector framework validation: 60 tests passed, including catalog and
+  parameterized status regressions for no-auth loaders.
+
+Acceptance criteria:
+
+- Expanding Example Datasets on a clean deployment returns its catalog without
+  a prior connect action.
+- No-auth status, catalog, preview, import, and refresh routes use the same
+  cached loader lifecycle.
+- A no-auth loader with pinned/default public configuration receives those
+  parameters during lazy initialization.
+- Production browser validation shows no `data-source-sidebar` connector error
+  after deployment.
 
 ### DF-023: Enterprise data access lacks a settled direct-versus-MCP architecture
 

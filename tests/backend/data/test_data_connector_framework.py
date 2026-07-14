@@ -155,6 +155,16 @@ class MockLoader(ExternalDataLoader):
         return "Connect with host, user, password."
 
 
+class NoAuthMockLoader(MockLoader):
+    @staticmethod
+    def auth_config() -> dict[str, Any]:
+        return {"mode": "none"}
+
+    @staticmethod
+    def list_params() -> list[dict[str, Any]]:
+        return []
+
+
 class DelegatedMockLoader(MockLoader):
     @staticmethod
     def delegated_login_config() -> dict[str, Any]:
@@ -716,6 +726,41 @@ class TestCatalogRoutes:
         assert resp.status_code == 200
         assert "tree" in data["data"]
         assert "hierarchy" in data["data"]
+
+    def test_no_auth_catalog_tree_lazily_initializes_loader(self, client):
+        source = DataConnector.from_loader(
+            NoAuthMockLoader,
+            source_id="always_on",
+            display_name="Always On",
+        )
+        DATA_CONNECTORS["always_on"] = source
+
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = client.post(
+                "/api/connectors/get-catalog-tree",
+                json={"connector_id": "always_on"},
+            )
+
+        assert resp.get_json()["status"] == "success"
+        assert source._get_loader("test-user") is not None
+
+    def test_no_auth_status_lazily_initializes_loader_with_default_params(self, client):
+        source = DataConnector.from_loader(
+            NoAuthMockLoader,
+            source_id="always_on",
+            display_name="Always On",
+            default_params={"host": "public.example"},
+        )
+        DATA_CONNECTORS["always_on"] = source
+
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = client.post(
+                "/api/connectors/get-status",
+                json={"connector_id": "always_on"},
+            )
+
+        assert resp.get_json()["status"] == "success"
+        assert source._get_loader("test-user").params == {"host": "public.example"}
 
     def test_catalog_tree_with_filter(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):

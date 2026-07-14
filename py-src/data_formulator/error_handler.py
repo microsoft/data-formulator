@@ -84,13 +84,17 @@ def classify_and_wrap_llm_error(exc: Exception) -> AppError:
     safe_message = classify_llm_error(exc)
     text = str(exc).lower()
 
-    error_code = ErrorCode.LLM_UNKNOWN_ERROR
-    retry = False
-    for pattern, code, retryable in _LLM_CODE_PATTERNS:
-        if re.search(pattern, text):
-            error_code = code
-            retry = retryable
-            break
+    if isinstance(exc, TimeoutError):
+        error_code = ErrorCode.LLM_TIMEOUT
+        retry = True
+    else:
+        error_code = ErrorCode.LLM_UNKNOWN_ERROR
+        retry = False
+        for pattern, code, retryable in _LLM_CODE_PATTERNS:
+            if re.search(pattern, text):
+                error_code = code
+                retry = retryable
+                break
 
     return AppError(
         error_code,
