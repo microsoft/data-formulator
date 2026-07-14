@@ -33,7 +33,7 @@
         "chart.js": "^4.5.1",
         "d3": "^7.3.0",
         "dompurify": "^3.4.0",
-        "echarts": "^6.0.0",
+        "echarts": "^6.1.0",
         "exceljs": "^4.4.0",
         "flint-chart": "^0.2.1",
         "html2canvas": "^1.4.1",
