@@ -39,7 +39,7 @@
         "html2canvas": "^1.4.1",
         "i18next": "^26.0.1",
         "i18next-browser-languagedetector": "^8.2.1",
-        "js-yaml": "^4.1.1",
+        "js-yaml": "^4.2.0",
         "katex": "^0.16.22",
         "localforage": "^1.10.0",
         "lodash": "^4.18.1",
