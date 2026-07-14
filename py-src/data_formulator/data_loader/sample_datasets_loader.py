@@ -67,6 +67,10 @@ class SampleDatasetsLoader(ExternalDataLoader):
         return "none"
 
     @staticmethod
+    def auth_config() -> dict[str, Any]:
+        return {"mode": "none"}
+
+    @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:
         return [
             {"key": "dataset", "label": "Dataset"},

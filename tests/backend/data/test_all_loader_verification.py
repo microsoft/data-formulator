@@ -151,6 +151,13 @@ class TestAuthModes:
         if "superset" in loaders:
             assert loaders["superset"].auth_mode() == "token"
 
+    def test_sample_datasets_uses_no_auth_config(self):
+        loaders = _get_available_loaders()
+        sample_loader = loaders["sample_datasets"]
+
+        assert sample_loader.auth_mode() == "none"
+        assert sample_loader.auth_config()["mode"] == "none"
+
 
 # ==================================================================
 # Tests: list_params and auth_instructions
@@ -162,7 +169,8 @@ class TestStaticMethods:
         for key, cls in _get_available_loaders().items():
             params = cls.list_params()
             assert isinstance(params, list), f"{key}: list_params() must return a list"
-            assert len(params) > 0, f"{key}: must have at least one param"
+            if cls.auth_config().get("mode") != "none":
+                assert len(params) > 0, f"{key}: must have at least one param"
             for p in params:
                 assert "name" in p, f"{key}: each param must have 'name'"
                 assert "type" in p, f"{key}: each param must have 'type'"
@@ -176,6 +184,8 @@ class TestStaticMethods:
     def test_all_loaders_have_required_host_or_identifier(self):
         """Each loader should require at least one identifying connection param."""
         for key, cls in _get_available_loaders().items():
+            if cls.auth_config().get("mode") == "none":
+                continue
             params = cls.list_params()
             required = [p for p in params if p.get("required", False)]
             assert len(required) > 0, f"{key}: should have at least one required param"

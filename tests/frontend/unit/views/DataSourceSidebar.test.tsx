@@ -1,8 +1,7 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { DataSourceSidebar } from '../../../../src/views/DataSourceSidebar';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiRequest } from '../../../../src/app/apiClient';
+import { DataSourceSidebar } from '../../../../src/views/DataSourceSidebar';
 
 const { dispatch, mockState } = vi.hoisted(() => ({
     dispatch: vi.fn(),
@@ -34,16 +33,21 @@ vi.mock('react-redux', () => ({
     useSelector: (selector: (state: any) => unknown) => selector(mockState),
 }));
 
-vi.mock('../../../../src/app/dfSlice', () => ({
-    dfActions: {
-        addMessages: (payload: any) => ({ type: 'messages/add', payload }),
-        setDataSourceSidebarOpen: (payload: any) => ({ type: 'sidebar/setOpen', payload }),
-        setSessionLoading: (payload: any) => ({ type: 'session/setLoading', payload }),
-        loadState: (payload: any) => ({ type: 'state/load', payload }),
-        setActiveWorkspace: (payload: any) => ({ type: 'workspace/setActive', payload }),
-    },
-    fetchFieldSemanticType: vi.fn(),
-}));
+vi.mock('../../../../src/app/dfSlice', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../../src/app/dfSlice')>();
+    return {
+        ...actual,
+        dfActions: {
+            ...actual.dfActions,
+            addMessages: (payload: any) => ({ type: 'messages/add', payload }),
+            setDataSourceSidebarOpen: (payload: any) => ({ type: 'sidebar/setOpen', payload }),
+            setSessionLoading: (payload: any) => ({ type: 'session/setLoading', payload }),
+            loadState: (payload: any) => ({ type: 'state/load', payload }),
+            setActiveWorkspace: (payload: any) => ({ type: 'workspace/setActive', payload }),
+        },
+        fetchFieldSemanticType: vi.fn(),
+    };
+});
 
 vi.mock('../../../../src/app/utils', () => ({
     CONNECTOR_URLS: {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     apiRequest: vi.fn(),
@@ -139,7 +139,7 @@ describe('agent metadata thunks', () => {
             { type: fetchAvailableModels.rejected.type, error: { name: 'Error', message: 'boom' } },
         );
 
-        expect(state.testedModels[0]).toEqual({ id: 'global-1', status: 'configured', message: '' });
+        expect(state.testedModels[0]).toEqual({ id: 'global-1', status: 'unknown', message: '' });
         expect(state.messages.at(-1)?.value).toBe('messages.availableModelsFailed');
     });
 

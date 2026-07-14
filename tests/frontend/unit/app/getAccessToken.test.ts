@@ -1,34 +1,28 @@
 /**
  * Tests for getAccessToken — silent refresh on expired tokens.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetUser = vi.fn();
 const mockSigninSilent = vi.fn();
 
-vi.mock('../../../../src/app/oidcConfig', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../../../src/app/oidcConfig')>();
-    return {
-        ...original,
-        getUserManager: vi.fn(async () => ({
-            getUser: mockGetUser,
-            signinSilent: mockSigninSilent,
-        })),
-    };
-});
+import { getAccessTokenFromManager } from '../../../../src/app/oidcToken';
 
-import { getAccessToken } from '../../../../src/app/oidcConfig';
+const manager = {
+    getUser: mockGetUser,
+    signinSilent: mockSigninSilent,
+} as any;
 
 beforeEach(() => {
     vi.clearAllMocks();
 });
 
-describe('getAccessToken', () => {
+describe('getAccessTokenFromManager', () => {
 
     it('returns token when user exists and not expired', async () => {
         mockGetUser.mockResolvedValue({ expired: false, access_token: 'fresh-token' });
 
-        const token = await getAccessToken();
+        const token = await getAccessTokenFromManager(manager);
 
         expect(token).toBe('fresh-token');
         expect(mockSigninSilent).not.toHaveBeenCalled();
@@ -37,7 +31,7 @@ describe('getAccessToken', () => {
     it('returns null when no user stored', async () => {
         mockGetUser.mockResolvedValue(null);
 
-        const token = await getAccessToken();
+        const token = await getAccessTokenFromManager(manager);
 
         expect(token).toBeNull();
         expect(mockSigninSilent).not.toHaveBeenCalled();
@@ -47,7 +41,7 @@ describe('getAccessToken', () => {
         mockGetUser.mockResolvedValue({ expired: true, access_token: 'old-token' });
         mockSigninSilent.mockResolvedValue({ expired: false, access_token: 'refreshed-token' });
 
-        const token = await getAccessToken();
+        const token = await getAccessTokenFromManager(manager);
 
         expect(token).toBe('refreshed-token');
         expect(mockSigninSilent).toHaveBeenCalledOnce();
@@ -57,7 +51,7 @@ describe('getAccessToken', () => {
         mockGetUser.mockResolvedValue({ expired: true, access_token: 'old-token' });
         mockSigninSilent.mockRejectedValue(new Error('refresh failed'));
 
-        const token = await getAccessToken();
+        const token = await getAccessTokenFromManager(manager);
 
         expect(token).toBeNull();
         expect(mockSigninSilent).toHaveBeenCalledOnce();
@@ -67,7 +61,7 @@ describe('getAccessToken', () => {
         mockGetUser.mockResolvedValue({ expired: true, access_token: 'old-token' });
         mockSigninSilent.mockResolvedValue(null);
 
-        const token = await getAccessToken();
+        const token = await getAccessTokenFromManager(manager);
 
         expect(token).toBeNull();
     });

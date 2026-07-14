@@ -14,6 +14,43 @@ log = logging.getLogger(__name__)
 
 SQL_COPT_SS_ACCESS_TOKEN = 1256
 
+_ODBC_CONTROL_CHARACTERS = frozenset("\x00\r\n")
+
+
+def _bounded_integer(value: Any, field_name: str, minimum: int, maximum: int) -> str:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+    if not minimum <= parsed <= maximum:
+        raise ValueError(f"{field_name} must be between {minimum} and {maximum}")
+    return str(parsed)
+
+
+def _yes_no(value: Any, field_name: str) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in {"yes", "no"}:
+        raise ValueError(f"{field_name} must be yes or no")
+    return normalized
+
+
+def _odbc_value(value: Any, field_name: str) -> str:
+    text = str(value)
+    # ODBC brace-delimited values terminate at the first closing brace, so a
+    # closing brace cannot be represented without reintroducing ambiguity.
+    if "}" in text or any(character in text for character in _ODBC_CONTROL_CHARACTERS):
+        raise ValueError(f"{field_name} contains unsupported characters")
+    if ";" in text or text != text.strip() or text.startswith("{"):
+        return f"{{{text}}}"
+    return text
+
+
+def _odbc_driver(value: Any) -> str:
+    text = str(value).strip()
+    if not text or any(character in text for character in "{};\x00\r\n"):
+        raise ValueError("driver contains unsupported characters")
+    return text
+
 
 def _encode_odbc_access_token(access_token: str) -> bytes:
     encoded = access_token.encode("utf-16-le")
@@ -35,20 +72,11 @@ class MSSQLDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_config() -> dict[str, Any]:
-        return {
-            "mode": "delegated",
-            "display_name": "Microsoft Entra",
-            "audience": "https://database.windows.net/",
-            "login_url": "/api/auth/azure-sql/login",
-            "supports_refresh": False,
-        }
+        return {"mode": "credentials"}
 
     @staticmethod
-    def delegated_login_config() -> dict[str, str]:
-        return {
-            "login_url": "/api/auth/azure-sql/login",
-            "label_key": "loader.mssql.entraSignIn",
-        }
+    def delegated_login_config() -> None:
+        return None
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -148,27 +176,38 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         from data_formulator.security.log_sanitizer import sanitize_params
         log.info("Initializing MSSQL DataLoader with parameters: %s", sanitize_params(params))
 
-        self.params = params
+        retained_params = dict(params)
+        access_token = retained_params.pop("access_token", "").strip()
+        self.params = retained_params
 
         self.server = params.get("server", "localhost")
         self.database = params.get("database", "") or ""
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
-        access_token = params.get("access_token", "").strip()
-        self.port = params.get("port", "1433")
-        self.driver = params.get("driver", "ODBC Driver 17 for SQL Server")
-        self.encrypt = params.get("encrypt", "yes")
-        self.trust_server_certificate = params.get("trust_server_certificate", "no")
-        self.connection_timeout = params.get("connection_timeout", "30")
+        self.port = _bounded_integer(params.get("port", "1433"), "port", 1, 65535)
+        self.driver = _odbc_driver(params.get("driver", "ODBC Driver 17 for SQL Server"))
+        self.encrypt = _yes_no(params.get("encrypt", "yes"), "encrypt")
+        self.trust_server_certificate = _yes_no(
+            params.get("trust_server_certificate", "no"),
+            "trust_server_certificate",
+        )
+        self.connection_timeout = _bounded_integer(
+            params.get("connection_timeout", "30"),
+            "connection_timeout",
+            1,
+            300,
+        )
 
         # When no database specified, connect to master for catalog browsing
         connect_db = self.database or "master"
+        server_and_port = _odbc_value(f"{self.server},{self.port}", "server")
+        database_value = _odbc_value(connect_db, "database")
 
         # Build ODBC connection string
         conn_str = (
             f"DRIVER={{{self.driver}}};"
-            f"SERVER={self.server},{self.port};"
-            f"DATABASE={connect_db};"
+            f"SERVER={server_and_port};"
+            f"DATABASE={database_value};"
             f"Encrypt={self.encrypt};"
             f"TrustServerCertificate={self.trust_server_certificate};"
             f"Connection Timeout={self.connection_timeout};"
@@ -180,7 +219,9 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
             }
             access_token = ""
         elif self.user:
-            conn_str += f"UID={self.user};PWD={self.password};"
+            user_value = _odbc_value(self.user, "user")
+            password_value = _odbc_value(self.password, "password")
+            conn_str += f"UID={user_value};PWD={password_value};"
         else:
             conn_str += "Trusted_Connection=yes;"
 

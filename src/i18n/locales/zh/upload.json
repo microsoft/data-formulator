@@ -122,6 +122,7 @@
       "mysql": "查询 MySQL 表",
       "postgresql": "查询 Postgres 表",
       "mssql": "查询 SQL Server 表",
+      "azure_sql": "使用 Microsoft Entra 查询 Azure SQL",
       "cosmosdb": "查询 Cosmos DB 容器",
       "mongodb": "查询 MongoDB 集合",
       "bigquery": "查询 BigQuery 数据集",

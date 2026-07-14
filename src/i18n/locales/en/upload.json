@@ -122,6 +122,7 @@
       "mysql": "Query MySQL tables",
       "postgresql": "Query Postgres tables",
       "mssql": "Query SQL Server tables",
+      "azure_sql": "Query Azure SQL with Microsoft Entra",
       "cosmosdb": "Query Cosmos DB containers",
       "mongodb": "Query MongoDB collections",
       "bigquery": "Query BigQuery datasets",

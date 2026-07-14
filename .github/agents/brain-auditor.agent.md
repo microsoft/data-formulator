@@ -5,7 +5,7 @@ tools: ['edit', 'read', 'search/codebase', 'search/usages']
 user-invocable: false
 disable-model-invocation: false
 model: ['Auto']
-lastReviewed: 2026-05-29
+lastReviewed: 2026-07-11
 ---
 
 # Brain Auditor Worker
@@ -21,7 +21,7 @@ In scope:
 - Prompts under `.github/prompts/`
 - Agent files under `.github/agents/`
 - Registry/config references used by those files (`.github/config/`)
-- Cross-references from brain artefacts to **sibling repos** at `../Alex_ACT_Memory/` (announcements/, notes.md, feedback/, profile/) and `../Alex_ACT_Plugin_Mall/` (catalog/, scoring/, .github/skills/, .github/workflows/scan-sources.yml). These are valid xref destinations — a missing target in the local tree means *check the sibling repo*, not *broken link*.
+- Cross-references from brain artefacts to **sibling repos** at `../Alex_ACT_Memory/` (announcements/, feedback/, knowledge/, insights/, encrypted profile envelopes) and `../Alex_ACT_Plugin_Mall/` (catalog/, scoring/, .github/skills/, .github/workflows/scan-sources.yml). These are valid xref destinations — a missing target in the local tree means *check the sibling repo*, not *broken link*.
 
 Out of scope (delegate elsewhere):
 

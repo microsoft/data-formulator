@@ -29,6 +29,12 @@ param infrastructureSubnetNsgId string = ''
 @description('Optional network security group ID attached to the private endpoint subnet.')
 param privateEndpointSubnetNsgId string = ''
 
+@description('Optional Microsoft Entra tenant ID for delegated Azure SQL connections.')
+param azureSqlEntraTenantId string = ''
+
+@description('Optional Microsoft Entra application client ID for delegated Azure SQL connections.')
+param azureSqlEntraClientId string = ''
+
 @description('Reference the governed VNet instead of updating it. Use for environments where policy owns VNet metadata.')
 param useExistingVirtualNetwork bool = false
 
@@ -110,6 +116,8 @@ module containerApp 'modules/containerapp.bicep' = {
     containerRegistryLoginServer: registry.outputs.loginServer
     azureOpenAiEndpoint: openai.outputs.endpoint
     azureOpenAiDeploymentName: openai.outputs.deploymentName
+    azureSqlEntraTenantId: azureSqlEntraTenantId
+    azureSqlEntraClientId: azureSqlEntraClientId
     customDomainName: customDomainName
     customDomainCertificateId: customDomainCertificateId
   }

@@ -16,7 +16,8 @@
  *      URLs; `oidc-client-ts` skips discovery entirely.
  */
 
-import { UserManager, WebStorageStateStore, User } from "oidc-client-ts";
+import { User, UserManager, WebStorageStateStore } from "oidc-client-ts";
+import { getAccessTokenFromManager } from "./oidcToken";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -182,21 +183,7 @@ export async function getUserManager(): Promise<UserManager | null> {
  * authenticated via OIDC or the token has expired.
  */
 export async function getAccessToken(): Promise<string | null> {
-    const mgr = await getUserManager();
-    if (!mgr) return null;
-    let user = await mgr.getUser();
-    if (!user) return null;
-
-    if (user.expired) {
-        try {
-            user = await mgr.signinSilent();
-        } catch {
-            return null;
-        }
-        if (!user) return null;
-    }
-
-    return user.access_token;
+    return getAccessTokenFromManager(await getUserManager());
 }
 
 /**
@@ -206,14 +193,4 @@ export async function getOidcUser(): Promise<User | null> {
     const mgr = await getUserManager();
     if (!mgr) return null;
     return mgr.getUser();
-}
-
-// ---------------------------------------------------------------------------
-// Test helpers — allow tests to replace the singleton
-// ---------------------------------------------------------------------------
-
-/** @internal — used only by tests */
-export function _resetForTesting(): void {
-    _authInfoPromise = null;
-    _userManager = null;
 }

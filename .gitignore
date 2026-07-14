@@ -418,3 +418,6 @@ package-lock.json
 .env.*
 !.env.example
 local.settings.json
+
+# Transient ACT Edition upgrade rollback directories
+.github-backup-*/

@@ -58,6 +58,7 @@ _log = logging.getLogger(__name__)
 _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("mysql",      "data_formulator.data_loader.mysql_data_loader",      "MySQLDataLoader",      "pymysql"),
     ("mssql",      "data_formulator.data_loader.mssql_data_loader",      "MSSQLDataLoader",      "pyodbc"),
+    ("azure_sql",  "data_formulator.data_loader.azure_sql_data_loader",  "AzureSQLDataLoader",   "pyodbc"),
     ("postgresql", "data_formulator.data_loader.postgresql_data_loader",  "PostgreSQLDataLoader", "psycopg2-binary"),
     ("kusto",      "data_formulator.data_loader.kusto_data_loader",      "KustoDataLoader",      "azure-kusto-data"),
     ("s3",         "data_formulator.data_loader.s3_data_loader",         "S3DataLoader",         "boto3"),

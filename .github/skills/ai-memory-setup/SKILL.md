@@ -1,22 +1,26 @@
 ---
 name: ai-memory-setup
 description: "Detect, resolve, and manage the Alex_ACT_Memory shared memory bus. Fires on bootstrap, session start (announcements), and feedback writes."
-lastReviewed: 2026-05-28
+lastReviewed: 2026-07-11
 ---
 
 # AI-Memory Setup
 
-Alex_ACT_Memory is a shared git repo (sibling clone at `../Alex_ACT_Memory`) where ACT heirs exchange feedback, announcements, knowledge, and profile data. This skill covers resolution, bootstrapping, and ongoing read/write operations.
+Alex_ACT_Memory is a local-first repo (sibling clone at `../Alex_ACT_Memory`) where ACT heirs exchange feedback, announcements, knowledge, and optional encrypted profile data. A remote is optional and sharing is the user's decision. This skill covers resolution, bootstrapping, and ongoing read/write operations.
 
-## Resolution Algorithm (3-state)
+## Resolution Modes
 
-The `_registry.cjs` script resolves the memory bus in this order:
+`resolveMemoryBus(repoRoot)` is read-only by default: it returns the existing
+`../Alex_ACT_Memory` sibling or `null`. It does not pull, clone, or scaffold.
 
-1. **Sibling exists**: `../Alex_ACT_Memory/.git` is present → use it, pull updates (best-effort)
-2. **Clone from remote**: sibling absent, remote URL configured → `git clone`
-3. **Scaffold**: clone fails or no remote → create minimal local repo
+Explicit setup callers may pass `{ mutate: true }`, enabling this sequence:
 
-Resolution always succeeds (scaffold is the floor). Heirs never need to configure cloud drives or pin paths.
+1. **Sibling exists**: use it and pull updates (best-effort)
+2. **Clone from remote**: sibling absent and remote configured → `git clone`
+3. **Scaffold**: clone fails or no remote → create a minimal local repo
+
+The mutation gate preserves user control. Session checks do not create a remote,
+clone, scaffold, or pull merely because Memory was mentioned.
 
 ## Folder Structure
 
@@ -30,9 +34,8 @@ Resolution always succeeds (scaffold is the floor). Heirs never need to configur
   knowledge/               # Shared knowledge packages
     index.json
     README.md
-  profile/                 # Per-user profiles
-    default/README.md
-    <username>/user-profile.json
+  profile/                 # Protected encrypted profiles
+    <username>/user-profile.encrypted.json
   insights/                # Analytical insights
   docs/
     MIGRATION.md           # OneDrive → git migration guide
@@ -42,17 +45,19 @@ Resolution always succeeds (scaffold is the floor). Heirs never need to configur
 
 ### Detect (session start)
 
-On every session start, resolve the memory bus via `resolveMemoryBus(repoRoot)`. If found:
+On session start, resolve the existing sibling via `resolveMemoryBus(repoRoot)`. If found:
 
 1. Check `announcements/` for unread files
 2. Report any new announcements to the user (one line each)
 3. Do NOT read or report feedback (that's the Supervisor's job)
 
-If resolution fails completely (should not happen — scaffold is the floor): note silently, do not prompt.
+If the sibling is absent: note silently, do not prompt or create it.
 
 ### Bootstrap (first time)
 
-Handled automatically by `bootstrap-heir.cjs`. The script calls `resolveMemoryBus(targetAbs)` which clones or scaffolds as needed. No user interaction required.
+Handled only when bootstrap setup enables Memory. `bootstrap-heir.cjs` calls
+`resolveMemoryBus(targetAbs, { mutate: SETUP_MEMORY })`; cloning or scaffolding
+therefore occurs only when the setup flag is true.
 
 To manually resolve:
 
@@ -81,22 +86,27 @@ On session start (triggered by `greeting-checkin.instructions.md`):
 
 ### Profile
 
-User profiles live at `profile/<username>/user-profile.json`. Read via `readProfile(memoryRoot)`, write via `writeProfile(memoryRoot, profile)`.
+User profiles live at `profile/<username>/user-profile.encrypted.json`. Read on demand via `readProfile(memoryRoot, { projectRoot })`; write locally via `writeProfile(memoryRoot, profile, { projectRoot })`. Both resolve `ALEX_ACT_MEMORY_PASSWORD` from the process environment, an explicit file, the authorized project's local `.env`, then the sibling Memory clone's local `.env`.
+
+Every `.env` must be ignored and untracked in the repository that owns it. Edition verifies ignore status before reading. Project values override Memory values. Missing authorization returns no profile; wrong passwords or tampering fail closed. Profile functions never commit or push. The user decides whether to synchronize the encrypted envelope.
+
+Explicit workflows may call `readMemorySecret(memoryRoot, variableName, { projectRoot })` for one exact variable. The API never enumerates or imports Memory `.env`, mutates `process.env`, prints values, or runs during greeting. Use project-local overrides, VS Code SecretStorage, or an enterprise secret manager when all heirs on the machine should not share a secret.
 
 ## Programmatic API (`_registry.cjs`)
 
 | Function | Purpose |
 | --- | --- |
-| `resolveMemoryBus(repoRoot?)` | Returns `{ root, level, message }` — always succeeds |
+| `resolveMemoryBus(repoRoot?, options?)` | Returns the sibling or null by default; `{ mutate: true }` enables pull/clone/scaffold |
 | `scaffoldMemoryRepo(memoryPath)` | Creates minimal folder structure + git init |
-| `readProfile(memoryRoot)` | Returns user profile object or null |
-| `writeProfile(memoryRoot, profile)` | Writes profile + best-effort commit/push |
+| `readMemorySecret(memoryRoot, variableName, options?)` | Returns one exact named local secret using process/explicit/project/Memory precedence |
+| `readProfile(memoryRoot, options?)` | Decrypts an authorized profile on demand, or returns null when absent/unavailable |
+| `writeProfile(memoryRoot, profile, options?)` | Writes an encrypted envelope locally and atomically; never commits or pushes |
 
 ### CLI
 
 ```bash
 node .github/scripts/_registry.cjs --resolve [dir]     # Resolve memory bus
-node .github/scripts/_registry.cjs --profile [dir]     # Read user profile
+node .github/scripts/_registry.cjs --profile [dir]     # Check authorized profile availability without printing content
 ```
 
 ## Migration from OneDrive-based AI-Memory
@@ -112,11 +122,15 @@ Users upgrading from Edition <3.0.0 need a one-time migration:
 
 | Anti-pattern | Correction |
 | --- | --- |
-| Hardcoding an absolute path to memory | Use `resolveMemoryBus()` — it handles all three states |
+| Hardcoding an absolute path to memory | Use read-only `resolveMemoryBus()`; opt into mutation only during explicit setup |
 | Writing feedback without stripping project context | Always apply `cross-project-isolation` before writing |
 | Reading feedback as a heir | Feedback is for the Supervisor; heirs read announcements only |
-| Calling `scaffoldMemoryRepo` directly | Use `resolveMemoryBus()` which handles the full fallback chain |
+| Calling `scaffoldMemoryRepo` directly | Use `resolveMemoryBus(..., { mutate: true })` during explicit setup |
 | Expecting OneDrive/iCloud/Dropbox discovery | Removed in Edition 3.0.0; memory bus is git-only now |
+| Assuming Memory must have a remote | Local-only is valid; configuring or sharing a remote belongs to the user |
+| Keeping secrets in tracked files or copying them across heirs | Use exact-name lookup from an ignored project or Memory `.env`, SecretStorage, or an enterprise secret manager |
+| Importing every Memory `.env` variable | Request one exact variable for one explicit operation |
+| Automatically loading a profile on greeting | Decrypt only when an authorized workflow explicitly needs it |
 
 ## Falsifiability
 

@@ -296,6 +296,21 @@ class TestSharedRouteRegistration:
         assert "/api/connectors/column-values" in rules
 
 class TestDelegatedLoginConfig:
+    def test_modern_auth_config_controls_frontend_auth_mode(self):
+        class ModernDelegatedLoader(DelegatedMockLoader):
+            @staticmethod
+            def auth_config() -> dict[str, Any]:
+                return {"mode": "delegated"}
+
+        source = DataConnector.from_loader(
+            ModernDelegatedLoader,
+            source_id="azure_sql:staging",
+            display_name="Azure SQL staging",
+        )
+
+        assert source.get_frontend_config()["auth_mode"] == "delegated"
+        assert source._manifest()["auth_modes"] == ["delegated"]
+
     def test_app_relative_login_url_is_not_connector_prefixed(self):
         source = DataConnector.from_loader(
             DelegatedMockLoader,
@@ -425,6 +440,22 @@ class TestFrontendConfig:
 
 
 class TestConnectorList:
+
+    def test_loader_discovery_prefers_modern_auth_config(self, app):
+        class ModernDelegatedLoader(DelegatedMockLoader):
+            DISPLAY_NAME = "Azure SQL"
+
+            @staticmethod
+            def auth_config() -> dict[str, Any]:
+                return {"mode": "delegated"}
+
+        client = app.test_client()
+        with patch("data_formulator.data_loader.DATA_LOADERS", {"azure_sql": ModernDelegatedLoader}):
+            response = client.get("/api/data-loaders")
+
+        loader = response.get_json()["data"]["loaders"][0]
+        assert loader["type"] == "azure_sql"
+        assert loader["auth_mode"] == "delegated"
 
     def test_sso_auto_connect_respects_session_block(self, app):
         source = DataConnector.from_loader(

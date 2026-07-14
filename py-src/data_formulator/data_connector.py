@@ -370,7 +370,7 @@ class DataConnector:
             "icon": self._icon,
             "env_prefix": f"DF_{self._source_id.upper()}",
             "required_env": [],
-            "auth_modes": [self._loader_class.auth_mode()],
+            "auth_modes": [_loader_auth_mode(self._loader_class)],
             "capabilities": ["tables", "catalog", "refresh"],
         }
 
@@ -433,7 +433,7 @@ class DataConnector:
             "hierarchy": _hierarchy_dicts(full_hierarchy),
             "effective_hierarchy": _hierarchy_dicts(effective),
             "auth_instructions": self._loader_class.auth_instructions(),
-            "auth_mode": self._loader_class.auth_mode(),
+            "auth_mode": _loader_auth_mode(self._loader_class),
             "delegated_login": self._resolve_delegated_login(),
         }
 
@@ -759,7 +759,7 @@ def list_data_loaders():
             "name": display_name,
             "params": params,
             "hierarchy": _hierarchy_dicts(loader_class.catalog_hierarchy()),
-            "auth_mode": loader_class.auth_mode(),
+            "auth_mode": _loader_auth_mode(loader_class),
             "auth_instructions": loader_class.auth_instructions(),
             "delegated_login": loader_class.delegated_login_config(),
             "source": "plugin" if plugin_path else "builtin",

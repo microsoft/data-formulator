@@ -52,6 +52,29 @@ export function validateDelegatedLoginMessage(
     };
 }
 
+export async function prepareDelegatedLoginUrl(
+    loginUrl: string,
+    connectorId: string,
+    origin: string,
+    request: typeof apiRequest,
+    loginParams: Record<string, string>,
+): Promise<string> {
+    const url = new URL(loginUrl, origin);
+    url.searchParams.set('df_origin', origin);
+    url.searchParams.set('connector_id', connectorId);
+    for (const [name, value] of Object.entries(loginParams)) {
+        if (value) url.searchParams.set(name, value);
+    }
+    if (!loginUrl.startsWith('/')) return url.toString();
+
+    const { data } = await request<{ authorize_url: string }>(
+        `${url.pathname}${url.search}`,
+        { headers: { Accept: 'application/json' } },
+    );
+    if (!data.authorize_url) throw new Error('Delegated login URL was not returned');
+    return data.authorize_url;
+}
+
 
 // ---------------------------------------------------------------------------
 
@@ -185,28 +208,39 @@ export const DataLoaderForm: React.FC<{
             return;
         }
 
-        const url = new URL(delegatedLogin.login_url, window.location.origin);
-        url.searchParams.set('df_origin', window.location.origin);
-        url.searchParams.set('connector_id', connectorIdRef.current);
-        // Pass auth-tier form params (e.g. client_id, tenant_id) to the login endpoint
-        for (const p of paramDefs) {
-            if (p.tier === 'auth' && !p.sensitive && p.type !== 'password' && mergedParams[p.name]) {
-                url.searchParams.set(p.name, mergedParams[p.name]);
-            }
-        }
-
         const width = 600;
         const height = 700;
         const left = window.screenX + (window.outerWidth - width) / 2;
         const top = window.screenY + (window.outerHeight - height) / 2;
         const popup = window.open(
-            url.toString(),
+            '',
             'df-sso-login',
             `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`,
         );
 
         if (!popup) {
             onFinish("error", t('db.popupBlocked') || 'Popup was blocked. Please allow popups and try again.');
+            setIsConnecting(false);
+            return;
+        }
+
+        try {
+            const loginParams = Object.fromEntries(
+                paramDefs
+                    .filter(p => p.tier === 'auth' && !p.sensitive && p.type !== 'password' && mergedParams[p.name])
+                    .map(p => [p.name, String(mergedParams[p.name])]),
+            );
+            const popupUrl = await prepareDelegatedLoginUrl(
+                delegatedLogin.login_url,
+                connectorIdRef.current,
+                window.location.origin,
+                apiRequest,
+                loginParams,
+            );
+            popup.location.href = popupUrl;
+        } catch (err: any) {
+            popup.close();
+            onFinish('error', err.message || 'Failed to start login');
             setIsConnecting(false);
             return;
         }

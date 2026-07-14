@@ -413,6 +413,7 @@ const CONNECTOR_TYPE_KEY_MAP: Record<string, string> = {
     MySQLDataLoader: 'mysql',
     PostgreSQLDataLoader: 'postgresql',
     MSSQLDataLoader: 'mssql',
+    AzureSQLDataLoader: 'azure_sql',
     CosmosDBDataLoader: 'cosmosdb',
     MongoDBDataLoader: 'mongodb',
     BigQueryDataLoader: 'bigquery',

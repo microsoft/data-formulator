@@ -1,6 +1,6 @@
 ---
 description: "File feedback to the user (and their Supervisor, if any) via the shared memory bus — guided through stripping rules and file naming"
-lastReviewed: 2026-05-29
+lastReviewed: 2026-07-11
 ---
 
 # Feedback
@@ -14,7 +14,7 @@ Capture friction, bugs, feature ideas, or success notes from this session and wr
    - `category`: `bug` | `friction` | `feature-request` | `success`
    - `severity`: `low` | `medium` | `high` | `critical`
    - `skill`: name of the skill if specific to one, otherwise empty
-3. **Resolve the shared memory bus** via `resolveMemoryBus()` (sibling `../Alex_ACT_Memory`). CLI: `node .github/scripts/_registry.cjs --resolve .`. If the sibling doesn't exist, it will be cloned or scaffolded automatically.
+3. **Resolve the shared memory bus** via read-only `resolveMemoryBus()` (sibling `../Alex_ACT_Memory`). CLI: `node .github/scripts/_registry.cjs --resolve .`. If the sibling does not exist, stop and ask whether the user wants to configure Memory; do not clone, scaffold, or configure a remote automatically.
 4. **Strip per `cross-project-isolation.instructions.md`** before writing:
    - No file paths from the heir project
    - No client names, domain entities, or business specifics

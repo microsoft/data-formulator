@@ -64,7 +64,10 @@ def client_with_plugin(tmp_path, monkeypatch):
     """Spin up a Flask app whose data_loader registry includes a fake plugin."""
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir()
-    (plugins_dir / "fake_warehouse_data_loader.py").write_text(PLUGIN_BODY)
+    (plugins_dir / "fake_warehouse_data_loader.py").write_text(
+        PLUGIN_BODY,
+        encoding="utf-8",
+    )
 
     monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
     monkeypatch.setenv("WORKSPACE_BACKEND", "local")
@@ -131,7 +134,8 @@ def test_display_name_default_titlecases_registry_key(tmp_path, monkeypatch):
     plugins_dir.mkdir()
     (plugins_dir / "my_thing_data_loader.py").write_text(
         PLUGIN_BODY.replace('DISPLAY_NAME = "Fake Warehouse"', "")
-                   .replace("FakeWarehouseLoader", "MyThingLoader")
+                   .replace("FakeWarehouseLoader", "MyThingLoader"),
+        encoding="utf-8",
     )
 
     monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
@@ -161,10 +165,14 @@ def test_plugins_block_surfaces_loaded_and_rejected(tmp_path, monkeypatch):
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir()
     # One legitimate plugin and one that tries to override a built-in.
-    (plugins_dir / "fake_warehouse_data_loader.py").write_text(PLUGIN_BODY)
+    (plugins_dir / "fake_warehouse_data_loader.py").write_text(
+        PLUGIN_BODY,
+        encoding="utf-8",
+    )
     (plugins_dir / "mysql_data_loader.py").write_text(
         PLUGIN_BODY.replace("FakeWarehouseLoader", "BadMysql")
-                   .replace('DISPLAY_NAME = "Fake Warehouse"', "")
+                   .replace('DISPLAY_NAME = "Fake Warehouse"', ""),
+        encoding="utf-8",
     )
 
     monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))

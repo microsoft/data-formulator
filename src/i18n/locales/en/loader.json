@@ -18,8 +18,15 @@
       "encrypt": "Enable encryption (yes/no)",
       "trust_server_certificate": "Trust server certificate (yes/no)",
       "connection_timeout": "Connection timeout in seconds",
+      "authInstructions": "**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Example (Windows auth):** server: `localhost\\SQLEXPRESS` · database: `mydb` (leave user/password empty)\n\n**Authentication:**\n- **Windows Auth:** Leave user/password empty (recommended for local development)\n- **SQL Server Auth:** Provide username and password\n\n**Troubleshooting:** Ensure the SQL Server service is running and TCP/IP is enabled."
+    },
+    "azure_sql": {
+      "server": "Azure SQL logical server hostname",
+      "database": "Target database name (required)",
+      "port": "Azure SQL port (default: 1433)",
+      "connection_timeout": "Connection timeout in seconds",
       "entraSignIn": "Sign in with Microsoft Entra",
-      "authInstructions": "**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Example (Windows auth):** server: `localhost\\SQLEXPRESS` · database: `mydb` (leave user/password empty)\n\n**Prerequisites:** Microsoft Entra delegated sign-in requires ODBC Driver 18. SQL and Windows authentication remain available.\n\n**Authentication:**\n- **Microsoft Entra:** Use the sign-in button; Conditional Access can require MFA\n- **Windows Auth:** Leave user/password empty (recommended for local dev)\n- **SQL Server Auth:** Provide username and password\n\n**Troubleshooting:** Ensure SQL Server service is running and TCP/IP is enabled."
+      "authInstructions": "Enter the Azure SQL logical server hostname and target database, then select **Sign in with Microsoft Entra**. Conditional Access determines whether MFA is required.\n\n**Prerequisites:** ODBC Driver 18, an Azure SQL Microsoft Entra administrator, and a contained database user or group with least-privilege access.\n\nTokens remain server-side and are never persisted in connector configuration or the credential vault."
     },
     "postgresql": {
       "user": "PostgreSQL username",

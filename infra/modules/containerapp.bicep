@@ -37,6 +37,12 @@ param azureOpenAiEndpoint string
 @description('Azure OpenAI model deployment name.')
 param azureOpenAiDeploymentName string
 
+@description('Optional Microsoft Entra tenant ID for delegated Azure SQL connections.')
+param azureSqlEntraTenantId string = ''
+
+@description('Optional Microsoft Entra application client ID for delegated Azure SQL connections.')
+param azureSqlEntraClientId string = ''
+
 @description('Optional custom domain bound to the Container App ingress.')
 param customDomainName string = ''
 
@@ -143,6 +149,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'DISABLE_DISPLAY_KEYS', value: 'true' }
             { name: 'FLASK_SECRET_KEY', secretRef: 'flask-secret-key' }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: applicationInsightsConnectionString }
+            ...(!empty(azureSqlEntraTenantId) && !empty(azureSqlEntraClientId)
+              ? [
+                  { name: 'AZURE_SQL_ENTRA_TENANT_ID', value: azureSqlEntraTenantId }
+                  { name: 'AZURE_SQL_ENTRA_CLIENT_ID', value: azureSqlEntraClientId }
+                  { name: 'AZURE_SQL_ENTRA_MANAGED_IDENTITY_CLIENT_ID', value: userAssignedIdentityClientId }
+                ]
+              : [])
           ]
         }
       ]

@@ -38,6 +38,16 @@ function err(msg) { findings.errors.push(msg); }
 function warn(msg) { findings.warnings.push(msg); }
 function info(msg) { findings.info.push(msg); }
 
+function walkDir(dir) {
+    const files = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const absolutePath = path.join(dir, entry.name);
+        if (entry.isDirectory()) files.push(...walkDir(absolutePath));
+        else if (entry.isFile()) files.push(absolutePath);
+    }
+    return files;
+}
+
 // ---- Check 1: marker exists --------------------------------------------------
 let marker = null;
 if (!fs.existsSync(MARKER_PATH)) {

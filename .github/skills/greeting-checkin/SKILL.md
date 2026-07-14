@@ -1,7 +1,7 @@
 ---
 name: greeting-checkin
 description: "Greeting-triggered self-check — recognise greetings, check Edition version against the upstream tag, scan AI-Memory announcements, and report inside the greeting reply"
-lastReviewed: 2026-04-30
+lastReviewed: 2026-07-11
 ---
 
 # Greeting Check-in
@@ -79,11 +79,11 @@ For each auto_action:
 4. After all actions, stage changes and commit silently (unless nothing changed)
 5. Report what was done in the greeting reply — one line per action with its result
 
-### 3c. Load user profile
+### 3c. Leave encrypted profiles unloaded
 
-Read the user profile from the memory bus: call `readProfile(memoryRoot)` (or read `<memoryRoot>/profile/<username>/user-profile.json` directly). If found, apply any session-relevant preferences (communication style, confidence badge visibility, tool preferences). If absent, continue without — profiles are optional.
-
-Do not report profile loading in the greeting reply unless the profile contains an explicit `greeting_note` field.
+Do not decrypt or read profiles during greeting. Profiles are optional and load
+only when the user or an authorized workflow explicitly requests profile-backed
+preferences. Announcement checks remain independent of profile authorization.
 
 ### 4. Write the session marker
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import errno
 import os
 from pathlib import Path
 
@@ -65,7 +66,12 @@ class TestConfinedDir:
         jail_dir = tmp_path / "jail"
         jail_dir.mkdir()
         link = jail_dir / "escape"
-        link.symlink_to(outside)
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            if exc.errno in {errno.EACCES, errno.EPERM} or getattr(exc, "winerror", None) == 1314:
+                pytest.skip("symlink creation is not permitted in this environment")
+            raise
 
         jail = ConfinedDir(jail_dir, mkdir=False)
         with pytest.raises(ValueError, match="escapes confined"):

@@ -1,20 +1,47 @@
 # Session Handoff
 
-**Last updated**: 2026-07-09
+**Last updated**: 2026-07-13
+
+## Azure SQL Connector Deployment
+
+- Production revision `ca-dataformulator--0000009` is healthy at 100% traffic.
+- Image: `azure-sql-20260710-1049`.
+- Public discovery exposes distinct `mssql` (credentials) and `azure_sql`
+  (delegated Microsoft Entra) connector types.
+- Entra application `Data Formulator GCX DEV` is configured with the production
+  callback, Azure SQL delegated permission, and secretless managed-identity
+  federation to `id-dataformulator`.
+- Live OAuth preparation verified the Microsoft tenant, client ID, Azure SQL
+  `.default` scope, exact callback, S256 PKCE, and state. The disposable
+  connector was deleted afterward.
+- Remaining: complete interactive consent/MFA against
+  `cpestaging.database.windows.net` / `CPE_Predictor`, then address
+  restart-ephemeral delegated-token sessions.
+- Current blocker: Microsoft Entra shows **Need admin approval** because tenant
+  user-consent policy blocks this new app. No permission grant exists yet. A
+  Cloud Application Administrator or Application Administrator must grant
+  tenant-wide consent once for Azure SQL `user_impersonation` on app client ID
+  `7cced1c1-4eb6-4adb-a149-9874baab45b0`.
+- Local DF-020 and DF-021 fixes now harden ODBC connection values and isolate
+  the eight-state OAuth limit per signed browser session. These fixes are not
+  committed or deployed yet.
+- Azure CLI is scoped to the Microsoft tenant, but the signed-in identity has
+  no active direct or transitive Entra directory role and cannot grant consent.
 
 ## Current State
 
-- The upstream baseline is `00d0f5e`.
+- Current local baseline is `71b1b78` on `main`.
 - PR #376 is open.
 - The stale `yarn.lock` fix is `4e185e9`.
-- The source, test, IaC, audit, meditation, and handoff work listed below is included in this handoff's publication commit. Use `git log -1` for its final SHA.
-- `ISSUES.md`, titled Data Formulator Audit and Change Log, contains the validated audit findings and operations record.
+- The working tree contains pre-existing Azure SQL and ACT Edition changes plus
+  the current audit remediation. Preserve unrelated user changes.
+- `docs/plans/ISSUES.md`, titled Data Formulator Audit and Change Log, contains the validated audit findings and operations record.
 
-## Live Production
+## Last Verified Production State
 
 - Resource group: `rg-data-formulator`
-- Revision: `ca-dataformulator--0000004`
-- Image: `azd-deploy-1783629787`
+- Revision: `ca-dataformulator--0000009`
+- Image: `azure-sql-20260710-1049`
 - Domain: `data.gcxteam.com`
 - `gpt-5.4-mini`: connected, 260K TPM, default model
 - `gpt-5.4-nano`: connected, 2.009M TPM
@@ -45,7 +72,7 @@ Files included from the working tree:
 
 Files added by the publication commit:
 
-- `ISSUES.md`
+- `docs/plans/ISSUES.md`
 - `tests/backend/agents/test_agent_config.py`
 - `tests/backend/test_static_mime_types.py`
 - `.github/episodic/INDEX.md`
@@ -60,27 +87,45 @@ Files added by the publication commit:
 - `git diff --check` passed.
 - Markdown lint passed.
 - Browser and API checks confirmed demo assets, the custom domain, and all three production models.
-- Full `pytest` was not run because the local environment lacks the complete backend test dependencies.
+- Audit remediation matrix: 143 backend tests passed without warnings.
+- Delegated popup frontend suite: 7 tests passed.
+- Production frontend build completed successfully with existing bundle-size
+  and dynamic-import warnings only.
+- Full backend suite: 2,023 passed and 13 skipped.
+- Full frontend suite: 33 files and 271 tests passed.
+- Five Flask-Session signer deprecation warnings remain and are tracked as
+  DF-022; removing the setting without migration would invalidate active
+  signed session cookies.
+- Touched frontend ESLint and the production build pass. Existing bundle-size
+  and dynamic-import build warnings remain.
 
 ## Pending Queue
 
-1. Review `ISSUES.md` and confirm the issue priorities.
-2. Implement DF-011 with ETag concurrency, starting with a failing regression test.
-3. Address DF-012 and DF-001.
-4. Add bounded HTTP 429 retries for DF-009.
-5. Run the full backend test suite in a dependency-complete environment.
-6. Monitor PR #376 checks and address any failures against the publication commit.
+1. Commit and deploy the approved local fixes; then verify the production image
+  and revision without changing unrelated infrastructure.
+2. Obtain tenant-wide Azure SQL delegated admin consent from an eligible Entra
+  administrator and complete the interactive popup/MFA smoke test.
+3. Select and implement an approved restart-durable shared session backend;
+  keep one worker and one replica until that state is shared, and coordinate
+  the DF-022 signer-cookie migration with that work.
+4. Monitor PR #376 checks against the full backend and frontend results.
+5. Delete `.github-backup-20260713-212145/` only after explicit approval; it is
+  now ignored and still present as recovery data.
 
 ## Resume Point
 
 Read these files before changing code:
 
 - `HANDOFF.md`
-- `ISSUES.md`
+- `docs/plans/ISSUES.md`
+- `docs/plans/2026-07-13-audit-remediation.md`
 - `/memories/repo/azd-deployment-gotchas.md`
 - `docs/dev-guides/9-workspace-storage-architecture.md`
 
-For continued implementation, write the DF-011 regression test first and confirm that it fails for the expected concurrency reason.
+For continued implementation, begin with the commit/deployment decision and the
+DF-022 session-cookie migration strategy. DF-020, DF-021, both full test suites,
+and independent maintainer reviews are green; do not rewrite their tests merely
+to change implementation behavior.
 
 Before merging the publication commit, run the backend tests in the devcontainer and review PR #376 checks.
 

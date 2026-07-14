@@ -19,6 +19,13 @@ governed production environment. Production-specific values live in
 - The runtime image installs Microsoft ODBC Driver 18 from Microsoft's signed
   Debian repository. This is required for Azure SQL delegated access-token
   connections; `unixodbc-dev` alone is insufficient.
+- Azure SQL delegated authentication uses the connector-specific
+  `AZURE_SQL_ENTRA_TENANT_ID`, `AZURE_SQL_ENTRA_CLIENT_ID`, and existing
+  user-assigned managed identity. The application registration trusts that
+  identity through a federated credential, so production stores no client
+  secret. These settings must not set the
+  global `AUTH_PROVIDER` or `OIDC_*` variables unless application-wide login is
+  also intentionally being enabled.
 - OAuth deployments behind Container Apps ingress must produce the public HTTPS
   callback and origin. Configure an exact trusted proxy boundary or a validated
   public OAuth base URL; never trust arbitrary forwarded headers.

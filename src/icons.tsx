@@ -3,18 +3,17 @@
 
 import React from 'react';
 
-import { SvgIcon, SvgIconProps } from '@mui/material';
-import { Box, SxProps } from '@mui/material';
+import { Box, SvgIcon, SvgIconProps, SxProps } from '@mui/material';
 
 // ── MUI domain icon re-exports ──────────────────────────────────────────
 // Centralized so every file imports domain icons from one place.
 // Chart-template icons (managed in ChartTemplates.tsx) are NOT included.
-export { default as TableIcon } from '@mui/icons-material/TableRowsOutlined';
-export { default as StreamIcon } from '@mui/icons-material/Stream';
-export { default as AgentIcon } from '@mui/icons-material/PrecisionManufacturing';
-export { default as InsightIcon } from '@mui/icons-material/Insights';
 export { default as AnchorIcon } from '@mui/icons-material/Anchor';
 export { default as FolderOpenIcon } from '@mui/icons-material/FolderOpen';
+export { default as InsightIcon } from '@mui/icons-material/Insights';
+export { default as AgentIcon } from '@mui/icons-material/PrecisionManufacturing';
+export { default as StreamIcon } from '@mui/icons-material/Stream';
+export { default as TableIcon } from '@mui/icons-material/TableRowsOutlined';
 
 // ── Data-loader / connector category icons ──────────────────────────────
 // Generic icons representing data source *categories*, not brand logos.
@@ -84,6 +83,7 @@ const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     mysql: RelationalDBIcon,
     postgresql: RelationalDBIcon,
     mssql: RelationalDBIcon,
+    azure_sql: RelationalDBIcon,
     // Document stores
     mongodb: DocumentStoreIcon,
     cosmosdb: DocumentStoreIcon,
@@ -116,6 +116,7 @@ const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     // Relational DB
     mysql: 0, MySQLDataLoader: 0,
     mssql: 0, MSSQLDataLoader: 0,
+    azure_sql: 0, AzureSQLDataLoader: 0,
     postgresql: 0, PostgreSQLDataLoader: 0,
     // Document Store
     mongodb: 1, MongoDBDataLoader: 1,
@@ -148,8 +149,7 @@ export const getConnectorIcon = (sourceType: string, props?: SvgIconProps): Reac
     return <Icon {...(props || {})} />;
 };
 
-export { GenericDBIcon as DatabaseIcon };
-export { RelationalDBIcon };
+export { GenericDBIcon as DatabaseIcon, RelationalDBIcon };
 
 // ── Custom SVG domain icons ─────────────────────────────────────────────
 
@@ -280,4 +280,4 @@ const UnknownIcon: React.FunctionComponent<SvgIconProps> = (props) => {
     );
 };
 
-export { BooleanIcon, NumericalIcon, StringIcon, DateIcon, DateTimeIcon, TimeIcon, DurationIcon, UnknownIcon };
+export { BooleanIcon, DateIcon, DateTimeIcon, DurationIcon, NumericalIcon, StringIcon, TimeIcon, UnknownIcon };

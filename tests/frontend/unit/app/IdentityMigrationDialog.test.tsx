@@ -9,21 +9,23 @@
  * - "Start Fresh" must NOT show "Importing workspaces…"
  * - "Import Data" calls the migrate endpoint and shows progress
  */
-import React from "react";
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockFetchWithIdentity = vi.fn();
+const mockApiRequest = vi.fn();
 const mockPurge = vi.fn(async () => {});
 
 vi.mock("../../../../src/app/utils", () => ({
-    fetchWithIdentity: (...args: any[]) => mockFetchWithIdentity(...args),
     getUrls: () => ({ SESSION_LIST: "/api/sessions/list" }),
+}));
+
+vi.mock("../../../../src/app/apiClient", () => ({
+    apiRequest: (...args: any[]) => mockApiRequest(...args),
 }));
 
 vi.mock("../../../../src/app/store", () => ({
@@ -53,22 +55,19 @@ import { IdentityMigrationDialog } from "../../../../src/app/IdentityMigrationDi
 // Helpers
 // ---------------------------------------------------------------------------
 
-function jsonResponse(body: any, status = 200): Response {
-    return new Response(JSON.stringify(body), {
-        status,
-        headers: { "Content-Type": "application/json" },
-    });
-}
-
 function setupAnonymousWorkspaces(count: number) {
-    mockFetchWithIdentity.mockImplementation(async (url: string) => {
+    mockApiRequest.mockImplementation(async (url: string) => {
         if (url.includes("/api/sessions/list")) {
-            return jsonResponse({
-                status: "ok",
-                sessions: Array.from({ length: count }, (_, i) => ({ id: `ws-${i}` })),
-            });
+            return {
+                data: {
+                    sessions: Array.from(
+                        { length: count },
+                        (_, i) => ({ id: `ws-${i}` }),
+                    ),
+                },
+            };
         }
-        return jsonResponse({ status: "ok" });
+        return { data: {} };
     });
 }
 
@@ -129,7 +128,7 @@ describe("User clicks 'Start Fresh'", () => {
             fireEvent.click(screen.getByText("Start Fresh"));
         });
 
-        const calls = mockFetchWithIdentity.mock.calls.map((c: any[]) => c[0]);
+        const calls = mockApiRequest.mock.calls.map((c: any[]) => c[0]);
         expect(calls).not.toContainEqual(
             expect.stringContaining("cleanup-anonymous"),
         );
@@ -148,7 +147,7 @@ describe("User clicks 'Start Fresh'", () => {
             fireEvent.click(screen.getByText("Start Fresh"));
         });
 
-        const calls = mockFetchWithIdentity.mock.calls.map((c: any[]) => c[0]);
+        const calls = mockApiRequest.mock.calls.map((c: any[]) => c[0]);
         expect(calls).not.toContainEqual(
             expect.stringContaining("/api/sessions/migrate"),
         );
@@ -193,20 +192,19 @@ describe("User clicks 'Import Data'", () => {
 
     it("calls migrate endpoint and shows importing state", async () => {
         setupAnonymousWorkspaces(2);
-        let resolveMigrate!: (v: Response) => void;
-        mockFetchWithIdentity.mockImplementation(async (url: string) => {
+        let resolveMigrate!: (value: { data: { moved: { id: string }[] } }) => void;
+        mockApiRequest.mockImplementation(async (url: string) => {
             if (url.includes("/api/sessions/list")) {
-                return jsonResponse({
-                    status: "ok",
-                    sessions: [{ id: "ws-0" }, { id: "ws-1" }],
-                });
+                return {
+                    data: { sessions: [{ id: "ws-0" }, { id: "ws-1" }] },
+                };
             }
             if (url.includes("/api/sessions/migrate")) {
-                return new Promise<Response>((resolve) => {
+                return new Promise<{ data: { moved: { id: string }[] } }>((resolve) => {
                     resolveMigrate = resolve;
                 });
             }
-            return jsonResponse({ status: "ok" });
+            return { data: {} };
         });
 
         render(<IdentityMigrationDialog oldBrowserId="abc-123" onDone={vi.fn()} />);
@@ -224,7 +222,7 @@ describe("User clicks 'Import Data'", () => {
         });
 
         await act(async () => {
-            resolveMigrate(jsonResponse({ status: "ok", moved: ["ws-0", "ws-1"] }));
+            resolveMigrate({ data: { moved: [{ id: "ws-0" }, { id: "ws-1" }] } });
         });
 
         await waitFor(() => {

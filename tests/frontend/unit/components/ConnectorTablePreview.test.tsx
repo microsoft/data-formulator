@@ -1,5 +1,4 @@
-import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ConnectorTablePreview } from '../../../../src/components/ConnectorTablePreview';
 
@@ -32,6 +31,14 @@ vi.mock('../../../../src/app/utils', () => ({
     },
 }));
 
+vi.mock('../../../../src/views/DataFrameTable', () => ({
+    DataFrameTable: ({ columnDescriptions }: { columnDescriptions: Record<string, string> }) => (
+        <div data-testid="column-descriptions">
+            {JSON.stringify(columnDescriptions)}
+        </div>
+    ),
+}));
+
 describe('ConnectorTablePreview source metadata', () => {
     const baseProps = {
         connectorId: 'warehouse',
@@ -49,35 +56,30 @@ describe('ConnectorTablePreview source metadata', () => {
         onLoad: vi.fn(),
     };
 
-    it('shows collapsed metadata header with status and column count', () => {
+    it('shows the table description inline', () => {
         render(
             <ConnectorTablePreview
                 {...baseProps}
                 tableDescription="Orders from the warehouse"
-                metadataStatus="synced"
             />,
         );
 
-        expect(screen.getByText('Source metadata')).toBeDefined();
-        expect(screen.getByText('Synced')).toBeDefined();
-        expect(screen.getByText(/3\s+columns/)).toBeDefined();
+        expect(screen.getByText('Orders from the warehouse')).toBeDefined();
     });
 
-    it('expands to show verbose_name and expression in column table', () => {
+    it('passes source column descriptions to the preview table', () => {
         render(
             <ConnectorTablePreview
                 {...baseProps}
-                metadataStatus="synced"
+                sampleRows={[{ order_id: 1, region: 'west', total: 10 }]}
             />,
         );
 
-        fireEvent.click(screen.getByText('Source metadata'));
-
-        expect(screen.getByText('order_id')).toBeDefined();
-        expect(screen.getByText('(订单编号)')).toBeDefined();
-        expect(screen.getByText('Primary order key')).toBeDefined();
-
-        expect(screen.getByText('total')).toBeDefined();
-        expect(screen.getByText('SUM(line_items.amount)')).toBeDefined();
+        expect(screen.getByTestId('column-descriptions').textContent).toBe(
+            JSON.stringify({
+                order_id: 'Primary order key',
+                total: 'Sum of line items',
+            }),
+        );
     });
 });

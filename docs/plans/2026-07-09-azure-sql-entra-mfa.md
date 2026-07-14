@@ -1,6 +1,10 @@
 # Azure SQL Microsoft Entra MFA Implementation Plan
 
-**Status:** Reassessed; loader and mocked auth implementation may begin after
+**Status:** Deployed to production revision `ca-dataformulator--0000009`; loader,
+popup preparation, managed-identity federation, and mocked auth contracts are
+green. The remaining release gates are one interactive Microsoft consent/MFA
+smoke test and restart-durable delegated-token sessions. Previously, loader and
+mocked auth implementation could begin after
 the shared delegated-auth contract is green. The representative Azure SQL
 target, network path, ODBC Driver 18, current-user SQL-audience token, and
 token packing are verified. Explicit active-tenant token acquisition produced
@@ -14,7 +18,15 @@ popup flow, and restart-durable delegated-token sessions.
 
 **Goal:** Add hosted, per-user Microsoft Entra authentication for Azure SQL Database so Conditional Access can require MFA and Data Formulator can connect with the resulting delegated access token.
 
-**Architecture:** Extend the existing SQL Server loader rather than creating a parallel Azure SQL loader. A dedicated backend OAuth popup flow obtains an Azure SQL-scoped token, stores it only in the identity-scoped `TokenStore` session, and posts a token-free success message to the opener; `DataConnector` then injects the token into `MSSQLDataLoader`, which passes it to `pyodbc` through `SQL_COPT_SS_ACCESS_TOKEN`. Existing SQL username/password and Windows trusted authentication remain unchanged.
+**Architecture:** Expose a distinct `azure_sql` connector backed by
+`AzureSQLDataLoader`, a thin subclass of `MSSQLDataLoader`. The subclass owns
+Azure-specific form/auth policy while reusing the shared catalog, query, and
+ODBC token data plane. A dedicated backend OAuth popup obtains an Azure
+SQL-scoped token, stores it only in the identity-scoped `TokenStore` session,
+and posts a token-free success message to the opener. Generic `mssql` remains
+SQL/Windows credential-only and preserves existing connector IDs and configs.
+The Azure SQL gateway reads connector-specific `AZURE_SQL_ENTRA_*` settings;
+it does not require or activate Data Formulator's global OIDC login provider.
 
 **Tech Stack:** Flask, existing OIDC provider configuration, OAuth 2.0 authorization code flow, Microsoft ODBC Driver 18, `pyodbc`, React, TypeScript, react-i18next, pytest, Vitest.
 
@@ -26,10 +38,15 @@ This plan implements hosted per-user authentication, not the Windows-only ODBC `
 
 The feature is complete when:
 
-- A user can choose **Sign in with Microsoft Entra** on an SQL Server connector.
+- A user can create a distinct **Azure SQL (Microsoft Entra)** connector and
+    choose **Sign in with Microsoft Entra**.
+- Generic SQL Server connectors expose only SQL and Windows authentication.
 - The popup requests `https://database.windows.net/.default` and supports Entra Conditional Access/MFA.
 - The callback validates state, stores the access token under the connector instance ID, and sends no token to browser JavaScript.
-- `MSSQLDataLoader` connects with `SQL_COPT_SS_ACCESS_TOKEN` and omits `UID`, `PWD`, `Trusted_Connection`, and `Authentication` from that connection string.
+- `AzureSQLDataLoader` requires a target database and delegated token, enforces
+    ODBC Driver 18 with encrypted certificate-validated transport, and passes the
+    token through the shared MSSQL data plane using
+    `SQL_COPT_SS_ACCESS_TOKEN`.
 - Existing SQL authentication and Windows trusted authentication continue to build the same connection strings.
 - Tokens, authorization codes, and raw ODBC connection strings are absent from logs, connector configuration, and the credential vault.
 - Expired or missing delegated tokens require a new sign-in rather than silently falling back to SQL or Windows credentials.
@@ -117,11 +134,11 @@ class TestMSSQLAuthentication:
     def test_access_token_uses_odbc_token_attribute(self):
         from data_formulator.data_loader.mssql_data_loader import (
             SQL_COPT_SS_ACCESS_TOKEN,
-            MSSQLDataLoader,
+            AzureSQLDataLoader,
         )
 
         with patch("pyodbc.connect") as connect:
-            MSSQLDataLoader({
+            AzureSQLDataLoader({
                 "server": "example.database.windows.net",
                 "database": "analytics",
                 "access_token": "token-value",
@@ -147,7 +164,10 @@ class TestMSSQLAuthentication:
         ...
 ```
 
-Add tests that `auth_config()` declares delegated authentication and that `delegated_login_config()` exposes the Azure SQL login endpoint without embedding credentials.
+Add tests that `AzureSQLDataLoader.auth_config()` declares delegated
+authentication with `profile="azure_sql"`, while
+`MSSQLDataLoader.auth_config()` remains credential-only. Verify that only the
+Azure SQL loader exposes the delegated login endpoint.
 
 ### Step 2: Verify loader RED
 
@@ -159,13 +179,16 @@ python -m pytest tests/backend/data/test_mssql_auth.py -q
 
 Expected: failures because token packing, the ODBC access-token constant, and delegated metadata do not exist.
 
-## Task 2: Add Minimal ODBC Access-Token Support
+## Task 2: Add A Separate Azure SQL Connector Over The Shared Data Plane
 
-**Objective:** Make the loader consume an injected token without changing catalog or query behavior.
+**Objective:** Give Azure SQL a distinct product/auth contract without
+duplicating MSSQL catalog or query behavior.
 
 **Files:**
 
 - Modify: `py-src/data_formulator/data_loader/mssql_data_loader.py`
+- Create: `py-src/data_formulator/data_loader/azure_sql_data_loader.py`
+- Modify: `py-src/data_formulator/data_loader/__init__.py`
 
 ### Step 1: Implement minimum loader GREEN behavior
 
@@ -180,7 +203,10 @@ def _encode_odbc_access_token(access_token: str) -> bytes:
     return struct.pack("=i", len(encoded)) + encoded
 ```
 
-Read `access_token` from params. When present, call:
+Keep the ODBC token branch in the shared MSSQL data plane. The Azure SQL
+subclass requires `server`, `database`, and `access_token`, forces Driver 18,
+encryption, and certificate validation, then delegates to the shared
+implementation. When a token is present, call:
 
 ```python
 pyodbc.connect(
@@ -193,13 +219,15 @@ pyodbc.connect(
 
 Do not add `UID`, `PWD`, `Trusted_Connection`, or `Authentication` in token mode. Preserve the existing branches byte-for-byte when no token is present.
 
-Add:
+Add the following metadata to `AzureSQLDataLoader`; restore
+`MSSQLDataLoader` to `{"mode": "credentials"}` with no delegated login:
 
 ```python
 @staticmethod
 def auth_config() -> dict:
     return {
         "mode": "delegated",
+        "profile": "azure_sql",
         "display_name": "Microsoft Entra",
         "login_url": "/api/auth/azure-sql/login",
         "supports_refresh": False,
@@ -209,7 +237,7 @@ def auth_config() -> dict:
 def delegated_login_config() -> dict[str, str]:
     return {
         "login_url": "/api/auth/azure-sql/login",
-        "label_key": "loader.mssql.entraSignIn",
+        "label_key": "loader.azure_sql.entraSignIn",
     }
 ```
 
@@ -332,7 +360,7 @@ yarn test
 
 Add matching keys for:
 
-- `loader.mssql.entraSignIn`
+- `loader.azure_sql.entraSignIn`
 - Entra configuration unavailable
 - Sign-in expired or canceled
 - Azure SQL access denied
@@ -411,7 +439,8 @@ IdP or MFA time):
 - Transient SQL retries MUST be bounded and used only when the operation is
     idempotent.
 - Existing SQL authentication and Windows trusted authentication UX MUST remain
-    available with no extra connector type introduced.
+    available on the unchanged `mssql` connector; delegated Entra authentication
+    MUST be isolated to the distinct `azure_sql` connector.
 
 ## Definition of Done
 

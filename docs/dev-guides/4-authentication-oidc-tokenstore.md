@@ -178,6 +178,20 @@ def auth_config() -> dict:
 | `OIDC_CLIENT_SECRET` | OIDC Client Secret（设置即启用 backend 模式） | 机密客户端必需 |
 | `AUTH_MODE` | 强制覆盖模式（`frontend` / `backend`） | 否（自动推导） |
 | `OIDC_AUTHORIZE_URL` | IdP 授权端点 | 否（自动发现） |
+
+Azure SQL delegated connector 使用独立配置，不依赖或激活全局 OIDC provider：
+
+| 变量 | 说明 | 必需 |
+| ------ | ------ | ------ |
+| `AZURE_SQL_ENTRA_TENANT_ID` | Azure SQL 用户所在的 Microsoft Entra tenant ID | 是 |
+| `AZURE_SQL_ENTRA_CLIENT_ID` | Azure SQL delegated confidential application client ID | 是 |
+| `AZURE_SQL_ENTRA_CLIENT_SECRET` | 非 Azure 环境可选的后端 client secret | 条件必需 |
+| `AZURE_SQL_ENTRA_MANAGED_IDENTITY_CLIENT_ID` | Azure 上用于 federated client assertion 的 user-assigned managed identity client ID | 条件必需 |
+
+浏览器先通过带 identity header 的 app-relative API 请求准备 authorization
+URL，再打开 Microsoft 登录窗口。外部 callback 依靠同一个 Flask session
+绑定并原子消费 state；不能要求 Microsoft 回调携带 Data Formulator 的
+`X-Identity-Id` header。
 | `OIDC_TOKEN_URL` | IdP Token 端点 | 否（自动发现） |
 | `OIDC_USERINFO_URL` | IdP UserInfo 端点 | 否（自动发现） |
 | `OIDC_JWKS_URL` | IdP JWKS 端点 | 否（自动发现） |

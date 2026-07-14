@@ -1,7 +1,7 @@
 ---
 description: "PII filter at memory write boundaries — prevent sensitive data from entering persistent storage tiers"
 applyTo: "**"
-lastReviewed: 2026-05-29
+lastReviewed: 2026-07-11
 ---
 
 # PII Memory Filter
@@ -61,7 +61,7 @@ Before writing to persistent storage, ask:
 
 When the user asks to store something containing PII:
 
-- **Contact info** → Store in `../Alex_ACT_Memory/profile/<username>/user-profile.json` (L3, on-demand only, never auto-loaded)
+- **Contact info** → With user approval, store only in `../Alex_ACT_Memory/profile/<username>/user-profile.encrypted.json` (L3, encrypted, on-demand only, never auto-loaded)
 - **Health data** → Decline. Explain no memory tier is appropriate for L4 health data.
 - **Credentials** → Direct to VS Code SecretStorage or environment variables
 - **Work patterns** → Generalize: "prefers TDD" not "wrote 47 tests on Tuesday"

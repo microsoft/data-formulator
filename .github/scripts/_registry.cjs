@@ -1,10 +1,9 @@
 /**
  * _registry.cjs — shared memory bus resolution and sync policy.
  *
- * Resolves the Alex_ACT_Memory sibling repo using a three-state fallback:
- *   1. SIBLING: ../Alex_ACT_Memory exists → use it (git pull)
- *   2. CLONE:   remote configured → git clone
- *   3. SCAFFOLD: create minimal local repo
+ * Resolves the Alex_ACT_Memory sibling repo. Read-only callers use an existing
+ * sibling or receive null. Explicit setup callers pass { mutate: true } to
+ * enable pull, clone, or scaffold behavior.
  *
  * Also exports EDITION_OWNED/HEIR_OWNED sync policy arrays for
  * bootstrap-heir.cjs and upgrade-self.cjs.
@@ -13,14 +12,23 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const {
+    PASSWORD_ENV,
+    ProfileCryptoError,
+    decryptEnvelope,
+    encryptBuffer,
+    readSecretFromSources,
+    writeJsonAtomic,
+} = require('./shared/profile-crypto.cjs');
 
 const MEMORY_REPO_NAME = 'Alex_ACT_Memory';
 const MEMORY_REMOTE = 'https://github.com/fabioc-aloha/Alex_ACT_Memory.git';
 
 /**
- * Resolve the memory bus root. Returns { root, level, message } or null on failure.
+ * Resolve the memory bus root. Returns { root, level, message } or null.
  * level: 'sibling' | 'cloned' | 'scaffolded'
  * @param {string} [repoRoot] - the heir's repo root (defaults to cwd)
+ * @param {{mutate?: boolean}} [options] - opt into pull/clone/scaffold behavior
  */
 function resolveMemoryBus(repoRoot, options = {}) {
     const mutate = options.mutate === true;
@@ -65,7 +73,7 @@ function scaffoldMemoryRepo(memoryPath) {
     fs.mkdirSync(memoryPath, { recursive: true });
     try { execFileSync('git', ['init', '--quiet'], { cwd: memoryPath, stdio: 'ignore' }); } catch { /* git not available */ }
 
-    const dirs = ['announcements', 'feedback', 'knowledge', 'profile/default', 'insights', 'docs'];
+    const dirs = ['announcements', 'feedback', 'knowledge', 'profile', 'insights', 'docs'];
     for (const d of dirs) {
         fs.mkdirSync(path.join(memoryPath, d), { recursive: true });
     }
@@ -76,8 +84,7 @@ function scaffoldMemoryRepo(memoryPath) {
         'feedback/README.md': '# Feedback\\n\\nHeir friction reports. Any heir writes here when encountering issues.\\n',
         'knowledge/index.json': '[]',
         'knowledge/README.md': '# Knowledge\\n\\nCurated knowledge packages. See index.json for registry.\\n',
-        'profile/default/README.md': '# Default Profile\\n\\nFallback when no user-specific profile exists.\\n',
-        '.gitignore': '# OS\\nThumbs.db\\n.DS_Store\\n\\n# Editor\\n.vscode/\\n*.swp\\n',
+        '.gitignore': '# OS\\nThumbs.db\\n.DS_Store\\n\\n# Editor\\n.vscode/\\n*.swp\\n\\n# Local secrets\\n.env\\n.env.*\\n!.env.example\\n',
     };
 
     for (const [rel, content] of Object.entries(files)) {
@@ -96,35 +103,81 @@ function scaffoldMemoryRepo(memoryPath) {
 }
 
 /**
- * Read user profile from memory bus.
+ * Read one exact local secret without importing or enumerating environment data.
  * @param {string} memoryRoot
- * @returns {object|null}
+ * @param {string} variableName
+ * @param {{environment?: object, projectRoot?: string, envFile?: string, required?: boolean}} [options]
+ * @returns {string|null}
  */
-function readProfile(memoryRoot) {
-    const username = sanitizePathSegment(process.env.USER || process.env.USERNAME || 'default');
-    const profilePath = path.join(memoryRoot, 'profile', username, 'user-profile.json');
-    const fallbackPath = path.join(memoryRoot, 'profile', 'default', 'user-profile.json');
-    const target = fs.existsSync(profilePath) ? profilePath : (fs.existsSync(fallbackPath) ? fallbackPath : null);
-    if (!target) return null;
-    try { return JSON.parse(fs.readFileSync(target, 'utf8')); } catch { return null; }
+function readMemorySecret(memoryRoot, variableName, options = {}) {
+    const projectRoot = options.projectRoot || process.cwd();
+    const envFiles = [];
+    if (options.envFile) envFiles.push(options.envFile);
+    envFiles.push(path.join(projectRoot, '.env'));
+    envFiles.push(path.join(memoryRoot, '.env'));
+    return readSecretFromSources({
+        environment: options.environment || process.env,
+        envFiles,
+        variableName,
+        requireGitignored: true,
+        required: options.required === true,
+    });
 }
 
 /**
- * Write user profile to memory bus (best-effort commit + push).
+ * Read an encrypted user profile from Memory. Missing authorization skips the
+ * optional profile while authentication or envelope failures remain explicit.
+ * @param {string} memoryRoot
+ * @param {{environment?: object, projectRoot?: string, envFile?: string}} [options]
+ * @returns {object|null}
+ */
+function readProfile(memoryRoot, options = {}) {
+    const username = sanitizePathSegment(process.env.USER || process.env.USERNAME || 'default');
+    const profilePath = path.join(memoryRoot, 'profile', username, 'user-profile.encrypted.json');
+    const fallbackPath = path.join(memoryRoot, 'profile', 'default', 'user-profile.encrypted.json');
+    const target = fs.existsSync(profilePath) ? profilePath : (fs.existsSync(fallbackPath) ? fallbackPath : null);
+    if (!target) return null;
+    const password = readMemorySecret(memoryRoot, PASSWORD_ENV, options);
+    if (!password) return null;
+    let envelope;
+    try {
+        envelope = JSON.parse(fs.readFileSync(target, 'utf8'));
+    } catch {
+        throw new ProfileCryptoError('PROFILE_ENVELOPE_INVALID', 'Encrypted profile envelope is invalid');
+    }
+    const plaintext = decryptEnvelope(envelope, password);
+    try {
+        return JSON.parse(plaintext.toString('utf8'));
+    } catch {
+        throw new ProfileCryptoError('PROFILE_CONTENT_INVALID', 'Decrypted profile content is invalid');
+    } finally {
+        plaintext.fill(0);
+    }
+}
+
+/**
+ * Write an encrypted profile locally. Repository synchronization is an
+ * explicit user decision and is never performed by this function.
  * @param {string} memoryRoot
  * @param {object} profile
+ * @param {{environment?: object, projectRoot?: string, envFile?: string}} [options]
  */
-function writeProfile(memoryRoot, profile) {
+function writeProfile(memoryRoot, profile, options = {}) {
     const username = sanitizePathSegment(process.env.USER || process.env.USERNAME || 'default');
-    const profileDir = path.join(memoryRoot, 'profile', username);
-    fs.mkdirSync(profileDir, { recursive: true });
-    const profilePath = path.join(profileDir, 'user-profile.json');
-    fs.writeFileSync(profilePath, JSON.stringify(profile, null, 2) + '\n');
+    const profilePath = path.join(memoryRoot, 'profile', username, 'user-profile.encrypted.json');
+    const password = readMemorySecret(memoryRoot, PASSWORD_ENV, options);
+    if (!password) {
+        throw new ProfileCryptoError(
+            'PROFILE_PASSWORD_MISSING',
+            `Profile password is unavailable in ${PASSWORD_ENV}`
+        );
+    }
+    const plaintext = Buffer.from(JSON.stringify(profile));
     try {
-        execFileSync('git', ['add', profilePath], { cwd: memoryRoot, stdio: 'ignore' });
-        execFileSync('git', ['commit', '-m', `Update profile: ${username}`, '--quiet'], { cwd: memoryRoot, stdio: 'ignore' });
-        execFileSync('git', ['push', '--quiet'], { cwd: memoryRoot, stdio: 'ignore', timeout: 15000 });
-    } catch { /* best effort — push may fail without remote */ }
+        writeJsonAtomic(profilePath, encryptBuffer(plaintext, password));
+    } finally {
+        plaintext.fill(0);
+    }
 }
 
 function sanitizePathSegment(value) {
@@ -192,11 +245,11 @@ const BOOTSTRAP_TEMPLATES = [
     '.vscode/settings.json',
 ];
 
-module.exports = { resolveMemoryBus, readProfile, writeProfile, scaffoldMemoryRepo, MEMORY_REPO_NAME, MEMORY_REMOTE, EDITION_OWNED, HEIR_OWNED, BOOTSTRAP_TEMPLATES };
+module.exports = { resolveMemoryBus, readMemorySecret, readProfile, writeProfile, scaffoldMemoryRepo, MEMORY_REPO_NAME, MEMORY_REMOTE, EDITION_OWNED, HEIR_OWNED, BOOTSTRAP_TEMPLATES };
 
 // ── CLI mode ───────────────────────────────────────────────────────
 // node _registry.cjs --resolve [dir]     Resolve memory bus
-// node _registry.cjs --profile [dir]     Read user profile
+// node _registry.cjs --profile [dir]     Check encrypted profile availability
 if (require.main === module) {
     const args = process.argv.slice(2);
     if (args.includes('--resolve')) {
@@ -214,14 +267,20 @@ if (require.main === module) {
         const dir = args[idx + 1] || process.cwd();
         const bus = resolveMemoryBus(dir);
         if (bus) {
-            const profile = readProfile(bus.root);
-            console.log(profile ? JSON.stringify(profile, null, 2) : '(no profile found)');
+            try {
+                const profile = readProfile(bus.root, { projectRoot: dir });
+                console.log(profile ? '(profile available)' : '(no authorized profile available)');
+            } catch (cause) {
+                const code = cause instanceof ProfileCryptoError ? cause.code : 'PROFILE_READ_FAILED';
+                console.error(`${code}: profile unavailable`);
+                process.exitCode = 1;
+            }
         } else {
             console.log('(no memory bus)');
         }
     } else {
         console.log('Usage:');
         console.log('  node _registry.cjs --resolve [dir]     Resolve memory bus');
-        console.log('  node _registry.cjs --profile [dir]     Read user profile');
+        console.log('  node _registry.cjs --profile [dir]     Check encrypted profile availability');
     }
 }
