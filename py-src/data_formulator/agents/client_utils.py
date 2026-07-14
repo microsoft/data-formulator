@@ -345,7 +345,7 @@ class Client(object):
         params["timeout"] = timeout
         litellm.completion(
             model=self.model, messages=messages,
-            max_tokens=3, drop_params=True, **params,
+            max_tokens=3, drop_params=True, _skip_mcp_handler=True, **params,
         )
 
     def _dispatch(self, *, messages, stream, params, tools=None, extra=None):
@@ -359,6 +359,11 @@ class Client(object):
         effective_stream = stream and not is_ollama
         call_kwargs = dict(model=self.model, messages=messages,
                            drop_params=True, stream=effective_stream,
+                           # We never use litellm's built-in MCP gateway. Setting this
+                           # skips litellm's proxy/MCP handler import path, which pulls
+                           # in fastapi and is not a dependency of this project
+                           # (litellm>=1.92 imports it whenever `tools` are passed).
+                           _skip_mcp_handler=True,
                            **params, **(extra or {}))
         if tools is not None:
             call_kwargs["tools"] = tools
