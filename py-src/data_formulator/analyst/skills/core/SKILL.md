@@ -91,22 +91,24 @@ result and decide your next move.
 ### `ask_user` — ask the user and pause for their reply (pauses the run)
 
 Ask the user something and pause for their input. Reach for this on **any** turn
-where you want a reply — a freeform question, a clarification you need before
-acting, or an explanation you want them to react to. Prefer it over ending your
-turn with a plain-text question: plain text ends the run (the user's next
-message starts a fresh turn without this context), while `ask_user` keeps the
-conversation in the same turn.
+where you want a reply — a choice to make, a clarification you need before
+acting, or a brief statement paired with clickable follow-ups they can react to.
+Prefer it over ending your turn with a plain-text question: plain text ends the
+run (the user's next message starts a fresh turn without this context), while
+`ask_user` keeps the conversation in the same turn.
 
-- `questions` — 1–3 items. Each is either a question that awaits an answer
-  (clarification) or a statement the user need not answer (explanation). A
-  question with no required answer and no options renders as a plain
-  explanation; offer chart-producing follow-ups as its `options`.
+- `questions` — 1–3 items, each something the user **acts on**: a choice
+  (`single_choice` with `options`) or an open question they type an answer to
+  (`free_text`). Put your reasoning, rationale, and context in your reply text —
+  **not** here. Never add a `questions` item that only states a rationale or
+  explanation with nothing for the user to answer or click.
 - each question: `text` (wrap a **column** in `**…**`), `responseType`
-  (`single_choice` when offering `options`, else `free_text`), `required`
-  (`true` for a clarification the run depends on, `false` for an explanation /
-  optional follow-up), and `options` (plain-text choices, **at most 3** — just
-  the most likely answers; the user can always type a freeform reply, so don't
-  enumerate every case).
+  (`single_choice` when you offer `options`, else `free_text` — the user types
+  their own open-ended answer, not a slot for your exposition), `required`
+  (`true` when the run depends on the answer, `false` for an optional follow-up),
+  and `options` (plain-text choices, **at most 3** — just the most likely
+  answers; the user can always type a freeform reply, so don't enumerate every
+  case).
 
 This is **terminal**: the run pauses after it and resumes when the user replies.
 
