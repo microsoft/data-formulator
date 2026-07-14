@@ -552,7 +552,22 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     return <>
         <Tooltip title={t('model.selectModel')}>
-            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color={selectedReady ? "primary" : 'warning'} onClick={()=>{setModelDialogOpen(true)}}>
+            <Button
+                sx={{
+                    fontSize: '13px',
+                    fontWeight: 400,
+                    textTransform: 'none',
+                    px: 1.5,
+                    py: 0.5,
+                    minWidth: 'auto',
+                    lineHeight: 1.5,
+                    color: selectedReady ? 'text.secondary' : undefined,
+                    '&:hover': { color: selectedReady ? 'text.primary' : undefined, backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                }}
+                variant="text"
+                color={selectedReady ? 'inherit' : 'warning'}
+                onClick={()=>{setModelDialogOpen(true)}}
+            >
                 {selectedReady ? selectedModelName : t('model.selectModels')}
                 {selectedReady && (config.miniMode ?? false) && (
                     <Tooltip title={t('model.miniModeHint')}>

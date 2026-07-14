@@ -47,6 +47,13 @@
     "data": "Data",
     "microsoftResearch": "Microsoft Research"
   },
+  "logs": {
+    "title": "Server Logs",
+    "viewLogs": "View server logs",
+    "refresh": "Refresh",
+    "download": "Download full log",
+    "empty": "Log file is empty."
+  },
   "session": {
     "exportSession": "export session",
     "importSession": "import session",

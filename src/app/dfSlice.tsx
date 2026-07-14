@@ -113,7 +113,7 @@ export interface ClientConfig {
     formulateTimeoutSeconds: number;
     defaultChartWidth: number;
     defaultChartHeight: number;
-    maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 2.0)
+    maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 1.5)
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
     paletteKey: string; // active color palette key from tokens.ts
     miniMode: boolean; // when true, run the single-turn MiniAnalystAgent (for small/local models)
@@ -333,7 +333,7 @@ const initialState: DataFormulatorState = {
         formulateTimeoutSeconds: 180,
         defaultChartWidth: 400,
         defaultChartHeight: 300,
-        maxStretchFactor: 2.0,
+        maxStretchFactor: 1.5,
         frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
         miniMode: false,

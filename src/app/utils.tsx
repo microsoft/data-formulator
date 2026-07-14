@@ -67,6 +67,11 @@ export function getUrls() {
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
 
+        // Server logs (local mode only)
+        LOGS_INFO: `/api/logs/info`,
+        LOGS_TAIL: `/api/logs/tail`,
+        LOGS_DOWNLOAD: `/api/logs/download`,
+
         // Session management
         SESSION_SAVE: `/api/sessions/save`,
         SESSION_LIST: `/api/sessions/list`,

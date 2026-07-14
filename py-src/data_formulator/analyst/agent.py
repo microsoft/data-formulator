@@ -973,9 +973,14 @@ class AnalystAgent:
                     stdout = stdout[:8000] + "\n... (truncated)"
                 return {"status": "ok", "stdout": stdout}
             else:
+                err = raw.get("error_message", raw.get("content", "Unknown error"))
+                logger.warning(
+                    "[AnalystAgent] explore code failed: %s\n--- code ---\n%s",
+                    err, code[:2000],
+                )
                 return {
                     "status": "error",
-                    "error": raw.get("error_message", raw.get("content", "Unknown error")),
+                    "error": err,
                     "stdout": "",
                 }
         except Exception as e:
@@ -1019,6 +1024,10 @@ class AnalystAgent:
 
             if execution_result['status'] != 'ok':
                 error_message = execution_result.get('content', 'Unknown error')
+                logger.warning(
+                    "[AnalystAgent] visualize code failed: %s\n--- code ---\n%s",
+                    error_message, code[:2000],
+                )
                 return {"status": "error", "error_message": str(error_message)}
 
             full_df = execution_result['content']

@@ -47,6 +47,13 @@
     "data": "数据",
     "microsoftResearch": "微软研究院"
   },
+  "logs": {
+    "title": "服务器日志",
+    "viewLogs": "查看服务器日志",
+    "refresh": "刷新",
+    "download": "下载完整日志",
+    "empty": "日志文件为空。"
+  },
   "session": {
     "exportSession": "导出会话",
     "importSession": "导入会话",

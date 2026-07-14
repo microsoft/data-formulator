@@ -1268,9 +1268,14 @@ class DataLoadingAgent:
 
                 return response
             else:
+                err = raw.get("error_message", raw.get("content", "Unknown error"))
+                logger.warning(
+                    "execute_python code failed: %s\n--- code ---\n%s",
+                    err, code[:2000],
+                )
                 return {
                     "stdout": "",
-                    "error": raw.get("error_message", raw.get("content", "Unknown error")),
+                    "error": err,
                 }
 
         except Exception as e:
