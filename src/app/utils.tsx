@@ -26,7 +26,7 @@ export function getUrls() {
         DATA_LOADING_CHAT_URL: `/api/agent/data-loading-chat`,
         SCRATCH_UPLOAD_URL: `/api/agent/workspace/scratch/upload`,
         SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,
-        
+
         CODE_EXPL_URL: `/api/agent/code-expl`,
         CHART_INSIGHT_URL: `/api/agent/chart-insight`,
         SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
@@ -124,7 +124,7 @@ export const CONNECTOR_URLS = {
 /**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.
  * Returns identity in "type:id" format (e.g., "user:alice@example.com" or "browser:550e8400-...")
- * 
+ *
  * This namespaced format ensures the backend can distinguish between authenticated users
  * and anonymous browser sessions, preventing identity spoofing attacks.
  */
@@ -199,11 +199,6 @@ async function _doFetch(
         }
 
         options = { ...options, headers };
-
-        console.log(
-            `[fetchWithIdentity] ${options.method || 'GET'} ${urlString} with headers:`,
-            Object.fromEntries(headers.entries()),
-        );
 
         // Ephemeral mode: attach full table data from IndexedDB to JSON POST requests.
         if (workspaceId && options.method?.toUpperCase() === 'POST') {
@@ -344,40 +339,40 @@ function djb2Hash(str: string): string {
  * - Always includes column names and row count
  * - Samples first 50, last 50, and 50 evenly distributed rows from the middle
  * - This catches most data changes while remaining efficient
- * 
+ *
  * @param rows - The table rows to hash
  * @param names - Optional column names (for additional fingerprinting)
  * @returns A hash string representing the content
  */
 export function computeContentHash(rows: any[], names?: string[]): string {
     const parts: string[] = [];
-    
+
     // Include column names if provided
     if (names && names.length > 0) {
         parts.push(`cols:${names.join(',')}`);
     }
-    
+
     // Include row count
     const rowCount = rows.length;
     parts.push(`count:${rowCount}`);
-    
+
     if (rowCount === 0) {
         return djb2Hash(parts.join('|'));
     }
-    
+
     // Get column names from first row if not provided
     const columnNames = names || Object.keys(rows[0] || {});
     parts.push(`fields:${columnNames.join(',')}`);
-    
+
     // Sampling strategy for efficiency
     const sampleSize = 50;
     const samplesToInclude: number[] = [];
-    
+
     // Always include first N rows
     for (let i = 0; i < Math.min(sampleSize, rowCount); i++) {
         samplesToInclude.push(i);
     }
-    
+
     // Include evenly distributed rows from the middle
     if (rowCount > sampleSize * 2) {
         const step = Math.floor((rowCount - sampleSize * 2) / sampleSize);
@@ -389,17 +384,17 @@ export function computeContentHash(rows: any[], names?: string[]): string {
             }
         }
     }
-    
+
     // Always include last N rows
     for (let i = Math.max(rowCount - sampleSize, sampleSize); i < rowCount; i++) {
         if (!samplesToInclude.includes(i)) {
             samplesToInclude.push(i);
         }
     }
-    
+
     // Sort indices for consistent ordering
     samplesToInclude.sort((a, b) => a - b);
-    
+
     // Build content string from sampled rows
     const rowStrings: string[] = [];
     for (const idx of samplesToInclude) {
@@ -416,15 +411,15 @@ export function computeContentHash(rows: any[], names?: string[]): string {
             rowStrings.push(`${idx}:${rowValues.join(',')}`);
         }
     }
-    
+
     parts.push(`rows:${rowStrings.join(';')}`);
-    
+
     return djb2Hash(parts.join('|'));
 }
 
 export function runCodeOnInputListsInVM(
-            code: string, 
-            inputTupleList: any[][], 
+            code: string,
+            inputTupleList: any[][],
             mode: "faster" | "safer") : [any[], any][] {
     // inputList is a list of testInputs, each item can be an arg or a list of args (if the function takes more than one argument)
     "use strict";
@@ -435,7 +430,7 @@ export function runCodeOnInputListsInVM(
             if (code != "") {
                 let jsCode = ts.transpile(code);
                 //target = eval(jsCode)(s);
-                
+
                 //console.log(`let func = ${code}; func(arg)`)
                 let context = { inputTupleList : inputTupleList, outputs: inputTupleList.map(args => undefined) };
                 //console.log(`let func = ${jsCode}; let outputs = inputList.map(arg => func(arg));`);
@@ -463,7 +458,7 @@ export function runCodeOnInputListsInVM(
                 });
                 return ioPairs;
             }
-        } catch (err) {            
+        } catch (err) {
             console.warn(err);
         }
     }
@@ -474,7 +469,7 @@ export function runCodeOnInputListsInVM(
 export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields: FieldItem[]) {
     let aggregateFields: [string | undefined, string][] = []
     let groupByFields: string[] = []
-    
+
     for (const [channel, encoding] of Object.entries(encodingMap)) {
         const field = encoding.fieldID ? _.find(allFields, (f) => f.id === encoding.fieldID) : undefined;
         if (encoding.aggregate) {
@@ -512,13 +507,13 @@ export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: 
 
             const groupValues = row.slice(0, -1);
             const group = row[row.length - 1];
-            
+
             return {
                 // Add group by fields
                 ...Object.fromEntries(groupByFields.map((field, i) => [field, groupValues[i]])),
                 // Add aggregations
-                ...(aggregateFields.some(([_, type]) => type === 'count') 
-                    ? { _count: group.length } 
+                ...(aggregateFields.some(([_, type]) => type === 'count')
+                    ? { _count: group.length }
                     : {}),
                 ...Object.fromEntries(
                     aggregateFields
@@ -546,9 +541,9 @@ export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: 
 }
 
 export const assembleVegaChart = (
-    chartType: string, 
-    encodingMap: { [key in Channel]: EncodingItem; }, 
-    conceptShelfItems: FieldItem[], 
+    chartType: string,
+    encodingMap: { [key in Channel]: EncodingItem; },
+    conceptShelfItems: FieldItem[],
     workingTable: any[],
     tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[], intrinsicDomain?: [number, number], unit?: string, displayName?: string, description?: string}},
     baseChartWidth: number = 100,
@@ -652,7 +647,7 @@ export let getTriggers = (leafTable: DictTable, tables: DictTable[]): Trigger[] 
     // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)
     let triggers : Trigger[] = [];
     let t = leafTable;
-    
+
     while(true) {
         // this is when we find an original table
         if (t.derive == undefined) {
@@ -673,7 +668,7 @@ export let getTriggers = (leafTable: DictTable, tables: DictTable[]): Trigger[] 
             break;
         }
     }
-    
+
     return triggers;
 }
 

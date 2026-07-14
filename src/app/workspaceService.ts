@@ -12,14 +12,14 @@
  * - ephemeral           → IndexedDB via workspaceDB / tableDataDB
  */
 
-import { fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, assertDownloadResponseOk } from './apiClient';
+import { fetchWithIdentity, getUrls } from './utils';
 import {
-    workspaceDB,
-    tableDataDB,
     exportWorkspaceToZip,
     importWorkspaceFromZip,
+    tableDataDB,
     TableIndexEntry,
+    workspaceDB,
 } from './workspaceDB';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -36,6 +36,21 @@ export interface WorkspaceSummary {
     saved_at: string | null;
     table_count?: number | null;
     chart_count?: number | null;
+}
+export type WorkspaceBackend = 'local' | 'azure_blob' | 'ephemeral';
+
+/**
+ * Return whether browser-persisted state points to a workspace that no longer
+ * exists in server-owned storage. Ephemeral workspaces are frontend-owned and
+ * must never be reconciled against the server list.
+ */
+export function shouldResetPersistedWorkspace(
+    activeWorkspaceId: string | null,
+    backend: WorkspaceBackend,
+    serverWorkspaces: WorkspaceSummary[],
+): boolean {
+    if (!activeWorkspaceId || backend === 'ephemeral') return false;
+    return !serverWorkspaces.some(workspace => workspace.id === activeWorkspaceId);
 }
 
 // ── Workspace list change event ─────────────────────────────────────

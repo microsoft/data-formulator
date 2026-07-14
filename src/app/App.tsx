@@ -5,111 +5,86 @@ import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
+import { AuthButton } from './AuthButton';
 import {
     DataFormulatorState,
-    dfActions,
-    dfSelectors,
-    fetchGlobalModelList,
     DEFAULT_ROW_LIMIT,
     DEFAULT_ROW_LIMIT_EPHEMERAL,
-} from './dfSlice'
-import { getBrowserId, generateUUID } from './identity';
-import type { AuthInfo } from './oidcConfig';
-import { OidcCallback } from './OidcCallback';
-import { AuthButton } from './AuthButton';
+    dfActions,
+    fetchGlobalModelList
+} from './dfSlice';
+import { getBrowserId } from './identity';
 import { IdentityMigrationDialog } from './IdentityMigrationDialog';
+import { OidcCallback } from './OidcCallback';
+import type { AuthInfo } from './oidcConfig';
 
-import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
-import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
+import { bgAlpha, defaultPaletteKey, paletteKeys, palettes } from './tokens';
 
-import _ from 'lodash';
 
 import {
-    Button,
-    Tooltip,
-    Typography,
     Box,
-    Toolbar,
-    Divider,
-    DialogTitle,
-    Dialog,
-    DialogContent,
-    Link,
-    DialogContentText,
-    DialogActions,
-    ToggleButtonGroup,
-    ToggleButton,
-    Menu,
-    MenuItem,
-    TextField,
-    SvgIcon,
-    IconButton,
-    Select,
-    FormControl,
-    InputLabel,
-    ListItemIcon,
-    ListItemText,
+    Button,
     CircularProgress,
-    LinearProgress,
-    Switch,
-    FormControlLabel,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
+    Divider,
+    FormControl,
+    IconButton,
+    InputLabel,
+    Link,
+    ListItemText,
+    MenuItem,
+    Select,
+    SvgIcon,
+    TextField,
+    ToggleButton,
+    ToggleButtonGroup,
+    Toolbar,
+    Tooltip,
+    Typography
 } from '@mui/material';
 
 
 import MuiAppBar from '@mui/material/AppBar';
-import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
+import { alpha, createTheme, styled, ThemeProvider } from '@mui/material/styles';
 
-import LogoutIcon from '@mui/icons-material/Logout';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
+import LogoutIcon from '@mui/icons-material/Logout';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
 import { useAutoSave } from './useAutoSave';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
-import GridViewIcon from '@mui/icons-material/GridView';
-import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import SettingsIcon from '@mui/icons-material/Settings';
+import YouTubeIcon from '@mui/icons-material/YouTube';
+import { useTranslation } from 'react-i18next';
 import {
     createBrowserRouter,
-    Link as RouterLink,
     Outlet,
+    Link as RouterLink,
     RouterProvider,
     useLocation,
     useSearchParams,
 } from "react-router-dom";
-import { About } from '../views/About';
-import ChartGallery from '../gallery/ChartGallery';
-import { MessageSnackbar } from '../views/MessageSnackbar';
-import { ChartRenderService } from '../views/ChartRenderService';
-import { DictTable } from '../components/ComponentType';
-import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
 import { AnvilLoader } from '../components/AnvilLoader';
-import { ModelSelectionButton } from '../views/ModelSelectionDialog';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
-import DownloadIcon from '@mui/icons-material/Download';
-import SaveIcon from '@mui/icons-material/Save';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import { getUrls } from './utils';
-import { apiRequest } from './apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged } from './workspaceService';
-import { getSerializableState } from './useAutoSave';
-import store, { persistor } from './store';
-import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
-import ChatIcon from '@mui/icons-material/Chat';
-import ArticleIcon from '@mui/icons-material/Article';
-import EditIcon from '@mui/icons-material/Edit';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import GitHubIcon from '@mui/icons-material/GitHub';
-import UploadIcon from '@mui/icons-material/Upload';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import YouTubeIcon from '@mui/icons-material/YouTube';
-import PublicIcon from '@mui/icons-material/Public';
-import { useTranslation } from 'react-i18next';
+import ChartGallery from '../gallery/ChartGallery';
 import { syncVegaLocale } from '../lib/vega-locale';
+import { About } from '../views/About';
+import { ChartRenderService } from '../views/ChartRenderService';
+import { MessageSnackbar } from '../views/MessageSnackbar';
+import { ModelSelectionButton } from '../views/ModelSelectionDialog';
+import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
+import { apiRequest } from './apiClient';
+import store, { AppDispatch } from './store';
+import { getSerializableState } from './useAutoSave';
+import { getUrls } from './utils';
+import { deleteWorkspace, listWorkspaces, loadWorkspace, onWorkspaceListChanged, saveWorkspaceState, shouldResetPersistedWorkspace } from './workspaceService';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -206,8 +181,8 @@ const LanguageSwitcher: React.FC = () => {
             exclusive
             onChange={(_, value) => value && i18n.changeLanguage(value)}
             size="small"
-            sx={{ 
-                height: '28px', 
+            sx={{
+                height: '28px',
                 my: 'auto',
                 mr: 1,
                 '& .MuiToggleButton-root': {
@@ -234,7 +209,7 @@ export interface AppFCProps {
 const TableMenu: React.FC = () => {
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
     const { t } = useTranslation();
-    
+
     return (
         <>
             <Button
@@ -244,9 +219,9 @@ const TableMenu: React.FC = () => {
             >
                 {t('appBar.data')}
             </Button>
-            
+
             {/* Unified Data Upload Dialog */}
-            <UnifiedDataUploadDialog 
+            <UnifiedDataUploadDialog
                 open={dialogOpen}
                 onClose={() => setDialogOpen(false)}
                 initialTab="menu"
@@ -412,18 +387,14 @@ const WorkspaceMenu: React.FC = () => {
     const { t } = useTranslation();
     const diskPersistenceDisabled = false; // all backends support workspace switching
 
-    console.log('Rendering WorkspaceMenu, activeWorkspace:', activeWorkspace, 'serverConfig:', serverConfig); // Debug log for rendering and state
-    console.log(serverConfig); // Debug log for serverConfig
-    console.log(activeWorkspace); // Debug log for activeWorkspace
-
     if (!activeWorkspace) return null;
 
     return (
         <>
             <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
-                <Box 
+                <Box
                     onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
-                    sx={{ 
+                    sx={{
                         display: 'flex', alignItems: 'center', gap: 0.5,
                         cursor: 'pointer',
                         px: 1,
@@ -433,9 +404,9 @@ const WorkspaceMenu: React.FC = () => {
                         '&:hover .ws-chevron': { opacity: 1 },
                     }}
                 >
-                    <Typography noWrap sx={{ 
-                        fontSize: 14, 
-                        fontWeight: 500, 
+                    <Typography noWrap sx={{
+                        fontSize: 14,
+                        fontWeight: 500,
                         color: 'text.primary',
                         maxWidth: 280,
                         letterSpacing: '0.01em',
@@ -496,7 +467,7 @@ const ConfigDialog: React.FC = () => {
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
 
-    const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
+    const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds ||
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
                       maxStretchFactor !== config.maxStretchFactor ||
@@ -511,9 +482,9 @@ const ConfigDialog: React.FC = () => {
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle>{t('app.settings')}</DialogTitle>
                 <DialogContent>
-                    <Box sx={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
                         gap: 3,
                         maxWidth: 400
                     }}>
@@ -572,7 +543,7 @@ const ConfigDialog: React.FC = () => {
                                         }
                                     }}
                                     error={defaultChartWidth < 100 || defaultChartWidth > 1000}
-                                    helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
+                                    helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ?
                                         t('config.chartSizeRangeError') : ""}
                                 />
                             </Box>
@@ -599,7 +570,7 @@ const ConfigDialog: React.FC = () => {
                                         }
                                     }}
                                     error={defaultChartHeight < 100 || defaultChartHeight > 1000}
-                                    helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
+                                    helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ?
                                         t('config.chartSizeRangeError') : ""}
                                 />
                             </Box>
@@ -625,7 +596,7 @@ const ConfigDialog: React.FC = () => {
                                         }
                                     }}
                                     error={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
-                                    helperText={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax ? 
+                                    helperText={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax ?
                                         t('config.localRowLimitRangeError') : ""}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
@@ -655,7 +626,7 @@ const ConfigDialog: React.FC = () => {
                                         }
                                     }}
                                     error={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5}
-                                    helperText={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5 ? 
+                                    helperText={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5 ?
                                         t('config.maxStretchFactorRangeError') : ""}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
@@ -680,7 +651,7 @@ const ConfigDialog: React.FC = () => {
                                         max: 3600,
                                     }}
                                     error={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
-                                    helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ? 
+                                    helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ?
                                         t('config.formulateTimeoutRangeError') : ""}
                                     fullWidth
                                 />
@@ -701,7 +672,7 @@ const ConfigDialog: React.FC = () => {
                         setPaletteKey(defaultPaletteKey);
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
-                    <Button 
+                    <Button
                         variant={hasChanges ? "contained" : "text"}
                         disabled={!hasChanges || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
@@ -718,7 +689,7 @@ const ConfigDialog: React.FC = () => {
                 </DialogActions>
             </Dialog>
         </>
-    );  
+    );
 }
 
 const ErrorBoundaryFallback: React.FC = () => {
@@ -759,9 +730,10 @@ const AppShell: FC = () => {
             timestamp: Date.now(),
             value: t(i18nKey, { defaultValue: 'SSO login failed. Please contact your administrator.' }),
         }));
-        searchParams.delete('auth_error');
-        setSearchParams(searchParams, { replace: true });
-    }, []);
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.delete('auth_error');
+        setSearchParams(nextSearchParams, { replace: true });
+    }, [dispatch, searchParams, setSearchParams, t]);
 
     // Auto-persist session state to the active workspace (debounced)
     useAutoSave();
@@ -999,30 +971,29 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 dispatch(dfActions.setServerConfig(data));
                 setConfigLoaded(true);
             });
-    }, []);
+    }, [dispatch]);
 
     // Validate persisted workspace still exists on the backend
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    
-    // Debug: log persisted state on startup
+
     useEffect(() => {
         if (configLoaded) {
-            console.log('[DEBUG] activeWorkspace:', activeWorkspace);
-            console.log('[DEBUG] tables:', tables.length, tables.map(t => ({ id: t.id, virtual: t.virtual, rowLen: t.rows?.length })));
-            
             // Recover orphaned state: tables exist but activeWorkspace was lost
             if (!activeWorkspace && tables.length > 0) {
                 const recoveredId = `recovered_${Date.now()}`;
                 dispatch(dfActions.setActiveWorkspace({ id: recoveredId, displayName: t('workspace.recoveredSession') }));
             }
         }
-    }, [configLoaded]);
+    }, [activeWorkspace, configLoaded, dispatch, t, tables.length]);
 
     // Unified auth initialisation — driven by /api/auth/info and server IDENTITY
     const [authChecked, setAuthChecked] = useState(false);
     const [migrationBrowserId, setMigrationBrowserId] = useState<string | null>(null);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const serverIdentityType = serverConfig?.IDENTITY?.type;
+    const serverIdentityId = serverConfig?.IDENTITY?.id;
+    const workspaceBackend = serverConfig?.WORKSPACE_BACKEND || 'local';
 
     useEffect(() => {
         if (!configLoaded) return;
@@ -1034,9 +1005,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             let resolvedIdentity: { type: 'user' | 'browser' | 'local'; id: string; displayName?: string } | null = null;
 
             // Check if the server assigned a fixed identity (e.g. localhost mode)
-            const serverIdentity = serverConfig?.IDENTITY;
-            if (serverIdentity?.type === 'local' && serverIdentity?.id) {
-                resolvedIdentity = { type: 'local', id: serverIdentity.id };
+            if (serverIdentityType === 'local' && serverIdentityId) {
+                resolvedIdentity = { type: 'local', id: serverIdentityId };
             }
 
             if (!resolvedIdentity) {
@@ -1097,11 +1067,32 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             dispatch(dfActions.setIdentity(resolvedIdentity));
 
+            let effectiveWorkspaceBackend = workspaceBackend;
             try {
                 const { data: refreshedConfig } = await apiRequest(getUrls().APP_CONFIG);
                 dispatch(dfActions.setServerConfig(refreshedConfig));
+                effectiveWorkspaceBackend = refreshedConfig.WORKSPACE_BACKEND || effectiveWorkspaceBackend;
             } catch {
                 // App config was already loaded; connector status refresh is best-effort.
+            }
+
+            // redux-persist can outlive server-local workspace storage (for
+            // example after a replica replacement). Reconcile only after the
+            // final identity is active, and before AppShell mounts auto-save,
+            // so stale browser state cannot recreate a deleted workspace.
+            try {
+                const persistedWorkspaceId = store.getState().activeWorkspace?.id ?? null;
+                const serverWorkspaces = await listWorkspaces();
+                if (shouldResetPersistedWorkspace(
+                    persistedWorkspaceId,
+                    effectiveWorkspaceBackend,
+                    serverWorkspaces,
+                )) {
+                    dispatch(dfActions.resetState());
+                }
+            } catch {
+                // A transient list failure is not evidence that data is gone.
+                // Preserve browser state and allow the normal retry paths.
             }
 
             // Persist current identity type for next page load
@@ -1121,7 +1112,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             setAuthChecked(true);
         })();
-    }, [configLoaded]);
+    }, [configLoaded, dispatch, serverIdentityId, serverIdentityType, workspaceBackend]);
 
     useEffect(() => {
         document.title = toolName;
@@ -1129,7 +1120,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         // Users can verify connectivity via the "Test" button in the model dialog,
         // or errors will surface naturally when a model is first used.
         dispatch(fetchGlobalModelList());
-    }, []);
+    }, [dispatch]);
 
     let theme = createTheme({
         typography: {

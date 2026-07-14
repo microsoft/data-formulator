@@ -1,75 +1,74 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux"; /* code change */
-import { 
+import {
     DataFormulatorState,
     dfActions,
     dfSelectors,
-} from '../app/dfSlice'
+} from '../app/dfSlice';
 
-import _ from 'lodash';
+
 
 import { Allotment, AllotmentHandle } from "allotment";
 import "allotment/dist/style.css";
 
 import {
-    Typography,
-    Box,
-    Tooltip,
-    Button,
-    Divider,
-    useTheme,
     alpha,
-    CircularProgress,
     Backdrop,
+    Box,
+    Button,
+    CircularProgress,
+    Divider,
     Link,
-    Select,
     MenuItem,
+    Select,
     TextField,
+    Tooltip,
+    Typography,
+    useTheme,
 } from '@mui/material';
 import { borderColor, radius } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
 
-import { DndProvider } from 'react-dnd'
-import { HTML5Backend } from 'react-dnd-html5-backend'
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 
-import dfLogo from '../assets/df-logo.png';
-import exampleImageTable from "../assets/example-image-table.png";
-import { ModelSelectionButton } from './ModelSelectionDialog';
-import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
-import { ReportView } from './ReportView';
-import { DataSourceSidebar } from './DataSourceSidebar';
-import GitHubIcon from '@mui/icons-material/GitHub';
-import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
-import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
-import type { DictTable } from '../components/ComponentType';
-import { useTranslation } from 'react-i18next';
-import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
-import type { WorkspaceSummary } from '../app/workspaceService';
-import { AppDispatch } from '../app/store';
-import { generateUUID } from '../app/identity';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import IconButton from '@mui/material/IconButton';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DownloadIcon from '@mui/icons-material/Download';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
 import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import IconButton from '@mui/material/IconButton';
+import { useTranslation } from 'react-i18next';
+import { apiRequest } from '../app/apiClient';
+import { generateUUID } from '../app/identity';
+import { AppDispatch } from '../app/store';
+import { useDerivedTableRefresh } from '../app/useDataRefresh';
+import { CONNECTOR_URLS } from '../app/utils';
+import type { WorkspaceSummary } from '../app/workspaceService';
+import { deleteWorkspace, exportWorkspace, importWorkspace, listWorkspaces, loadWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
+import dfLogo from '../assets/df-logo.png';
+import type { DictTable } from '../components/ComponentType';
+import { DataSourceSidebar } from './DataSourceSidebar';
+import { ExampleSession, ExampleSessionCard, exampleSessions, fetchExampleSessions } from './ExampleSessions';
+import { ModelSelectionButton } from './ModelSelectionDialog';
+import { ReportView } from './ReportView';
+import { ConnectorInstance, DataLoadMenu, UnifiedDataUploadDialog, UploadTabType } from './UnifiedDataUploadDialog';
 
 /** Generate a session ID like session_20260408_193052_a1b2 */
 function generateSessionId(): string {
@@ -175,7 +174,7 @@ export const DataFormulatorFC = ({ }) => {
             dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
-    }, [dispatch]);
+    }, [dispatch, t]);
 
     const handleDeleteWorkspace = useCallback(async (name: string) => {
         try {
@@ -188,7 +187,7 @@ export const DataFormulatorFC = ({ }) => {
             }));
         }
         setConfirmDeleteWs(null);
-    }, [dispatch]);
+    }, [dispatch, t]);
 
     const startRenameWorkspace = useCallback((id: string, currentName: string) => {
         setRenamingWs(id);
@@ -226,7 +225,7 @@ export const DataFormulatorFC = ({ }) => {
             // On failure, refetch so the UI returns to the server's truth.
             fetchWorkspaces();
         }
-    }, [renamingWs, renameDraft, savedWorkspaces, cancelRenameWorkspace, dispatch, fetchWorkspaces]);
+    }, [renamingWs, renameDraft, savedWorkspaces, cancelRenameWorkspace, dispatch, fetchWorkspaces, t]);
 
     const handleExportWorkspace = useCallback(async (id: string) => {
         try {
@@ -294,7 +293,7 @@ export const DataFormulatorFC = ({ }) => {
                 return copy;
         }
     }, [savedWorkspaces, wsSort]);
-    
+
     // Set up automatic refresh of derived tables when source data changes
     useDerivedTableRefresh();
 
@@ -379,33 +378,6 @@ export const DataFormulatorFC = ({ }) => {
 
     useEffect(() => {
         document.title = toolName;
-        
-        // Preload imported images (public images are preloaded in index.html)
-        const imagesToPreload = [
-            { src: dfLogo, type: 'image/png' },
-            { src: exampleImageTable, type: 'image/png' },
-        ];
-        
-        const preloadLinks: HTMLLinkElement[] = [];
-        imagesToPreload.forEach(({ src, type }) => {
-            // Use link preload for better priority
-            const link = document.createElement('link');
-            link.rel = 'preload';
-            link.as = 'image';
-            link.href = src;
-            link.type = type;
-            document.head.appendChild(link);
-            preloadLinks.push(link);
-        });
-        
-        // Cleanup function to remove preload links when component unmounts
-        return () => {
-            preloadLinks.forEach(link => {
-                if (link.parentNode) {
-                    link.parentNode.removeChild(link);
-                }
-            });
-        };
     }, []);
 
     useEffect(() => {
@@ -425,8 +397,8 @@ export const DataFormulatorFC = ({ }) => {
     const visPane = visPaneMain;
 
     let borderBoxStyle = {
-        border: `1px solid ${borderColor.view}`, 
-        borderRadius: radius.pill, 
+        border: `1px solid ${borderColor.view}`,
+        borderRadius: radius.pill,
         //boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
@@ -435,7 +407,10 @@ export const DataFormulatorFC = ({ }) => {
     const CARD_GAP = 12;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
     const PANE_PADDING = 48;
-    const columnSize = (n: number) => n * COLUMN_WIDTH + PANE_PADDING;
+    const columnSize = useCallback(
+        (n: number) => n * COLUMN_WIDTH + PANE_PADDING,
+        [COLUMN_WIDTH],
+    );
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -457,7 +432,7 @@ export const DataFormulatorFC = ({ }) => {
             const totalWidth = sizes.reduce((a, b) => a + b, 0);
             allotmentRef.current.resize([snapped, totalWidth - snapped]);
         }
-    }, []);
+    }, [columnSize]);
 
     // Compute thread count to decide preferred pane width:
     // A "thread" is a leaf table's derivation chain displayed as a column.
@@ -553,9 +528,9 @@ export const DataFormulatorFC = ({ }) => {
             });
             return () => cancelAnimationFrame(rafId);
         }
-    }, [threadCount, tables.length]);
+    }, [columnSize, threadCount, tables.length]);
 
-    const fixedSplitPane = ( 
+    const fixedSplitPane = (
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
             <DataSourceSidebar
                 onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)}
@@ -570,7 +545,7 @@ export const DataFormulatorFC = ({ }) => {
                     {tables.length > 0 ? (
                         <Allotment.Pane minSize={columnSize(1)} preferredSize={columnSize(preferredColumns)} maxSize={columnSize(3)} snap={false}>
                             <DataThread sx={{
-                                display: 'flex', 
+                                display: 'flex',
                                 flexDirection: 'column',
                                 overflow: 'hidden',
                                 alignContent: 'flex-start',
@@ -592,28 +567,28 @@ export const DataFormulatorFC = ({ }) => {
         </Box>
     );
 
-    let footer = <Box sx={{ color: 'text.secondary', display: 'flex', 
+    let footer = <Box sx={{ color: 'text.secondary', display: 'flex',
             backgroundColor: 'rgba(255, 255, 255, 0.89)',
             alignItems: 'center', justifyContent: 'center' }}>
-        <Button size="small" color="inherit" 
-            sx={{ textTransform: 'none'}} 
-            target="_blank" rel="noopener noreferrer" 
+        <Button size="small" color="inherit"
+            sx={{ textTransform: 'none'}}
+            target="_blank" rel="noopener noreferrer"
             href="https://www.microsoft.com/en-us/privacy/privacystatement">{t('footer.privacyCookies')}</Button>
         <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
-        <Button size="small" color="inherit" 
-            sx={{ textTransform: 'none'}} 
-            target="_blank" rel="noopener noreferrer" 
+        <Button size="small" color="inherit"
+            sx={{ textTransform: 'none'}}
+            target="_blank" rel="noopener noreferrer"
             href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">{t('footer.termsOfUse')}</Button>
         <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
-        <Button size="small" color="inherit" 
-            sx={{ textTransform: 'none'}} 
-            target="_blank" rel="noopener noreferrer" 
+        <Button size="small" color="inherit"
+            sx={{ textTransform: 'none'}}
+            target="_blank" rel="noopener noreferrer"
             href="https://github.com/microsoft/data-formulator/issues">{t('footer.contactUs')}</Button>
         <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
     let dataUploadRequestBox = <Box sx={{
-            margin: '4px 4px 4px 8px', 
+            margin: '4px 4px 4px 8px',
             background: `
                 linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.01)} 1px, transparent 1px),
                 linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.01)} 1px, transparent 1px)
@@ -623,10 +598,10 @@ export const DataFormulatorFC = ({ }) => {
         }}>
         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             <Box sx={{display: 'flex', mx: 'auto'}}>
-                <Typography fontSize={84} sx={{ml: 2, letterSpacing: '0.05em'}}>{toolName}</Typography> 
+                <Typography fontSize={84} sx={{ml: 2, letterSpacing: '0.05em'}}>{toolName}</Typography>
             </Box>
-            <Typography sx={{ 
-                fontSize: 24, color: theme.palette.text.secondary, 
+            <Typography sx={{
+                fontSize: 24, color: theme.palette.text.secondary,
                 textAlign: 'center', mb: 2}}>
                 {t('landing.tagline')}
             </Typography>
@@ -718,7 +693,7 @@ export const DataFormulatorFC = ({ }) => {
             )}
 
             <Box sx={{mt: 4}}>
-                <DataLoadMenu 
+                <DataLoadMenu
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     onSelectConnector={(conn) => {
                         // Already-authed connector → open the data-source
@@ -916,7 +891,7 @@ export const DataFormulatorFC = ({ }) => {
         </Box>
         {footer}
     </Box>;
-    
+
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
             <DndProvider backend={HTML5Backend}>
@@ -929,7 +904,7 @@ export const DataFormulatorFC = ({ }) => {
                         {dataUploadRequestBox}
                     </Box>
                 )}
-                <UnifiedDataUploadDialog 
+                <UnifiedDataUploadDialog
                     open={uploadDialogOpen}
                     onClose={() => {
                         setUploadDialogOpen(false);
