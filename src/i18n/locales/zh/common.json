@@ -619,6 +619,8 @@
     "clarificationTitle": "有问题",
     "minimizeClarification": "收起",
     "expandClarification": "展开",
+    "pauseClose": "关闭（切换焦点）",
+    "pauseDelete": "删除",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "（可选）",
     "freeTextClarificationPlaceholder": "输入你的回答...",

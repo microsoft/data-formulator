@@ -1294,7 +1294,7 @@ let SingleThreadGroupView: FC<{
                         key: `${keyPrefix}-conv-${tableId}-${ei}`,
                         type: triggerType,
                         highlighted,
-                        element: <ResolvedConversationCard pairs={pairs} highlighted={highlighted} />,
+                        element: <ResolvedConversationCard pairs={pairs} highlighted={highlighted} sourceTableId={tableId} />,
                         interactionEntry: pairs[pairs.length - 1].userEntry,
                         gutterIcon: (
                             <ForumOutlinedIcon sx={{

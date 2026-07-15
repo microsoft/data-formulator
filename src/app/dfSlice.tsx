@@ -1627,6 +1627,18 @@ export const dataFormulatorSlice = createSlice({
                 ];
             }
         },
+        // Remove specific interaction entries (by timestamp) from a table's
+        // trigger interaction — used to delete a resolved conversation block
+        // (e.g. an explanation) from the data thread.
+        removeInteractionEntries: (state, action: PayloadAction<{ tableId: string; timestamps: number[] }>) => {
+            const table = state.tables.find(t => t.id === action.payload.tableId);
+            if (table?.derive?.trigger?.interaction) {
+                const ts = new Set(action.payload.timestamps);
+                table.derive.trigger.interaction = table.derive.trigger.interaction.filter(
+                    e => e.timestamp === undefined || !ts.has(e.timestamp)
+                );
+            }
+        },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
             

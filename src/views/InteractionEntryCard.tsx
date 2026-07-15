@@ -590,6 +590,9 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
 export interface ResolvedConversationCardProps {
     pairs: { agentEntry: InteractionEntry; userEntry: InteractionEntry }[];
     highlighted?: boolean;
+    /** Source table whose interaction holds these entries — lets the re-opened
+     *  explanation popup delete this block from the thread. */
+    sourceTableId?: string;
 }
 
 /** Render one or more resolved clarify/explain/suggest_data_search
@@ -603,7 +606,7 @@ export interface ResolvedConversationCardProps {
  *  hinted "💬 conversation happened here" marker that stays openable
  *  for context.
  */
-export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> = memo(({ pairs }) => {
+export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> = memo(({ pairs, sourceTableId }) => {
     const theme = useTheme();
     const [expanded, setExpanded] = useState(false);
 
@@ -630,7 +633,13 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
         if (isExplanation) {
             const md = lastPair.agentEntry.content || lastPair.agentEntry.displayContent || '';
             if (md.trim()) {
-                window.dispatchEvent(new CustomEvent('df-view-explanation', { detail: { content: md } }));
+                // Timestamps of every entry in this conversation so the popup's
+                // Delete can remove the whole block from the source table.
+                const timestamps = pairs.flatMap(p => [p.agentEntry.timestamp, p.userEntry.timestamp])
+                    .filter((t): t is number => typeof t === 'number');
+                window.dispatchEvent(new CustomEvent('df-view-explanation', {
+                    detail: { content: md, sourceTableId, timestamps },
+                }));
             }
         } else {
             setExpanded(v => !v);

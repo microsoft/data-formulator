@@ -567,6 +567,8 @@
     "clarificationTitle": "Question",
     "minimizeClarification": "Minimize",
     "expandClarification": "Expand",
+    "pauseClose": "Close (switch focus)",
+    "pauseDelete": "Delete",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "(optional)",
     "freeTextClarificationPlaceholder": "Type your answer...",

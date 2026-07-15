@@ -210,11 +210,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Markdown of an explanation the user clicked in the data thread to re-open
     // in the read-only ExplanationPanel popup. Set via the `df-view-explanation`
     // window event (see below); kept local to avoid growing the redux slice.
-    const [viewingExplanation, setViewingExplanation] = useState<string | null>(null);
+    const [viewingExplanation, setViewingExplanation] = useState<{ content: string; sourceTableId?: string; timestamps?: number[] } | null>(null);
+    // When the user clicks "Close" on a live pause we KEEP the pending block in
+    // the thread but hide its panel (and switch focus to the previous chart).
+    // Keyed by the pause draft id so a brand-new pause still surfaces.
+    const [dismissedPauseDraftId, setDismissedPauseDraftId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
     const lastAutoFocusedChartIdRef = useRef<string | null>(null);
+    // Most recently focused CHART, so a pause's "Close (switch focus)" can hand
+    // focus back to whatever chart the user was last looking at.
+    const lastChartFocusRef = useRef<string | null>(null);
     // Whether we've already auto-focused an artifact during the current
     // agent run. We only jump focus once per run (to the FIRST generated
     // chart), so the user isn't yanked around as further charts stream in.
@@ -268,6 +275,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
         return undefined;
     }, [focusedId, charts, generatedReports])();
+
+    // Remember the last chart the user focused so a pause "Close" can restore it.
+    useEffect(() => {
+        if (focusedId?.type === 'chart') lastChartFocusRef.current = focusedId.chartId;
+    }, [focusedId]);
 
     // Root tables and priority ordering for API calls
     const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -457,13 +469,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const pendingClarification = React.useMemo(() => {
         const clarifyingDraft = draftNodes.find(d =>
             d.derive?.status === 'clarifying' && d.derive?.pendingClarification &&
+            // A pause the user "closed" is kept in the thread but no longer
+            // treated as pending — so its panel hides, it can't mask a newer
+            // pause, and it doesn't block re-opening explanations.
+            d.id !== dismissedPauseDraftId &&
             threadTableIds.has(d.derive.trigger.tableId)
         );
         if (clarifyingDraft?.derive?.pendingClarification) {
             return { ...clarifyingDraft.derive.pendingClarification, actionId: clarifyingDraft.actionId || '', draftId: clarifyingDraft.id };
         }
         return null;
-    }, [draftNodes, threadTableIds]);
+    }, [draftNodes, threadTableIds, dismissedPauseDraftId]);
 
     // Extract the active structured clarification (or explanation) from
     // DraftNode interaction log. Both are stored as ClarificationQuestion[]
@@ -1563,8 +1579,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // ExplanationPanel popup above the chat box.
     useEffect(() => {
         const handler = (e: Event) => {
-            const content = (e as CustomEvent).detail?.content as string | undefined;
-            if (content) setViewingExplanation(content);
+            const detail = (e as CustomEvent).detail as { content?: string; sourceTableId?: string; timestamps?: number[] } | undefined;
+            if (detail?.content) {
+                setViewingExplanation({ content: detail.content, sourceTableId: detail.sourceTableId, timestamps: detail.timestamps });
+            }
         };
         window.addEventListener('df-view-explanation', handler);
         return () => window.removeEventListener('df-view-explanation', handler);
@@ -1649,6 +1667,41 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, [pendingClarification, dispatch, t]);
 
+    // Move focus back to the chart the user was last on (else the most recent
+    // chart, else the focused table). Used by a pause's "Close" so a follow-up
+    // targets that chart instead of the clarify / explain context.
+    const switchFocusToPreviousChart = useCallback(() => {
+        const prevId = lastChartFocusRef.current;
+        if (prevId && charts.some(c => c.id === prevId)) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: prevId }));
+            return;
+        }
+        const lastChart = [...charts].reverse().find(c => c.chartType !== 'Table' && c.chartType !== 'Auto');
+        if (lastChart) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: lastChart.id }));
+        } else if (focusedTableId) {
+            dispatch(dfActions.setFocused({ type: 'table', tableId: focusedTableId }));
+        }
+    }, [charts, dispatch, focusedTableId]);
+
+    // "Close" a live pause: keep the pending block in the thread, hide its
+    // panel, and switch focus to the previous chart.
+    const closePause = useCallback(() => {
+        if (pendingClarification?.draftId) {
+            setDismissedPauseDraftId(pendingClarification.draftId);
+        }
+        switchFocusToPreviousChart();
+    }, [pendingClarification, switchFocusToPreviousChart]);
+
+    // Drop the "closed pause" latch once that draft is gone (resolved / deleted)
+    // so it never lingers as a stale filter.
+    useEffect(() => {
+        if (dismissedPauseDraftId &&
+            !draftNodes.some(d => d.id === dismissedPauseDraftId && d.derive?.status === 'clarifying')) {
+            setDismissedPauseDraftId(null);
+        }
+    }, [draftNodes, dismissedPauseDraftId]);
+
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
@@ -1686,7 +1739,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     onSelectAnswer={handleSelectAnswer}
                     onClearAnswer={handleClearAnswer}
                     onSubmit={resumeFromClarification}
-                    onCancel={cancelAgent}
+                    onClose={closePause}
+                    onDelete={cancelAgent}
                 />
             )}
             {clarificationQuestions?.kind === 'clarification' && !clarificationQuestions.questions && clarificationQuestions.variant === 'explain' && clarificationQuestions.content && pendingClarification && !isChatFormulating && (
@@ -1695,7 +1749,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // in the chat box below (which resumes the conversation).
                 <ExplanationPanel
                     content={clarificationQuestions.content}
-                    onCancel={cancelAgent}
+                    onClose={closePause}
+                    onDelete={cancelAgent}
                 />
             )}
             {clarificationQuestions?.kind === 'delegate' && pendingClarification && !isChatFormulating && (
@@ -1703,7 +1758,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     target={clarificationQuestions.target}
                     message={clarificationQuestions.message}
                     options={clarificationQuestions.options}
-                    onCancel={cancelAgent}
+                    onClose={closePause}
+                    onDelete={cancelAgent}
                 />
             )}
             {/* Re-opened explanation: the user clicked a resolved explanation
@@ -1711,8 +1767,20 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 only shown when no live pause is active so it never overlaps. */}
             {viewingExplanation && !pendingClarification && !isChatFormulating && (
                 <ExplanationPanel
-                    content={viewingExplanation}
-                    onCancel={() => setViewingExplanation(null)}
+                    content={viewingExplanation.content}
+                    onClose={() => { setViewingExplanation(null); switchFocusToPreviousChart(); }}
+                    onDelete={() => {
+                        // Remove this resolved explanation block from the thread
+                        // (drop its interaction entries), then close + refocus.
+                        if (viewingExplanation.sourceTableId && viewingExplanation.timestamps?.length) {
+                            dispatch(dfActions.removeInteractionEntries({
+                                tableId: viewingExplanation.sourceTableId,
+                                timestamps: viewingExplanation.timestamps,
+                            }));
+                        }
+                        setViewingExplanation(null);
+                        switchFocusToPreviousChart();
+                    }}
                 />
             )}
             {/* Input area wrapper */}
