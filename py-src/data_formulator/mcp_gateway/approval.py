@@ -24,6 +24,7 @@ class McpApprovalRequest:
     """A user-visible approval request bound to one exact operation scope."""
 
     approval_id: str
+    caller_subject: str
     profile_id: str
     operation: str
     source_reference: McpSourceReference
@@ -32,6 +33,7 @@ class McpApprovalRequest:
 
 @dataclass
 class _ApprovalRecord:
+    caller_subject: str
     profile_id: str
     operation: str
     source_reference: McpSourceReference
@@ -48,15 +50,20 @@ class McpApprovalGate:
     def request(
         self,
         *,
+        caller_subject: str,
         profile_id: str,
         operation: str,
         source_reference: McpSourceReference,
     ) -> McpApprovalRequest:
-        if not profile_id.strip() or not operation.strip():
-            raise ValueError("profile_id and operation must be nonempty")
+        _validate_request_fields(
+            caller_subject=caller_subject,
+            profile_id=profile_id,
+            operation=operation,
+        )
 
         approval_id = token_urlsafe(32)
         record = _ApprovalRecord(
+            caller_subject=caller_subject,
             profile_id=profile_id,
             operation=operation,
             source_reference=source_reference,
@@ -66,16 +73,25 @@ class McpApprovalGate:
             self._records[approval_id] = record
         return self._snapshot(approval_id, record)
 
-    def approve(self, approval_id: str) -> bool:
-        return self._transition(approval_id, McpApprovalState.APPROVED)
+    def approve(self, approval_id: str, *, caller_subject: str) -> bool:
+        return self._transition(
+            approval_id,
+            caller_subject=caller_subject,
+            target=McpApprovalState.APPROVED,
+        )
 
-    def deny(self, approval_id: str) -> bool:
-        return self._transition(approval_id, McpApprovalState.DENIED)
+    def deny(self, approval_id: str, *, caller_subject: str) -> bool:
+        return self._transition(
+            approval_id,
+            caller_subject=caller_subject,
+            target=McpApprovalState.DENIED,
+        )
 
     def consume(
         self,
         approval_id: str,
         *,
+        caller_subject: str,
         profile_id: str,
         operation: str,
         source_reference: McpSourceReference,
@@ -85,18 +101,59 @@ class McpApprovalGate:
             if (
                 record is None
                 or record.state is not McpApprovalState.APPROVED
-                or record.profile_id != profile_id
-                or record.operation != operation
-                or record.source_reference != source_reference
+                or not _matches_scope(
+                    record,
+                    caller_subject=caller_subject,
+                    profile_id=profile_id,
+                    operation=operation,
+                    source_reference=source_reference,
+                )
             ):
                 return False
             record.state = McpApprovalState.CONSUMED
             return True
 
-    def _transition(self, approval_id: str, target: McpApprovalState) -> bool:
+    def confirm_and_consume(
+        self,
+        approval_id: str,
+        *,
+        caller_subject: str,
+        profile_id: str,
+        operation: str,
+        source_reference: McpSourceReference,
+    ) -> bool:
+        """Atomically confirm and consume one caller-owned approval scope."""
         with self._lock:
             record = self._records.get(approval_id)
-            if record is None or record.state is not McpApprovalState.PENDING:
+            if (
+                record is None
+                or record.state is not McpApprovalState.PENDING
+                or not _matches_scope(
+                    record,
+                    caller_subject=caller_subject,
+                    profile_id=profile_id,
+                    operation=operation,
+                    source_reference=source_reference,
+                )
+            ):
+                return False
+            record.state = McpApprovalState.CONSUMED
+            return True
+
+    def _transition(
+        self,
+        approval_id: str,
+        *,
+        caller_subject: str,
+        target: McpApprovalState,
+    ) -> bool:
+        with self._lock:
+            record = self._records.get(approval_id)
+            if (
+                record is None
+                or record.state is not McpApprovalState.PENDING
+                or record.caller_subject != caller_subject
+            ):
                 return False
             record.state = target
             return True
@@ -105,8 +162,35 @@ class McpApprovalGate:
     def _snapshot(approval_id: str, record: _ApprovalRecord) -> McpApprovalRequest:
         return McpApprovalRequest(
             approval_id=approval_id,
+            caller_subject=record.caller_subject,
             profile_id=record.profile_id,
             operation=record.operation,
             source_reference=record.source_reference,
             state=record.state,
         )
+
+
+def _validate_request_fields(
+    *,
+    caller_subject: str,
+    profile_id: str,
+    operation: str,
+) -> None:
+    if not caller_subject.strip() or not profile_id.strip() or not operation.strip():
+        raise ValueError("caller_subject, profile_id, and operation must be nonempty")
+
+
+def _matches_scope(
+    record: _ApprovalRecord,
+    *,
+    caller_subject: str,
+    profile_id: str,
+    operation: str,
+    source_reference: McpSourceReference,
+) -> bool:
+    return (
+        record.caller_subject == caller_subject
+        and record.profile_id == profile_id
+        and record.operation == operation
+        and record.source_reference == source_reference
+    )

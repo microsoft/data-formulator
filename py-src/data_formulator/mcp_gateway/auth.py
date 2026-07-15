@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 import os
@@ -9,6 +10,7 @@ from urllib.parse import urlsplit
 
 import jwt
 from jwt import PyJWKClient
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
 
 from data_formulator.mcp.errors import (
@@ -110,6 +112,20 @@ class GatewayTokenVerifier:
             scopes=[],
             resource=self._config.audience,
         )
+
+
+def get_authenticated_caller_subject(
+    *,
+    access_token_provider: Callable[[], AccessToken | None] = get_access_token,
+) -> str:
+    """Return the verified FastMCP caller subject for a protected request."""
+    access_token = access_token_provider()
+    subject = access_token.subject if access_token is not None else None
+    if not isinstance(subject, str) or not subject.strip():
+        raise McpGatewayAuthenticationError(
+            "Gateway caller token has no valid subject"
+        )
+    return subject
 
 
 def _required_value(variable_name: str) -> str:

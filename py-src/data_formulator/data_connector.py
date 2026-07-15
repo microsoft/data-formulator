@@ -2273,3 +2273,36 @@ def register_data_connectors(app: Flask) -> None:
         )
         _ADMIN_CONNECTOR_IDS.add("sample_datasets")
         logger.info("Registered built-in 'sample_datasets' connector")
+
+
+def register_governed_mcp_connectors(
+    *,
+    source_registry: "McpGovernedSourceRegistry",
+    gateway_client: "McpGovernedGatewayClient",
+) -> None:
+    """Register only deployment-manifest governed MCP connectors as admin sources."""
+    from data_formulator.data_loader.mcp_governed_data_loader import (
+        create_mcp_governed_data_loader_type,
+    )
+    from data_formulator.mcp.errors import McpProfileValidationError
+
+    sources = source_registry.sources()
+    if any(source.connector_id in DATA_CONNECTORS for source in sources):
+        raise McpProfileValidationError(
+            "governed MCP connector identifier conflicts with an existing connector"
+        )
+
+    pending_connectors = {
+        source.connector_id: DataConnector.from_loader(
+            create_mcp_governed_data_loader_type(
+                source=source,
+                gateway_client=gateway_client,
+            ),
+            source_id=source.connector_id,
+            display_name=source.connector_id,
+            icon="dataset",
+        )
+        for source in sources
+    }
+    DATA_CONNECTORS.update(pending_connectors)
+    _ADMIN_CONNECTOR_IDS.update(pending_connectors)

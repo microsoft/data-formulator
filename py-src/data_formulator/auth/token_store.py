@@ -156,6 +156,19 @@ class TokenStore:
             return legacy.get("access_token")
         return None
 
+    def get_exact_service_token(
+        self,
+        system_id: str,
+        audience: str,
+    ) -> str | None:
+        """Return only an audience-qualified token without legacy fallback."""
+        tokens_by_connector = session.get(_SVC_AUDIENCE_NS, {})
+        connector_tokens = tokens_by_connector.get(system_id, {})
+        cached = connector_tokens.get(audience)
+        if cached is None or self._is_expired(cached):
+            return None
+        return cached.get("access_token")
+
     def clear_service_token(self, system_id: str) -> None:
         """Clear cached token AND vault credentials for a system.
 

@@ -17,23 +17,24 @@ Work in ascending order. A row may start only after its dependencies and exit
 gate are complete. Rows marked parallel may proceed concurrently with each
 other, but not before their shared prerequisite row.
 
-| Order | Workstream | Issues | Depends on | Current state | Exit gate |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Prevent Azure metadata loss | DF-011 | None | Resolved; focused and adjacent tests pass | Concurrent metadata updates cannot overwrite one another |
-| 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | Mitigated; request limits are bounded and production is capped at one replica | Request memory is bounded; shared state is required before scale-out |
-| 3 | Secure connector query boundaries | DF-002 | DF-001 | Resolved; focused and adjacent loader tests pass | Request-controlled identifiers are validated or parameterized |
-| 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004, DF-024 | DF-001, DF-002 | Resolved and production-verified through `f960263` | Connections close predictably, transient failures preserve credentials, and no-auth connectors initialize on first use |
-| 5 | Complete model transport resilience | DF-009, DF-025 | DF-012 | Resolved and production-verified through `f960263` | Bounded retries, finite request deadlines, safe stream interruption, and reproducible LiteLLM builds pass focused tests |
-| 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015, DF-022 | DF-001 through DF-004 | Original hardening resolved; DF-022 session-cookie migration decision remains | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests without deprecated session configuration |
-| 7 | Decide enterprise direct-versus-MCP data architecture | DF-023 | Completed runtime hardening and connector requirements | Provisional hybrid decision recorded; source-paired spike remains | Direct and MCP paths are compared against one identity, data, provenance, reliability, and operations contract |
-| 8A | Complete Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Implemented shared delegated-auth primitives | Source blockers deployed; Entra consent, durable sessions, and interactive popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
-| 8B | Extend delegated authentication to Fabric discovery | DF-017 | DF-023 and implemented Azure SQL auth foundation | Fabric scopes, discovery, and durable sessions remain | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and restart-durable sessions are verified |
-| 8C | Complete Fabric discovery integration | DF-017 | Shared Fabric delegated-auth contract | Mocked discovery may proceed after DF-023; representative tenant evidence is required for release | Bounded delegated workspace/item discovery passes contract and real-service tests |
-| 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Blocked on DF-017 and data-plane spikes | Delta and supported file imports pass catalog, limit, and audience tests |
-| 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Blocked on DF-017 and metadata/query spikes | Delegated RLS-safe query results pass API, limit, and serialization tests |
+| Done | Order | Workstream | Issues | Depends on | Current state | Exit gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| [x] | 1 | Prevent Azure metadata loss | DF-011 | None | Resolved; focused and adjacent tests pass | Concurrent metadata updates cannot overwrite one another |
+| [ ] | 2 | Establish container safety and shared state | DF-012, DF-001 | DF-011 | Mitigated; request limits are bounded and production is capped at one replica | Request memory is bounded; shared state is required before scale-out |
+| [x] | 3 | Secure connector query boundaries | DF-002 | DF-001 | Resolved; focused and adjacent loader tests pass | Request-controlled identifiers are validated or parameterized |
+| [x] | 4 | Harden connector lifecycle and reconnect behavior | DF-003, DF-004, DF-024 | DF-001, DF-002 | Resolved and production-verified through `f960263` | Connections close predictably, transient failures preserve credentials, and no-auth connectors initialize on first use |
+| [x] | 5 | Complete model transport resilience | DF-009, DF-025 | DF-012 | Resolved and production-verified through `f960263` | Bounded retries, finite request deadlines, safe stream interruption, and reproducible LiteLLM builds pass focused tests |
+| [ ] | 6 | Complete production hardening | DF-005 through DF-008, DF-013 through DF-015, DF-022 | DF-001 through DF-004 | Original hardening resolved; DF-022 session-cookie migration decision remains | Persistence, server runtime, timeouts, memory, cookies, logging, and OAuth state pass regression tests without deprecated session configuration |
+| [ ] | 7 | Decide enterprise direct-versus-MCP data architecture | DF-023 | Completed runtime hardening and connector requirements | In progress; see the DF-023 checklist | Direct and MCP paths are compared against one identity, data, provenance, reliability, and operations contract |
+| [ ] | 8A | Complete Azure SQL delegated Entra authentication | DF-016, DF-020, DF-021 | Implemented shared delegated-auth primitives | Source blockers deployed; Entra consent, durable sessions, and interactive popup gates remain | ODBC attributes cannot be injected, concurrent users retain independent OAuth state, and Entra token connections remain green |
+| [ ] | 8B | Extend delegated authentication to Fabric discovery | DF-017 | DF-023 and implemented Azure SQL auth foundation | Fabric scopes, discovery, and durable sessions remain | Per-user workspace/item discovery, audience-aware tokens, secure popup flow, and restart-durable sessions are verified |
+| [ ] | 8C | Complete Fabric discovery integration | DF-017 | Shared Fabric delegated-auth contract | Mocked discovery may proceed after DF-023; representative tenant evidence is required for release | Bounded delegated workspace/item discovery passes contract and real-service tests |
+| [ ] | 9A | Add Fabric Lakehouse imports | DF-018 | DF-017 | Blocked on DF-017 and data-plane spikes | Delta and supported file imports pass catalog, limit, and audience tests |
+| [ ] | 9B | Add Fabric Semantic Model queries | DF-019 | DF-017 | Blocked on DF-017 and metadata/query spikes | Delegated RLS-safe query results pass API, limit, and serialization tests |
 
-Orders 9A and 9B are parallel. Update the tracker state and exit-gate evidence
-whenever an issue is resolved, superseded, or split.
+Orders 9A and 9B are parallel. Check an item only when its exit gate is
+complete; update the state and exit-gate evidence whenever an issue is resolved,
+superseded, or split.
 
 ### Reassessment checkpoint (2026-07-09)
 
@@ -185,6 +186,93 @@ whenever an issue is resolved, superseded, or split.
 - The retained image `recreate-11dfb1fd3d3c` from `11dfb1f` is the immediate
   rollback artifact.
 
+### Governed MCP foundation checkpoint (2026-07-14)
+
+- [x] Add immutable profiles and capability manifests, a stateless health-only
+  gateway, dedicated-caller authorization, single-use approvals, cancellation
+  late-result protection, and fail-closed upstream tool-drift validation
+  (`ffec69b`).
+- [x] Pass the local MCP gateway and connector regression suite (124 tests) and
+  compile the gateway image plus feature-gated Container Apps Bicep with
+  `enableMcpGateway=false`.
+- [x] Create the dedicated gateway Entra resource application, its delegated
+  `access_as_user` scope, and its tenant service principal.
+- [x] Prove the local profile-pinned operation contract: exact capability
+  validation, mapped tool invocation, versioned and bounded result parsing,
+  timeout and denial sanitization, cancellation late-result rejection, and an
+  injected fixed read-operation surface that rejects raw proxy fields
+  (`tests/backend/mcp/`: 91 passed; adjacent connector regression: 77 passed).
+- [x] Add a startup-owned operation service that resolves profiles before client
+  construction and fails closed for approval-required operations
+  (`tests/backend/mcp/`: 94 passed).
+- [x] Select a read-only, versioned deployment manifest that maps each public
+  governed connector ID to one administrator-created profile and source
+  reference; browser-visible configuration cannot supply that mapping.
+- [x] Select a gateway-owned approval route beside `McpApprovalGate` so the
+  single-use approval record and server-side retry execute in one backend.
+- [x] Locally implement the selected backend-owned approval confirmation and
+  retry flow: fixed operations store immutable requests by authenticated caller
+  subject and operation ID; the gateway-only confirmation path atomically
+  consumes the exact scope before retrying it. Neither MCP arguments nor
+  confirmation requests accept an approval ID, endpoint, tool, or other
+  browser-supplied transport field (`tests/backend/mcp/`: 113 passed).
+- [x] Implement and locally validate the governed-source manifest registry:
+  immutable public connector/profile/source bindings reject unsupported manifest
+  schemas, unknown profiles, duplicate or endpoint-like public IDs, invalid
+  source references, and unknown lookups
+  (`tests/backend/mcp/test_governed_source_registry.py`: 7 passed; full local
+  MCP suite: 104 passed).
+- [x] Select `MCP_GOVERNED_SOURCE_MANIFEST_PATH` as the deployment-owned
+  mounted JSON configuration surface; locally validate loading it, leaving
+  governed sources unavailable when unset, and failing closed on malformed
+  content (`tests/backend/mcp/test_governed_source_manifest.py`: 3 passed).
+- [x] Implement the catalog-only `mcp_governed` adapter and atomic,
+  manifest-only admin registration with an injected local gateway client.
+  It exposes no connection parameters, preserves source/snapshot provenance,
+  rejects continuation and malformed catalog metadata, and does not enable
+  generic MCP data import
+  (`tests/backend/data/test_mcp_governed_data_loader.py`: 8 passed).
+- [x] Add an offline deployment bootstrap that loads the strict
+  `MCP_GOVERNED_PROFILE_MANIFEST_PATH` profile manifest before the governed
+  source manifest and atomically registers only manifest-defined connectors
+  through an injected gateway client. Source configuration without profiles
+  fails closed; absent configuration performs no registration
+  (`tests/backend/mcp/test_governed_profile_manifest.py`: 7 passed;
+  `tests/backend/mcp/test_governed_mcp_bootstrap.py`: 3 passed).
+- [x] Implement and locally validate the authenticated product-side gateway
+  client core. It resolves only exact connector-and-audience TokenStore entries,
+  rejects legacy token fallback and untrusted endpoints, attaches the bearer
+  token without logging it, sends only the manifest-bound fixed operation
+  contract, validates bounded structured results, and surfaces approval without
+  auto-confirming it (`tests/backend/mcp/test_governed_product_client.py`:
+  11 passed; TokenStore regression scope: 42 passed).
+- [x] Harden the local approval lifecycle with owner-bound denial, generic
+  unknown/replay handling, one-winner confirmation/denial races, and explicit
+  no-replay behavior after an upstream failure. Keep time-based expiry open
+  until the pending-approval TTL and expired-state UX are defined
+  ([implementation plan](2026-07-15-governed-mcp-approval-lifecycle-hardening.md);
+  focused lifecycle tests: 32 passed; full MCP suite: 144 passed;
+  governed-loader/connector scope: 85 passed).
+- [x] Complete the catalog lifecycle contract for governed loaders: emit stable
+  `table_key` values directly from `list_tables()`, prove refresh re-queries the
+  same immutable profile/source/snapshot binding, and prove manifest-created
+  admin connectors remain globally visible without creating identity-specific
+  connector copies (`test_mcp_governed_data_loader.py`: 10 passed; full MCP
+  suite: 144 passed; governed-loader/connector scope: 87 passed).
+- [ ] Add the approved gateway-token acquisition flow and invoke the locally
+  proven bootstrap from production startup. Do not expose a user-creatable
+  `mcp_governed` loader or activate live transport before the approval gates
+  pass.
+- [ ] Obtain tenant-wide consent from an Entra administrator for the existing
+  Data Formulator client.
+- [ ] Nominate a non-sensitive, source-paired Fabric fixture; the checked
+  personal workspace has no OneLake items.
+- [ ] Validate an approved upstream and compare direct versus MCP paths using
+  the nominated fixture.
+- [ ] Complete deployment, ownership, security-review, and architecture-decision
+  gates in the
+  [Governed MCP Adapter Tracker](2026-07-14-governed-mcp-adapter-tracker.md).
+
 ## Published Product Change Map
 
 This is the complete commit-level map of product, test, dependency, deployment,
@@ -208,6 +296,7 @@ excluded from this runtime changelog.
 | `11dfb1f` | Reconcile stale persisted workspace state and remove startup console/preload noise | Full recreation checkpoint |
 | `b71bfc2` | Record the full Container App recreation and image-based rollback state | Full recreation checkpoint and deployment record |
 | `f960263` | Initialize no-auth connectors and bound Azure OpenAI model retries, streaming, and LiteLLM versions | DF-024 and DF-025 |
+| `ffec69b` | Add governed MCP profile, gateway, and disabled-by-default deployment foundation | DF-023 |
 
 The map covers this branch's adaptation work, not the full historical changelog
 of upstream Data Formulator before `00d0f5e`.
@@ -1400,14 +1489,29 @@ Acceptance criteria:
 
 ### DF-023: Enterprise data access lacks a settled direct-versus-MCP architecture
 
-**Status**: Proposed; source-paired decision spike required \
+**Status**: In progress; governed MCP foundation is complete and the
+source-paired decision spike remains \
 **Severity**: Medium \
 **Area**: Connector platform, MCP, enterprise data access
 
 The confirmed adaptation need includes enterprise-grade Azure SQL, Microsoft
 Fabric, semantic model, and future governed-source access. The shipped runtime
-currently has a mature `ExternalDataLoader` and `DataConnector` contract but no
-MCP client, server, or tool integration under `py-src/`, `src/`, or `tests/`.
+has a mature `ExternalDataLoader` and `DataConnector` contract plus a
+profile-pinned MCP gateway with a local fixed-operation transport contract. It
+does not yet have a governed MCP loader, an approved upstream, or a
+representative source-paired comparison.
+
+Progress:
+
+- [x] Establish the profile-pinned gateway foundation and local compatibility
+  contract.
+- [x] Prove local mapped-tool invocation, bounded versioned results, safe
+  failure handling, and cancellation with a stateless FastMCP upstream.
+- [x] Expose only fixed read operations through an injected service and reject
+  raw endpoint and tool overrides before service execution.
+- [ ] Validate an approved upstream and implement governed-loader behavior.
+- [ ] Compare source-paired direct and MCP paths before the architecture
+  decision.
 
 Existing Agency and Fabric MCP capabilities are implementation accelerators.
 They are not product runtime components and do not currently satisfy Data

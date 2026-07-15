@@ -25,7 +25,16 @@ def _profile(profile_id: str = "fabric-pilot") -> McpServerProfile:
             "result_schema_version": "v1",
             "required_operations": ["catalog", "schema", "semantic_query", "health"],
         },
-        "allowed_tools": ["fabric.list_entities", "fabric.search_ontology"],
+        "allowed_tools": [
+            "fabric.list_entities",
+            "fabric.get_schema",
+            "fabric.search_ontology",
+        ],
+        "operation_tools": {
+            "catalog": "fabric.list_entities",
+            "schema": "fabric.get_schema",
+            "semantic_query": "fabric.search_ontology",
+        },
         "limits": {
             "max_rows": 10_000,
             "max_bytes": 32 * 1024 * 1024,

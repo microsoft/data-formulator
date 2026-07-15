@@ -43,7 +43,16 @@ def _profile_data(**overrides: object) -> dict[str, object]:
                 McpOperation.HEALTH.value,
             ],
         },
-        "allowed_tools": ["fabric.list_entities", "fabric.search_ontology"],
+        "allowed_tools": [
+            "fabric.list_entities",
+            "fabric.get_schema",
+            "fabric.search_ontology",
+        ],
+        "operation_tools": {
+            "catalog": "fabric.list_entities",
+            "schema": "fabric.get_schema",
+            "semantic_query": "fabric.search_ontology",
+        },
         "limits": {
             "max_rows": 10_000,
             "max_bytes": 32 * 1024 * 1024,
@@ -68,8 +77,56 @@ class TestMcpServerProfile:
             McpOperation.HEALTH,
         })
         assert profile.capability_manifest.required_operations == profile.operations
+        assert profile.operation_tools == {
+            McpOperation.CATALOG: "fabric.list_entities",
+            McpOperation.SCHEMA: "fabric.get_schema",
+            McpOperation.SEMANTIC_QUERY: "fabric.search_ontology",
+        }
         with pytest.raises(FrozenInstanceError):
             profile.profile_id = "other"  # type: ignore[misc]
+
+    def test_rejects_profile_missing_non_health_operation_mapping(self):
+        operation_tools = _profile_data()["operation_tools"]
+        assert isinstance(operation_tools, dict)
+        operation_tools.pop("schema")
+
+        with pytest.raises(McpProfileValidationError, match="mapping"):
+            McpServerProfile.from_dict(_profile_data(operation_tools=operation_tools))
+
+    def test_rejects_profile_mapping_undeclared_operation(self):
+        operation_tools = _profile_data()["operation_tools"]
+        assert isinstance(operation_tools, dict)
+        operation_tools["bounded_read"] = "fabric.get_schema"
+
+        with pytest.raises(McpProfileValidationError, match="operation mapping"):
+            McpServerProfile.from_dict(_profile_data(operation_tools=operation_tools))
+
+    def test_rejects_profile_mapping_unapproved_tool(self):
+        operation_tools = _profile_data()["operation_tools"]
+        assert isinstance(operation_tools, dict)
+        operation_tools["catalog"] = "fabric.unapproved_tool"
+
+        with pytest.raises(McpProfileValidationError, match="allowlisted"):
+            McpServerProfile.from_dict(_profile_data(operation_tools=operation_tools))
+
+    @pytest.mark.parametrize(
+        "operation_tools",
+        [
+            {
+                "catalog": "",
+                "schema": "fabric.get_schema",
+                "semantic_query": "fabric.search_ontology",
+            },
+            {
+                "catalog": "fabric.list_entities",
+                "schema": "fabric.list_entities",
+                "semantic_query": "fabric.search_ontology",
+            },
+        ],
+    )
+    def test_rejects_profile_empty_or_duplicate_operation_tool_mapping(self, operation_tools):
+        with pytest.raises(McpProfileValidationError, match="operation mapping"):
+            McpServerProfile.from_dict(_profile_data(operation_tools=operation_tools))
 
     def test_rejects_profile_with_mismatched_capability_manifest(self):
         with pytest.raises(McpProfileValidationError, match="manifest"):

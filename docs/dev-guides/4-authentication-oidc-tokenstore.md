@@ -148,6 +148,9 @@ def auth_config() -> dict:
 - `TokenStore.store_service_token(..., audience=...)` 按 connector instance
   和资源 audience 隔离 token；`get_service_token(connector_id, audience)`
   只返回完全匹配的有效 token。
+- 要求严格 connector-and-audience 隔离的新安全敏感集成必须使用
+  `get_exact_service_token(connector_id, audience)`；该方法绝不读取旧的
+  无 audience 记录，精确 token 不存在时调用方必须 fail closed。
 - 后端 callback 只向 opener 发送
   `{type: "df-sso-auth", authenticated: true}`，不发送 access token 或
   refresh token。

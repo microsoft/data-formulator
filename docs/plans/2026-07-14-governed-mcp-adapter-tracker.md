@@ -21,8 +21,8 @@ Tracks the implementation plan and its architecture constraints:
 | Area | Status | Owner | Approval or evidence needed |
 | --- | --- | --- | --- |
 | Product MCP profile | Complete | Unassigned | Profile contract and local MCP SDK compatibility spike complete |
-| Internal gateway, transport, and policy gate | In progress | Unassigned | Health, registry, late-result barrier, dedicated caller auth, approval gate, tool capability-drift validation, production factory, container packaging, and disabled-by-default IaC wiring complete; upstream transport tests require a configured fixture |
-| Governed loader | Not started | Unassigned | Loader lifecycle and provenance tests |
+| Internal gateway, transport, and policy gate | In progress | Unassigned | Subject-bound confirmation, denial, terminal race handling, and no-replay behavior after consumption are locally complete; pending-approval expiry, authenticated startup composition, and approved upstream validation remain |
+| Governed loader | In progress | Unassigned | Strict profile/source manifest loading, the offline injected registration bootstrap, the authenticated fixed-operation product client, stable catalog keys, refresh, provenance, and identity visibility are locally validated; approved gateway-token acquisition, production startup, restart, and bounded-import tests remain |
 | Fabric IQ pilot | Not started | Unassigned | Preview, cost, residency, and fixture approval |
 | OneLake metadata and import pilot | Not started | Unassigned | Source-paired fixture and separate data-path validation |
 | Work IQ context adapter | Not started | Unassigned | Read-path and tenant-policy approval |
@@ -34,8 +34,8 @@ Tracks the implementation plan and its architecture constraints:
 | ID | Work package | Status | Owner | Depends on | Completion evidence |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Define product MCP profile | Complete | Unassigned | None | Immutable profile, tool policy, capability manifest, source reference, RED/GREEN tests, and local SDK compatibility record complete |
-| 2 | Add internal gateway, transport, and policy gate | In progress | Unassigned | 1 | Stateless health-only gateway, startup profile registry, late-result barrier, validated gateway-audience caller authorization, single-use approval flow, exact upstream tool validation, fail-closed production factory, and disabled-by-default packaging/IaC wiring complete; upstream transport tests require a configured fixture |
-| 3 | Create MCP-governed loader | Not started | Unassigned | 1, 2 | `mcp_governed` loader, Arrow validation, lifecycle and provenance tests |
+| 2 | Add internal gateway, transport, and policy gate | In progress | Unassigned | 1 | Subject-bound single-use confirmation and denial, generic unknown/replay handling, one-winner race evidence, and failure-after-consumption no-replay evidence are complete; pending-approval expiry, authenticated startup composition, and approved upstream validation remain |
+| 3 | Create MCP-governed loader | In progress | Unassigned | 1, 2 | Profile/source manifests compose offline in strict order; the authenticated client uses exact audience-qualified tokens, trusted HTTPS, fixed operation contracts, and bounded response validation; catalog-only registration is admin-only and has stable keys, refresh/provenance, and identity-visibility coverage; approved token acquisition, production startup, restart, and bounded Arrow validation remain |
 | 4 | Add Fabric IQ semantic discovery pilot | Not started | Unassigned | 1, 2, 3, Fabric approvals | Approved Fabric profile, async behavior, provenance, i18n and regression tests |
 | 5 | Add OneLake metadata and bounded table-import pilot | Not started | Unassigned | 1, 2, 3, source-paired Fabric fixture | Metadata discovery plus bounded Arrow import through a validated DFS/Delta, SQL, or governed-handle path |
 | 6 | Add read-only Work IQ context adapter | Not started | Unassigned | 1, 2, Work IQ approval | Explicit scope flow, read-only manifest, ephemeral attributed context, regression tests |
@@ -60,9 +60,9 @@ Tracks the implementation plan and its architecture constraints:
 
 | Evidence item | Required for | Status |
 | --- | --- | --- |
-| Deterministic profile and contract test suite | 1, 2, 8 | Complete: MCP profile, SDK compatibility, gateway, registry, operation, caller-auth, approval, and capability-drift suites are green; local MCP plus connector regression run: 124 passed |
-| Sanitized error, logging, cancellation, and limit tests | 2, 3, 5, 6 | In progress: client cancellation, late-result barrier, safe caller-auth logging, approval scope, capability drift, and production auth-factory tests complete; remaining gateway transport cases require a configured fixture |
-| Loader lifecycle, identity isolation, refresh, and provenance tests | 3 | Not started |
+| Deterministic profile and contract test suite | 1, 2, 8 | Complete: MCP profile, SDK compatibility, gateway, profile/source manifests, offline bootstrap, authenticated product client, exact audience-token isolation, operation, caller-auth, subject-bound approval confirmation/denial, capability-drift, mapped-operation, fixed-surface, and operation-service suites are green; focused approval lifecycle: 32 passed; current local MCP suite: 144 passed; governed-loader and adjacent connector scope: 87 passed; TokenStore scope: 42 passed |
+| Sanitized error, logging, cancellation, and limit tests | 2, 3, 5, 6 | In progress: client cancellation, late-result barrier, safe caller-auth logging, subject-bound approval scope, atomic confirmation/denial, one-winner race behavior, no replay after upstream failure, capability drift, local mapped invocation, bounded versioned results, timeout and policy-denial sanitization, raw gateway-field rejection, and production auth-factory tests complete; pending expiry, approved upstream, and broader loader cases remain |
+| Loader lifecycle, identity isolation, refresh, and provenance tests | 3 | In progress: catalog-only `list_tables()` emits stable server-owned `table_key` values, rejects untrusted provenance overrides, refresh re-queries the immutable profile/source/snapshot binding, and one manifest-created admin connector is shared without per-identity copies (`test_mcp_governed_data_loader.py`: 10 passed); restart and bounded-import lifecycle evidence remain |
 | Fabric IQ preview, cost, residency, and source-paired fixture record | 4 | Not started |
 | OneLake metadata plus separate bounded-read, Arrow, audience, and region evidence | 5 | Not started |
 | Work IQ read-only scope and no-persistence regression evidence | 6 | Not started |
@@ -86,7 +86,9 @@ Tracks the implementation plan and its architecture constraints:
 | Gateway becomes a broad enterprise-resource broker | Excessive permissions and data exposure | Expose only fixed product operations and source-specific profiles; add new lanes through separate approval | Open |
 | Current network lacks a private-MCP topology | Private Foundry or remote MCP cannot be enabled safely | Keep pilot gateway internal to Container Apps; create a separate subnet/DNS/egress design before private upstream adoption | Open |
 | OneLake table API is metadata-only | Table import cannot use the table API response directly | Select and validate a separate DFS/Delta, SQL, or governed-handle data path | Open |
-| MCP client cancellation does not interrupt an in-flight tool | Late upstream result could race with user cancellation | Mark cancellation terminal and discard late results before any connector, catalog, workspace, or provenance mutation | Mitigated in first-release contract |
+| MCP client cancellation does not interrupt an in-flight tool | Late upstream result could race with user cancellation | Mark cancellation terminal and discard late results before any connector, catalog, workspace, or provenance mutation | Mitigated in local mapped-operation contract |
+| Approval state exists in a different process from retry execution | A confirmation could be replayed, lost, or applied to a different operation | The gateway backend owns local `McpApprovalGate`, same-subject confirmation, scope validation, atomic consumption, and retry in one process; retain that composition when wiring production startup | Locally mitigated; production startup composition pending |
+| Pending approvals have no selected expiry policy | Abandoned process-local records can persist for the gateway process lifetime | Define the pending TTL, expired-state UX, and cleanup behavior together before adding a clock; do not invent a duration in infrastructure code | Open decision |
 
 ## Decision Gates
 
@@ -122,6 +124,9 @@ Tracks the implementation plan and its architecture constraints:
 
 ## Immediate Next Actions
 
+1. Define the pending-approval TTL, expired-state UX, and production
+   multi-replica ownership model before adding expiry or shared approval state.
+
 1. Have an Entra administrator grant tenant-wide consent for the existing Data Formulator client to request the dedicated gateway `access_as_user` scope.
 
 1. Name the Foundry project owner, Fabric fixture owner, enterprise security reviewer, Work IQ administrator, and MCP operations owner.
@@ -130,6 +135,11 @@ Tracks the implementation plan and its architecture constraints:
 
 1. Review the internal gateway provisioning plan, then authorize only a preview after the Entra app-registration operator and Fabric fixture owner are named.
 
-1. Use the nominated fixture to implement the remaining fake/upstream transport tests, then validate the profile-pinned `tools/list` contract before any live query.
+1. Use the nominated fixture to validate the profile-pinned upstream operation contract, then compare direct and MCP paths before any live query.
+
+1. Approve and implement gateway-token acquisition for the dedicated audience,
+   then invoke the locally proven authenticated client and profile-before-source
+   bootstrap from production startup. Do not add a user-creatable loader type
+   or activate live transport before the existing approval gates pass.
 
 1. Record the approved initial Fabric, OneLake, and Work IQ scope, or explicitly defer any lane without required approval.

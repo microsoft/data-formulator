@@ -13,6 +13,7 @@ from data_formulator.mcp_gateway.auth import (
     GatewayAuthConfig,
     GatewayCallerVerifier,
     GatewayTokenVerifier,
+    get_authenticated_caller_subject,
 )
 
 pytestmark = [pytest.mark.backend]
@@ -124,3 +125,32 @@ class TestGatewayTokenVerifier:
         verifier = GatewayTokenVerifier(auth_config, caller_verifier=caller_verifier)
 
         assert asyncio.run(verifier.verify_token("signed-token")) is None
+
+
+class TestAuthenticatedCallerSubject:
+    def test_reads_the_verified_fastmcp_subject(self):
+        access_token = AccessToken(
+            token="signed-token",
+            client_id="data-formulator-web",
+            subject="data-formulator-user",
+            scopes=[],
+            resource="api://data-formulator-mcp-gateway",
+        )
+
+        subject = get_authenticated_caller_subject(
+            access_token_provider=lambda: access_token
+        )
+
+        assert subject == "data-formulator-user"
+
+    def test_rejects_a_missing_fastmcp_subject(self):
+        access_token = AccessToken(
+            token="signed-token",
+            client_id="data-formulator-web",
+            subject=None,
+            scopes=[],
+            resource="api://data-formulator-mcp-gateway",
+        )
+
+        with pytest.raises(McpGatewayAuthenticationError, match="subject"):
+            get_authenticated_caller_subject(access_token_provider=lambda: access_token)

@@ -98,6 +98,35 @@ class TestAudienceAwareServiceTokens:
                 "mssql:finance", "https://api.fabric.microsoft.com"
             ) is None
 
+    def test_exact_lookup_returns_only_the_requested_audience_token(self, app):
+        with app.test_request_context():
+            flask.session.clear()
+            store = TokenStore()
+            store.store_service_token(
+                "mcp:fabric-sales",
+                "gateway-token",
+                audience="api://data-formulator-mcp-gateway",
+            )
+
+            assert store.get_exact_service_token(
+                "mcp:fabric-sales",
+                "api://data-formulator-mcp-gateway",
+            ) == "gateway-token"
+
+    def test_exact_lookup_never_uses_legacy_token_fallback(self, app):
+        with app.test_request_context():
+            flask.session.clear()
+            store = TokenStore()
+            store.store_service_token(
+                "mcp:fabric-sales",
+                "legacy-token",
+            )
+
+            assert store.get_exact_service_token(
+                "mcp:fabric-sales",
+                "api://data-formulator-mcp-gateway",
+            ) is None
+
     def test_clear_removes_all_audiences_for_connector(self, app):
         with app.test_request_context():
             flask.session.clear()

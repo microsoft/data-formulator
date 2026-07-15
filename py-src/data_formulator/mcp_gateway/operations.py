@@ -29,6 +29,12 @@ class McpGatewayOperation:
         with self._lock:
             return self._state
 
+    @property
+    def is_active(self) -> bool:
+        """Report whether an upstream result may still be delivered."""
+        with self._lock:
+            return self._state is McpGatewayOperationState.ACTIVE
+
     def cancel(self) -> bool:
         """Mark the operation cancelled and reject every late completion."""
         return self._transition(McpGatewayOperationState.CANCELLED)

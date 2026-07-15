@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import re
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 from urllib.parse import urlsplit
 
 from data_formulator.mcp.errors import McpProfileValidationError
@@ -195,6 +196,7 @@ class McpServerProfile:
     operations: frozenset[McpOperation]
     capability_manifest: McpCapabilityManifest
     allowed_tools: frozenset[str]
+    operation_tools: Mapping[McpOperation, str]
     limits: McpOperationLimits
     require_approval: bool
 
@@ -211,7 +213,7 @@ class McpServerProfile:
         if version != _SUPPORTED_PROFILE_VERSION:
             raise McpProfileValidationError("unsupported profile version")
 
-        endpoint = _validate_endpoint(data.get("endpoint"))
+        endpoint = validate_mcp_endpoint(data.get("endpoint"))
         audience = _required_string(data.get("audience"), "audience")
 
         server_label = _required_string(data.get("server_label"), "server_label")
@@ -235,6 +237,11 @@ class McpServerProfile:
             )
 
         tool_policy = McpToolPolicy.from_dict(data, source_class)
+        operation_tools = _parse_operation_tools(
+            data.get("operation_tools"),
+            operations,
+            tool_policy.allowed_tools,
+        )
         limits = McpOperationLimits.from_dict(data.get("limits"))
 
         return cls(
@@ -247,6 +254,7 @@ class McpServerProfile:
             operations=operations,
             capability_manifest=capability_manifest,
             allowed_tools=tool_policy.allowed_tools,
+            operation_tools=operation_tools,
             limits=limits,
             require_approval=tool_policy.require_approval,
         )
@@ -258,7 +266,8 @@ def _required_string(value: object, field_name: str) -> str:
     return value.strip()
 
 
-def _validate_endpoint(value: object) -> str:
+def validate_mcp_endpoint(value: object) -> str:
+    """Require a credential-free trusted HTTPS MCP endpoint."""
     endpoint = _required_string(value, "endpoint")
     parsed = urlsplit(endpoint)
     if (
@@ -287,6 +296,47 @@ def _parse_operations(value: object) -> frozenset[McpOperation]:
         return frozenset(McpOperation(_required_string(operation, "operation")) for operation in value)
     except ValueError as exc:
         raise McpProfileValidationError("operation is not supported") from exc
+
+
+def _parse_operation_tools(
+    value: object,
+    operations: frozenset[McpOperation],
+    allowed_tools: frozenset[str],
+) -> Mapping[McpOperation, str]:
+    if not isinstance(value, dict):
+        raise McpProfileValidationError("operation mapping must be an object")
+
+    parsed: dict[McpOperation, str] = {}
+    for raw_operation, raw_tool in value.items():
+        try:
+            operation = McpOperation(_required_string(raw_operation, "operation"))
+        except ValueError as exc:
+            raise McpProfileValidationError(
+                "operation mapping contains an unsupported operation"
+            ) from exc
+        try:
+            tool = _required_string(raw_tool, "tool")
+        except McpProfileValidationError as exc:
+            raise McpProfileValidationError(
+                "operation mapping tool must be a nonempty string"
+            ) from exc
+        parsed[operation] = tool
+
+    required_operations = operations - {McpOperation.HEALTH}
+    if set(parsed) != required_operations:
+        raise McpProfileValidationError(
+            "operation mapping must cover exactly the declared non-health operations"
+        )
+    if len(set(parsed.values())) != len(parsed):
+        raise McpProfileValidationError(
+            "operation mapping must assign distinct tools to each operation"
+        )
+    if not set(parsed.values()) <= allowed_tools:
+        raise McpProfileValidationError(
+            "operation mapping must use only allowlisted tools"
+        )
+
+    return MappingProxyType(parsed)
 
 
 def _positive_int(value: Any, field_name: str) -> int:
