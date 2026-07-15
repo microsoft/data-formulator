@@ -82,14 +82,18 @@ const RULES = [
     severity: 'error',
     targets: ['word', 'email', 'pdf'],
     check: (content) => {
-      const tablePattern = /^\|[^\n]+\|$/gm;
-      const tables = content.match(tablePattern) || [];
-      for (let i = 0; i < tables.length - 1; i++) {
-        const cols1 = tables[i].split('|').length;
-        const cols2 = tables[i + 1].split('|').length;
-        if (cols1 !== cols2 && !tables[i + 1].match(/^[\s|:-]+$/)) {
-          return `Table column count mismatch (${cols1} vs ${cols2}) -- will break in Word`;
+      let expectedColumns;
+      for (const line of content.split('\n')) {
+        if (!/^\|[^\n]+\|$/.test(line)) {
+          expectedColumns = undefined;
+          continue;
         }
+
+        const columns = line.split('|').length;
+        if (expectedColumns !== undefined && columns !== expectedColumns) {
+          return `Table column count mismatch (${expectedColumns} vs ${columns}) -- will break in Word`;
+        }
+        expectedColumns = columns;
       }
     },
   },

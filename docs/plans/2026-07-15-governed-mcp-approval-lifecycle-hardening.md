@@ -14,8 +14,9 @@ duration.
 
 **Tech Stack:** Python, FastMCP, Starlette, HTTPX ASGI transport, pytest.
 
-**Status:** Complete locally. Pending-approval expiry remains an open product
-and topology decision.
+**Status:** Complete locally. A 15-minute TTL and generic-unavailable expiry and
+restart policy were selected afterward, but are not implemented. See
+`docs/plans/2026-07-15-governed-mcp-production-composition.md`.
 
 ---
 
@@ -39,9 +40,10 @@ and topology decision.
   or other-subject operation IDs to avoid state enumeration.
 - Keep approval decisions terminal. A failed upstream call after confirmation
   requires a new product operation and new approval.
-- Do not implement time-based expiry until the product defines the pending
-  approval TTL and expired-state UX. This is a specific open decision, not an
-  implementation omission.
+- The 15-minute approval TTL and generic-unavailable behavior were selected
+  after this implementation and are scheduled in
+  `docs/plans/2026-07-15-governed-mcp-production-composition.md`. They are not
+  implemented yet.
 
 ## Task 1: Add Atomic Coordinator Denial
 

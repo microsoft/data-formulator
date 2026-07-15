@@ -8,6 +8,10 @@ It also records changes made against the original upstream Data Formulator
 codebase. Copilot and Agency brain assets are excluded from the change ledger
 because they do not alter product runtime behavior.
 
+The selected governed MCP decisions and next implementation sequence are
+tracked in
+`docs/plans/2026-07-15-governed-mcp-production-composition.md`.
+
 Readiness requirements and objective evidence are maintained in
 `docs/plans/2026-07-09-connector-implementation-requirements.md`.
 
@@ -248,9 +252,10 @@ superseded, or split.
   11 passed; TokenStore regression scope: 42 passed).
 - [x] Harden the local approval lifecycle with owner-bound denial, generic
   unknown/replay handling, one-winner confirmation/denial races, and explicit
-  no-replay behavior after an upstream failure. Keep time-based expiry open
-  until the pending-approval TTL and expired-state UX are defined
-  ([implementation plan](2026-07-15-governed-mcp-approval-lifecycle-hardening.md);
+  no-replay behavior after an upstream failure. The 15-minute TTL and
+  generic-unavailable policy were selected after that implementation and are
+  scheduled in the production-composition plan, but they are not implemented
+  yet (`docs/plans/2026-07-15-governed-mcp-approval-lifecycle-hardening.md`;
   focused lifecycle tests: 32 passed; full MCP suite: 144 passed;
   governed-loader/connector scope: 85 passed).
 - [x] Complete the catalog lifecycle contract for governed loaders: emit stable
@@ -263,6 +268,11 @@ superseded, or split.
   proven bootstrap from production startup. Do not expose a user-creatable
   `mcp_governed` loader or activate live transport before the approval gates
   pass.
+- [ ] Implement `docs/plans/2026-07-15-governed-mcp-production-composition.md`,
+  including the 15-minute TTL, generic-unavailable behavior, single-replica
+  fail-closed state, request-time OBO, exact connector plus
+  gateway-audience caching, startup composition, and disabled-by-default Bicep
+  wiring.
 - [ ] Obtain tenant-wide consent from an Entra administrator for the existing
   Data Formulator client.
 - [ ] Nominate a non-sensitive, source-paired Fabric fixture; the checked

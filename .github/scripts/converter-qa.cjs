@@ -468,6 +468,27 @@ suite('markdown-lint.cjs', () => {
   const r1 = mdLint.lint(clean);
   assert(r1.errors.length === 0, 'clean doc has no errors');
 
+  // Separate tables may legitimately have different column counts.
+  const separateTables = [
+    '# My Doc',
+    '',
+    '| A | B |',
+    '| --- | --- |',
+    '| 1 | 2 |',
+    '',
+    'Between the tables.',
+    '',
+    '| A | B | C |',
+    '| --- | --- | --- |',
+    '| 1 | 2 | 3 |',
+    '',
+  ].join('\n');
+  const separateTableResult = mdLint.lint(separateTables);
+  assert(
+    !separateTableResult.errors.some(e => e.id === 'TBL001'),
+    'does not compare column counts across separate tables',
+  );
+
   // Missing H1
   const noH1 = '## Section\n\nSome text.\n';
   const r2 = mdLint.lint(noH1);

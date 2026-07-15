@@ -4,6 +4,8 @@ date: 2026-07-14
 scope: Track delivery, evidence, dependencies, and decision gates for the governed MCP adapter implementation.
 falsification-deadline: 2026-09-30
 related:
+  - docs/plans/2026-07-15-governed-mcp-production-composition.md
+  - docs/plans/2026-07-15-governed-mcp-approval-lifecycle-hardening.md
   - docs/plans/2026-07-14-governed-mcp-adapter-plan.md
   - docs/plans/2026-07-14-enterprise-data-access-architecture.md
   - docs/plans/2026-07-14-internal-mcp-gateway-provisioning.md
@@ -11,7 +13,24 @@ related:
 
 # Governed MCP Adapter Tracker
 
-Tracks the implementation plan and its architecture constraints:
+Tracks the implementation plan, shipped governed MCP contract, and the open external gates.
+
+Session snapshot: commit `10cf74c` was pushed to `origin/main`; the change set
+includes 37 files, 5492 additions, and 57 deletions. Local verification before
+push passed 273 tests, staged diff and whitespace checks were clean, and the
+sensitive-literal scan was clean.
+
+## Selected Decisions for Next Implementation
+
+- 15-minute approval TTL with an injected monotonic clock and race-safe cleanup.
+- Generic unavailable responses for expired, restarted, unknown, denied, consumed, and other-subject operation IDs.
+- Process-local approval state stays single-replica and must fail closed otherwise.
+- Request-time Microsoft Entra OBO using the signed-in user assertion.
+- Exact connector plus gateway-audience TokenStore caching.
+- Production startup composes existing manifests and client with no startup network calls.
+- `enableMcpGateway=false` stays the infrastructure default.
+
+## Current References
 
 - [Governed MCP Adapter Implementation Plan](2026-07-14-governed-mcp-adapter-plan.md)
 - [Enterprise Data Access Architecture](2026-07-14-enterprise-data-access-architecture.md)
@@ -21,8 +40,8 @@ Tracks the implementation plan and its architecture constraints:
 | Area | Status | Owner | Approval or evidence needed |
 | --- | --- | --- | --- |
 | Product MCP profile | Complete | Unassigned | Profile contract and local MCP SDK compatibility spike complete |
-| Internal gateway, transport, and policy gate | In progress | Unassigned | Subject-bound confirmation, denial, terminal race handling, and no-replay behavior after consumption are locally complete; pending-approval expiry, authenticated startup composition, and approved upstream validation remain |
-| Governed loader | In progress | Unassigned | Strict profile/source manifest loading, the offline injected registration bootstrap, the authenticated fixed-operation product client, stable catalog keys, refresh, provenance, and identity visibility are locally validated; approved gateway-token acquisition, production startup, restart, and bounded-import tests remain |
+| Internal gateway, transport, and policy gate | In progress | Unassigned | Subject-bound confirmation, denial, terminal race handling, and no-replay behavior after consumption are locally complete; the 15-minute TTL, generic-unavailable behavior, single-replica fail-closed state, and request-time OBO are selected but not implemented yet |
+| Governed loader | In progress | Unassigned | Strict profile/source manifest loading, the offline injected registration bootstrap, the authenticated fixed-operation product client, stable catalog keys, refresh, provenance, and identity visibility are locally validated; exact connector plus gateway-audience caching, production startup composition, restart tests, and bounded-import tests remain |
 | Fabric IQ pilot | Not started | Unassigned | Preview, cost, residency, and fixture approval |
 | OneLake metadata and import pilot | Not started | Unassigned | Source-paired fixture and separate data-path validation |
 | Work IQ context adapter | Not started | Unassigned | Read-path and tenant-policy approval |
@@ -34,8 +53,8 @@ Tracks the implementation plan and its architecture constraints:
 | ID | Work package | Status | Owner | Depends on | Completion evidence |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Define product MCP profile | Complete | Unassigned | None | Immutable profile, tool policy, capability manifest, source reference, RED/GREEN tests, and local SDK compatibility record complete |
-| 2 | Add internal gateway, transport, and policy gate | In progress | Unassigned | 1 | Subject-bound single-use confirmation and denial, generic unknown/replay handling, one-winner race evidence, and failure-after-consumption no-replay evidence are complete; pending-approval expiry, authenticated startup composition, and approved upstream validation remain |
-| 3 | Create MCP-governed loader | In progress | Unassigned | 1, 2 | Profile/source manifests compose offline in strict order; the authenticated client uses exact audience-qualified tokens, trusted HTTPS, fixed operation contracts, and bounded response validation; catalog-only registration is admin-only and has stable keys, refresh/provenance, and identity-visibility coverage; approved token acquisition, production startup, restart, and bounded Arrow validation remain |
+| 2 | Add internal gateway, transport, and policy gate | In progress | Unassigned | 1 | Subject-bound single-use confirmation and denial, generic unknown/replay handling, one-winner race evidence, and failure-after-consumption no-replay evidence are complete; the 15-minute TTL, generic-unavailable behavior, single-replica fail-closed state, and request-time OBO are selected but not implemented yet |
+| 3 | Create MCP-governed loader | In progress | Unassigned | 1, 2 | Profile/source manifests compose offline in strict order; the authenticated client uses exact audience-qualified tokens, trusted HTTPS, fixed operation contracts, and bounded response validation; catalog-only registration is admin-only and has stable keys, refresh/provenance, and identity-visibility coverage; exact connector plus gateway-audience caching, production startup composition, restart, and bounded Arrow validation remain |
 | 4 | Add Fabric IQ semantic discovery pilot | Not started | Unassigned | 1, 2, 3, Fabric approvals | Approved Fabric profile, async behavior, provenance, i18n and regression tests |
 | 5 | Add OneLake metadata and bounded table-import pilot | Not started | Unassigned | 1, 2, 3, source-paired Fabric fixture | Metadata discovery plus bounded Arrow import through a validated DFS/Delta, SQL, or governed-handle path |
 | 6 | Add read-only Work IQ context adapter | Not started | Unassigned | 1, 2, Work IQ approval | Explicit scope flow, read-only manifest, ephemeral attributed context, regression tests |
@@ -88,7 +107,7 @@ Tracks the implementation plan and its architecture constraints:
 | OneLake table API is metadata-only | Table import cannot use the table API response directly | Select and validate a separate DFS/Delta, SQL, or governed-handle data path | Open |
 | MCP client cancellation does not interrupt an in-flight tool | Late upstream result could race with user cancellation | Mark cancellation terminal and discard late results before any connector, catalog, workspace, or provenance mutation | Mitigated in local mapped-operation contract |
 | Approval state exists in a different process from retry execution | A confirmation could be replayed, lost, or applied to a different operation | The gateway backend owns local `McpApprovalGate`, same-subject confirmation, scope validation, atomic consumption, and retry in one process; retain that composition when wiring production startup | Locally mitigated; production startup composition pending |
-| Pending approvals have no selected expiry policy | Abandoned process-local records can persist for the gateway process lifetime | Define the pending TTL, expired-state UX, and cleanup behavior together before adding a clock; do not invent a duration in infrastructure code | Open decision |
+| Pending approvals have a selected expiry policy, but no implementation yet | Abandoned process-local records can persist, or a restart can reopen the wrong path | Keep the 15-minute TTL, generic-unavailable behavior, and fail-closed single-replica contract in the production-composition plan until tests and startup wiring land | Selected, not implemented |
 
 ## Decision Gates
 
@@ -124,22 +143,15 @@ Tracks the implementation plan and its architecture constraints:
 
 ## Immediate Next Actions
 
-1. Define the pending-approval TTL, expired-state UX, and production
-   multi-replica ownership model before adding expiry or shared approval state.
+1. Implement TTL cleanup with an injected monotonic clock and race-safe cleanup.
 
-1. Have an Entra administrator grant tenant-wide consent for the existing Data Formulator client to request the dedicated gateway `access_as_user` scope.
+1. Add restart fail-closed tests for the generic unavailable path.
 
-1. Name the Foundry project owner, Fabric fixture owner, enterprise security reviewer, Work IQ administrator, and MCP operations owner.
+1. Add the OBO provider with client-secret and managed-identity assertion modes and safe errors.
 
-1. Select one non-sensitive Fabric source that can be accessed through both a direct path and an approved MCP path using the same identity and snapshot. `My workspace` was checked read-only and contains no OneLake items.
+1. Add startup composition with no startup network calls and contradictory-config failure.
 
-1. Review the internal gateway provisioning plan, then authorize only a preview after the Entra app-registration operator and Fabric fixture owner are named.
+1. Wire the disabled-by-default Bicep path with single-replica and secret-volume manifests.
 
-1. Use the nominated fixture to validate the profile-pinned upstream operation contract, then compare direct and MCP paths before any live query.
-
-1. Approve and implement gateway-token acquisition for the dedicated audience,
-   then invoke the locally proven authenticated client and profile-before-source
-   bootstrap from production startup. Do not add a user-creatable loader type
-   or activate live transport before the existing approval gates pass.
-
-1. Record the approved initial Fabric, OneLake, and Work IQ scope, or explicitly defer any lane without required approval.
+1. Run the full regression and Bicep validation set, then update tracker,
+   issues, and handoff with measured evidence.
