@@ -4,6 +4,7 @@
 import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Box, Collapse, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
@@ -133,13 +134,21 @@ export const PlanStepsView: React.FC<{
 };
 
 /** Compact Markdown for summary entries — inherits parent font-size (10px). */
-export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => (
+export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => {
+    const theme = useTheme();
+    return (
     <Box sx={{
         wordBreak: 'break-word',
+        // Tables (and some UA styles) don't reliably inherit the app font and
+        // fall back to serif — pin the theme font at the container so all
+        // rendered markdown (incl. table cells) stays sans-serif. The `code`
+        // component overrides this with its own monospace stack.
+        fontFamily: theme.typography.fontFamily,
         '& > :first-child': { mt: 0 },
         '& > :last-child': { mb: 0 },
     }}>
         <Markdown
+            remarkPlugins={[remarkGfm]}
             components={{
                 p: ({ children }) => (
                     <Typography component="p" sx={{ fontSize: 'inherit', color, lineHeight: 1.6, my: 0.25 }}>
@@ -173,12 +182,35 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                     </Box>
                 ),
                 pre: ({ children }) => <>{children}</>,
+                table: ({ children }) => (
+                    <Box sx={{ overflowX: 'auto', my: 0.5 }}>
+                        <Box component="table" sx={{ borderCollapse: 'collapse', width: '100%', fontSize: 'inherit', color }}>
+                            {children}
+                        </Box>
+                    </Box>
+                ),
+                th: ({ children }) => (
+                    <Box component="th" sx={{
+                        border: '1px solid rgba(0,0,0,0.12)', px: '5px', py: '2px',
+                        textAlign: 'left', fontWeight: 600, bgcolor: 'rgba(0,0,0,0.03)',
+                    }}>
+                        {children}
+                    </Box>
+                ),
+                td: ({ children }) => (
+                    <Box component="td" sx={{
+                        border: '1px solid rgba(0,0,0,0.12)', px: '5px', py: '2px', verticalAlign: 'top',
+                    }}>
+                        {children}
+                    </Box>
+                ),
             }}
         >
             {content}
         </Markdown>
     </Box>
-);
+    );
+};
 
 /** Render text with `**field**` markers as styled spans. The marker is
  *  rendered as a flat "highlighter underline" — a thin colored bar sitting
@@ -573,7 +605,6 @@ export interface ResolvedConversationCardProps {
  */
 export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> = memo(({ pairs }) => {
     const theme = useTheme();
-    const { t } = useTranslation();
     const [expanded, setExpanded] = useState(false);
 
     if (pairs.length === 0) return null;
@@ -581,61 +612,78 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
     // Preview uses the LAST user reply (most recent resolution); fall back
     // to the last agent question if that reply is empty.
     const lastPair = pairs[pairs.length - 1];
-    const lastUserText = stripFieldMarkers(lastPair.userEntry.displayContent || lastPair.userEntry.content).replace(/\s+/g, ' ').trim();
-    const lastAgentText = stripFieldMarkers(lastPair.agentEntry.displayContent || lastPair.agentEntry.content).replace(/\s+/g, ' ').trim();
-    const previewText = lastUserText || lastAgentText;
+    // Compact card preview: the agent's message (question / answer) plus the
+    // user's follow-up reply, shown as `↳ …`.
+    const agentPreview = stripFieldMarkers(lastPair.agentEntry.displayContent || lastPair.agentEntry.content || '')
+        .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
+    const followup = stripFieldMarkers(lastPair.userEntry.displayContent || lastPair.userEntry.content || '')
+        .replace(/\s+/g, ' ').trim();
 
-    const dim = theme.palette.text.secondary;
+    // An explanation exchange (agent gave an answer) re-opens the full
+    // read-only ExplanationPanel popup on click — which renders its markdown
+    // (tables, code) properly — rather than the plain inline expand used for
+    // clarify/delegate back-and-forth. Bridged to SimpleChartRecBox via a
+    // window CustomEvent (same pattern as `df-replay-workflow`) to avoid
+    // growing the shared redux slice.
+    const isExplanation = pairs.every(p => p.agentEntry.role === 'explain');
+    const handleCardClick = () => {
+        if (isExplanation) {
+            const md = lastPair.agentEntry.content || lastPair.agentEntry.displayContent || '';
+            if (md.trim()) {
+                window.dispatchEvent(new CustomEvent('df-view-explanation', { detail: { content: md } }));
+            }
+        } else {
+            setExpanded(v => !v);
+        }
+    };
+
     const customPalette = theme.palette.custom;
     const turnCount = pairs.length;
 
     return (
-        <Box
-            onClick={() => setExpanded(v => !v)}
-            sx={{
-                cursor: 'pointer',
-                py: '2px',
-                px: '4px',
-                borderRadius: '4px',
-                '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
-            }}
-        >
+        <Box onClick={handleCardClick} sx={{ cursor: 'pointer' }}>
             {!expanded ? (
+                // Simple card: agent message preview + ↳ user reply. Same look
+                // for clarify / explain / delegate (primary-tinted). Explain
+                // clicks re-open the full popup; the others expand inline below.
                 <Box sx={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '6px',
-                    fontSize: '11px',
-                    color: dim,
-                    opacity: 0.8,
+                    borderRadius: radius.sm,
+                    border: `1px solid ${borderColor.component}`,
+                    backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                    px: 1, py: 0.75,
+                    display: 'flex', flexDirection: 'column', gap: '3px',
+                    transition: 'background-color 0.15s, border-color 0.15s',
+                    '&:hover': {
+                        backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                        borderColor: alpha(theme.palette.primary.main, 0.3),
+                    },
                 }}>
-                    {turnCount > 1 && (
-                        <Typography component="span" sx={{
-                            fontSize: '10px',
-                            color: 'inherit',
-                            opacity: 0.7,
-                            flexShrink: 0,
-                            fontVariantNumeric: 'tabular-nums',
-                            lineHeight: 1.4,
-                            mt: '1px',
+                    {agentPreview && (
+                        <Box sx={{ display: 'flex', gap: '4px', alignItems: 'baseline' }}>
+                            {turnCount > 1 && (
+                                <Typography component="span" sx={{
+                                    fontSize: 9, fontWeight: 600, color: theme.palette.text.disabled,
+                                    flexShrink: 0, fontVariantNumeric: 'tabular-nums', mt: '1px',
+                                }}>
+                                    ×{turnCount}
+                                </Typography>
+                            )}
+                            <Typography component="div" sx={{
+                                fontSize: 11, color: theme.palette.text.primary, lineHeight: 1.4,
+                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                            }}>
+                                {agentPreview}
+                            </Typography>
+                        </Box>
+                    )}
+                    {followup && (
+                        <Typography component="div" sx={{
+                            fontSize: 10.5, color: theme.palette.text.secondary, lineHeight: 1.35,
+                            display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                         }}>
-                            ×{turnCount}
+                            ↳ {followup}
                         </Typography>
                     )}
-                    <Typography component="span" sx={{
-                        fontSize: 'inherit',
-                        color: 'inherit',
-                        fontStyle: 'italic',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                        flex: 1,
-                        minWidth: 0,
-                        lineHeight: 1.4,
-                    }}>
-                        {previewText}
-                    </Typography>
                 </Box>
             ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', py: '2px' }}>

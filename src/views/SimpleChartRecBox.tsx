@@ -207,6 +207,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // breaks on binary/Excel and large files). `scratchPath` is the returned
     // `scratch/<name>_<hash>.<ext>`.
     const [attachedFiles, setAttachedFiles] = useState<{ name: string; scratchPath: string }[]>([]);
+    // Markdown of an explanation the user clicked in the data thread to re-open
+    // in the read-only ExplanationPanel popup. Set via the `df-view-explanation`
+    // window event (see below); kept local to avoid growing the redux slice.
+    const [viewingExplanation, setViewingExplanation] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
@@ -1554,6 +1558,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return () => window.removeEventListener('df-replay-workflow', handler);
     }, [exploreFromChat, isChatFormulating, focusedTableId, dispatch, t]);
 
+    // Re-open an explanation the user clicked in the data thread
+    // (ResolvedConversationCard fires `df-view-explanation`) in the read-only
+    // ExplanationPanel popup above the chat box.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const content = (e as CustomEvent).detail?.content as string | undefined;
+            if (content) setViewingExplanation(content);
+        };
+        window.addEventListener('df-view-explanation', handler);
+        return () => window.removeEventListener('df-view-explanation', handler);
+    }, []);
+
     const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
         if (!pendingClarification) return;
         // Pass the formatted display string as `prompt` — it powers both the
@@ -1688,6 +1704,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     message={clarificationQuestions.message}
                     options={clarificationQuestions.options}
                     onCancel={cancelAgent}
+                />
+            )}
+            {/* Re-opened explanation: the user clicked a resolved explanation
+                card in the data thread. Read-only popup above the chat box;
+                only shown when no live pause is active so it never overlaps. */}
+            {viewingExplanation && !pendingClarification && !isChatFormulating && (
+                <ExplanationPanel
+                    content={viewingExplanation}
+                    onCancel={() => setViewingExplanation(null)}
                 />
             )}
             {/* Input area wrapper */}

@@ -70,6 +70,7 @@
         "react-virtuoso": "^4.3.10",
         "redux": "^4.2.0",
         "redux-persist": "^6.0.0",
+        "remark-gfm": "^4",
         "tiptap-markdown": "^0.9.0",
         "typescript": "^4.9.5",
         "validator": "^13.15.20",
