@@ -27,7 +27,6 @@ import {
 import { alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
@@ -51,8 +50,9 @@ interface AgentPauseShellProps {
     title: string;
     /** Tooltip for the close (×) icon — de-highlights / switches focus. */
     closeTooltip: string;
-    /** Tooltip for the delete (trash) icon — removes this block. */
-    deleteTooltip: string;
+    /** Deprecated: delete is handled from the thread card directly, so the
+     *  panel no longer renders a delete button. Kept optional for callers. */
+    deleteTooltip?: string;
     /**
      * Icon glyph rendered in the header. Callers pass a fully-styled
      * `AgentToyIcon` (or any node) so the shell stays agnostic of icon
@@ -69,19 +69,17 @@ interface AgentPauseShellProps {
     accentColor?: string;
     /** Close: de-highlight the pause and switch focus to the previous chart. */
     onClose: () => void;
-    /** Delete: remove this block (the pending pause / resolved node). */
-    onDelete: () => void;
+    /** Deprecated: delete is handled from the thread card directly. */
+    onDelete?: () => void;
     children: ReactNode;
 }
 
 const AgentPauseShell: FC<AgentPauseShellProps> = ({
     title,
     closeTooltip,
-    deleteTooltip,
     icon,
     accentColor,
     onClose,
-    onDelete,
     children,
 }) => {
     const theme = useTheme();
@@ -123,19 +121,6 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                 }}>
                     {title}
                 </Typography>
-                <Tooltip title={deleteTooltip}>
-                    <IconButton
-                        size="small"
-                        onClick={onDelete}
-                        sx={{
-                            p: 0, width: 16, height: 16,
-                            color: theme.palette.text.disabled,
-                            '&:hover': { color: theme.palette.error.main },
-                        }}
-                    >
-                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                </Tooltip>
                 <Tooltip title={closeTooltip}>
                     <IconButton
                         size="small"

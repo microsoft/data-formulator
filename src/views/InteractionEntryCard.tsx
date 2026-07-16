@@ -369,7 +369,21 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color = theme.palette.text.secondary;
         }
 
-        const hasPlan = !!entry.plan && entry.plan !== displayText;
+        // Plan (thinking) lines: split, then drop the redundant "creating
+        // chart…" step (it just duplicates the instruction text). A plan whose
+        // ONLY content is that filtered step has nothing to show — so `hasPlan`
+        // is false and no thinking section / divider renders above the text.
+        const planLinesVisible = (() => {
+            if (!entry.plan || entry.plan === displayText) return [] as string[];
+            const raw = (entry.plan.includes('\x1E') ? entry.plan.split('\x1E') : entry.plan.split('\n'))
+                .filter(l => l.trim());
+            return raw.filter(l => {
+                const stripped = l.startsWith('✓') ? l.slice(2) : l;
+                const lbl = stripped.trim().toLowerCase();
+                return !(lbl.startsWith('creating chart') || lbl.startsWith('图表'));
+            });
+        })();
+        const hasPlan = planLinesVisible.length > 0;
 
         // Active clarify/explain entries are read in the ClarificationPanel
         // at the bottom (the outer timeline row already refocuses there on
@@ -494,14 +508,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 onClick={() => isCollapsible && setExpanded(!expanded)}
             >
                 <Collapse in={expanded}>
-                    {hasPlan && (() => {
-                        const planLines = (entry.plan!.includes('\x1E') ? entry.plan!.split('\x1E') : entry.plan!.split('\n')).filter(l => l.trim());
-                        return (
-                            <Box sx={{ py: '2px' }}>
-                                <PlanStepsView steps={planLines} filterCreatingChart />
-                            </Box>
-                        );
-                    })()}
+                    {hasPlan && (
+                        <Box sx={{ py: '2px' }}>
+                            <PlanStepsView steps={planLinesVisible} />
+                        </Box>
+                    )}
                     {hasPlan && <Box sx={{ borderBottom: `1px solid ${borderColor.component}`, my: '2px' }} />}
                     {collapsedLabel && (
                         <Typography component="div" sx={{

@@ -2,12 +2,13 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification, TextTurn } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
+import { migrateState } from './stateMigrations';
 import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash } from './utils';
 import { apiRequest } from './apiClient';
@@ -104,6 +105,7 @@ export type FocusedId =
     | { type: 'table'; tableId: string }
     | { type: 'chart'; chartId: string }
     | { type: 'report'; reportId: string }
+    | { type: 'text'; textId: string }
     | undefined;
 
 export const DEFAULT_ROW_LIMIT = 2_000_000;
@@ -257,6 +259,9 @@ export interface DataFormulatorState {
 
     // Generated reports state
     generatedReports: GeneratedReport[];
+    // Text turns (clarify / explain) placed in a thread by their one authored
+    // edge `parentNodeId` — the node the user asked from (design-docs/42).
+    textTurns: TextTurn[];
 
     // Session loading overlay
     sessionLoading: boolean;
@@ -352,6 +357,7 @@ const initialState: DataFormulatorState = {
     agentHandoffRequest: null,
 
     generatedReports: [],
+    textTurns: [],
 
     sessionLoading: false,
     sessionLoadingLabel: '',
@@ -548,6 +554,10 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
 
     // Delete reports triggered from this table
     state.generatedReports = state.generatedReports.filter(r => r.triggerTableId !== tableId);
+
+    // Delete text turns anchored to this table (design-docs/42): those whose
+    // authored thread edge points directly at it (`parentNodeId === tableId`).
+    state.textTurns = state.textTurns.filter(a => a.parentNodeId !== tableId);
 
     // Drop this table's starter questions / generation status
     delete state.starterQuestions[tableId];
@@ -764,6 +774,7 @@ export const dataFormulatorSlice = createSlice({
             state.dataLoadingChatPending = null;
 
             state.generatedReports = [];
+            state.textTurns = [];
 
             // Clear active workspace so stale IDs don't persist across restarts
             state.activeWorkspace = null;
@@ -836,7 +847,11 @@ export const dataFormulatorSlice = createSlice({
             state.starterQuestionsStatus[action.payload.tableId] = 'error';
         },
         loadState: (state, action: PayloadAction<any>) => {
-            const saved = action.payload;
+            // Upgrade an older persisted payload through the versioned migration
+            // chain before applying it (see stateMigrations.ts). Idempotent
+            // field backfills below handle "new optional field" cases that need
+            // no version.
+            const saved = migrateState(action.payload);
 
             // Return a brand-new state object so Immer skips
             // recursive proxy / freeze on potentially huge table rows.
@@ -906,6 +921,7 @@ export const dataFormulatorSlice = createSlice({
                 dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
                 dataLoadingChatPending: null,
                 generatedReports: saved.generatedReports || [],
+                textTurns: saved.textTurns || [],
 
                 // Reset transient fields
                 messages: [],
@@ -1927,6 +1943,52 @@ export const dataFormulatorSlice = createSlice({
         clearAgentHandoffRequest: (state) => {
             state.agentHandoffRequest = null;
         },
+        // ── Text turns (clarify / explain) — design-docs/41 ──
+        addTextTurn: (state, action: PayloadAction<TextTurn>) => {
+            const turn = action.payload;
+            const existingIndex = state.textTurns.findIndex(a => a.id === turn.id);
+            if (existingIndex >= 0) {
+                state.textTurns[existingIndex] = turn;
+            } else {
+                state.textTurns.push(turn);
+            }
+        },
+        updateTextTurn: (state, action: PayloadAction<{ id: string } & Partial<TextTurn>>) => {
+            const { id, ...patch } = action.payload;
+            const turn = state.textTurns.find(a => a.id === id);
+            if (turn) Object.assign(turn, patch);
+        },
+        removeTextTurn: (state, action: PayloadAction<string>) => {
+            const turnId = action.payload;
+            const turn = state.textTurns.find(a => a.id === turnId);
+            const wasFocused = state.focusedId?.type === 'text' && state.focusedId.textId === turnId;
+            state.textTurns = state.textTurns.filter(a => a.id !== turnId);
+            // Fallback focus (design-docs/42): the source chart it came from,
+            // else its thread-parent table (walk parentNodeId), else nothing.
+            if (wasFocused && turn) {
+                const allCharts = collectAllCharts(state);
+                if (turn.sourceChartId && allCharts.some(c => c.id === turn.sourceChartId)) {
+                    state.focusedId = { type: 'chart', chartId: turn.sourceChartId };
+                } else {
+                    // Resolve the turn's thread position to a table id.
+                    let parentTableId: string | undefined;
+                    let cur: TextTurn | undefined = turn;
+                    const seen = new Set<string>();
+                    while (cur && !seen.has(cur.id)) {
+                        seen.add(cur.id);
+                        const p: string | undefined = cur.parentNodeId;
+                        if (!p) break;
+                        if (state.tables.some(t => t.id === p)) { parentTableId = p; break; }
+                        cur = state.textTurns.find(tt => tt.id === p);
+                    }
+                    if (parentTableId) {
+                        state.focusedId = { type: 'table', tableId: parentTableId };
+                    } else {
+                        state.focusedId = undefined;
+                    }
+                }
+            }
+        },
         // Generated reports actions
         saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {
             const report = action.payload;
@@ -2328,11 +2390,71 @@ export const dfSelectors = {
     getEffectiveTableId: (state: DataFormulatorState): string | undefined => {
         if (!state.focusedId) return undefined;
         if (state.focusedId.type === 'table') return state.focusedId.tableId;
+        // A focused text artifact is non-canvas-owning (design-docs/41): resolve
+        // it to its source chart's table, else its thread-parent table.
+        if (state.focusedId.type === 'text') {
+            const textId = state.focusedId.textId;
+            const art = state.textTurns.find(a => a.id === textId);
+            if (!art) return undefined;
+            if (art.sourceChartId) {
+                const c = collectAllCharts(state).find(ch => ch.id === art.sourceChartId);
+                if (c) return c.tableRef;
+            }
+            // Walk parentNodeId to the turn's thread-parent table (design-docs/42).
+            let cur: TextTurn | undefined = art;
+            const seen = new Set<string>();
+            while (cur && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const p: string | undefined = cur.parentNodeId;
+                if (!p) break;
+                if (state.tables.some(t => t.id === p)) return p;
+                cur = state.textTurns.find(tt => tt.id === p);
+            }
+            return undefined;
+        }
         // type === 'chart': derive table from the chart's tableRef
         let allCharts = collectAllCharts(state);
         let chart = allCharts.find(c => c.id === (state.focusedId as { type: 'chart'; chartId: string }).chartId);
         return chart?.tableRef;
     },
+    /**
+     * The focus the CANVAS should render for. A focused text artifact is
+     * non-canvas-owning (design-docs/41): it overlays a panel above the chat
+     * while the canvas keeps showing the artifact's source chart (or, when no
+     * chart exists, its source table). Every other focus type passes through
+     * unchanged, so canvas consumers can read this in place of raw `focusedId`.
+     * Memoized so consuming components don't re-render on unrelated dispatches.
+     */
+    selectCanvasTarget: createSelector(
+        [
+            (state: DataFormulatorState) => state.focusedId,
+            (state: DataFormulatorState) => state.textTurns,
+            (state: DataFormulatorState) => state.charts,
+            selectTriggerCharts,
+            (state: DataFormulatorState) => state.tables,
+        ],
+        (focusedId, textTurns, userCharts, triggerCharts, tables): FocusedId => {
+            if (focusedId?.type !== 'text') return focusedId;
+            const art = textTurns.find(a => a.id === focusedId.textId);
+            if (!art) return undefined;
+            if (art.sourceChartId
+                && [...userCharts, ...triggerCharts].some(c => c.id === art.sourceChartId)) {
+                return { type: 'chart', chartId: art.sourceChartId };
+            }
+            // No source chart: resolve the turn's thread position to a table
+            // (walk parentNodeId) and keep it on the canvas (design-docs/42).
+            let cur: TextTurn | undefined = art;
+            const seen = new Set<string>();
+            while (cur && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const p: string | undefined = cur.parentNodeId;
+                if (!p) break;
+                if (tables.some(t => t.id === p)) return { type: 'table', tableId: p };
+                cur = textTurns.find(tt => tt.id === p);
+            }
+            return undefined;
+        },
+    ),
     getFocusedChartId: (state: DataFormulatorState): string | undefined => {
         return state.focusedId?.type === 'chart' ? state.focusedId.chartId : undefined;
     },
