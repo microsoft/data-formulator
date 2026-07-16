@@ -825,7 +825,6 @@ let SingleThreadGroupView: FC<{
     usedIntermediateTableIds: string[],
     globalHighlightedTableIds: string[],
     focusedThreadLeafId?: string, // The leaf table ID of the thread containing the focused table
-    homedTurnIds?: Set<string>, // text-turn ids whose cards THIS thread renders (single home, design-docs/42)
     sx?: SxProps
 }> = function ({
     threadIdx,
@@ -838,7 +837,6 @@ let SingleThreadGroupView: FC<{
     usedIntermediateTableIds,
     globalHighlightedTableIds,
     focusedThreadLeafId,
-    homedTurnIds,
     sx
 }) {
 
@@ -917,9 +915,7 @@ let SingleThreadGroupView: FC<{
 
     // Text turns render by their authored parent edge (design-docs/42): each
     // turn is a child of its `parentNodeId` — a table (a fresh turn on it) or
-    // another turn (a chained follow-up). The thread it renders in is decided by
-    // home assignment (`homedTurnIds`); a conversation-produced table is a normal
-    // leaf that forks into its own column, so no inline/owned-table machinery.
+    // another turn (a chained follow-up).
     const textTurnChildrenOf = useMemo(() => {
         const map = new Map<string, TextTurn[]>();
         for (const turn of textTurns) {
@@ -933,25 +929,50 @@ let SingleThreadGroupView: FC<{
         return map;
     }, [textTurns]);
 
-    // Root TABLE of each homed turn's conversation — where its run's pending
-    // "working…" banner renders when the root is shown as a used parent.
-    const homedConversationTableIds = useMemo(() => {
+    const turnById = useMemo(() => new Map(textTurns.map(tt => [tt.id, tt])), [textTurns]);
+
+    // A turn is a "lead-up" if it PRODUCED a table — i.e. it sits on some table's
+    // `threadParentId` chain (the clarify/answer that resolved into that table).
+    // Such turns render WITH their result table (as its lead-in, in the table's
+    // thread) so the conversation and its result stay connected — NOT at the root
+    // table. Terminal / still-pending turns (no result yet) render at the root's
+    // non-ghost card instead (design-docs/42).
+    const leadUpTurnIds = useMemo(() => {
         const s = new Set<string>();
-        if (!homedTurnIds) return s;
-        for (const turn of textTurns) {
-            if (!homedTurnIds.has(turn.id)) continue;
-            let cur: TextTurn | undefined = turn;
+        for (const t of tables) {
+            let cur: string | undefined = t.threadParentId;
             const seen = new Set<string>();
-            while (cur && !seen.has(cur.id)) {
-                seen.add(cur.id);
-                const p: string | undefined = cur.parentNodeId;
-                if (!p) break;
-                if (tableById.has(p)) { s.add(p); break; }
-                cur = textTurns.find(tt => tt.id === p);
+            while (cur && !seen.has(cur)) {
+                seen.add(cur);
+                const turn = turnById.get(cur);
+                if (!turn) break;              // reached a table / unknown
+                s.add(turn.id);
+                cur = turn.parentNodeId;
+                if (cur && tableById.has(cur)) break; // reached the root table
             }
         }
         return s;
-    }, [homedTurnIds, textTurns, tableById]);
+    }, [tables, turnById, tableById]);
+
+    // The lead-up conversation for a table: the turn chain from its
+    // `threadParentId` up to (not including) the root table, oldest first.
+    const leadUpTurnsOf = (tableId: string): TextTurn[] => {
+        const t = tableById.get(tableId);
+        if (!t?.threadParentId) return [];
+        const out: TextTurn[] = [];
+        let cur: string | undefined = t.threadParentId;
+        const seen = new Set<string>();
+        while (cur && !seen.has(cur)) {
+            seen.add(cur);
+            const turn = turnById.get(cur);
+            if (!turn) break;
+            out.push(turn);
+            cur = turn.parentNodeId;
+            if (cur && tableById.has(cur)) break;
+        }
+        return out.reverse();
+    };
+
     const runningAgentTableIds = useMemo(() => {
         const ids = new Map<string, { description: string }>();
         for (const d of draftNodes) {
@@ -1753,40 +1774,53 @@ let SingleThreadGroupView: FC<{
                     backgroundColor: alpha(theme.palette.text.primary, 0.03),
                     ...ComponentBorderStyle,
                     borderRadius: '6px', cursor: 'pointer',
+                    position: 'relative',
+                    '& .textturn-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                    '&:hover .textturn-delete-btn': { opacity: 1 },
                 }}
                 onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}
             >
-                <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'flex-start',
-                    '& .textturn-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                    '&:hover .textturn-delete-btn': { opacity: 1 },
-                }}>
-                    <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
-                        {showPrompt && turn.prompt && (
-                            <Typography sx={{
-                                fontSize: 10.5, color: 'text.secondary', fontStyle: 'italic', mb: '1px',
-                                display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden', wordBreak: 'break-word',
-                            }}>
-                                {turn.prompt}
-                            </Typography>
-                        )}
+                <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0 }}>
+                    {showPrompt && turn.prompt && (
                         <Typography sx={{
-                            fontSize: 11, color: 'text.primary', lineHeight: 1.4, fontWeight: 500,
-                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                            fontSize: 10.5, color: 'text.secondary', fontStyle: 'italic', mb: '1px',
+                            display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
                             overflow: 'hidden', wordBreak: 'break-word',
                         }}>
-                            {preview}
+                            {turn.prompt}
                         </Typography>
-                    </Box>
-                    <Tooltip title={t('chartRec.pauseDelete')}>
-                        <IconButton className="textturn-delete-btn" size="small" color="error"
-                            sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
-                            onClick={(e) => { e.stopPropagation(); dispatch(dfActions.removeTextTurn(turn.id)); }}
-                        >
-                            <DeleteIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
+                    )}
+                    <Typography sx={{
+                        fontSize: 11,
+                        // Agent clarify/explain is conversational scaffolding: soften
+                        // to text.secondary so it recedes below the data + the user's
+                        // decisions, yet stays more legible than the disposable
+                        // thinking steps (text.disabled). A still-unanswered clarify
+                        // stays prominent (text.primary) — it's a live ask.
+                        color: (turn.textKind === 'clarify' && !turn.answered) ? 'text.primary' : 'text.secondary',
+                        lineHeight: 1.4, fontWeight: 500,
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden', wordBreak: 'break-word',
+                    }}>
+                        {preview}
+                    </Typography>
                 </Box>
+                {/* Delete floats over the top-right corner so it doesn't take
+                    horizontal space from the text; a translucent bg + blur keeps
+                    the trash icon readable over the content on hover. */}
+                <Tooltip title={t('chartRec.pauseDelete')}>
+                    <IconButton className="textturn-delete-btn" size="small" color="error"
+                        sx={{
+                            position: 'absolute', top: 2, right: 2, p: 0.25,
+                            bgcolor: alpha(theme.palette.background.paper, 0.75),
+                            backdropFilter: 'blur(2px)',
+                            '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.14), transform: 'scale(1.1)' },
+                        }}
+                        onClick={(e) => { e.stopPropagation(); dispatch(dfActions.removeTextTurn(turn.id)); }}
+                    >
+                        <DeleteIcon sx={{ fontSize: 15 }} />
+                    </IconButton>
+                </Tooltip>
             </Card>
         );
         // The follow-up reply renders as its OWN box below the card, using the
@@ -1817,34 +1851,37 @@ let SingleThreadGroupView: FC<{
         };
     };
 
+    // Render a single text turn: its triggering prompt bubble (if any) then the
+    // turn card. `keyNode` seeds prompt-entry keys.
+    const pushSingleTurn = (turn: TextTurn, keyNode: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
+        if (turn.prompt) {
+            pushInteractionEntries(
+                [{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.prompt, timestamp: turn.createdAt }],
+                keyNode, triggerType, highlighted, `textturn-prompt-${turn.id}`,
+            );
+        }
+        timelineItems.push(buildTextTurnTimelineItem(turn, highlighted, false));
+    };
+
     // Render the text-turn subtree rooted at a node (design-docs/42): the node's
-    // direct child turns in order (limited to those HOMED to this thread), each
-    // followed by its own chained follow-ups (recursion). A turn's triggering
-    // question renders as a separate prompt bubble; the follow-up answer is
-    // combined inline (`↳`) in its card. A table a turn produced is a NORMAL leaf
-    // (own column) — not rendered here.
+    // direct child turns in order, each followed by its own chained follow-ups
+    // (recursion). SKIPS lead-up turns — those produced a table and render WITH
+    // that result table (see leadUpTurnsOf / pushTableBlock), so here we render
+    // only the terminal / still-pending conversation on `nodeId`.
     const pushTextTurnSubtree = (nodeId: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
         const turns = textTurnChildrenOf.get(nodeId);
         if (!turns) return;
         for (const turn of turns) {
-            // Single home: only render turns assigned to this thread entry.
-            if (homedTurnIds && !homedTurnIds.has(turn.id)) continue;
-            if (turn.prompt) {
-                pushInteractionEntries(
-                    [{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.prompt, timestamp: turn.createdAt }],
-                    nodeId, triggerType, highlighted, `textturn-prompt-${turn.id}`,
-                );
-            }
-            timelineItems.push(buildTextTurnTimelineItem(turn, highlighted, false));
+            if (leadUpTurnIds.has(turn.id)) continue; // renders with its result table
+            pushSingleTurn(turn, nodeId, highlighted, triggerType);
             // Chained follow-ups hang off this turn.
             pushTextTurnSubtree(turn.id, highlighted, triggerType);
         }
     };
 
-    // Table-level entry point: render the turn subtree rooted at a table. Per-turn
-    // home gating inside `pushTextTurnSubtree` keeps each turn in exactly one
-    // thread, so a table shown as a used parent in several columns renders only
-    // the turns homed here (design-docs/42).
+    // Table-level entry point: render the turn subtree rooted at a table. Only
+    // ever called at the table's NON-GHOST card (design-docs/42), so a table shown
+    // as a used-parent ghost elsewhere renders no conversation there.
     const pushTableTextTurns = (tableId: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
         pushTextTurnSubtree(tableId, highlighted, triggerType);
     };
@@ -1866,6 +1903,12 @@ let SingleThreadGroupView: FC<{
         highlighted: boolean,
         keyPrefix: string,
     ) => {
+        // Lead-up conversation that PRODUCED this table (design-docs/42): the
+        // clarify/answer turns on its threadParentId chain, rendered BEFORE the
+        // trigger + card so the conversation and its result read as one thread.
+        for (const turn of leadUpTurnsOf(tableId)) {
+            pushSingleTurn(turn, tableId, highlighted, triggerType);
+        }
         let afterEntries: InteractionEntry[] = [];
         if (trigger) {
             const interaction = trigger.interaction;
@@ -1917,32 +1960,20 @@ let SingleThreadGroupView: FC<{
             });
         }
     }
-    displayedUsedTableIds.forEach((tableId, i) => {
+    displayedUsedTableIds.forEach((tableId) => {
         const isHighlighted = highlightedTableIds.includes(tableId);
-        // A used parent is the branch-point/carry-over table — it is ALWAYS shown
-        // fully somewhere else (the source catalog, or the thread that owns it as
-        // a fresh table). So here it's just a "shadow" reference for orientation:
-        // a muted ghost card (design-docs/42). This is what keeps a fork from
-        // repeating the full parent card in every column.
+        // A used parent is a pure SHADOW reference (design-docs/42): the table is
+        // shown fully — with ALL its attached content (conversation turns, live
+        // run state) — at its ONE non-ghost card (the source catalog for a source
+        // table, else the thread that owns it as a fresh table). Here we render
+        // ONLY the muted ghost card — no turns, no draft. This is what stops a
+        // fork from repeating the parent's cards / messages / state per column.
         pushTableAndChartItems(
             tableId,
             _buildTableCard(tableId, { ghost: true }),
             'table',
             isHighlighted,
         );
-
-        // Text turns homed here on a USED parent (a table the user asked about
-        // that also feeds this thread) render as its child conversation, once,
-        // right after the parent card (design-docs/42).
-        pushTableTextTurns(tableId, isHighlighted, 'trigger');
-        // A run in progress off this used parent (e.g. the user answered a
-        // clarify that lives here) shows its thinking banner WITH the
-        // conversation cards, not stranded at the thread tail. Gated to the
-        // conversation home so it renders once, in the same column as the cards;
-        // per-thread renderedDraftIds prevents a duplicate in the new/leaf loop.
-        if (homedConversationTableIds.has(tableId)) {
-            pushAgentDraftItems(tableId, 'trigger', isHighlighted);
-        }
     });
 
     // Interleave triggers and tables for the main thread body
@@ -3539,7 +3570,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         isSplitThread?: boolean;          // true → render "↑ continued from above" header + ghost parent
         hasContinuationBelow?: boolean;   // true → render "↓ continues below" footer
         usedTableIds?: string[];
-        homedTurnIds?: Set<string>;       // text-turn ids whose cards THIS entry renders (single home, design-docs/42)
         hideLabel?: boolean;
     };
     let allThreadEntries: ThreadEntry[] = [];
@@ -3663,99 +3693,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         }
     }
 
-    // Assign each clarify/explain TURN a single "home" thread entry, so it
-    // renders in exactly one place (design-docs/42). A turn that sits on a leaf
-    // table's THREAD chain (a clarify whose answer produced that leaf) homes to
-    // that leaf's fork/column; a terminal turn (produced no table) homes to the
-    // thread where its root table is the immediate used-parent/owner, else the
-    // source-tables group.
-    {
-        if (textTurnsForHome.length > 0) {
-            const turnHome = new Map<string, string>(); // turnId -> entry.key
-            const turnById = new Map(textTurnsForHome.map(tt => [tt.id, tt]));
-            // Thread parent of a node (table → threadParentId ?? data parent;
-            // turn → parentNodeId).
-            const threadParentOf = (id: string): string | undefined => {
-                const tbl = tableById.get(id);
-                if (tbl) return tbl.threadParentId ?? tbl.derive?.trigger?.tableId;
-                return turnById.get(id)?.parentNodeId;
-            };
-            // Turn ids on a leaf table's thread chain (leaf → root).
-            const chainTurnIds = (leafTableId: string): string[] => {
-                const out: string[] = [];
-                let cur: string | undefined = leafTableId;
-                const seen = new Set<string>();
-                while (cur && !seen.has(cur)) {
-                    seen.add(cur);
-                    if (turnById.has(cur)) out.push(cur);
-                    cur = threadParentOf(cur);
-                }
-                return out;
-            };
-            // Pass A: turns on a leaf's thread chain → that leaf's entry. Non-
-            // source entries first (claim order lists owners before users) so the
-            // owning fork wins.
-            for (const entry of allThreadEntries) {
-                if (entry.groupId === 'source-tables') continue;
-                for (const lt of entry.leafTables) {
-                    for (const turnId of chainTurnIds(lt.id)) {
-                        if (!turnHome.has(turnId)) turnHome.set(turnId, entry.key);
-                    }
-                }
-            }
-            // Pass B: terminal turns (produced no table ⇒ on no leaf chain).
-            // Home by the turn's root table being the immediate used-parent/owner
-            // of a thread, else the source-tables group.
-            const unhomed = textTurnsForHome.filter(tt => !turnHome.has(tt.id));
-            if (unhomed.length > 0) {
-                const tableHome = new Map<string, string>(); // rootTableId -> entry.key
-                const wanted = new Set(
-                    unhomed.map(tt => textTurnRootByTurn.get(tt.id)).filter(Boolean) as string[],
-                );
-                for (const entry of allThreadEntries) {
-                    if (entry.groupId === 'source-tables') continue;
-                    const usedSet = new Set(entry.usedTableIds || []);
-                    for (const lt of entry.leafTables) {
-                        const chain: string[] = [];
-                        for (const tp of getCachedTriggers(lt)) {
-                            if (!chain.includes(tp.tableId)) chain.push(tp.tableId);
-                            if (!chain.includes(tp.resultTableId)) chain.push(tp.resultTableId);
-                        }
-                        if (!chain.includes(lt.id)) chain.push(lt.id);
-                        let immediateParent: string | undefined;
-                        for (const id of chain) {
-                            if (usedSet.has(id)) immediateParent = id;
-                            else if (wanted.has(id) && !tableHome.has(id)) tableHome.set(id, entry.key);
-                        }
-                        if (immediateParent && wanted.has(immediateParent) && !tableHome.has(immediateParent)) {
-                            tableHome.set(immediateParent, entry.key);
-                        }
-                    }
-                }
-                for (const entry of allThreadEntries) {
-                    if (entry.groupId !== 'source-tables') continue;
-                    for (const lt of entry.leafTables) {
-                        if (wanted.has(lt.id) && !tableHome.has(lt.id)) tableHome.set(lt.id, entry.key);
-                    }
-                }
-                for (const tt of unhomed) {
-                    const root = textTurnRootByTurn.get(tt.id);
-                    const key = root ? tableHome.get(root) : undefined;
-                    if (key) turnHome.set(tt.id, key);
-                }
-            }
-            // Reverse into per-entry homed-turn sets. Always assign (even empty):
-            // an undefined set means "no gating" and would duplicate a turn homed
-            // elsewhere.
-            for (const entry of allThreadEntries) {
-                const ids = new Set<string>();
-                for (const [turnId, key] of turnHome) if (key === entry.key) ids.add(turnId);
-                entry.homedTurnIds = ids;
-            }
-        } else {
-            for (const entry of allThreadEntries) entry.homedTurnIds = new Set<string>();
-        }
-    }
+    // (design-docs/42) No per-turn home assignment anymore: a table's attached
+    // content (conversation turns + live run state) renders at its single
+    // NON-GHOST card (source catalog for a source table, else the owning thread;
+    // see pushTextTurnSubtree / the ghost used-parent loop). Threads/columns come
+    // purely from table leaves via the standard split rules.
 
     // Use the same stable viewportHeight (derived from the outer wrapper) for
     // packing as we do for split decisions — so the column count doesn't shift
@@ -3784,7 +3726,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             usedIntermediateTableIds={usedTableIds}
             globalHighlightedTableIds={globalHighlightedTableIds}
             focusedThreadLeafId={focusedThreadLeafId}
-            homedTurnIds={entry.homedTurnIds}
             sx={{
                 backgroundColor: 'white',
                 borderRadius: radius.md,
