@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Faint plot grid — a generic "chart canvas" with no data mark, so it
+       doesn't hint at any specific chart type -->
+  <line x1="52" y1="92"  x2="236" y2="92"  stroke="#dcdcdc" stroke-width="3"/>
+  <line x1="52" y1="152" x2="236" y2="152" stroke="#dcdcdc" stroke-width="3"/>
+  <line x1="114" y1="34" x2="114" y2="212" stroke="#dcdcdc" stroke-width="3"/>
+  <line x1="176" y1="34" x2="176" y2="212" stroke="#dcdcdc" stroke-width="3"/>
+  <!-- Y-axis -->
+  <line x1="52" y1="30" x2="52" y2="216" stroke="#363636" stroke-width="5" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="48" y1="212" x2="236" y2="212" stroke="#363636" stroke-width="5" stroke-linecap="round"/>
+</svg>

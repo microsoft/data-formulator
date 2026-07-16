@@ -50,6 +50,9 @@ import chartIconBump from '../assets/chart-icon-bump.svg';
 import chartIconRose from '../assets/chart-icon-rose.svg';
 import chartIconBarTable from '../assets/chart-icon-bar-table.svg';
 import chartIconKpiCard from '../assets/chart-icon-kpi-card.svg';
+// Generic fallback for chart types without a bespoke icon (matches the flat
+// line-art language of the others: dark axes + muted bars + a blue trend line).
+import chartIconPlaceholder from '../assets/chart-icon-placeholder.svg';
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
@@ -102,7 +105,7 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
 function addIcons(defs: { chart: string }[]): ChartTemplate[] {
     return defs.map(def => ({
         ...def,
-        icon: CHART_ICONS[def.chart] || <InsightsIcon />,
+        icon: CHART_ICONS[def.chart] || <ChartIcon src={chartIconPlaceholder} />,
     })) as ChartTemplate[];
 }
 
