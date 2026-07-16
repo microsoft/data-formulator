@@ -1849,6 +1849,53 @@ let SingleThreadGroupView: FC<{
         pushTextTurnSubtree(tableId, highlighted, triggerType);
     };
 
+    // Render one table's full block in the thread body: its trigger interaction
+    // (split so the run's closing summary follows the outputs), the table card +
+    // charts, reports, the after-run summary, then any new conversation and the
+    // live agent draft. Shared by the new-table and leaf-table passes — they were
+    // identical apart from the trigger source and the card/type labels. (The old
+    // `afterTableMap`/`leafAfterTableMap` Maps were set and read in the same
+    // iteration, so they collapse to a local here.)
+    const pushTableBlock = (
+        tableId: string,
+        trigger: Trigger | undefined,
+        tableCard: any,
+        triggerCardFallback: any,
+        tableType: 'table' | 'leaf-table',
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+        keyPrefix: string,
+    ) => {
+        let afterEntries: InteractionEntry[] = [];
+        if (trigger) {
+            const interaction = trigger.interaction;
+            if (interaction && interaction.length > 0) {
+                const [before, after] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(before, tableId, triggerType, highlighted, keyPrefix);
+                afterEntries = after;
+            } else if (triggerCardFallback) {
+                // No interaction log — render the trigger card directly.
+                timelineItems.push({
+                    key: triggerCardFallback?.key || `${triggerType}-${tableId}`,
+                    type: triggerType,
+                    highlighted,
+                    element: triggerCardFallback,
+                });
+            }
+        }
+        // Table card + charts, then reports (output cards, before the summary).
+        pushTableAndChartItems(tableId, tableCard, tableType, highlighted);
+        pushReportItems(tableId, highlighted, triggerType);
+        // The run's closing summary follows the LAST artifact, before any new turn.
+        if (afterEntries.length > 0) {
+            pushInteractionEntries(afterEntries, tableId, triggerType, highlighted, `${keyPrefix}-after`);
+        }
+        // A new question/explanation on the table follows the summary.
+        pushTableTextTurns(tableId, highlighted, triggerType);
+        // Running / clarifying agent state.
+        pushAgentDraftItems(tableId, triggerType, highlighted);
+    };
+
     // Add used (shared) tables at the top
     // Show the immediate parent as a full table card, with "..." for further ancestors.
     // On a continuation segment (isSplitThread), suppress the "..." — the
@@ -1899,99 +1946,34 @@ let SingleThreadGroupView: FC<{
     });
 
     // Interleave triggers and tables for the main thread body
-    const afterTableMap = new Map<string, InteractionEntry[]>();
     newTableIds.forEach((tableId, i) => {
         const triggerPair = newTriggerPairs.find(tp => tp.resultTableId === tableId);
-        const isHighlighted = highlightedTableIds.includes(tableId);
-
-        // Add trigger card (or interaction log entries) if exists
-        if (triggerPair) {
-            const interaction = triggerPair.interaction;
-            if (interaction && interaction.length > 0) {
-                const [beforeTable, afterTable] = splitAtLastInstruction(interaction);
-                pushInteractionEntries(beforeTable, tableId, 'trigger', isHighlighted, 'interaction');
-                if (afterTable.length > 0) afterTableMap.set(tableId, afterTable);
-            } else {
-                // No interaction log, use trigger card directly
-                const triggerCard = triggerCards[newTriggerPairs.indexOf(triggerPair)];
-                if (triggerCard) {
-                    timelineItems.push({
-                        key: triggerCard?.key || `woven-trigger-${tableId}`,
-                        type: 'trigger',
-                        highlighted: isHighlighted,
-                        element: triggerCard,
-                    });
-                }
-            }
-        }
-
-        // Add table card and its charts
-        pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
-
-        // Add report cards anchored to this table. Reports are output cards of
-        // the run (like charts), so they sit with the other outputs, BEFORE the
-        // run's closing summary.
-        pushReportItems(tableId, isHighlighted, 'trigger');
-
-        // After-table entries (e.g. summary). The run's closing summary is the
-        // final word of THIS run and must follow the LAST artifact (table,
-        // chart, or report), BEFORE any new turn started afterward.
-        const afterTable = afterTableMap.get(tableId);
-        if (afterTable && afterTable.length > 0) {
-            pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
-        }
-
-        // Text turns (clarify / explain) started AFTER this run — a new
-        // question/explanation on the table — so they follow the summary.
-        pushTableTextTurns(tableId, isHighlighted, 'trigger');
-
-        // Running or clarifying agent state
-        pushAgentDraftItems(tableId, 'trigger', isHighlighted);
+        pushTableBlock(
+            tableId,
+            triggerPair,
+            tableElementList[i],
+            triggerPair ? triggerCards[newTriggerPairs.indexOf(triggerPair)] : undefined,
+            'table',
+            'trigger',
+            highlightedTableIds.includes(tableId),
+            'interaction',
+        );
     });
 
     // Add leaf table components
-    const leafAfterTableMap = new Map<string, InteractionEntry[]>();
-    leafTables.forEach((lt, i) => {
-        let leafTrigger = lt.derive?.trigger;
+    leafTables.forEach((lt) => {
+        const leafTrigger = lt.derive?.trigger;
         const isHL = highlightedTableIds.includes(lt.id);
-
-        if (leafTrigger) {
-            const interaction = leafTrigger.interaction;
-            if (interaction && interaction.length > 0) {
-                const [leafBefore, leafAfter] = splitAtLastInstruction(interaction);
-                pushInteractionEntries(leafBefore, lt.id, 'leaf-trigger', isHL, 'leaf-interaction');
-                if (leafAfter.length > 0) leafAfterTableMap.set(lt.id, leafAfter);
-            } else {
-                timelineItems.push({
-                    key: `leaf-trigger-${lt.id}`,
-                    type: 'leaf-trigger',
-                    highlighted: isHL,
-                    element: _buildTriggerCard(leafTrigger, isHL),
-                });
-            }
-        }
-
-        pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
-
-        // Add report cards anchored to this leaf table. Reports are output cards
-        // of the run (like charts), so they sit with the other outputs, BEFORE
-        // the run's closing summary.
-        pushReportItems(lt.id, isHL, 'leaf-trigger');
-
-        // After-table entries (e.g. summary). The run's closing summary is the
-        // final word of THIS run and must follow the LAST artifact (table,
-        // chart, or report), BEFORE any new turn started afterward.
-        const leafAfterEntries = leafAfterTableMap.get(lt.id);
-        if (leafAfterEntries && leafAfterEntries.length > 0) {
-            pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
-        }
-
-        // Text turns (clarify / explain) started AFTER this run — a new
-        // question/explanation on the table — so they follow the summary.
-        pushTableTextTurns(lt.id, isHL, 'leaf-trigger');
-
-        // Running or clarifying agent state
-        pushAgentDraftItems(lt.id, 'leaf-trigger', isHL);
+        pushTableBlock(
+            lt.id,
+            leafTrigger,
+            _buildTableCard(lt.id),
+            leafTrigger ? _buildTriggerCard(leafTrigger, isHL) : undefined,
+            'leaf-table',
+            'leaf-trigger',
+            isHL,
+            'leaf-interaction',
+        );
     });
 
     // Timeline rendering helper
