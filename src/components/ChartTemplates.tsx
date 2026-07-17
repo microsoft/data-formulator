@@ -50,6 +50,16 @@ import chartIconBump from '../assets/chart-icon-bump.svg';
 import chartIconRose from '../assets/chart-icon-rose.svg';
 import chartIconBarTable from '../assets/chart-icon-bar-table.svg';
 import chartIconKpiCard from '../assets/chart-icon-kpi-card.svg';
+// Borrowed from the flint-chart gallery (same flat line-art design language) for
+// types that previously fell back to the generic placeholder.
+import chartIconConnectedScatter from '../assets/chart-icon-connected-scatter.svg';
+import chartIconGantt from '../assets/chart-icon-gantt.svg';
+import chartIconBullet from '../assets/chart-icon-bullet.svg';
+import chartIconEcdf from '../assets/chart-icon-ecdf.svg';
+import chartIconViolin from '../assets/chart-icon-violin.svg';
+import chartIconSlope from '../assets/chart-icon-slope.svg';
+import chartIconSparkline from '../assets/chart-icon-sparkline.svg';
+import chartIconRangeArea from '../assets/chart-icon-range-area.svg';
 // Generic fallback for chart types without a bespoke icon (matches the flat
 // line-art language of the others: dark axes + muted bars + a blue trend line).
 import chartIconPlaceholder from '../assets/chart-icon-placeholder.svg';
@@ -91,6 +101,17 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
     "Strip Plot": <ChartIcon src={chartIconStripPlot} />,
     "Radar Chart": <ChartIcon src={chartIconRadar} />,
     "KPI Card": <ChartIcon src={chartIconKpiCard} />,
+    // Borrowed from the flint-chart gallery (see imports above).
+    "Connected Scatter Plot": <ChartIcon src={chartIconConnectedScatter} />,
+    "Gantt Chart": <ChartIcon src={chartIconGantt} />,
+    "Bullet Chart": <ChartIcon src={chartIconBullet} />,
+    "ECDF Plot": <ChartIcon src={chartIconEcdf} />,
+    "Violin Plot": <ChartIcon src={chartIconViolin} />,
+    "Slope Chart": <ChartIcon src={chartIconSlope} />,
+    "Sparkline": <ChartIcon src={chartIconSparkline} />,
+    "Range Area Chart": <ChartIcon src={chartIconRangeArea} />,
+    "Map": <ChartIcon src={chartIconWorldMap} />,
+    "Choropleth": <ChartIcon src={chartIconUSMap} />,
     "Custom Point": <ChartIcon src={chartIconCustomPoint} />,
     "Custom Line": <ChartIcon src={chartIconCustomLine} />,
     "Custom Bar": <ChartIcon src={chartIconCustomBar} />,

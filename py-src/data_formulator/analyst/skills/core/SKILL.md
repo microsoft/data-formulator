@@ -206,28 +206,53 @@ The following reference material applies when you call the `visualize` tool.
 ### B. Chart Type Reference
 
 The `chart_type` value in the `visualize` action MUST be one of the names listed
-in the first column below (exact spelling, including capitalization). When a row
-lists multiple names, pick whichever fits the "when to use" hint best.
+below (exact spelling, including capitalization). When a row lists multiple
+names, pick whichever fits the "when to use" hint best.
+
+**Choosing a chart — prefer simple, escalate when it fits.** Reach for the
+**Everyday** set first: it answers most questions and is the safest, most
+legible choice. But when the data or question genuinely fits a **Specialized**
+type (a distribution's shape, a cumulative curve, a rank race, a before→after,
+a geographic pattern…), prefer it — a well-matched specialized chart is more
+insightful than forcing a generic one. Don't pick a specialized type for
+novelty; use it because its "when to use" condition is met.
+
+**Everyday — reach for these first**
 
 | chart_type | encodings | config | when to use |
 |---|---|---|---|
 | Scatter Plot | x, y, color, size, facet | opacity (0.1–1.0) | Relationships between two quantitative fields |
 | Regression | x, y, color, size, facet | regressionMethod ("linear","log","exp","pow","quad","poly"), polyOrder (2–10) | Trend line over scatter; one line per color group |
-| Bar Chart / Lollipop Chart / Waterfall Chart | x, y, color, facet | — | Bar: default categorical comparison. Lollipop: cleaner for ranked lists / sparse categories. Waterfall: cumulative gain/loss, each bar starts where the previous ended |
+| Bar Chart / Stacked Bar Chart / Lollipop Chart / Waterfall Chart | x, y, color, facet | — | Bar: categorical comparison (auto-stacks when color is set). Stacked Bar: explicit stacked totals, color = the stack. Lollipop: cleaner for ranked lists / sparse categories. Waterfall: cumulative gain/loss, each bar starts where the previous ended |
 | Grouped Bar Chart | x, y, group, facet | — | Side-by-side bars across a second categorical dimension |
-| Histogram / Density Plot | x, color, facet | — | Distribution of one quantitative field. Histogram: discrete bins, auto-binned. Density Plot: smooth KDE curve |
-| Boxplot | x, y, color, facet | — | Distribution summary (median/quartiles/outliers) by category |
-| Ranged Dot Plot | x, y, color, facet | — | Min–max range or two-point comparison per category |
 | Line Chart | x, y, color, strokeDash, facet | interpolate ("linear","monotone","step") | Trends over an ordered (usually temporal) x-axis |
 | Area Chart | x, y, color, facet | — | Magnitude over ordered x; auto-stacks when color is set |
+| Histogram / Density Plot | x, color, facet | — | Distribution of one quantitative field. Histogram: discrete bins, auto-binned. Density Plot: smooth KDE curve |
+| Boxplot | x, y, color, facet | — | Distribution summary (median/quartiles/outliers) by category |
 | Pie Chart | size, color, facet | innerRadius (0–100; 0=pie, >0=donut) | Part-of-whole with ≤7 categories. Wedge value goes on **size**, not **theta** |
-| Radar Chart | x, y, color, facet | — | Multi-metric profile/comparison; x = metric name, y = value, color = entity (long-form data) |
 | Heatmap | x, y, color, facet | colorScheme — sequential ("viridis","blues","reds","oranges","greens") or diverging ("blueorange","redblue") | Matrix / 2D density; color encodes the quantitative cell value |
+
+**Specialized — use when the data/question fits the "when to use"**
+
+| chart_type | encodings | config | when to use |
+|---|---|---|---|
+| Connected Scatter Plot | x, y, order, color, facet | — | Two quantitative fields traced in sequence — needs an `order` field (e.g. time) so points are joined in order, not by x |
+| Ranged Dot Plot | x, y, color, facet | — | Min–max range or two-point comparison per category |
+| Violin Plot | x, y, color, facet | — | Distribution SHAPE (KDE silhouette) by category; better than a boxplot when data is multimodal. x = category, y = value |
+| Strip Plot | x, y, color, size, facet | — | Every individual point by category (jittered); good for small/medium n where raw values matter, not just a summary |
+| ECDF Plot | x, color, facet | — | Cumulative distribution of one quantitative field. Pass the RAW field on x (do NOT pre-compute the CDF); color for per-group curves |
+| Bump Chart | x, y, color, facet | — | How RANKINGS change over ordered x; y = rank, color = entity (long-form: one row per entity × x) |
+| Slope Chart | x, y, color, facet | — | Change between exactly TWO points (before → after) per entity; x = the two labels, y = value, color = entity |
+| Streamgraph | x, y, color, facet | — | Several series' magnitude over ordered x, stacked around a center baseline (color = series) — theme/volume shifts over time |
+| Range Area Chart | x, y, y2, color, facet | — | A shaded band between a lower (y) and upper (y2) bound over ordered x — e.g. min–max or a confidence interval |
+| Rose Chart | x, y, color, facet | — | Cyclical/categorical magnitude as angular wedges (polar bars); x = category/angle, y = value |
+| Pyramid Chart | x, y, color, facet | — | Back-to-back bars split by a binary group (e.g. population by age × sex); y = category, x = value, color = the two-sided group |
+| Radar Chart | x, y, color, facet | — | Multi-metric profile/comparison; x = metric name, y = value, color = entity (long-form data) |
 | Bar Table | x, y, color, facet | — | Ranked horizontal table with inline bars; one row per category. y = category, x = value |
 | KPI Card | metric, value, goal | — | "Big number" dashboard tile(s); one row per tile. `value` must be pre-aggregated; `goal` is optional |
 | Candlestick Chart | x, open, high, low, close, facet | — | OHLC financial data |
-| World Map | longitude, latitude, color, size | projection ("mercator","equalEarth","naturalEarth1","orthographic"), projectionCenter ([lon,lat]) | Geographic points/regions on a world projection |
-| US Map | longitude, latitude, color, size | — (fixed albersUsa) | US-only points/regions (albersUsa projection) |
+| Map | longitude, latitude, color, size | projection ("mercator","equalEarth","naturalEarth1","orthographic","albersUsa"), projectionCenter ([lon,lat]) | Geographic POINTS/bubbles by lon/lat (use projection "albersUsa" for a US-only map) |
+| Choropleth | id, color, facet | region ("world","usa",…) | Filled REGIONS shaded by value; `id` = the region key (country/state name or code), color = the quantitative value |
 
 **Critical chart rules:**
 - **Scatter Plot**: use config opacity (0.1–1.0) for dense data instead of encoding opacity.
@@ -242,7 +267,12 @@ lists multiple names, pick whichever fits the "when to use" hint best.
 - **Bar Table**: y is the category column to rank; x is the quantitative value driving bar length. Don't sort in Python — the template sorts.
 - **KPI Card**: channels are `metric`, `value`, `goal` (not x/y). One DataFrame row = one tile. The `value` column must already contain the final number to display (aggregate upstream in the Python step).
 - **Candlestick Chart**: requires `open`, `high`, `low`, `close` columns.
-- **World Map / US Map**: channel names are `longitude` / `latitude`, not `x` / `y`.
+- **Connected Scatter Plot**: provide an `order` field (usually time) so points are joined in sequence, not by x-order.
+- **ECDF Plot**: pass the RAW quantitative field on `x` — the chart computes the cumulative curve; do NOT pre-compute it in Python.
+- **Range Area Chart**: `y` is the lower bound and `y2` the upper bound of the band.
+- **Bump / Slope Chart**: long-form data — one row per (entity, x); `color` is the entity. Slope's `x` has exactly two categories (before/after).
+- **Violin Plot**: like Boxplot but shows the full distribution shape; x = category, y = value.
+- **Map / Choropleth**: `Map` plots points via `longitude` / `latitude` (set projection `"albersUsa"` for the US); `Choropleth` fills regions — put the region key on `id` and the value on `color`, not `x` / `y`.
 - **facet**: available for nearly all chart types; use a low-cardinality categorical field.
 - All fields in `encodings` must also appear in `output_fields`. Typically use 2–3 channels (x, y, color/size).
 

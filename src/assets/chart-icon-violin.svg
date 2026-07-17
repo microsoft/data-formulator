@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Violin 1 — single-bulge symmetric KDE silhouette -->
+  <path d="M98,52 Q80,68 76,98 Q74,128 82,160 Q88,186 98,200
+           Q108,186 114,160 Q122,128 120,98 Q116,68 98,52 Z"
+        fill="#76c6ff" stroke="#363636" stroke-width="3" stroke-linejoin="round"/>
+  <line x1="98" y1="56" x2="98" y2="196" stroke="#363636" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
+  <!-- Violin 2 — bimodal (two-hump) symmetric KDE silhouette -->
+  <path d="M180,66 Q164,76 162,102 Q160,122 174,138 Q160,156 160,172 Q160,194 180,206
+           Q200,194 200,172 Q200,156 186,138 Q200,122 198,102 Q196,76 180,66 Z"
+        fill="#76c6ff" stroke="#363636" stroke-width="3" stroke-linejoin="round"/>
+  <line x1="180" y1="70" x2="180" y2="202" stroke="#363636" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

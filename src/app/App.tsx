@@ -107,7 +107,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
 import { useTranslation } from 'react-i18next';
-import { syncVegaLocale } from '../lib/vega-locale';
+import { syncVegaLocale } from '../i18n/vega-locale';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
