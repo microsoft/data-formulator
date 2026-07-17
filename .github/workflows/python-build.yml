@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Set Node.js 20
       uses: actions/setup-node@v4
       with:
