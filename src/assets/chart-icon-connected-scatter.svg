@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Connected Scatter Plot icon: scattered dots joined by a winding,
+       self-crossing straight-segment path (the ordered trajectory) -->
+
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Connecting path: straight segments that wind back and forth and cross -->
+  <polyline points="78,170 150,80 100,140 200,110 130,55 210,180"
+            fill="none" stroke="#76c6ff" stroke-width="4"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Scatter points at every vertex -->
+  <circle cx="78"  cy="170" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="150" cy="80"  r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="100" cy="140" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="200" cy="110" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="130" cy="55"  r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="210" cy="180" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+</svg>

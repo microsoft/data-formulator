@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Bullet chart icon: value bars with target ticks over context bands -->
+  <!-- Y-axis -->
+  <line x1="60" y1="36" x2="60" y2="212" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="56" y1="208" x2="234" y2="208" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Row 1 -->
+  <rect x="62" y="58"  width="150" height="30" fill="#E6E6E6"/>
+  <rect x="62" y="66"  width="92"  height="14" fill="#3a6ea5"/>
+  <rect x="178" y="54" width="5"   height="38" fill="#1a1a1a"/>
+  <!-- Row 2 -->
+  <rect x="62" y="106" width="150" height="30" fill="#E6E6E6"/>
+  <rect x="62" y="114" width="120" height="14" fill="#3a6ea5"/>
+  <rect x="150" y="102" width="5"  height="38" fill="#1a1a1a"/>
+  <!-- Row 3 -->
+  <rect x="62" y="154" width="150" height="30" fill="#E6E6E6"/>
+  <rect x="62" y="162" width="68"  height="14" fill="#3a6ea5"/>
+  <rect x="162" y="150" width="5"  height="38" fill="#1a1a1a"/>
+</svg>

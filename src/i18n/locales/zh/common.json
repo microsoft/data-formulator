@@ -47,6 +47,13 @@
     "data": "数据",
     "microsoftResearch": "微软研究院"
   },
+  "logs": {
+    "title": "服务器日志",
+    "viewLogs": "查看服务器日志",
+    "refresh": "刷新",
+    "download": "下载完整日志",
+    "empty": "日志文件为空。"
+  },
   "session": {
     "exportSession": "导出会话",
     "importSession": "导入会话",
@@ -423,6 +430,9 @@
     "threadIndex": "线程 - {{index}}",
     "continuedFromAbove": "续上",
     "continuesBelow": "续下",
+    "textTurnEarlier": "之前的 {{count}} 条回复",
+    "textTurnEarlier_other": "之前的 {{count}} 条回复",
+    "textTurnCollapse": "收起",
     "usingSources": "使用",
     "hmm": "嗯...",
     "oops": "出错了...",
@@ -578,6 +588,7 @@
     "placeholderFormulateEmphasis": "✏️ 整理数据",
     "formulateAndOverride": "整理并覆盖",
     "agentWorking": "Agent 努力工作中...",
+    "attachUploadFailed": "附加 {{name}} 失败",
     "replyPlaceholder": "回复 Agent 的问题...",
     "explorePlaceholder": "有什么问题，有什么想要探索的？（用 @ 添加上下文）",
     "explorePlaceholderSingleTable": "有什么问题，有什么想要探索的？",
@@ -611,6 +622,8 @@
     "clarificationTitle": "有问题",
     "minimizeClarification": "收起",
     "expandClarification": "展开",
+    "pauseClose": "关闭（切换焦点）",
+    "pauseDelete": "删除",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "（可选）",
     "freeTextClarificationPlaceholder": "输入你的回答...",

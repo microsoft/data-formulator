@@ -11,8 +11,8 @@
  * Call {@link syncVegaLocale} once at startup and on every language change.
  */
 
-import { defaultLocale } from 'vega';
-import i18n from '../i18n';
+import { formatLocale, timeFormatLocale } from 'vega';
+import i18n from './index';
 
 const D3_DEFAULT_NUMBER = {
     decimal: '.',
@@ -42,5 +42,9 @@ function readTimeLocale(): Record<string, unknown> | null {
 
 export function syncVegaLocale(): void {
     const timeLocale = readTimeLocale();
-    defaultLocale(D3_DEFAULT_NUMBER as any, (timeLocale ?? D3_DEFAULT_TIME) as any);
+    // `vega` re-exports numberFormatDefaultLocale as formatLocale and
+    // timeFormatDefaultLocale as timeFormatLocale; both set the process-wide
+    // default locale (equivalent to the old combined `defaultLocale`).
+    formatLocale(D3_DEFAULT_NUMBER);
+    timeFormatLocale(timeLocale ?? D3_DEFAULT_TIME);
 }

@@ -19,16 +19,17 @@ import {
     Paper,
     MenuList,
     MenuItem,
+    ClickAwayListener,
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
-import { streamRequest } from '../app/apiClient';
+import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
 import { persistEphemeralDerivedTable } from '../app/tableThunks';
-import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey } from "../components/ComponentType";
+import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 
 import { alpha } from '@mui/material/styles';
@@ -127,11 +128,13 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
                         sx={{
                             position: 'absolute', bottom: 8, right: 8,
                             width: 24, height: 24, p: 0,
-                            bgcolor: 'transparent',
+                            bgcolor: alpha(theme.palette.error.main, 0.08),
                             color: 'error.main',
+                            border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
                             '&:hover': {
-                                bgcolor: alpha(theme.palette.error.main, 0.08),
+                                bgcolor: alpha(theme.palette.error.main, 0.16),
                                 color: 'error.dark',
+                                borderColor: alpha(theme.palette.error.main, 0.35),
                             },
                         }}
                     >
@@ -161,6 +164,30 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
     );
 };
 
+/**
+ * Resolve a thread node id (a table id, or a text-turn id) to the TABLE it sits
+ * under, by walking `parentNodeId` up the chain (design-docs/42). Used to seed a
+ * run's draft (which is table-keyed) and to highlight a focused turn's table.
+ */
+const resolveNodeTable = (
+    nodeId: string | null | undefined,
+    textTurns: TextTurn[],
+    tables: DictTable[],
+): string | undefined => {
+    if (!nodeId) return undefined;
+    if (tables.some(t => t.id === nodeId)) return nodeId;
+    let cur = textTurns.find(tt => tt.id === nodeId);
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        const p = cur.parentNodeId;
+        if (!p) return undefined;
+        if (tables.some(t => t.id === p)) return p;
+        cur = textTurns.find(tt => tt.id === p);
+    }
+    return undefined;
+};
+
 export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ onInputFocus }) {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -173,6 +200,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const workspaceBackend = useSelector((state: DataFormulatorState) => state.serverConfig.WORKSPACE_BACKEND);
     const activeWorkspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+    // Text turns (clarify / explain / delegate) — design-docs/41. The focused
+    // one (if any) drives the overlay panel above the chat.
+    const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -199,11 +229,43 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
     const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
     const [attachedImages, setAttachedImages] = useState<string[]>([]);
-    const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
+    // Non-image attachments are uploaded to the workspace scratch/ folder (raw
+    // bytes preserved) so the agent can read them with execute_python_script
+    // (pandas) or hand off to data loading — instead of inlining text (which
+    // breaks on binary/Excel and large files). `scratchPath` is the returned
+    // `scratch/<name>_<hash>.<ext>`.
+    const [attachedFiles, setAttachedFiles] = useState<{ name: string; scratchPath: string }[]>([]);
+    // Markdown of an explanation the user clicked in the data thread to re-open
+    // in the read-only ExplanationPanel popup. Set via the `df-view-explanation`
+    // window event (see below); kept local to avoid growing the redux slice.
+    const [viewingExplanation, setViewingExplanation] = useState<{ content: string; sourceTableId?: string; timestamps?: number[] } | null>(null);
+    // When the user clicks "Close" on a live pause we KEEP the pending block in
+    // the thread but hide its panel (and switch focus to the previous chart).
+    // Keyed by the pause draft id so a brand-new pause still surfaces.
+    const [dismissedPauseDraftId, setDismissedPauseDraftId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
+    // The chart the user was on when the current run started — provenance for a
+    // clarify/explain TextTurn emitted mid/end of the run (design-docs/41).
+    const runSourceChartIdRef = useRef<string | null>(null);
+    // Authored thread edge, chained (design-docs/42): the LAST thread node this
+    // run created — starts as the node the user asked from (a table, or the turn
+    // being answered), then advances to each turn/table as it's emitted. Every
+    // new node's parentNodeId/threadParentId = this ref, so one run reads as a
+    // linear chain (table → clarify → table → explain). Set once at run start,
+    // advanced at each emit — never re-derived at render.
+    const runLastNodeRef = useRef<string | null>(null);
+    // True when this run CONTINUES a conversation (the user answered a focused
+    // turn): its leading prompt is already shown as that turn's reply, so it
+    // isn't re-rendered as a fresh prompt bubble.
+    const runIsContinuationRef = useRef<boolean>(false);
+    // Guards a focused clarify turn from double-submitting once auto-answered.
+    const textTurnSubmittedRef = useRef<string | null>(null);
     const userChartFocusLockedRef = useRef(false);
     const lastAutoFocusedChartIdRef = useRef<string | null>(null);
+    // Most recently focused CHART, so a pause's "Close (switch focus)" can hand
+    // focus back to whatever chart the user was last looking at.
+    const lastChartFocusRef = useRef<string | null>(null);
     // Whether we've already auto-focused an artifact during the current
     // agent run. We only jump focus once per run (to the FIRST generated
     // chart), so the user isn't yanked around as further charts stream in.
@@ -255,8 +317,25 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             const report = generatedReports.find(r => r.id === focusedId.reportId);
             return report?.triggerTableId;
         }
+        // A focused text turn is non-canvas-owning (design-docs/41): resolve to
+        // its source chart's table, else its thread-parent table — so the input
+        // box, send, and exploreFromChat all work while it's focused.
+        if (focusedId.type === 'text') {
+            const turn = textTurns.find(tt => tt.id === focusedId.textId);
+            if (!turn) return undefined;
+            if (turn.sourceChartId) {
+                const c = charts.find(ch => ch.id === turn.sourceChartId);
+                if (c) return c.tableRef;
+            }
+            return resolveNodeTable(turn.id, textTurns, tables);
+        }
         return undefined;
-    }, [focusedId, charts, generatedReports])();
+    }, [focusedId, charts, generatedReports, textTurns, tables])();
+
+    // Remember the last chart the user focused so a pause "Close" can restore it.
+    useEffect(() => {
+        if (focusedId?.type === 'chart') lastChartFocusRef.current = focusedId.chartId;
+    }, [focusedId]);
 
     // Root tables and priority ordering for API calls
     const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -364,48 +443,57 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [focusedTableId]);
 
     // Handle paste events to capture images
-    const handlePaste = React.useCallback((e: React.ClipboardEvent) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.startsWith('image/')) {
-                e.preventDefault();
-                const file = items[i].getAsFile();
-                if (!file) continue;
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const dataUrl = reader.result as string;
-                    setAttachedImages(prev => [...prev, dataUrl]);
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-    }, []);
-
     // Attach files as conversation context. Images become reference images
-    // (sent to the model as attachments); text-like files are read as text
-    // and folded into the agent prompt as context.
-    const handleAttachFiles = React.useCallback((fileList: FileList | null) => {
+    // (sent to the model as attachments); every other file is uploaded to the
+    // workspace scratch/ folder (raw bytes) and referenced by path, so the
+    // agent reads it via execute_python_script / delegate rather than getting
+    // its bytes inlined into the prompt. Accepts a FileList (from the "+"
+    // input) or a File[] (from a paste).
+    const handleAttachFiles = React.useCallback((fileList: FileList | File[] | null) => {
         if (!fileList) return;
-        const MAX_TEXT_CHARS = 50000;
         Array.from(fileList).forEach(file => {
             if (file.type.startsWith('image/')) {
                 const reader = new FileReader();
                 reader.onload = () => setAttachedImages(prev => [...prev, reader.result as string]);
                 reader.readAsDataURL(file);
             } else {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    let content = (reader.result as string) || '';
-                    if (content.length > MAX_TEXT_CHARS) {
-                        content = content.slice(0, MAX_TEXT_CHARS) + '\n…[truncated]';
-                    }
-                    setAttachedFiles(prev => [...prev, { name: file.name, content }]);
-                };
-                reader.readAsText(file);
+                const formData = new FormData();
+                formData.append('file', file);
+                apiRequest(getUrls().SCRATCH_UPLOAD_URL, { method: 'POST', body: formData })
+                    .then(({ data }) => {
+                        const scratchPath = (data as any)?.path || `scratch/${file.name}`;
+                        setAttachedFiles(prev => [...prev, { name: file.name, scratchPath }]);
+                    })
+                    .catch(err => {
+                        console.error('Scratch upload failed:', err);
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(), type: 'error',
+                            component: 'data-agent',
+                            value: t('chartRec.attachUploadFailed', { name: file.name, defaultValue: `Failed to attach ${file.name}` }),
+                        }));
+                    });
             }
         });
-    }, []);
+    }, [dispatch, t]);
+
+    // Paste handler: capture pasted files — images AND other files (CSV, Excel,
+    // etc.) — so the chat box accepts the same attachments as the "+" button,
+    // not just images. When the clipboard holds no files (plain text), we let
+    // the paste fall through to the textarea as normal.
+    const handlePaste = React.useCallback((e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        const files: File[] = [];
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].kind === 'file') {
+                const f = items[i].getAsFile();
+                if (f) files.push(f);
+            }
+        }
+        if (files.length === 0) return;
+        e.preventDefault();
+        handleAttachFiles(files);
+    }, [handleAttachFiles]);
 
     // Collect table IDs from root up to (and including) the focused table for agent action matching
     const threadTableIds = React.useMemo(() => {
@@ -437,13 +525,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const pendingClarification = React.useMemo(() => {
         const clarifyingDraft = draftNodes.find(d =>
             d.derive?.status === 'clarifying' && d.derive?.pendingClarification &&
+            // A pause the user "closed" is kept in the thread but no longer
+            // treated as pending — so its panel hides, it can't mask a newer
+            // pause, and it doesn't block re-opening explanations.
+            d.id !== dismissedPauseDraftId &&
             threadTableIds.has(d.derive.trigger.tableId)
         );
         if (clarifyingDraft?.derive?.pendingClarification) {
             return { ...clarifyingDraft.derive.pendingClarification, actionId: clarifyingDraft.actionId || '', draftId: clarifyingDraft.id };
         }
         return null;
-    }, [draftNodes, threadTableIds]);
+    }, [draftNodes, threadTableIds, dismissedPauseDraftId]);
 
     // Extract the active structured clarification (or explanation) from
     // DraftNode interaction log. Both are stored as ClarificationQuestion[]
@@ -599,20 +691,25 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [tables, charts, conceptShelfItems]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
-        trajectory: any[];
-        completedStepCount: number;
-        actionId: string;
-        lastCreatedTableId: string | null;
+        trajectory?: any[];
+        completedStepCount?: number;
+        actionId?: string;
+        lastCreatedTableId?: string | null;
+        parentNodeId?: string;
     }, displayPrompt?: string) => {
         if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
-        // Fold attached reference files into the prompt the agent sees, while
-        // keeping the timeline bubble (displayContent) clean for the user.
-        const fileContext = attachedFiles.length > 0
-            ? '\n\n' + attachedFiles.map(f => `[Attached file: ${f.name}]\n${f.content}`).join('\n\n')
-            : '';
-        const agentPrompt = prompt + fileContext;
-        const cleanDisplay = displayPrompt ?? (fileContext ? prompt : undefined);
+        // Non-image attachments live in the workspace scratch/ folder; we pass
+        // their paths to the agent (see requestBody.scratch_files) rather than
+        // inlining their bytes. The prompt/bubble stay clean.
+        const agentPrompt = prompt;
+        const cleanDisplay = displayPrompt;
+        // Names shown as chips on the user's message bubble so the sent message
+        // reflects what was attached (files live in scratch/, images inline).
+        const attachmentNames = [
+            ...attachedFiles.map(f => f.name),
+            ...attachedImages.map((_, i) => attachedImages.length > 1 ? `image ${i + 1}` : 'image'),
+        ];
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
         const currentTable = tables.find(t => t.id === focusedTableId);
@@ -625,8 +722,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         ];
         if (selectedTableIds.length === 0) return;
 
-        const isResume = !!clarificationContext;
-        const actionId = isResume ? clarificationContext!.actionId : `exploreDataFromNL_${String(Date.now())}`;
+        // A real resume replays a trajectory; answering a clarify WITHOUT a
+        // trajectory token is a fresh turn that still threads the conversation.
+        const isResume = !!(clarificationContext?.trajectory && clarificationContext.trajectory.length > 0);
+        const actionId = clarificationContext?.actionId || `exploreDataFromNL_${String(Date.now())}`;
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
         // Seed the auto-focus baseline with whatever chart the user is
@@ -636,6 +735,35 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
         firstFocusedThisRunRef.current = false;
         userChartFocusLockedRef.current = false;
+        // Capture the source chart for any TextTurn this run emits — its CANVAS
+        // anchor (focusing the turn keeps this chart on the canvas, design-docs/41).
+        // Fall back to the last-focused chart ONLY when it belongs to the asked-
+        // from table; otherwise an unrelated chart from a prior run would hijack
+        // the turn's canvas anchor and yank focus onto that chart's (result)
+        // table instead of leaving the user on the table they asked from.
+        runSourceChartIdRef.current = (() => {
+            if (focusedId?.type === 'chart') return focusedId.chartId;
+            const lc = lastChartFocusRef.current;
+            if (lc) {
+                const lastChart = charts.find(c => c.id === lc);
+                if (lastChart && lastChart.tableRef === focusedTableId) return lc;
+            }
+            return null;
+        })();
+        // ── The ONE capture (design-docs/42) ──────────────────────────────
+        // The node the user is asking from: the turn being answered on a
+        // continuation, else the focused turn, else the focused table. Every
+        // node this run creates chains off it (runLastNodeRef advances).
+        const askedFromNode = clarificationContext?.parentNodeId
+            ?? (focusedId?.type === 'text' ? focusedId.textId : (focusedTableId ?? null));
+        runLastNodeRef.current = askedFromNode;
+        // A continuation (answering a turn) — its leading prompt is already the
+        // prior turn's reply, so don't re-render it as a fresh prompt bubble.
+        runIsContinuationRef.current = !!(askedFromNode && askedFromNode.startsWith('textTurn'));
+        // The TABLE the pending draft anchors to (drafts are table-keyed): the
+        // asked-from node resolved to its thread table, so the "working…" banner
+        // shows where the finalized turn/table will land.
+        const askedFromTable = resolveNodeTable(askedFromNode, textTurns, tables) ?? focusedTableId ?? null;
 
         setIsChatFormulating(true);
 
@@ -647,6 +775,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
                 from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
                 ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
+                ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                 timestamp: Date.now()
             }}));
             dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
@@ -670,6 +799,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             })),
             primary_tables: primaryTableNames,
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
+            ...(attachedFiles.length > 0 ? { scratch_files: attachedFiles.map(f => f.scratchPath) } : {}),
             model: activeModel,
             max_iterations: 10,
             agent_mode: config.miniMode ? 'mini' : 'standard',
@@ -711,7 +841,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // No special clarification payload needed.
             requestBody.trajectory = clarificationContext!.trajectory;
             requestBody.user_question = agentPrompt;
-            requestBody.completed_step_count = clarificationContext!.completedStepCount;
+            requestBody.completed_step_count = clarificationContext!.completedStepCount || 0;
         } else {
             requestBody.user_question = agentPrompt;
             if (focusedThread) requestBody.focused_thread = focusedThread;
@@ -730,7 +860,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let createdCharts: Chart[] = [];
         let allNewConcepts: FieldItem[] = [];
         let isCompleted = false;
-        let lastCreatedTableId: string | null = isResume ? clarificationContext!.lastCreatedTableId : null;
+        let lastCreatedTableId: string | null = clarificationContext?.lastCreatedTableId ?? null;
 
         // ── DraftNode tracking ──
         // Local accumulator mirrors the DraftNode's interaction (avoids stale closure reads)
@@ -763,14 +893,20 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // The user reply was already appended above, add to local accumulator too
             currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
                 ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
+                ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                 timestamp: Date.now() });
         } else {
-            const initialEntries: InteractionEntry[] = [
+            // On a CONTINUATION run (answering a focused turn) the leading
+            // prompt is already shown as that turn's answer box — so DON'T seed
+            // it into the draft/table trigger at all (no add → no need to strip
+            // later). Fresh runs keep the prompt as the thread anchor.
+            const initialEntries: InteractionEntry[] = runIsContinuationRef.current ? [] : [
                 { from: 'user', to: 'data-agent', role: 'prompt', content: agentPrompt,
                     ...(cleanDisplay ? { displayContent: cleanDisplay } : {}),
+                    ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                     timestamp: Date.now() }
             ];
-            createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
+            createNextDraft(askedFromTable || focusedTableId!, initialEntries);
         }
 
         // Track the last agent display_instruction (from "action" events)
@@ -1079,6 +1215,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 createdTables.push(candidateTable);
                 lastCreatedTableId = candidateTableId;
 
+                // design-docs/42 chain: this table FOLLOWS the run's last node.
+                // If that was a clarify turn, author the thread edge back to it
+                // (so `table → clarifyTurn → askedFromTable` reads as one branch);
+                // if it was a table, the data edge (derive.trigger) already places
+                // it, so leave threadParentId unset. Then advance the chain so a
+                // later turn/table in this run follows THIS table.
+                if (runLastNodeRef.current && runLastNodeRef.current.startsWith('textTurn')) {
+                    candidateTable.threadParentId = runLastNodeRef.current;
+                }
+                runLastNodeRef.current = candidateTableId;
+
                 // Ephemeral mode: persist full rows to IndexedDB (keeps only a
                 // sample + virtual marker in Redux). Other backends store on the server.
                 if (workspaceBackend === 'ephemeral' && activeWorkspaceId) {
@@ -1177,32 +1324,40 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     return;
                 }
                 if (currentDraftId) {
-                    // Snapshot thinking steps into the pause entry so they render
-                    // inline (as 二级) between the user prompt and the pause.
-                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
                     thinkingSteps = [];
                     pendingThought = '';
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
 
-                    const pauseEntry: InteractionEntry = {
-                        from: 'data-agent', to: 'user',
-                        role: isExplainEvent ? 'explain' : 'clarify',
-                        plan: priorSteps || result.thought || undefined,
-                        content: normalizedClarification.summary,
-                        clarificationQuestions: normalizedClarification.questions,
-                        timestamp: Date.now(),
-                    };
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
-                    currentDraftInteraction.push(pauseEntry);
-                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
-                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
-                        trajectory: result.trajectory || [],
-                        completedStepCount: result.completed_step_count || 0,
-                        lastCreatedTableId,
-                    }}));
-                    // Don't change the user's focus — they may have been looking
-                    // at a chart and the clarify/explain pause shouldn't yank
-                    // their attention back to the parent table.
+                    // The turn's output is a TextTurn (design-docs/41), not a
+                    // clarifying draft. Create it, focus it (its overlay shows
+                    // above the chat), and drop the running draft.
+                    const turnId = `textTurn_${actionId}_${String(Date.now())}`;
+                    // design-docs/42: the turn FOLLOWS the run's last node
+                    // (the asked-from table, or the previous node in the run).
+                    const parentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId;
+                    if (parentNodeId) {
+                        dispatch(dfActions.addTextTurn({
+                            kind: 'text',
+                            id: turnId,
+                            displayId: turnId,
+                            textKind: isExplainEvent ? 'explain' : 'clarify',
+                            content: normalizedClarification.summary,
+                            ...(!runIsContinuationRef.current && currentDraftInteraction[0]?.role === 'prompt' ? { prompt: currentDraftInteraction[0].displayContent || currentDraftInteraction[0].content } : {}),
+                            ...(isExplainEvent ? {} : { options: normalizedClarification.questions }),
+                            parentNodeId,
+                            ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
+                            actionId,
+                            // Resume token (§12): present iff the backend stamped a
+                            // trajectory on the event (clarify/interact does today).
+                            ...(result.trajectory ? { resume: { trajectory: result.trajectory, completedStepCount: result.completed_step_count || 0 } } : {}),
+                            createdAt: Date.now(),
+                        }));
+                        // Advance the chain: a later node in this run follows this turn.
+                        runLastNodeRef.current = turnId;
+                        dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
+                    }
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                    currentDraftId = null;
                 }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
@@ -1306,30 +1461,37 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 } else if (!reportId && summary && currentDraftId) {
                     // Pure Q&A run — the agent committed no action and answered in
                     // plain text (e.g. the user just asked a question). There's no
-                    // table to anchor to. Treat the closing answer as an `explain`
-                    // pause: the draft enters the pause phase with the answer text,
-                    // so it surfaces in the explanation panel above the chat box
-                    // and the user can reply to continue the conversation (resume).
-                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    // table to anchor to. The closing answer becomes an `explain`
+                    // TextTurn (design-docs/41): a focusable/deletable thread node
+                    // whose overlay shows above the chat. Completion carries no
+                    // trajectory, so no resume token ⇒ a followup is a fresh turn.
                     thinkingSteps = [];
                     pendingThought = '';
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
 
-                    const pauseEntry: InteractionEntry = {
-                        from: 'data-agent', to: 'user', role: 'explain',
-                        plan: priorSteps || result.content?.thought || undefined,
-                        content: summary,
-                        timestamp: Date.now(),
-                    };
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
-                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
-                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
-                        trajectory: result.trajectory || result.content?.trajectory || [],
-                        completedStepCount: result.completed_step_count || result.content?.completed_step_count || 0,
-                        lastCreatedTableId,
-                    }}));
-                    // Keep the node; clear the handle so handleCompletion's draft
-                    // cleanup doesn't remove the pause we just persisted.
+                    const turnId = `textTurn_${actionId}_${String(Date.now())}`;
+                    // design-docs/42: this closing explanation FOLLOWS the run's
+                    // last node (the produced table, or the asked-from node).
+                    const parentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId;
+                    const resumeTraj = result.trajectory || result.content?.trajectory;
+                    if (parentNodeId) {
+                        dispatch(dfActions.addTextTurn({
+                            kind: 'text',
+                            id: turnId,
+                            displayId: turnId,
+                            textKind: 'explain',
+                            content: summary,
+                            ...(!runIsContinuationRef.current && currentDraftInteraction[0]?.role === 'prompt' ? { prompt: currentDraftInteraction[0].displayContent || currentDraftInteraction[0].content } : {}),
+                            parentNodeId,
+                            ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
+                            actionId,
+                            ...(resumeTraj ? { resume: { trajectory: resumeTraj, completedStepCount: result.completed_step_count || result.content?.completed_step_count || 0 } } : {}),
+                            createdAt: Date.now(),
+                        }));
+                        runLastNodeRef.current = turnId;
+                        dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
+                    }
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
                     currentDraftId = null;
                 }
             }
@@ -1494,8 +1656,23 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             exploreFromChat(displayPrompt, clarificationCtx);
             return;
         }
+        // Follow-up typed in the main input while a text turn (clarify OR
+        // explain) is focused: treat the prompt as that turn's reply so it
+        // renders once (as the turn's answer) and threads into the same
+        // conversation — instead of duplicating (answer box AND a fresh prompt
+        // bubble) and starting an unrelated run (design-docs/41). Only for an
+        // unanswered turn; an answered one is locked, so a further prompt is a
+        // fresh turn.
+        const focusedTurn = focusedId?.type === 'text'
+            ? textTurns.find(tt => tt.id === focusedId.textId && !tt.answered)
+            : undefined;
+        if (focusedTurn) {
+            dispatch(dfActions.updateTextTurn({ id: focusedTurn.id, answered: true, answer: prompt }));
+            exploreFromChat(prompt, { parentNodeId: focusedTurn.id }, displayPrompt);
+            return;
+        }
         exploreFromChat(prompt, undefined, displayPrompt);
-    }, [exploreFromChat, clarificationQuestions, clarifyAnswers]);
+    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, textTurns, dispatch]);
 
     // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
     // with a prompt describing the captured workflow; we hand it straight to
@@ -1529,6 +1706,32 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         window.addEventListener('df-replay-workflow', handler);
         return () => window.removeEventListener('df-replay-workflow', handler);
     }, [exploreFromChat, isChatFormulating, focusedTableId, dispatch, t]);
+
+    // Re-open an explanation the user clicked in the data thread
+    // (ResolvedConversationCard fires `df-view-explanation`) in the read-only
+    // ExplanationPanel popup above the chat box.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { content?: string; sourceTableId?: string; timestamps?: number[] } | undefined;
+            if (detail?.content) {
+                setViewingExplanation({ content: detail.content, sourceTableId: detail.sourceTableId, timestamps: detail.timestamps });
+            }
+        };
+        window.addEventListener('df-view-explanation', handler);
+        return () => window.removeEventListener('df-view-explanation', handler);
+    }, []);
+
+    // Re-open a "closed" (dismissed) live pause when the user clicks its block
+    // in the data thread (DataThread fires `df-reopen-pause`). Clearing the
+    // dismissal latch lets `pendingClarification` surface the panel again.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const draftId = (e as CustomEvent).detail?.draftId as string | undefined;
+            setDismissedPauseDraftId(prev => (draftId && prev === draftId ? null : prev));
+        };
+        window.addEventListener('df-reopen-pause', handler);
+        return () => window.removeEventListener('df-reopen-pause', handler);
+    }, []);
 
     const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
         if (!pendingClarification) return;
@@ -1609,6 +1812,111 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, [pendingClarification, dispatch, t]);
 
+    // Move focus back to the chart the user was last on (else the most recent
+    // chart, else the focused table). Used by a pause's "Close" so a follow-up
+    // targets that chart instead of the clarify / explain context.
+    const switchFocusToPreviousChart = useCallback(() => {
+        const prevId = lastChartFocusRef.current;
+        if (prevId && charts.some(c => c.id === prevId)) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: prevId }));
+            return;
+        }
+        const lastChart = [...charts].reverse().find(c => c.chartType !== 'Table' && c.chartType !== 'Auto');
+        if (lastChart) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: lastChart.id }));
+        } else if (focusedTableId) {
+            dispatch(dfActions.setFocused({ type: 'table', tableId: focusedTableId }));
+        }
+    }, [charts, dispatch, focusedTableId]);
+
+    // "Close" a live pause: keep the pending block in the thread, hide its
+    // panel, and switch focus to the previous chart.
+    const closePause = useCallback(() => {
+        if (pendingClarification?.draftId) {
+            setDismissedPauseDraftId(pendingClarification.draftId);
+        }
+        switchFocusToPreviousChart();
+    }, [pendingClarification, switchFocusToPreviousChart]);
+
+    // Drop the "closed pause" latch once that draft is gone (resolved / deleted)
+    // so it never lingers as a stale filter.
+    useEffect(() => {
+        if (dismissedPauseDraftId &&
+            !draftNodes.some(d => d.id === dismissedPauseDraftId && d.derive?.status === 'clarifying')) {
+            setDismissedPauseDraftId(null);
+        }
+    }, [draftNodes, dismissedPauseDraftId]);
+
+    // ── Focused text turn (design-docs/41) ──────────────────────────────────
+    // A clarify / explain / delegate node the user has focused (by clicking its
+    // thread card). It drives the overlay panel above the chat, independent of
+    // the legacy live-pause (`pendingClarification`) path.
+    const focusedTextTurn = focusedId?.type === 'text'
+        ? textTurns.find(tt => tt.id === focusedId.textId)
+        : undefined;
+
+    // Reset accumulated answers when the focused clarify turn changes.
+    useEffect(() => {
+        if (focusedTextTurn) { setClarifyAnswers({}); textTurnSubmittedRef.current = null; }
+    }, [focusedTextTurn?.id]);
+
+    // Close a focused text turn → hand focus back to its source chart (else its
+    // thread-parent table), keeping the node in the thread.
+    const closeTextTurn = useCallback((turn: TextTurn) => {
+        if (turn.sourceChartId && charts.some(c => c.id === turn.sourceChartId)) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: turn.sourceChartId }));
+        } else {
+            const tableId = resolveNodeTable(turn.id, textTurns, tables);
+            if (tableId) {
+                dispatch(dfActions.setFocused({ type: 'table', tableId }));
+            } else {
+                dispatch(dfActions.setFocused(undefined));
+            }
+        }
+    }, [charts, tables, textTurns, dispatch]);
+
+    // Answer a focused clarify turn. Resumes the run iff the turn carries the
+    // backend's opaque resume token (§12); otherwise a fresh turn. The turn stays
+    // in the thread as the record and the run starts (overlay hides).
+    const submitTextTurnAnswer = useCallback((responses: ClarificationResponse[]) => {
+        const turn = focusedTextTurn;
+        if (!turn) return;
+        const displayPrompt = formatClarificationResponses(responses);
+        // Lock this clarify: it's answered once, then read-only. A later response
+        // is a NEW conversation, not a re-answer (design-docs/41).
+        dispatch(dfActions.updateTextTurn({ id: turn.id, answered: true, answer: displayPrompt }));
+        // Continue the conversation from THIS turn (design-docs/42): the run's
+        // chain starts here, so the produced table threads under it. Include the
+        // resume trajectory iff the backend stamped one.
+        const ctx = {
+            parentNodeId: turn.id,
+            ...(turn.resume
+                ? { trajectory: turn.resume.trajectory, completedStepCount: turn.resume.completedStepCount, actionId: turn.actionId || '', lastCreatedTableId: null }
+                : {}),
+        };
+        exploreFromChat(displayPrompt, ctx);
+    }, [exploreFromChat, focusedTextTurn, dispatch]);
+
+    // Record a clicked option / typed answer inside a FOCUSED clarify turn's
+    // panel (design-docs/41). Mirrors handleSelectAnswer but works off the
+    // focused TextTurn's options (there is no `pendingClarification`). Auto-submits
+    // when every question is answered by a clicked option.
+    const handleSelectTextTurnAnswer = useCallback((questionIndex: number, response: ClarificationResponse, autoSubmit: boolean = true) => {
+        const turn = focusedTextTurn;
+        const questions = turn?.options;
+        if (!turn || !questions) return;
+        if (textTurnSubmittedRef.current === turn.id) return;
+        const newAnswers = { ...clarifyAnswers, [questionIndex]: response };
+        setClarifyAnswers(newAnswers);
+        const allAnswered = questions.every((_q, idx) => !!newAnswers[idx]);
+        const allOptions = questions.every((_q, idx) => newAnswers[idx]?.source === 'option');
+        if (allAnswered && allOptions && autoSubmit) {
+            textTurnSubmittedRef.current = turn.id;
+            const responses: ClarificationResponse[] = questions.map((_q, idx) => newAnswers[idx]);
+            submitTextTurnAnswer(responses);
+        }
+    }, [focusedTextTurn, clarifyAnswers, submitTextTurnAnswer]);
+
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
@@ -1646,7 +1954,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     onSelectAnswer={handleSelectAnswer}
                     onClearAnswer={handleClearAnswer}
                     onSubmit={resumeFromClarification}
-                    onCancel={cancelAgent}
+                    onClose={closePause}
+                    onDelete={cancelAgent}
                 />
             )}
             {clarificationQuestions?.kind === 'clarification' && !clarificationQuestions.questions && clarificationQuestions.variant === 'explain' && clarificationQuestions.content && pendingClarification && !isChatFormulating && (
@@ -1655,7 +1964,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // in the chat box below (which resumes the conversation).
                 <ExplanationPanel
                     content={clarificationQuestions.content}
-                    onCancel={cancelAgent}
+                    onClose={closePause}
+                    onDelete={cancelAgent}
                 />
             )}
             {clarificationQuestions?.kind === 'delegate' && pendingClarification && !isChatFormulating && (
@@ -1663,7 +1973,56 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     target={clarificationQuestions.target}
                     message={clarificationQuestions.message}
                     options={clarificationQuestions.options}
-                    onCancel={cancelAgent}
+                    onClose={closePause}
+                    onDelete={cancelAgent}
+                />
+            )}
+            {/* Focused text turn (design-docs/41): a clarify / explain node the
+                user focused by clicking its thread card. An OPEN clarify gets
+                the interactive panel; an ANSWERED clarify or any explanation is
+                read-only (question → answer). Gated to not overlap the legacy
+                live pause. */}
+            {focusedTextTurn && !pendingClarification && !isChatFormulating && (
+                (focusedTextTurn.textKind === 'clarify' && !focusedTextTurn.answered && focusedTextTurn.options && focusedTextTurn.options.length > 0) ? (
+                    <ClarificationPanel
+                        questions={focusedTextTurn.options}
+                        variant="clarify"
+                        selectedAnswers={clarifyAnswers}
+                        onSelectAnswer={handleSelectTextTurnAnswer}
+                        onClearAnswer={handleClearAnswer}
+                        onSubmit={submitTextTurnAnswer}
+                        onClose={() => closeTextTurn(focusedTextTurn)}
+                        onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
+                    />
+                ) : (
+                    <ExplanationPanel
+                        content={focusedTextTurn.answered && focusedTextTurn.answer
+                            ? `${focusedTextTurn.content}\n\n> ↳ ${focusedTextTurn.answer}`
+                            : focusedTextTurn.content}
+                        onClose={() => closeTextTurn(focusedTextTurn)}
+                        onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
+                    />
+                )
+            )}
+            {/* Re-opened explanation: the user clicked a resolved explanation
+                card in the data thread. Read-only popup above the chat box;
+                only shown when no live pause is active so it never overlaps. */}
+            {viewingExplanation && !pendingClarification && !focusedTextTurn && !isChatFormulating && (
+                <ExplanationPanel
+                    content={viewingExplanation.content}
+                    onClose={() => { setViewingExplanation(null); switchFocusToPreviousChart(); }}
+                    onDelete={() => {
+                        // Remove this resolved explanation block from the thread
+                        // (drop its interaction entries), then close + refocus.
+                        if (viewingExplanation.sourceTableId && viewingExplanation.timestamps?.length) {
+                            dispatch(dfActions.removeInteractionEntries({
+                                tableId: viewingExplanation.sourceTableId,
+                                timestamps: viewingExplanation.timestamps,
+                            }));
+                        }
+                        setViewingExplanation(null);
+                        switchFocusToPreviousChart();
+                    }}
                 />
             )}
             {/* Input area wrapper */}
@@ -1983,6 +2342,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const showGettingStarted = !!focusedRootTableId
         && !isChatFormulating
         && !pendingClarification
+        && !focusedTextTurn
         && (starterLoading || (focusedStarterEntry?.questions?.length ?? 0) > 0);
 
     const starterChipSx = {
@@ -2058,10 +2418,28 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     ) : null;
 
     return (
-        <Box>
-            {gettingStartedBlock}
-            {/* The input box */}
-            {inputBox}
-        </Box>
+        <ClickAwayListener
+            mouseEvent="onMouseDown"
+            onClickAway={(e) => {
+                // Click-elsewhere-to-close for a focused text turn's panel —
+                // EXCEPT an active (unanswered) clarify, which must stay open
+                // so the pending question isn't lost. Clicks on a thread card
+                // switch focus normally, so ignore those here.
+                if (!focusedTextTurn) return;
+                const isActiveClarify = focusedTextTurn.textKind === 'clarify'
+                    && !focusedTextTurn.answered
+                    && (focusedTextTurn.options?.length ?? 0) > 0;
+                if (isActiveClarify) return;
+                const el = e.target as HTMLElement | null;
+                if (el?.closest?.('.data-thread-card')) return;
+                closeTextTurn(focusedTextTurn);
+            }}
+        >
+            <Box>
+                {gettingStartedBlock}
+                {/* The input box */}
+                {inputBox}
+            </Box>
+        </ClickAwayListener>
     );
 };

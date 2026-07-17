@@ -36,7 +36,7 @@ import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedRepor
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { extractErrorMessage } from '../app/errorHandler';
-import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
+import { Chart, DictTable, Trigger, InteractionEntry, TextTurn } from "../components/ComponentType";
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { loadTable } from '../app/tableThunks';
@@ -46,6 +46,8 @@ import { deleteWorkspace } from '../app/workspaceService';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
@@ -865,6 +867,7 @@ let SingleThreadGroupView: FC<{
     let charts = useSelector(dfSelectors.getAllCharts);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
+    let textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
@@ -872,8 +875,28 @@ let SingleThreadGroupView: FC<{
             const chart = charts.find(c => c.id === focusedId.chartId);
             return chart?.tableRef;
         }
+        if (focusedId.type === 'text') {
+            // Highlight the text turn's thread-parent table (or its source
+            // chart's table), mirroring chart focus (design-docs/41/42).
+            const turn = textTurns.find(tt => tt.id === focusedId.textId);
+            if (!turn) return undefined;
+            if (turn.sourceChartId) {
+                const chart = charts.find(c => c.id === turn.sourceChartId);
+                if (chart?.tableRef) return chart.tableRef;
+            }
+            let cur: TextTurn | undefined = turn;
+            const seen = new Set<string>();
+            while (cur && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const p: string | undefined = cur.parentNodeId;
+                if (!p) return undefined;
+                if (tableById.has(p)) return p;
+                cur = textTurns.find(tt => tt.id === p);
+            }
+            return undefined;
+        }
         return undefined;
-    }, [focusedId, charts]);
+    }, [focusedId, charts, textTurns]);
     let draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
 
@@ -890,7 +913,66 @@ let SingleThreadGroupView: FC<{
         return map;
     }, [generatedReports]);
 
-    // Pre-index running/clarifying/completed status from DraftNodes
+    // Text turns render by their authored parent edge (design-docs/42): each
+    // turn is a child of its `parentNodeId` — a table (a fresh turn on it) or
+    // another turn (a chained follow-up).
+    const textTurnChildrenOf = useMemo(() => {
+        const map = new Map<string, TextTurn[]>();
+        for (const turn of textTurns) {
+            const key = turn.parentNodeId;
+            if (!key) continue;
+            const list = map.get(key) || [];
+            list.push(turn);
+            map.set(key, list);
+        }
+        for (const list of map.values()) list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        return map;
+    }, [textTurns]);
+
+    const turnById = useMemo(() => new Map(textTurns.map(tt => [tt.id, tt])), [textTurns]);
+
+    // A turn is a "lead-up" if it PRODUCED a table — i.e. it sits on some table's
+    // `threadParentId` chain (the clarify/answer that resolved into that table).
+    // Such turns render WITH their result table (as its lead-in, in the table's
+    // thread) so the conversation and its result stay connected — NOT at the root
+    // table. Terminal / still-pending turns (no result yet) render at the root's
+    // non-ghost card instead (design-docs/42).
+    const leadUpTurnIds = useMemo(() => {
+        const s = new Set<string>();
+        for (const t of tables) {
+            let cur: string | undefined = t.threadParentId;
+            const seen = new Set<string>();
+            while (cur && !seen.has(cur)) {
+                seen.add(cur);
+                const turn = turnById.get(cur);
+                if (!turn) break;              // reached a table / unknown
+                s.add(turn.id);
+                cur = turn.parentNodeId;
+                if (cur && tableById.has(cur)) break; // reached the root table
+            }
+        }
+        return s;
+    }, [tables, turnById, tableById]);
+
+    // The lead-up conversation for a table: the turn chain from its
+    // `threadParentId` up to (not including) the root table, oldest first.
+    const leadUpTurnsOf = (tableId: string): TextTurn[] => {
+        const t = tableById.get(tableId);
+        if (!t?.threadParentId) return [];
+        const out: TextTurn[] = [];
+        let cur: string | undefined = t.threadParentId;
+        const seen = new Set<string>();
+        while (cur && !seen.has(cur)) {
+            seen.add(cur);
+            const turn = turnById.get(cur);
+            if (!turn) break;
+            out.push(turn);
+            cur = turn.parentNodeId;
+            if (cur && tableById.has(cur)) break;
+        }
+        return out.reverse();
+    };
+
     const runningAgentTableIds = useMemo(() => {
         const ids = new Map<string, { description: string }>();
         for (const d of draftNodes) {
@@ -1294,7 +1376,7 @@ let SingleThreadGroupView: FC<{
                         key: `${keyPrefix}-conv-${tableId}-${ei}`,
                         type: triggerType,
                         highlighted,
-                        element: <ResolvedConversationCard pairs={pairs} highlighted={highlighted} />,
+                        element: <ResolvedConversationCard pairs={pairs} highlighted={highlighted} sourceTableId={tableId} />,
                         interactionEntry: pairs[pairs.length - 1].userEntry,
                         gutterIcon: (
                             <ForumOutlinedIcon sx={{
@@ -1661,6 +1743,202 @@ let SingleThreadGroupView: FC<{
         }
     };
 
+    // Build a single text-turn timeline item (clarify / explain), mirroring
+    // buildReportTimelineItem (design-docs/41). Clicking focuses it — its panel
+    // overlays above the chat while the canvas keeps the source chart; the delete
+    // button removes it (generic artifact delete). `showPrompt` folds the
+    // triggering prompt into the card (leaf / terminal case) so it renders as a
+    // single self-contained artifact (like a report); the compositional-trigger
+    // case passes false and renders the prompt as a separate trigger entry.
+    const buildTextTurnTimelineItem = (turn: TextTurn, highlighted: boolean, showPrompt: boolean) => {
+        const isFocused = focusedId?.type === 'text' && focusedId.textId === turn.id;
+        const rowHL = highlighted || isFocused;
+        const preview = (turn.content || '')
+            .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
+        // No timeline dot for text turns — instead an exchange (⇄) glyph sits
+        // OUTSIDE the box, to its left, flowing with the card (design-docs/41).
+        const gutterIcon = <Box sx={{ width: 0, height: 0 }} />;
+        const conversationIcon = (
+            <SwapHorizIcon sx={{
+                fontSize: 17, flexShrink: 0, mt: '6px',
+                color: rowHL ? theme.palette.text.secondary : theme.palette.text.disabled,
+            }} />
+        );
+        const card = (
+            <Card className={`data-thread-card ${isFocused ? 'selected-card' : ''}`} elevation={0}
+                sx={{
+                    width: '100%',
+                    // Same gray fill as the agent thinking bubbles
+                    // (InteractionEntryCard neutral bubbleBg) for consistency;
+                    // border matches other cards. Focus → selected-card ring.
+                    backgroundColor: alpha(theme.palette.text.primary, 0.03),
+                    ...ComponentBorderStyle,
+                    borderRadius: '6px', cursor: 'pointer',
+                    position: 'relative',
+                    '& .textturn-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                    '&:hover .textturn-delete-btn': { opacity: 1 },
+                }}
+                onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}
+            >
+                <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0 }}>
+                    {showPrompt && turn.prompt && (
+                        <Typography sx={{
+                            fontSize: 10.5, color: 'text.secondary', fontStyle: 'italic', mb: '1px',
+                            display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden', wordBreak: 'break-word',
+                        }}>
+                            {turn.prompt}
+                        </Typography>
+                    )}
+                    <Typography sx={{
+                        fontSize: 11,
+                        // Agent clarify/explain is conversational scaffolding: soften
+                        // to text.secondary so it recedes below the data + the user's
+                        // decisions, yet stays more legible than the disposable
+                        // thinking steps (text.disabled). A still-unanswered clarify
+                        // stays prominent (text.primary) — it's a live ask.
+                        color: (turn.textKind === 'clarify' && !turn.answered) ? 'text.primary' : 'text.secondary',
+                        lineHeight: 1.4, fontWeight: 500,
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden', wordBreak: 'break-word',
+                    }}>
+                        {preview}
+                    </Typography>
+                </Box>
+                {/* Delete floats over the top-right corner so it doesn't take
+                    horizontal space from the text; a translucent bg + blur keeps
+                    the trash icon readable over the content on hover. */}
+                <Tooltip title={t('chartRec.pauseDelete')}>
+                    <IconButton className="textturn-delete-btn" size="small" color="error"
+                        sx={{
+                            position: 'absolute', top: 2, right: 2, p: 0.25,
+                            bgcolor: alpha(theme.palette.background.paper, 0.75),
+                            backdropFilter: 'blur(2px)',
+                            '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.14), transform: 'scale(1.1)' },
+                        }}
+                        onClick={(e) => { e.stopPropagation(); dispatch(dfActions.removeTextTurn(turn.id)); }}
+                    >
+                        <DeleteIcon sx={{ fontSize: 15 }} />
+                    </IconButton>
+                </Tooltip>
+            </Card>
+        );
+        // The follow-up reply renders as its OWN box below the card, using the
+        // user-response bubble style (InteractionEntryCard user prompt) so it
+        // reads as the user's turn (design-docs/41).
+        const answerBox = turn.answered && turn.answer ? (
+            <Box sx={{ mt: '4px' }}
+                onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}
+            >
+                <InteractionEntryCard
+                    entry={{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.answer }}
+                    highlighted={false}
+                />
+            </Box>
+        ) : null;
+        const element = (
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%', minWidth: 0 }}>
+                {conversationIcon}
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                    {card}
+                    {answerBox}
+                </Box>
+            </Box>
+        );
+        return {
+            key: `textturn-${turn.id}`, type: 'artifact' as const, highlighted: rowHL,
+            gutterIcon, element,
+        };
+    };
+
+    // Render a single text turn: its triggering prompt bubble (if any) then the
+    // turn card. `keyNode` seeds prompt-entry keys.
+    const pushSingleTurn = (turn: TextTurn, keyNode: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
+        if (turn.prompt) {
+            pushInteractionEntries(
+                [{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.prompt, timestamp: turn.createdAt }],
+                keyNode, triggerType, highlighted, `textturn-prompt-${turn.id}`,
+            );
+        }
+        timelineItems.push(buildTextTurnTimelineItem(turn, highlighted, false));
+    };
+
+    // Render the text-turn subtree rooted at a node (design-docs/42): the node's
+    // direct child turns in order, each followed by its own chained follow-ups
+    // (recursion). SKIPS lead-up turns — those produced a table and render WITH
+    // that result table (see leadUpTurnsOf / pushTableBlock), so here we render
+    // only the terminal / still-pending conversation on `nodeId`.
+    const pushTextTurnSubtree = (nodeId: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
+        const turns = textTurnChildrenOf.get(nodeId);
+        if (!turns) return;
+        for (const turn of turns) {
+            if (leadUpTurnIds.has(turn.id)) continue; // renders with its result table
+            pushSingleTurn(turn, nodeId, highlighted, triggerType);
+            // Chained follow-ups hang off this turn.
+            pushTextTurnSubtree(turn.id, highlighted, triggerType);
+        }
+    };
+
+    // Table-level entry point: render the turn subtree rooted at a table. Only
+    // ever called at the table's NON-GHOST card (design-docs/42), so a table shown
+    // as a used-parent ghost elsewhere renders no conversation there.
+    const pushTableTextTurns = (tableId: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
+        pushTextTurnSubtree(tableId, highlighted, triggerType);
+    };
+
+    // Render one table's full block in the thread body: its trigger interaction
+    // (split so the run's closing summary follows the outputs), the table card +
+    // charts, reports, the after-run summary, then any new conversation and the
+    // live agent draft. Shared by the new-table and leaf-table passes — they were
+    // identical apart from the trigger source and the card/type labels. (The old
+    // `afterTableMap`/`leafAfterTableMap` Maps were set and read in the same
+    // iteration, so they collapse to a local here.)
+    const pushTableBlock = (
+        tableId: string,
+        trigger: Trigger | undefined,
+        tableCard: any,
+        triggerCardFallback: any,
+        tableType: 'table' | 'leaf-table',
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+        keyPrefix: string,
+    ) => {
+        // Lead-up conversation that PRODUCED this table (design-docs/42): the
+        // clarify/answer turns on its threadParentId chain, rendered BEFORE the
+        // trigger + card so the conversation and its result read as one thread.
+        for (const turn of leadUpTurnsOf(tableId)) {
+            pushSingleTurn(turn, tableId, highlighted, triggerType);
+        }
+        let afterEntries: InteractionEntry[] = [];
+        if (trigger) {
+            const interaction = trigger.interaction;
+            if (interaction && interaction.length > 0) {
+                const [before, after] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(before, tableId, triggerType, highlighted, keyPrefix);
+                afterEntries = after;
+            } else if (triggerCardFallback) {
+                // No interaction log — render the trigger card directly.
+                timelineItems.push({
+                    key: triggerCardFallback?.key || `${triggerType}-${tableId}`,
+                    type: triggerType,
+                    highlighted,
+                    element: triggerCardFallback,
+                });
+            }
+        }
+        // Table card + charts, then reports (output cards, before the summary).
+        pushTableAndChartItems(tableId, tableCard, tableType, highlighted);
+        pushReportItems(tableId, highlighted, triggerType);
+        // The run's closing summary follows the LAST artifact, before any new turn.
+        if (afterEntries.length > 0) {
+            pushInteractionEntries(afterEntries, tableId, triggerType, highlighted, `${keyPrefix}-after`);
+        }
+        // A new question/explanation on the table follows the summary.
+        pushTableTextTurns(tableId, highlighted, triggerType);
+        // Running / clarifying agent state.
+        pushAgentDraftItems(tableId, triggerType, highlighted);
+    };
+
     // Add used (shared) tables at the top
     // Show the immediate parent as a full table card, with "..." for further ancestors.
     // On a continuation segment (isSplitThread), suppress the "..." — the
@@ -1682,105 +1960,51 @@ let SingleThreadGroupView: FC<{
             });
         }
     }
-    displayedUsedTableIds.forEach((tableId, i) => {
+    displayedUsedTableIds.forEach((tableId) => {
         const isHighlighted = highlightedTableIds.includes(tableId);
-        // On a continuation segment, render the carry-over parent as a
-        // non-interactive "ghost" so it's clearly an orientation aid, not a
-        // fresh table — no background color, dashed border, no actions.
+        // A used parent is a pure SHADOW reference (design-docs/42): the table is
+        // shown fully — with ALL its attached content (conversation turns, live
+        // run state) — at its ONE non-ghost card (the source catalog for a source
+        // table, else the thread that owns it as a fresh table). Here we render
+        // ONLY the muted ghost card — no turns, no draft. This is what stops a
+        // fork from repeating the parent's cards / messages / state per column.
         pushTableAndChartItems(
             tableId,
-            _buildTableCard(tableId, { ghost: isSplitThread }),
+            _buildTableCard(tableId, { ghost: true }),
             'table',
             isHighlighted,
         );
     });
 
     // Interleave triggers and tables for the main thread body
-    const afterTableMap = new Map<string, InteractionEntry[]>();
     newTableIds.forEach((tableId, i) => {
         const triggerPair = newTriggerPairs.find(tp => tp.resultTableId === tableId);
-        const isHighlighted = highlightedTableIds.includes(tableId);
-
-        // Add trigger card (or interaction log entries) if exists
-        if (triggerPair) {
-            const interaction = triggerPair.interaction;
-            if (interaction && interaction.length > 0) {
-                const [beforeTable, afterTable] = splitAtLastInstruction(interaction);
-                pushInteractionEntries(beforeTable, tableId, 'trigger', isHighlighted, 'interaction');
-                if (afterTable.length > 0) afterTableMap.set(tableId, afterTable);
-            } else {
-                // No interaction log, use trigger card directly
-                const triggerCard = triggerCards[newTriggerPairs.indexOf(triggerPair)];
-                if (triggerCard) {
-                    timelineItems.push({
-                        key: triggerCard?.key || `woven-trigger-${tableId}`,
-                        type: 'trigger',
-                        highlighted: isHighlighted,
-                        element: triggerCard,
-                    });
-                }
-            }
-        }
-
-        // Add table card and its charts
-        pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
-
-        // Add report cards anchored to this table. Reports are output cards of
-        // the run (like charts), so they sit with the other outputs, BEFORE the
-        // run's closing summary.
-        pushReportItems(tableId, isHighlighted, 'trigger');
-
-        // After-table entries (e.g. summary). The run's closing summary is the
-        // final word and must follow the LAST artifact (table, chart, or
-        // report), so it is pushed after pushReportItems.
-        const afterTable = afterTableMap.get(tableId);
-        if (afterTable && afterTable.length > 0) {
-            pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
-        }
-
-        // Running or clarifying agent state
-        pushAgentDraftItems(tableId, 'trigger', isHighlighted);
+        pushTableBlock(
+            tableId,
+            triggerPair,
+            tableElementList[i],
+            triggerPair ? triggerCards[newTriggerPairs.indexOf(triggerPair)] : undefined,
+            'table',
+            'trigger',
+            highlightedTableIds.includes(tableId),
+            'interaction',
+        );
     });
 
     // Add leaf table components
-    const leafAfterTableMap = new Map<string, InteractionEntry[]>();
-    leafTables.forEach((lt, i) => {
-        let leafTrigger = lt.derive?.trigger;
+    leafTables.forEach((lt) => {
+        const leafTrigger = lt.derive?.trigger;
         const isHL = highlightedTableIds.includes(lt.id);
-
-        if (leafTrigger) {
-            const interaction = leafTrigger.interaction;
-            if (interaction && interaction.length > 0) {
-                const [leafBefore, leafAfter] = splitAtLastInstruction(interaction);
-                pushInteractionEntries(leafBefore, lt.id, 'leaf-trigger', isHL, 'leaf-interaction');
-                if (leafAfter.length > 0) leafAfterTableMap.set(lt.id, leafAfter);
-            } else {
-                timelineItems.push({
-                    key: `leaf-trigger-${lt.id}`,
-                    type: 'leaf-trigger',
-                    highlighted: isHL,
-                    element: _buildTriggerCard(leafTrigger, isHL),
-                });
-            }
-        }
-
-        pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
-
-        // Add report cards anchored to this leaf table. Reports are output cards
-        // of the run (like charts), so they sit with the other outputs, BEFORE
-        // the run's closing summary.
-        pushReportItems(lt.id, isHL, 'leaf-trigger');
-
-        // After-table entries (e.g. summary). The run's closing summary is the
-        // final word and must follow the LAST artifact (table, chart, or
-        // report), so it is pushed after pushReportItems.
-        const leafAfterEntries = leafAfterTableMap.get(lt.id);
-        if (leafAfterEntries && leafAfterEntries.length > 0) {
-            pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
-        }
-
-        // Running or clarifying agent state
-        pushAgentDraftItems(lt.id, 'leaf-trigger', isHL);
+        pushTableBlock(
+            lt.id,
+            leafTrigger,
+            _buildTableCard(lt.id),
+            leafTrigger ? _buildTriggerCard(leafTrigger, isHL) : undefined,
+            'leaf-table',
+            'leaf-trigger',
+            isHL,
+            'leaf-interaction',
+        );
     });
 
     // Timeline rendering helper
@@ -1989,9 +2213,15 @@ let SingleThreadGroupView: FC<{
             // back into focus. Prefer the latest chart on the associated
             // table (so users keep seeing the chart they were working on);
             // fall back to focusing the table itself if no chart exists.
+            // Also re-opens the pause panel if it was "closed" (dismissed) —
+            // the thread block is the handle back into the conversation.
             const clarifyClickHandler = (item.isClarifying && item.tableId)
                 ? () => {
                     const tableId = item.tableId!;
+                    const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+                    if (clarifyDraft) {
+                        window.dispatchEvent(new CustomEvent('df-reopen-pause', { detail: { draftId: clarifyDraft.id } }));
+                    }
                     const chartsForTable = charts.filter(c => c.tableRef === tableId);
                     const lastChart = chartsForTable[chartsForTable.length - 1];
                     if (lastChart) {
@@ -2544,14 +2774,17 @@ function computeSplitExtraLeaves(
     allTables: DictTable[],
     chartElements: { tableId: string }[],
     fittableColumns: number,
+    textTurnItemsByTable: Map<string, number>,
 ): DictTable[] {
     if (fittableColumns <= 1) return [];
     const tableById = new Map(allTables.map(t => [t.id, t]));
 
-    // Per-trigger item count = 1 (table) + interaction entries + charts.
+    // Per-trigger item count = 1 (table) + interaction entries + charts +
+    // text-turn cards (clarify/explain) anchored to the result table.
     const itemsForTrigger = (resultTableId: string, interaction: InteractionEntry[] | undefined): number => {
         const charts = chartElements.filter(ce => ce.tableId === resultTableId).length;
-        return 1 + effectiveEntryCount(interaction) + charts;
+        const textTurns = textTurnItemsByTable.get(resultTableId) || 0;
+        return 1 + effectiveEntryCount(interaction) + charts + textTurns;
     };
 
     // Compute per-thread totals up front so we can pick the budget.
@@ -2893,6 +3126,52 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
 
+    // Text turns (clarify/explain) — needed at this level to assign each a
+    // single "home" thread entry (see the home-assignment block below).
+    let textTurnsForHome = useSelector((state: DataFormulatorState) => state.textTurns);
+    // Root TABLE of each turn's conversation (design-docs/42): walk parentNodeId
+    // until a table (chained follow-ups resolve to their chain's root table).
+    const textTurnRootByTurn = useMemo(() => {
+        const tableIds = new Set(tables.map(t => t.id));
+        const turnById = new Map(textTurnsForHome.map(tt => [tt.id, tt]));
+        const rootOf = (tt: TextTurn): string | undefined => {
+            let cur: TextTurn | undefined = tt;
+            const seen = new Set<string>();
+            while (cur && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const p = cur.parentNodeId;
+                if (!p) return undefined;
+                if (tableIds.has(p)) return p;
+                cur = turnById.get(p);
+            }
+            return undefined;
+        };
+        const map = new Map<string, string>();
+        for (const tt of textTurnsForHome) {
+            const r = rootOf(tt);
+            if (r) map.set(tt.id, r);
+        }
+        return map;
+    }, [textTurnsForHome, tables]);
+    // Tables that root a text-turn conversation: branch-split exclusion + home.
+    const textTurnRootTableIds = useMemo(
+        () => new Set([...textTurnRootByTurn.values()]),
+        [textTurnRootByTurn],
+    );
+    // Rendered timeline-item count each table's conversation adds (card +
+    // optional prompt bubble), keyed by the root table — feeds thread height +
+    // split budgeting so text-turn cards count as taking vertical space.
+    const textTurnItemsByTable = useMemo(() => {
+        const map = new Map<string, number>();
+        for (const tt of textTurnsForHome) {
+            const key = textTurnRootByTurn.get(tt.id);
+            if (!key) continue;
+            const items = 1 + (tt.prompt ? 1 : 0);
+            map.set(key, (map.get(key) || 0) + items);
+        }
+        return map;
+    }, [textTurnsForHome, textTurnRootByTurn]);
+
     // Derive focusedTableId from focusedId for scroll/highlight logic
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
@@ -2905,8 +3184,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             const report = generatedReports.find(r => r.id === focusedId.reportId);
             return report?.triggerTableId;
         }
+        if (focusedId.type === 'text') {
+            // A focused text turn (clarify/explain) highlights its thread-parent
+            // table (or the table of its source chart) and that table's thread,
+            // just like focusing a chart (design-docs/41/42).
+            const turn = textTurnsForHome.find(tt => tt.id === focusedId.textId);
+            if (!turn) return undefined;
+            if (turn.sourceChartId) {
+                const chart = charts.find(c => c.id === turn.sourceChartId);
+                if (chart?.tableRef) return chart.tableRef;
+            }
+            return textTurnRootByTurn.get(turn.id);
+        }
         return undefined;
-    }, [focusedId, charts, generatedReports]);
+    }, [focusedId, charts, generatedReports, textTurnsForHome, textTurnRootByTurn]);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
@@ -3131,6 +3422,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // anchors are considered leaf tables to simplify the view
 
     let isLeafTable = (table: DictTable) => {
+        // A table with no (non-anchored) derivations is a leaf. Conversation-
+        // produced tables are NORMAL tables now (design-docs/42): they fork into
+        // their own column via the standard leaf partition, so no special case.
         let children = tables.filter(t => t.derive?.trigger.tableId == table.id);
         if (children.length == 0 || children.every(t => t.anchored)) {
             return true;
@@ -3165,11 +3459,19 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const computedExtras = fittableColumns <= 1
         ? []
         : computeSplitExtraLeaves(
-            leafTables, tables, chartElements, fittableColumns,
+            leafTables, tables, chartElements, fittableColumns, textTurnItemsByTable,
         );
     // Avoid duplicating tables that are already leaves (e.g. anchored mids).
+    // Also never split at a table that carries a terminal text turn
+    // (clarify/explain with no result table): promoting it as a segment
+    // endpoint would strand its explanation in a separate thread column,
+    // divorced from the derivations that continue from the same table
+    // (design-docs/41). Keeping it un-promoted glues the explanation to the
+    // table's outgoing derivation flow in one continuous thread.
     const existingLeafIds = new Set(leafTables.map(t => t.id));
-    const extraLeaves: DictTable[] = computedExtras.filter(t => !existingLeafIds.has(t.id));
+    const extraLeaves: DictTable[] = computedExtras.filter(
+        t => !existingLeafIds.has(t.id) && !textTurnRootTableIds.has(t.id),
+    );
     if (extraLeaves.length > 0) {
         leafTables = [...leafTables, ...extraLeaves];
     }
@@ -3250,7 +3552,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     // Collect all tables (including derived ones) for the workspace panel.
     let baseTables = tables;
-    // Threaded tables: leaf tables that have a derivation chain
+    // Threaded tables: leaf tables that have a derivation chain. A conversation-
+    // produced table is a normal derived leaf, so it threads (forks) here without
+    // any special case (design-docs/42).
     let threadedTables = leafTables.filter(lt => {
         const triggers = getTriggers(lt, tables);
         return triggers.length + 1 > 1;
@@ -3335,6 +3639,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
         let entryCount = newTriggerPairs.reduce((sum, tp) => sum + (tp.interaction?.length || 1), 0);
         entryCount += lt.derive?.trigger?.interaction?.length || 1;
+        // Text-turn cards (clarify/explain) anchored to any table in this
+        // thread also occupy vertical space — count them so tall conversations
+        // widen/split correctly.
+        entryCount += [...threadTableIds].reduce((sum, id) => sum + (textTurnItemsByTable.get(id) || 0), 0);
         let totalTables = newTableIds.length + 1;
 
         threadTableIds.forEach(id => claimedTableIds.add(id));
@@ -3385,7 +3693,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         }
     }
 
-    // Pick the best column layout: dynamically based on container width.
+    // (design-docs/42) No per-turn home assignment anymore: a table's attached
+    // content (conversation turns + live run state) renders at its single
+    // NON-GHOST card (source catalog for a source table, else the owning thread;
+    // see pushTextTurnSubtree / the ghost used-parent loop). Threads/columns come
+    // purely from table leaves via the standard split rules.
+
     // Use the same stable viewportHeight (derived from the outer wrapper) for
     // packing as we do for split decisions — so the column count doesn't shift
     // when the chatbox grows during clarification/explanation.

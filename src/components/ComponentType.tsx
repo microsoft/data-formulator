@@ -67,6 +67,10 @@ export interface InteractionEntry {
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
+    /** Names of files / images the user attached with this prompt, surfaced as
+     *  chips in the message bubble (the file bytes live in workspace scratch/,
+     *  not here). */
+    attachments?: string[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
     /** For 'delegate' entries: which peer agent the Data Agent wants to
@@ -107,6 +111,55 @@ export interface DraftNode {
 }
 
 export type ThreadNode = DraftNode | DictTable;
+
+/**
+ * A first-class **text turn** (clarify / explain) in the thread — a sibling to
+ * charts, tables, and reports (see design-docs/41). Placed in the thread by its
+ * one authored edge, `parentNodeId` (design-docs/42): the node the user was
+ * asking from when the turn was created. Focusing one overlays a panel above the
+ * chat without taking over the canvas (the canvas keeps showing `sourceChartId`);
+ * deleting one is a generic artifact delete. (Delegate is NOT a text turn — a
+ * hand-off is an agent action, handled directly.)
+ */
+export interface TextTurn {
+    kind: 'text';
+    id: string;
+    displayId: string;
+    /** clarify carries `options`; explain has none. */
+    textKind: 'clarify' | 'explain';
+    /** Markdown: the question preamble, or the answer. */
+    content: string;
+    /** The user message that triggered this turn (shown with the card so the
+     *  exchange stays self-contained — the run produced no table to anchor it). */
+    prompt?: string;
+    /** clarify only (empty/undefined ⇒ a plain explanation). */
+    options?: ClarificationQuestion[];
+    /** True once the user has responded to THIS clarify — it then locks
+     *  (read-only). A later response is a *new* conversation, not a re-answer. */
+    answered?: boolean;
+    /** The user's response to this clarify, shown in the resolved read-only view
+     *  (question → answer). */
+    answer?: string;
+    /**
+     * The thread node this turn FOLLOWS (design-docs/42) — the SINGLE authored
+     * edge that places the turn in the thread. Captured once at ask time: the
+     * table the user asked from (a fresh turn), or the previous node in the run
+     * (a chained follow-up / the turn being answered). Branching = two nodes
+     * sharing a parent. This fully replaces the old inferred positioning
+     * (sourceTableId / resultTableId / conversationId), which are now deprecated.
+     */
+    parentNodeId: string;
+    /** The chart the user was on when this turn was created — canvas provenance
+     *  only (focusing the turn keeps this chart on the canvas). NOT positioning. */
+    sourceChartId?: string;
+    actionId?: string;
+    /**
+     * §12 opaque resume token — set iff the backend stamped a trajectory on the
+     * emitting event (continuation opt-in). Absent ⇒ followups are fresh turns.
+     */
+    resume?: { trajectory: any[]; completedStepCount: number };
+    createdAt: number;
+}
 
 // Define data cleaning message types
 export type DataCleanTableOutput = {
@@ -300,6 +353,16 @@ export interface DictTable {
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
     description: string; // table-level description sourced from the loader (read-only). Empty string when none.
+
+    /**
+     * Authored THREAD edge (design-docs/42): the node this table FOLLOWS in the
+     * thread — set to a text-turn id when a conversation produced the table (the
+     * chain `table → clarifyTurn → askedFromTable`). It overrides
+     * `derive.trigger.tableId` for POSITION only; data provenance
+     * (`derive.source` / `derive.trigger`) is unchanged. Unset ⇒ the table's
+     * thread parent is its data parent (`derive.trigger.tableId`).
+     */
+    threadParentId?: string;
 
     source?: DataSourceConfig;
     

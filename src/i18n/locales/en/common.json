@@ -47,6 +47,13 @@
     "data": "Data",
     "microsoftResearch": "Microsoft Research"
   },
+  "logs": {
+    "title": "Server Logs",
+    "viewLogs": "View server logs",
+    "refresh": "Refresh",
+    "download": "Download full log",
+    "empty": "Log file is empty."
+  },
   "session": {
     "exportSession": "export session",
     "importSession": "import session",
@@ -423,6 +430,9 @@
     "threadIndex": "thread - {{index}}",
     "continuedFromAbove": "continued",
     "continuesBelow": "continues",
+    "textTurnEarlier": "{{count}} earlier reply",
+    "textTurnEarlier_other": "{{count}} earlier replies",
+    "textTurnCollapse": "Collapse",
     "usingSources": "Using",
     "hmm": "hmm...",
     "oops": "oops...",
@@ -526,6 +536,7 @@
     "placeholderFormulateEmphasis": "✏️ formulate data",
     "formulateAndOverride": "formulate and override",
     "agentWorking": "Agent is working...",
+    "attachUploadFailed": "Failed to attach {{name}}",
     "replyPlaceholder": "Reply to agent's question...",
     "explorePlaceholder": "Ask questions or describe what to explore (add context with @)",
     "explorePlaceholderSingleTable": "Ask questions or describe what to explore",
@@ -559,6 +570,8 @@
     "clarificationTitle": "Question",
     "minimizeClarification": "Minimize",
     "expandClarification": "Expand",
+    "pauseClose": "Close (switch focus)",
+    "pauseDelete": "Delete",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "(optional)",
     "freeTextClarificationPlaceholder": "Type your answer...",

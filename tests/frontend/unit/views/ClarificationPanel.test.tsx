@@ -37,7 +37,8 @@ describe('ClarificationPanel', () => {
           options: [{ label: 'Revenue' }],
         }]}
         onSubmit={onSubmit}
-        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
 
@@ -70,7 +71,8 @@ describe('ClarificationPanel', () => {
         ]}
         onSelectAnswer={onSelectAnswer}
         onSubmit={onSubmit}
-        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
 
@@ -94,7 +96,8 @@ describe('ClarificationPanel', () => {
           responseType: 'free_text',
         }]}
         onSubmit={onSubmit}
-        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
 
@@ -132,7 +135,8 @@ describe('ClarificationPanel', () => {
           options: [{ label: 'Revenue' }],
         }]}
         onSubmit={onSubmit}
-        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
 
@@ -166,7 +170,8 @@ describe('ClarificationPanel', () => {
         onSelectAnswer={onSelectAnswer}
         onClearAnswer={onClearAnswer}
         onSubmit={vi.fn()}
-        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
 
@@ -196,7 +201,8 @@ describe('ClarificationPanel', () => {
           responseType: 'free_text',
         }]}
         onSubmit={onSubmit}
-        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
 

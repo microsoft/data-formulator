@@ -483,7 +483,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     
     let charts = useSelector(dfSelectors.getAllCharts);
-    let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    // Resolve via the canvas target so a focused text turn keeps the chart
+    // detail on its source chart (design-docs/41).
+    let focusedId = useSelector(dfSelectors.selectCanvasTarget);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
 
@@ -1336,7 +1338,10 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const { t } = useTranslation();
     let allCharts = useSelector(dfSelectors.getAllCharts);
-    let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    // Resolve the canvas target: a focused text turn (clarify/explain) is
+    // non-canvas-owning — the canvas keeps showing its source chart, or the
+    // source table when no chart exists (design-docs/41).
+    let focusedId = useSelector(dfSelectors.selectCanvasTarget);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
@@ -1488,7 +1493,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                     px: 3, pt: 2, pb: 2, boxSizing: 'border-box',
                                 }}>
                                     <Box sx={{ width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, flex: '1 1 auto', minHeight: MIN_TABLE_HEIGHT, maxHeight: maxCardHeight }}>
-                                        <FreeDataViewFC maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} resetOrderToken={tableResetOrderToken} onStateReport={setTableGridReport} />
+                                        <FreeDataViewFC tableId={focusedTableId} maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} resetOrderToken={tableResetOrderToken} onStateReport={setTableGridReport} />
                                     </Box>
                                 </Box>
                             );

@@ -129,6 +129,13 @@ class MySQLDataLoader(ExternalDataLoader):
         conn = self._get_conn()
         cur = conn.cursor()
         try:
+            # Force a fresh REPEATABLE READ snapshot on every read so rows
+            # committed by other sessions after this loader was first
+            # instantiated are visible without restarting the process.
+            try:
+                conn.commit()
+            except Exception:
+                pass
             cur.execute(query)
             if cur.description is None:
                 return pa.table({})

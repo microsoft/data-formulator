@@ -264,11 +264,13 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
             <IconButton size="small" onClick={onStop}
                 sx={{
                     width: 28, height: 28,
-                    bgcolor: 'transparent',
+                    bgcolor: alpha(theme.palette.error.main, 0.08),
                     color: 'error.main',
+                    border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
                     '&:hover': {
-                        bgcolor: alpha(theme.palette.error.main, 0.08),
+                        bgcolor: alpha(theme.palette.error.main, 0.16),
                         color: 'error.dark',
+                        borderColor: alpha(theme.palette.error.main, 0.35),
                     },
                 }}>
                 <StopIcon sx={{ fontSize: 14 }} />

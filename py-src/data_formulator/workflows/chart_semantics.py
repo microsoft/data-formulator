@@ -11,7 +11,7 @@ Provides semantic-aware type resolution for create_vl_plots.py:
   - VL type resolution (nominal / ordinal / temporal / quantitative)
   - Ordinal sort order (months, days, quarters)
 
-This is intentionally minimal.  The TS agents-chart library is the
+This is intentionally minimal.  The flint-chart TS library is the
 canonical source of truth for formatting, color schemes, tick
 constraints, domain constraints, and other visual refinements.
 The Python side focuses on getting the structural type decisions right

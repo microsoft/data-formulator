@@ -215,14 +215,14 @@ loses work.)
 next message starts a fresh turn). Use it whenever you've done what was asked,
 including answering a question you fully resolved.
 
-**Whenever you expect the user to reply — a question, a clarification, an
-explanation you want them to react to, or a set of choices — use the `ask_user`
-action instead.** It renders a question widget and pauses the run for their
-reply, so the conversation resumes in the same turn. `ask_user` accepts
-free-text questions (no clickable options required), so reach for it for *any*
-followup-seeking turn, not only structured choices. Plain text never asks for
-input; `ask_user` always does. There is no separate "stop" or "summary" action:
-you stop by simply not acting.
+**Whenever you expect the user to reply — a question, a clarification, or a set
+of choices — use the `ask_user` action instead.** It renders a question widget
+and pauses the run for their reply, so the conversation resumes in the same
+turn. `ask_user` accepts free-text questions (no clickable options required), so
+reach for it for *any* followup-seeking turn, not only structured choices. Keep
+your reasoning and explanations in your reply text, not inside `ask_user`. Plain
+text never asks for input; `ask_user` always does. There is no separate "stop"
+or "summary" action: you stop by simply not acting.
 
 The concrete actions available to you — and how to use each well — are
 described in the capability sections below.
@@ -371,6 +371,7 @@ class AnalystAgent:
         primary_tables: list[str] | None = None,
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
+        scratch_files: list[str] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -434,6 +435,7 @@ class AnalystAgent:
                     primary_tables=primary_tables,
                     attached_images=attached_images,
                     charts=charts,
+                    scratch_files=scratch_files,
                 )
                 rlog.log(
                     "context_built",
@@ -973,9 +975,14 @@ class AnalystAgent:
                     stdout = stdout[:8000] + "\n... (truncated)"
                 return {"status": "ok", "stdout": stdout}
             else:
+                err = raw.get("error_message", raw.get("content", "Unknown error"))
+                logger.warning(
+                    "[AnalystAgent] explore code failed: %s\n--- code ---\n%s",
+                    err, code[:2000],
+                )
                 return {
                     "status": "error",
-                    "error": raw.get("error_message", raw.get("content", "Unknown error")),
+                    "error": err,
                     "stdout": "",
                 }
         except Exception as e:
@@ -1019,6 +1026,10 @@ class AnalystAgent:
 
             if execution_result['status'] != 'ok':
                 error_message = execution_result.get('content', 'Unknown error')
+                logger.warning(
+                    "[AnalystAgent] visualize code failed: %s\n--- code ---\n%s",
+                    error_message, code[:2000],
+                )
                 return {"status": "error", "error_message": str(error_message)}
 
             full_df = execution_result['content']
@@ -1237,6 +1248,7 @@ class AnalystAgent:
         primary_tables: list[str] | None = None,
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
+        scratch_files: list[str] | None = None,
     ) -> list[dict]:
         """Build the initial messages with 3-tier context."""
         table_summaries = self._build_lightweight_table_context(input_tables, primary_tables=primary_tables)
@@ -1272,6 +1284,25 @@ class AnalystAgent:
             if always_apply_rules:
                 rules_text = "\n\n".join([f"### {r['title']}\n{r['body']}" for r in always_apply_rules])
                 user_content += f"[USER RULES - MUST FOLLOW]\n\n{rules_text}\n\n"
+
+        # Non-image attachments were uploaded to the workspace scratch/ folder
+        # (raw bytes). Surface them and the two natural uses: read as context
+        # for analysis, or bring into the workspace via data loading (which
+        # shares scratch/ access). Keep it neutral — the agent picks.
+        if scratch_files:
+            file_list = "\n".join(f"- {p}" for p in scratch_files)
+            user_content += (
+                "[ATTACHED FILES]\n\n"
+                "The user attached file(s), saved in the workspace scratch/ "
+                "folder:\n"
+                f"{file_list}\n\n"
+                "You can use them two ways: read a file with execute_python_script "
+                "(e.g. pd.read_excel('scratch/<name>') or "
+                "pd.read_csv('scratch/<name>')) to use as context for your "
+                "analysis, or \u2014 if it's data to bring into the workspace \u2014 "
+                "delegate to data_loading, which can read the same scratch/ "
+                "files.\n\n"
+            )
 
         user_content += f"[USER QUESTION]\n\n{user_question}"
 

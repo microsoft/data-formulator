@@ -43,14 +43,14 @@ https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
 ## News 🔥🔥🔥
 
-[07-13-2026] **Data Formulator 0.8 alpha 1** — a preview of a more connected, agent-driven data workflow:
+[07-17-2026] **Data Formulator 0.8 alpha 2** — A more connected, conversational way to work with data:
 
-- **Smarter agent handoffs.** Analysis can delegate directly to data loading while preserving the conversation and request context.
-- **A redesigned connector experience.** Progressive setup, explicit authentication paths, database discovery, clearer scope controls, and improved credential handling make data sources easier to configure safely.
-- **Better loading plans.** Recommended selections, compact previews, readable filters, provenance, and more reliable history and scrolling improve review before import.
-- **Stronger enterprise foundations.** Unified connector metadata, session-scoped knowledge and distillation improvements, model routing, and additional isolation guardrails prepare Data Formulator for larger deployments.
+- **Explore large datasets through conversation.** Connect a database, then ask the agent to find the right tables, filter the data, or update your selection as your question evolves. You can review the resulting filters, previews, and data sources before anything is loaded.
+- **Keep the whole analysis in one conversation.** Agents can load data without losing track of what you asked. Questions, explanations, and results stay together in the Data Thread, so you can pick up from any step or branch into a new question, column, or chart.
+- **Choose a chart that fits the question.** The gallery now includes bullet, connected scatter, ECDF, Gantt, range area, slope, sparkline, and violin charts, along with better recommendations. Files you attach also stay available to the analyst as the exploration continues.
+- **Spend less time troubleshooting.** This release improves long-running sessions, model routing, data isolation, installation across platforms, dependency security, and MySQL data freshness. Persistent logs and an in-app log viewer make problems easier to track down.
 
-> Preview with `pip install --pre data_formulator==0.8.0a1` or `uvx --from data_formulator==0.8.0a1 data_formulator`.
+> Preview with `pip install --pre data_formulator==0.8.0a2` or `uvx --from data_formulator==0.8.0a2 data_formulator`.
 
 > Install the latest stable release (0.7) with `pip install data_formulator` or run instantly with `uvx data_formulator`.
 

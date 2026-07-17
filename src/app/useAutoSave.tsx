@@ -6,6 +6,7 @@ import { useSelector } from 'react-redux';
 import { DataFormulatorState } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
 import { handleApiError } from './errorHandler';
+import { DF_STATE_VERSION } from './stateMigrations';
 
 /**
  * Fields excluded from auto-save (secrets / ephemeral / fetched-on-startup).
@@ -39,6 +40,9 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
             result[key] = value;
         }
     }
+    // Stamp the schema version so `migrateState` can upgrade this payload on a
+    // future load (see stateMigrations.ts). Unversioned = 0.
+    result.__stateVersion = DF_STATE_VERSION;
     return result;
 }
 

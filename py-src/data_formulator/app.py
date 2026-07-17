@@ -123,6 +123,85 @@ app.config['CLI_ARGS'] = {
 # Get logger for this module (logging config moved to run_app function)
 logger = logging.getLogger(__name__)
 
+_LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Marker attribute so we never attach the persistent file handler twice
+# (configure_logging runs early; run_app re-checks once --data-dir is known).
+_FILE_HANDLER_MARKER = '_df_persistent_file_handler'
+
+
+def _resolve_data_home() -> Path:
+    """Resolve the Data Formulator home directory for logging.
+
+    Mirrors ``get_data_formulator_home()`` but is safe to call outside an
+    application context (logging is configured before the app runs).
+    Order: CLI_ARGS['data_dir'] > DATA_FORMULATOR_HOME env > ~/.data_formulator.
+    """
+    data_dir = app.config.get('CLI_ARGS', {}).get('data_dir')
+    if data_dir:
+        return Path(data_dir)
+    env_home = os.getenv('DATA_FORMULATOR_HOME')
+    if env_home:
+        return Path(env_home)
+    return Path.home() / '.data_formulator'
+
+
+def configure_file_logging() -> None:
+    """Attach a rotating file handler that persists all logs under
+    ``<DATA_FORMULATOR_HOME>/logs/data_formulator.log``.
+
+    This is the artifact users can send when reporting problems. Output is
+    passed through :class:`SensitiveDataFilter` so API keys / tokens are
+    redacted. The handler is idempotent — if the resolved path changes
+    (e.g. ``--data-dir`` supplied after early configuration) the old handler
+    is replaced.
+    """
+    from logging.handlers import RotatingFileHandler
+    from data_formulator.security.log_sanitizer import SensitiveDataFilter
+
+    try:
+        log_dir = _resolve_data_home() / 'logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / 'data_formulator.log'
+    except Exception as exc:  # pragma: no cover - filesystem edge cases
+        logging.getLogger('data_formulator').warning(
+            "Could not set up persistent file logging: %s", exc,
+        )
+        return
+
+    root = logging.getLogger()
+
+    # Skip if an identical handler is already attached; otherwise drop any
+    # previous persistent handler so we don't duplicate output.
+    for h in list(root.handlers):
+        if getattr(h, _FILE_HANDLER_MARKER, False):
+            if getattr(h, 'baseFilename', None) == str(log_path.resolve()):
+                app.config['LOG_FILE_PATH'] = str(log_path)
+                return
+            root.removeHandler(h)
+            try:
+                h.close()
+            except Exception:
+                pass
+
+    handler = RotatingFileHandler(
+        log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding='utf-8',
+    )
+    setattr(handler, _FILE_HANDLER_MARKER, True)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    handler.addFilter(SensitiveDataFilter())
+    root.addHandler(handler)
+
+    # Mirror onto the Flask app logger too (its handlers are managed separately).
+    if not any(getattr(h, _FILE_HANDLER_MARKER, False) for h in app.logger.handlers):
+        app.logger.addHandler(handler)
+
+    app.config['LOG_FILE_PATH'] = str(log_path)
+    logging.getLogger('data_formulator').info(
+        "Persistent logs: %s", log_path,
+    )
+
+
 def configure_logging():
     """Configure logging for the Flask application."""
     log_level_str = os.getenv("LOG_LEVEL", "INFO").strip().upper()
@@ -135,7 +214,7 @@ def configure_logging():
 
     logging.basicConfig(
         level=logging.WARNING,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format=_LOG_FORMAT,
         handlers=[handler],
     )
 
@@ -148,6 +227,9 @@ def configure_logging():
     app.logger.handlers = []
     for h in logging.getLogger().handlers:
         app.logger.addHandler(h)
+
+    # Persist everything to a file under the DF home so users can send logs.
+    configure_file_logging()
 
     logging.getLogger('data_formulator').info(
         "Log level: %s (sanitize=%s)", log_level_str,
@@ -188,12 +270,16 @@ def _register_blueprints():
     # Import demo stream routes
     from data_formulator.routes.demo_stream import demo_stream_bp, limiter as demo_stream_limiter
     demo_stream_limiter.init_app(app)
-    
+
+    # Import server-log inspection routes (local-mode gated)
+    from data_formulator.routes.logs import logs_bp
+
     # Register blueprints
     app.register_blueprint(tables_bp)
     app.register_blueprint(agent_bp)
     app.register_blueprint(session_bp)
     app.register_blueprint(demo_stream_bp)
+    app.register_blueprint(logs_bp)
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
@@ -446,6 +532,10 @@ def run_app():
         ],
     }
     
+    # Now that --data-dir is applied, ensure the persistent log file lives
+    # under the resolved DF home (re-points if it differs from the default).
+    configure_file_logging()
+
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints()
 

@@ -22,14 +22,12 @@
 
 import React, { FC, ReactNode, useEffect, useRef, useState } from 'react';
 import {
-    Box, Collapse, IconButton, InputAdornment, TextField, Tooltip, Typography, useTheme,
+    Box, IconButton, InputAdornment, TextField, Tooltip, Typography, useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
-import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import { useTranslation } from 'react-i18next';
@@ -48,66 +46,52 @@ import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
 // ---------------------------------------------------------------------------
 
 interface AgentPauseShellProps {
-    /** Localized header label shown both when expanded and minimized. */
+    /** Localized header label. */
     title: string;
-    /** Short preview text shown next to the title when the panel is minimized. */
-    minimizedPreview?: string;
-    /** Tooltip + behavior for the dismiss (×) icon. */
-    dismissTooltip: string;
-    /** Tooltip labels for the minimize/expand toggle. */
-    minimizeTooltip: string;
-    expandTooltip: string;
+    /** Tooltip for the close (×) icon — de-highlights / switches focus. */
+    closeTooltip: string;
+    /** Deprecated: delete is handled from the thread card directly, so the
+     *  panel no longer renders a delete button. Kept optional for callers. */
+    deleteTooltip?: string;
     /**
      * Icon glyph rendered in the header. Callers pass a fully-styled
      * `AgentToyIcon` (or any node) so the shell stays agnostic of icon
-     * variants and colors. The shell only fades the icon when minimized.
+     * variants and colors.
      */
     icon: ReactNode;
     /**
-     * Optional accent color driving the panel's chrome (bg fill, border,
-     * hover). When omitted the panel uses neutral greyscale chrome. Each
-     * pause variant passes its own semantic hue so clarify / explain /
+     * Optional accent color driving the panel's chrome (bg fill, border).
+     * When omitted the panel uses a faint wash of the theme's SECONDARY color.
+     * Each pause variant passes its own semantic hue so clarify / explain /
      * suggest panels read as visually distinct moments in the timeline
      * (parallel to the tinted bubbles in `InteractionEntryCard`).
      */
     accentColor?: string;
-    /** Called when the user dismisses the pause. */
-    onCancel: () => void;
-    /** Reset minimized state whenever this value changes (e.g. new questions). */
-    resetKey?: unknown;
+    /** Close: de-highlight the pause and switch focus to the previous chart. */
+    onClose: () => void;
+    /** Deprecated: delete is handled from the thread card directly. */
+    onDelete?: () => void;
     children: ReactNode;
 }
 
 const AgentPauseShell: FC<AgentPauseShellProps> = ({
     title,
-    minimizedPreview,
-    dismissTooltip,
-    minimizeTooltip,
-    expandTooltip,
+    closeTooltip,
     icon,
     accentColor,
-    onCancel,
-    resetKey,
+    onClose,
     children,
 }) => {
     const theme = useTheme();
-    const [minimized, setMinimized] = useState(false);
 
     // Chrome is a soft tinted fill in the accent hue. When no explicit accent
     // is given the panel falls back to a faint wash of the theme's SECONDARY
     // color — a different, theme-derived hue from the primary blue used by the
-    // chat affordances, so the panel reads as its own subtle surface without
-    // echoing the primary CTA color. Interactive affordances (chips, CTAs)
-    // keep the primary hue for the strongest color.
+    // chat affordances, so the panel reads as its own subtle surface.
     const fillAccent = accentColor ?? theme.palette.secondary.main;
     const panelBg = alpha(fillAccent, 0.05);
     const panelBorder = alpha(fillAccent, 0.18);
-    const panelHover = alpha(fillAccent, 0.09);
     const primaryColor = theme.palette.primary.main;
-
-    // Reset minimize when the underlying pause changes so a brand-new
-    // pause shows up expanded by default.
-    useEffect(() => { setMinimized(false); }, [resetKey]);
 
     return (
         <Box sx={{
@@ -116,104 +100,43 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
             borderBottom: `1px solid ${panelBorder}`,
             backgroundColor: panelBg,
             // Inset slightly under the parent Card's gradient border (1.5px
-            // stroke + 12px outer radius → ~10.5px inner radius). Match
-            // that inner curve so the panel's rounded corners hug the
-            // gradient border instead of sticking out as squared edges.
+            // stroke + 12px outer radius → ~10.5px inner radius) so the panel's
+            // rounded corners hug the gradient border cleanly.
             borderRadius: '10.5px 10.5px 0 0',
             overflow: 'hidden',
             mx: '-10px', mt: '-8px', mb: '4px',
         }}>
-            <Box
-                onClick={() => setMinimized(prev => !prev)}
-                sx={{
-                    display: 'flex', alignItems: 'center', gap: '6px', minHeight: 16,
-                    cursor: 'pointer',
-                    // Stretch hover background to the panel's full content
-                    // width by extending past the parent's px: 0.5 padding,
-                    // then re-add it on the inside. Header owns the top
-                    // spacing so the hover bg fills cleanly to the panel's
-                    // rounded top edge.
-                    px: 0.5, mx: -0.5, pt: '8px', pb: '6px',
-                    '&:hover': { backgroundColor: panelHover },
-                }}
-            >
-                <Box sx={{
-                    display: 'inline-flex', flexShrink: 0,
-                    opacity: minimized ? 0.5 : 1,
-                }}>
+            <Box sx={{
+                display: 'flex', alignItems: 'center', gap: '6px', minHeight: 16,
+                px: 0.5, mx: -0.5, pt: '8px', pb: '6px',
+            }}>
+                <Box sx={{ display: 'inline-flex', flexShrink: 0 }}>
                     {icon}
                 </Box>
-                {minimized ? (
-                    <Box sx={{
-                        flex: 1, display: 'flex', alignItems: 'baseline',
-                        gap: '6px', minWidth: 0,
-                    }}>
-                        <Typography sx={{
-                            fontSize: 10, fontWeight: 600,
-                            color: theme.palette.text.disabled,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.06em', flexShrink: 0,
-                        }}>
-                            {title}
-                        </Typography>
-                        {minimizedPreview && (
-                            <Typography sx={{
-                                fontSize: 11,
-                                color: theme.palette.text.secondary,
-                                fontStyle: 'italic',
-                                overflow: 'hidden', textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap', minWidth: 0, flex: 1,
-                            }}>
-                                {minimizedPreview.slice(0, 120)}
-                            </Typography>
-                        )}
-                    </Box>
-                ) : (
-                    <Typography sx={{
-                        fontSize: 11, fontWeight: 600,
-                        color: theme.palette.text.primary,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em', flex: 1,
-                    }}>
-                        {title}
-                    </Typography>
-                )}
-                <Tooltip title={dismissTooltip}>
+                <Typography sx={{
+                    fontSize: 11, fontWeight: 600,
+                    color: theme.palette.text.primary,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em', flex: 1,
+                }}>
+                    {title}
+                </Typography>
+                <Tooltip title={closeTooltip}>
                     <IconButton
                         size="small"
-                        onClick={(e) => { e.stopPropagation(); onCancel(); }}
-                        sx={{
-                            p: 0, width: 16, height: 16,
-                            color: theme.palette.text.disabled,
-                            '&:hover': { color: theme.palette.error.main },
-                        }}
-                    >
-                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                </Tooltip>
-                <Tooltip title={minimized ? expandTooltip : minimizeTooltip}>
-                    <IconButton
-                        size="small"
-                        // The whole header row is clickable to toggle; this
-                        // dedicated button just provides the affordance and a
-                        // tooltip.
+                        onClick={onClose}
                         sx={{
                             p: 0, width: 16, height: 16,
                             color: theme.palette.text.secondary,
                             '&:hover': { color: primaryColor },
                         }}
-                        tabIndex={-1}
                     >
-                        {minimized
-                            ? <UnfoldMoreIcon sx={{ fontSize: 14 }} />
-                            : <UnfoldLessIcon sx={{ fontSize: 14 }} />}
+                        <CloseRoundedIcon sx={{ fontSize: 14 }} />
                     </IconButton>
                 </Tooltip>
             </Box>
 
-            <Collapse in={!minimized} timeout={180} unmountOnExit={false}>
-                {children}
-            </Collapse>
+            {children}
         </Box>
     );
 };
@@ -249,7 +172,10 @@ interface ClarificationPanelProps {
     /** Clear a question's recorded answer (e.g. the user edits its field). */
     onClearAnswer?: (questionIndex: number) => void;
     onSubmit: (responses: ClarificationResponse[]) => void;
-    onCancel: () => void;
+    /** Close: de-highlight the pause and switch focus to the previous chart. */
+    onClose: () => void;
+    /** Delete: remove this pending pause block. */
+    onDelete: () => void;
 }
 
 export const ClarificationPanel: FC<ClarificationPanelProps> = ({
@@ -259,7 +185,8 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     onSelectAnswer,
     onClearAnswer,
     onSubmit,
-    onCancel,
+    onClose,
+    onDelete,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -495,12 +422,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
             />}
             accentColor={chromeAccent}
             title={title}
-            minimizedPreview={questions[0]?.text || ''}
-            dismissTooltip={t('chartRec.cancelClarification')}
-            minimizeTooltip={t('chartRec.minimizeClarification')}
-            expandTooltip={t('chartRec.expandClarification')}
-            onCancel={onCancel}
-            resetKey={questions}
+            closeTooltip={t('chartRec.pauseClose')}
+            deleteTooltip={t('chartRec.pauseDelete')}
+            onClose={onClose}
+            onDelete={onDelete}
         >
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: questions.length > 1 ? '14px' : '4px', pb: '8px' }}>
                 {questions.map((question, questionIndex) => {
@@ -652,8 +577,10 @@ interface DelegatePanelProps {
     /** One or two hand-off option prompts (cards). Each string is shown
      *  on the button and used as the seed prompt for the target agent. */
     options: string[];
-    /** Dismiss the suggestion (treated as cancelling the pause). */
-    onCancel: () => void;
+    /** Close: de-highlight the suggestion and switch focus to the previous chart. */
+    onClose: () => void;
+    /** Delete: remove this suggestion block. */
+    onDelete: () => void;
 }
 
 /**
@@ -668,7 +595,8 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
     target,
     message,
     options,
-    onCancel,
+    onClose,
+    onDelete,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -679,8 +607,8 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
         if (!cleanPrompt) return;
         dispatch(dfActions.requestAgentHandoff({ target, prompt: cleanPrompt }));
         // Hand off — the user's attention moves to the target agent
-        // and the data-agent run is done.
-        onCancel();
+        // and the data-agent run is done, so the suggestion block is removed.
+        onDelete();
     };
 
     const isReport = target === 'report_gen';
@@ -702,12 +630,10 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
             />}
             accentColor={theme.palette.primary.main}
             title={t('chartRec.delegateTitle')}
-            minimizedPreview={message}
-            dismissTooltip={t('chartRec.delegateDismiss')}
-            minimizeTooltip={t('chartRec.delegateMinimize')}
-            expandTooltip={t('chartRec.delegateExpand')}
-            onCancel={onCancel}
-            resetKey={`${target}|${validOptions.join('||')}`}
+            closeTooltip={t('chartRec.pauseClose')}
+            deleteTooltip={t('chartRec.pauseDelete')}
+            onClose={onClose}
+            onDelete={onDelete}
         >
             <Box sx={{
                 display: 'flex', flexDirection: 'column',
@@ -793,8 +719,10 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
 interface ExplanationPanelProps {
     /** The agent's plain-text answer (markdown) to display read-only. */
     content: string;
-    /** Dismiss the panel (the user is done reading the answer). */
-    onCancel: () => void;
+    /** Close: de-highlight the panel and switch focus to the previous chart. */
+    onClose: () => void;
+    /** Delete: remove this explanation block from the thread. */
+    onDelete: () => void;
 }
 
 /**
@@ -804,7 +732,7 @@ interface ExplanationPanelProps {
  * but carries no inputs or actions — it's purely "here's what I said",
  * dismissible by the header's delete button or by focusing another item.
  */
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onCancel }) => {
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
@@ -816,12 +744,10 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onCancel 
             />}
             accentColor={theme.palette.primary.main}
             title={t('chartRec.explanationTitle')}
-            minimizedPreview={content}
-            dismissTooltip={t('chartRec.dismissExplanation')}
-            minimizeTooltip={t('chartRec.minimizeClarification')}
-            expandTooltip={t('chartRec.expandClarification')}
-            onCancel={onCancel}
-            resetKey={content}
+            closeTooltip={t('chartRec.pauseClose')}
+            deleteTooltip={t('chartRec.pauseDelete')}
+            onClose={onClose}
+            onDelete={onDelete}
         >
             <Box sx={{
                 maxHeight: 'clamp(120px, 32vh, 360px)',

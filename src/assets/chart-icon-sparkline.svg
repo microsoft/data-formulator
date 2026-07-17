@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Sparkline table: category tick | chrome-less trend strip | value tick -->
+  <!-- Row 1 (blue) -->
+  <line x1="20" y1="64" x2="54" y2="64" stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+  <polyline points="74,68 96,56 118,72 140,50 162,64 184,54 206,62" fill="none" stroke="#76c6ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="222" y1="64" x2="240" y2="64" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Row 2 (blue) -->
+  <line x1="20" y1="106" x2="54" y2="106" stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+  <polyline points="74,112 96,102 118,114 140,96 162,108 184,116 206,100" fill="none" stroke="#76c6ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="222" y1="106" x2="236" y2="106" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Row 3 (blue) -->
+  <line x1="20" y1="148" x2="54" y2="148" stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+  <polyline points="74,150 96,140 118,156 140,138 162,152 184,144 206,154" fill="none" stroke="#76c6ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="222" y1="148" x2="232" y2="148" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Row 4 (grayed "others") -->
+  <line x1="20" y1="190" x2="54" y2="190" stroke="#D8D8D8" stroke-width="4" stroke-linecap="round"/>
+  <polyline points="74,192 96,186 118,196 140,184 162,194 184,188 206,192" fill="none" stroke="#B8B8B8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="222" y1="190" x2="232" y2="190" stroke="#B8B8B8" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Column separators (subtle) -->
+  <line x1="66" y1="36" x2="66" y2="218" stroke="#363636" stroke-width="2" stroke-linecap="round"/>
+  <line x1="214" y1="36" x2="214" y2="218" stroke="#363636" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Header underline -->
+  <line x1="20" y1="36" x2="240" y2="36" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <!-- Baseline -->
+  <line x1="20" y1="218" x2="240" y2="218" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -6,8 +6,9 @@
 SEMANTIC TYPE SYSTEM  (Python mirror of the TypeScript registry)
 =============================================================================
 
-The **source of truth** for semantic types lives in the TypeScript library:
-    src/lib/agents-chart/core/type-registry.ts
+The **source of truth** for semantic types lives in the flint-chart library
+(npm package `flint-chart`, repo microsoft/flint-chart):
+    packages/flint-js/src/core/type-registry.ts
 
 This file mirrors the registered types and provides:
   1. String constants for every type in the TS TYPE_REGISTRY
