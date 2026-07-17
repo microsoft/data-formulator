@@ -1216,10 +1216,10 @@
   resolved "https://registry.npmjs.org/@tiptap/extension-horizontal-rule/-/extension-horizontal-rule-3.22.2.tgz"
   integrity sha512-Oz8KN5KJAWV1mFNE9UIWXdMD6xa5zPf/0yLsT8V4sgaRm+VsdFKllN58BY9qCZf/kIZbaOez5KkaoeAcm0MAZg==
 
-"@tiptap/extension-image@^3.22.2":
-  version "3.22.2"
-  resolved "https://registry.npmjs.org/@tiptap/extension-image/-/extension-image-3.22.2.tgz"
-  integrity sha512-xFCgwreF6sn5mQ/hFDQKn41NIbbfks/Ou9j763Djf3pWsastgzdgwifQOpXVI3aSsqlKUO3o8/8R/yQczvZcwg==
+"@tiptap/extension-image@^3.28.0":
+  version "3.28.0"
+  resolved "https://registry.yarnpkg.com/@tiptap/extension-image/-/extension-image-3.28.0.tgz#c7f81921eed08296eb93b8b409b429d7e6fa785b"
+  integrity sha512-aKGCdEjyujUcQ6tEtq4EPbKxEC16QsKapv3DeZs1c/UHFiEUalbbPHBnxjGnupiLz75IR+07GYqBoZ81kSCxiA==
 
 "@tiptap/extension-italic@^3.22.2":
   version "3.22.2"
