@@ -27,7 +27,7 @@ jobs:
         node-version: 20
         cache: 'yarn'
     - name: Set up uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: 3.12
     - name: Install node dependencies
