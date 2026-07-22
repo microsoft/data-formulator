@@ -3,8 +3,12 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from data_formulator.data_loader.kusto_data_loader import KustoDataLoader
+from data_formulator.data_loader.kusto_data_loader import (
+    KustoDataLoader,
+    _KustoDelegatedCredential,
+)
 from data_formulator.data_loader.external_data_loader import ConnectorParamError
+from data_formulator.data_connector import DataConnector
 
 
 def _loader() -> KustoDataLoader:
@@ -67,6 +71,74 @@ def test_ambient_path_does_not_require_service_principal_fields() -> None:
     }
 
     KustoDataLoader.validate_params(params)
+
+
+def test_microsoft_sign_in_is_default_when_oauth_is_configured(monkeypatch) -> None:
+    monkeypatch.setenv("KUSTO_OAUTH_CLIENT_ID", "client")
+
+    paths = KustoDataLoader.auth_paths()
+
+    assert paths[0]["id"] == "microsoft_sign_in"
+    assert paths[0]["default"] is True
+    assert KustoDataLoader.delegated_login_config() == {
+        "login_url": "/api/auth/kusto/login",
+        "label": "Sign in with Microsoft",
+        "params": ["kusto_cluster"],
+    }
+
+
+def test_ambient_is_default_when_oauth_is_not_configured(monkeypatch) -> None:
+    monkeypatch.delenv("KUSTO_OAUTH_CLIENT_ID", raising=False)
+
+    paths = KustoDataLoader.auth_paths()
+
+    assert paths[0]["id"] == "ambient"
+    assert paths[0]["default"] is True
+    assert KustoDataLoader.delegated_login_config() is None
+
+
+def test_connector_manifest_preserves_root_oauth_url(monkeypatch) -> None:
+    monkeypatch.setenv("KUSTO_OAUTH_CLIENT_ID", "client")
+    connector = DataConnector.from_loader(
+        KustoDataLoader,
+        source_id="kusto:test",
+        display_name="Kusto test",
+    )
+
+    config = connector.get_frontend_config()
+
+    assert config["delegated_login"] == {
+        "login_url": "/api/auth/kusto/login",
+        "label": "Sign in with Microsoft",
+        "params": ["kusto_cluster"],
+    }
+
+
+def test_delegated_credential_refreshes_expired_token(monkeypatch) -> None:
+    monkeypatch.setenv("KUSTO_OAUTH_CLIENT_ID", "client")
+    monkeypatch.setenv("KUSTO_OAUTH_TENANT_ID", "tenant")
+    response = Mock(ok=True)
+    response.json.return_value = {
+        "access_token": "new-access",
+        "refresh_token": "new-refresh",
+        "expires_in": 3600,
+    }
+    credential = _KustoDelegatedCredential(
+        "https://help.kusto.windows.net",
+        "expired-access",
+        "refresh",
+        0,
+    )
+
+    with patch(
+        "data_formulator.data_loader.kusto_data_loader.http.post",
+        return_value=response,
+    ) as post:
+        token = credential.get_token("https://help.kusto.windows.net/.default")
+
+    assert token.token == "new-access"
+    assert credential.refresh_token == "new-refresh"
+    assert post.call_args.kwargs["data"]["grant_type"] == "refresh_token"
 
 
 def test_legacy_complete_service_principal_infers_path() -> None:

@@ -480,10 +480,14 @@ class DataConnector:
             return None
         login_url = raw.get("login_url", "")
         # Resolve relative URLs to the connector's API prefix
-        if login_url and not login_url.startswith("http"):
+        if login_url and not login_url.startswith(("http", "/")):
             login_url = f"/api/connectors/{self._source_id}/{login_url}"
         # Only send safe fields to the frontend
-        return {"login_url": login_url, "label": raw.get("label", "")}
+        return {
+            "login_url": login_url,
+            "label": raw.get("label", ""),
+            "params": list(raw.get("params", [])),
+        }
 
     # -- Identity + Loader Management --------------------------------------
 
@@ -1424,6 +1428,7 @@ def connector_connect():
                 **extra_params,
                 "access_token": access_token,
                 "refresh_token": data.get("refresh_token", ""),
+                "token_expires_at": time.time() + float(data.get("expires_in") or 3600),
             }
         else:
             user_params = data.get("params", {})

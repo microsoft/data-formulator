@@ -70,7 +70,15 @@
       "client_id": "仅服务主体",
       "client_secret": "仅服务主体",
       "tenant_id": "仅服务主体",
-      "authInstructions": "**方式 1 — Azure 默认身份（最简单）：** 认证字段留空。DF 会自动使用 Azure CLI 登录（`az login`）、托管标识、VS Code 凭据或环境变量 — 按顺序尝试。\n\n**方式 2 — 服务主体：** 提供具有集群访问权限的 `client_id`、`client_secret` 和 `tenant_id`。"
+      "authInstructions": "**方式 1 — 使用 Microsoft 登录（推荐）：** 使用自己的身份登录并沿用现有 Kusto 权限。服务器配置 `KUSTO_OAUTH_CLIENT_ID` 后会显示此选项。\n\n**方式 2 — Azure 默认身份：** 使用 Azure CLI 登录（`az login`）、托管标识、VS Code 凭据或环境凭据。\n\n**方式 3 — 服务主体：** 提供具有集群访问权限的 `client_id`、`client_secret` 和 `tenant_id`。\n\n无论选择哪种身份，都必须预先拥有所选 Kusto 数据库的数据平面访问权限。"
+    },
+    "databricks": {
+      "server_hostname": "例如 adb-1234567890.11.azuredatabricks.net",
+      "http_path": "SQL 仓库 HTTP 路径，例如 /sql/1.0/warehouses/abc123",
+      "catalog": "Unity Catalog 名称（留空则浏览所有 catalog）",
+      "schema": "架构名称（留空则浏览该 catalog 下所有架构）",
+      "access_token": "Databricks 个人访问令牌（dapi...）",
+      "authInstructions": "**在哪里找到这些值：** 在 Databricks 工作区中打开 **SQL → SQL Warehouses**（左侧栏），点击你的仓库，进入 **Connection details** 选项卡，从中复制 **Server hostname** 和 **HTTP path**。\n\n**访问令牌：** 点击右上角头像 → **Settings → Developer → Access tokens → Generate new token**，令牌以 `dapi` 开头且仅显示一次。\n\n**权限：** 该令牌所属用户需要对目标 Unity Catalog 对象拥有 `USE CATALOG` / `USE SCHEMA` 和 `SELECT` 权限。\n\n**范围：** 将 *catalog* 和 *schema* 留空可浏览你有权访问的全部内容，或填写以直接进入指定的 catalog/架构 —— 例如可试用内置的 `samples` catalog → `nyctaxi` → `trips`。\n\n**没有账号？** Databricks Free Edition 免费、无服务器，并内置 `samples` catalog，无需配置集群或仓库。"
     },
     "superset": {
       "url": "Superset 基础 URL（如 https://bi.company.com）",

@@ -1,9 +1,13 @@
 import json
 import logging
+import os
 import re
+import time
 from typing import Any
 import pandas as pd
 import pyarrow as pa
+import requests as http
+from azure.core.credentials import AccessToken
 
 # ISO-8601 date / datetime literal (optional time, fractional seconds and
 # timezone). Values matching this are emitted as KQL ``datetime(...)`` literals
@@ -19,6 +23,56 @@ from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRe
 from azure.kusto.data.helpers import dataframe_from_result_table
 
 logger = logging.getLogger(__name__)
+
+
+class _KustoDelegatedCredential:
+    """Azure TokenCredential backed by an OAuth refresh token."""
+
+    def __init__(
+        self,
+        cluster: str,
+        access_token: str,
+        refresh_token: str,
+        expires_at: float,
+    ) -> None:
+        self.cluster = cluster.rstrip("/")
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        self.expires_at = expires_at
+
+    def get_token(self, *scopes: str, **_kwargs: Any) -> AccessToken:
+        if self.access_token and self.expires_at > time.time() + 300:
+            return AccessToken(self.access_token, int(self.expires_at))
+
+        client_id = os.environ.get("KUSTO_OAUTH_CLIENT_ID", "")
+        tenant_id = os.environ.get("KUSTO_OAUTH_TENANT_ID", "organizations")
+        authority = os.environ.get(
+            "KUSTO_OAUTH_AUTHORITY_HOST", "https://login.microsoftonline.com",
+        ).rstrip("/")
+        if not client_id or not self.refresh_token:
+            raise RuntimeError("Kusto delegated sign-in has expired; sign in again")
+
+        data = {
+            "client_id": client_id,
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "scope": scopes[0] if scopes else f"{self.cluster}/.default",
+        }
+        client_secret = os.environ.get("KUSTO_OAUTH_CLIENT_SECRET", "")
+        if client_secret:
+            data["client_secret"] = client_secret
+        response = http.post(
+            f"{authority}/{tenant_id}/oauth2/v2.0/token",
+            data=data,
+            timeout=15,
+        )
+        if not response.ok:
+            raise RuntimeError("Kusto delegated token refresh failed; sign in again")
+        tokens = response.json()
+        self.access_token = tokens["access_token"]
+        self.refresh_token = tokens.get("refresh_token", self.refresh_token)
+        self.expires_at = time.time() + tokens.get("expires_in", 3600)
+        return AccessToken(self.access_token, int(self.expires_at))
 
 
 def _coerce_int(value: Any) -> int | None:
@@ -53,7 +107,8 @@ class KustoDataLoader(ExternalDataLoader):
 
     @classmethod
     def auth_paths(cls) -> list[dict[str, Any]]:
-        return [
+        microsoft_sign_in = bool(os.environ.get("KUSTO_OAUTH_CLIENT_ID"))
+        paths = [
             {
                 "id": "ambient",
                 "label": "Azure default identity",
@@ -61,7 +116,7 @@ class KustoDataLoader(ExternalDataLoader):
                 "fields": [],
                 "required_fields": [],
                 "kind": "ambient",
-                "default": True,
+                "default": not microsoft_sign_in,
             },
             {
                 "id": "service_principal",
@@ -72,18 +127,45 @@ class KustoDataLoader(ExternalDataLoader):
                 "kind": "credentials",
             },
         ]
+        if microsoft_sign_in:
+            paths.insert(0, {
+                "id": "microsoft_sign_in",
+                "label": "Sign in with Microsoft",
+                "description": "Use your Microsoft identity and existing Kusto permissions.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "delegated_login",
+                "default": True,
+            })
+        return paths
 
     @classmethod
     def infer_auth_path(cls, params: dict[str, Any]) -> str:
         if all(params.get(name) for name in ("client_id", "client_secret", "tenant_id")):
             return "service_principal"
+        if params.get("access_token"):
+            return "microsoft_sign_in"
         return "ambient"
 
     @staticmethod
-    def auth_instructions() -> str:
-        return """**Option 1 — Azure Default Identity (recommended):** Leave the auth fields empty. DF connects using the host's ambient Azure credentials — your Azure CLI login (`az login`) when running locally, or a Managed Identity when deployed to Azure. That identity must be granted access to the cluster.
+    def delegated_login_config() -> dict[str, Any] | None:
+        if not os.environ.get("KUSTO_OAUTH_CLIENT_ID"):
+            return None
+        return {
+            "login_url": "/api/auth/kusto/login",
+            "label": "Sign in with Microsoft",
+            "params": ["kusto_cluster"],
+        }
 
-**Option 2 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access."""
+    @staticmethod
+    def auth_instructions() -> str:
+        return """**Option 1 — Sign in with Microsoft (recommended):** Sign in as yourself and use your existing Kusto permissions. This option appears when the server has `KUSTO_OAUTH_CLIENT_ID` configured.
+
+    **Option 2 — Azure Default Identity:** Use the host's ambient Azure credentials — your Azure CLI login (`az login`) when running locally, or a Managed Identity when deployed to Azure.
+
+    **Option 3 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access.
+
+    Every identity must already have data-plane access to the selected Kusto database."""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -95,10 +177,11 @@ class KustoDataLoader(ExternalDataLoader):
         self.client_secret = params.get("client_secret", None)
         self.tenant_id = params.get("tenant_id", None)
 
-        # Optional delegated user token (Kusto-audience). Reserved for a future
-        # user-impersonation sign-in; when absent the loader falls through to
-        # ambient Azure credentials (az login / Managed Identity).
+        # Optional delegated user token (Kusto-audience). When absent the loader
+        # falls through to ambient Azure credentials or a service principal.
         self.access_token = params.get("access_token", None)
+        self.refresh_token = params.get("refresh_token", None)
+        self.token_expires_at = float(params.get("token_expires_at") or 0)
 
         try:
             self.client = KustoClient(self._build_kcsb())
@@ -119,9 +202,18 @@ class KustoDataLoader(ExternalDataLoader):
         2. Service principal (``client_id`` / ``client_secret`` / ``tenant_id``)
         3. ``DefaultAzureCredential`` (``az login`` / Managed Identity / etc.)
         """
-        # 1. Explicit Kusto user token (already scoped for the cluster).
+        # 1. Delegated Kusto user token (already scoped for the cluster).
         if self.access_token:
             logger.info("Using delegated user token for Kusto client.")
+            if self.refresh_token:
+                credential = _KustoDelegatedCredential(
+                    self.kusto_cluster,
+                    self.access_token,
+                    self.refresh_token,
+                    self.token_expires_at,
+                )
+                return KustoConnectionStringBuilder.with_azure_token_credential(
+                    self.kusto_cluster, credential)
             return KustoConnectionStringBuilder.with_aad_user_token_authentication(
                 self.kusto_cluster, self.access_token)
 

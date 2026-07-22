@@ -34,6 +34,7 @@ boto3
 google-cloud-bigquery
 google-auth
 db-dtypes
+databricks-sql-connector
 
 # SSO / Auth deps
 PyJWT[crypto]>=2.8.0

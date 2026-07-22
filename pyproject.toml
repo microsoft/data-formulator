@@ -57,6 +57,7 @@ dependencies = [
     "google-cloud-bigquery",    # bigquery
     "google-auth",              # bigquery
     "db-dtypes",                # bigquery
+    "databricks-sql-connector", # databricks
     # SSO / Auth deps
     "PyJWT[crypto]>=2.8.0",     # OIDC JWT verification (includes cryptography)
     "requests",                 # GitHub OAuth code exchange, Superset API calls

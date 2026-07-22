@@ -80,7 +80,7 @@ export interface ServerConfig {
         effective_hierarchy: Array<{key: string; label: string}>;
         auth_instructions: string;
         auth_mode?: string;
-        delegated_login?: { login_url: string; label?: string } | null;
+        delegated_login?: { login_url: string; label?: string; params?: string[] } | null;
     }>;
     DISABLED_SOURCES?: Record<string, {install_hint: string}>;
     CONNECTED_CONNECTORS?: string[];
