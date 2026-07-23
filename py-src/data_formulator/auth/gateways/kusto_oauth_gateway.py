@@ -215,7 +215,7 @@ def kusto_callback():
     if idp_error:
         return _popup_response(origin, {
             "type": "df-sso-auth",
-            "error": request.args.get("error_description") or idp_error,
+            "error": "Microsoft sign-in failed",
         })
 
     code = request.args.get("code")
