@@ -23,7 +23,7 @@
         "@mui/material": "^7.1.1",
         "@mui/x-tree-view": "^9.0.1",
         "@reduxjs/toolkit": "^1.8.6",
-        "@tiptap/extension-image": "^3.22.2",
+        "@tiptap/extension-image": "^3.28.0",
         "@tiptap/extension-table": "^3.22.2",
         "@tiptap/extension-table-cell": "^3.22.2",
         "@tiptap/extension-table-header": "^3.22.2",
