@@ -1241,6 +1241,7 @@ def list_connectors():
             "source": "admin" if is_admin else "user",
             "deletable": not is_admin,
             "source_type": connector._loader_class.__name__,
+            "type_name": connector._loader_class.DISPLAY_NAME or connector._icon,
             "display_name": connector._display_name,
             "icon": connector._icon,
             "connected": connected,
@@ -1442,6 +1443,38 @@ def _remove_user_connector(identity: str, connector_id: str) -> None:
             logger.info("Removed connector spec '%s'", connector_id)
     except Exception as e:
         logger.warning("Failed to remove connector spec '%s': %s", connector_id, e)
+
+
+def _update_user_connector_display_name(identity: str, connector_id: str, display_name: str) -> None:
+    jail = _connectors_jail(identity, mkdir=False)
+    filename = f"{_safe_source_filename(connector_id)}.json"
+    path = jail.resolve(filename)
+    if not path.exists():
+        raise AppError(ErrorCode.CONNECTOR_ERROR, f"Connector config not found: {connector_id}")
+    with open(path, "r", encoding="utf-8") as f:
+        entry = _json.load(f)
+    entry["display_name"] = display_name
+    with open(path, "w", encoding="utf-8") as f:
+        _json.dump(entry, f, ensure_ascii=False, indent=2)
+
+
+@connectors_bp.route("/api/connectors/<path:connector_id>", methods=["PATCH"])
+def update_connector(connector_id: str):
+    """Rename a user connector without changing its stable source ID."""
+    if connector_id in _ADMIN_CONNECTOR_IDS:
+        raise AppError(ErrorCode.ACCESS_DENIED, "Admin connectors cannot be renamed")
+
+    display_name = str((request.get_json() or {}).get("display_name", "")).strip()
+    if not display_name:
+        raise AppError(ErrorCode.INVALID_REQUEST, "display_name is required")
+    if len(display_name) > 120:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "display_name must be 120 characters or fewer")
+
+    _registry_key, connector = _resolve_connector_with_key({"connector_id": connector_id})
+    identity = DataConnector._get_identity()
+    _update_user_connector_display_name(identity, connector_id, display_name)
+    connector._display_name = display_name
+    return json_ok({"id": connector_id, "display_name": display_name})
 
 
 @connectors_bp.route("/api/connectors/<path:connector_id>", methods=["DELETE"])

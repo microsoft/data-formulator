@@ -54,6 +54,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "true",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Include files in subdirectories",
             },
             {
@@ -62,6 +63,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Glob pattern to filter files (e.g. '*.csv')",
             },
         ]

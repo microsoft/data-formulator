@@ -22,6 +22,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from '../app/apiClient';
+import { deriveConnectorDisplayName } from '../app/connectorNames';
 import { CONNECTOR_URLS } from '../app/utils';
 import { dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -59,12 +60,12 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     const [metaError, setMetaError] = useState<string>('');
     const [loadingMeta, setLoadingMeta] = useState(true);
     const [expanded, setExpanded] = useState(defaultExpanded);
-    const [connectionName, setConnectionName] = useState<string>(prompt.connectionName || '');
     // Connected-state: collapsible details panel (non-sensitive only).
     const [connExpanded, setConnExpanded] = useState(false);
     const [connDetails, setConnDetails] = useState<Array<{ label: string; value: string }>>([]);
 
     const createdIdRef = useRef<string | null>(prompt.connectorId ?? null);
+    const generatedNameRef = useRef(prompt.connectionName || '');
     const seededRef = useRef(false);
 
     // Fetch the connector's param/auth schema. The agent only sends the type;
@@ -85,9 +86,6 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                     }));
                 }
                 setMeta(found);
-                if (found && !connectionName) {
-                    setConnectionName(found.name);
-                }
             })
             .catch(() => {
                 if (!cancelled) {
@@ -171,24 +169,26 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     // create-on-connect: called by DataLoaderForm right before it connects.
     const handleBeforeConnect = useCallback(async (params: Record<string, any>): Promise<string> => {
         if (createdIdRef.current) return createdIdRef.current;
+        const displayName = deriveConnectorDisplayName(meta?.name || sourceType, params);
         const { data } = await apiRequest<any>(CONNECTOR_URLS.CREATE, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 loader_type: sourceType,
-                display_name: connectionName.trim() || meta?.name || sourceType,
+                display_name: displayName,
                 icon: sourceType,
                 params,
                 persist: true,
             }),
         });
         createdIdRef.current = data.id;
+        generatedNameRef.current = displayName;
         return data.id;
-    }, [sourceType, connectionName, meta]);
+    }, [sourceType, meta]);
 
     const handleConnected = useCallback(async () => {
         const cid = createdIdRef.current;
-        let resolvedName = connectionName.trim() || meta?.name || sourceType;
+        let resolvedName = generatedNameRef.current || meta?.name || sourceType;
         if (cid) {
             try {
                 const { data } = await apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' });
@@ -234,7 +234,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
             attachments: [],
             hidden: true,
         }));
-    }, [messageId, connectionName, meta, sourceType, dispatch, t]);
+    }, [messageId, meta, sourceType, dispatch, t]);
 
     const cardSx = {
         mt: 1,
@@ -349,12 +349,6 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                             authPaths={meta.auth_paths}
                             compact
                             hideInstructions
-                            connectionName={{
-                                label: t('upload.connectionNameLabel', { defaultValue: 'connection name' }),
-                                value: connectionName,
-                                placeholder: meta.name,
-                                onChange: setConnectionName,
-                            }}
                             onImport={() => {}}
                             onFinish={(status, message) => {
                                 dispatch(dfActions.addMessages({

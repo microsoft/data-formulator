@@ -91,18 +91,10 @@ export const DataLoaderForm: React.FC<{
     delegatedLogin?: { login_url: string; label?: string; params?: string[] } | null,
     authMode?: string,
     authPaths?: ConnectorAuthPath[],
-    connectionName?: {
-        label: string,
-        value: string,
-        placeholder: string,
-        onChange: (value: string) => void,
-    },
     formTitle?: React.ReactNode,
     onImport: () => void,
     onFinish: (status: "success" | "error" | "warning", message: string, importedTables?: string[]) => void,
     onConnected?: () => void,
-    /** Called when the user clicks Delete. Receives the connectorId. */
-    onDelete?: (connectorId: string) => void,
     /** Called before the connect step. Returns the effective connectorId to use.
      *  Used by AddConnectionPanel to create the connector before connecting. */
     onBeforeConnect?: (params: Record<string, any>) => Promise<string>,
@@ -119,7 +111,7 @@ export const DataLoaderForm: React.FC<{
      *  the agent in chat. Populates the transient sensitive state so the user
      *  needn't retype; never persisted (see the redux-persist transform). */
     initialSensitiveParams?: Record<string, string>,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], connectionName, formTitle, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false, initialSensitiveParams}) => {
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false, initialSensitiveParams}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const loaderTypeKey = loaderType || dataLoaderType;
@@ -560,17 +552,18 @@ export const DataLoaderForm: React.FC<{
             {/* Connection form. Catalog browsing + table loading live in
                 the data-source sidebar — this dialog is for create / edit /
                 re-auth only. */}
-            <>
+            <Box sx={{
+                width: '100%',
+                maxWidth: compact ? '100%' : 960,
+                mx: 'auto',
+                px: compact ? 0 : { xs: 0, sm: 1.5 },
+                boxSizing: 'border-box',
+            }}>
                 {formTitle && (
-                    <Typography sx={{ fontSize: 13, lineHeight: 1.4, fontWeight: 600, color: 'text.primary', mb: 1 }}>
+                    <Typography sx={{ fontSize: 13, lineHeight: 1.4, fontWeight: 400, color: 'secondary.main', mb: 2 }}>
                         {formTitle}
                     </Typography>
                 )}
-                {!onBeforeConnect && (
-                    <Typography variant="body2" sx={{fontSize: 11.5, color: 'secondary.main', fontWeight: 600, mt: 1}}>
-                        {dataLoaderType}
-                    </Typography>
-                    )}
                     {(() => {
                         const hasTiers = paramDefs.some(p => p.tier);
                         const renderTimelineStep = (
@@ -639,6 +632,20 @@ export const DataLoaderForm: React.FC<{
                             ...formTextSx,
                             color: 'text.secondary',
                         };
+                        const fieldRowSx = {
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(0, 1fr)',
+                            rowGap: 0.25,
+                            alignItems: 'stretch',
+                            width: '100%',
+                            maxWidth: 420,
+                            minWidth: 0,
+                        };
+                        const fieldLabelSx = {
+                            ...secondaryTextSx,
+                            textAlign: 'left',
+                            overflowWrap: 'anywhere',
+                        };
                         // Typical Data Formulator body size (12px). Fields, labels
                         // and placeholders all sit on this one scale.
                         const inputSx = {
@@ -690,27 +697,31 @@ export const DataLoaderForm: React.FC<{
                                 loaderTypeKey === 'kusto' && name === 'kusto_cluster';
                             const isKustoDatabase = (name: string) =>
                                 loaderTypeKey === 'kusto' && name === 'kusto_database';
-                            // Left label, right input box. The per-field hint lives
-                            // inside the box as its placeholder, so each row stays a
-                            // single clean line: "name        [ value / hint ]".
+                            // Keep labels above inputs so long localized descriptions
+                            // cannot compete with or overlap the editable field.
                             const renderFieldRow = (paramDef: typeof tierParams[number], input: React.ReactNode) => (
                                 <Box
                                     key={paramDef.name}
-                                    sx={{
-                                        display: 'grid',
-                                        gridTemplateColumns: compact ? '104px minmax(0, 1fr)' : '124px minmax(0, 340px)',
-                                        columnGap: 2,
-                                        alignItems: 'center',
-                                    }}
+                                    sx={fieldRowSx}
                                 >
-                                    <Typography sx={{ ...secondaryTextSx, textAlign: 'left' }}>
+                                    <Typography sx={fieldLabelSx}>
                                         {paramDef.name}{paramDef.required ? ' *' : ''}
                                     </Typography>
                                     <Box sx={{ minWidth: 0 }}>{input}</Box>
                                 </Box>
                             );
                             return (
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: compact ? 1.5 : 2, maxWidth: 640 }}>
+                            <Box sx={{
+                                display: 'grid',
+                                gridTemplateColumns: 'minmax(0, 1fr)',
+                                columnGap: 4,
+                                rowGap: compact ? 1.5 : 2,
+                                width: '100%',
+                                maxWidth: 860,
+                                '@container (min-width: 720px)': {
+                                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                },
+                            }}>
                                 {tierParams.map((paramDef) => (
                                     isKustoCluster(paramDef.name) ? (
                                         renderFieldRow(paramDef,
@@ -891,42 +902,21 @@ export const DataLoaderForm: React.FC<{
                             ? t('db.createConnector', { defaultValue: 'Create Connector' })
                             : t('db.connect', { suffix: (params.table_filter || '').trim() ? t('db.withFilter') : '' });
                         let stepNumber = 0;
-                        const connectionStep = connectionName || connectionParams.length > 0 ? ++stepNumber : 0;
+                        const connectionStep = connectionParams.length > 0 ? ++stepNumber : 0;
                         const scopeStep = filterParams.length > 0 ? ++stepNumber : 0;
                         const authStep = ++stepNumber;
+                        const showConnectAction = !hasDelegated || selectedAuthParams.length > 0;
+                        const actionStep = showConnectAction ? ++stepNumber : 0;
 
                         return (
-                            <Box sx={{ mt: 1.5, maxWidth: 1120 }}>
+                            <Box sx={{ mt: 1.5, width: '100%', containerType: 'inline-size' }}>
                                 {/* Connection identity and source coordinates belong together. */}
-                                {(connectionName || connectionParams.length > 0) && (
+                                {connectionParams.length > 0 && (
                                     renderTimelineStep(
                                         connectionStep,
                                         t('db.tierConnection'),
                                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: compact ? 1.5 : 2 }}>
-                                            {connectionName && (
-                                                <Box sx={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns: compact ? '104px minmax(0, 1fr)' : '124px minmax(0, 340px)',
-                                                    columnGap: 2,
-                                                    alignItems: 'center',
-                                                }}>
-                                                    <Typography sx={{ ...secondaryTextSx, textAlign: 'left' }}>
-                                                        {connectionName.label}
-                                                    </Typography>
-                                                    <Box sx={{ minWidth: 0 }}>
-                                                        <DraftTextField
-                                                            key={`connection-name-${dataLoaderType}`}
-                                                            sx={inputSx}
-                                                            variant="standard" size="small" fullWidth
-                                                            value={connectionName.value}
-                                                            placeholder={connectionName.placeholder}
-                                                            onDraftChange={connectionName.onChange}
-                                                            onCommit={connectionName.onChange}
-                                                        />
-                                                    </Box>
-                                                </Box>
-                                            )}
-                                            {connectionParams.length > 0 && renderParamGrid(connectionParams)}
+                                            {renderParamGrid(connectionParams)}
                                             {advancedConnectionParams.length > 0 && (
                                                 <Box>
                                                     <Button
@@ -1108,7 +1098,22 @@ export const DataLoaderForm: React.FC<{
                                         renderParamGrid(selectedAuthParams)
                                     )}
 
-                                    {(!hasDelegated || selectedAuthParams.length > 0) && (
+                                    </>,
+                                    !showConnectAction,
+                                )}
+
+                                {showConnectAction && renderTimelineStep(
+                                    actionStep,
+                                    null,
+                                    <Box sx={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 1.5,
+                                        width: '100%',
+                                        maxWidth: 860,
+                                    }}>
                                         <Button
                                             variant="contained" color="primary" size="small"
                                             disabled={isConnecting}
@@ -1117,35 +1122,30 @@ export const DataLoaderForm: React.FC<{
                                                 minWidth: 80,
                                                 height: 30,
                                                 fontSize: 12,
-                                                mt: selectedAuthParams.length > 0 ? 1.25 : 1,
                                             }}
                                             onClick={() => connectAndListTables()}>
                                             {connectLabel}
                                         </Button>
-                                    )}
-                                    </>,
+                                        {paramDefs.length > 0 && (
+                                            <FormControlLabel
+                                                sx={{ m: 0, ml: 'auto', flexShrink: 0 }}
+                                                control={(
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={persistCredentials}
+                                                        onChange={(event) => setPersistCredentials(event.target.checked)}
+                                                        sx={{ p: 0.25, mr: 0.25 }}
+                                                    />
+                                                )}
+                                                label={(
+                                                    <Typography sx={{ ...secondaryTextSx, fontSize: 11 }}>
+                                                        {t('db.rememberCredentials')}
+                                                    </Typography>
+                                                )}
+                                            />
+                                        )}
+                                    </Box>,
                                     true,
-                                )}
-
-                                {paramDefs.length > 0 && (
-                                    <Box sx={{ ml: 4.75, mt: 1 }}>
-                                        <FormControlLabel
-                                            sx={{ m: 0 }}
-                                            control={(
-                                                <Checkbox
-                                                    size="small"
-                                                    checked={persistCredentials}
-                                                    onChange={(event) => setPersistCredentials(event.target.checked)}
-                                                    sx={{ p: 0 }}
-                                                />
-                                            )}
-                                            label={(
-                                                <Typography sx={secondaryTextSx}>
-                                                    {t('db.rememberCredentials')}
-                                                </Typography>
-                                            )}
-                                        />
-                                    </Box>
                                 )}
                             </Box>
                         );
@@ -1155,7 +1155,7 @@ export const DataLoaderForm: React.FC<{
                             sx={{
                                 mt: 2,
                                 ml: 4.75,
-                                maxWidth: 760,
+                                maxWidth: 860,
                                 borderRadius: 1,
                                 bgcolor: 'action.hover',
                                 color: 'text.secondary',
@@ -1206,18 +1206,7 @@ export const DataLoaderForm: React.FC<{
                             )}
                         </Box>
                     )}
-                    {onDelete && connectorIdRef.current && (
-                        <Box sx={{ mt: 2 }}>
-                            <Button
-                                variant="outlined" size="small" color="error"
-                                sx={{ textTransform: "none", fontSize: 11, height: 26, minWidth: 0 }}
-                                onClick={() => onDelete(connectorIdRef.current!)}
-                            >
-                                {t('db.deleteConnector', { defaultValue: 'Delete' })}
-                            </Button>
-                        </Box>
-                    )}
-                </>
+                </Box>
         </Box>
     );
 }
