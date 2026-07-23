@@ -990,7 +990,7 @@ const ScrollFadeContainer: React.FC<{
 interface LoaderType {
     type: string;
     name: string;
-    params: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    params: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;
     auth_paths?: ConnectorAuthPath[];

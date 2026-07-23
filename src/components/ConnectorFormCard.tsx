@@ -32,7 +32,7 @@ import type { ConnectorFormPrompt, ConnectorInstance, ConnectorAuthPath } from '
 interface LoaderMeta {
     type: string;
     name: string;
-    params: Array<{ name: string; type: string; required: boolean; default?: string | number | boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter' }>;
+    params: Array<{ name: string; type: string; required: boolean; default?: string | number | boolean; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter' }>;
     auth_mode?: string;
     auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;

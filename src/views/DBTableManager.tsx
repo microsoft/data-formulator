@@ -17,6 +17,8 @@ import {
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest, type ApiError } from '../app/apiClient';
@@ -80,7 +82,7 @@ export const DataLoaderForm: React.FC<{
     dataLoaderType: string,
     /** Loader registry key (e.g. "mysql") for i18n lookups. Falls back to dataLoaderType. */
     loaderType?: string,
-    paramDefs: {name: string, default?: string | number | boolean, type: string, required: boolean, description?: string, sensitive?: boolean, tier?: 'connection' | 'auth' | 'filter'}[],
+    paramDefs: {name: string, default?: string | number | boolean, options?: string[], type: string, required: boolean, advanced?: boolean, description?: string, sensitive?: boolean, tier?: 'connection' | 'auth' | 'filter'}[],
     authInstructions: string,
     connectorId?: string,
     autoConnect?: boolean,
@@ -111,8 +113,7 @@ export const DataLoaderForm: React.FC<{
     /** When true, lay parameters out in a single column and tighten spacing
      *  so the form fits inside a chat card (design 38). */
     compact?: boolean,
-    /** When true, suppress the connector's built-in authInstructions block so
-     *  agent-authored setup guidance can replace it (design 38). */
+    /** When true, keep setup instructions collapsed initially in compact forms. */
     hideInstructions?: boolean,
     /** One-time seed for sensitive fields (passwords/tokens) the user handed to
      *  the agent in chat. Populates the transient sensitive state so the user
@@ -206,6 +207,8 @@ export const DataLoaderForm: React.FC<{
     const [isLoadingDatabases, setIsLoadingDatabases] = useState(false);
     const [databaseDiscoveryError, setDatabaseDiscoveryError] = useState('');
     const [databaseMenuOpen, setDatabaseMenuOpen] = useState(false);
+    const [showAdvancedConnection, setShowAdvancedConnection] = useState(false);
+    const [instructionsExpanded, setInstructionsExpanded] = useState(!hideInstructions);
 
     // In-app CLI sign-in (local mode only), e.g. `az login` for Entra ID.
     const [cliLoginStatus, setCliLoginStatus] = useState<{ installed: boolean; signed_in: boolean; account: { user?: string } | null } | null>(null);
@@ -847,6 +850,38 @@ export const DataLoaderForm: React.FC<{
                                             }}
                                         />
                                         )
+                                    ) : paramDef.options ? (
+                                        renderFieldRow(paramDef,
+                                        <Autocomplete
+                                            freeSolo
+                                            options={paramDef.options}
+                                            value={params[paramDef.name] ?? ''}
+                                            onChange={(_event, value) => {
+                                                dispatch(dfActions.updateDataLoaderConnectParam({
+                                                    dataLoaderType,
+                                                    paramName: paramDef.name,
+                                                    paramValue: value ?? '',
+                                                }));
+                                            }}
+                                            onInputChange={(_event, value, reason) => {
+                                                if (reason === 'input') {
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({
+                                                        dataLoaderType,
+                                                        paramName: paramDef.name,
+                                                        paramValue: value,
+                                                    }));
+                                                }
+                                            }}
+                                            renderInput={(inputParams) => (
+                                                <TextField
+                                                    {...inputParams}
+                                                    sx={inputSx}
+                                                    variant="standard" size="small" fullWidth
+                                                    placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
+                                                />
+                                            )}
+                                        />
+                                        )
                                     ) : (
                                     renderFieldRow(paramDef,
                                     <DraftTextField
@@ -865,7 +900,8 @@ export const DataLoaderForm: React.FC<{
                             );
                         };
 
-                        const connectionParams = paramDefs.filter(p => p.tier === 'connection');
+                        const connectionParams = paramDefs.filter(p => p.tier === 'connection' && !p.advanced);
+                        const advancedConnectionParams = paramDefs.filter(p => p.tier === 'connection' && p.advanced);
                         const filterParams = paramDefs.filter(p => p.tier === 'filter');
                         const authParams = paramDefs.filter(p => p.tier === 'auth');
                         const selectedAuthPath = authPaths.find(path => path.id === params._auth_path)
@@ -915,6 +951,32 @@ export const DataLoaderForm: React.FC<{
                                                 </Box>
                                             )}
                                             {connectionParams.length > 0 && renderParamGrid(connectionParams)}
+                                            {advancedConnectionParams.length > 0 && (
+                                                <Box>
+                                                    <Button
+                                                        size="small"
+                                                        color="inherit"
+                                                        onClick={() => setShowAdvancedConnection(value => !value)}
+                                                        endIcon={showAdvancedConnection
+                                                            ? <ExpandLessIcon fontSize="small" />
+                                                            : <ExpandMoreIcon fontSize="small" />}
+                                                        sx={{
+                                                            px: 0,
+                                                            minWidth: 0,
+                                                            color: 'text.secondary',
+                                                            fontSize: 12,
+                                                            textTransform: 'none',
+                                                        }}
+                                                    >
+                                                        {t('db.advancedSettings', { defaultValue: 'Advanced settings' })}
+                                                    </Button>
+                                                    {showAdvancedConnection && (
+                                                        <Box sx={{ mt: 1.5 }}>
+                                                            {renderParamGrid(advancedConnectionParams)}
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                            )}
                                         </Box>,
                                     )
                                 )}
@@ -1132,24 +1194,36 @@ export const DataLoaderForm: React.FC<{
                                 mt: 2,
                                 ml: 4.75,
                                 maxWidth: 760,
-                                p: 1.5,
                                 borderRadius: 1,
                                 bgcolor: 'action.hover',
                                 color: 'text.secondary',
+                                overflow: 'hidden',
                             }}
                         >
-                            <Typography
+                            <Button
+                                fullWidth
+                                color="inherit"
+                                onClick={() => setInstructionsExpanded(value => !value)}
+                                endIcon={instructionsExpanded
+                                    ? <ExpandLessIcon fontSize="small" />
+                                    : <ExpandMoreIcon fontSize="small" />}
                                 sx={{
+                                    justifyContent: 'space-between',
+                                    px: 1.5,
+                                    py: 1,
                                     fontSize: 11.5,
                                     lineHeight: 1.5,
                                     fontWeight: 600,
                                     color: 'text.primary',
-                                    mb: 1,
+                                    textTransform: 'none',
                                 }}
                             >
                                 {t('db.setupDetails', { defaultValue: 'Setup details' })}
-                            </Typography>
+                            </Button>
+                            {instructionsExpanded && (
                             <Box sx={(theme) => ({
+                                px: 1.5,
+                                pb: 1.5,
                                 maxWidth: 720,
                                 fontFamily: theme.typography.fontFamily,
                                 fontSize: 11.5,
@@ -1167,6 +1241,7 @@ export const DataLoaderForm: React.FC<{
                             })}>
                                 <Markdown>{setupDetailsContent}</Markdown>
                             </Box>
+                            )}
                         </Box>
                     )}
                     {onDelete && connectorIdRef.current && (

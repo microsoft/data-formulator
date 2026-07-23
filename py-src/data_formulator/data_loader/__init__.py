@@ -57,7 +57,7 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("mysql",      "data_formulator.data_loader.mysql_data_loader",      "MySQLDataLoader",      "pymysql"),
-    ("mssql",      "data_formulator.data_loader.mssql_data_loader",      "MSSQLDataLoader",      "pyodbc"),
+    ("mssql",      "data_formulator.data_loader.mssql_data_loader",      "MSSQLDataLoader",      "mssql-python"),
     ("postgresql", "data_formulator.data_loader.postgresql_data_loader",  "PostgreSQLDataLoader", "psycopg2-binary"),
     ("kusto",      "data_formulator.data_loader.kusto_data_loader",      "KustoDataLoader",      "azure-kusto-data"),
     ("databricks", "data_formulator.data_loader.databricks_data_loader", "DatabricksDataLoader", "databricks-sql-connector"),

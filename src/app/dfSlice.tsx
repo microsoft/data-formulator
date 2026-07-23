@@ -74,7 +74,7 @@ export interface ServerConfig {
         source_type: string;
         name: string;
         icon: string;
-        params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+        params_form: Array<{name: string; type: string; required: boolean; default?: string; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
         pinned_params: Record<string, string>;
         hierarchy: Array<{key: string; label: string}>;
         effective_hierarchy: Array<{key: string; label: string}>;

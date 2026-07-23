@@ -1,35 +1,16 @@
 import json
 import logging
 import math
-import struct
 from typing import Any
 
+import mssql_python
 import pyarrow as pa
-import pyodbc
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 log = logging.getLogger(__name__)
-
-# ODBC connection attribute for passing a pre-fetched Entra ID (Azure AD)
-# access token to the SQL Server driver (SQL_COPT_SS_ACCESS_TOKEN).
-_SQL_COPT_SS_ACCESS_TOKEN = 1256
-
-# Token audience/scope for Azure SQL / SQL Server Entra ID authentication.
-_AZURE_SQL_SCOPE = "https://database.windows.net/.default"
-
-
-def _is_nan(value) -> bool:
-    """Check if a value is NaN (works for float, int, None)."""
-    if value is None:
-        return True
-    try:
-        return math.isnan(float(value))
-    except (TypeError, ValueError):
-        return False
-
 
 class MSSQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "SQL Server"
@@ -80,19 +61,12 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "description": "SQL Server port (default: 1433)",
             },
             {
-                "name": "driver",
-                "type": "string",
-                "required": False,
-                "default": "ODBC Driver 17 for SQL Server",
-                "tier": "connection",
-                "description": "ODBC driver name",
-            },
-            {
                 "name": "encrypt",
                 "type": "string",
                 "required": False,
                 "default": "yes",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Enable encryption (yes/no)",
             },
             {
@@ -101,6 +75,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "no",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Trust server certificate (yes/no)",
             },
             {
@@ -109,6 +84,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "30",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Connection timeout in seconds",
             },
         ]
@@ -180,8 +156,7 @@ class MSSQLDataLoader(ExternalDataLoader):
 
 **Windows authentication (Windows only):** Choose *Windows authentication* and leave username/password empty.
 
-**Prerequisites (macOS/Linux only):**
-Install the ODBC driver: `brew install unixodbc msodbcsql18` (macOS) or `sudo apt-get install unixodbc-dev msodbcsql18` (Ubuntu/Debian). For Entra ID you also need the Azure CLI (`brew install azure-cli`) and to run `az login`.
+**Microsoft Entra prerequisite:** Install the Azure CLI and run `az login`. The SQL Server driver is included with Data Formulator; no separate ODBC driver installation is needed.
 
 **Troubleshooting:** Confirm you are signed in with `az account show`. Ensure the SQL Server service is running and TCP/IP is enabled. Test SQL auth with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
 
@@ -196,7 +171,6 @@ Install the ODBC driver: `brew install unixodbc msodbcsql18` (macOS) or `sudo ap
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
         self.port = params.get("port", "1433")
-        self.driver = params.get("driver", "ODBC Driver 17 for SQL Server")
         self.encrypt = params.get("encrypt", "yes")
         self.trust_server_certificate = params.get("trust_server_certificate", "no")
         self.connection_timeout = params.get("connection_timeout", "30")
@@ -206,65 +180,33 @@ Install the ODBC driver: `brew install unixodbc msodbcsql18` (macOS) or `sudo ap
         # When no database specified, connect to master for catalog browsing
         connect_db = self.database or "master"
 
-        # Build the auth-independent part of the ODBC connection string.
+        # Build the auth-independent connection string. mssql-python uses
+        # Direct Database Connectivity, so no external ODBC driver is needed.
         conn_str = (
-            f"DRIVER={{{self.driver}}};"
             f"SERVER={self.server},{self.port};"
             f"DATABASE={connect_db};"
             f"Encrypt={self.encrypt};"
             f"TrustServerCertificate={self.trust_server_certificate};"
-            f"Connection Timeout={self.connection_timeout};"
         )
 
-        connect_kwargs: dict[str, Any] = {}
+        try:
+            connection_timeout = max(1, int(self.connection_timeout))
+        except (TypeError, ValueError) as e:
+            raise ValueError("Connection timeout must be a positive number of seconds") from e
+
         if self.auth_path == "entra_id":
-            # Entra ID: fetch a token via DefaultAzureCredential (az login /
-            # Managed Identity / VS Code / env) and hand it to the driver.
-            # No UID/PWD/Trusted_Connection goes into the string.
-            connect_kwargs["attrs_before"] = {
-                _SQL_COPT_SS_ACCESS_TOKEN: self._get_entra_id_token_struct()
-            }
+            conn_str += "Authentication=ActiveDirectoryDefault;"
         elif self.user or self.auth_path == "sql_auth":
-            conn_str += f"UID={self.user};PWD={self.password};"
+            conn_str += f"Authentication=SqlPassword;UID={self.user};PWD={self.password};"
         else:
             conn_str += "Trusted_Connection=yes;"
 
         try:
-            self._conn = pyodbc.connect(conn_str, **connect_kwargs)
+            self._conn = mssql_python.connect(conn_str, timeout=connection_timeout)
             log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
             log.error(f"Failed to connect to SQL Server: {e}")
             raise ValueError(f"Failed to connect to SQL Server '{self.server}': {e}") from e
-
-    @staticmethod
-    def _get_entra_id_token_struct() -> bytes:
-        """Fetch an Entra ID access token for Azure SQL and pack it for ODBC.
-
-        Uses ``DefaultAzureCredential`` so a local ``az login`` (or Managed
-        Identity / VS Code / environment credentials) is enough to connect.
-        The token is packed into the little-endian, length-prefixed UTF-16-LE
-        struct expected by the SQL Server ODBC access-token attribute.
-        """
-        try:
-            from azure.identity import DefaultAzureCredential
-        except ImportError as e:
-            raise ValueError(
-                "Microsoft Entra ID authentication requires the 'azure-identity' "
-                "package. Install it with `uv pip install azure-identity`."
-            ) from e
-
-        try:
-            credential = DefaultAzureCredential()
-            token = credential.get_token(_AZURE_SQL_SCOPE).token
-        except Exception as e:
-            raise ValueError(
-                "Failed to acquire a Microsoft Entra ID token. Run `az login` in "
-                "your terminal (or configure a Managed Identity), then retry. "
-                f"Details: {e}"
-            ) from e
-
-        token_bytes = token.encode("UTF-16-LE")
-        return struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
 
     # SQL Server types that may need special handling
     _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # use .STAsText()

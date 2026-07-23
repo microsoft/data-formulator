@@ -54,3 +54,20 @@ def test_http_500_with_lost_connection_maps_to_connection_failed():
 
     assert info.code == ErrorCode.DB_CONNECTION_FAILED
     assert info.retry is True
+
+
+def test_azure_sql_firewall_denial_exposes_safe_client_ip():
+    error = RuntimeError(
+        "Cannot open server 'example' requested by the login. Client with IP "
+        "address '131.107.1.158' is not allowed to access the server."
+    )
+
+    info = classify_connector_error(error, operation="connect")
+
+    assert info.code == ErrorCode.DB_FIREWALL_BLOCKED
+    assert info.retry is False
+    assert "131.107.1.158" in info.message
+    assert "SQL server firewall" in info.message
+    assert "example" not in info.message
+
+

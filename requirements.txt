@@ -28,7 +28,7 @@ azure-identity
 azure-kusto-data
 azure-keyvault-secrets
 pymysql
-pyodbc
+mssql-python>=1.11.0
 psycopg2-binary
 boto3
 google-cloud-bigquery
