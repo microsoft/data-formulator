@@ -595,7 +595,7 @@ export interface ConnectorInstance {
     /** Backend signals that SSO token exchange can auto-connect this source. */
     sso_auto_connect?: boolean;
     deletable?: boolean;
-    params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;
     hierarchy: Array<{key: string; label: string}>;
     effective_hierarchy: Array<{key: string; label: string}>;

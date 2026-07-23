@@ -232,7 +232,9 @@ class TestMSSQLSyncCatalogMetadata:
 
     @pytest.fixture()
     def _patch_mssql_connect(self):
-        with patch("pyodbc.connect") as mock_conn:
+        with patch(
+            "data_formulator.data_loader.mssql_data_loader.mssql_python.connect"
+        ) as mock_conn:
             conn = MagicMock()
             mock_conn.return_value = conn
             yield mock_conn
@@ -249,6 +251,10 @@ class TestMSSQLSyncCatalogMetadata:
 
     def test_single_db_delegates_to_list_tables(self, _patch_mssql_connect):
         loader = self._make_loader(database="mydb")
+        connection_string = _patch_mssql_connect.call_args.args[0]
+        assert "DRIVER=" not in connection_string
+        assert "Authentication=SqlPassword" in connection_string
+        assert _patch_mssql_connect.call_args.kwargs["timeout"] == 30
         fake_tables = [
             {"name": "dbo.orders", "metadata": {"_source_name": "dbo.orders", "columns": []}},
         ]

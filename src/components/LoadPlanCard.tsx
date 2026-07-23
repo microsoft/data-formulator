@@ -251,17 +251,19 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                 );
             })}
 
-            {/* Footer: action button (unconfirmed) or quiet caption (confirmed). */}
+            {/* Footer: keep actions available after loading and show the
+                prior-load status immediately to their left. */}
             <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Box sx={{ flex: 1 }} />
-                {confirmed ? (
+                {confirmed && (
                     <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
                         {t('dataLoading.loadPlan.loadedCount', {
                             count: plan.candidates.filter(c => !c.resolutionError).length,
                             defaultValue: '✓ Loaded',
                         })}
                     </Typography>
-                ) : canLoadInNewWorkspace ? (
+                )}
+                {canLoadInNewWorkspace ? (
                     // A workspace with data is already open — make the load
                     // destination explicit rather than silently appending.
                     <>

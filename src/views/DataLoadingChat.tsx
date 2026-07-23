@@ -247,16 +247,17 @@ const InlineTablePreviewView: React.FC<{
                 expanded={expanded}
                 onTogglePreview={preview.sampleRows.length > 0 ? () => setExpanded(!expanded) : undefined}
             />
-            {/* Footer: matches LoadPlanCard — right-aligned contained
-                Load button (unconfirmed) or quiet "Loaded" caption. */}
+            {/* Footer: keep the load action available after loading and show
+                the prior-load status immediately to its left. */}
             {(onLoad || confirmed) && (
-                <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center' }}>
+                <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Box sx={{ flex: 1 }} />
-                    {confirmed ? (
+                    {confirmed && (
                         <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
                             {t('dataLoading.loadPlan.loadedCount', { count: 1, defaultValue: '✓ Loaded' })}
                         </Typography>
-                    ) : onLoad ? (
+                    )}
+                    {onLoad && (
                         <Button size="small" variant="contained" onClick={onLoad}
                             sx={{
                                 textTransform: 'none', fontSize: 12,
@@ -265,7 +266,7 @@ const InlineTablePreviewView: React.FC<{
                             }}>
                             {t('dataLoading.loadTable')}
                         </Button>
-                    ) : null}
+                    )}
                 </Box>
             )}
         </Box>

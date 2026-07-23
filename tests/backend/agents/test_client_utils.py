@@ -7,6 +7,7 @@ Tests cover the pure-logic parts that don't require a live LLM:
 - Model name prefixing for gemini / anthropic / ollama
 - Ollama api_base normalisation (trailing /api stripping)
 - Image block stripping helpers (_strip_image_blocks, _strip_images_from_messages)
+- Image request detection (_messages_contain_images)
 - Image deserialise error detection (_is_image_deserialize_error)
 - Client.from_config constructor
 """
@@ -202,6 +203,43 @@ class TestIsImageDeserializeError:
     def test_partial_match_image_url_without_expected(self):
         """'image_url' alone without 'expected `text`' should NOT match."""
         assert self.client._is_image_deserialize_error("received image_url block") is False
+
+    def test_upstream_failure_with_images_detected(self):
+        err = "400: Error from provider (OpenCode Go): Upstream request failed"
+        assert self.client._is_image_deserialize_error(err, has_images=True) is True
+
+    def test_upstream_failure_without_images_not_detected(self):
+        err = "400: Error from provider (OpenCode Go): Upstream request failed"
+        assert self.client._is_image_deserialize_error(err, has_images=False) is False
+
+    def test_unsupported_image_message_with_images_detected(self):
+        err = "The selected model does not support image inputs"
+        assert self.client._is_image_deserialize_error(err, has_images=True) is True
+
+
+# ---------------------------------------------------------------------------
+# _messages_contain_images
+# ---------------------------------------------------------------------------
+
+class TestMessagesContainImages:
+    def setup_method(self):
+        self.client = Client("openai", "gpt-4o", api_key="k")
+
+    def test_multimodal_message_detected(self):
+        messages = [
+            {"role": "user", "content": [
+                {"type": "text", "text": "Describe this"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
+            ]},
+        ]
+        assert self.client._messages_contain_images(messages) is True
+
+    def test_text_only_messages_not_detected(self):
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": [{"type": "text", "text": "Describe this"}]},
+        ]
+        assert self.client._messages_contain_images(messages) is False
 
 
 # ---------------------------------------------------------------------------

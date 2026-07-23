@@ -101,9 +101,34 @@ def df_to_safe_records(df: pd.DataFrame) -> list[dict[str, Any]]:
     streaming should call this function rather than using ``df.to_json``
     / ``df.to_dict`` directly.
     """
+    safe_df = df.copy(deep=False)
+    for column in safe_df.select_dtypes(include=["object", "string"]).columns:
+        safe_df[column] = safe_df[column].map(_repair_invalid_unicode)
     return json.loads(
-        df.to_json(orient="records", date_format="iso", default_handler=str)
+        safe_df.to_json(orient="records", date_format="iso", default_handler=str)
     )
+
+
+def _repair_invalid_unicode(value: Any) -> Any:
+    """Replace malformed surrogate code points while preserving valid Unicode."""
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+            return value
+        except UnicodeEncodeError:
+            return value.encode("utf-8", errors="replace").decode("utf-8")
+    if isinstance(value, dict):
+        return {
+            _repair_invalid_unicode(key): _repair_invalid_unicode(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_repair_invalid_unicode(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_repair_invalid_unicode(item) for item in value)
+    if isinstance(value, set):
+        return {_repair_invalid_unicode(item) for item in value}
+    return value
 
 
 def normalize_dtype_to_app_type(dtype_str: str) -> str:

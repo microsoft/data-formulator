@@ -43,7 +43,7 @@ https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
 ## News 🔥🔥🔥
 
-[07-23-2026] **Data Formulator 0.8 alpha** (a1–a3, latest: 0.8.0a3) includes:
+[07-23-2026] **Data Formulator 0.8 alpha** (a1–a4, latest: 0.8.0a4) includes:
 
 - **Conversational database loading.** Agents can discover relevant tables, propose filters, preview results, and revise a loading plan through conversation before importing data.
 - **Unified Data Thread.** Questions, clarifications, explanations, tables, and charts share one conversation history, with branching from earlier steps into new questions, calculated columns, or visualizations.
@@ -53,7 +53,7 @@ https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 - **Microsoft authentication for enterprise connectors.** SQL Server supports passwordless Microsoft Entra ID authentication through `az login`, including an in-app flow for local deployments. Kusto supports delegated Microsoft sign-in alongside Azure default identity and service principal authentication.
 - **Connector setup and diagnostics.** Connection forms separate connection, scope, and source-specific authentication options. Persistent server logs and an in-app log viewer help diagnose failures.
 
-> Preview with `pip install --pre data_formulator==0.8.0a3` or `uvx data_formulator@0.8.0a3`.
+> Preview with `pip install --pre data_formulator==0.8.0a4` or `uvx data_formulator@0.8.0a4`.
 
 > Install the latest stable release (0.7) with `pip install data_formulator` or run instantly with `uvx data_formulator`.
 
