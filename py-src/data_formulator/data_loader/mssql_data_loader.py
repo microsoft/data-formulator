@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import struct
 from typing import Any
 
 import pyarrow as pa
@@ -11,6 +12,13 @@ from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 log = logging.getLogger(__name__)
+
+# ODBC connection attribute for passing a pre-fetched Entra ID (Azure AD)
+# access token to the SQL Server driver (SQL_COPT_SS_ACCESS_TOKEN).
+_SQL_COPT_SS_ACCESS_TOKEN = 1256
+
+# Token audience/scope for Azure SQL / SQL Server Entra ID authentication.
+_AZURE_SQL_SCOPE = "https://database.windows.net/.default"
 
 
 def _is_nan(value) -> bool:
@@ -52,7 +60,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "",
                 "tier": "auth",
-                "description": "Username (leave empty for Windows Authentication)",
+                "description": "Username (leave empty for Entra ID / Windows auth)",
             },
             {
                 "name": "password",
@@ -61,7 +69,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "default": "",
                 "sensitive": True,
                 "tier": "auth",
-                "description": "Password (leave empty for Windows Authentication)",
+                "description": "Password (leave empty for Entra ID / Windows auth)",
             },
             {
                 "name": "port",
@@ -106,20 +114,76 @@ class MSSQLDataLoader(ExternalDataLoader):
         ]
         return params_list
 
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "entra_id",
+                "label": "Microsoft Entra ID (az login)",
+                "description": (
+                    "Run `az login` in your terminal, then connect with no "
+                    "password. Also works with Managed Identity, VS Code, and "
+                    "environment credentials."
+                ),
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+                "default": True,
+                # In local mode the UI shows an in-app "Sign in with Azure CLI"
+                # button wired to these endpoints so users can az login without
+                # leaving the app.
+                "cli_login": {
+                    "provider": "azure",
+                    "label": "Sign in with Azure CLI",
+                    "status_url": "/api/local/azure-status",
+                    "login_url": "/api/local/azure-login",
+                },
+            },
+            {
+                "id": "sql_auth",
+                "label": "SQL Server authentication",
+                "description": "Sign in with a SQL Server username and password.",
+                "fields": ["user", "password"],
+                "required_fields": ["user", "password"],
+                "kind": "credentials",
+            },
+            {
+                "id": "windows_auth",
+                "label": "Windows authentication",
+                "description": "Use the host's Windows identity (Trusted Connection). Windows only.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+            },
+        ]
+
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        selected = str(params.get("_auth_path") or "").strip()
+        if selected:
+            return selected
+        if params.get("user") and params.get("password"):
+            return "sql_auth"
+        return "entra_id"
+
     @staticmethod
     def auth_instructions() -> str:
-        return """**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`
+        return """**Microsoft Entra ID (recommended):** Run `az login` once in your terminal, then start Data Formulator. Choose *Microsoft Entra ID*, fill in only `server` and (optionally) `database`, and leave username/password empty — your Azure CLI credentials are used automatically. Managed Identity, VS Code, and environment credentials also work via `DefaultAzureCredential`.
 
-**Example (Windows auth):** server: `localhost\\SQLEXPRESS` · database: `mydb` (leave user/password empty)
+> Your Entra identity must be granted access to the database, e.g. an admin runs `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` and grants the needed roles.
+
+**Example (Entra ID):** server: `myserver.database.windows.net` · database: `mydb` (username/password empty)
+
+**SQL Server authentication:** Choose *SQL Server authentication* and provide username and password.
+
+**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`
+
+**Windows authentication (Windows only):** Choose *Windows authentication* and leave username/password empty.
 
 **Prerequisites (macOS/Linux only):**
-Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-get install unixodbc-dev msodbcsql17` (Ubuntu/Debian). Windows usually has these pre-installed.
+Install the ODBC driver: `brew install unixodbc msodbcsql18` (macOS) or `sudo apt-get install unixodbc-dev msodbcsql18` (Ubuntu/Debian). For Entra ID you also need the Azure CLI (`brew install azure-cli`) and to run `az login`.
 
-**Authentication:**
-- **Windows Auth:** Leave user/password empty (recommended for local dev)
-- **SQL Server Auth:** Provide username and password
-
-**Troubleshooting:** Ensure SQL Server service is running. Verify TCP/IP is enabled in SQL Server Configuration Manager. Test with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
+**Troubleshooting:** Confirm you are signed in with `az account show`. Ensure the SQL Server service is running and TCP/IP is enabled. Test SQL auth with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
 
     def __init__(self, params: dict[str, Any]):
         from data_formulator.security.log_sanitizer import sanitize_params
@@ -137,10 +201,12 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         self.trust_server_certificate = params.get("trust_server_certificate", "no")
         self.connection_timeout = params.get("connection_timeout", "30")
 
+        self.auth_path = params.get("_auth_path") or self.infer_auth_path(params)
+
         # When no database specified, connect to master for catalog browsing
         connect_db = self.database or "master"
 
-        # Build ODBC connection string
+        # Build the auth-independent part of the ODBC connection string.
         conn_str = (
             f"DRIVER={{{self.driver}}};"
             f"SERVER={self.server},{self.port};"
@@ -149,17 +215,56 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
             f"TrustServerCertificate={self.trust_server_certificate};"
             f"Connection Timeout={self.connection_timeout};"
         )
-        if self.user:
+
+        connect_kwargs: dict[str, Any] = {}
+        if self.auth_path == "entra_id":
+            # Entra ID: fetch a token via DefaultAzureCredential (az login /
+            # Managed Identity / VS Code / env) and hand it to the driver.
+            # No UID/PWD/Trusted_Connection goes into the string.
+            connect_kwargs["attrs_before"] = {
+                _SQL_COPT_SS_ACCESS_TOKEN: self._get_entra_id_token_struct()
+            }
+        elif self.user or self.auth_path == "sql_auth":
             conn_str += f"UID={self.user};PWD={self.password};"
         else:
             conn_str += "Trusted_Connection=yes;"
 
         try:
-            self._conn = pyodbc.connect(conn_str)
+            self._conn = pyodbc.connect(conn_str, **connect_kwargs)
             log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
             log.error(f"Failed to connect to SQL Server: {e}")
             raise ValueError(f"Failed to connect to SQL Server '{self.server}': {e}") from e
+
+    @staticmethod
+    def _get_entra_id_token_struct() -> bytes:
+        """Fetch an Entra ID access token for Azure SQL and pack it for ODBC.
+
+        Uses ``DefaultAzureCredential`` so a local ``az login`` (or Managed
+        Identity / VS Code / environment credentials) is enough to connect.
+        The token is packed into the little-endian, length-prefixed UTF-16-LE
+        struct expected by the SQL Server ODBC access-token attribute.
+        """
+        try:
+            from azure.identity import DefaultAzureCredential
+        except ImportError as e:
+            raise ValueError(
+                "Microsoft Entra ID authentication requires the 'azure-identity' "
+                "package. Install it with `uv pip install azure-identity`."
+            ) from e
+
+        try:
+            credential = DefaultAzureCredential()
+            token = credential.get_token(_AZURE_SQL_SCOPE).token
+        except Exception as e:
+            raise ValueError(
+                "Failed to acquire a Microsoft Entra ID token. Run `az login` in "
+                "your terminal (or configure a Managed Identity), then retry. "
+                f"Details: {e}"
+            ) from e
+
+        token_bytes = token.encode("UTF-16-LE")
+        return struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
 
     # SQL Server types that may need special handling
     _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # use .STAsText()

@@ -171,6 +171,7 @@ export const DataLoaderForm: React.FC<{
     const connectorIdRef = useRef(connectorId);
     useEffect(() => { connectorIdRef.current = connectorId; }, [connectorId]);
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
+    const isLocalMode = useSelector((state: DataFormulatorState) => !!state.serverConfig?.IS_LOCAL_MODE);
 
     // Materialize declared defaults and the default authentication path as
     // actual form values rather than placeholders. Existing user-entered or
@@ -197,7 +198,6 @@ export const DataLoaderForm: React.FC<{
 
     let [isConnecting, setIsConnecting] = useState(false);
     const [persistCredentials, setPersistCredentials] = useState(true);
-
     // High-level progress shown while connecting (e.g. Kusto reporting which
     // database it's currently listing). Polled from the backend during the
     // connect request; cleared when it resolves.
@@ -206,6 +206,60 @@ export const DataLoaderForm: React.FC<{
     const [isLoadingDatabases, setIsLoadingDatabases] = useState(false);
     const [databaseDiscoveryError, setDatabaseDiscoveryError] = useState('');
     const [databaseMenuOpen, setDatabaseMenuOpen] = useState(false);
+
+    // In-app CLI sign-in (local mode only), e.g. `az login` for Entra ID.
+    const [cliLoginStatus, setCliLoginStatus] = useState<{ installed: boolean; signed_in: boolean; account: { user?: string } | null } | null>(null);
+    const [cliLoginBusy, setCliLoginBusy] = useState(false);
+    const [cliLoginError, setCliLoginError] = useState('');
+
+    // The auth path the user has currently selected (also computed in the
+    // render body; duplicated here so effects/handlers can react to it).
+    const activeAuthPath = authPaths.find(path => path.id === params._auth_path)
+        || authPaths.find(path => path.default)
+        || authPaths[0];
+    const cliLogin = (isLocalMode && activeAuthPath?.cli_login) ? activeAuthPath.cli_login : undefined;
+    const cliStatusUrl = cliLogin?.status_url;
+
+    // Fetch current CLI sign-in status when a CLI-login auth path is selected.
+    useEffect(() => {
+        if (!cliStatusUrl) { setCliLoginStatus(null); setCliLoginError(''); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const { data } = await apiRequest<any>(cliStatusUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+                if (!cancelled) setCliLoginStatus(data);
+            } catch {
+                if (!cancelled) setCliLoginStatus(null);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [cliStatusUrl]);
+
+    const handleCliLogin = useCallback(async () => {
+        if (!cliLogin) return;
+        setCliLoginBusy(true);
+        setCliLoginError('');
+        try {
+            const { data } = await apiRequest<any>(cliLogin.login_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            setCliLoginStatus({ installed: true, signed_in: !!data.signed_in, account: data.account ?? null });
+        } catch (error: any) {
+            setCliLoginError(
+                error?.apiError?.message
+                || error?.message
+                || t('db.cliLoginFailed', { defaultValue: 'Sign-in failed. Try running the login command in a terminal.' }),
+            );
+        } finally {
+            setCliLoginBusy(false);
+        }
+    }, [cliLogin, t]);
 
     // Sensitive params (passwords, tokens, secrets) live in component state only —
     // never persisted to Redux / localStorage.
@@ -950,6 +1004,41 @@ export const DataLoaderForm: React.FC<{
                                             <Typography sx={{ ...secondaryTextSx }}>
                                                 {selectedAuthPath.description}
                                             </Typography>
+                                        </Box>
+                                    )}
+
+                                    {isLocalMode && selectedAuthPath?.cli_login && (
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mt: 0.5, mb: selectedAuthParams.length > 0 ? 2 : 0 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
+                                                <Button
+                                                    variant={cliLoginStatus?.signed_in ? 'outlined' : 'contained'}
+                                                    color="primary"
+                                                    size="small"
+                                                    sx={{ textTransform: 'none', minWidth: 80, height: 30, fontSize: 12, whiteSpace: 'nowrap' }}
+                                                    disabled={cliLoginBusy}
+                                                    startIcon={cliLoginBusy ? <CircularProgress size={14} color="inherit" /> : undefined}
+                                                    onClick={handleCliLogin}
+                                                >
+                                                    {cliLoginBusy
+                                                        ? t('db.cliLoginInProgress', { defaultValue: 'Signing in…' })
+                                                        : (cliLoginStatus?.signed_in
+                                                            ? t('db.cliLoginSwitch', { defaultValue: 'Switch account' })
+                                                            : selectedAuthPath.cli_login.label)}
+                                                </Button>
+                                                {cliLoginStatus?.signed_in && cliLoginStatus.account?.user && (
+                                                    <Typography sx={{ ...secondaryTextSx }}>
+                                                        {t('db.cliLoginSignedInAs', { user: cliLoginStatus.account.user, defaultValue: 'Signed in as {{user}}' })}
+                                                    </Typography>
+                                                )}
+                                                {cliLoginStatus && !cliLoginStatus.installed && (
+                                                    <Typography sx={{ ...secondaryTextSx }}>
+                                                        {t('db.cliNotInstalled', { defaultValue: 'Azure CLI not found — install it or sign in via a terminal.' })}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                            {cliLoginError && (
+                                                <Typography sx={{ ...secondaryTextSx, color: 'error.main' }}>{cliLoginError}</Typography>
+                                            )}
                                         </Box>
                                     )}
 

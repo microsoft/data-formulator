@@ -11,14 +11,14 @@
     "mssql": {
       "server": "SQL Server 主机地址或实例名",
       "database": "数据库名称（留空可浏览所有数据库）",
-      "user": "用户名（留空使用 Windows 认证）",
-      "password": "密码（留空使用 Windows 认证）",
+      "user": "用户名（使用 Entra ID / Windows 认证时留空）",
+      "password": "密码（使用 Entra ID / Windows 认证时留空）",
       "port": "SQL Server 端口（默认 1433）",
       "driver": "ODBC 驱动名称",
       "encrypt": "启用加密（yes/no）",
       "trust_server_certificate": "信任服务器证书（yes/no）",
       "connection_timeout": "连接超时时间（秒）",
-      "authInstructions": "**示例（SQL 认证）：** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**示例（Windows 认证）：** server: `localhost\\SQLEXPRESS` · database: `mydb`（用户名和密码留空）\n\n**前置条件（仅 macOS/Linux）：**\n安装 ODBC 驱动：`brew install unixodbc msodbcsql17`（macOS）或 `sudo apt-get install unixodbc-dev msodbcsql17`（Ubuntu/Debian）。Windows 通常已预装。\n\n**认证方式：**\n- **Windows 认证：** 用户名和密码留空（推荐用于本地开发）\n- **SQL Server 认证：** 提供用户名和密码\n\n**排查：** 确保 SQL Server 服务正在运行。在 SQL Server 配置管理器中确认 TCP/IP 已启用。用 `sqlcmd -S <server> -d <database> -U <user> -P <password>` 测试连接。"
+      "authInstructions": "**Microsoft Entra ID（推荐）：** 先在终端运行一次 `az login`，然后启动 Data Formulator。选择 *Microsoft Entra ID*，只填写 `server`（和可选的 `database`），用户名/密码留空 — 会自动使用你的 Azure CLI 凭据。也支持通过 `DefaultAzureCredential` 使用托管标识、VS Code 和环境凭据。\n\n> 你的 Entra 身份必须已获授权访问该数据库，例如管理员运行 `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` 并授予相应角色。\n\n**示例（Entra ID）：** server: `myserver.database.windows.net` · database: `mydb`（用户名/密码留空）\n\n**SQL Server 认证：** 选择 *SQL Server 认证* 并提供用户名和密码。\n\n**示例（SQL 认证）：** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Windows 认证（仅 Windows）：** 选择 *Windows 认证* 并将用户名/密码留空。\n\n**前置条件（仅 macOS/Linux）：**\n安装 ODBC 驱动：`brew install unixodbc msodbcsql18`（macOS）或 `sudo apt-get install unixodbc-dev msodbcsql18`（Ubuntu/Debian）。使用 Entra ID 还需安装 Azure CLI（`brew install azure-cli`）并运行 `az login`。\n\n**排查：** 用 `az account show` 确认已登录。确保 SQL Server 服务正在运行且 TCP/IP 已启用。用 `sqlcmd -S <server> -d <database> -U <user> -P <password>` 测试 SQL 认证。"
     },
     "postgresql": {
       "user": "PostgreSQL 用户名",
