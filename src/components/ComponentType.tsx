@@ -572,6 +572,13 @@ export interface ConnectorAuthPath {
     required_fields?: string[];
     kind: 'credentials' | 'ambient' | 'delegated_login' | 'token_exchange';
     default?: boolean;
+    /** Optional in-app CLI sign-in (local mode only), e.g. `az login`. */
+    cli_login?: {
+        provider: string;
+        label: string;
+        status_url: string;
+        login_url: string;
+    };
 }
 
 /** A registered connector instance from GET /api/connectors */
@@ -595,5 +602,5 @@ export interface ConnectorInstance {
     auth_mode?: string;
     auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;
-    delegated_login?: { login_url: string; label?: string } | null;
+    delegated_login?: { login_url: string; label?: string; params?: string[] } | null;
 }

@@ -58,6 +58,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
 import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
 
@@ -929,6 +930,63 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 // AddConnectionPanel — left sidebar lists loader types, right shows DataLoaderForm
 // ---------------------------------------------------------------------------
 
+// A scrollable area that softly fades its bottom edge and shows a subtle
+// down-chevron while more content sits below the fold, so long connector
+// forms don't feel abruptly cut off. The affordance fades out once the user
+// reaches the end.
+const ScrollFadeContainer: React.FC<{
+    children: React.ReactNode;
+    sx?: object;
+    /** Recompute when this changes (e.g. selected loader swaps content). */
+    resetKey?: unknown;
+}> = ({ children, sx, resetKey }) => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [moreBelow, setMoreBelow] = useState(false);
+
+    const update = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        setMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+    }, []);
+
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        for (const child of Array.from(el.children)) ro.observe(child);
+        return () => ro.disconnect();
+    }, [update, resetKey]);
+
+    return (
+        <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
+            <Box ref={scrollRef} onScroll={update} sx={{ flex: 1, minHeight: 0, overflow: 'auto', ...sx }}>
+                {children}
+            </Box>
+            <Box
+                sx={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 40,
+                    pointerEvents: 'none',
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    justifyContent: 'center',
+                    opacity: moreBelow ? 1 : 0,
+                    transition: 'opacity 0.2s ease',
+                    background: (theme) =>
+                        `linear-gradient(to bottom, ${alpha(theme.palette.background.paper, 0)}, ${theme.palette.background.paper})`,
+                }}
+            >
+                <KeyboardArrowDownIcon sx={{ fontSize: 16, color: 'text.secondary', mb: 0.25 }} />
+            </Box>
+        </Box>
+    );
+};
+
 interface LoaderType {
     type: string;
     name: string;
@@ -937,7 +995,7 @@ interface LoaderType {
     auth_mode?: string;
     auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;
-    delegated_login?: { login_url: string; label?: string } | null;
+    delegated_login?: { login_url: string; label?: string; params?: string[] } | null;
     source?: 'plugin' | 'builtin';
     source_path?: string | null;
 }
@@ -1170,7 +1228,7 @@ const AddConnectionPanel: React.FC<{
                 ) : selectedLoader ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         {/* Connector setup timeline */}
-                        <Box sx={{ px: 2, pt: 1.5, pb: 2, flex: 1, minHeight: 0, overflow: 'auto' }}>
+                        <ScrollFadeContainer sx={{ px: 2, pt: 1.5, pb: 2 }} resetKey={selectedType}>
                             <DataLoaderForm
                                 dataLoaderType={selectedType}
                                 paramDefs={selectedLoader.params}
@@ -1199,7 +1257,7 @@ const AddConnectionPanel: React.FC<{
                                 onConnected={handleConnected}
                                 onBeforeConnect={handleBeforeConnect}
                             />
-                        </Box>
+                        </ScrollFadeContainer>
                     </Box>
                 ) : (
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>

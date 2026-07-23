@@ -60,6 +60,7 @@ _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("mssql",      "data_formulator.data_loader.mssql_data_loader",      "MSSQLDataLoader",      "pyodbc"),
     ("postgresql", "data_formulator.data_loader.postgresql_data_loader",  "PostgreSQLDataLoader", "psycopg2-binary"),
     ("kusto",      "data_formulator.data_loader.kusto_data_loader",      "KustoDataLoader",      "azure-kusto-data"),
+    ("databricks", "data_formulator.data_loader.databricks_data_loader", "DatabricksDataLoader", "databricks-sql-connector"),
     ("s3",         "data_formulator.data_loader.s3_data_loader",         "S3DataLoader",         "boto3"),
     ("azure_blob", "data_formulator.data_loader.azure_blob_data_loader", "AzureBlobDataLoader",  "azure-storage-blob"),
     ("mongodb",    "data_formulator.data_loader.mongodb_data_loader",    "MongoDBDataLoader",    "pymongo"),

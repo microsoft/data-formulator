@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.8.0a2"
+version = "0.8.0a3"
 
 requires-python = ">=3.11"
 authors = [
@@ -57,6 +57,7 @@ dependencies = [
     "google-cloud-bigquery",    # bigquery
     "google-auth",              # bigquery
     "db-dtypes",                # bigquery
+    "databricks-sql-connector", # databricks
     # SSO / Auth deps
     "PyJWT[crypto]>=2.8.0",     # OIDC JWT verification (includes cryptography)
     "requests",                 # GitHub OAuth code exchange, Superset API calls

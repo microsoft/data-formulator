@@ -36,7 +36,7 @@ interface LoaderMeta {
     auth_mode?: string;
     auth_paths?: ConnectorAuthPath[];
     auth_instructions?: string;
-    delegated_login?: { login_url: string; label?: string } | null;
+    delegated_login?: { login_url: string; label?: string; params?: string[] } | null;
 }
 
 interface ConnectorFormCardProps {

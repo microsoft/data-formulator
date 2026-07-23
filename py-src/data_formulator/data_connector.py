@@ -480,10 +480,14 @@ class DataConnector:
             return None
         login_url = raw.get("login_url", "")
         # Resolve relative URLs to the connector's API prefix
-        if login_url and not login_url.startswith("http"):
+        if login_url and not login_url.startswith(("http", "/")):
             login_url = f"/api/connectors/{self._source_id}/{login_url}"
         # Only send safe fields to the frontend
-        return {"login_url": login_url, "label": raw.get("label", "")}
+        return {
+            "login_url": login_url,
+            "label": raw.get("label", ""),
+            "params": list(raw.get("params", [])),
+        }
 
     # -- Identity + Loader Management --------------------------------------
 
@@ -1070,6 +1074,117 @@ def pick_local_directory():
     return json_ok({"path": folder})
 
 
+def _az_account_summary() -> dict[str, Any] | None:
+    """Return the currently signed-in Azure CLI account, or None.
+
+    Runs ``az account show`` (no shell) and parses the JSON output. Returns
+    ``None`` when the CLI is missing, the user is not signed in, or the call
+    fails/times out.
+    """
+    import json as _json
+    import shutil
+    import subprocess
+
+    if shutil.which("az") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["az", "account", "show", "--only-show-errors", "-o", "json"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        data = _json.loads(result.stdout)
+    except ValueError:
+        return None
+    user = data.get("user") or {}
+    return {
+        "user": user.get("name"),
+        "subscription": data.get("name"),
+        "tenant_id": data.get("tenantId"),
+    }
+
+
+@connectors_bp.route("/api/local/azure-status", methods=["POST"])
+def azure_cli_status():
+    """Report whether the local Azure CLI is installed and signed in.
+
+    Only available in local deployment mode. Used by connectors that support
+    Microsoft Entra ID auth (e.g. SQL Server) to show the current sign-in
+    state next to an in-app "Sign in with Azure CLI" button.
+    """
+    import shutil
+
+    from data_formulator.auth.identity import is_local_mode
+
+    if not is_local_mode():
+        raise AppError(ErrorCode.ACCESS_DENIED, "Not available in server mode")
+
+    if shutil.which("az") is None:
+        return json_ok({"installed": False, "signed_in": False, "account": None})
+
+    account = _az_account_summary()
+    return json_ok({
+        "installed": True,
+        "signed_in": account is not None,
+        "account": account,
+    })
+
+
+@connectors_bp.route("/api/local/azure-login", methods=["POST"])
+def azure_cli_login():
+    """Run ``az login`` on the local machine, opening the system browser.
+
+    Only available in local deployment mode (the backend runs on the user's
+    own machine, so the browser opens for them). Blocks until the interactive
+    sign-in completes or times out. On success returns the signed-in account.
+    """
+    import shutil
+    import subprocess
+
+    from data_formulator.auth.identity import is_local_mode
+
+    if not is_local_mode():
+        raise AppError(ErrorCode.ACCESS_DENIED, "Not available in server mode")
+
+    if shutil.which("az") is None:
+        raise AppError(
+            ErrorCode.CONNECTOR_ERROR,
+            "Azure CLI ('az') is not installed. Install it (e.g. "
+            "`brew install azure-cli`) or run `az login` in a terminal.",
+        )
+
+    # Already signed in — treat as success without opening a browser.
+    existing = _az_account_summary()
+    if existing is not None:
+        return json_ok({"signed_in": True, "account": existing})
+
+    try:
+        result = subprocess.run(
+            ["az", "login", "--only-show-errors", "-o", "json"],
+            capture_output=True, text=True, timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        raise AppError(
+            ErrorCode.CONNECTOR_ERROR,
+            "Azure sign-in timed out. Complete the browser prompt and retry.",
+        )
+    except OSError as exc:
+        logger.warning("Failed to launch az login: %s", exc)
+        raise AppError(ErrorCode.CONNECTOR_ERROR, "Failed to launch Azure CLI sign-in")
+
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip().splitlines()
+        message = detail[-1] if detail else "Azure sign-in failed or was cancelled."
+        raise AppError(ErrorCode.CONNECTOR_ERROR, message)
+
+    account = _az_account_summary()
+    return json_ok({"signed_in": account is not None, "account": account})
+
+
 @connectors_bp.route("/api/connectors", methods=["GET"])
 def list_connectors():
     """List all registered connector instances (admin + user) with connection status."""
@@ -1424,6 +1539,7 @@ def connector_connect():
                 **extra_params,
                 "access_token": access_token,
                 "refresh_token": data.get("refresh_token", ""),
+                "token_expires_at": time.time() + float(data.get("expires_in") or 3600),
             }
         else:
             user_params = data.get("params", {})

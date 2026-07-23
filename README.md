@@ -43,14 +43,17 @@ https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
 ## News 🔥🔥🔥
 
-[07-17-2026] **Data Formulator 0.8 alpha 2** — A more connected, conversational way to work with data:
+[07-23-2026] **Data Formulator 0.8 alpha** (a1–a3, latest: 0.8.0a3) includes:
 
-- **Explore large datasets through conversation.** Connect a database, then ask the agent to find the right tables, filter the data, or update your selection as your question evolves. You can review the resulting filters, previews, and data sources before anything is loaded.
-- **Keep the whole analysis in one conversation.** Agents can load data without losing track of what you asked. Questions, explanations, and results stay together in the Data Thread, so you can pick up from any step or branch into a new question, column, or chart.
-- **Choose a chart that fits the question.** The gallery now includes bullet, connected scatter, ECDF, Gantt, range area, slope, sparkline, and violin charts, along with better recommendations. Files you attach also stay available to the analyst as the exploration continues.
-- **Spend less time troubleshooting.** This release improves long-running sessions, model routing, data isolation, installation across platforms, dependency security, and MySQL data freshness. Persistent logs and an in-app log viewer make problems easier to track down.
+- **Conversational database loading.** Agents can discover relevant tables, propose filters, preview results, and revise a loading plan through conversation before importing data.
+- **Unified Data Thread.** Questions, clarifications, explanations, tables, and charts share one conversation history, with branching from earlier steps into new questions, calculated columns, or visualizations.
+- **Expanded chart gallery, powered by Flint.** New bullet, connected scatter, ECDF, Gantt, range area, slope, sparkline, and violin charts, along with improved chart recommendations. Try the open-source [Flint chart language](https://microsoft.github.io/flint-chart/) in your own applications.
+- **Persistent analyst attachments.** CSV, JSON, Excel, and other attached files remain available to the analyst throughout an exploration instead of being embedded once in a prompt.
+- **Databricks connector.** Browse Unity Catalog catalogs, schemas, and tables, then load Databricks data into the exploration workflow.
+- **Microsoft authentication for enterprise connectors.** SQL Server supports passwordless Microsoft Entra ID authentication through `az login`, including an in-app flow for local deployments. Kusto supports delegated Microsoft sign-in alongside Azure default identity and service principal authentication.
+- **Connector setup and diagnostics.** Connection forms separate connection, scope, and source-specific authentication options. Persistent server logs and an in-app log viewer help diagnose failures.
 
-> Preview with `pip install --pre data_formulator==0.8.0a2` or `uvx --from data_formulator==0.8.0a2 data_formulator`.
+> Preview with `pip install --pre data_formulator==0.8.0a3` or `uvx data_formulator@0.8.0a3`.
 
 > Install the latest stable release (0.7) with `pip install data_formulator` or run instantly with `uvx data_formulator`.
 
