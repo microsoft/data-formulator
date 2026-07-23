@@ -1468,14 +1468,11 @@ def _update_user_connector_display_name(identity: str, connector_id: str, displa
     connector_id = _validate_connector_id_for_fs(connector_id)
     jail = _connectors_jail(identity, mkdir=False)
     filename = f"{_safe_source_filename(connector_id)}.json"
-    path = jail.resolve(filename)
-    if not path.exists():
+    if not jail.exists(filename):
         raise AppError(ErrorCode.CONNECTOR_ERROR, f"Connector config not found: {connector_id}")
-    with open(path, "r", encoding="utf-8") as f:
-        entry = _json.load(f)
+    entry = _json.loads(jail.read_text(filename))
     entry["display_name"] = display_name
-    with open(path, "w", encoding="utf-8") as f:
-        _json.dump(entry, f, ensure_ascii=False, indent=2)
+    jail.write_text(filename, _json.dumps(entry, ensure_ascii=False, indent=2))
 
 
 @connectors_bp.route("/api/connectors/<path:connector_id>", methods=["PATCH"])
@@ -1493,7 +1490,7 @@ def update_connector(connector_id: str):
 
     _registry_key, connector = _resolve_connector_with_key({"connector_id": connector_id})
     identity = DataConnector._get_identity()
-    _update_user_connector_display_name(identity, connector_id, display_name)
+    _update_user_connector_display_name(identity, connector._source_id, display_name)
     connector._display_name = display_name
     return json_ok({"id": connector_id, "display_name": display_name})
 
