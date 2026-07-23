@@ -9,7 +9,7 @@
 
 1. **唯一调用路径** — 所有 Agent 通过 `Client.get_completion()` 或 `Client.get_completion_with_tools()` 调用 LLM，两者内部均走 `litellm.completion()`。
 2. **`drop_params=True`** — LiteLLM 自动丢弃模型不支持的参数（如 `reasoning_effort`、`parallel_tool_calls`），不会报错。
-3. **图片降级** — 如果模型不支持图片，`_is_image_deserialize_error()` 捕获异常后自动剥离图片重试。
+3. **图片降级** — 如果模型不支持图片，`_is_image_deserialize_error()` 捕获异常后自动剥离图片重试；对于信息不明确的上游请求失败，仅在原请求确实包含图片时降级。
 4. **无前端预检查** — 前端始终允许用户上传图片；后端自动处理。
 
 ## Client API

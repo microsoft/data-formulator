@@ -295,10 +295,32 @@ class Client(object):
                 sanitized_messages.append(msg)
         return sanitized_messages
 
-    def _is_image_deserialize_error(self, error_text: str) -> bool:
+    def _messages_contain_images(self, messages) -> bool:
+        """Return whether messages contain an image_url content block."""
+        return any(
+            isinstance(msg, dict)
+            and isinstance(msg.get("content"), list)
+            and any(
+                isinstance(item, dict) and item.get("type") == "image_url"
+                for item in msg["content"]
+            )
+            for msg in messages
+        )
+
+    def _is_image_deserialize_error(self, error_text: str, has_images: bool = False) -> bool:
         """Detect provider errors caused by image blocks on text-only models."""
         lowered = error_text.lower()
-        return ("image_url" in lowered and "expected `text`" in lowered) or "unknown variant `image_url`" in lowered
+        return (
+            ("image_url" in lowered and "expected `text`" in lowered)
+            or "unknown variant `image_url`" in lowered
+            or (
+                has_images
+                and (
+                    "upstream request failed" in lowered
+                    or ("image" in lowered and ("not support" in lowered or "unsupported" in lowered))
+                )
+            )
+        )
 
     def _is_reasoning_effort_error(self, error_text: str) -> bool:
         """Detect provider errors caused by an unsupported ``reasoning_effort``
@@ -393,7 +415,7 @@ class Client(object):
             if self._is_reasoning_effort_error(err):
                 params.pop("reasoning_effort", None)
                 return self._dispatch(messages=messages, stream=stream, params=params)
-            if self._is_image_deserialize_error(err):
+            if self._is_image_deserialize_error(err, self._messages_contain_images(messages)):
                 sanitized = self._strip_images_from_messages(messages)
                 return self._dispatch(messages=sanitized, stream=stream, params=params)
             raise
@@ -416,7 +438,7 @@ class Client(object):
                 params.pop("reasoning_effort", None)
                 return self._dispatch(messages=messages, stream=stream,
                                       params=params, tools=tools, extra=kwargs)
-            if self._is_image_deserialize_error(err):
+            if self._is_image_deserialize_error(err, self._messages_contain_images(messages)):
                 sanitized = self._strip_images_from_messages(messages)
                 return self._dispatch(messages=sanitized, stream=stream,
                                       params=params, tools=tools, extra=kwargs)
