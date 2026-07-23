@@ -23,6 +23,7 @@ import dataclasses
 import inspect
 import json as _json
 import logging
+import re
 import threading
 import time
 from pathlib import Path
@@ -1403,6 +1404,24 @@ def _connectors_jail(identity: str, *, mkdir: bool = True) -> ConfinedDir:
     return ConfinedDir(_connectors_dir(identity), mkdir=mkdir)
 
 
+_CONNECTOR_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
+
+
+def _validate_connector_id_for_fs(connector_id: str) -> str:
+    """Validate connector id before any filesystem-derived usage.
+
+    Allows stable connector IDs used by this app (alnum plus ``_.:-``),
+    rejects separators/whitespace and other special characters.
+    """
+    value = str(connector_id).strip()
+    if not _CONNECTOR_ID_RE.fullmatch(value):
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            "Invalid connector_id format",
+        )
+    return value
+
+
 def _safe_source_filename(source_id: str) -> str:
     """Sanitise a source_id into a safe, collision-resistant filename component.
 
@@ -1446,6 +1465,7 @@ def _remove_user_connector(identity: str, connector_id: str) -> None:
 
 
 def _update_user_connector_display_name(identity: str, connector_id: str, display_name: str) -> None:
+    connector_id = _validate_connector_id_for_fs(connector_id)
     jail = _connectors_jail(identity, mkdir=False)
     filename = f"{_safe_source_filename(connector_id)}.json"
     path = jail.resolve(filename)
@@ -1463,6 +1483,7 @@ def update_connector(connector_id: str):
     """Rename a user connector without changing its stable source ID."""
     if connector_id in _ADMIN_CONNECTOR_IDS:
         raise AppError(ErrorCode.ACCESS_DENIED, "Admin connectors cannot be renamed")
+    connector_id = _validate_connector_id_for_fs(connector_id)
 
     display_name = str((request.get_json() or {}).get("display_name", "")).strip()
     if not display_name:
