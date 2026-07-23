@@ -585,6 +585,7 @@ export interface ConnectorAuthPath {
 export interface ConnectorInstance {
     id: string;
     source_type: string;
+    type_name?: string;
     display_name: string;
     icon: string;
     connected: boolean;

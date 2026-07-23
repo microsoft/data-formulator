@@ -13,6 +13,11 @@ For **data-file** sanitisation see :func:`datalake.parquet_utils.safe_data_filen
 
 from __future__ import annotations
 
+import re
+
+
+_SAFE_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
 
 def safe_source_id(source_id: str) -> str:
     """Sanitise a ``source_id`` into a filesystem-safe, collision-resistant string.
@@ -24,6 +29,7 @@ def safe_source_id(source_id: str) -> str:
     * ``/`` and ``\\`` → ``_``  (path separators)
     * ``:``            → ``--`` (Windows-unsafe, and preserves uniqueness so that
       ``mysql:prod`` and ``mysql_prod`` map to different filenames)
+    * final value must match ``[A-Za-z0-9._-]+`` and not be ``.`` or ``..``
 
     Examples::
 
@@ -34,7 +40,14 @@ def safe_source_id(source_id: str) -> str:
         >>> safe_source_id("a:b/c\\\\d")
         'a--b_c_d'
     """
-    return source_id.replace("/", "_").replace("\\", "_").replace(":", "--")
+    sanitized = source_id.replace("/", "_").replace("\\", "_").replace(":", "--")
+    if not sanitized or sanitized in {".", ".."}:
+        raise ValueError("source_id must not be empty or relative-dot segments")
+    if len(sanitized) > 255:
+        raise ValueError("source_id is too long")
+    if not _SAFE_SOURCE_ID_RE.fullmatch(sanitized):
+        raise ValueError("source_id contains unsupported characters")
+    return sanitized
 
 
 __all__ = ["safe_source_id"]

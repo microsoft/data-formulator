@@ -35,7 +35,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             {"name": "user", "type": "string", "required": True, "default": "postgres", "tier": "auth", "description": "PostgreSQL username"}, 
             {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "PostgreSQL host"}, 
-            {"name": "port", "type": "string", "required": False, "default": "5432", "tier": "connection", "description": "PostgreSQL port"},
+            {"name": "port", "type": "string", "required": False, "default": "5432", "tier": "connection", "advanced": True, "description": "PostgreSQL port"},
             {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Database name (leave empty to browse all databases)"}
         ]
         return params_list

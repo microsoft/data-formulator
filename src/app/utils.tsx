@@ -124,6 +124,7 @@ export const CONNECTOR_URLS = {
     DATA_LOADERS: '/api/data-loaders',
     LIST: '/api/connectors',
     CREATE: '/api/connectors',
+    UPDATE: (id: string) => `/api/connectors/${id}`,
     DELETE: (id: string) => `/api/connectors/${id}`,
 } as const;
 

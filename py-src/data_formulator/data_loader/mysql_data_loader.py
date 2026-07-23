@@ -31,7 +31,7 @@ class MySQLDataLoader(ExternalDataLoader):
             {"name": "user", "type": "string", "required": True, "default": "root", "tier": "auth", "description": "MySQL username"}, 
             {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "server address"}, 
-            {"name": "port", "type": "int", "required": False, "default": 3306, "tier": "connection", "description": "server port"},
+            {"name": "port", "type": "int", "required": False, "default": 3306, "tier": "connection", "advanced": True, "description": "server port"},
             {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Database name (leave empty to browse all databases)"}
         ]
         return params_list

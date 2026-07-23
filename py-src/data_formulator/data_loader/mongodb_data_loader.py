@@ -23,7 +23,7 @@ class MongoDBDataLoader(ExternalDataLoader):
     def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "server address"}, 
-            {"name": "port", "type": "int", "required": False, "default": 27017, "tier": "connection", "description": "server port"},
+            {"name": "port", "type": "int", "required": False, "default": 27017, "tier": "connection", "advanced": True, "description": "server port"},
             {"name": "username", "type": "string", "required": False, "default": "", "tier": "auth", "description": "leave blank if no auth"},
             {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank if no auth"},
             {"name": "database", "type": "string", "required": True, "default": "", "tier": "connection", "description": "database name"},

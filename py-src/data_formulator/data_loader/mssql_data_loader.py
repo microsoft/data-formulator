@@ -58,6 +58,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "1433",
                 "tier": "connection",
+                "advanced": True,
                 "description": "SQL Server port (default: 1433)",
             },
             {
