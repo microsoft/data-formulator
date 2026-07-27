@@ -413,7 +413,7 @@ venv
 # Temporary documentation directory
 tmp-docs/
 
-\.\NUL
+.NUL
 NUL
 
 # Package manager lock files (using yarn)
