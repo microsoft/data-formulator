@@ -178,8 +178,10 @@ Use a read-only ClickHouse account. Leave *database* empty to browse accessible 
         self.validate_params(self.params)
         self.host = str(self.params.get("host", "")).strip()
         self.username = str(self.params.get("username", "default")).strip()
-        self.password = str(self.params.get("password", ""))
-        self.database = str(self.params.get("database", "")).strip()
+        raw_password = self.params.get("password")
+        self.password = "" if raw_password is None else str(raw_password)
+        raw_database = self.params.get("database")
+        self.database = "" if raw_database is None else str(raw_database).strip()
         self.secure = _as_bool(self.params.get("secure", False), name="secure")
         self.verify = _as_bool(self.params.get("verify", True), name="verify")
 
@@ -565,44 +567,52 @@ Use a read-only ClickHouse account. Leave *database* empty to browse accessible 
         if not remaining:
             return {}
         table = remaining[0]
-        relation = self._quote_relation(database, table)
-        parameters = {"database": database, "table": table}
+        try:
+            relation = self._quote_relation(database, table)
+            parameters = {"database": database, "table": table}
 
-        columns = self._read_sql(
-            """
-            SELECT name, type, comment
-            FROM system.columns
-            WHERE database = %(database)s AND table = %(table)s
-            ORDER BY position
-            """,
-            parameters,
-        ).to_pylist()
-        column_metadata = []
-        for column in columns:
-            item = {"name": column["name"], "type": column["type"]}
-            if column.get("comment"):
-                item["description"] = column["comment"]
-            column_metadata.append(item)
+            columns = self._read_sql(
+                """
+                SELECT name, type, comment
+                FROM system.columns
+                WHERE database = %(database)s AND table = %(table)s
+                ORDER BY position
+                """,
+                parameters,
+            ).to_pylist()
+            column_metadata = []
+            for column in columns:
+                item = {"name": column["name"], "type": column["type"]}
+                if column.get("comment"):
+                    item["description"] = column["comment"]
+                column_metadata.append(item)
 
-        table_rows = self._read_sql(
-            """
-            SELECT comment, total_rows
-            FROM system.tables
-            WHERE database = %(database)s AND name = %(table)s
-            """,
-            parameters,
-        ).to_pylist()
-        sample = self._read_sql(f"SELECT * FROM {relation} LIMIT 5")
-        result: dict[str, Any] = {
-            "columns": column_metadata,
-            "sample_rows": df_to_safe_records(sample.to_pandas()),
-        }
-        if table_rows:
-            if table_rows[0].get("comment"):
-                result["description"] = table_rows[0]["comment"]
-            if table_rows[0].get("total_rows") is not None:
-                result["row_count"] = int(table_rows[0]["total_rows"])
-        return result
+            table_rows = self._read_sql(
+                """
+                SELECT comment, total_rows
+                FROM system.tables
+                WHERE database = %(database)s AND name = %(table)s
+                """,
+                parameters,
+            ).to_pylist()
+            sample = self._read_sql(f"SELECT * FROM {relation} LIMIT 5")
+            result: dict[str, Any] = {
+                "columns": column_metadata,
+                "sample_rows": df_to_safe_records(sample.to_pandas()),
+            }
+            if table_rows:
+                if table_rows[0].get("comment"):
+                    result["description"] = table_rows[0]["comment"]
+                if table_rows[0].get("total_rows") is not None:
+                    result["row_count"] = int(table_rows[0]["total_rows"])
+            return result
+        except Exception as exc:
+            logger.warning(
+                "ClickHouse metadata lookup failed for %s (%s)",
+                path,
+                type(exc).__name__,
+            )
+            return {}
 
     def get_column_types(self, source_table: str) -> dict[str, Any]:
         database, table, _ = self._resolve_source_table(source_table)

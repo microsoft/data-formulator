@@ -88,6 +88,46 @@ def test_constructor_maps_secure_read_only_options(fake_client):
     assert "password" not in loader.get_safe_params()
 
 
+def test_constructor_normalizes_none_optional_parameters(fake_client):
+    with mock.patch(
+        "data_formulator.data_loader.clickhouse_data_loader.clickhouse_connect.get_client",
+        return_value=fake_client,
+    ) as get_client:
+        loader = ClickHouseDataLoader(
+            {
+                "host": "cloud.example",
+                "username": "reader",
+                "password": None,
+                "database": None,
+            }
+        )
+
+    assert loader.password == ""
+    assert loader.database == ""
+    assert get_client.call_args.kwargs["password"] == ""
+    assert get_client.call_args.kwargs["database"] is None
+
+
+def test_constructor_preserves_falsy_non_none_parameters(fake_client):
+    with mock.patch(
+        "data_formulator.data_loader.clickhouse_data_loader.clickhouse_connect.get_client",
+        return_value=fake_client,
+    ) as get_client:
+        loader = ClickHouseDataLoader(
+            {
+                "host": "cloud.example",
+                "username": "reader",
+                "password": 0,
+                "database": 0,
+            }
+        )
+
+    assert loader.password == "0"
+    assert loader.database == "0"
+    assert get_client.call_args.kwargs["password"] == "0"
+    assert get_client.call_args.kwargs["database"] == "0"
+
+
 def test_connection_failure_redacts_password():
     with mock.patch(
         "data_formulator.data_loader.clickhouse_data_loader.clickhouse_connect.get_client",
@@ -246,6 +286,32 @@ def test_probe_cannot_escape_pinned_database(loader):
     result = loader.probe(["other_database", "secret_table"], {"limit": 1})
     assert "error" in result
     assert "configured database" in result["error"]
+
+
+@pytest.mark.parametrize("failure_index", [0, 1, 2])
+def test_get_metadata_returns_empty_when_a_query_fails(loader, failure_index):
+    successful_results = [
+        pa.table({"name": ["event_id"], "type": ["UUID"], "comment": [""]}),
+        pa.table({"comment": ["Event stream"], "total_rows": [12]}),
+        pa.table({"event_id": ["00000000-0000-0000-0000-000000000000"]}),
+    ]
+    side_effects = successful_results[:failure_index] + [
+        RuntimeError("server leaked sensitive details")
+    ]
+
+    with (
+        mock.patch.object(loader, "_read_sql", side_effect=side_effects),
+        mock.patch(
+            "data_formulator.data_loader.clickhouse_data_loader.logger.warning"
+        ) as warning,
+    ):
+        assert loader.get_metadata(["analytics", "events"]) == {}
+
+    warning.assert_called_once_with(
+        "ClickHouse metadata lookup failed for %s (%s)",
+        ["analytics", "events"],
+        "RuntimeError",
+    )
 
 
 def test_close_and_connection_check(loader, fake_client):
