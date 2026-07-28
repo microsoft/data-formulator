@@ -263,6 +263,132 @@ Use a read-only ClickHouse account. Leave *database* empty to browse accessible 
     def _quote_identifier(name: str) -> str:
         return probe_utils.quote_ident(name, probe_utils.CLICKHOUSE)
 
+    @staticmethod
+    def _unwrap_type(column_type: str) -> str:
+        """Strip ``Nullable``/``LowCardinality`` wrappers off a ClickHouse type."""
+        remaining = (column_type or "").strip()
+        while True:
+            for wrapper in ("Nullable(", "LowCardinality("):
+                if remaining.startswith(wrapper) and remaining.endswith(")"):
+                    remaining = remaining[len(wrapper) : -1].strip()
+                    break
+            else:
+                return remaining
+
+    @classmethod
+    def _cast_function(cls, column_type: str) -> str | None:
+        """The function that renders a ClickHouse type faithfully through Arrow.
+
+        ClickHouse's Arrow output format is a lossy projection of its type
+        system: several types are serialised as their physical representation,
+        so they arrive as integers or opaque bytes that no longer carry their
+        meaning, and ``JSON`` cannot be serialised at all.  Projecting those
+        columns server-side is the only way to preserve them -- the Arrow
+        payload carries no field metadata, so a repair pass on the client
+        cannot tell a degraded column from a genuine one.
+
+        Returns ``None`` for the majority of types, which Arrow already
+        represents correctly and which must be passed through untouched.
+        """
+        base = cls._unwrap_type(column_type)
+
+        def matches(*names: str) -> bool:
+            # Parameterised types keep their arguments, e.g. DateTime('UTC').
+            return any(base == name or base.startswith(f"{name}(") for name in names)
+
+        if matches("DateTime"):
+            # -> uint32 (epoch seconds).  DateTime64 is already a timestamp.
+            return "toDateTime64({column}, 0)"
+        if matches("IPv4", "IPv6"):
+            # -> uint32 / fixed_size_binary[16] instead of a readable address.
+            return "toString({column})"
+        if matches("UUID"):
+            # -> an extension type over fixed_size_binary[16]; it renders in
+            # Arrow but is raw bytes to pandas, which then fails to encode it.
+            return "toString({column})"
+        if matches("Enum", "Enum8", "Enum16"):
+            # -> the ordinal, dropping the label that gives the value meaning.
+            return "toString({column})"
+        if matches("FixedString"):
+            # -> fixed_size_binary, i.e. bytes rather than text.
+            return "toString({column})"
+        if matches("Int128", "Int256", "UInt128", "UInt256"):
+            # -> raw fixed_size_binary; a decimal string stays exact and usable.
+            return "toString({column})"
+        if matches("Decimal", "Decimal256") and cls._decimal_precision(base) > 38:
+            # Arrow renders these as decimal256, which DuckDB cannot ingest at
+            # all (its DECIMAL precision caps at 38).
+            return "toString({column})"
+        if matches("JSON", "Object"):
+            # Raises NOT_IMPLEMENTED in the Arrow writer, failing the whole
+            # import; as text it at least survives the trip.
+            return "toJSONString({column})"
+        if matches("Variant", "Dynamic"):
+            return "toString({column})"
+        return None
+
+    @staticmethod
+    def _decimal_precision(base_type: str) -> int:
+        """Precision of a ``Decimal(P, S)`` type; 0 when it cannot be read."""
+        arguments = base_type[base_type.find("(") + 1 : base_type.rfind(")")]
+        try:
+            return int(arguments.split(",")[0].strip())
+        except ValueError:
+            return 0
+
+    @classmethod
+    def _project_column(cls, column: str, cast: str) -> str:
+        """Apply ``cast`` to ``column``, keeping the column's original name."""
+        quoted = cls._quote_identifier(column)
+        return f"{cast.format(column=quoted)} AS {quoted}"
+
+    def _column_casts(self, database: str, table: str) -> dict[str, str]:
+        """Map column name -> cast template, for the columns that need one."""
+        try:
+            rows = self._read_sql(
+                """
+                SELECT name, type
+                FROM system.columns
+                WHERE database = %(database)s AND table = %(table)s
+                """,
+                {"database": database, "table": table},
+            ).to_pylist()
+        except Exception:
+            # A failed type lookup must not block the import; affected columns
+            # just fall back to whatever the Arrow writer produces.
+            logger.debug("ClickHouse column type lookup failed", exc_info=True)
+            return {}
+        return self._casts_from_column_types(rows)
+
+    @classmethod
+    def _casts_from_column_types(cls, rows: list[dict[str, Any]]) -> dict[str, str]:
+        casts = {}
+        for row in rows:
+            cast = cls._cast_function(row["type"])
+            if cast is not None:
+                casts[row["name"]] = cast
+        return casts
+
+    @classmethod
+    def _build_select_list(
+        cls, casts: dict[str, str], columns: list[Any] | None = None
+    ) -> str:
+        """The SELECT list that projects every degraded column back into shape."""
+        if columns:
+            return ", ".join(
+                cls._project_column(str(column), casts[str(column)])
+                if str(column) in casts
+                else cls._quote_identifier(str(column))
+                for column in columns
+            )
+        if casts:
+            # REPLACE keeps every other column, and their order, untouched.
+            replacements = ", ".join(
+                cls._project_column(name, casts[name]) for name in sorted(casts)
+            )
+            return f"* REPLACE ({replacements})"
+        return "*"
+
     @classmethod
     def _quote_relation(cls, database: str, table: str) -> str:
         return f"{cls._quote_identifier(database)}.{cls._quote_identifier(table)}"
@@ -365,14 +491,12 @@ Use a read-only ClickHouse account. Leave *database* empty to browse accessible 
     ) -> pa.Table:
         options = import_options or {}
         size = self._validated_size(options.get("size", MAX_IMPORT_ROWS))
-        _, _, relation = self._resolve_source_table(source_table)
+        database, table, relation = self._resolve_source_table(source_table)
 
-        columns = options.get("columns") or []
-        select_list = (
-            ", ".join(self._quote_identifier(str(column)) for column in columns)
-            if columns
-            else "*"
-        )
+        # Several ClickHouse types survive the Arrow writer only as raw
+        # integers or bytes, so project them back into shape server-side.
+        casts = self._column_casts(database, table)
+        select_list = self._build_select_list(casts, options.get("columns") or [])
         sql = f"SELECT {select_list} FROM {relation}"
 
         filters = options.get("source_filters") or []
@@ -595,7 +719,12 @@ Use a read-only ClickHouse account. Leave *database* empty to browse accessible 
                 """,
                 parameters,
             ).to_pylist()
-            sample = self._read_sql(f"SELECT * FROM {relation} LIMIT 5")
+            # Reuse the types already fetched above, so sample rows go through
+            # the same projection as an import and cost no extra round trip.
+            sample_select = self._build_select_list(
+                self._casts_from_column_types(columns)
+            )
+            sample = self._read_sql(f"SELECT {sample_select} FROM {relation} LIMIT 5")
             result: dict[str, Any] = {
                 "columns": column_metadata,
                 "sample_rows": df_to_safe_records(sample.to_pandas()),

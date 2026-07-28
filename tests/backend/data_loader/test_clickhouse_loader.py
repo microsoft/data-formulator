@@ -319,3 +319,133 @@ def test_close_and_connection_check(loader, fake_client):
     loader.close()
     assert fake_client.closed is True
     assert loader.test_connection() is False
+
+
+@pytest.mark.parametrize(
+    "column_type, expected",
+    [
+        # ClickHouse's Arrow writer degrades these to their physical form.
+        ("DateTime", "toDateTime64({column}, 0)"),
+        ("DateTime('Asia/Tokyo')", "toDateTime64({column}, 0)"),
+        ("Nullable(DateTime)", "toDateTime64({column}, 0)"),
+        ("LowCardinality(Nullable(DateTime))", "toDateTime64({column}, 0)"),
+        ("IPv4", "toString({column})"),
+        ("IPv6", "toString({column})"),
+        ("Enum8('a' = 1, 'b' = 2)", "toString({column})"),
+        ("Enum16('a' = 1)", "toString({column})"),
+        ("FixedString(4)", "toString({column})"),
+        ("UUID", "toString({column})"),
+        ("Int128", "toString({column})"),
+        ("UInt256", "toString({column})"),
+        # DuckDB's DECIMAL precision caps at 38.
+        ("Decimal(76, 10)", "toString({column})"),
+        ("Nullable(Decimal(50, 2))", "toString({column})"),
+        # JSON cannot be serialised by the Arrow writer at all.
+        ("JSON", "toJSONString({column})"),
+        ("Object('json')", "toJSONString({column})"),
+        ("Dynamic", "toString({column})"),
+        # Everything below already crosses Arrow intact.
+        ("DateTime64(3)", None),
+        ("Nullable(DateTime64(3))", None),
+        ("Date", None),
+        ("Date32", None),
+        ("UInt32", None),
+        ("Int64", None),
+        ("String", None),
+        ("LowCardinality(String)", None),
+        ("Decimal(18, 4)", None),
+        ("Decimal(38, 4)", None),
+        ("Bool", None),
+        ("Array(Int32)", None),
+        ("Map(String, Int32)", None),
+        ("Tuple(a Int32, b String)", None),
+    ],
+)
+def test_cast_function_covers_lossy_types(column_type, expected):
+    assert ClickHouseDataLoader._cast_function(column_type) == expected
+
+
+def test_fetch_projects_lossy_columns(loader, fake_client):
+    # DateTime, IPv4 and JSON all degrade (or fail) through Arrow, so the
+    # loader must project them server-side; UInt32 must be left alone.
+    fake_client.results = [
+        pa.table(
+            {
+                "name": ["created at", "amount", "client ip", "payload"],
+                "type": ["DateTime", "UInt32", "IPv4", "JSON"],
+            }
+        )
+    ]
+    loader.fetch_data_as_arrow("analytics.events", {"size": 10})
+    query, _ = fake_client.queries[-1]
+    assert (
+        "SELECT * REPLACE ("
+        "toString(`client ip`) AS `client ip`, "
+        "toDateTime64(`created at`, 0) AS `created at`, "
+        "toJSONString(`payload`) AS `payload`)" in query
+    )
+    assert "`amount`" not in query
+
+
+def test_fetch_projects_within_explicit_column_list(loader, fake_client):
+    fake_client.results = [
+        pa.table(
+            {
+                "name": ["created_at", "status"],
+                "type": ["DateTime", "Enum8('on' = 1)"],
+            }
+        )
+    ]
+    loader.fetch_data_as_arrow(
+        "analytics.events", {"columns": ["amount", "created_at", "status"]}
+    )
+    query, _ = fake_client.queries[-1]
+    assert (
+        "SELECT `amount`, toDateTime64(`created_at`, 0) AS `created_at`, "
+        "toString(`status`) AS `status`" in query
+    )
+
+
+def test_fetch_keeps_plain_star_without_lossy_columns(loader, fake_client):
+    fake_client.results = [pa.table({"name": ["amount"], "type": ["UInt32"]})]
+    loader.fetch_data_as_arrow("analytics.events")
+    query, _ = fake_client.queries[-1]
+    assert query.startswith("SELECT * FROM")
+
+
+def test_fetch_survives_column_type_lookup_failure(loader, fake_client):
+    original = loader._read_sql
+    calls = {"n": 0}
+
+    def flaky(query, parameters=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("system.columns unavailable")
+        return original(query, parameters)
+
+    with mock.patch.object(loader, "_read_sql", side_effect=flaky):
+        loader.fetch_data_as_arrow("analytics.events")
+    query, _ = fake_client.queries[-1]
+    assert query.startswith("SELECT * FROM `analytics`.`events`")
+
+
+def test_metadata_sample_projects_lossy_columns(loader, fake_client):
+    fake_client.results = [
+        pa.table(
+            {
+                "name": ["created_at", "amount"],
+                "type": ["DateTime", "UInt32"],
+                "comment": ["", ""],
+            }
+        ),
+        pa.table({"comment": ["Event stream"], "total_rows": [12]}),
+        pa.table({"created_at": [0], "amount": [1]}),
+    ]
+    loader.get_metadata(["analytics", "events"])
+    sample_query, _ = fake_client.queries[-1]
+    assert (
+        "SELECT * REPLACE (toDateTime64(`created_at`, 0) AS `created_at`) "
+        "FROM `analytics`.`events` LIMIT 5" in sample_query
+    )
+    # The sample reuses the types already fetched, so no extra type lookup.
+    assert sum("system.columns" in query for query, _ in fake_client.queries) == 1
