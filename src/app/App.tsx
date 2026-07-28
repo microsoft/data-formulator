@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -74,6 +74,7 @@ import {
     Outlet,
     RouterProvider,
     useLocation,
+    useNavigate,
     useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
@@ -106,6 +107,10 @@ import UploadIcon from '@mui/icons-material/Upload';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
+import TranslateIcon from '@mui/icons-material/Translate';
+import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
 import { syncVegaLocale } from '../i18n/vega-locale';
 
@@ -226,6 +231,196 @@ const LanguageSwitcher: React.FC = () => {
                 </ToggleButton>
             ))}
         </ToggleButtonGroup>
+    );
+};
+
+/**
+ * Below this toolbar width the app bar collapses to a phone-style layout:
+ * the page switcher becomes a dropdown and the trailing controls fold into
+ * a single overflow menu. Measured on the toolbar itself (not the viewport)
+ * because the app shell floors its content width and scrolls horizontally.
+ */
+const COMPACT_TOOLBAR_WIDTH = 900;
+
+const useIsNarrow = (ref: React.RefObject<HTMLElement | null>, threshold: number) => {
+    const [narrow, setNarrow] = useState(false);
+    useEffect(() => {
+        const element = ref.current;
+        if (!element || typeof ResizeObserver === 'undefined') return;
+        const update = () => setNarrow(element.getBoundingClientRect().width < threshold);
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(element);
+        return () => ro.disconnect();
+    }, [ref, threshold]);
+    return narrow;
+};
+
+const menuItemSx = { fontSize: 13, minHeight: 34, py: 0.5 };
+
+/** Language options rendered as menu rows for the compact overflow menu. */
+const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
+    const { i18n } = useTranslation();
+    const availableLanguages = useSelector(
+        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
+    );
+
+    if (!availableLanguages || availableLanguages.length <= 1) return null;
+    const current = i18n.language.split('-')[0];
+
+    return (
+        <>
+            {availableLanguages.map(lang => (
+                <MenuItem
+                    key={lang}
+                    selected={lang === current}
+                    onClick={() => { i18n.changeLanguage(lang); onSelect(); }}
+                    sx={menuItemSx}
+                >
+                    <ListItemIcon>
+                        {lang === current
+                            ? <CheckIcon fontSize="small" />
+                            : <TranslateIcon fontSize="small" sx={{ opacity: 0.3 }} />}
+                    </ListItemIcon>
+                    <ListItemText primaryTypographyProps={{ fontSize: 13 }}>
+                        {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                    </ListItemText>
+                </MenuItem>
+            ))}
+        </>
+    );
+};
+
+/** Compact replacement for the About / App top-nav buttons. */
+const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
+    const { t } = useTranslation();
+    const navigate = useNavigate();
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const pages = [
+        { to: '/about', label: t('appBar.about'), selected: isAboutPage },
+        { to: '/app', label: t('appBar.app'), selected: !isAboutPage },
+    ];
+    const currentLabel = pages.find(page => page.selected)?.label ?? '';
+
+    return (
+        <>
+            <Button
+                color="inherit"
+                onClick={(event) => setAnchorEl(event.currentTarget)}
+                endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 16, color: 'text.secondary' }} />}
+                aria-haspopup="menu"
+                sx={{
+                    textTransform: 'none',
+                    minWidth: 0,
+                    px: 0.75,
+                    gap: 0.25,
+                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                }}
+            >
+                <Typography noWrap component="h1" sx={{ fontSize: 15, fontWeight: 300, letterSpacing: '0.03em' }}>
+                    {toolName}
+                </Typography>
+                <Typography noWrap sx={{ fontSize: 13, color: 'text.secondary' }}>
+                    {`: ${currentLabel}`}
+                </Typography>
+            </Button>
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={() => setAnchorEl(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            >
+                {pages.map(page => (
+                    <MenuItem
+                        key={page.to}
+                        selected={page.selected}
+                        sx={menuItemSx}
+                        onClick={() => {
+                            setAnchorEl(null);
+                            if (!page.selected) navigate(page.to);
+                        }}
+                    >
+                        <ListItemIcon>
+                            {page.selected ? <CheckIcon fontSize="small" /> : null}
+                        </ListItemIcon>
+                        <ListItemText primaryTypographyProps={{ fontSize: 13 }}>
+                            {`${toolName}: ${page.label}`}
+                        </ListItemText>
+                    </MenuItem>
+                ))}
+            </Menu>
+        </>
+    );
+};
+
+const EXTERNAL_LINKS = {
+    github: 'https://github.com/microsoft/data-formulator',
+    youtube: 'https://youtu.be/3ndlwt0Wi3c',
+    pip: 'https://pypi.org/project/data-formulator/',
+    discord: 'https://discord.gg/mYCZMQKYZb',
+};
+
+/**
+ * Phone-style overflow menu holding everything that does not fit in a narrow
+ * app bar (language, settings, logs, links, exit).
+ */
+const ToolbarOverflowMenu: React.FC<{
+    items: {
+        key: string;
+        label: string;
+        icon: React.ReactNode;
+        href?: string;
+        onClick?: () => void;
+    }[];
+    showLanguages?: boolean;
+}> = ({ items, showLanguages = true }) => {
+    const { t } = useTranslation();
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const close = () => setAnchorEl(null);
+
+    return (
+        <>
+            <Tooltip title={t('appBar.moreOptions', { defaultValue: 'More options' })}>
+                <IconButton
+                    size="small"
+                    onClick={(event) => setAnchorEl(event.currentTarget)}
+                    aria-haspopup="menu"
+                    aria-label={t('appBar.moreOptions', { defaultValue: 'More options' })}
+                    sx={{
+                        p: 0.5,
+                        color: 'text.secondary',
+                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                    }}
+                >
+                    <MoreVertIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={close}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{ paper: { sx: { minWidth: 200 } } }}
+            >
+                {showLanguages && <LanguageMenuItems onSelect={close} />}
+                {showLanguages && items.length > 0 && <Divider />}
+                {items.map(item => (
+                    <MenuItem
+                        key={item.key}
+                        sx={menuItemSx}
+                        {...(item.href
+                            ? { component: 'a' as const, href: item.href, target: '_blank', rel: 'noopener noreferrer' }
+                            : {})}
+                        onClick={() => { close(); item.onClick?.(); }}
+                    >
+                        <ListItemIcon>{item.icon}</ListItemIcon>
+                        <ListItemText primaryTypographyProps={{ fontSize: 13 }}>{item.label}</ListItemText>
+                    </MenuItem>
+                ))}
+            </Menu>
+        </>
     );
 };
 
@@ -454,15 +649,19 @@ const WorkspaceMenu: React.FC = () => {
 
 // Exit the current session and return to the front-page (no workspace).
 // Saves work first so the session is recoverable from the workspace picker.
-const ExitSessionButton: React.FC = () => {
+const useExitSession = () => {
     const dispatch = useDispatch();
     const state = useSelector((s: DataFormulatorState) => s);
-    const { t } = useTranslation();
 
-    const handleExit = async () => {
+    return useCallback(async () => {
         try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
         dispatch(dfActions.resetState());
-    };
+    }, [state, dispatch]);
+};
+
+const ExitSessionButton: React.FC = () => {
+    const { t } = useTranslation();
+    const handleExit = useExitSession();
 
     return (
         <Tooltip title={t('workspace.exitSessionTooltip', { defaultValue: 'Exit session and return to the workspace picker' })} placement="bottom">
@@ -489,8 +688,21 @@ const ExitSessionButton: React.FC = () => {
     );
 };
 
-const ConfigDialog: React.FC = () => {
-    const [open, setOpen] = useState(false);
+/**
+ * Settings dialog. Renders its own icon-button trigger by default; the
+ * compact toolbar hides the trigger and drives `open` from its overflow menu.
+ */
+const ConfigDialog: React.FC<{
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    hideTrigger?: boolean;
+}> = ({ open: openProp, onOpenChange, hideTrigger = false }) => {
+    const [openState, setOpenState] = useState(false);
+    const open = openProp ?? openState;
+    const setOpen = useCallback((value: boolean) => {
+        setOpenState(value);
+        onOpenChange?.(value);
+    }, [onOpenChange]);
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
@@ -517,6 +729,7 @@ const ConfigDialog: React.FC = () => {
 
     return (
         <>
+            {!hideTrigger && (
             <Tooltip title={t('app.settings')}>
                 <IconButton
                     size="small"
@@ -531,6 +744,7 @@ const ConfigDialog: React.FC = () => {
                     <SettingsOutlinedIcon fontSize="small" />
                 </IconButton>
             </Tooltip>
+            )}
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle>{t('app.settings')}</DialogTitle>
                 <DialogContent>
@@ -804,6 +1018,14 @@ const AppShell: FC = () => {
     const isLandingView = isAppPage && tables.length === 0;
     const shellMinWidth = isLandingView ? '640px' : '1000px';
 
+    // Narrow toolbars fold their controls into menus instead of letting the
+    // nav buttons, session name and trailing actions overlap.
+    const toolbarRef = useRef<HTMLDivElement | null>(null);
+    const isCompactToolbar = useIsNarrow(toolbarRef, COMPACT_TOOLBAR_WIDTH);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [logsOpen, setLogsOpen] = useState(false);
+    const exitSession = useExitSession();
+
     return (
         <Box sx={{
             position: 'absolute',
@@ -826,10 +1048,14 @@ const AppShell: FC = () => {
                 overflow: 'hidden'
             }}>
                 <AppBar position="static">
-                    <Toolbar variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
+                    <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
                         <Box sx={{ width: 40, minWidth: 40, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                             <Box component="img" sx={{ height: 20 }} alt="" src={dfLogo} />
                         </Box>
+                        {isCompactToolbar ? (
+                            <PageNavMenu isAboutPage={isAboutPage} />
+                        ) : (
+                        <>
                         <Button sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
                             alignItems: 'stretch',
@@ -855,18 +1081,65 @@ const AppShell: FC = () => {
                             <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
                             <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
                         </Box>
-                        {tables.length === 0 && !activeWorkspace && (
+                        </>
+                        )}
+                        {!isCompactToolbar && tables.length === 0 && !activeWorkspace && (
                             <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.secondary', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                                 {t('appBar.microsoftResearch')}
                             </Typography>
                         )}
-                        {/* Centered workspace name — acts as session indicator/switcher */}
+                        {/* Workspace name — session indicator/switcher. Centered
+                            absolutely when there is room, otherwise it flows
+                            between the nav menu and the trailing actions. */}
                         {activeWorkspace && isAppPage && (
-                            <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
-                                <WorkspaceMenu />
+                            isCompactToolbar ? (
+                                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', mx: 1 }}>
+                                    <WorkspaceMenu />
+                                </Box>
+                            ) : (
+                                <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
+                                    <WorkspaceMenu />
+                                </Box>
+                            )
+                        )}
+                        {isAppPage && isCompactToolbar && (
+                            <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.5 }}>
+                                <ModelSelectionButton />
+                                <ConfigDialog open={settingsOpen} onOpenChange={setSettingsOpen} hideTrigger />
+                                {serverConfig.IS_LOCAL_MODE && (
+                                    <LogViewerDialog open={logsOpen} onOpenChange={setLogsOpen} hideTrigger />
+                                )}
+                                <ToolbarOverflowMenu
+                                    items={[
+                                        {
+                                            key: 'settings',
+                                            label: t('app.settings'),
+                                            icon: <SettingsOutlinedIcon fontSize="small" />,
+                                            onClick: () => setSettingsOpen(true),
+                                        },
+                                        ...(serverConfig.IS_LOCAL_MODE ? [{
+                                            key: 'logs',
+                                            label: t('logs.viewLogs', { defaultValue: 'View server logs' }),
+                                            icon: <TerminalOutlinedIcon fontSize="small" />,
+                                            onClick: () => setLogsOpen(true),
+                                        }] : []),
+                                        {
+                                            key: 'github',
+                                            label: t('appBar.viewOnGitHub'),
+                                            icon: <GitHubIcon fontSize="small" />,
+                                            href: EXTERNAL_LINKS.github,
+                                        },
+                                        ...(activeWorkspace ? [{
+                                            key: 'exit',
+                                            label: t('workspace.exit', { defaultValue: 'Exit' }),
+                                            icon: <LogoutIcon fontSize="small" />,
+                                            onClick: () => { exitSession(); },
+                                        }] : []),
+                                    ]}
+                                />
                             </Box>
                         )}
-                        {isAppPage && (
+                        {isAppPage && !isCompactToolbar && (
                             <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.75 }}>
                                 <ModelSelectionButton />
                                 <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
@@ -900,7 +1173,39 @@ const AppShell: FC = () => {
                                 )}
                             </Box>
                         )}
-                        {isAboutPage && (
+                        {isAboutPage && isCompactToolbar && (
+                            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
+                                <ToolbarOverflowMenu
+                                    items={[
+                                        {
+                                            key: 'video',
+                                            label: t('appBar.watchVideo'),
+                                            icon: <YouTubeIcon fontSize="small" />,
+                                            href: EXTERNAL_LINKS.youtube,
+                                        },
+                                        {
+                                            key: 'github',
+                                            label: t('appBar.viewOnGitHub'),
+                                            icon: <GitHubIcon fontSize="small" />,
+                                            href: EXTERNAL_LINKS.github,
+                                        },
+                                        {
+                                            key: 'pip',
+                                            label: t('appBar.pipInstall'),
+                                            icon: <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="" />,
+                                            href: EXTERNAL_LINKS.pip,
+                                        },
+                                        {
+                                            key: 'discord',
+                                            label: t('appBar.joinDiscord'),
+                                            icon: <DiscordIcon sx={{ fontSize: 20 }} />,
+                                            href: EXTERNAL_LINKS.discord,
+                                        },
+                                    ]}
+                                />
+                            </Box>
+                        )}
+                        {isAboutPage && !isCompactToolbar && (
                             <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
                                 <LanguageSwitcher />
                                 <Tooltip title={t('appBar.watchVideo')}>

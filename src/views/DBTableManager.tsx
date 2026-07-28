@@ -976,12 +976,21 @@ export const DataLoaderForm: React.FC<{
                                             }}
                                             aria-label={t('db.tierAuth')}
                                             sx={{
-                                                display: 'inline-flex',
+                                                // Narrow containers (inline chat card, split
+                                                // panes) cannot fit the auth paths side by
+                                                // side, so stack them and only switch to a
+                                                // row once the form is wide enough.
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'stretch',
+                                                width: '100%',
+                                                maxWidth: 420,
                                                 '& .MuiToggleButton-root': {
-                                                    height: 30,
+                                                    minHeight: 30,
                                                     px: 1.5,
-                                                    py: 0,
+                                                    py: 0.25,
                                                     ...formTextSx,
+                                                    justifyContent: 'center',
                                                     textTransform: 'none',
                                                     color: 'text.secondary',
                                                     borderColor: 'divider',
@@ -992,13 +1001,51 @@ export const DataLoaderForm: React.FC<{
                                                 },
                                                 '& .MuiToggleButtonGroup-grouped': {
                                                     borderRadius: 0,
+                                                    marginLeft: 0,
+                                                    borderLeft: '1px solid',
+                                                    borderLeftColor: 'divider',
+                                                    '&:not(:first-of-type)': {
+                                                        marginTop: '-1px',
+                                                        borderTop: '1px solid',
+                                                        borderTopColor: 'divider',
+                                                    },
                                                     '&:first-of-type': {
                                                         borderTopLeftRadius: 4,
-                                                        borderBottomLeftRadius: 4,
+                                                        borderTopRightRadius: 4,
                                                     },
                                                     '&:last-of-type': {
-                                                        borderTopRightRadius: 4,
+                                                        borderBottomLeftRadius: 4,
                                                         borderBottomRightRadius: 4,
+                                                    },
+                                                },
+                                                '@container (min-width: 560px)': {
+                                                    display: 'inline-flex',
+                                                    flexDirection: 'row',
+                                                    width: 'auto',
+                                                    maxWidth: '100%',
+                                                    '& .MuiToggleButton-root': {
+                                                        height: 30,
+                                                        py: 0,
+                                                        whiteSpace: 'nowrap',
+                                                    },
+                                                    '& .MuiToggleButtonGroup-grouped': {
+                                                        borderRadius: 0,
+                                                        '&:not(:first-of-type)': {
+                                                            marginTop: 0,
+                                                            marginLeft: '-1px',
+                                                            borderTop: '1px solid',
+                                                            borderTopColor: 'divider',
+                                                        },
+                                                        '&:first-of-type': {
+                                                            borderTopLeftRadius: 4,
+                                                            borderBottomLeftRadius: 4,
+                                                            borderTopRightRadius: 0,
+                                                        },
+                                                        '&:last-of-type': {
+                                                            borderTopRightRadius: 4,
+                                                            borderBottomRightRadius: 4,
+                                                            borderBottomLeftRadius: 0,
+                                                        },
                                                     },
                                                 },
                                             }}

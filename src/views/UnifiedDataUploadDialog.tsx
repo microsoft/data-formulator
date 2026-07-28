@@ -1940,10 +1940,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             maxWidth={false}
             sx={{ 
                 '& .MuiDialog-paper': { 
-                    width: 1200,
-                    maxWidth: '95vw',
-                    height: 700, 
-                    maxHeight: '90vh',
+                    // Working surface, not a prompt: claim almost the whole
+                    // viewport on small screens (a percentage cap would waste
+                    // 5-10% there) and stop growing at a comfortable size on
+                    // large ones.
+                    m: 2,
+                    width: 'min(1280px, calc(100vw - 32px))',
+                    maxWidth: 'none',
+                    height: 'min(860px, calc(100vh - 32px))',
+                    maxHeight: 'none',
                     display: 'flex',
                     flexDirection: 'column',
                     transition: 'width 0.2s ease',

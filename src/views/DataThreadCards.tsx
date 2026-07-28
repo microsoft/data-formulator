@@ -101,6 +101,76 @@ export let buildChartCard = (
     </Box>
 }
 
+/** Wrap chart elements as thumbnail rows under their table. */
+export let buildChartCards = (
+    relevantCharts: { tableId: string, chartId: string, element: any }[],
+    focusedChartId: string | undefined,
+    collapsed: boolean = false,
+) => {
+    let collapsedProps = collapsed ? { width: '50%', "& canvas": { width: 60, maxHeight: 50 } } : { width: '100%' };
+    return relevantCharts.map((ce) =>
+        <Box key={`relevant-chart-${ce.chartId}`}
+            data-chart-id={ce.chartId}
+            sx={{
+                display: 'flex', padding: 0, ...collapsedProps }}>
+            {buildChartCard(ce, focusedChartId)}
+        </Box>);
+}
+
+// ─── Table Reference (ghost) Card ────────────────────────────────────────────
+
+/**
+ * A muted pointer to a table whose real card lives elsewhere — the shelf (a
+ * thread's source origin) or an earlier column (a continuation's carried-over
+ * parent).  Visually this is the pre-refactor "ghost" table card: identical to
+ * a real table card, just gray + reduced opacity, and with no actions.  It is
+ * a reference, not a node — it never carries charts, turns or drafts.
+ */
+export let buildTableRefChip = (props: {
+    tableId: string;
+    table: DictTable | undefined;
+    highlighted: boolean;
+    focused: boolean;
+    dispatch: any;
+}) => {
+    const { tableId, table, focused, dispatch } = props;
+    return <Box key={`regular-table-box-${tableId}`}
+        data-table-id={tableId}
+        className="data-thread-card-wrapper"
+        sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+        <Card className={`data-thread-card ${focused ? 'selected-card' : ''}`} elevation={0}
+            sx={{ width: '100%',
+                // Ghost: still a real, clickable table card so users can jump
+                // to the carry-over parent — just visually muted (gray bg +
+                // reduced opacity) so it reads as an orientation aid rather
+                // than a fresh node.
+                backgroundColor: 'rgba(0,0,0,0.04)',
+                opacity: 0.4,
+                ...ComponentBorderStyle,
+                borderRadius: '6px',
+            }}
+            onClick={() => {
+                dispatch(dfActions.setFocused({ type: 'table', tableId }));
+            }}>
+            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center' }}>
+                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
+                    <Box sx={{ margin: '4px 8px 4px 2px', minWidth: 0, flex: 1 }}>
+                        <Typography fontSize="inherit" sx={{
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            wordBreak: 'break-all',
+                        }}>{table?.displayId || tableId}</Typography>
+                    </Box>
+                </Stack>
+            </Box>
+        </Card>
+    </Box>
+}
+
 // ─── Trigger Card Wrapper ────────────────────────────────────────────────────
 
 export let buildTriggerCard = (

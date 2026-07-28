@@ -500,10 +500,11 @@ export const DataFormulatorFC = ({ }) => {
             }
         });
         const leafTables = tables.filter(t => !hasNonAnchoredChild.has(t.id));
-        // Threads = leaf tables with derivation chains + 1 group for hanging (source) tables
+        // Threads = leaf tables with derivation chains, plus one slot for the
+        // source-table shelf (source tables are not threads; they pin to the
+        // top of the first column).
         const threaded = leafTables.filter(t => t.derive);
-        const hanging = leafTables.filter(t => !t.derive);
-        let count = threaded.length + (hanging.length > 0 ? 1 : 0);
+        let count = threaded.length + (tables.some(t => !t.derive) ? 1 : 0);
 
         // Account for chain-splitting: long chains are broken into sub-threads
         // (mirrors MAX_CHAIN_TABLES logic in DataThread)

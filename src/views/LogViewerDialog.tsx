@@ -43,9 +43,18 @@ interface LogTailResponse {
     content: string;
 }
 
-export const LogViewerDialog: FC = () => {
+export const LogViewerDialog: FC<{
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    hideTrigger?: boolean;
+}> = ({ open: openProp, onOpenChange, hideTrigger = false }) => {
     const { t } = useTranslation();
-    const [open, setOpen] = useState(false);
+    const [openState, setOpenState] = useState(false);
+    const open = openProp ?? openState;
+    const setOpen = useCallback((value: boolean) => {
+        setOpenState(value);
+        onOpenChange?.(value);
+    }, [onOpenChange]);
     const [loading, setLoading] = useState(false);
     const [content, setContent] = useState('');
     const [path, setPath] = useState<string | null>(null);
@@ -88,6 +97,7 @@ export const LogViewerDialog: FC = () => {
 
     return (
         <>
+            {!hideTrigger && (
             <Tooltip title={t('logs.viewLogs', { defaultValue: 'View server logs' })}>
                 <IconButton
                     size="small"
@@ -102,6 +112,7 @@ export const LogViewerDialog: FC = () => {
                     <TerminalOutlinedIcon fontSize="small" />
                 </IconButton>
             </Tooltip>
+            )}
             <Dialog open={open} onClose={() => setOpen(false)} maxWidth="lg" fullWidth>
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1 }}>
                     <Typography component="span" sx={{ fontWeight: 500, flexGrow: 1 }}>

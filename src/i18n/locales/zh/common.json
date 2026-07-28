@@ -45,6 +45,7 @@
     "about": "关于",
     "app": "应用",
     "data": "数据",
+    "moreOptions": "更多选项",
     "microsoftResearch": "微软研究院"
   },
   "logs": {
@@ -434,7 +435,6 @@
     "editMetadata": "编辑元数据",
     "refreshData": "刷新数据",
     "autoRefreshTooltip": "每 {{interval}} 自动刷新 - 点击修改间隔或停止监听",
-    "threadZero": "线程0",
     "threadIndex": "线程 - {{index}}",
     "continuedFromAbove": "续上",
     "continuesBelow": "续下",
@@ -462,6 +462,10 @@
     "expand": "展开",
     "renameTable": "重命名表",
     "addData": "添加数据",
+    "addMoreData": "添加更多数据",
+    "dataSources": "数据源",
+    "showAllTables": "显示全部 {{count}} 个",
+    "showFewerTables": "收起",
     "working": "处理中...",
     "waitingForClarification": "等待澄清...",
     "rename": "重命名",

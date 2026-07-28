@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
     Box,
@@ -14,16 +14,8 @@ import {
     useTheme,
     SxProps,
     Button,
-    TextField,
     CircularProgress,
-    Popper,
-    Paper,
-    ClickAwayListener,
     Badge,
-    Menu,
-    MenuItem,
-    Switch,
-    FormControlLabel,
     Collapse,
     Card,
 } from '@mui/material';
@@ -34,21 +26,19 @@ import { useTranslation } from 'react-i18next';
 import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
 import { extractErrorMessage } from '../app/errorHandler';
 import { Chart, DictTable, Trigger, InteractionEntry, TextTurn } from "../components/ComponentType";
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
-import { deleteWorkspace } from '../app/workspaceService';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
+import { TableIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
 import _ from 'lodash';
@@ -61,8 +51,6 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 import { checkChartAvailability, generateChartSkeleton, getDataTable } from './ChartUtils';
 
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import EditIcon from '@mui/icons-material/Edit';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -71,14 +59,13 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { alpha } from '@mui/material/styles';
 
-import { RefreshDataDialog } from './RefreshDataDialog';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
 import GridOnIcon from '@mui/icons-material/GridOn';
-import { useDataRefresh } from '../app/useDataRefresh';
-import { buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
+import { buildTriggerCard, buildTableCard, buildTableRefChip, buildChartCards, BuildTableCardProps } from './DataThreadCards';
+import { SourceTableShelf, SHELF_VISIBLE_LIMIT } from './SourceTableShelf';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -95,7 +82,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
 
-import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
+import { ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, ResolvedConversationCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
@@ -196,312 +183,6 @@ export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = 
 };
 
 
-
-/** Seconds options for stream/database auto-refresh interval (labels in i18n: dataThread.refreshInterval.*). */
-const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86400] as const;
-
-// Streaming Settings Popup Component
-const StreamingSettingsPopup = memo<{
-    open: boolean;
-    anchorEl: HTMLElement | null;
-    onClose: () => void;
-    table: DictTable;
-    onUpdateSettings: (autoRefresh: boolean, refreshIntervalSeconds?: number) => void;
-    onRefreshNow?: () => void;
-}>(({ open, anchorEl, onClose, table, onUpdateSettings, onRefreshNow }) => {
-    const [refreshInterval, setRefreshInterval] = useState<number>(
-        table.source?.refreshIntervalSeconds || 60
-    );
-    const [autoRefresh, setAutoRefresh] = useState<boolean>(
-        table.source?.autoRefresh || false
-    );
-    const [selectMenuOpen, setSelectMenuOpen] = useState<boolean>(false);
-    const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-    const { t } = useTranslation();
-
-    useEffect(() => {
-        if (open) {
-            setRefreshInterval(table.source?.refreshIntervalSeconds || 60);
-            setAutoRefresh(table.source?.autoRefresh || false);
-        }
-    }, [open, table.source]);
-
-    const handleAutoRefreshChange = (enabled: boolean) => {
-        setAutoRefresh(enabled);
-        onUpdateSettings(enabled, enabled ? refreshInterval : undefined);
-        if (!enabled) {
-            onClose();
-        }
-    };
-
-    const handleIntervalChange = (interval: number) => {
-        setRefreshInterval(interval);
-        if (autoRefresh) {
-            onUpdateSettings(true, interval);
-        }
-    };
-
-    const handleRefreshNow = async () => {
-        if (onRefreshNow && !isRefreshing) {
-            setIsRefreshing(true);
-            try {
-                await onRefreshNow();
-            } finally {
-                setIsRefreshing(false);
-            }
-        }
-    };
-
-    const handleClickAway = (event: MouseEvent | TouchEvent) => {
-        // Don't close if the select menu is open
-        if (selectMenuOpen) {
-            return;
-        }
-        // Don't close if clicking on the select menu or menu items
-        const target = event.target as HTMLElement;
-        if (
-            target.closest('.MuiMenu-root') ||
-            target.closest('.MuiPaper-root')?.classList.contains('MuiMenu-paper') ||
-            target.closest('[role="menuitem"]') ||
-            target.closest('[role="listbox"]')
-        ) {
-            return;
-        }
-        onClose();
-    };
-
-    return (
-        <Popper
-            open={open}
-            anchorEl={anchorEl}
-            placement="bottom-start"
-            style={{ zIndex: 1300 }}
-        >
-            <ClickAwayListener onClickAway={handleClickAway} mouseEvent="onMouseDown">
-                <Paper
-                    elevation={8}
-                    sx={{
-                        fontSize: 12,
-                        p: 1.5,
-                        mt: 1,
-                        ...ViewBorderStyle,
-                    }}
-                >
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'nowrap' }}>
-                            <FormControlLabel
-                                control={
-                                    <Switch
-                                        checked={autoRefresh}
-                                        onChange={(e) => handleAutoRefreshChange(e.target.checked)}
-                                        size="small"
-                                    />
-                                }
-                                label={
-                                    <Typography variant="body2" sx={{ fontSize: 11 }}>
-                                        {t('dataThread.watchForUpdates')}
-                                    </Typography>
-                                }
-                                sx={{ mr: 0 }}
-                            />
-                            {autoRefresh && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
-                                    <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                        {t('dataThread.every')}
-                                    </Typography>
-                                    <TextField
-                                        select
-                                        size="small"
-                                        value={refreshInterval}
-                                        onChange={(e) => handleIntervalChange(Number(e.target.value))}
-                                        slotProps={{
-                                            select: {
-                                                open: selectMenuOpen,
-                                                onOpen: () => setSelectMenuOpen(true),
-                                                onClose: () => setSelectMenuOpen(false)
-                                            }
-                                        }}
-                                        sx={{ 
-                                            minWidth: 70,
-                                            '& .MuiInputBase-root': { fontSize: 11, height: 28 },
-                                            '& .MuiSelect-select': { py: 0.5 }
-                                        }}
-                                    >
-                                        {STREAM_REFRESH_INTERVAL_SECONDS.map((sec) => (
-                                            <MenuItem key={sec} value={sec}>
-                                                {t(`dataThread.refreshInterval.${sec}`)}
-                                            </MenuItem>
-                                        ))}
-                                    </TextField>
-                                </Box>
-                            )}
-                            {onRefreshNow && (
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={handleRefreshNow}
-                                    disabled={isRefreshing}
-                                    startIcon={isRefreshing ? <CircularProgress size={14} /> : <RefreshIcon sx={{ fontSize: 14 }} />}
-                                    sx={{
-                                        fontSize: 11,
-                                        textTransform: 'none',
-                                        height: 28,
-                                        alignSelf: 'flex-start'
-                                    }}
-                                >
-                                    {t('dataThread.refreshNow')}
-                                </Button>
-                            )}
-                        </Box>
-                    </Box>
-                </Paper>
-            </ClickAwayListener>
-        </Popper>
-    );
-});
-
-// Table Metadata Viewer (read-only)
-// Renders the source-supplied table description for connector/upload
-// tables, or the agent-produced code explanation for derived tables.
-// Per-column metadata is exposed elsewhere as header tooltips on the
-// data preview, not here. Strictly read-only and strictly textual.
-// See design-docs/23-table-description-unification.md.
-const MetadataPopup = memo<{
-    open: boolean;
-    anchorEl: HTMLElement | null;
-    onClose: () => void;
-    table: DictTable | null;
-}>(({ open, anchorEl, onClose, table }) => {
-    const { t } = useTranslation();
-
-    const tableName = table?.displayId || table?.id || '';
-    const description = (table?.description || '').trim();
-    const codeExplanation = (table?.derive?.explanation?.code || '').trim();
-
-    return (
-        <Popper
-            open={open}
-            anchorEl={anchorEl}
-            placement="bottom-start"
-            style={{ zIndex: 1300 }}
-        >
-            <ClickAwayListener onClickAway={onClose}>
-                <Paper
-                    elevation={8}
-                    sx={{
-                        width: 480,
-                        maxHeight: '70vh',
-                        overflow: 'auto',
-                        fontSize: 12,
-                        p: 2,
-                        mt: 1,
-                        ...ViewBorderStyle,
-                    }}
-                >
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        {t('dataThread.metadataFor', { table: tableName, defaultValue: `Metadata for ${tableName}` })}
-                    </Typography>
-
-                    {description && (
-                        <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {description}
-                        </Typography>
-                    )}
-
-                    {!description && codeExplanation && (
-                        <Box>
-                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
-                                {t('dataThread.derivationSummary', { defaultValue: 'Derivation summary' })}
-                            </Typography>
-                            <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
-                                {codeExplanation}
-                            </Typography>
-                        </Box>
-                    )}
-
-                    {!description && !codeExplanation && (
-                        <Typography sx={{ fontSize: 11.5, color: 'text.disabled', fontStyle: 'italic' }}>
-                            {t('dataThread.noMetadata', { defaultValue: 'No description available for this table.' })}
-                        </Typography>
-                    )}
-
-                    <Box sx={{ mt: 1.5, display: 'flex' }}>
-                        <Button size="small" sx={{ ml: 'auto' }} onClick={onClose} color="primary">{t('app.close', { defaultValue: 'Close' })}</Button>
-                    </Box>
-                </Paper>
-            </ClickAwayListener>
-        </Popper>
-    );
-});
-
-
-
-// Rename table popup - opens as a small popper with a text field
-const RenameTablePopup = memo<{
-    open: boolean;
-    anchorEl: HTMLElement | null;
-    onClose: () => void;
-    onSave: (newName: string) => void;
-    initialValue: string;
-    tableName: string;
-}>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
-    const [name, setName] = useState(initialValue);
-    const { t } = useTranslation();
-
-    useEffect(() => {
-        setName(initialValue);
-    }, [initialValue, open]);
-
-    const handleSave = () => {
-        if (name.trim() !== '') {
-            onSave(name.trim());
-            onClose();
-        }
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-            handleSave();
-        } else if (e.key === 'Escape') {
-            onClose();
-        }
-    };
-
-    return (
-        <Popper
-            open={open}
-            anchorEl={anchorEl}
-            placement="bottom-start"
-            style={{ zIndex: 1300 }}
-        >
-            <ClickAwayListener onClickAway={onClose}>
-                <Paper
-                    elevation={8}
-                    sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, ...ViewBorderStyle }}
-                >
-                    <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: 12 }}>
-                        {t('dataThread.renameTable')}
-                    </Typography>
-                    <TextField
-                        autoFocus
-                        fullWidth
-                        variant="outlined"
-                        size="small"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        sx={{ my: 0.5, '& .MuiInputBase-input': { fontSize: 12 } }}
-                    />
-                    <Box sx={{ mt: 0.5, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                        <Button size="small" onClick={onClose}>{t('app.cancel')}</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>{t('app.save')}</Button>
-                    </Box>
-                </Paper>
-            </ClickAwayListener>
-        </Popper>
-    );
-});
 
 const WorkspacePanel: FC<{
     tables: DictTable[],
@@ -815,24 +496,29 @@ const WorkspacePanel: FC<{
 };
 
 let SingleThreadGroupView: FC<{
-    threadIdx: number,
-    threadLabel?: string, // Custom label; absent on continuation segments
-    isSplitThread?: boolean, // When true, this is a continuation: truncate used tables to immediate parent + render "↑ continued" header
+    threadLabel?: string, // Header label; absent on continuation segments
+    // A continuation of the thread above: renders the "↑ continued" header +
+    // a chip for the carried-over parent, and no label of its own.
+    isSplitThread?: boolean,
     hasContinuationBelow?: boolean, // When true, render "↓ continues below" footer
-    hideLabel?: boolean, // When true, hide the thread label divider
-    leafTables: DictTable[];
+    // The source table this thread grows out of. Source tables are NOT part of
+    // the thread system (they live in the shelf); a thread only echoes its
+    // origin as a compact reference chip so the reader can see where it started.
+    originTableId?: string,
+    // The thread's terminal table, if any. A thread with no leaf table is a
+    // source table's artifact thread (charts / reports / conversation only).
+    leafTable?: DictTable;
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
     globalHighlightedTableIds: string[],
     focusedThreadLeafId?: string, // The leaf table ID of the thread containing the focused table
     sx?: SxProps
 }> = function ({
-    threadIdx,
     threadLabel,
     isSplitThread = false,
     hasContinuationBelow = false,
-    hideLabel = false,
-    leafTables,
+    originTableId,
+    leafTable,
     chartElements,
     usedIntermediateTableIds,
     globalHighlightedTableIds,
@@ -841,27 +527,26 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
-    const { manualRefresh } = useDataRefresh();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
-    let leafTableIds = leafTables.map(lt => lt.id);
-    // Thread is highlighted only if this thread's leaf tables include the focused thread's leaf
-    const threadHighlighted = focusedThreadLeafId 
-        ? leafTableIds.includes(focusedThreadLeafId) 
-        : false;
+    // Thread is highlighted only if it ends at the focused thread's leaf,
+    // or (for a source-artifact thread) it hosts the focused source table's artifacts.
+    const ownsOriginArtifacts = !!originTableId && !usedIntermediateTableIds.includes(originTableId);
+    const threadHighlighted = !!focusedThreadLeafId
+        && (leafTable?.id === focusedThreadLeafId
+            || (ownsOriginArtifacts && originTableId === focusedThreadLeafId));
     // Ancestor thread: not the focused thread, but *owns* some highlighted tables
     // (tables that only appear as used/shared references don't count)
     const isAncestorThread = !threadHighlighted && globalHighlightedTableIds.length > 0
-        && leafTables.some(lt => {
-            const trigs = getTriggers(lt, tables);
-            const chainIds = [...trigs.map(tp => tp.tableId), lt.id];
+        && !!leafTable && (() => {
+            const trigs = getTriggers(leafTable, tables);
+            const chainIds = [...trigs.map(tp => tp.tableId), leafTable.id];
             const ownedIds = chainIds.filter(id => !usedIntermediateTableIds.includes(id));
             return ownedIds.some(id => globalHighlightedTableIds.includes(id));
-        });
+        })();
     const shouldHighlightThread = threadHighlighted || isAncestorThread;
-    let parentTableId = leafTables[0].derive?.trigger.tableId || undefined;
+    let parentTableId = leafTable?.derive?.trigger.tableId || undefined;
     let parentTable = (parentTableId ? tableById.get(parentTableId) : undefined) as DictTable;
 
     let charts = useSelector(dfSelectors.getAllCharts);
@@ -936,7 +621,7 @@ let SingleThreadGroupView: FC<{
     // Such turns render WITH their result table (as its lead-in, in the table's
     // thread) so the conversation and its result stay connected — NOT at the root
     // table. Terminal / still-pending turns (no result yet) render at the root's
-    // non-ghost card instead (design-docs/42).
+    // real card instead (design-docs/42).
     const leadUpTurnIds = useMemo(() => {
         const s = new Set<string>();
         for (const t of tables) {
@@ -998,226 +683,7 @@ let SingleThreadGroupView: FC<{
         return ids;
     }, [draftNodes]);
 
-    // Metadata popup state
-    const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
-    const [selectedTableForMetadata, setSelectedTableForMetadata] = useState<DictTable | null>(null);
-    const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(null);
-
-    // Table menu state
-    const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
-    const [selectedTableForMenu, setSelectedTableForMenu] = useState<DictTable | null>(null);
-
-    // Refresh data dialog state
-    const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
-    const [selectedTableForRefresh, setSelectedTableForRefresh] = useState<DictTable | null>(null);
-    const [isRefreshing, setIsRefreshing] = useState(false);
-
-    // Streaming settings popup state
-    const [streamingSettingsPopupOpen, setStreamingSettingsPopupOpen] = useState(false);
-    const [selectedTableForStreamingSettings, setSelectedTableForStreamingSettings] = useState<DictTable | null>(null);
-    const [streamingSettingsAnchorEl, setStreamingSettingsAnchorEl] = useState<HTMLElement | null>(null);
-
-    let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
-        dispatch(dfActions.updateTableDisplayId({
-            tableId: tableId,
-            displayId: displayId
-        }));
-    }
-
-    // Rename popup state
-    const [renamePopupOpen, setRenamePopupOpen] = useState(false);
-    const [selectedTableForRename, setSelectedTableForRename] = useState<DictTable | null>(null);
-    const [renameAnchorEl, setRenameAnchorEl] = useState<HTMLElement | null>(null);
-
-    const handleOpenRenamePopup = (table: DictTable, anchorEl: HTMLElement) => {
-        setSelectedTableForRename(table);
-        setRenameAnchorEl(anchorEl);
-        setRenamePopupOpen(true);
-    };
-
-    const handleCloseRenamePopup = () => {
-        setRenamePopupOpen(false);
-        setSelectedTableForRename(null);
-        setRenameAnchorEl(null);
-    };
-
-    const handleSaveRename = (newName: string) => {
-        if (selectedTableForRename) {
-            handleUpdateTableDisplayId(selectedTableForRename.id, newName);
-        }
-    };
-
-    const handleOpenMetadataPopup = (table: DictTable, anchorEl: HTMLElement) => {
-        setSelectedTableForMetadata(table);
-        setMetadataAnchorEl(anchorEl);
-        setMetadataPopupOpen(true);
-    };
-
-    const handleCloseMetadataPopup = () => {
-        setMetadataPopupOpen(false);
-        setSelectedTableForMetadata(null);
-        setMetadataAnchorEl(null);
-    };
-
-    // Table menu handlers
-    const handleOpenTableMenu = (table: DictTable, anchorEl: HTMLElement) => {
-        setSelectedTableForMenu(table);
-        setTableMenuAnchorEl(anchorEl);
-    };
-
-    const handleCloseTableMenu = () => {
-        setTableMenuAnchorEl(null);
-        setSelectedTableForMenu(null);
-    };
-
-    // Refresh data handlers
-    const handleOpenRefreshDialog = (table: DictTable) => {
-        setSelectedTableForRefresh(table);
-        setRefreshDialogOpen(true);
-        handleCloseTableMenu();
-    };
-
-    const handleCloseRefreshDialog = () => {
-        setRefreshDialogOpen(false);
-        setSelectedTableForRefresh(null);
-    };
-
-    // Streaming settings handlers
-    const handleOpenStreamingSettingsPopup = (table: DictTable, anchorEl: HTMLElement) => {
-        setSelectedTableForStreamingSettings(table);
-        setStreamingSettingsAnchorEl(anchorEl);
-        setStreamingSettingsPopupOpen(true);
-    };
-
-    const handleCloseStreamingSettingsPopup = () => {
-        setStreamingSettingsPopupOpen(false);
-        setSelectedTableForStreamingSettings(null);
-        setStreamingSettingsAnchorEl(null);
-    };
-
-    const handleUpdateStreamingSettings = (autoRefresh: boolean, refreshIntervalSeconds?: number) => {
-        if (selectedTableForStreamingSettings) {
-            dispatch(dfActions.updateTableSourceRefreshSettings({
-                tableId: selectedTableForStreamingSettings.id,
-                autoRefresh,
-                refreshIntervalSeconds
-            }));
-        }
-    };
-
-    // Function to refresh derived tables in batch.
-    // Collects all results first, then dispatches a single updateMultipleTableRows.
-    const refreshDerivedTables = async (sourceTableId: string, newRows: any[]) => {
-        const derivedTables = tables.filter(t => t.derive?.source?.includes(sourceTableId));
-        if (derivedTables.length === 0) return;
-        
-        const refreshPromises = derivedTables
-            .filter(dt => dt.derive && dt.derive.code && dt.derive.codeSignature)
-            .map(async (derivedTable) => {
-                const parentTableData = derivedTable.derive!.source.map(sourceId => {
-                    const sourceTable = tables.find(t => t.id === sourceId);
-                    if (sourceTable) {
-                        const rows = sourceId === sourceTableId ? newRows : sourceTable.rows;
-                        const tableName = sourceTable.virtual?.tableId || sourceTable.id.replace(/\.[^/.]+$/, "");
-                        return { name: tableName, rows };
-                    }
-                    return null;
-                }).filter(t => t !== null);
-
-                if (parentTableData.length === 0) return null;
-
-                try {
-                    const requestBody: any = {
-                        input_tables: parentTableData,
-                        code: derivedTable.derive!.code,
-                        code_signature: derivedTable.derive!.codeSignature, // HMAC proof
-                        output_variable: derivedTable.derive!.outputVariable || 'result_df',
-                        virtual: !!derivedTable.virtual?.tableId,
-                        output_table_name: derivedTable.virtual?.tableId
-                    };
-                    
-                    const { data: result } = await apiRequest<any>(getUrls().REFRESH_DERIVED_DATA, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestBody)
-                    });
-
-                    if (result.rows) {
-                        return { tableId: derivedTable.id, rows: result.rows } as { tableId: string, rows: any[] };
-                    } else {
-                        console.error(`Failed to refresh derived table ${derivedTable.id}:`, result.message);
-                        dispatch(dfActions.addMessages({
-                            timestamp: Date.now(),
-                            type: 'error',
-                            component: t('messages.dataRefresh.component'),
-                            value: t('messages.dataRefresh.failedDerivedTable', {
-                                table: derivedTable.displayId || derivedTable.id,
-                                detail: result.message || t('messages.dataRefresh.unknownError'),
-                            }),
-                        }));
-                        return null;
-                    }
-                } catch (error) {
-                    console.error(`Error refreshing derived table ${derivedTable.id}:`, error);
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(),
-                        type: 'error',
-                        component: t('messages.dataRefresh.component'),
-                        value: t('messages.dataRefresh.errorRefreshingDerivedTable', {
-                            table: derivedTable.displayId || derivedTable.id,
-                        }),
-                    }));
-                    return null;
-                }
-            });
-
-        const results = await Promise.all(refreshPromises);
-        const successfulUpdates = results.filter((r): r is { tableId: string, rows: any[] } => r !== null);
-        
-        if (successfulUpdates.length > 0) {
-            // Single batch dispatch instead of N individual dispatches
-            dispatch(dfActions.updateMultipleTableRows(successfulUpdates));
-        }
-    };
-
-    const handleRefreshComplete = async (newRows: any[]) => {
-        if (!selectedTableForRefresh) return;
-
-        setIsRefreshing(true);
-        try {
-            // Update the source table with new rows
-            dispatch(dfActions.updateTableRows({
-                tableId: selectedTableForRefresh.id,
-                rows: newRows
-            }));
-
-            // Refresh all derived tables
-            await refreshDerivedTables(selectedTableForRefresh.id, newRows);
-
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'success',
-                component: t('messages.dataRefresh.component'),
-                value: t('messages.dataRefresh.successRefreshedWithDerived', {
-                    table: selectedTableForRefresh.displayId || selectedTableForRefresh.id,
-                }),
-            }));
-        } catch (error) {
-            console.error('Error during refresh:', error);
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: t('messages.dataRefresh.component'),
-                value: t('messages.dataRefresh.errorRefreshingData', { error: String(error) }),
-            }));
-        } finally {
-            setIsRefreshing(false);
-        }
-    };
-
     const theme = useTheme();
-
-    let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
 
     const dispatch = useDispatch();
 
@@ -1226,7 +692,10 @@ let SingleThreadGroupView: FC<{
     const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
     
     let triggerPairs = parentTable ? getTriggers(parentTable, tables) : [];
-    let tableIdList = parentTable ? [...triggerPairs.map((tp) => tp.tableId), parentTable.id] : [];
+    // Source tables never render as cards inside a thread — they live in the
+    // shelf, and the thread echoes its origin as a chip instead.
+    let tableIdList = (parentTable ? [...triggerPairs.map((tp) => tp.tableId), parentTable.id] : [])
+        .filter(id => !!tableById.get(id)?.derive);
 
     let usedTableIdsInThread = tableIdList.filter(id => usedIntermediateTableIds.includes(id));
     let newTableIds = tableIdList.filter(id => !usedTableIdsInThread.includes(id));
@@ -1241,16 +710,23 @@ let SingleThreadGroupView: FC<{
 
     // Shared props for buildTableCard calls
     let tableCardProps: Omit<BuildTableCardProps, 'tableId'> = {
-        tables, charts, chartElements, usedIntermediateTableIds,
-        highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
+        tables, chartElements, usedIntermediateTableIds,
+        highlightedTableIds, focusedTableId, focusedChartId,
         parentTable, tableIdList, collapsed, dispatch,
-        handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
+        primaryBgColor: theme.palette.primary.bgcolor,
         t,
-        showOriginalName: threadIdx === -1,
     };
 
-    let _buildTableCard = (tableId: string, opts?: { ghost?: boolean }) => {
-        return buildTableCard({ tableId, ...tableCardProps, ...(opts || {}) });
+    let _buildTableCard = (tableId: string) => {
+        return buildTableCard({ tableId, ...tableCardProps });
+    }
+
+    /** Pointer to a table whose real card lives in the shelf or a prior column. */
+    let _buildRefChip = (tableId: string, highlighted: boolean) => {
+        return buildTableRefChip({
+            tableId, table: tableById.get(tableId), highlighted,
+            focused: tableId === focusedTableId, dispatch,
+        });
     }
 
     let tableElementList = newTableIds.map((tableId, i) => _buildTableCard(tableId));
@@ -1880,8 +1356,8 @@ let SingleThreadGroupView: FC<{
     };
 
     // Table-level entry point: render the turn subtree rooted at a table. Only
-    // ever called at the table's NON-GHOST card (design-docs/42), so a table shown
-    // as a used-parent ghost elsewhere renders no conversation there.
+    // ever called at the table's real card (design-docs/42), so a table shown
+    // as a used-parent chip elsewhere renders no conversation there.
     const pushTableTextTurns = (tableId: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
         pushTextTurnSubtree(tableId, highlighted, triggerType);
     };
@@ -1939,10 +1415,39 @@ let SingleThreadGroupView: FC<{
         pushAgentDraftItems(tableId, triggerType, highlighted);
     };
 
+    // The thread's origin: a source table lives in the shelf, never in a
+    // thread, so we echo it here as a compact chip that says "this thread
+    // starts from X". The FIRST thread growing out of a source also hosts that
+    // source's terminal artifacts (charts, reports, conversation, live run).
+    if (originTableId) {
+        const isHL = highlightedTableIds.includes(originTableId);
+        timelineItems.push({
+            key: `origin-ghost-${originTableId}`,
+            type: 'table',
+            tableId: originTableId,
+            highlighted: isHL,
+            element: _buildRefChip(originTableId, isHL),
+        });
+        if (ownsOriginArtifacts) {
+            buildChartCards(
+                chartElements.filter(ce => ce.tableId === originTableId),
+                focusedChartId, collapsed,
+            ).forEach((el, i) => timelineItems.push({
+                key: `origin-chart-${originTableId}-${i}`,
+                type: 'chart',
+                highlighted: isHL,
+                element: el,
+            }));
+            pushReportItems(originTableId, isHL, 'trigger');
+            pushTableTextTurns(originTableId, isHL, 'trigger');
+            pushAgentDraftItems(originTableId, 'trigger', isHL);
+        }
+    }
+
     // Add used (shared) tables at the top
-    // Show the immediate parent as a full table card, with "..." for further ancestors.
+    // Show the immediate parent as a reference chip, with "..." for further ancestors.
     // On a continuation segment (isSplitThread), suppress the "..." — the
-    // continuation header already signals carry-over and the ghost table card
+    // continuation header already signals carry-over and the chip
     // names the parent explicitly.
     let displayedUsedTableIds = usedTableIdsInThread;
     if (usedTableIdsInThread.length > 1) {
@@ -1962,18 +1467,19 @@ let SingleThreadGroupView: FC<{
     }
     displayedUsedTableIds.forEach((tableId) => {
         const isHighlighted = highlightedTableIds.includes(tableId);
-        // A used parent is a pure SHADOW reference (design-docs/42): the table is
-        // shown fully — with ALL its attached content (conversation turns, live
-        // run state) — at its ONE non-ghost card (the source catalog for a source
-        // table, else the thread that owns it as a fresh table). Here we render
-        // ONLY the muted ghost card — no turns, no draft. This is what stops a
-        // fork from repeating the parent's cards / messages / state per column.
-        pushTableAndChartItems(
+        // A used parent is a pure POINTER (design-docs/42): the table is shown
+        // fully — with ALL its attached content (conversation turns, live run
+        // state) — at its ONE real card (the shelf for a source table, else the
+        // thread that owns it as a fresh table). Here we render only the chip —
+        // no charts, no turns, no draft. This is what stops a fork from
+        // repeating the parent's cards / messages / state per column.
+        timelineItems.push({
+            key: `used-table-ghost-${tableId}`,
+            type: 'table',
             tableId,
-            _buildTableCard(tableId, { ghost: true }),
-            'table',
-            isHighlighted,
-        );
+            highlighted: isHighlighted,
+            element: _buildRefChip(tableId, isHighlighted),
+        });
     });
 
     // Interleave triggers and tables for the main thread body
@@ -1991,8 +1497,9 @@ let SingleThreadGroupView: FC<{
         );
     });
 
-    // Add leaf table components
-    leafTables.forEach((lt) => {
+    // The thread's own terminal table
+    if (leafTable) {
+        const lt = leafTable;
         const leafTrigger = lt.derive?.trigger;
         const isHL = highlightedTableIds.includes(lt.id);
         pushTableBlock(
@@ -2005,7 +1512,7 @@ let SingleThreadGroupView: FC<{
             isHL,
             'leaf-interaction',
         );
-    });
+    }
 
     // Timeline rendering helper
     const TIMELINE_WIDTH = 14;
@@ -2289,23 +1796,22 @@ let SingleThreadGroupView: FC<{
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
                     position: 'relative',
                 }}>
-                    {(index > 0 || !hideLabel) && (() => {
+                    {(index > 0 || !isSplitThread) && (() => {
                         // When connecting to the header (index 0, label visible), match the header's highlight state
-                        const useHeader = index === 0 && !hideLabel;
+                        const useHeader = index === 0 && !isSplitThread;
                         const topColor = useHeader ? (headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)') : dashedColor;
                         const topWidth = '2px';
                         const topStyle = 'solid';
                         return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
                     })()}
-                    {index === 0 && hideLabel && isSplitThread && (
+                    {index === 0 && isSplitThread && (
                         // Continuation segment: extend the dashed gutter from the
-                        // "↑ continued" header above down through the ghost row
+                        // "↑ continued" header above down through the chip row
                         // so the timeline reads as a single unbroken path.
                         <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
                     )}
-                    {index === 0 && hideLabel && !isSplitThread && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                     <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        // Ghost row: dim the gutter icon to match the muted card.
+                        // Chip row: dim the gutter icon to match the muted card.
                         ...(item.type === 'used-table' && isSplitThread ? { opacity: 0.45 } : {}),
                     }}>
                         {getTimelineDot(item)}
@@ -2346,7 +1852,7 @@ let SingleThreadGroupView: FC<{
         }}
         >
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
-            {!hideLabel && (() => {
+            {!isSplitThread && (() => {
                 const hlColor = theme.palette.primary.main;
                 const nhColor = 'rgba(0,0,0,0.35)';
                 const connColor = headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
@@ -2373,7 +1879,7 @@ let SingleThreadGroupView: FC<{
                             textTransform: 'uppercase', letterSpacing: '0.02em',
                             color: headerHL ? hlColor : 'rgba(0,0,0,0.55)', 
                         }}>
-                            {threadLabel || (threadIdx === -1 ? t('dataThread.threadZero') : t('dataThread.threadIndex', { index: threadIdx + 1 }))}
+                            {threadLabel}
                         </Typography>
                     </Box>
                 </Box>
@@ -2381,11 +1887,11 @@ let SingleThreadGroupView: FC<{
             })()}
             {isSplitThread && (() => {
                 // Continuation header: a small "↑ continued" chip on a dashed
-                // gutter.  The ghost parent table card immediately below
-                // identifies the carry-over table, and the segment's first
-                // real content is the next instruction — so we don't echo the
-                // previous instruction here (it would duplicate either the
-                // ghost's name or the upcoming instruction card).
+                // gutter.  The parent chip immediately below identifies the
+                // carry-over table, and the segment's first real content is
+                // the next instruction — so we don't echo the previous
+                // instruction here (it would duplicate either the chip's name
+                // or the upcoming instruction card).
                 return (
                     <Box sx={{ display: 'flex', flexDirection: 'row' }}>
                         <Box sx={{
@@ -2431,169 +1937,6 @@ let SingleThreadGroupView: FC<{
                 );
             })()}
         </div>
-        <MetadataPopup
-            open={metadataPopupOpen}
-            anchorEl={metadataAnchorEl}
-            onClose={handleCloseMetadataPopup}
-            table={selectedTableForMetadata}
-        />
-        <RenameTablePopup
-            open={renamePopupOpen}
-            anchorEl={renameAnchorEl}
-            onClose={handleCloseRenamePopup}
-            onSave={handleSaveRename}
-            initialValue={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
-            tableName={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
-        />
-
-        {/* Table actions menu */}
-        <Menu
-            anchorEl={tableMenuAnchorEl}
-            open={Boolean(tableMenuAnchorEl)}
-            onClose={handleCloseTableMenu}
-            onClick={(e) => e.stopPropagation()}
-        >
-            <MenuItem 
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (selectedTableForMenu) {
-                        handleOpenRenamePopup(selectedTableForMenu, tableMenuAnchorEl!);
-                    }
-                    handleCloseTableMenu();
-                }}
-                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-            >
-                <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
-                {t('dataThread.rename')}
-            </MenuItem>
-            {/* Pin option - only for derived tables */}
-            {selectedTableForMenu?.derive != undefined && (
-                <MenuItem 
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        if (selectedTableForMenu) {
-                            dispatch(dfActions.updateTableAnchored({tableId: selectedTableForMenu.id, anchored: !selectedTableForMenu.anchored}));
-                        }
-                        handleCloseTableMenu();
-                    }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                >
-                    <AnchorIcon sx={{ fontSize: 16, color: selectedTableForMenu?.anchored ? 'primary.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu?.anchored ? t('dataThread.unpinTable') : t('dataThread.pinTable')}
-                </MenuItem>
-            )}
-            {/* View metadata - available for every table; read-only viewer of
-                source description + per-column descriptions (or derivation summary) */}
-            {selectedTableForMenu && (
-                <MenuItem 
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        if (selectedTableForMenu) {
-                            handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
-                        }
-                        handleCloseTableMenu();
-                    }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                >
-                    <AttachFileIcon sx={{ 
-                        fontSize: 16,
-                        color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
-                    }}/>
-                    {t('dataThread.viewMetadata', { defaultValue: 'View metadata' })}
-                </MenuItem>
-            )}
-            {/* Refresh settings - shown for stream/database sources to configure auto-refresh interval */}
-            {selectedTableForMenu && 
-             selectedTableForMenu.derive == undefined &&
-             (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && (
-                <MenuItem 
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        if (selectedTableForMenu) {
-                            handleOpenStreamingSettingsPopup(selectedTableForMenu, tableMenuAnchorEl!);
-                        }
-                        handleCloseTableMenu();
-                    }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                >
-                    <StreamIcon sx={{ fontSize: 16, color: selectedTableForMenu.source?.autoRefresh ? 'success.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu.source?.autoRefresh ? t('dataThread.refreshSettings') : t('dataThread.watchForUpdates')}
-                </MenuItem>
-            )}
-            {/* Refresh data - hidden for database tables and derived tables */}
-            {selectedTableForMenu?.derive == undefined && selectedTableForMenu?.source?.type !== 'database' && (
-                <MenuItem 
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        if (selectedTableForMenu) {
-                            handleOpenRefreshDialog(selectedTableForMenu);
-                        }
-                    }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                >
-                    <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                    {t('dataThread.replaceData')}
-                </MenuItem>
-            )}
-            <MenuItem 
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (selectedTableForMenu) {
-                        // If this is the last source table, also wipe the
-                        // session itself — a workspace with no source
-                        // table is effectively empty and the user would
-                        // otherwise be left staring at a blank thread.
-                        const isSource = !selectedTableForMenu.derive;
-                        const remainingSources = tables.filter(t => !t.derive && t.id !== selectedTableForMenu.id);
-                        const shouldDeleteSession = isSource && remainingSources.length === 0;
-                        const wsToDelete = shouldDeleteSession ? activeWorkspace?.id : undefined;
-                        dispatch(dfActions.deleteTable(selectedTableForMenu.id));
-                        if (shouldDeleteSession && wsToDelete) {
-                            (async () => {
-                                try {
-                                    await deleteWorkspace(wsToDelete);
-                                } catch {
-                                    // best effort — user can still manually delete from the sidebar
-                                }
-                                // Drop into the unsessioned landing state instead of
-                                // auto-creating a new "Untitled Session" workspace.
-                                dispatch(dfActions.resetState());
-                            })();
-                        }
-                    }
-                    handleCloseTableMenu();
-                }}
-                disabled={selectedTableForMenu 
-                    ? (!selectedTableForMenu.derive && tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id)) 
-                    : true}
-                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
-            >
-                <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
-                {t('dataThread.deleteTable')}
-            </MenuItem>
-        </Menu>
-
-        {/* Refresh data dialog */}
-        {selectedTableForRefresh && (
-            <RefreshDataDialog
-                open={refreshDialogOpen}
-                onClose={handleCloseRefreshDialog}
-                table={selectedTableForRefresh}
-                onRefreshComplete={handleRefreshComplete}
-            />
-        )}
-
-        {/* Streaming settings popup */}
-        {selectedTableForStreamingSettings && (
-            <StreamingSettingsPopup
-                open={streamingSettingsPopupOpen}
-                anchorEl={streamingSettingsAnchorEl}
-                onClose={handleCloseStreamingSettingsPopup}
-                table={selectedTableForStreamingSettings}
-                onUpdateSettings={handleUpdateStreamingSettings}
-                onRefreshNow={() => manualRefresh(selectedTableForStreamingSettings.id)}
-            />
-        )}
     </Box>
     }
 
@@ -2704,8 +2047,6 @@ const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
 const LAYOUT_ENTRY_HEIGHT = 38;         // interaction entry — empirical ~1.5-line average incl. row padding
 const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
 const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
-const LAYOUT_THREAD_GAP = 8;            // my: 0.5 = 4px top + 4px bottom between threads
-const SCROLL_TOLERANCE = 1.5;           // a column / segment may extend up to 1.5 × vh before we add another
 
 function estimateThreadHeight(
     tableCount: number, entryCount: number, chartCount: number
@@ -2732,18 +2073,6 @@ function effectiveEntryCount(interaction: InteractionEntry[] | undefined): numbe
     return Math.max(1, n);
 }
 
-/** Estimated height of one trigger block: interaction entries + result table + its charts. */
-function estimateTriggerBlockHeight(
-    tableId: string,
-    interaction: InteractionEntry[] | undefined,
-    chartElements: { tableId: string }[],
-): number {
-    const charts = chartElements.filter(ce => ce.tableId === tableId).length;
-    return effectiveEntryCount(interaction) * LAYOUT_ENTRY_HEIGHT
-        + LAYOUT_TABLE_HEIGHT
-        + charts * LAYOUT_CHART_HEIGHT;
-}
-
 /**
  * For each long thread, identify intermediate tables to "promote" as extra
  * leaves so the thread renders as multiple stacked segments.
@@ -2767,7 +2096,7 @@ function estimateTriggerBlockHeight(
  * Each cut at trigger index `j` (j ≥ 2, segment starts at trigger j-1)
  * promotes `triggers[j-2].resultTableId` as a leaf, so the previous segment
  * ends on that table and the new segment opens on `triggers[j-1]`'s
- * instruction with the promoted table shown as a dimmed ghost.
+ * instruction with the promoted table shown as a reference chip.
  */
 function computeSplitExtraLeaves(
     leafTables: DictTable[],
@@ -2961,21 +2290,18 @@ function balancedPartitionCuts(triggerH: number[], K: number): number[] {
 }
 
 /**
- * Compute a balanced column layout for threads.
+ * Distribute threads (in display order) over `numColumns` columns, balancing
+ * estimated height.  This is what places the segments of a split thread into
+ * successive columns, so a long thread wraps instead of scrolling forever.
  *
  * @param heights  – Estimated pixel height for each thread (in display order).
- * @param numColumns – Maximum number of columns to distribute into.
- * @param flexOrder – When true, threads may be reordered across columns for
- *                    better balance (LPT heuristic). When false, the original
- *                    order is preserved (optimal contiguous partitioning via
- *                    binary-search on the maximum column height).
+ * @param numColumns – Number of columns to distribute into.
  * @returns An array of columns, where each column is an array of original
  *          thread indices.  Empty columns are omitted.
  */
 function computeThreadColumnLayout(
     heights: number[],
     numColumns: number,
-    flexOrder: boolean = false,
 ): number[][] {
     if (heights.length === 0) return [];
     if (heights.length === 1) return [[0]];
@@ -2983,32 +2309,7 @@ function computeThreadColumnLayout(
     const cols = Math.min(numColumns, heights.length);
     if (cols <= 1) return [heights.map((_, i) => i)];
 
-    return flexOrder
-        ? layoutFlexOrder(heights, cols)
-        : layoutPreserveOrder(heights, cols);
-}
-
-/**
- * Balanced layout *with* reordering (LPT – Longest Processing Time first).
- * Assigns the tallest unplaced thread to whichever column is currently shortest.
- */
-function layoutFlexOrder(heights: number[], numColumns: number): number[][] {
-    const indexed = heights.map((h, i) => ({ idx: i, h }));
-    indexed.sort((a, b) => b.h - a.h);                // tallest first
-
-    const columns: number[][] = Array.from({ length: numColumns }, () => []);
-    const colH: number[] = new Array(numColumns).fill(0);
-
-    for (const item of indexed) {
-        let minCol = 0;
-        for (let c = 1; c < numColumns; c++) {
-            if (colH[c] < colH[minCol]) minCol = c;
-        }
-        columns[minCol].push(item.idx);
-        colH[minCol] += item.h;
-    }
-
-    return columns.filter(c => c.length > 0);
+    return layoutPreserveOrder(heights, cols);
 }
 
 /**
@@ -3057,63 +2358,6 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
     }
 
     return columns;
-}
-
-/**
- * Choose the best column layout that balances scroll burden vs whitespace.
- *
- * 1. If a single column fits within SCROLL_TOLERANCE × viewportHeight,
- *    use one column — the small scroll is preferable to the whitespace
- *    of an extra column (e.g. one long thread + one tiny thread).
- * 2. Otherwise, evaluate layouts for 1 … maxColumns and pick the smallest
- *    column count whose tallest column fits within viewportHeight.
- * 3. If nothing eliminates scrolling, pick the layout that minimises the
- *    tallest column (least scrolling).
- */
-
-function chooseBestColumnLayout(
-    heights: number[],
-    maxColumns: number,
-    viewportHeight: number,
-    flexOrder: boolean = false,
-    minColumns: number = 1,
-): number[][] {
-    if (heights.length === 0) return [];
-
-    const cap = Math.min(maxColumns, heights.length);
-    const start = Math.min(Math.max(minColumns, 1), cap);
-    const tolerantHeight = viewportHeight * SCROLL_TOLERANCE;
-
-    // Compute effective column height including gaps between threads
-    const columnEffectiveHeight = (col: number[]) => {
-        const contentH = col.reduce((sum, idx) => sum + heights[idx], 0);
-        const gapH = Math.max(0, col.length - 1) * LAYOUT_THREAD_GAP;
-        return contentH + gapH;
-    };
-
-    // Evaluate every candidate column count (start … cap).
-    // Pick the smallest n whose tallest column fits within tolerance.
-    // If none fits, pick the one with the shortest tallest column.
-    let bestLayout: number[][] = [];
-    let bestMaxH = Infinity;
-
-    for (let n = start; n <= cap; n++) {
-        const layout = computeThreadColumnLayout(heights, n, flexOrder);
-        const maxH = Math.max(...layout.map(columnEffectiveHeight));
-
-        // Smallest n that fits within tolerance → least whitespace
-        if (maxH <= tolerantHeight) {
-            return layout;
-        }
-
-        // Otherwise track the layout with the shortest tallest column
-        if (maxH < bestMaxH) {
-            bestMaxH = maxH;
-            bestLayout = layout;
-        }
-    }
-
-    return bestLayout;
 }
 
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
@@ -3209,10 +2453,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     const containerRef = useRef<null | HTMLDivElement>(null)
     // Outer wrapper containing both the thread area and the chatbox.
-    // Its height is governed by the parent Allotment pane and stays constant
-    // when the chatbox grows/shrinks during clarification or explanation.
-    // Used to derive a stable viewportHeight for split decisions so that
-    // chatbox resizing doesn't trigger re-splitting of long threads.
     const outerRef = useRef<null | HTMLDivElement>(null)
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
@@ -3433,20 +2673,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
 
-    // Stable viewport estimate for split decisions.  We measure the OUTER
-    // wrapper (thread area + chatbox) and subtract a fixed baseline for the
-    // collapsed chatbox footprint.  This keeps the split threshold stable
-    // when the chatbox expands during clarification/explanation, avoiding
-    // re-splitting of threads as the chatbox grows or shrinks.
-    const CHATBOX_BASELINE_HEIGHT = 120; // approximate collapsed-chatbox footprint in px
-    const outerHeight = outerRef.current?.clientHeight ?? 0;
-    const viewportHeight = outerHeight > CHATBOX_BASELINE_HEIGHT
-        ? outerHeight - CHATBOX_BASELINE_HEIGHT
-        : (containerRef.current?.clientHeight
-            || (typeof window !== 'undefined' ? window.innerHeight : 800));
     // Determine how many columns can fit in the current container width.  When
     // only one column fits, splitting a long thread into segments adds visual
-    // overhead (continuation headers + ghost parents) without any layout
+    // overhead (continuation headers + parent chips) without any layout
     // benefit, since the segments would just stack in the same single column.
     // Column geometry (CARD_WIDTH / CARD_GAP / PANEL_PADDING) is defined once
     // in ./threadLayout and shared with DataFormulator's pane snapping.
@@ -3560,40 +2789,37 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return triggers.length + 1 > 1;
     });
 
-    // Build thread entries and their estimated heights for layout.
+    // Build thread entries for layout.
+    // Source tables are NOT threads: they live in the shelf. A thread is one
+    // derived-table chain (plus, optionally, the artifacts of the source table
+    // it grew out of). Columns therefore come purely from the derived-table
+    // tree — charts, reports, conversation turns and live drafts are terminal
+    // artifacts that stack inline under their parent table.
     type ThreadEntry = {
         key: string;
-        groupId: string;
-        leafTables: DictTable[];
-        threadIdx: number;
+        isShelf?: boolean;                // true → the source-table shelf, not a thread
+        leafTable?: DictTable;            // absent → source-artifact-only thread
+        originTableId?: string;           // source table this thread grew out of (reference chip)
         threadLabel?: string;
-        isSplitThread?: boolean;          // true → render "↑ continued from above" header + ghost parent
+        isSplitThread?: boolean;          // true → continuation: "↑ continued" header + parent chip, no label
         hasContinuationBelow?: boolean;   // true → render "↓ continues below" footer
         usedTableIds?: string[];
-        hideLabel?: boolean;
     };
     let allThreadEntries: ThreadEntry[] = [];
-    let allThreadHeights: number[] = [];
 
     // Track which leaf tables are promoted (split) vs real leaves
     const extraLeafIds = new Set(extraLeaves.map(t => t.id));
 
-    // Track which table IDs have been claimed by earlier threads
-    let claimedTableIds = new Set<string>();
+    // Numbering counter shared by source-artifact threads and derived threads:
+    // every numbered thread, whatever roots it, takes the next index.
+    let realThreadIdx = 0;
 
-    // Source tables: always displayed as a group at the top, showing all non-derived tables
     let sourceTables = tables.filter(t => !t.derive);
+
+    // The shelf is not a thread, but it occupies the top of the first column,
+    // so it packs alongside the threads as slot 0.
     if (sourceTables.length > 0) {
-        sourceTables.forEach(lt => claimedTableIds.add(lt.id));
-        let sourceChartCount = sourceTables.reduce((sum, lt) => sum + chartElements.filter(ce => ce.tableId === lt.id).length, 0);
-        allThreadEntries.push({
-            key: 'source-tables',
-            groupId: 'source-tables',
-            leafTables: sourceTables,
-            threadIdx: -1,
-            hideLabel: true,
-        });
-        allThreadHeights.push(estimateThreadHeight(sourceTables.length, 0, sourceChartCount));
+        allThreadEntries.push({ key: 'source-shelf', isShelf: true });
     }
 
     // Pre-scan: group every threaded leaf (extras + real leaves) by the *real
@@ -3622,122 +2848,163 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         segmentsByGroup.set(gid, arr);
     }
 
+    // Where each head segment grows from: the chain root, when it is a source
+    // table. This is the ONE place origins are decided — it drives both the
+    // reference chip in the thread and which sources still need a column below.
+    const originOfHead = new Map<string, string>();
+    for (const lt of threadedTables) {
+        if (segmentsByGroup.get(groupIdOf(lt))![0] !== lt.id) continue; // continuation
+        const trigs = getCachedTriggers(lt);
+        const rootId = trigs.length > 0 ? trigs[0].tableId : lt.derive?.trigger.tableId;
+        if (rootId && !tableById.get(rootId)?.derive) originOfHead.set(lt.id, rootId);
+    }
+    const sourcesWithColumn = new Set(originOfHead.values());
+
+    // A source table that owns artifacts (charts, reports, conversation, a live
+    // run) but roots NO derivation gets a column of its own — the shelf holds
+    // names only, so the artifacts would otherwise have nowhere to hang.
+    for (const st of sourceTables) {
+        if (sourcesWithColumn.has(st.id)) continue;
+        const hasArtifacts = chartElements.some(ce => ce.tableId === st.id)
+            || (textTurnItemsByTable.get(st.id) || 0) > 0
+            || generatedReports.some(r => r.triggerTableId === st.id)
+            || draftNodes.some(d => d.derive?.trigger.tableId === st.id);
+        if (!hasArtifacts) continue;
+        realThreadIdx++;
+        allThreadEntries.push({
+            key: `source-thread-${st.id}`,
+            originTableId: st.id,
+            threadLabel: t('dataThread.threadIndex', { index: String(realThreadIdx) }),
+        });
+    }
+
     // Numbering: only the *first* segment of each group bumps the counter and
     // gets a visible label.  Continuation segments are unlabelled — they rely
-    // on the "↑ continued" header chip + ghost parent for visual continuity.
-    let realThreadIdx = 0;
-
+    // on the "↑ continued" header chip + parent chip for visual continuity.
+    // (`realThreadIdx` continues from the source-artifact threads above.)
     threadedTables.forEach((lt, i) => {
-        const triggers = getCachedTriggers(lt);
-
-        let threadTableIds = new Set<string>();
-        triggers.forEach(t => threadTableIds.add(t.resultTableId));
-        threadTableIds.add(lt.id);
-
-        let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
-        let newTriggerPairs = triggers.filter(tp => newTableIds.includes(tp.resultTableId));
-        let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
-        let entryCount = newTriggerPairs.reduce((sum, tp) => sum + (tp.interaction?.length || 1), 0);
-        entryCount += lt.derive?.trigger?.interaction?.length || 1;
-        // Text-turn cards (clarify/explain) anchored to any table in this
-        // thread also occupy vertical space — count them so tall conversations
-        // widen/split correctly.
-        entryCount += [...threadTableIds].reduce((sum, id) => sum + (textTurnItemsByTable.get(id) || 0), 0);
-        let totalTables = newTableIds.length + 1;
-
-        threadTableIds.forEach(id => claimedTableIds.add(id));
-
-        const gid = groupIdOf(lt);
-        const groupSegs = segmentsByGroup.get(gid)!;
+        const groupSegs = segmentsByGroup.get(groupIdOf(lt))!;
         const posInGroup = groupSegs.indexOf(lt.id);
         const isFirst = posInGroup === 0;
         const isLast = posInGroup === groupSegs.length - 1;
-
-        let threadLabel: string | undefined;
-        let threadIdxForEntry: number;
-        if (isFirst) {
-            realThreadIdx++;
-            threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
-            threadIdxForEntry = realThreadIdx - 1;
-        } else {
-            threadLabel = undefined;
-            threadIdxForEntry = realThreadIdx - 1; // inherit head's idx
-        }
+        if (isFirst) realThreadIdx++;
 
         allThreadEntries.push({
             key: `thread-${lt.id}-${i}`,
-            groupId: lt.id,
-            leafTables: [lt],
-            threadIdx: threadIdxForEntry,
-            threadLabel,
-            isSplitThread: !isFirst,             // continuation → ghost parent + header
-            hideLabel: !isFirst,                 // continuation → no own label divider
+            leafTable: lt,
+            originTableId: originOfHead.get(lt.id),
+            threadLabel: isFirst ? t('dataThread.threadIndex', { index: String(realThreadIdx) }) : undefined,
+            isSplitThread: !isFirst,             // continuation → parent chip + header, no label
             hasContinuationBelow: !isLast,       // not the tail → "↓ continues below" footer
         });
-        allThreadHeights.push(estimateThreadHeight(totalTables, entryCount, chartCount));
     });
 
-    // Pre-compute usedTableIds for each entry (avoids quadratic recomputation in renderThreadEntry)
+    // Ownership + height, in one pass over the entries in layout order.
+    // `accumulated` is the single source of truth: the FIRST entry to mention a
+    // table renders it in full (card + charts + reports + turns + live run);
+    // every later entry only points at it. Heights are estimated from exactly the rows
+    // that entry will therefore render, so layout can't drift from the view.
+    let allThreadHeights: number[] = [];
     {
         let accumulated: string[] = [];
+        const artifactRowsOf = (id: string) =>
+            chartElements.filter(ce => ce.tableId === id).length
+            + generatedReports.filter(r => r.triggerTableId === id).length;
+
         for (const entry of allThreadEntries) {
             entry.usedTableIds = [...accumulated];
-            for (const lt of entry.leafTables) {
-                const triggers = getCachedTriggers(lt);
-                // Include both source (tableId) and result (resultTableId) IDs from the chain
-                for (const tp of triggers) {
-                    accumulated.push(tp.tableId, tp.resultTableId);
+
+            if (entry.isShelf) {
+                // Collapsed by default past the limit, so estimate the collapsed height.
+                // +1 row for the "Add more data" button, which sits below the
+                // bracketed set (the section label is covered by the thread overhead).
+                allThreadHeights.push(estimateThreadHeight(Math.min(sourceTables.length, SHELF_VISIBLE_LIMIT) + 1, 0, 0));
+                continue;
+            }
+
+            let tableRows = 0, entryRows = 0, artifactRows = 0;
+
+            if (entry.originTableId) {
+                tableRows += 1; // origin reference chip
+                if (!accumulated.includes(entry.originTableId)) {
+                    artifactRows += artifactRowsOf(entry.originTableId);
+                    entryRows += textTurnItemsByTable.get(entry.originTableId) || 0;
                 }
+                accumulated.push(entry.originTableId);
+            }
+
+            const lt = entry.leafTable;
+            if (lt) {
+                const triggers = getCachedTriggers(lt);
+                const chainIds = [...triggers.map(tp => tp.resultTableId), lt.id];
+                const freshIds = chainIds.filter(id => !accumulated.includes(id));
+                tableRows += freshIds.length + 1; // + the carried-over parent chip
+                artifactRows += freshIds.reduce((sum, id) => sum + artifactRowsOf(id), 0);
+                entryRows += triggers
+                    .filter(tp => freshIds.includes(tp.resultTableId))
+                    .reduce((sum, tp) => sum + (tp.interaction?.length || 1), 0);
+                entryRows += lt.derive?.trigger?.interaction?.length || 1;
+                // Text-turn cards (clarify/explain) anchored to any table in this
+                // thread also occupy vertical space — count them so tall
+                // conversations widen/split correctly.
+                entryRows += chainIds.reduce((sum, id) => sum + (textTurnItemsByTable.get(id) || 0), 0);
+                // Include both source (tableId) and result (resultTableId) IDs from the chain
+                for (const tp of triggers) accumulated.push(tp.tableId, tp.resultTableId);
                 accumulated.push(lt.id);
             }
+
+            allThreadHeights.push(estimateThreadHeight(tableRows, entryRows, artifactRows));
         }
     }
 
-    // (design-docs/42) No per-turn home assignment anymore: a table's attached
-    // content (conversation turns + live run state) renders at its single
-    // NON-GHOST card (source catalog for a source table, else the owning thread;
-    // see pushTextTurnSubtree / the ghost used-parent loop). Threads/columns come
-    // purely from table leaves via the standard split rules.
+    // (design-docs/42) No per-turn home assignment: a table's attached content
+    // (conversation turns + live run state) renders at its single real card
+    // card — the first entry that mentions it. Columns come purely from the
+    // derived-table tree via the standard split rules.
 
-    // Use the same stable viewportHeight (derived from the outer wrapper) for
-    // packing as we do for split decisions — so the column count doesn't shift
-    // when the chatbox grows during clarification/explanation.
-    const availableHeight = viewportHeight;
-    const hasMultipleThreads = allThreadEntries.length > 1;
-
-    const MAX_COLUMNS = fittableColumns;
-    const columnLayout: number[][] = chooseBestColumnLayout(
-        allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
-        /* minColumns */ fittableColumns,
-    );
+    // The column count is the width that fits; entries (including the segments
+    // of a split thread) are spread across them balancing estimated height.
+    const columnLayout: number[][] = computeThreadColumnLayout(allThreadHeights, fittableColumns);
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
 
+        const entrySx = {
+            backgroundColor: 'white',
+            borderRadius: radius.md,
+            padding: 1,
+            my: 0.5,
+            flex: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            height: 'fit-content',
+            width: CARD_WIDTH,
+            transition: transition.fast,
+        } as const;
+
+        // The shelf packs like a thread but isn't one: it just lists the
+        // workspace's source tables, which every thread grows out of.
+        if (entry.isShelf) {
+            return <SourceTableShelf
+                key={entry.key}
+                sourceTables={sourceTables}
+                highlightedTableIds={globalHighlightedTableIds}
+                focusedTableId={focusedTableId}
+                sx={entrySx} />;
+        }
+
         return <SingleThreadGroupView
             key={entry.key}
-            threadIdx={entry.threadIdx}
             threadLabel={entry.threadLabel}
             isSplitThread={entry.isSplitThread}
             hasContinuationBelow={entry.hasContinuationBelow}
-            hideLabel={entry.hideLabel}
-            leafTables={entry.leafTables}
+            originTableId={entry.originTableId}
+            leafTable={entry.leafTable}
             chartElements={chartElements}
             usedIntermediateTableIds={usedTableIds}
             globalHighlightedTableIds={globalHighlightedTableIds}
             focusedThreadLeafId={focusedThreadLeafId}
-            sx={{
-                backgroundColor: 'white',
-                borderRadius: radius.md,
-                padding: 1,
-                my: 0.5,
-                flex: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                height: 'fit-content',
-                width: CARD_WIDTH,
-                transition: transition.fast,
-            }} />;
+            sx={entrySx} />;
     };
 
     // Let content fill available width; column count driven by container size

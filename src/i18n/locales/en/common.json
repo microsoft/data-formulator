@@ -45,6 +45,7 @@
     "about": "About",
     "app": "App",
     "data": "Data",
+    "moreOptions": "More options",
     "microsoftResearch": "Microsoft Research"
   },
   "logs": {
@@ -434,7 +435,6 @@
     "editMetadata": "Edit metadata",
     "refreshData": "Refresh data",
     "autoRefreshTooltip": "Auto-refresh every {{interval}} - Click to change interval or stop watching",
-    "threadZero": "thread0",
     "threadIndex": "thread - {{index}}",
     "continuedFromAbove": "continued",
     "continuesBelow": "continues",
@@ -462,6 +462,10 @@
     "expand": "expand",
     "renameTable": "Rename table",
     "addData": "add data",
+    "addMoreData": "Add more data",
+    "dataSources": "Data sources",
+    "showAllTables": "Show all {{count}}",
+    "showFewerTables": "Show fewer",
     "working": "working...",
     "waitingForClarification": "waiting for clarification...",
     "rename": "Rename",
