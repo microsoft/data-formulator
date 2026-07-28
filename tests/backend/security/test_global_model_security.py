@@ -11,6 +11,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+from data_formulator.errors import AppError, ErrorCode
 from data_formulator.model_registry import ModelRegistry
 
 pytestmark = [pytest.mark.backend]
@@ -70,25 +71,102 @@ class TestGetClientGlobalResolution:
             assert client.params.get("api_key") == "sk-user-own-key"
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
-    def test_global_model_without_registry_match_falls_through(self):
-        """If a global model id is not in the registry, get_client should
-        still work (using whatever config was passed)."""
+    def test_global_claim_for_unregistered_id_is_rejected(self):
+        """An is_global claim naming an id the registry does not know must be
+        rejected outright.
+
+        Falling through to the caller's own config would grant it the trust it
+        just failed to prove -- in particular the allowlist exemption below,
+        which turned api_base into an SSRF sink that the server signs with its
+        own credentials.
+        """
         registry = ModelRegistry()
 
         with patch("data_formulator.routes.agents.model_registry", registry):
             from data_formulator.routes.agents import get_client
 
-            client = get_client({
-                "id": "global-nonexistent-model",
+            with pytest.raises(AppError, match="Unknown global model") as exc:
+                get_client({
+                    "id": "global-nonexistent-model",
+                    "endpoint": "openai",
+                    "model": "nonexistent",
+                    "api_key": "sk-fallback",
+                    "api_base": "",
+                    "api_version": "",
+                    "is_global": True,
+                })
+
+            assert exc.value.code == ErrorCode.ACCESS_DENIED
+            assert exc.value.get_http_status() == 403
+
+    @patch.dict(
+        os.environ,
+        {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.openai.com/*"},
+        clear=True,
+    )
+    def test_global_claim_cannot_bypass_the_api_base_allowlist(self):
+        """The reported vulnerability: is_global + an unregistered id skipped
+        validate_api_base entirely, so an attacker-controlled api_base was
+        accepted even with the allowlist enforced."""
+        registry = ModelRegistry()
+
+        with patch("data_formulator.routes.agents.model_registry", registry):
+            from data_formulator.routes.agents import get_client
+
+            with pytest.raises(AppError) as exc:
+                get_client({
+                    "id": "nonexistent-xyz",
+                    "endpoint": "azure",
+                    "model": "gpt-4",
+                    "api_key": "",
+                    "api_base": "https://attacker-listener.example/",
+                    "is_global": True,
+                })
+
+            assert exc.value.code == ErrorCode.ACCESS_DENIED
+
+    @patch.dict(
+        os.environ,
+        {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.openai.com/*"},
+        clear=True,
+    )
+    def test_user_model_api_base_is_still_validated(self):
+        """Without the is_global claim the allowlist applies as before."""
+        registry = ModelRegistry()
+
+        with patch("data_formulator.routes.agents.model_registry", registry):
+            from data_formulator.routes.agents import get_client
+
+            with pytest.raises(AppError, match="allowlist") as exc:
+                get_client({
+                    "id": "user-custom-model",
+                    "endpoint": "azure",
+                    "model": "gpt-4",
+                    "api_key": "",
+                    "api_base": "https://attacker-listener.example/",
+                })
+
+            assert exc.value.get_http_status() == 403
+
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_resolving_a_global_model_does_not_mutate_the_registry(self):
+        """get_client normalises strings in place; it must copy first so the
+        process-wide registry config is not edited by a request."""
+        registry = ModelRegistry()
+        stored = registry.get_config("global-openai-gpt-4o")
+        before = dict(stored)
+
+        with patch("data_formulator.routes.agents.model_registry", registry):
+            from data_formulator.routes.agents import get_client
+
+            get_client({
+                "id": "global-openai-gpt-4o",
                 "endpoint": "openai",
-                "model": "nonexistent",
-                "api_key": "sk-fallback",
-                "api_base": "",
-                "api_version": "",
+                "model": "gpt-4o",
                 "is_global": True,
             })
 
-            assert client.params.get("api_key") == "sk-fallback"
+        assert registry.get_config("global-openai-gpt-4o") == before
 
 
 # ---------------------------------------------------------------------------

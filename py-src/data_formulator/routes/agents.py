@@ -103,23 +103,57 @@ def _set_cors(response):
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
 
-def get_client(model_config):
-    # For global models, resolve real credentials from the server-side registry.
-    # The frontend only knows the model id; the api_key never leaves the server.
-    if model_config.get("is_global"):
-        real_config = model_registry.get_config(model_config["id"])
-        if real_config:
-            model_config = real_config
+def get_client(model_config, trusted=False):
+    """Build a LiteLLM client for *model_config*.
 
+    ``trusted`` marks a config that came from the server-side registry rather
+    than from a request body.  Callers that already resolved a config through
+    ``model_registry`` pass ``trusted=True``; everything reached from an HTTP
+    payload must leave it ``False``.
+    """
+    # ``is_global`` arrives inside the request body, so it is only a *claim*
+    # that some id names a server-configured model.  Trust has to come from
+    # that lookup actually succeeding -- never from the flag itself.  Treating
+    # the flag as proof let a caller attach it to a config it fully controlled
+    # and inherit the exemptions granted to global models below, turning
+    # ``api_base`` into an SSRF sink that the server signs with its own
+    # credentials.
+    if not trusted and model_config.get("is_global"):
+        resolved = model_registry.get_config(model_config.get("id"))
+        if resolved is None:
+            # Fail closed.  Continuing with the caller's own config would hand
+            # it exactly the trust it just failed to prove.
+            logger.warning(
+                "Rejected is_global request for unregistered model id: %r",
+                model_config.get("id"),
+            )
+            raise AppError(
+                ErrorCode.ACCESS_DENIED,
+                "Unknown global model. Pick a model from the server's "
+                "configured list, or supply your own API credentials.",
+            )
+        model_config = resolved
+        trusted = True
+
+    # Copy before normalising: a registry config is shared server-wide and must
+    # not be mutated in place by the strip below.
+    model_config = dict(model_config)
     for key in model_config:
         if isinstance(model_config[key], str):
             model_config[key] = model_config[key].strip()
 
-    # Validate user-provided api_base against the allowlist (SSRF protection).
-    # Global models are trusted (their api_base comes from server env vars).
-    if not model_config.get("is_global"):
+    # Validate caller-provided api_base against the allowlist (SSRF
+    # protection).  Registry configs are exempt because their api_base is set
+    # by the operator's env vars, not by a request.
+    if not trusted:
         from data_formulator.security.url_allowlist import validate_api_base
-        validate_api_base(model_config.get("api_base"))
+        try:
+            validate_api_base(model_config.get("api_base"))
+        except ValueError as e:
+            # url_allowlist stays framework-agnostic and signals with
+            # ValueError; translate it here so the caller gets a 403 instead
+            # of a generic 500.
+            raise AppError(ErrorCode.ACCESS_DENIED, str(e)) from e
 
     client = Client(
         model_config["endpoint"],
@@ -172,7 +206,7 @@ def check_available_models():
         error = None
 
         try:
-            client = get_client(full_config)
+            client = get_client(full_config, trusted=True)
             logger.info(f"  [{model_id}] Sending connectivity ping (max_tokens=3)...")
             client.ping(timeout=10)
             status = "connected"

@@ -680,7 +680,7 @@ export const SourceTableShelf: FC<{
         <Box sx={{ padding: '2px 4px 2px 4px', display: 'flex', flexDirection: 'column' }}>
             {/* Section label, in the same type as a thread's "THREAD - N" header.
                 Left-aligned: unlike a thread header there's no dot to sit beside. */}
-            <Box sx={{ pr: CARD_INSET_RIGHT, display: 'flex', alignItems: 'center', minHeight: 20 }}>
+            <Box sx={{ pr: CARD_INSET_RIGHT, display: 'flex', alignItems: 'center', minHeight: 16 }}>
                 <Typography sx={{
                     fontSize: '11px', fontWeight: 700,
                     textTransform: 'uppercase', letterSpacing: '0.02em',
@@ -690,9 +690,10 @@ export const SourceTableShelf: FC<{
                 </Typography>
             </Box>
 
-            {/* Connector from the header down into the first card's icon, the
-                same lead-in a thread header draws below its dot. */}
-            <Box aria-hidden sx={{ ml: RAIL_OFFSET, height: '10px', borderLeft: RAIL_LINE }} />
+            {/* Just enough rail to link the label to the first card. The card
+                row draws its own lead-in above the icon, so anything longer
+                here reads as a gap between the label and the list. */}
+            <Box aria-hidden sx={{ ml: RAIL_OFFSET, height: '2px', borderLeft: RAIL_LINE }} />
 
             {/* Each card carries its own gutter icon and rail segments (see the
                 `cards` memo), so the rail is punctuated exactly like a thread's
