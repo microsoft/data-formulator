@@ -294,7 +294,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             table = source_table
         
         col_list = self._safe_select_list(schema.strip('[]'), table.strip('[]'))
-        base_query = f"SELECT {col_list} FROM [{schema}].[{table}]"
+        base_query = f"SELECT TOP {int(size)} {col_list} FROM [{schema}].[{table}]"
         
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
@@ -303,8 +303,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             sanitized_cols = [f'[{col}] {order_direction}' for col in sort_columns]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
-        # SQL Server uses TOP instead of LIMIT
-        query = f"SELECT TOP {size} * FROM ({base_query}{order_by_clause}) AS limited"
+        query = f"{base_query}{order_by_clause}"
         
         log.info(f"Executing SQL Server query: {query[:200]}...")
         

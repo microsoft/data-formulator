@@ -179,7 +179,7 @@ export const DataLoaderForm: React.FC<{
                 }));
             }
         }
-        if (authPaths.length > 0 && !params._auth_path) {
+        if (authPaths.length > 0 && !authPaths.some(path => path.id === params._auth_path)) {
             const defaultPath = authPaths.find(path => path.default) || authPaths[0];
             dispatch(dfActions.updateDataLoaderConnectParam({
                 dataLoaderType,
