@@ -57,6 +57,7 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("mysql",      "data_formulator.data_loader.mysql_data_loader",      "MySQLDataLoader",      "pymysql"),
+    ("clickhouse", "data_formulator.data_loader.clickhouse_data_loader", "ClickHouseDataLoader", "clickhouse-connect"),
     ("mssql",      "data_formulator.data_loader.mssql_data_loader",      "MSSQLDataLoader",      "mssql-python"),
     ("postgresql", "data_formulator.data_loader.postgresql_data_loader",  "PostgreSQLDataLoader", "psycopg2-binary"),
     ("kusto",      "data_formulator.data_loader.kusto_data_loader",      "KustoDataLoader",      "azure-kusto-data"),

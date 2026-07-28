@@ -51,6 +51,7 @@ dependencies = [
     "azure-kusto-data", # kusto
     "azure-keyvault-secrets", # kusto
     "pymysql", # mysql
+    "clickhouse-connect", # clickhouse
     "mssql-python>=1.11.0", # mssql
     "psycopg2-binary", # postgresql
     "boto3", # s3, athena
