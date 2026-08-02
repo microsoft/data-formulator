@@ -5,13 +5,13 @@
  * Agent response resolution — maps AI agent chart recommendations to
  * concrete Chart objects.
  *
- * The encoding recommendation engine has moved to the agents-chart library.
+ * The encoding recommendation engine lives in the flint-chart library.
  * Use `vlRecommendEncodings` / `ecRecommendEncodings` / etc. directly.
  */
 
 import { Channel, Chart, DictTable, FieldItem } from '../components/ComponentType';
 import { generateFreshChart } from './dfSlice';
-import { vlGetTemplateDef } from '../lib/agents-chart';
+import { vlGetTemplateDef } from 'flint-chart';
 
 /** Map from agent short names to display chart type names. */
 const AGENT_CHART_TYPE_MAP: Record<string, string> = {

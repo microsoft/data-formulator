@@ -217,3 +217,10 @@ export function _resetForTesting(): void {
     _authInfoPromise = null;
     _userManager = null;
 }
+
+/** @internal — injects the minimal manager surface used by token tests. */
+export function _setUserManagerForTesting(
+    manager: Pick<UserManager, "getUser" | "signinSilent"> | null,
+): void {
+    _userManager = manager as UserManager | null;
+}

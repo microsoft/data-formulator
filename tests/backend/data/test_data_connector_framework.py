@@ -451,6 +451,23 @@ class TestAuthRoutes:
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "success"
 
+    def test_rename_connector_preserves_stable_id(self, connected_client, source):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch("data_formulator.data_connector._update_user_connector_display_name") as persist:
+            resp = connected_client.patch(
+                "/api/connectors/mock_db",
+                json={"display_name": "Analytics warehouse"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.get_json()["data"] == {
+            "id": "mock_db",
+            "display_name": "Analytics warehouse",
+        }
+        assert source._source_id == "mock_db"
+        assert source._display_name == "Analytics warehouse"
+        persist.assert_called_once_with("test-user", "mock_db", "Analytics warehouse")
+
     def test_disconnect_connector_clears_loader_and_credentials(self, connected_client, source):
         """Disconnect keeps the connector but clears active and stored credentials."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
@@ -623,7 +640,8 @@ class TestCatalogRoutes:
         assert data["data"]["tree"] == []
 
     def test_search_catalog_not_connected_returns_error(self, client):
-        with patch.object(DataConnector, "_get_identity", return_value="nobody"):
+        with patch.object(DataConnector, "_get_identity", return_value="nobody"), \
+             patch.object(DataConnector, "_try_ambient_reconnect", return_value=None):
             resp = client.post("/api/connectors/search-catalog", json={
                 "connector_id": "mock_db",
                 "query": "users",

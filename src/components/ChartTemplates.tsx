@@ -4,17 +4,17 @@
 /**
  * Chart Templates with UI icons.
  *
- * This module wraps the reusable agents-chart template definitions
+ * This module wraps the reusable flint-chart template definitions
  * with React icon components for display in the Data Formulator UI.
  * The pure template logic (mark, encoding paths, post-processors) lives
- * in src/lib/agents-chart/templates/.
+ * in the flint-chart package.
  */
 
 import { ChartTemplate } from "./ComponentType";
 import {
     vlTemplateDefs,
     vlGetTemplateChannels,
-} from "../lib/agents-chart";
+} from "flint-chart";
 import InsightsIcon from '@mui/icons-material/Insights';
 import React from "react";
 
@@ -50,6 +50,19 @@ import chartIconBump from '../assets/chart-icon-bump.svg';
 import chartIconRose from '../assets/chart-icon-rose.svg';
 import chartIconBarTable from '../assets/chart-icon-bar-table.svg';
 import chartIconKpiCard from '../assets/chart-icon-kpi-card.svg';
+// Borrowed from the flint-chart gallery (same flat line-art design language) for
+// types that previously fell back to the generic placeholder.
+import chartIconConnectedScatter from '../assets/chart-icon-connected-scatter.svg';
+import chartIconGantt from '../assets/chart-icon-gantt.svg';
+import chartIconBullet from '../assets/chart-icon-bullet.svg';
+import chartIconEcdf from '../assets/chart-icon-ecdf.svg';
+import chartIconViolin from '../assets/chart-icon-violin.svg';
+import chartIconSlope from '../assets/chart-icon-slope.svg';
+import chartIconSparkline from '../assets/chart-icon-sparkline.svg';
+import chartIconRangeArea from '../assets/chart-icon-range-area.svg';
+// Generic fallback for chart types without a bespoke icon (matches the flat
+// line-art language of the others: dark axes + muted bars + a blue trend line).
+import chartIconPlaceholder from '../assets/chart-icon-placeholder.svg';
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
@@ -88,6 +101,17 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
     "Strip Plot": <ChartIcon src={chartIconStripPlot} />,
     "Radar Chart": <ChartIcon src={chartIconRadar} />,
     "KPI Card": <ChartIcon src={chartIconKpiCard} />,
+    // Borrowed from the flint-chart gallery (see imports above).
+    "Connected Scatter Plot": <ChartIcon src={chartIconConnectedScatter} />,
+    "Gantt Chart": <ChartIcon src={chartIconGantt} />,
+    "Bullet Chart": <ChartIcon src={chartIconBullet} />,
+    "ECDF Plot": <ChartIcon src={chartIconEcdf} />,
+    "Violin Plot": <ChartIcon src={chartIconViolin} />,
+    "Slope Chart": <ChartIcon src={chartIconSlope} />,
+    "Sparkline": <ChartIcon src={chartIconSparkline} />,
+    "Range Area Chart": <ChartIcon src={chartIconRangeArea} />,
+    "Map": <ChartIcon src={chartIconWorldMap} />,
+    "Choropleth": <ChartIcon src={chartIconUSMap} />,
     "Custom Point": <ChartIcon src={chartIconCustomPoint} />,
     "Custom Line": <ChartIcon src={chartIconCustomLine} />,
     "Custom Bar": <ChartIcon src={chartIconCustomBar} />,
@@ -99,25 +123,11 @@ export const CHART_ICONS: Record<string, React.ReactElement> = {
 // Build CHART_TEMPLATES by adding icons to library template defs
 // ---------------------------------------------------------------------------
 
-/** Global properties injected into any template that supports column/row faceting. */
-const FACET_AXIS_PROPERTIES = [
-    {
-        key: 'independentYAxis', label: 'Independent Y-Axis', type: 'binary' as const,
-        visibleWhen: { channels: ['column', 'row'] },
-    },
-];
-
-function addIcons(defs: { chart: string; channels?: string[]; properties?: any[] }[]): ChartTemplate[] {
-    return defs.map(def => {
-        const hasFacetChannels = def.channels?.some(ch => ch === 'column' || ch === 'row');
-        const extraProps = hasFacetChannels ? FACET_AXIS_PROPERTIES : [];
-        const mergedProperties = [...(def.properties || []).filter((p: any) => p.key !== 'independentYAxis'), ...extraProps];
-        return {
-            ...def,
-            properties: mergedProperties,
-            icon: CHART_ICONS[def.chart] || <InsightsIcon />,
-        };
-    }) as ChartTemplate[];
+function addIcons(defs: { chart: string }[]): ChartTemplate[] {
+    return defs.map(def => ({
+        ...def,
+        icon: CHART_ICONS[def.chart] || <ChartIcon src={chartIconPlaceholder} />,
+    })) as ChartTemplate[];
 }
 
 export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = Object.fromEntries(
@@ -135,7 +145,7 @@ export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = Object.fromEn
 export {
     channels,
     channelGroups,
-} from '../lib/agents-chart';
+} from 'flint-chart';
 
 export function getChartTemplate(chartType: string): ChartTemplate | undefined {
     return Object.values(CHART_TEMPLATES).flat().find(t => t.chart === chartType);

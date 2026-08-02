@@ -50,16 +50,45 @@ When a STYLE REFERENCE is provided, follow it closely: carry its visual decision
 Hard rules:
 1. Do not include a `data` block in your output. The caller re-attaches live rows.
 2. Only reference columns that exist in the data sample.
+3. Preserve field-name escaping EXACTLY. Column names containing `.`, `[`, or `]` are escaped with a backslash in `field` references (e.g. a column literally named `Tomatoes, per lb.` appears as `"field": "Tomatoes, per lb\\."`). Keep those backslashes intact — do not drop or add them. An unescaped `.` makes Vega-Lite read it as a nested-object path, which breaks the chart (empty plot).
 
-Out-of-scope: only refuse if the request genuinely needs data that isn't in the table — e.g. joining another dataset, a column that doesn't exist and can't be derived from existing ones. In that case return:
+Out-of-scope: refuse if the request genuinely needs data that simply isn't there and can't be derived in Vega-Lite — e.g. joining a separate dataset, or a column that doesn't exist and can't be computed from the existing ones. Anything expressible with a Vega-Lite `transform` (aggregations, calculated fields, filters, folds, window/joinaggregate, etc.) is in scope — add the transforms you need. If you do refuse, return:
 {"out_of_scope": true, "rationale": "<one sentence on what data is missing>"}
 
 Otherwise return:
 {
   "vlSpec": <the new Vega-Lite spec, with no `data` block>,
   "label": "<two-word lowercase label, e.g. \"dark theme\", \"rotated labels\", \"percent of total\">",
-  "rationale": "<one short sentence on what you changed>"
+  "rationale": "<one short sentence on what you changed>",
+  "configUI": <a SHORT list (2-4) of simple follow-up controls — see below>
 }
+
+[configUI — generative follow-up controls]
+After you produce the new spec, design 2-4 small UI controls that let the user keep tweaking THIS specific variant without re-prompting. Pick knobs that are meaningful for the chart you just made (e.g. mark opacity, corner radius, point size, font size, gridlines on/off, label angle, color scheme, legend position).
+
+Each control declares WHERE in the spec it writes and the allowed VALUES — there is NO code, just a `path` (the location in the spec) plus the value the chosen option writes there. Shapes:
+- "key": short unique id, lowercase no spaces, e.g. "opacity"
+- "label": short human label, e.g. "opacity"
+- "path": array describing the location in the vlSpec to write the value to, e.g. ["mark","opacity"] or ["encoding","x","axis","labelAngle"] or ["config","legend","orient"]. Use array indices (numbers) for arrays, e.g. ["layer",0,"mark","color"]. Intermediate objects are created if missing.
+- "type": one of "continuous" | "binary" | "discrete"
+- for "continuous": "min", "max", optional "step", and "defaultValue" (number) — the value written at `path` is the number itself
+- for "binary": "defaultValue" (true/false) — the boolean is written at `path`
+- for "discrete": "options" (array of {"value": <any>, "label": "<text>"}) and "defaultValue" — the chosen option's `value` is written at `path`. The `value` may be a scalar OR a whole object (e.g. a full mark sub-spec or a color array), which the app sets wholesale at `path`.
+
+Rules for configUI:
+- `defaultValue` MUST equal what the spec you returned already encodes at that `path`, so the controls start in sync with the chart.
+- Make sure `path` points at a real location in the spec you returned (so toggling actually changes the visible chart).
+- Never use "__proto__", "prototype", or "constructor" as a path segment.
+
+Example configUI:
+[
+  {"key": "opacity", "label": "opacity", "type": "continuous", "min": 0.2, "max": 1, "step": 0.05, "defaultValue": 0.9, "path": ["mark", "opacity"]},
+  {"key": "grid", "label": "gridlines", "type": "binary", "defaultValue": true, "path": ["encoding", "y", "axis", "grid"]},
+  {"key": "scheme", "label": "palette", "type": "discrete", "defaultValue": "tableau10", "path": ["encoding", "color", "scale", "scheme"],
+   "options": [{"value": "tableau10", "label": "tableau"}, {"value": "category10", "label": "category"}, {"value": "set2", "label": "set2"}]}
+]
+
+If no meaningful per-variant control fits, return "configUI": [].
 
 Return ONLY the JSON object — no markdown fences, no commentary.
 '''
@@ -167,6 +196,7 @@ class ChartRestyleAgent(object):
                             "vlSpec": cleaned,
                             "rationale": str(parsed.get("rationale", "")).strip(),
                             "label": str(parsed.get("label", "")).strip(),
+                            "configUI": self._sanitize_config_ui(parsed.get("configUI")),
                         }
 
         # No usable response.
@@ -179,6 +209,93 @@ class ChartRestyleAgent(object):
     # ------------------------------------------------------------------
     # Guardrails
     # ------------------------------------------------------------------
+
+    _FORBIDDEN_PATH_SEGMENTS = {"__proto__", "prototype", "constructor"}
+
+    def _sanitize_config_ui(self, raw: Any) -> list[dict]:
+        """Validate the LLM-authored configUI array into a clean list.
+
+        Each control is a declarative "write value at path" knob — there is no
+        code. We validate the path (non-empty, no prototype-polluting segments)
+        and the per-type params, dropping anything malformed. Returns [] when
+        nothing is usable. The frontend re-validates as well.
+        """
+        if not isinstance(raw, list):
+            return []
+        out: list[dict] = []
+        seen: set[str] = set()
+        for c in raw:
+            if not isinstance(c, dict):
+                continue
+            key = str(c.get("key", "")).strip()
+            label = str(c.get("label", "")).strip()
+            ctype = c.get("type")
+            if not key or not label or key in seen:
+                continue
+
+            # Validate path: non-empty list of str / non-negative int, no
+            # prototype-polluting segments.
+            raw_path = c.get("path")
+            if not isinstance(raw_path, list) or len(raw_path) == 0:
+                continue
+            path: list = []
+            path_ok = True
+            for seg in raw_path:
+                if isinstance(seg, bool):
+                    path_ok = False
+                    break
+                if isinstance(seg, int) and seg >= 0:
+                    path.append(seg)
+                elif isinstance(seg, str) and seg and seg not in self._FORBIDDEN_PATH_SEGMENTS:
+                    path.append(seg)
+                else:
+                    path_ok = False
+                    break
+            if not path_ok:
+                continue
+
+            if ctype == "binary":
+                out.append({"key": key, "label": label, "type": "binary",
+                            "path": path, "defaultValue": bool(c.get("defaultValue"))})
+            elif ctype == "continuous":
+                try:
+                    cmin = float(c.get("min"))
+                    cmax = float(c.get("max"))
+                except (TypeError, ValueError):
+                    continue
+                if not (cmax > cmin):
+                    continue
+                entry = {"key": key, "label": label, "type": "continuous",
+                         "path": path, "min": cmin, "max": cmax}
+                try:
+                    step = float(c.get("step"))
+                    if step > 0:
+                        entry["step"] = step
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    entry["defaultValue"] = float(c.get("defaultValue"))
+                except (TypeError, ValueError):
+                    entry["defaultValue"] = cmin
+                out.append(entry)
+            elif ctype == "discrete":
+                opts_raw = c.get("options")
+                if not isinstance(opts_raw, list):
+                    continue
+                options = [
+                    {"value": o.get("value"), "label": str(o.get("label", "")).strip()}
+                    for o in opts_raw
+                    if isinstance(o, dict) and str(o.get("label", "")).strip()
+                ]
+                if not options:
+                    continue
+                default = c.get("defaultValue", options[0]["value"])
+                out.append({"key": key, "label": label, "type": "discrete",
+                            "path": path, "options": options, "defaultValue": default})
+            else:
+                continue
+            seen.add(key)
+        return out
 
     def _enforce_guardrails(self, original: dict, candidate: dict) -> dict | None:
         """Apply post-hoc guardrails to a candidate spec.

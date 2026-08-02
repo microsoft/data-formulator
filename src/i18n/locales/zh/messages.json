@@ -68,6 +68,7 @@
       "emptyDataframe": "输出数据为空（0 行），请检查筛选条件或数据加载。",
       "fieldsNotFound": "输出数据中未找到图表编码字段：{{missing}}。可用列：{{available}}",
       "llmApiError": "LLM API 错误",
+      "miniNoChart": "我无法为此请求生成可用的图表{{error}}。请尝试重新表述，或切换到能力更强的模型以使用迷你模式。",
       "llmEmptyResponse": "LLM 返回了空响应",
       "parseActionFailed": "无法从 LLM 响应中解析操作",
       "unknownAction": "未知操作：{{actionType}}",

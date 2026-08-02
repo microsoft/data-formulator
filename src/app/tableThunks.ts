@@ -22,6 +22,46 @@ import { DataFormulatorState, dfActions, fetchColumnStats, fetchFieldSemanticTyp
 import { tableDataDB } from './workspaceDB';
 import i18n from '../i18n';
 
+/**
+ * Persist a derived / agent-generated table's full rows to IndexedDB for
+ * **ephemeral mode**, returning a copy that keeps only a sample + a `virtual`
+ * marker in Redux (mirroring how the `loadTable` thunk handles ephemeral data).
+ *
+ * In ephemeral mode the IndexedDB `table_data` store is the only durable source
+ * of truth: every API call ships those rows back to the server as
+ * `_workspace_tables`. Tables inserted straight into Redux (via
+ * `insertDerivedTables` / `overrideDerivedTables`) would otherwise never reach
+ * IndexedDB, leaving the server's scratch workspace — and the grid's pagination
+ * — with an empty data body.
+ *
+ * Callers must invoke this only when in ephemeral mode (they own that check).
+ * On save failure the original table is returned unchanged so the session keeps
+ * working with the full rows in Redux.
+ */
+export async function persistEphemeralDerivedTable(workspaceId: string, table: DictTable): Promise<DictTable> {
+    if (table.rows.length === 0) {
+        return table;
+    }
+
+    const tableId = table.virtual?.tableId || table.id;
+    const fullRows = table.rows;
+    const fullRowCount = Math.max(table.virtual?.rowCount ?? 0, fullRows.length);
+
+    try {
+        await tableDataDB.save(workspaceId, tableId, fullRows);
+    } catch (e) {
+        console.warn('[persistEphemeralDerivedTable] IndexedDB save failed; keeping full rows in Redux:', e);
+        return table;
+    }
+
+    const sampleSize = Math.min(1000, fullRows.length);
+    return {
+        ...table,
+        rows: fullRows.slice(0, sampleSize),
+        virtual: { tableId, rowCount: fullRowCount },
+    };
+}
+
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
     const blob = new Blob([new TextEncoder().encode(data)]);

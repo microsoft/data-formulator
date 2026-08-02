@@ -11,33 +11,324 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { Markdown } from 'tiptap-markdown';
-import { Box, Button, IconButton, Menu, MenuItem, Tooltip, Divider, useTheme, Typography } from '@mui/material';
+import { Box, IconButton, Tooltip, Divider, Typography, CircularProgress, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { WritingPencil, ShimmerText, WritingIndicator } from '../components/FunComponents';
+import { WritingIndicator } from '../components/FunComponents';
+import { getChartTemplate } from '../components/ChartTemplates';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
 import FormatItalicIcon from '@mui/icons-material/FormatItalic';
 import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
 import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import TitleIcon from '@mui/icons-material/Title';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import ImageIcon from '@mui/icons-material/Image';
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import DownloadIcon from '@mui/icons-material/Download';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+
+/** Compact "1.2s" / "850ms" style duration for inspection steps. */
+function formatStepDuration(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+}
 
 export interface TiptapReportEditorProps {
     content: string;           // HTML content (from processReport)
-    editable?: boolean;
+    streamingText?: string;    // raw markdown, shown via typewriter while writing-phase streams
+    resolveChartImage?: (chartId: string) => { url: string; width: number; height: number } | undefined; // for streaming chart embeds
+    editable?: boolean;        // edit mode on/off (formatting toolbar visible, content editable)
+    isGenerating?: boolean;    // report is still streaming; suppress export actions, show status
+    generatingPhase?: 'inspecting' | 'writing'; // which phase the agent is in while generating
+    // accumulated inspect steps so the user sees what's happening; `charts`
+    // carries chart-type + display name so we can show a type icon next to it
+    inspectionSteps?: InspectStep[];
     reportId?: string;         // triggers re-focus when switching reports
     onUpdate?: (html: string) => void;
-    onCopyContent?: () => void | Promise<void>;
-    onCopyImage?: () => void | Promise<void>;
-    onDownloadPng?: () => void | Promise<void>;
-    onExportPdf?: () => void | Promise<void>;
-    copyContentSuccess?: boolean;
-    copyImageSuccess?: boolean;
 }
+
+// ── Generating-status UI ───────────────────────────────────────────────────
+// While a report streams, the canvas shows (in order): a "thinking…" spinner
+// before anything arrives → a list of inspection steps (each flips to a ✓ with
+// a duration) → a trailing "thinking…" once all steps resolve → and finally a
+// pencil "writing…" overlay glued to the bottom of the growing text.
+
+export interface InspectStep {
+    label: string;
+    doneLabel?: string;   // past-tense label shown once the step completes
+    done: boolean;
+    charts?: { chartType: string; name: string }[];
+    startedAt?: number;   // epoch ms when the tool call started
+    durationMs?: number;  // wall time once the step is done
+}
+
+/** Small fixed-size slot holding either a spinner or a ✓, aligned to text.
+ *  Text stays uniformly muted; the icon carries the one bit of state color —
+ *  a soft spinner while running, a green check once done (matching the data
+ *  load chat's convention). */
+const StatusIcon: FC<{ done?: boolean }> = ({ done }) => (
+    <Box sx={{ flexShrink: 0, mt: '2px', display: 'flex', alignItems: 'center' }}>
+        {done
+            ? <CheckCircleIcon sx={{ fontSize: 13, color: 'success.main' }} />
+            : <CircularProgress size={11} thickness={5} sx={{ color: 'text.secondary' }} />}
+    </Box>
+);
+
+/** Spinner + gently pulsing label for "thinking…" / "still working" states. */
+const ThinkingRow: FC<{ label: string }> = ({ label }) => (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 0.25 }}>
+        <StatusIcon />
+        <Typography component="span" sx={{
+            fontSize: 12, lineHeight: 1.4, color: 'text.secondary',
+            animation: 'thinking-pulse 1.6s ease-in-out infinite',
+            '@keyframes thinking-pulse': {
+                '0%, 100%': { opacity: 0.6 },
+                '50%': { opacity: 1 },
+            },
+        }}>
+            {label}
+        </Typography>
+    </Box>
+);
+
+/** A single inspection step: status icon, label + duration, then chart chips. */
+const InspectionStepRow: FC<{ step: InspectStep }> = ({ step }) => (
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75, py: 0.25 }}>
+        <StatusIcon done={step.done} />
+        <Box sx={{ display: 'flex', flexDirection: 'column', rowGap: 0.25, minWidth: 0 }}>
+            {/* Label and elapsed time sit together on the first line. */}
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
+                <Typography component="span" sx={{
+                    fontSize: 12, lineHeight: 1.4, color: 'text.primary',
+                    whiteSpace: 'normal', wordBreak: 'break-word',
+                }}>
+                    {step.done && step.doneLabel ? step.doneLabel : step.label}
+                </Typography>
+                {step.done && step.durationMs != null && (
+                    <Typography component="span" sx={{
+                        fontSize: 11, lineHeight: 1.4, color: 'text.disabled',
+                        fontVariantNumeric: 'tabular-nums',
+                    }}>
+                        {formatStepDuration(step.durationMs)}
+                    </Typography>
+                )}
+            </Box>
+            {/* Each inspected chart gets its own line, even when there's only one. */}
+            {step.charts?.map((c, j) => (
+                <Box key={j} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, minWidth: 0 }}>
+                    <Box sx={{
+                        width: 14, height: 14, flexShrink: 0, opacity: 0.85,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        '& svg': { fontSize: 14 },
+                    }}>
+                        {getChartTemplate(c.chartType)?.icon}
+                    </Box>
+                    <Typography component="span" sx={{
+                        fontSize: 12, lineHeight: 1.4, color: 'text.secondary',
+                        whiteSpace: 'normal', wordBreak: 'break-word',
+                    }}>
+                        {c.name}
+                    </Typography>
+                </Box>
+            ))}
+        </Box>
+    </Box>
+);
+
+/**
+ * The in-flow status shown before the report text starts streaming: a muted
+ * title, then either a lone "thinking…" (nothing happening yet) or the
+ * accumulated inspection steps followed by a trailing "thinking…" once they
+ * all resolve.
+ */
+const InspectingStatus: FC<{ steps?: InspectStep[] }> = ({ steps }) => {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, px: '24px', pt: '40px', pb: '16px' }}>
+            <Typography sx={{
+                fontSize: 11, fontWeight: 600, letterSpacing: '0.05em',
+                textTransform: 'uppercase', color: 'text.secondary', mb: 0.5,
+            }}>
+                {t('editor.workingTitle')}
+            </Typography>
+            {steps?.length
+                ? steps.map((step, i) => <InspectionStepRow key={i} step={step} />)
+                : null}
+            {(!steps?.length || steps.every(s => s.done)) && (
+                <ThinkingRow label={t('dataThread.thinking')} />
+            )}
+        </Box>
+    );
+};
+
+/** Strip inline markdown emphasis markers for the lightweight streaming view. */
+function stripInlineMarkers(line: string): string {
+    return line
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/(^|[^*])\*([^*]+)\*/g, '$1$2')
+        .replace(/`([^`]+)`/g, '$1');
+}
+
+/** Detect a chart-image line: ![caption](chart://id) or legacy [IMAGE(id)]. */
+function matchChartImageLine(line: string): { chartId: string; caption?: string } | null {
+    const md = line.match(/^!\[([^\]]*)\]\(chart:\/\/([^)]+)\)\s*$/);
+    if (md) return { caption: md[1] || undefined, chartId: md[2] };
+    const legacy = line.match(/^\[IMAGE\(([^)]+)\)\]\s*$/);
+    if (legacy) return { chartId: legacy[1] };
+    return null;
+}
+
+type ResolveChartImage = (chartId: string) => { url: string; width: number; height: number } | undefined;
+
+/**
+ * Lightweight, line-based render of the streamed markdown. Good enough to read
+ * smoothly while text arrives; the real TipTap parse happens once on completion.
+ */
+const StreamingMarkdownLite: FC<{ text: string; caret?: React.ReactNode; resolveChartImage?: ResolveChartImage }> = ({ text, caret, resolveChartImage }) => {
+    const lines = text.split('\n');
+    const lastIdx = lines.length - 1;
+    return (
+        <>
+            {lines.map((line, i) => {
+                const tail = i === lastIdx ? caret : null;
+                const img = matchChartImageLine(line);
+                if (img) {
+                    const cached = resolveChartImage?.(img.chartId);
+                    if (cached) {
+                        return (
+                            <Box key={i} component="div" sx={{ textAlign: 'center', my: '0.5em' }}>
+                                <Box component="img" src={cached.url} alt={img.caption ?? ''}
+                                    width={cached.width} height={cached.height}
+                                    sx={{ maxWidth: '100%', height: 'auto', borderRadius: '4px' }} />
+                                {tail}
+                            </Box>
+                        );
+                    }
+                    return (
+                        <Box key={i} component="div" sx={{ textAlign: 'center', color: 'text.disabled', py: '16px' }}>
+                            📊 {img.caption || img.chartId}{tail}
+                        </Box>
+                    );
+                }
+                const h = line.match(/^(#{1,3})\s+(.*)$/);
+                if (h) {
+                    const level = h[1].length;
+                    return (
+                        <Box key={i} component="div" sx={{
+                            fontWeight: level === 1 ? 700 : 600,
+                            fontSize: level === 1 ? '1.75rem' : level === 2 ? '1.4rem' : '1.15rem',
+                            lineHeight: 1.3,
+                            mt: i === 0 ? 0 : '1em', mb: '0.4em',
+                        }}>
+                            {stripInlineMarkers(h[2])}{tail}
+                        </Box>
+                    );
+                }
+                const li = line.match(/^[-*]\s+(.*)$/);
+                if (li) {
+                    return (
+                        <Box key={i} component="div" sx={{ display: 'flex', gap: 1, mb: '0.25em' }}>
+                            <Box component="span" sx={{ color: 'text.disabled' }}>•</Box>
+                            <Box component="span">{stripInlineMarkers(li[1])}{tail}</Box>
+                        </Box>
+                    );
+                }
+                return (
+                    <Box key={i} component="div" sx={{ minHeight: line === '' ? '0.5em' : undefined, mb: line === '' ? 0 : '0.2em' }}>
+                        {stripInlineMarkers(line)}{tail}
+                    </Box>
+                );
+            })}
+        </>
+    );
+};
+
+/**
+ * Typewriter buffer: smoothly reveals `text` regardless of how bursty the
+ * network deltas are. A rAF loop catches the displayed length up to the target,
+ * revealing more per frame when the backlog is large so it never falls behind.
+ */
+const StreamingText: FC<{ text: string; resolveChartImage?: ResolveChartImage }> = ({ text, resolveChartImage }) => {
+    const { t } = useTranslation();
+    const textRef = useRef(text);
+    textRef.current = text;
+    const shownLenRef = useRef(0);
+    const [shown, setShown] = useStateReact('');
+
+    useEffect(() => {
+        let raf = 0;
+        let lastTime = performance.now();
+        let lastTargetLen = 0;
+        let lastChunkTime = lastTime;
+        let fraction = 0;            // sub-character reveal accumulator
+
+        // Reveal rate in chars/ms, smoothed across chunks. Each time a chunk
+        // arrives we estimate the natural rate as (chunk size / time since the
+        // previous chunk), so the chunk is spread out over roughly the gap until
+        // the next one is expected — that feels like natural typing rather than
+        // dumping. Clamped to a sane min/max and floored so it never stalls.
+        const MIN_RATE = 0.012;     // ~12 chars/sec — slowest "typing" we allow
+        const MAX_RATE = 0.20;      // ~200 chars/sec — cap so big bursts don't blur
+        let rate = 0.03;            // initial guess until the first interval is known
+
+        const tick = () => {
+            const now = performance.now();
+            const dt = Math.min(now - lastTime, 100); // clamp tab-switch gaps
+            lastTime = now;
+
+            const target = textRef.current;
+            let len = shownLenRef.current;
+            if (len > target.length) { len = 0; fraction = 0; } // report cleared/restarted
+
+            // On each new chunk, re-estimate the natural typing rate from this
+            // chunk's size and the interval since the previous chunk arrived.
+            const arrived = target.length - lastTargetLen;
+            if (arrived > 0) {
+                const interval = Math.max(now - lastChunkTime, 1);
+                lastChunkTime = now;
+                lastTargetLen = target.length;
+                const chunkRate = arrived / interval;
+                rate = rate * 0.7 + chunkRate * 0.3; // EMA smoothing across chunks
+            }
+
+            const backlog = target.length - len;
+            if (backlog > 0) {
+                // Pace at the smoothed rate, but never below the min typing speed,
+                // and lift slightly when the backlog is large so we don't drift
+                // permanently behind a fast stream.
+                const catchUp = backlog > 240 ? 1.6 : backlog > 80 ? 1.25 : 1;
+                const effRate = Math.min(MAX_RATE, Math.max(MIN_RATE, rate) * catchUp);
+                fraction += effRate * dt;
+                const whole = Math.floor(fraction);
+                if (whole >= 1) {
+                    fraction -= whole;
+                    len = Math.min(target.length, len + whole);
+                    shownLenRef.current = len;
+                    setShown(target.slice(0, len));
+                }
+            }
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, []);
+
+    return (
+        <Box sx={{
+            px: '24px', pt: '40px', pb: '64px',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+            fontSize: '0.95rem', lineHeight: 1.7, color: 'rgb(55, 53, 47)',
+        }}>
+            <StreamingMarkdownLite text={shown} resolveChartImage={resolveChartImage} caret={
+                <Box component="span" sx={{
+                    display: 'inline-block', width: '2px', height: '1.1em',
+                    ml: '1px', verticalAlign: 'text-bottom', backgroundColor: 'text.primary',
+                    animation: 'stream-caret 1s step-end infinite',
+                    '@keyframes stream-caret': { '50%': { opacity: 0 } },
+                }} />
+            } />
+            <Box sx={{ mt: shown.length === 0 ? 1 : 2 }}>
+                <WritingIndicator label={t('editor.writingReport')} fontSize="0.85rem" />
+            </Box>
+        </Box>
+    );
+};
 
 /** Resizable image node view — drag bottom-right corner to resize */
 const ResizableImageView: FC<NodeViewProps> = ({ node, updateAttributes, selected }) => {
@@ -175,20 +466,18 @@ const ToolbarButton: FC<{
 
 export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
     content,
+    streamingText,
+    resolveChartImage,
     editable = true,
+    isGenerating = false,
+    generatingPhase,
+    inspectionSteps,
     reportId,
     onUpdate,
-    onCopyContent,
-    onCopyImage,
-    onDownloadPng,
-    onExportPdf,
-    copyContentSuccess = false,
-    copyImageSuccess = false,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const isFocused = useRef(false);
-    const [imageMenuAnchor, setImageMenuAnchor] = useStateReact<null | HTMLElement>(null);
 
     const editor = useEditor({
         extensions: [
@@ -247,6 +536,9 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
     // Always sync if the content contains new images (img tags) that aren't in the editor yet
     useEffect(() => {
         if (!editor) return;
+        // While the writing phase streams, the lightweight typewriter view owns the
+        // display — defer the (expensive) markdown parse until the stream completes.
+        if (generatingPhase === 'writing') return;
         if (!isFocused.current) {
             editor.commands.setContent(content, { emitUpdate: false });
         } else {
@@ -258,7 +550,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                 editor.commands.setContent(content, { emitUpdate: false });
             }
         }
-    }, [editor, content]);
+    }, [editor, content, generatingPhase]);
 
     const copyAsRichText = useCallback(async () => {
         if (!editor) return;
@@ -278,70 +570,32 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
     if (!editor) return null;
 
     const iconSx = { fontSize: 16 };
-    const exportIconSx = { fontSize: 15 };
-    const exportButtonSx = {
-        minWidth: 0,
-        height: 26,
-        px: 0.75,
-        py: 0,
-        borderRadius: '4px',
-        textTransform: 'none',
-        fontSize: 12,
-        fontWeight: 400,
-        lineHeight: 1,
-        color: 'text.secondary',
-        borderColor: 'transparent',
-        backgroundColor: 'transparent',
-        '& .MuiButton-startIcon': {
-            mr: 0.5,
-            ml: 0,
-            color: 'inherit',
-        },
-        '&:hover': {
-            color: 'primary.main',
-            borderColor: alpha(theme.palette.primary.main, 0.08),
-            backgroundColor: alpha(theme.palette.primary.main, 0.08),
-        },
-    };
-    const exportMenuItemSx = {
-        minHeight: 30,
-        px: 1.25,
-        py: 0.5,
-        fontSize: 12,
-        color: 'text.secondary',
-        '& .MuiSvgIcon-root': {
-            fontSize: 15,
-            mr: 0.75,
-            color: 'text.disabled',
-        },
-    };
-    const hasExportActions = !!(onCopyContent || onCopyImage || onDownloadPng || onExportPdf);
-    const imageMenuOpen = Boolean(imageMenuAnchor);
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
-            {/* Toolbar — always visible, disabled during generation */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%', position: 'relative' }}>
+            {/* Toolbar — only in edit mode (formatting); hidden when reading or generating */}
+            {editable && (
             <Box sx={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '2px',
                 px: 1,
                 py: 2,
+                minHeight: 26,
                 borderBottom: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
                 flexShrink: 0,
                 position: 'sticky',
                 top: 0,
                 zIndex: 5,
                 backgroundColor: 'background.paper',
-                opacity: editable ? 1 : 0.5,
             }}
                 data-report-toolbar
             >
+                {editable && (
                 <Box sx={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '2px',
-                    pointerEvents: editable ? 'auto' : 'none',
                 }}>
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleBold().run()}
@@ -395,126 +649,13 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                         <FormatQuoteIcon sx={iconSx} />
                     </ToolbarButton>
                 </Box>
-                {hasExportActions && editable && (
-                    <Box sx={{
-                        ml: 'auto',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        pointerEvents: editable ? 'auto' : 'none',
-                    }}>
-                        {onCopyContent && (
-                            <Button
-                                size="small"
-                                variant="text"
-                                startIcon={copyContentSuccess ? <CheckCircleIcon sx={exportIconSx} /> : <ContentCopyIcon sx={exportIconSx} />}
-                                onClick={onCopyContent}
-                                color={copyContentSuccess ? 'success' : 'primary'}
-                                sx={{
-                                    ...exportButtonSx,
-                                    ...(copyContentSuccess ? {
-                                        color: 'success.main',
-                                        backgroundColor: alpha(theme.palette.success.main, 0.08),
-                                    } : {}),
-                                }}
-                            >
-                                {copyContentSuccess ? t('report.copied') : t('report.copyContent')}
-                            </Button>
-                        )}
-                        {(onCopyImage || onDownloadPng) && (
-                            <>
-                                <Button
-                                    size="small"
-                                    variant="text"
-                                    startIcon={copyImageSuccess ? <CheckCircleIcon sx={exportIconSx} /> : <ImageIcon sx={exportIconSx} />}
-                                    onClick={(event) => setImageMenuAnchor(event.currentTarget)}
-                                    color={copyImageSuccess ? 'success' : 'primary'}
-                                    sx={{
-                                        ...exportButtonSx,
-                                        ...(copyImageSuccess ? {
-                                            color: 'success.main',
-                                            backgroundColor: alpha(theme.palette.success.main, 0.08),
-                                        } : {}),
-                                    }}
-                                >
-                                    {copyImageSuccess ? t('report.copied') : t('report.imageActions')}
-                                </Button>
-                                <Menu
-                                    anchorEl={imageMenuAnchor}
-                                    open={imageMenuOpen}
-                                    onClose={() => setImageMenuAnchor(null)}
-                                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                                    slotProps={{
-                                        paper: {
-                                            sx: {
-                                                mt: 0.5,
-                                                borderRadius: '6px',
-                                                boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
-                                                border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-                                            }
-                                        }
-                                    }}
-                                >
-                                    {onCopyImage && (
-                                        <MenuItem
-                                            onClick={() => {
-                                                setImageMenuAnchor(null);
-                                                void onCopyImage();
-                                            }}
-                                            sx={exportMenuItemSx}
-                                        >
-                                            <ContentCopyIcon />
-                                            {t('report.copyImage')}
-                                        </MenuItem>
-                                    )}
-                                    {onDownloadPng && (
-                                        <MenuItem
-                                            onClick={() => {
-                                                setImageMenuAnchor(null);
-                                                void onDownloadPng();
-                                            }}
-                                            sx={exportMenuItemSx}
-                                        >
-                                            <DownloadIcon />
-                                            {t('report.downloadPng')}
-                                        </MenuItem>
-                                    )}
-                                </Menu>
-                            </>
-                        )}
-                        {onExportPdf && (
-                            <Button
-                                size="small"
-                                variant="text"
-                                startIcon={<PictureAsPdfIcon sx={exportIconSx} />}
-                                onClick={onExportPdf}
-                                sx={exportButtonSx}
-                            >
-                                {t('report.exportPdf')}
-                            </Button>
-                        )}
-                    </Box>
                 )}
-                    {!editable && (
-                        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.75, pointerEvents: 'none' }}>
-                            <Box sx={{
-                                width: 6, height: 6, borderRadius: '50%',
-                                backgroundColor: 'primary.main',
-                                animation: 'pulse-dot 1.2s ease-in-out infinite',
-                                '@keyframes pulse-dot': {
-                                    '0%, 100%': { opacity: 0.3 },
-                                    '50%': { opacity: 1 },
-                                },
-                            }} />
-                            <ShimmerText>{t('editor.generating')}</ShimmerText>
-                        </Box>
-                    )}
             </Box>
+            )}
             {/* Editor */}
             <Box sx={{
                 flex: 1,
-                overflowY: 'auto',
+                overflow: 'visible',
                 position: 'relative',
                 '& .tiptap': {
                     outline: 'none',
@@ -632,24 +773,15 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                     },
                 },
             }}>
-                <EditorContent editor={editor} />
-                {/* Shimmer overlay while generating */}
-                {!editable && (
-                    <Box sx={{
-                        position: 'absolute',
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: '40%',
-                        pointerEvents: 'none',
-                        background: `linear-gradient(to bottom, transparent 0%, ${alpha(theme.palette.background.paper, 0.6)} 40%, ${theme.palette.background.paper} 100%)`,
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        justifyContent: 'center',
-                        pb: 6,
-                    }}>
-                        <WritingIndicator label={t('editor.writingReport')} fontSize="0.85rem" />
-                    </Box>
+                {/* While inspecting, the report is still empty — show progress.
+                    While writing, a typewriter view reveals the streamed text
+                    smoothly; TipTap takes over (one parse) once it completes. */}
+                {isGenerating && generatingPhase !== 'writing' ? (
+                    <InspectingStatus steps={inspectionSteps} />
+                ) : isGenerating && generatingPhase === 'writing' ? (
+                    <StreamingText text={streamingText ?? ''} resolveChartImage={resolveChartImage} />
+                ) : (
+                    <EditorContent editor={editor} />
                 )}
             </Box>
         </Box>

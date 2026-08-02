@@ -87,7 +87,15 @@ describe('formatCellValue', () => {
     expect(formatCellValue(3600000, Type.Duration)).toBe('1h');
     expect(formatCellValue(90000, Type.Duration)).toBe('1m 30s');
     expect(formatCellValue(5000, Type.Duration)).toBe('5s');
-    expect(formatCellValue(0, Type.Duration)).toBe('0s');
+    expect(formatCellValue(0, Type.Duration)).toBe('0');
+  });
+
+  it('should not over-format sub-second Duration values', () => {
+    // Seconds-based columns (e.g. timestamp_sec: 0, 0.083, 0.167) must not
+    // collapse to "0s" — show the plain number instead.
+    expect(formatCellValue(0.083, Type.Duration)).toBe('0.083');
+    expect(formatCellValue(0.167, Type.Duration)).toBe('0.167');
+    expect(formatCellValue(1.5, Type.Duration)).toBe('1.5');
   });
 
   it('should pass through non-numeric Duration as string', () => {

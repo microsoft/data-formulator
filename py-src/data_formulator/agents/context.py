@@ -339,6 +339,30 @@ def handle_inspect_source_data(
     return content
 
 
+def _fetch_live_metadata(source_id: str, path: list) -> dict[str, Any] | None:
+    """Best-effort live ``get_metadata`` for a catalog table node.
+
+    Resolves the connected loader for ``source_id`` within the current request
+    identity and returns its live metadata dict (columns, types, row_count,
+    sample_rows). Returns ``None`` on any failure — callers must degrade to the
+    cache-only view. Never raises.
+    """
+    if not source_id or not path:
+        return None
+    try:
+        from data_formulator.data_connector import resolve_live_loader
+
+        loader = resolve_live_loader(source_id)
+        meta = loader.get_metadata(list(path))
+        return meta or None
+    except Exception:
+        logger.debug(
+            "Live metadata fallback failed for %s/%s", source_id, path,
+            exc_info=True,
+        )
+        return None
+
+
 def handle_read_catalog_metadata(
     source_id: str,
     table_key: str,
@@ -380,6 +404,22 @@ def handle_read_catalog_metadata(
 
     meta = target.get("metadata") or {}
 
+    # Live fallback (design 37 §4.1 / §9.2): when the cached entry is a table
+    # node whose columns were never synced (e.g. cluster-wide Kusto browse
+    # skips per-DB schema for perf), fetch live schema from the connected
+    # loader so the agent can actually reason about filters/aggregations.
+    # Always auto — no flag. Best-effort: any failure leaves the cache-only
+    # view intact. Results are NOT written back to the cache (we stay
+    # agentic, design 37 §3.6).
+    live_note = None
+    if not meta.get("columns") and target.get("path"):
+        live_meta = _fetch_live_metadata(source_id, target.get("path"))
+        if live_meta and live_meta.get("columns"):
+            merged = dict(meta)
+            merged.update(live_meta)
+            meta = merged
+            live_note = "live (fetched from source; not cached)"
+
     # Build LLM-friendly text output with field whitelist
     lines = [f"## {target.get('name', table_key)}"]
     lines.append(f"Source: {source_id}")
@@ -388,7 +428,7 @@ def handle_read_catalog_metadata(
     if target.get("path"):
         lines.append(f"Path: {' > '.join(target['path'])}")
 
-    status = meta.get("source_metadata_status", "not_synced")
+    status = live_note or meta.get("source_metadata_status", "not_synced")
     lines.append(f"Metadata status: {status}")
 
     for field in ("schema", "database", "row_count"):

@@ -6,12 +6,19 @@ import {
     Box,
     Typography,
     IconButton,
-    Link,
     Tooltip,
+    Menu,
+    MenuItem,
     useTheme,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { alpha } from '@mui/material/styles';
 import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/EditOutlined';
+import CheckIcon from '@mui/icons-material/Check';
+import DownloadIcon from '@mui/icons-material/Download';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ImageIcon from '@mui/icons-material/Image';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
@@ -20,6 +27,7 @@ import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from '../app/store';
 import { TiptapReportEditor } from './TiptapReportEditor';
 import { getCachedChart } from '../app/chartCache';
+import { floatingPillSx } from '../app/tokens';
 import { useTranslation } from 'react-i18next';
 
 export const ReportView: FC = () => {
@@ -48,14 +56,37 @@ export const ReportView: FC = () => {
     const isGenerating = currentReport?.status === 'generating';
 
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
-    const [copyButtonSuccess, setCopyButtonSuccess] = useState(false);
-    const [imageCopyButtonSuccess, setImageCopyButtonSuccess] = useState(false);
+    // Read-first: report opens as a clean text page; users opt into editing explicitly.
+    const [isEditMode, setIsEditMode] = useState(false);
+    // Download/share menu anchored to the floating download button.
+    const [downloadMenuAnchor, setDownloadMenuAnchor] = useState<null | HTMLElement>(null);
 
     const updateCachedReportImages = (chartId: string, blobUrl: string, width: number, height: number) => {
         setCachedReportImages(prev => ({
             ...prev,
             [chartId]: { url: blobUrl, width, height }
         }));
+    };
+
+    // The report content column is capped at 816px (see render below); leave a
+    // little breathing room so embedded charts never butt against the edge.
+    const REPORT_MAX_CHART_WIDTH = 720;
+
+    // Derive the embed dimensions for a chart from the size the rendering engine
+    // actually chose (stored on the cache entry). We preserve that aspect ratio
+    // and only scale down to fit the report column — never up — so a wide time
+    // series stays wide and a tall chart stays tall, instead of being forced
+    // into a fixed square. Falls back to the configured default when the engine
+    // size isn't available yet (e.g. transient thumbnail-only state on reload).
+    const embedDimsFor = (chartId: string): { width: number; height: number } => {
+        const cached = getCachedChart(chartId);
+        const natW = cached?.naturalWidth;
+        const natH = cached?.naturalHeight;
+        if (natW && natH) {
+            const scale = Math.min(REPORT_MAX_CHART_WIDTH / natW, 1);
+            return { width: Math.round(natW * scale), height: Math.round(natH * scale) };
+        }
+        return { width: config.defaultChartWidth, height: config.defaultChartHeight };
     };
 
     // Helper function to show messages using dfSlice
@@ -217,38 +248,10 @@ export const ReportView: FC = () => {
                     'text/plain': new Blob([clone.innerText], { type: 'text/plain' }),
                 }),
             ]);
-            setCopyButtonSuccess(true);
-            setTimeout(() => setCopyButtonSuccess(false), 2000);
+            showMessage(t('report.contentCopied'));
         } catch (e) {
             console.warn('Failed to copy report content:', e);
             showMessage(t('report.failedToCopyClipboard'), 'error');
-        }
-    };
-
-    const copyReportAsImage = async () => {
-        if (!canWriteToClipboard()) {
-            showMessage(getClipboardUnavailableMessage(), 'error');
-            return;
-        }
-
-        try {
-            const canvas = await renderReportToCanvas();
-            if (!canvas) return;
-            const blob = await canvasToBlob(canvas);
-            if (!blob) {
-                showMessage(t('report.failedToGenerateImage'), 'error');
-                return;
-            }
-
-            await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': blob })
-            ]);
-            showMessage(t('report.imageCopied'));
-            setImageCopyButtonSuccess(true);
-            setTimeout(() => setImageCopyButtonSuccess(false), 2000);
-        } catch (error) {
-            console.error('Error generating report image:', error);
-            showMessage(t('report.failedToGenerateReportImage'), 'error');
         }
     };
 
@@ -463,10 +466,12 @@ ${styles}
                 if (cached?.svg) {
                     const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
                     const blobUrl = URL.createObjectURL(blob);
-                    updateCachedReportImages(chartId, blobUrl, config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chartId);
+                    updateCachedReportImages(chartId, blobUrl, width, height);
                 } else if (chartThumbnails[chartId]) {
                     // Fall back to thumbnail
-                    updateCachedReportImages(chartId, chartThumbnails[chartId], config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chartId);
+                    updateCachedReportImages(chartId, chartThumbnails[chartId], width, height);
                 }
             });
         }
@@ -477,6 +482,17 @@ ${styles}
             loadReport(allGeneratedReports[0].id);
         }
     }, [currentReportId]);
+
+    // Always return to read mode when switching reports or while a report is generating.
+    useEffect(() => {
+        setIsEditMode(false);
+    }, [currentReportId]);
+
+    useEffect(() => {
+        if (isGenerating) {
+            setIsEditMode(false);
+        }
+    }, [isGenerating]);
 
     // Derive focused report ID from Redux state
     const focusedReportId = focusedId?.type === 'report' ? focusedId.reportId : undefined;
@@ -500,7 +516,7 @@ ${styles}
             const timer = setTimeout(() => loadReport(focusedReportId), 800);
             return () => clearTimeout(timer);
         }
-    }, [focusedReportId, charts, tables]);
+    }, [focusedReportId, charts, tables, chartThumbnails]);
 
     // Keep local content in sync with Redux during streaming (status === 'generating')
     useEffect(() => {
@@ -562,9 +578,11 @@ ${styles}
                 const cached = getCachedChart(chart.id);
                 if (cached?.svg) {
                     const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
-                    updateCachedReportImages(chart.id, URL.createObjectURL(blob), config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chart.id);
+                    updateCachedReportImages(chart.id, URL.createObjectURL(blob), width, height);
                 } else if (chartThumbnails[chart.id]) {
-                    updateCachedReportImages(chart.id, chartThumbnails[chart.id], config.defaultChartWidth, config.defaultChartHeight);
+                    const { width, height } = embedDimsFor(chart.id);
+                    updateCachedReportImages(chart.id, chartThumbnails[chart.id], width, height);
                 }
             });
         }
@@ -593,6 +611,25 @@ ${styles}
     let displayedReport = generatedReport;
     displayedReport = processReport(displayedReport);
 
+    // Raw markdown (fence stripped) for the lightweight typewriter view while streaming.
+    const rawReportMarkdown = (() => {
+        const m = generatedReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
+        return m ? m[1] : generatedReport;
+    })();
+
+    const downloadMenuItemSx = {
+        minHeight: 30,
+        px: 1.25,
+        py: 0.5,
+        fontSize: 12,
+        color: 'text.secondary',
+        '& .MuiSvgIcon-root': {
+            fontSize: 15,
+            mr: 0.75,
+            color: 'text.disabled',
+        },
+    };
+
     return (
         <Box sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <Box sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
@@ -606,29 +643,93 @@ ${styles}
                         flexDirection: 'column',
                         gap: 1,
                     }}>
-                        <Tooltip title={t('report.backToEditor')} placement="right">
-                            <IconButton
-                                size="small"
-                                onClick={() => dispatch(dfActions.setViewMode('editor'))}
-                                sx={{
-                                    backgroundColor: 'background.paper',
-                                    boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
-                                    '&:hover': { backgroundColor: 'action.hover' },
+                        {!isGenerating && currentReportId && (
+                            <Tooltip title={isEditMode ? t('report.doneEditing') : t('report.editReport')} placement="right">
+                                <IconButton
+                                    size="small"
+                                    onClick={() => setIsEditMode((v) => !v)}
+                                    sx={isEditMode ? {
+                                        ...floatingPillSx,
+                                        backgroundColor: 'primary.main',
+                                        color: 'primary.contrastText',
+                                        '&:hover': { backgroundColor: 'primary.dark', color: 'primary.contrastText' },
+                                    } : floatingPillSx}
+                                >
+                                    {isEditMode ? <CheckIcon sx={{ fontSize: 18 }} /> : <EditIcon sx={{ fontSize: 18 }} />}
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        {!isGenerating && currentReportId && (
+                            <Tooltip title={t('report.downloadAndShare')} placement="right">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => setDownloadMenuAnchor(e.currentTarget)}
+                                    sx={downloadMenuAnchor ? {
+                                        ...floatingPillSx,
+                                        color: 'primary.main',
+                                    } : floatingPillSx}
+                                >
+                                    <DownloadIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        <Menu
+                            anchorEl={downloadMenuAnchor}
+                            open={Boolean(downloadMenuAnchor)}
+                            onClose={() => setDownloadMenuAnchor(null)}
+                            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                            slotProps={{
+                                paper: {
+                                    sx: {
+                                        ml: 0.5,
+                                        borderRadius: '6px',
+                                        boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                        border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                                    }
+                                }
+                            }}
+                        >
+                            <MenuItem
+                                onClick={() => {
+                                    setDownloadMenuAnchor(null);
+                                    void copyReportContent();
                                 }}
+                                sx={downloadMenuItemSx}
                             >
-                                <ArrowBackIcon sx={{ fontSize: 18 }} />
-                            </IconButton>
-                        </Tooltip>
+                                <ContentCopyIcon />
+                                {t('report.copyContent')}
+                            </MenuItem>
+                            <MenuItem
+                                onClick={() => {
+                                    setDownloadMenuAnchor(null);
+                                    void downloadReportAsPng();
+                                }}
+                                sx={downloadMenuItemSx}
+                            >
+                                <ImageIcon />
+                                {t('report.saveAsImage')}
+                            </MenuItem>
+                            <MenuItem
+                                onClick={() => {
+                                    setDownloadMenuAnchor(null);
+                                    void exportReportAsPdf();
+                                }}
+                                sx={downloadMenuItemSx}
+                            >
+                                <PictureAsPdfIcon />
+                                {t('report.downloadPdf')}
+                            </MenuItem>
+                        </Menu>
                         {currentReportId && (
                             <Tooltip title={t('report.deleteReport')} placement="right">
                                 <IconButton
                                     size="small"
                                     onClick={(e) => deleteReport(currentReportId, e)}
                                     sx={{
-                                        backgroundColor: 'background.paper',
-                                        boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                        ...floatingPillSx,
                                         color: 'error.main',
-                                        '&:hover': { backgroundColor: 'error.50' },
+                                        '&:hover': { backgroundColor: 'error.50', color: 'error.main' },
                                     }}
                                 >
                                     <DeleteIcon sx={{ fontSize: 18 }} />
@@ -654,14 +755,13 @@ ${styles}
                         >
                             <TiptapReportEditor
                                 content={displayedReport}
-                                editable={!isGenerating}
+                                streamingText={rawReportMarkdown}
+                                resolveChartImage={(chartId) => cachedReportImages[chartId]}
+                                editable={isEditMode && !isGenerating}
+                                isGenerating={isGenerating}
+                                generatingPhase={currentReport?.generatingPhase}
+                                inspectionSteps={currentReport?.inspectionSteps}
                                 reportId={currentReportId}
-                                onCopyContent={currentReportId ? copyReportContent : undefined}
-                                onCopyImage={currentReportId ? copyReportAsImage : undefined}
-                                onDownloadPng={currentReportId ? downloadReportAsPng : undefined}
-                                onExportPdf={currentReportId ? exportReportAsPdf : undefined}
-                                copyContentSuccess={copyButtonSuccess}
-                                copyImageSuccess={imageCopyButtonSuccess}
                                 onUpdate={(html) => {
                                     if (currentReportId) {
                                         setGeneratedReport(html);
@@ -669,30 +769,6 @@ ${styles}
                                     }
                                 }}
                             />
-                            
-                            {/* Attribution */}
-                            <Typography sx={{ 
-                                px: 3, pb: 2,
-                                textAlign: 'center',
-                                fontSize: '0.7rem',
-                                color: 'text.disabled',
-                            }}>
-                                {t('report.createdWithAI')}{' '}
-                                <Link 
-                                    href="https://github.com/microsoft/data-formulator" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    sx={{ 
-                                        color: 'text.disabled',
-                                        textDecoration: 'none',
-                                        '&:hover': {
-                                            textDecoration: 'underline'
-                                        }
-                                    }}
-                                >
-                                    https://github.com/microsoft/data-formulator
-                                </Link>
-                            </Typography>
                         </Box>
                     </Box>
                 </Box>

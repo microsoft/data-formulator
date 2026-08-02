@@ -7,7 +7,13 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Mirror vite.config: advanced dev may point `flint-chart` at a local checkout
+      // via FLINT_CHART_LOCAL so tests exercise the same source. Unset → npm package.
+      ...(process.env.FLINT_CHART_LOCAL
+        ? { 'flint-chart': path.resolve(__dirname, process.env.FLINT_CHART_LOCAL) }
+        : {}),
     },
+    dedupe: ['vega', 'vega-lite', 'echarts', 'chart.js'],
   },
   test: {
     globals: true,

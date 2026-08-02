@@ -54,6 +54,9 @@
     "userManagedSection": "My models",
     "testing": "Testing…",
     "configured": "Configured",
-    "configuredMessage": "Server configured, click to verify connectivity"
+    "configuredMessage": "Server configured, click to verify connectivity",
+    "miniMode": "Mini agent mode",
+    "miniModeBadge": "mini mode",
+    "miniModeHint": "If your model is smaller or less capable (e.g. local or lightweight models), enable mini agent mode for a more reliable experience. It runs a single-turn analyst — one visualize or explain per request, with one optional data inspection."
   }
 }

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Empirical CDF — monotonic rising step curve (step-after), bottom-left to top-right -->
+  <polyline points="60,200 92,200 92,168 124,168 124,132 156,132 156,96 188,96 188,64 228,64"
+            fill="none" stroke="#76c6ff" stroke-width="5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

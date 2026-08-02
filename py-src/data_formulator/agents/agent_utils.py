@@ -494,7 +494,16 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100,
     def make_hashable(val):
         if val is None:
             return None
-        if isinstance(val, list):
+        # Dynamic/JSON columns (e.g. Kusto ``dynamic``, nested Mongo docs)
+        # surface as dict/list values, which are unhashable and break the
+        # ``set()`` de-dup below. Stringify those — and, as a catch-all, any
+        # other unhashable value (numpy arrays, etc.) — so summarization never
+        # crashes on structured columns.
+        if isinstance(val, (list, dict)):
+            return str(val)
+        try:
+            hash(val)
+        except TypeError:
             return str(val)
         return val
     

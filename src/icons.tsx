@@ -94,6 +94,7 @@ const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     bigquery: QueryEngineIcon,
     kusto: QueryEngineIcon,
     athena: QueryEngineIcon,
+    databricks: QueryEngineIcon,
     // BI / dashboards
     superset: DashboardIcon,
     // Local
@@ -127,6 +128,7 @@ const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     bigquery: 3, BigQueryDataLoader: 3,
     kusto: 3, KustoDataLoader: 3,
     athena: 3, AthenaDataLoader: 3,
+    databricks: 3, DatabricksDataLoader: 3,
     // Dashboard
     superset: 4, SupersetLoader: 4,
 };

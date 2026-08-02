@@ -58,6 +58,7 @@ class AthenaDataLoader(ExternalDataLoader):
     """
 
     DISPLAY_NAME = "Athena"
+    DESCRIPTION = "Query data in Amazon S3 using AWS Athena (Presto SQL)."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -67,10 +68,10 @@ class AthenaDataLoader(ExternalDataLoader):
             {"name": "aws_secret_access_key", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS secret access key (not required if using aws_profile)"},
             {"name": "aws_session_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS session token (required for temporary credentials)"},
             {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "tier": "connection", "description": "AWS region name"},
-            {"name": "workgroup", "type": "string", "required": False, "default": "primary", "tier": "connection", "description": "Athena workgroup name (output location is fetched from workgroup configuration)"},
-            {"name": "output_location", "type": "string", "required": False, "default": "", "tier": "connection", "description": "S3 output location for query results (e.g., s3://bucket/path/). If empty, uses workgroup configuration."},
+            {"name": "workgroup", "type": "string", "required": False, "default": "primary", "tier": "connection", "advanced": True, "description": "Athena workgroup name (output location is fetched from workgroup configuration)"},
+            {"name": "output_location", "type": "string", "required": False, "default": "", "tier": "connection", "advanced": True, "description": "S3 output location for query results (e.g., s3://bucket/path/). If empty, uses workgroup configuration."},
             {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Default database/catalog to use for queries"},
-            {"name": "query_timeout", "type": "number", "required": False, "default": 300, "tier": "connection", "description": "Query execution timeout in seconds (default: 300 = 5 minutes)"}
+            {"name": "query_timeout", "type": "number", "required": False, "default": 300, "tier": "connection", "advanced": True, "description": "Query execution timeout in seconds (default: 300 = 5 minutes)"}
         ]
         return params_list
 

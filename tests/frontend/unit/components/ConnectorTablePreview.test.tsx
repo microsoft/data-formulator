@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ConnectorTablePreview } from '../../../../src/components/ConnectorTablePreview';
 
@@ -42,42 +42,37 @@ describe('ConnectorTablePreview source metadata', () => {
             { name: 'region', type: 'STRING' },
             { name: 'total', type: 'NUMERIC', description: 'Sum of line items', expression: 'SUM(line_items.amount)' },
         ],
-        sampleRows: [],
+        sampleRows: [{ order_id: 1, region: 'US', total: 42 }],
         rowCount: 1,
         loading: false,
         alreadyLoaded: false,
         onLoad: vi.fn(),
     };
 
-    it('shows collapsed metadata header with status and column count', () => {
+    it('shows the source table description directly', () => {
         render(
             <ConnectorTablePreview
                 {...baseProps}
                 tableDescription="Orders from the warehouse"
-                metadataStatus="synced"
             />,
         );
 
-        expect(screen.getByText('Source metadata')).toBeDefined();
-        expect(screen.getByText('Synced')).toBeDefined();
-        expect(screen.getByText(/3\s+columns/)).toBeDefined();
+        expect(screen.getByText('Orders from the warehouse')).toBeDefined();
+        expect(screen.queryByText('Source metadata')).toBeNull();
     });
 
-    it('expands to show verbose_name and expression in column table', () => {
-        render(
+    it('uses descriptions on table headers without restoring the old metadata panel', () => {
+        const { container } = render(
             <ConnectorTablePreview
                 {...baseProps}
-                metadataStatus="synced"
             />,
         );
 
-        fireEvent.click(screen.getByText('Source metadata'));
-
-        expect(screen.getByText('order_id')).toBeDefined();
-        expect(screen.getByText('(订单编号)')).toBeDefined();
-        expect(screen.getByText('Primary order key')).toBeDefined();
-
-        expect(screen.getByText('total')).toBeDefined();
-        expect(screen.getByText('SUM(line_items.amount)')).toBeDefined();
+        const orderHeader = Array.from(container.querySelectorAll('th'))
+            .find(header => header.textContent === 'order_id');
+        expect(orderHeader).toBeDefined();
+        expect(orderHeader?.getAttribute('title')).toBeNull();
+        expect(screen.queryByText('(订单编号)')).toBeNull();
+        expect(screen.queryByText('SUM(line_items.amount)')).toBeNull();
     });
 });

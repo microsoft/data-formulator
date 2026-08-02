@@ -53,7 +53,7 @@ interface RenderJob {
  */
 async function renderHeadless(
     vlSpec: any,
-): Promise<{ svg: string; pngDataUrl: string }> {
+): Promise<{ svg: string; pngDataUrl: string; width: number; height: number }> {
     // Compile Vega-Lite → Vega spec
     const vgSpec = compile(vlSpec as any).spec;
 
@@ -72,10 +72,31 @@ async function renderHeadless(
         view.toImageURL('png', 2),  // scale factor 2 for retina
     ]);
 
+    // Capture the intrinsic size the engine laid the chart out at (includes
+    // axes / legends / titles), so consumers can preserve its true aspect
+    // ratio instead of forcing a fixed box.
+    const { width, height } = extractSvgSize(svg);
+
     // Finalize the view to free resources
     view.finalize();
 
-    return { svg, pngDataUrl };
+    return { svg, pngDataUrl, width, height };
+}
+
+/**
+ * Extract the intrinsic pixel dimensions from a Vega-rendered SVG string.
+ * Vega emits `<svg ... width="W" height="H" ...>`; we read those so the
+ * chart's engine-decided aspect ratio is preserved downstream. Falls back to
+ * the base render size if the attributes can't be parsed.
+ */
+function extractSvgSize(svg: string): { width: number; height: number } {
+    const tag = svg.match(/<svg\b[^>]*>/i)?.[0] ?? '';
+    const w = tag.match(/\bwidth="([\d.]+)"/);
+    const h = tag.match(/\bheight="([\d.]+)"/);
+    return {
+        width: w ? Math.round(parseFloat(w[1])) : FULL_WIDTH,
+        height: h ? Math.round(parseFloat(h[1])) : FULL_HEIGHT,
+    };
 }
 
 /**
@@ -214,6 +235,8 @@ export const ChartRenderService: FC = () => {
                 thumbnailDataUrl: thumbnailPng,
                 fullPngDataUrl: fullResult.pngDataUrl,
                 specKey: cacheKey,
+                naturalWidth: fullResult.width,
+                naturalHeight: fullResult.height,
             };
             setCachedChart(chart.id, entry);
 

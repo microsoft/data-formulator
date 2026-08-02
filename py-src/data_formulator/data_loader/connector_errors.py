@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from data_formulator.data_loader.external_data_loader import ConnectorParamError
@@ -41,6 +42,21 @@ def classify_connector_error(error: Exception, *, operation: str = "") -> Connec
     safe_detail = sanitize_error_message(raw_detail)
     text = raw_detail.lower()
     http_status = _http_status(chain)
+
+    firewall_match = re.search(
+        r"client with ip address ['\"]?([0-9a-f:.]+)['\"]? is not allowed to access the server",
+        raw_detail,
+        flags=re.IGNORECASE,
+    )
+    if firewall_match:
+        client_ip = firewall_match.group(1)
+        return ConnectorErrorInfo(
+            ErrorCode.DB_FIREWALL_BLOCKED,
+            f"Azure SQL blocked this network address ({client_ip}). Ask the "
+            "database administrator to add this IP to the SQL server firewall, "
+            "then try again.",
+            detail=safe_detail,
+        )
 
     if any(isinstance(exc, ConnectorParamError) for exc in chain):
         return ConnectorErrorInfo(

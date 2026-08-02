@@ -6,6 +6,7 @@ import { useSelector } from 'react-redux';
 import { DataFormulatorState } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
 import { handleApiError } from './errorHandler';
+import { DF_STATE_VERSION } from './stateMigrations';
 
 /**
  * Fields excluded from auto-save (secrets / ephemeral / fetched-on-startup).
@@ -15,8 +16,11 @@ const EXCLUDED_FIELDS = new Set([
     'models', 'selectedModelId', 'testedModels',
     'dataLoaderConnectParams', 'identity', 'serverConfig',
     // Transient fields that shouldn't trigger or be included in saves
-    'chartSynthesisInProgress', 'chartInsightInProgress',
+    'chartSynthesisInProgress',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
+    // Starter-questions status is transient (loading/error); the questions
+    // themselves are persisted, but the fetch status should reset on reload.
+    'starterQuestionsStatus',
     // Thumbnails are derived from chart specs + table data; re-rendered
     // from the module cache on reload, so don't waste bandwidth saving them.
     'chartThumbnails',
@@ -36,6 +40,9 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
             result[key] = value;
         }
     }
+    // Stamp the schema version so `migrateState` can upgrade this payload on a
+    // future load (see stateMigrations.ts). Unversioned = 0.
+    result.__stateVersion = DF_STATE_VERSION;
     return result;
 }
 

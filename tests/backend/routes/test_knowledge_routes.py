@@ -167,7 +167,7 @@ class TestKnowledgeDelete:
 
 class TestKnowledgeSearch:
     def test_search_returns_results(self, client, tmp_path):
-        exp_dir = tmp_path / "knowledge" / "experiences" / "finance"
+        exp_dir = tmp_path / "knowledge" / "workflows" / "finance"
         exp_dir.mkdir(parents=True, exist_ok=True)
         (exp_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
 
@@ -191,7 +191,7 @@ class TestKnowledgeSearch:
         assert data["status"] == "error"
 
     def test_search_filters_by_category(self, client, tmp_path):
-        exp_dir = tmp_path / "knowledge" / "experiences" / "finance"
+        exp_dir = tmp_path / "knowledge" / "workflows" / "finance"
         exp_dir.mkdir(parents=True, exist_ok=True)
         (exp_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
 
@@ -202,7 +202,7 @@ class TestKnowledgeSearch:
         assert len(data["data"]["results"]) == 0
 
 
-SESSION_EXPERIENCE_CONTEXT = {
+SESSION_WORKFLOW_CONTEXT = {
     "context_id": "ws-1",
     "workspace_id": "ws-1",
     "workspace_name": "Gasoline prices 2024",
@@ -233,6 +233,7 @@ SESSION_EXPERIENCE_CONTEXT = {
 DISTILLED_MD = """\
 ---
 subtitle: monthly sales aggregation
+filename: monthly sales
 tags: [sales, time-series]
 created: 2026-05-06
 updated: 2026-05-06
@@ -251,37 +252,37 @@ Beware of timezone-induced bucket drift.
 """
 
 
-class TestDistillExperience:
-    def test_distill_experience_from_context(self, client, tmp_path):
+class TestDistillWorkflow:
+    def test_distill_workflow_from_context(self, client, tmp_path):
         with patch("data_formulator.routes.agents.get_client", return_value=object()), \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
-                 "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run",
+                 "data_formulator.agents.agent_workflow_distill."
+                 "WorkflowDistillAgent.run",
                  return_value=DISTILLED_MD,
              ) as run:
-            resp = client.post("/api/knowledge/distill-experience", json={
-                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+            resp = client.post("/api/knowledge/distill-workflow", json={
+                "workflow_context": SESSION_WORKFLOW_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
 
         data = resp.get_json()
         assert data["status"] == "success"
-        assert data["data"]["category"] == "experiences"
-        assert (tmp_path / "knowledge" / "experiences" / data["data"]["path"]).exists()
+        assert data["data"]["category"] == "workflows"
+        assert (tmp_path / "knowledge" / "workflows" / data["data"]["path"]).exists()
         assert not (tmp_path / "agent-logs").exists()
         run.assert_called_once()
 
-    def test_distill_experience_llm_timeout_returns_structured_error(self, client):
+    def test_distill_workflow_llm_timeout_returns_structured_error(self, client):
         with patch("data_formulator.routes.agents.get_client", return_value=object()), \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
-                 "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run",
+                 "data_formulator.agents.agent_workflow_distill."
+                 "WorkflowDistillAgent.run",
                  side_effect=TimeoutError("request timed out"),
              ):
-            resp = client.post("/api/knowledge/distill-experience", json={
-                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+            resp = client.post("/api/knowledge/distill-workflow", json={
+                "workflow_context": SESSION_WORKFLOW_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
 
@@ -291,55 +292,60 @@ class TestDistillExperience:
         assert data["error"]["code"] == "LLM_TIMEOUT"
         assert data["error"]["retry"] is True
 
-    def test_distill_experience_missing_context(self, client):
-        resp = client.post("/api/knowledge/distill-experience", json={
+    def test_distill_workflow_missing_context(self, client):
+        resp = client.post("/api/knowledge/distill-workflow", json={
             "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
         })
         data = resp.get_json()
         assert data["status"] == "error"
 
-    def test_distill_experience_missing_threads(self, client):
-        bad_context = {k: v for k, v in SESSION_EXPERIENCE_CONTEXT.items() if k != "threads"}
-        resp = client.post("/api/knowledge/distill-experience", json={
-            "experience_context": bad_context,
+    def test_distill_workflow_missing_threads(self, client):
+        bad_context = {k: v for k, v in SESSION_WORKFLOW_CONTEXT.items() if k != "threads"}
+        resp = client.post("/api/knowledge/distill-workflow", json={
+            "workflow_context": bad_context,
             "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
         })
         data = resp.get_json()
         assert data["status"] == "error"
 
-    def test_distill_experience_missing_workspace(self, client):
-        bad_context = {k: v for k, v in SESSION_EXPERIENCE_CONTEXT.items()
+    def test_distill_workflow_missing_workspace(self, client):
+        bad_context = {k: v for k, v in SESSION_WORKFLOW_CONTEXT.items()
                        if k not in ("workspace_id", "workspace_name")}
-        resp = client.post("/api/knowledge/distill-experience", json={
-            "experience_context": bad_context,
+        resp = client.post("/api/knowledge/distill-workflow", json={
+            "workflow_context": bad_context,
             "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
         })
         data = resp.get_json()
         assert data["status"] == "error"
 
-    def test_distill_session_overrides_title_with_workspace_name(self, client, tmp_path):
-        """Session-scoped distillation composes 'Experience from <name>: <subtitle>'."""
+    def test_distill_session_uses_descriptive_title(self, client, tmp_path):
+        """Session-scoped distillation uses the agent subtitle as the title."""
         with patch("data_formulator.routes.agents.get_client", return_value=object()), \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
-                 "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run",
+                 "data_formulator.agents.agent_workflow_distill."
+                 "WorkflowDistillAgent.run",
                  return_value=DISTILLED_MD,
              ):
-            resp = client.post("/api/knowledge/distill-experience", json={
-                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+            resp = client.post("/api/knowledge/distill-workflow", json={
+                "workflow_context": SESSION_WORKFLOW_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
 
         data = resp.get_json()
         assert data["status"] == "success"
         path = data["data"]["path"]
-        # Filename is derived from the workspace name, not the LLM subtitle.
-        assert path == "gasoline-prices-2024.md"
-        saved = (tmp_path / "knowledge" / "experiences" / path).read_text(encoding="utf-8")
-        assert "title: 'Experience from Gasoline prices 2024: monthly sales aggregation'" in saved \
-            or "title: \"Experience from Gasoline prices 2024: monthly sales aggregation\"" in saved \
-            or "title: Experience from Gasoline prices 2024: monthly sales aggregation" in saved
+        # Filename is derived from the short agent-emitted `filename` hint,
+        # not the long descriptive title.
+        assert path == "monthly-sales.md"
+        saved = (tmp_path / "knowledge" / "workflows" / path).read_text(encoding="utf-8")
+        assert "title: monthly sales aggregation" in saved \
+            or "title: 'monthly sales aggregation'" in saved \
+            or "title: \"monthly sales aggregation\"" in saved
+        # No legacy "Workflow from <name>:" prefix on the title.
+        assert "Workflow from" not in saved
+        # The filename hint is consumed, not persisted in the front matter.
+        assert "filename:" not in saved
         # Workspace stamps are present so the file can be looked up later.
         assert "source_workspace_id: ws-1" in saved
         assert "source_workspace_name: Gasoline prices 2024" in saved
@@ -347,42 +353,46 @@ class TestDistillExperience:
         assert "## Method" in saved
 
     def test_distill_session_upserts_existing_workspace_file(self, client, tmp_path):
-        """Re-distilling the same workspace overwrites the same file."""
+        """Re-distilling the same workspace replaces the prior file."""
+        second_md = DISTILLED_MD.replace(
+            "filename: monthly sales",
+            "filename: annual revenue",
+        )
         with patch("data_formulator.routes.agents.get_client", return_value=object()), \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
-                 "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run",
-                 return_value=DISTILLED_MD,
+                 "data_formulator.agents.agent_workflow_distill."
+                 "WorkflowDistillAgent.run",
+                 side_effect=[DISTILLED_MD, second_md],
              ):
-            client.post("/api/knowledge/distill-experience", json={
-                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+            client.post("/api/knowledge/distill-workflow", json={
+                "workflow_context": SESSION_WORKFLOW_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
-            # Re-distill: workspace renamed, so the slug changes — old file
-            # should be removed in favour of the new one.
-            renamed = {**SESSION_EXPERIENCE_CONTEXT, "workspace_name": "Diesel 2024"}
-            resp = client.post("/api/knowledge/distill-experience", json={
-                "experience_context": renamed,
+            # Re-distill: the filename hint changes, so the slug changes — old
+            # file should be removed in favour of the new one (matched by
+            # source_workspace_id).
+            resp = client.post("/api/knowledge/distill-workflow", json={
+                "workflow_context": SESSION_WORKFLOW_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
 
         data = resp.get_json()
         assert data["status"] == "success"
         new_path = data["data"]["path"]
-        exp_dir = tmp_path / "knowledge" / "experiences"
+        exp_dir = tmp_path / "knowledge" / "workflows"
         # Stale slug deleted, new slug present.
-        assert not (exp_dir / "gasoline-prices-2024.md").exists()
+        assert not (exp_dir / "monthly-sales.md").exists()
         assert (exp_dir / new_path).exists()
-        assert new_path == "diesel-2024.md"
+        assert new_path == "annual-revenue.md"
 
-    def test_distill_session_skips_subtitle_double_prefix(self, client, tmp_path):
-        """Update-mode runs that re-emit a prefixed title don't double-prefix."""
-        # Simulate a prior run where the LLM echoed an Experience-prefixed title
+    def test_distill_session_strips_legacy_title_prefix(self, client, tmp_path):
+        """Update-mode runs strip any legacy 'Workflow from <name>:' prefix."""
+        # Simulate a prior run where the LLM echoed a Workflow-prefixed title
         # without a subtitle.
         prior_md = (
             "---\n"
-            "title: 'Experience from Gasoline prices 2024: prior insight'\n"
+            "title: 'Workflow from Gasoline prices 2024: prior insight'\n"
             "tags: [a]\n"
             "created: 2026-05-06\n"
             "updated: 2026-05-06\n"
@@ -392,17 +402,18 @@ class TestDistillExperience:
         with patch("data_formulator.routes.agents.get_client", return_value=object()), \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
-                 "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run",
+                 "data_formulator.agents.agent_workflow_distill."
+                 "WorkflowDistillAgent.run",
                  return_value=prior_md,
              ):
-            resp = client.post("/api/knowledge/distill-experience", json={
-                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+            resp = client.post("/api/knowledge/distill-workflow", json={
+                "workflow_context": SESSION_WORKFLOW_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
 
         data = resp.get_json()
         assert data["status"] == "success"
-        saved = (tmp_path / "knowledge" / "experiences" / data["data"]["path"]).read_text(encoding="utf-8")
-        # The "Experience from ..." prefix is stripped before re-prefixing.
-        assert saved.count("Experience from") == 1
+        saved = (tmp_path / "knowledge" / "workflows" / data["data"]["path"]).read_text(encoding="utf-8")
+        # The legacy "Workflow from ..." prefix is fully stripped.
+        assert "Workflow from" not in saved
+        assert "prior insight" in saved

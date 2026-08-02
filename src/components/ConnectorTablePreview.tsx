@@ -80,7 +80,12 @@ export interface ConnectorTablePreviewProps {
 
     enableFilters?: boolean;
 
-    onLoad: (importOptions: Record<string, any>) => void;
+    /** Hide the load/filter footer entirely — the preview then shows only
+     *  table metadata (used when loading is driven from elsewhere, e.g. a
+     *  batch action bar). */
+    hideLoadActions?: boolean;
+
+    onLoad?: (importOptions: Record<string, any>) => void;
     /** Optional: load the table into a brand-new workspace session. When
      *  provided, a secondary "Load in new session" button appears next to
      *  the primary Load button. */
@@ -154,6 +159,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     loading,
     alreadyLoaded,
     enableFilters = true,
+    hideLoadActions = false,
     onLoad,
     onLoadInNewSession,
     onUnload,
@@ -284,7 +290,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
         if (validFilters.length > 0) {
             opts.source_filters = validFilters;
         }
-        onLoad(opts);
+        onLoad?.(opts);
     }, [filters, columns, onLoad]);
 
     const handleLoadInNewSession = useCallback(() => {
@@ -593,7 +599,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 (otherwise the popover would grow when columns arrive).
                 The Add-filter button is disabled until columns are known
                 and the Preview button uses the same isLoading guard. */}
-            {enableFilters && !alreadyLoaded && (
+            {enableFilters && !alreadyLoaded && !hideLoadActions && (
                 <Box sx={{ mt: 0.75, mb: 0.5, flexShrink: 0 }}>
                     {filters.map((f, idx) => {
                         const colMeta = columns.find(c => c.name === f.column);
@@ -670,7 +676,8 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 </Box>
             )}
 
-            {/* Footer — load buttons */}
+            {/* Footer — load buttons (hidden when loading is driven externally) */}
+            {!hideLoadActions && (
             <Box sx={{ mt: 1, pt: 1, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {alreadyLoaded ? (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -721,6 +728,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     </Box>
                 )}
             </Box>
+            )}
         </Box>
     );
 };

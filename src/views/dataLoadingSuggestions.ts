@@ -6,7 +6,6 @@
 
 import { TFunction } from 'i18next';
 import React from 'react';
-import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
@@ -22,6 +21,12 @@ export interface DataLoadingSuggestion {
     onClick: () => void;
 }
 
+export interface SuggestionPayload {
+    text: string;
+    images: string[];
+    attachments: string[];
+}
+
 export interface BuildSuggestionsArgs {
     t: TFunction;
     setInput: (value: string) => void;
@@ -29,20 +34,26 @@ export interface BuildSuggestionsArgs {
     setAttachments: (names: string[]) => void;
     /** Optional hook that workspaces use to make sure a session exists before uploading. */
     ensureActiveWorkspace?: () => void;
+    /**
+     * Optional auto-run hook. When provided, suggestions submit the
+     * complete payload immediately (after any required async upload /
+     * data-URL prep) instead of just pre-filling the input. Callers
+     * typically wire this to a redux pending-submission dispatch so the
+     * payload survives the parent→child handoff without prop races.
+     * When absent, the suggestion behaves like a paste: it only fills
+     * the input fields via the `set*` callbacks.
+     */
+    requestAutoSend?: (payload: SuggestionPayload) => void;
 }
 
 const EXCEL_SAMPLE_NAME = 'climate-gas-indicator.xlsx';
 
 export function buildDataLoadingSuggestions(
-    { t, setInput, setImages, setAttachments, ensureActiveWorkspace }: BuildSuggestionsArgs,
+    { t, setInput, setImages, setAttachments, ensureActiveWorkspace, requestAutoSend }: BuildSuggestionsArgs,
 ): DataLoadingSuggestion[] {
-    const kindAsk = t('upload.agentChatSuggestion.kind.ask', { defaultValue: 'ask' });
     const kindFind = t('upload.agentChatSuggestion.kind.find', { defaultValue: 'find' });
     const kindExtract = t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' });
 
-    const askLabel = t('upload.agentChatSuggestion.askConnected', {
-        defaultValue: 'What datasets do we have from connected sources?',
-    });
     const findLabel = t('upload.agentChatSuggestion.findCPI', {
         defaultValue: 'Help me load consumer price index data',
     });
@@ -61,37 +72,32 @@ export function buildDataLoadingSuggestions(
 
     const iconSx = { fontSize: 14 };
 
+    // Common: fill the input fields AND (if auto-run is enabled) submit
+    // the payload. Centralising the dual behaviour keeps every
+    // suggestion below short and consistent.
+    const fillAndMaybeSend = (payload: SuggestionPayload) => {
+        setImages(payload.images);
+        setAttachments(payload.attachments);
+        setInput(payload.text);
+        requestAutoSend?.(payload);
+    };
+
     return [
-        {
-            kind: kindAsk,
-            label: askLabel,
-            icon: React.createElement(QuestionAnswerOutlinedIcon, { sx: iconSx }),
-            onClick: () => {
-                setImages([]);
-                setAttachments([]);
-                setInput(askLabel);
-            },
-        },
         {
             kind: kindFind,
             label: findLabel,
             icon: React.createElement(SearchIcon, { sx: iconSx }),
-            onClick: () => {
-                setImages([]);
-                setAttachments([]);
-                setInput(findLabel);
-            },
+            onClick: () => fillAndMaybeSend({ text: findLabel, images: [], attachments: [] }),
         },
         {
             kind: kindExtract,
             label: extractExcelLabel,
             icon: React.createElement(TableChartOutlinedIcon, { sx: iconSx }),
             onClick: () => {
-                // Surface the attachment chip synchronously so it is
-                // always present when the user hits send, even if the
-                // upload below is still mid-flight. The chip is what
-                // gets serialised into the outgoing `[Uploaded: name]`
-                // mention and ultimately the chat bubble.
+                // Surface the attachment chip / input synchronously so
+                // it is visible during the async upload. The auto-send
+                // (if enabled) waits until the upload completes so the
+                // backend can actually find the scratch file.
                 setImages([]);
                 setAttachments([EXCEL_SAMPLE_NAME]);
                 setInput(extractExcelLabel);
@@ -108,6 +114,18 @@ export function buildDataLoadingSuggestions(
                             method: 'POST', body: formData,
                         });
                     })
+                    .then(({ data }) => {
+                        // The backend hash-suffixes the filename, so use the
+                        // server-assigned name for the chip and the mention
+                        // — otherwise the agent looks for a file that the
+                        // upload renamed and reports it missing.
+                        const scratchName = (data?.path || `scratch/${EXCEL_SAMPLE_NAME}`).replace(/^scratch\//, '');
+                        setAttachments([scratchName]);
+                        requestAutoSend?.({
+                            text: extractExcelLabel, images: [],
+                            attachments: [scratchName],
+                        });
+                    })
                     .catch(err => console.error('Sample Excel upload failed:', err));
             },
         },
@@ -116,16 +134,21 @@ export function buildDataLoadingSuggestions(
             label: extractImageLabel,
             icon: React.createElement(ImageOutlinedIcon, { sx: iconSx }),
             onClick: () => {
+                // Image needs to be read into a data URL before we can
+                // surface it as a chip or send it. Defer auto-send until
+                // the FileReader resolves.
                 fetch(exampleImageTable)
                     .then(res => res.blob())
                     .then(blob => {
                         const reader = new FileReader();
                         reader.onload = () => {
-                            if (reader.result) {
-                                setImages([reader.result as string]);
-                                setAttachments([]);
-                                setInput(extractImageLabel);
-                            }
+                            if (!reader.result) return;
+                            const dataUrl = reader.result as string;
+                            fillAndMaybeSend({
+                                text: extractImageLabel,
+                                images: [dataUrl],
+                                attachments: [],
+                            });
                         };
                         reader.readAsDataURL(blob);
                     });
@@ -135,11 +158,51 @@ export function buildDataLoadingSuggestions(
             kind: kindExtract,
             label: extractTextLabel,
             icon: React.createElement(DescriptionOutlinedIcon, { sx: iconSx }),
-            onClick: () => {
-                setImages([]);
-                setAttachments([]);
-                setInput(extractTextPrompt);
-            },
+            onClick: () => fillAndMaybeSend({ text: extractTextPrompt, images: [], attachments: [] }),
+        },
+    ];
+}
+
+export interface DataLoadingQuickAction {
+    kind: string;
+    label: string;
+    onClick: () => void;
+}
+
+/**
+ * A short list of one-tap "quick actions" surfaced as pills above the
+ * composer (distinct from the `focusSuggestions` dropdown, which holds
+ * example prompts). These are the highest-intent entry points — connect a
+ * source, or see what connected data is already available. Rendered without
+ * icons to keep the empty-state / front page clean.
+ */
+export function buildDataLoadingQuickActions(
+    { t, setInput, setImages, setAttachments, requestAutoSend }: BuildSuggestionsArgs,
+): DataLoadingQuickAction[] {
+    const connectLabel = t('upload.agentChatQuickAction.connect', {
+        defaultValue: 'Help me connect to my data source',
+    });
+    const askLabel = t('upload.agentChatQuickAction.askConnected', {
+        defaultValue: 'What data do we have from connected sources?',
+    });
+
+    const fillAndSend = (text: string) => {
+        setImages([]);
+        setAttachments([]);
+        setInput(text);
+        requestAutoSend?.({ text, images: [], attachments: [] });
+    };
+
+    return [
+        {
+            kind: 'connect',
+            label: connectLabel,
+            onClick: () => fillAndSend(connectLabel),
+        },
+        {
+            kind: 'ask',
+            label: askLabel,
+            onClick: () => fillAndSend(askLabel),
         },
     ];
 }

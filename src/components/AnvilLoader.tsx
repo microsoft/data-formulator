@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { useEffect, useState } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, SxProps, Theme, Typography } from '@mui/material';
 import { keyframes } from '@mui/system';
 
 const ROWS = 3;
@@ -69,28 +69,40 @@ function BinaryGrid() {
     );
 }
 
-export function AnvilLoader() {
+export interface AnvilLoaderProps {
+    /** Override container height. Defaults to `'100vh'` (full-screen). */
+    height?: string | number;
+    /** Optional text shown below the binary grid. When omitted no text is rendered. */
+    label?: React.ReactNode;
+    /** Extra sx applied to the outermost container. */
+    sx?: SxProps<Theme>;
+}
+
+export function AnvilLoader({ height = '100vh', label, sx }: AnvilLoaderProps) {
     return (
         <Box sx={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', height: '100vh', gap: 3,
+            justifyContent: 'center', height, gap: 3,
             userSelect: 'none',
+            ...sx as any,
         }}>
             <BinaryGrid />
-            <Typography
-                variant="body2"
-                sx={{
-                    color: 'text.secondary',
-                    fontFamily: '"Courier New", monospace',
-                    letterSpacing: 3,
-                    fontSize: '0.75rem',
-                    fontWeight: 400,
-                    animation: `${pulse} 2.5s ease-in-out infinite`,
-                    textTransform: 'uppercase',
-                }}
-            >
-                loading data formulator...
-            </Typography>
+            {label !== undefined && (
+                <Typography
+                    variant="body2"
+                    sx={{
+                        color: 'text.secondary',
+                        fontFamily: '"Courier New", monospace',
+                        letterSpacing: 3,
+                        fontSize: '0.75rem',
+                        fontWeight: 400,
+                        animation: `${pulse} 2.5s ease-in-out infinite`,
+                        textTransform: 'uppercase',
+                    }}
+                >
+                    {label}
+                </Typography>
+            )}
         </Box>
     );
 }

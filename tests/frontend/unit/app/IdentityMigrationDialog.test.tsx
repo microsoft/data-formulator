@@ -64,11 +64,11 @@ function setupAnonymousWorkspaces(count: number) {
     mockFetchWithIdentity.mockImplementation(async (url: string) => {
         if (url.includes("/api/sessions/list")) {
             return jsonResponse({
-                status: "ok",
-                sessions: Array.from({ length: count }, (_, i) => ({ id: `ws-${i}` })),
+                status: "success",
+                data: { sessions: Array.from({ length: count }, (_, i) => ({ id: `ws-${i}` })) },
             });
         }
-        return jsonResponse({ status: "ok" });
+        return jsonResponse({ status: "success", data: {} });
     });
 }
 
@@ -197,8 +197,8 @@ describe("User clicks 'Import Data'", () => {
         mockFetchWithIdentity.mockImplementation(async (url: string) => {
             if (url.includes("/api/sessions/list")) {
                 return jsonResponse({
-                    status: "ok",
-                    sessions: [{ id: "ws-0" }, { id: "ws-1" }],
+                    status: "success",
+                    data: { sessions: [{ id: "ws-0" }, { id: "ws-1" }] },
                 });
             }
             if (url.includes("/api/sessions/migrate")) {
@@ -206,7 +206,7 @@ describe("User clicks 'Import Data'", () => {
                     resolveMigrate = resolve;
                 });
             }
-            return jsonResponse({ status: "ok" });
+            return jsonResponse({ status: "success", data: {} });
         });
 
         render(<IdentityMigrationDialog oldBrowserId="abc-123" onDone={vi.fn()} />);
@@ -224,7 +224,7 @@ describe("User clicks 'Import Data'", () => {
         });
 
         await act(async () => {
-            resolveMigrate(jsonResponse({ status: "ok", moved: ["ws-0", "ws-1"] }));
+            resolveMigrate(jsonResponse({ status: "success", data: { moved: ["ws-0", "ws-1"] } }));
         });
 
         await waitFor(() => {

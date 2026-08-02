@@ -19,6 +19,7 @@ from data_formulator.data_loader.external_data_loader import (
     _esc_id,
     _esc_str,
 )
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class PostgreSQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "PostgreSQL"
+    DESCRIPTION = "Connect to a PostgreSQL database server to query tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -33,7 +35,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             {"name": "user", "type": "string", "required": True, "default": "postgres", "tier": "auth", "description": "PostgreSQL username"}, 
             {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "PostgreSQL host"}, 
-            {"name": "port", "type": "string", "required": False, "default": "5432", "tier": "connection", "description": "PostgreSQL port"},
+            {"name": "port", "type": "string", "required": False, "default": "5432", "tier": "connection", "advanced": True, "description": "PostgreSQL port"},
             {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Database name (leave empty to browse all databases)"}
         ]
         return params_list
@@ -244,6 +246,25 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         logger.info(f"Fetched {arrow_table.num_rows} rows from PostgreSQL")
         
         return arrow_table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to PostgreSQL and run it server-side."""
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        db, schema, table = self._resolve_source_table(
+            ".".join(str(p) for p in path)
+        )
+        try:
+            relation = (
+                f"{probe_utils.quote_ident(schema, probe_utils.POSTGRES)}."
+                f"{probe_utils.quote_ident(table, probe_utils.POSTGRES)}"
+            )
+        except ValueError as exc:
+            return {"error": f"invalid table identifier: {exc}"}
+        execute = (lambda sql: self._read_sql_on(sql, db)) if db else self._read_sql
+        return probe_utils.probe_via_native_sql(
+            query, relation=relation, dialect=probe_utils.POSTGRES, execute=execute,
+        )
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List available tables from PostgreSQL.

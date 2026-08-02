@@ -51,8 +51,6 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
-    Switch,
-    FormControlLabel,
 } from '@mui/material';
 
 
@@ -69,7 +67,7 @@ import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
 import GridViewIcon from '@mui/icons-material/GridView';
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
-import SettingsIcon from '@mui/icons-material/Settings';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import {
     createBrowserRouter,
     Link as RouterLink,
@@ -79,7 +77,6 @@ import {
     useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
-import ChartGallery from '../gallery/ChartGallery';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
@@ -87,6 +84,7 @@ import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
 import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
+import { LogViewerDialog } from '../views/LogViewerDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -109,7 +107,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
 import { useTranslation } from 'react-i18next';
-import { syncVegaLocale } from '../lib/vega-locale';
+import { syncVegaLocale } from '../i18n/vega-locale';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -209,12 +207,16 @@ const LanguageSwitcher: React.FC = () => {
             sx={{ 
                 height: '28px', 
                 my: 'auto',
-                mr: 1,
                 '& .MuiToggleButton-root': {
                     textTransform: 'none',
                     fontSize: '12px',
                     py: 0,
                     minWidth: '40px',
+                    color: 'text.secondary',
+                    borderColor: 'divider',
+                    '&.Mui-selected': {
+                        color: 'text.primary',
+                    },
                 },
             }}
         >
@@ -468,8 +470,18 @@ const ExitSessionButton: React.FC = () => {
                 size="small"
                 variant="text"
                 onClick={handleExit}
-                startIcon={<LogoutIcon sx={{ fontSize: 18 }} />}
-                sx={{ textTransform: 'none', color: 'text.secondary' }}
+                startIcon={<LogoutIcon sx={{ fontSize: 16 }} />}
+                sx={{
+                    textTransform: 'none',
+                    fontSize: '13px',
+                    fontWeight: 400,
+                    px: 1.5,
+                    py: 0.5,
+                    minWidth: 'auto',
+                    lineHeight: 1.5,
+                    color: 'text.secondary',
+                    '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                }}
             >
                 {t('workspace.exit', { defaultValue: 'Exit' })}
             </Button>
@@ -490,7 +502,7 @@ const ConfigDialog: React.FC = () => {
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 180);
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
-    const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
+    const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 1.5);
     const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? rowLimitDefault);
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
@@ -505,9 +517,20 @@ const ConfigDialog: React.FC = () => {
 
     return (
         <>
-            <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
-                {t('app.settings')}
-            </Button>
+            <Tooltip title={t('app.settings')}>
+                <IconButton
+                    size="small"
+                    onClick={() => setOpen(true)}
+                    aria-label={t('app.settings')}
+                    sx={{
+                        p: 0.5,
+                        color: 'text.secondary',
+                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                    }}
+                >
+                    <SettingsOutlinedIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle>{t('app.settings')}</DialogTitle>
                 <DialogContent>
@@ -709,7 +732,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey, miniMode: config.miniMode ?? false}));
                             setOpen(false);
                         }}
                     >
@@ -748,9 +771,9 @@ const AppShell: FC = () => {
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
-    useEffect(() => {
-        const authError = searchParams.get('auth_error');
+    useEffect(() => {        const authError = searchParams.get('auth_error');
         if (!authError) return;
         const i18nKey = AUTH_ERROR_MESSAGES[authError] || 'auth.ssoErrorGeneric';
         dispatch(dfActions.addMessages({
@@ -770,8 +793,16 @@ const AppShell: FC = () => {
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
 
     const isAboutPage = location.pathname === '/about';
-    const isGalleryPage = location.pathname === '/gallery';
-    const isAppPage = !isAboutPage && !isGalleryPage;
+    const isAppPage = !isAboutPage;
+
+    // The canvas (threads, encoding shelf, viz cards) genuinely needs room, so
+    // the app shell floors content at 1000px and scrolls horizontally below
+    // that. The landing page (app route with no tables yet) has none of that —
+    // its hero, chips, connected-sources row and demo grid all reflow — so we
+    // relax its floor to 640px, a comfortable width where everything still
+    // wraps cleanly before a horizontal scrollbar appears.
+    const isLandingView = isAppPage && tables.length === 0;
+    const shellMinWidth = isLandingView ? '640px' : '1000px';
 
     return (
         <Box sx={{
@@ -783,7 +814,7 @@ const AppShell: FC = () => {
             bottom: 0,
             overflow: 'auto',
             '& > *': {
-                minWidth: '1000px',
+                minWidth: shellMinWidth,
                 minHeight: '600px'
             },
         }}>
@@ -823,10 +854,9 @@ const AppShell: FC = () => {
                         >
                             <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
                             <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
-                            <TopNavButton to="/gallery" label={t('appBar.gallery')} selected={isGalleryPage} />
                         </Box>
                         {tables.length === 0 && !activeWorkspace && (
-                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.secondary', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                                 {t('appBar.microsoftResearch')}
                             </Typography>
                         )}
@@ -837,39 +867,37 @@ const AppShell: FC = () => {
                             </Box>
                         )}
                         {isAppPage && (
-                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, alignItems: 'center' }}>
-                                <LanguageSwitcher />
-                                <ConfigDialog />
-                                <Divider orientation="vertical" variant="middle" flexItem />
+                            <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.75 }}>
                                 <ModelSelectionButton />
+                                <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
+                                <LanguageSwitcher />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                                    <ConfigDialog />
+                                    {serverConfig.IS_LOCAL_MODE && <LogViewerDialog />}
+                                    <Tooltip title={t('appBar.viewOnGitHub')}>
+                                        <IconButton
+                                            component="a"
+                                            href="https://github.com/microsoft/data-formulator"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            size="small"
+                                            aria-label={t('appBar.viewOnGitHub')}
+                                            sx={{
+                                                p: 0.5,
+                                                color: 'text.secondary',
+                                                '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                                            }}
+                                        >
+                                            <GitHubIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                </Box>
                                 {activeWorkspace && (
                                     <>
-                                        <Divider orientation="vertical" variant="middle" flexItem />
+                                        <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
                                         <ExitSessionButton />
                                     </>
                                 )}
-                            </Box>
-                        )}
-                        {isGalleryPage && (
-                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, alignItems: 'center' }}>
-                                <LanguageSwitcher />
-                                <Tooltip title={t('appBar.viewOnGitHub')}>
-                                    <IconButton
-                                        component="a"
-                                        href="https://github.com/microsoft/data-formulator"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={t('appBar.viewOnGitHub')}
-                                        sx={{
-                                            color: 'inherit',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                            }
-                                        }}
-                                    >
-                                        <GitHubIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
                             </Box>
                         )}
                         {isAboutPage && (
@@ -944,25 +972,6 @@ const AppShell: FC = () => {
                                     </IconButton>
                                 </Tooltip>
                             </Box>
-                        )}
-                        {isAppPage && (
-                            <Tooltip title={t('appBar.viewOnGitHub')}>
-                                <Button
-                                    component="a"
-                                    href="https://github.com/microsoft/data-formulator"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    sx={{
-                                        minWidth: 'auto',
-                                        color: 'inherit',
-                                        '&:hover': {
-                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                        }
-                                    }}
-                                >
-                                    <GitHubIcon fontSize="medium" />
-                                </Button>
-                            </Tooltip>
                         )}
                         <AuthButton />
                     </Toolbar>
@@ -1237,10 +1246,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     element: <About />,
                 },
                 {
-                    path: "gallery",
-                    element: <ChartGallery />,
-                },
-                {
                     path: "*",
                     element: <DataFormulatorFC />,
                 },
@@ -1253,7 +1258,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             {configLoaded && authChecked ? (
                 <RouterProvider router={router} />
             ) : (
-                <AnvilLoader />
+                <AnvilLoader label="loading data formulator..." />
             )}
             {migrationBrowserId && (
                 <IdentityMigrationDialog

@@ -79,6 +79,23 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     Open [http://localhost:5173](http://localhost:5173) to view it in the browser.
     The page will reload if you make edits. You will also see any lint errors in the console.
 
+### Advanced: developing against a local `flint-chart`
+
+DF depends on the published [`flint-chart`](https://www.npmjs.com/package/flint-chart) package;
+by default (`FLINT_CHART_LOCAL` unset) the bare `flint-chart` import resolves to that npm package.
+
+For co-development against a local Flint checkout with hot reload, point `FLINT_CHART_LOCAL` at
+its source when starting the dev server (or tests):
+
+```bash
+FLINT_CHART_LOCAL=../flint-chart/packages/flint-js/src yarn start
+# tests:
+FLINT_CHART_LOCAL=../flint-chart/packages/flint-js/src yarn test
+```
+
+Opt-in, advanced-dev only — leave it unset for normal work and CI, which use the installed
+package. The alias is wired in `vite.config.ts` and `vitest.config.ts`.
+
 ## Build for Production
 
 - **Build the frontend and then the backend**

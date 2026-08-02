@@ -11,3 +11,24 @@ updates:
    target-branch: "dev"
    schedule:
      interval: weekly
+
+ # Frontend JavaScript dependencies (package.json / yarn.lock)
+ - package-ecosystem: "npm"
+   directory: "/"
+   target-branch: "dev"
+   schedule:
+     interval: weekly
+
+ # Backend Python dependencies (pyproject.toml / uv.lock)
+ - package-ecosystem: "uv"
+   directory: "/"
+   target-branch: "dev"
+   schedule:
+     interval: weekly
+
+ # GitHub Actions workflow dependencies
+ - package-ecosystem: "github-actions"
+   directory: "/"
+   target-branch: "dev"
+   schedule:
+     interval: weekly

@@ -77,3 +77,16 @@ class TestEdgeCases:
         records = df_to_safe_records(df)
         assert records[0]["val"] == 42
         assert abs(records[1]["val"] - 3.14) < 0.001
+
+    def test_malformed_unicode_is_replaced_without_mutating_input(self):
+        malformed = "broken \ud800 text"
+        df = pd.DataFrame({"value": [malformed, "正常な文字列", {"items": [malformed]}]})
+
+        records = df_to_safe_records(df)
+
+        assert records == [
+            {"value": "broken ? text"},
+            {"value": "正常な文字列"},
+            {"value": {"items": ["broken ? text"]}},
+        ]
+        assert df.iloc[0]["value"] == malformed

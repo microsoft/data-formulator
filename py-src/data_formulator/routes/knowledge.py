@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Knowledge management API — CRUD + search + experience distillation.
+"""Knowledge management API — CRUD + search + workflow distillation.
 
 All endpoints use ``POST`` with JSON body.  Access is scoped to the
 current user via ``get_identity_id()`` and confined via ``ConfinedDir``.
@@ -155,44 +155,44 @@ def knowledge_search():
     return json_ok({"results": results})
 
 
-# ── distill experience ────────────────────────────────────────────────────
+# ── distill workflow ────────────────────────────────────────────────────
 
 
-@knowledge_bp.route("/distill-experience", methods=["POST"])
-def distill_experience():
-    """Distill user-visible analysis context into a reusable experience.
+@knowledge_bp.route("/distill-workflow", methods=["POST"])
+def distill_workflow():
+    """Distill user-visible analysis context into a reusable workflow.
 
     Session-scoped payload (design-docs/24):
-    ``experience_context`` carries a list of ``threads`` (one per leaf
+    ``workflow_context`` carries a list of ``threads`` (one per leaf
     derived table the user has on screen), each with its own chronological
     ``events`` array. ``workspace_id`` + ``workspace_name`` bind the
     resulting file to the active session so re-distilling upserts the
     same file.
 
-    Required body fields: ``experience_context`` and ``model``.
+    Required body fields: ``workflow_context`` and ``model``.
     Optional: ``user_instruction`` (natural-language focus hint for the LLM),
-    ``category_hint`` (sub-directory under experiences/).
+    ``category_hint`` (sub-directory under workflows/).
     """
     data = request.get_json(silent=True) or {}
-    experience_context = data.get("experience_context")
-    if not isinstance(experience_context, dict):
-        raise AppError(ErrorCode.INVALID_REQUEST, "'experience_context' is required")
+    workflow_context = data.get("workflow_context")
+    if not isinstance(workflow_context, dict):
+        raise AppError(ErrorCode.INVALID_REQUEST, "'workflow_context' is required")
 
-    threads = experience_context.get("threads")
+    threads = workflow_context.get("threads")
     if not isinstance(threads, list) or not threads:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
-            "'experience_context.threads' is required and must be a non-empty list",
+            "'workflow_context.threads' is required and must be a non-empty list",
         )
 
-    workspace_id_raw = experience_context.get("workspace_id", "")
+    workspace_id_raw = workflow_context.get("workspace_id", "")
     workspace_id = workspace_id_raw.strip() if isinstance(workspace_id_raw, str) else ""
-    workspace_name_raw = experience_context.get("workspace_name", "")
+    workspace_name_raw = workflow_context.get("workspace_name", "")
     workspace_name = workspace_name_raw.strip() if isinstance(workspace_name_raw, str) else ""
     if not workspace_id or not workspace_name:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
-            "'experience_context.workspace_id' and 'workspace_name' are required",
+            "'workflow_context.workspace_id' and 'workspace_name' are required",
         )
 
     model_config = data.get("model")
@@ -215,53 +215,55 @@ def distill_experience():
 
     # Build client and run distillation
     from data_formulator.routes.agents import get_client, _get_ui_lang
-    from data_formulator.agents.agent_experience_distill import ExperienceDistillAgent
+    from data_formulator.agents.agent_workflow_distill import WorkflowDistillAgent
 
     client = get_client(model_config)
 
-    agent = ExperienceDistillAgent(
+    agent = WorkflowDistillAgent(
         client=client,
         language_code=_get_ui_lang(),
         timeout_seconds=timeout_seconds,
     )
     try:
-        md_content = agent.run(experience_context, user_instruction=user_instruction)
+        md_content = agent.run(workflow_context, user_instruction=user_instruction)
     except Exception as exc:
-        logger.warning("Experience distillation LLM call failed: %s", type(exc).__name__)
+        logger.warning("Workflow distillation LLM call failed: %s", type(exc).__name__)
         from data_formulator.error_handler import classify_and_wrap_llm_error
         raise classify_and_wrap_llm_error(exc) from exc
 
-    # Save to knowledge/experiences/
+    # Save to knowledge/workflows/
     store = KnowledgeStore(user_home)
 
-    # Bind the file to the workspace, override title to
-    # "Experience from <workspace name>: <subtitle>", and upsert below.
-    md_content = _apply_session_front_matter(md_content, workspace_id, workspace_name)
+    # Bind the file to the workspace, set the title to the agent-generated
+    # descriptive subtitle, and upsert below.
+    md_content, title_core, filename_hint = _apply_session_front_matter(
+        md_content, workspace_id, workspace_name,
+    )
 
-    filename = _experience_filename(workspace_name)
+    filename = _workflow_filename(filename_hint or title_core or workspace_name)
     rel_path = f"{category_hint}/{filename}" if category_hint else filename
 
-    # Upsert: if a previous experience exists for this workspace at a
+    # Upsert: if a previous workflow exists for this workspace at a
     # different path (e.g. user renamed the workspace), delete it after a
     # successful write so we keep one file per session.
-    existing = store.find_experience_by_workspace_id(workspace_id)
+    existing = store.find_workflow_by_workspace_id(workspace_id)
 
     try:
-        store.write("experiences", rel_path, md_content)
+        store.write("workflows", rel_path, md_content)
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
     if existing and existing.get("path") and existing["path"] != rel_path:
         try:
-            store.delete("experiences", existing["path"])
+            store.delete("workflows", existing["path"])
         except Exception:
             logger.warning(
-                "Failed to delete stale session experience at %s",
+                "Failed to delete stale session workflow at %s",
                 existing.get("path"),
                 exc_info=True,
             )
 
-    return json_ok({"path": rel_path, "category": "experiences"})
+    return json_ok({"path": rel_path, "category": "workflows"})
 
 
 # ── helpers for session-scoped distillation ───────────────────────────────
@@ -269,16 +271,21 @@ def distill_experience():
 
 def _apply_session_front_matter(
     content: str, workspace_id: str, workspace_name: str,
-) -> str:
-    """Override / inject session-binding fields in the experience front matter.
+) -> tuple[str, str, str]:
+    """Override / inject session-binding fields in the workflow front matter.
 
-    - Composes the visible ``title`` as ``Experience from <name>: <subtitle>``
-      using the LLM-emitted ``subtitle`` (preferred) or pre-existing
-      ``title``. The original ``subtitle`` field is removed from the
-      front matter once consumed.
+    - Sets the visible ``title`` to the agent-emitted descriptive
+      ``subtitle`` (preferred) or the pre-existing ``title``, with any
+      legacy ``Workflow from <name>: `` prefix stripped. The ``subtitle``
+      field is removed from the front matter once consumed.
+    - Consumes the agent-emitted short ``filename`` hint (removed from the
+      front matter) and returns it so the caller can name the file without
+      using the long descriptive title.
     - Stamps ``source_workspace_id`` and ``source_workspace_name`` so the
       file can be looked up on subsequent distillations.
     - Forces ``source: distill`` (idempotent if already set).
+
+    Returns ``(content_with_front_matter, title_core, filename_hint)``.
     """
     from data_formulator.knowledge.store import parse_front_matter
 
@@ -287,27 +294,31 @@ def _apply_session_front_matter(
         meta = {}
 
     subtitle = str(meta.pop("subtitle", "") or "").strip()
+    filename_hint = str(meta.pop("filename", "") or "").strip()
     existing_title = str(meta.get("title", "") or "").strip()
 
-    # Strip any "Experience from <prev name>: " prefix from a prior pass so
-    # update-mode runs don't double-prefix when the LLM echoes the title.
-    title_core = subtitle or _strip_experience_prefix(existing_title)
+    # Strip any legacy "Workflow from <prev name>: " (or "Experience from")
+    # prefix so update-mode runs don't carry it forward.
+    title_core = subtitle or _strip_workflow_prefix(existing_title)
     if not title_core:
         title_core = workspace_name
 
-    new_title = f"Experience from {workspace_name}: {title_core}"
-    meta["title"] = new_title
+    meta["title"] = title_core
     meta["source"] = "distill"
     meta["source_workspace_id"] = workspace_id
     meta["source_workspace_name"] = workspace_name
 
-    return _serialize_front_matter(meta, body)
+    return _serialize_front_matter(meta, body), title_core, filename_hint
 
 
-_EXP_PREFIX_RE = re.compile(r"^\s*Experience from .+?:\s*", re.IGNORECASE)
+_EXP_PREFIX_RE = re.compile(r"^\s*(?:Workflow|Experience) from .+?:\s*", re.IGNORECASE)
+
+# Path separators, Windows-reserved chars and control chars that must never
+# appear in a filename derived from untrusted LLM output.
+_UNSAFE_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 
 
-def _strip_experience_prefix(title: str) -> str:
+def _strip_workflow_prefix(title: str) -> str:
     return _EXP_PREFIX_RE.sub("", title).strip()
 
 
@@ -323,16 +334,22 @@ def _serialize_front_matter(meta: dict, body: str) -> str:
     return f"---\n{yaml_text}\n---\n\n{body_text}"
 
 
-def _experience_filename(workspace_name: str) -> str:
-    """Derive a deterministic filename from the workspace name.
+def _workflow_filename(title: str) -> str:
+    """Slugify an LLM-supplied name into a clean, safe ``.md`` filename.
 
-    Re-distilling the same session always lands on the same file.
-    Falls back to a literal slug when sanitisation rejects the name.
+    Re-distilling a session upserts by ``source_workspace_id`` (see caller),
+    so the file is replaced even when the name changes. ``safe_data_filename``
+    enforces the security boundary (basename only, no ``.``/``..``); the slug
+    step just keeps separators and reserved chars out so the name is clean and
+    portable. Unicode (e.g. CJK) is preserved.
     """
     from data_formulator.datalake.parquet_utils import safe_data_filename
 
-    slug = workspace_name.strip().replace(" ", "-").lower()[:80] or "session-experience"
+    cleaned = _UNSAFE_FILENAME_CHARS.sub("-", title)
+    cleaned = re.sub(r"\s+", "-", cleaned.strip())
+    cleaned = re.sub(r"-{2,}", "-", cleaned)
+    slug = cleaned.strip(".-").lower()[:80] or "session-workflow"
     try:
         return safe_data_filename(f"{slug}.md")
     except ValueError:
-        return "session-experience.md"
+        return "session-workflow.md"

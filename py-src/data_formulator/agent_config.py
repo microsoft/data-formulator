@@ -48,15 +48,14 @@ AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
     # ── Heavy: code-gen, multi-step, tool-using ─────────────────────────────
     "data_transform":      "low",      # generates Python transform scripts
     "data_rec":            "low",      # chart / transformation recommendation
-    "data_agent":          "low",      # multi-step exploration agent
-    "report_gen":          "low",      # narrative + inspect/embed tools
+    "analyst":             "low",      # unified multi-step exploration + report agent
     "interactive_explore": "low",      # exploration idea agent
     "data_loading_chat":   "low",      # conversational data loading w/ tools
 
     # ── Light: single-turn extractors / classifiers / formatters ────────────
     "data_load":           "minimal",  # one-shot type inference
     "data_clean":          "minimal",  # extract tables from text
-    "experience_distill":  "minimal",  # summarise an analysis context
+    "workflow_distill":  "minimal",  # summarise an analysis context
     "chart_insight":       "minimal",  # title + 1–3 takeaways from a chart
     "chart_restyle":       "minimal",  # apply style edits to a Vega-Lite spec
     "code_explanation":    "minimal",  # describe derived fields

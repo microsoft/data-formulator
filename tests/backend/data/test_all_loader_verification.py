@@ -162,7 +162,8 @@ class TestStaticMethods:
         for key, cls in _get_available_loaders().items():
             params = cls.list_params()
             assert isinstance(params, list), f"{key}: list_params() must return a list"
-            assert len(params) > 0, f"{key}: must have at least one param"
+            if cls.auth_mode() != "none":
+                assert len(params) > 0, f"{key}: must have at least one param"
             for p in params:
                 assert "name" in p, f"{key}: each param must have 'name'"
                 assert "type" in p, f"{key}: each param must have 'type'"
@@ -178,7 +179,8 @@ class TestStaticMethods:
         for key, cls in _get_available_loaders().items():
             params = cls.list_params()
             required = [p for p in params if p.get("required", False)]
-            assert len(required) > 0, f"{key}: should have at least one required param"
+            if cls.auth_mode() != "none":
+                assert len(required) > 0, f"{key}: should have at least one required param"
 
     def test_rate_limit_returns_dict_or_none(self):
         for key, cls in _get_available_loaders().items():

@@ -107,6 +107,7 @@ def _build_filter_where_duckdb(
     column_types: dict[str, str] | None = None,
     *,
     alias: str = "",
+    search: str | None = None,
 ) -> str:
     """Build a DuckDB ``WHERE`` clause from the three-op filter vocabulary
     (design-doc 31): ``range`` / ``in`` / ``contains``. Returns either an
@@ -116,13 +117,17 @@ def _build_filter_where_duckdb(
     silently dropped — the route must continue to work even if the
     frontend sends stale state. An empty ``in`` list collapses to
     ``WHERE FALSE`` for the field so the user sees an empty grid.
+
+    ``search`` is a first-class global quick-search: a case-insensitive
+    substring matched across ALL columns (cast to VARCHAR). It is ANDed
+    with the per-column filters, but ORs across the columns internally.
     """
-    if not filters:
+    if not filters and not (search and search.strip()):
         return ""
     column_types = column_types or {}
     prefix = (alias + ".") if alias else ""
     clauses: list[str] = []
-    for f in filters:
+    for f in filters or []:
         if not isinstance(f, dict):
             continue
         op = f.get("op")
@@ -184,19 +189,29 @@ def _build_filter_where_duckdb(
                 f"CAST({qc} AS VARCHAR) ILIKE {_quote_lit(pattern)} ESCAPE '\\'"
             )
 
+    if search and search.strip():
+        esc = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{esc}%"
+        ors = [
+            f"CAST({prefix}{_quote_duckdb(c)} AS VARCHAR) ILIKE {_quote_lit(pattern)} ESCAPE '\\'"
+            for c in columns
+        ]
+        if ors:
+            clauses.append("(" + " OR ".join(ors) + ")")
+
     if not clauses:
         return ""
     return " WHERE " + " AND ".join(clauses)
 
 
-def _apply_filters_pandas(df: pd.DataFrame, filters: list | None) -> pd.DataFrame:
+def _apply_filters_pandas(df: pd.DataFrame, filters: list | None, search: str | None = None) -> pd.DataFrame:
     """Pandas mirror of :func:`_build_filter_where_duckdb`."""
-    if not filters:
+    if not filters and not (search and search.strip()):
         return df
     import pandas as _pd  # alias to avoid shadowing
     columns = set(df.columns)
     mask = _pd.Series([True] * len(df), index=df.index)
-    for f in filters:
+    for f in filters or []:
         if not isinstance(f, dict):
             continue
         op = f.get("op")
@@ -255,6 +270,14 @@ def _apply_filters_pandas(df: pd.DataFrame, filters: list | None) -> pd.DataFram
                 mask &= col.astype(str).str.contains(v, case=False, na=False, regex=False)
             except Exception:
                 pass
+    if search and search.strip():
+        smask = _pd.Series([False] * len(df), index=df.index)
+        for c in df.columns:
+            try:
+                smask = smask | df[c].astype(str).str.contains(search, case=False, na=False, regex=False)
+            except Exception:
+                pass
+        mask &= smask
     return df[mask]
 
 
@@ -280,6 +303,7 @@ def _build_parquet_sample_sql(
     offset: int = 0,
     filters: list | None = None,
     column_types: dict[str, str] | None = None,
+    search: str | None = None,
 ) -> tuple[str, str]:
     """
     Build DuckDB SQL for sampling (and optional aggregation) over parquet.
@@ -293,7 +317,7 @@ def _build_parquet_sample_sql(
     valid_agg = [(f, fn) for (f, fn) in aggregate_fields_and_functions if f is None or f in columns]
     valid_select = _dedup_list([f for f in select_fields if f in columns])
     valid_order = [f for f in order_by_fields if f in columns]
-    where_clause = _build_filter_where_duckdb(filters, columns, column_types, alias="t")
+    where_clause = _build_filter_where_duckdb(filters, columns, column_types, alias="t", search=search)
 
     if valid_agg:
         select_parts = []
@@ -484,13 +508,14 @@ def _apply_aggregation_and_sample(
     sample_size: int,
     offset: int = 0,
     filters: list | None = None,
+    search: str | None = None,
 ) -> tuple[pd.DataFrame, int]:
     """
     Apply filters (optional), aggregation (optional), then sample with ordering.
     Returns (sampled_df, total_row_count_after_aggregation).
     """
-    if filters:
-        df = _apply_filters_pandas(df, filters)
+    if filters or (search and search.strip()):
+        df = _apply_filters_pandas(df, filters, search=search)
     columns = list(df.columns)
     valid_agg = [
         (f, fn) for (f, fn) in aggregate_fields_and_functions
@@ -590,6 +615,7 @@ def sample_table():
         order_by_fields = data.get('order_by_fields', [])
         offset = data.get('offset', 0)
         filters = data.get('filters') or None
+        search = data.get('search') or None
 
         workspace = _get_workspace()
         if _should_use_duckdb(workspace, table_id):
@@ -606,6 +632,7 @@ def sample_table():
                 offset,
                 filters=filters,
                 column_types=column_types,
+                search=search,
             )
             total_row_count = int(workspace.run_parquet_sql(table_id, count_sql).iloc[0, 0])
             result_df = workspace.run_parquet_sql(table_id, main_sql)
@@ -620,6 +647,7 @@ def sample_table():
                 sample_size,
                 offset,
                 filters=filters,
+                search=search,
             )
         result_df = _dedup_dataframe_columns(result_df)
         rows_json = df_to_safe_records(result_df)

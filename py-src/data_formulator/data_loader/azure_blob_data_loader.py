@@ -9,6 +9,7 @@ from azure.identity import DefaultAzureCredential
 from pyarrow import fs as pa_fs
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from typing import Any
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class AzureBlobDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Azure Blob"
+    DESCRIPTION = "Load CSV, JSON, or Parquet files from an Azure Blob Storage container."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -26,7 +28,7 @@ class AzureBlobDataLoader(ExternalDataLoader):
             {"name": "credential_chain", "type": "string", "required": False, "default": "cli;managed_identity;env", "tier": "auth", "description": "Ordered list of Azure credential providers (cli;managed_identity;env)"},
             {"name": "account_key", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure storage account key"},
             {"name": "sas_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure SAS token"},
-            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "tier": "connection", "description": "Azure endpoint override"}
+            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "tier": "connection", "advanced": True, "description": "Azure endpoint override"}
         ]
         return params_list
     
@@ -150,6 +152,10 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
         logger.info(f"Fetched {arrow_table.num_rows} rows from Azure Blob [Arrow-native]")
         
         return arrow_table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Read the blob into DuckDB and compute the SPJQ there."""
+        return probe_utils.run_probe_on_duckdb(self, path, query, scan_size=MAX_IMPORT_ROWS)
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         # Create blob service client based on authentication method

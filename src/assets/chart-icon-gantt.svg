@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Gantt chart icon: horizontal task bars across a timeline -->
+  <!-- Y-axis -->
+  <line x1="60" y1="36" x2="60" y2="212" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="56" y1="208" x2="234" y2="208" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Task bars (offset + width vary to read as a schedule) -->
+  <rect x="68"  y="52"  width="72" height="20" rx="3" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <rect x="98"  y="84"  width="94" height="20" rx="3" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <rect x="80"  y="116" width="58" height="20" rx="3" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <rect x="138" y="148" width="80" height="20" rx="3" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <rect x="116" y="180" width="50" height="20" rx="3" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+</svg>

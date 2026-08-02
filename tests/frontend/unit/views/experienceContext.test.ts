@@ -3,7 +3,7 @@ import {
     isLeafDerivedTable,
     buildLeafEvents,
     buildDistillModelConfig,
-} from '../../../../src/views/experienceContext';
+} from '../../../../src/views/workflowContext';
 import type { DictTable } from '../../../../src/components/ComponentType';
 
 function makeTable(id: string, overrides?: Partial<DictTable>): DictTable {

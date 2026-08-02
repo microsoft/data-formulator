@@ -48,7 +48,7 @@ import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
-import { getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
+import { getIconFromDtype, getIconFromType } from './ViewUtils';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { Type } from '../data/types';
@@ -543,37 +543,24 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let normalizedDisplay = "";
     
     let handleSelectOption = (option: string) => {
-        if (conceptShelfItems.map(f => f.name).includes(option)) {
-            //console.log(`yah-haha: ${option}`);
-            updateEncProp("fieldID", (conceptShelfItems.find(f => f.name == option) as FieldItem).id);
-        } else {
-            if (option == "") {
-                console.log("nothing happens")
-            } else {
-                let newConept = {
-                    id: `concept-${Date.now()}`, name: option,
-                    source: "custom", tableRef: "custom",
-                } as FieldItem;
-                dispatch(dfActions.updateConceptItems(newConept));
-                updateEncProp("fieldID", newConept.id);
-            }
-            
+        // The encoding shelf only accepts fields that already exist in the
+        // current table. Selecting anything else (a stale concept from another
+        // table, or a typed-but-nonexistent name) is ignored — creating new
+        // fields here is not allowed, since that would require re-deriving data.
+        const fieldItem = conceptShelfItems.find(f => f.name == option);
+        const isAvailable = !!fieldItem && (!activeTable || activeTable.names.includes(option));
+        if (isAvailable) {
+            updateEncProp("fieldID", (fieldItem as FieldItem).id);
         }
     }
 
 
-    let conceptGroups = groupConceptItems(conceptShelfItems, tables);
-
-    let groupNames = [...new Set(conceptGroups.map(g => g.group))];
-    conceptGroups.sort((a, b) => {
-        if (groupNames.indexOf(a.group) < groupNames.indexOf(b.group)) {
-            return -1;
-        } else if (groupNames.indexOf(a.group) > groupNames.indexOf(b.group)) {
-            return 1;
-        } else {
-            return activeTable && activeTable.names.includes(a.field.name) && !activeTable.names.includes(b.field.name) ? -1 : 1;
-        }
-    })
+    // Field names selectable in this encoding shelf, listed in the same order as
+    // the columns of the current table. Only fields that exist in the table can
+    // be assigned here, so the table's column list is the source of truth — no
+    // need to derive or group them from the concept shelf.
+    let availableFieldNames = (activeTable ? activeTable.names : conceptShelfItems.map(f => f.name))
+        .filter(name => name != "");
 
     // Smart Popper component that switches between bottom-end and top-end
     const CustomPopper = (props: any) => {
@@ -623,15 +610,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }}
         // value={tempValue}
         filterOptions={(options, params) => {
-            const filtered = filter(options, params);
-            const { inputValue } = params;
-            // Suggest the creation of a new value
-            const isExisting = options.some((option) => inputValue === option);
-            if (!isExisting) {
-                return [`${inputValue}`, ...filtered,  ]
-            } else {
-                return [...filtered];
-            }
+            // The encoding shelf only accepts fields that already exist in the
+            // current table — creating brand-new fields (which would require
+            // re-deriving data) is not allowed here.
+            return filter(options, params);
         }}
         sx={{ 
             flexGrow: 1, 
@@ -647,138 +629,54 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         handleHomeEndKeys
         autoHighlight
         id={`autocomplete-${chartId}-${channel}`}
-        options={conceptGroups.map(g => g.field.name).filter(name => name != "")}
+        options={availableFieldNames}
         getOptionLabel={(option) => {
             // Value selected with enter, right from the input
             return option;
         }}
-        groupBy={(option) => {
-            let groupItem = conceptGroups.find(item => item.field.name == option);
-            if (groupItem && groupItem.field.name != "") {
-                return `${groupItem.group}`;
-            } else {
-                return t('encoding.createNewFieldGroup')
-            }         
-        }}
-        renderGroup={(params) => (
-            <Box key={params.key}>
-              <Box className="GroupHeader">{params.group}</Box>
-              <Box className="GroupItems" sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(2, 1fr)', 
-                padding: '4px'
-              }}>
-                {params.children}
-              </Box>
-            </Box>
-        )}
         renderOption={(props, option) => {
-            let renderOption = (conceptShelfItems.map(f => f.name).includes(option)) ? option : `${option}`;
-            let otherStyle = option == `` ? {color: "darkgray", fontStyle: "italic"} : {}
-
-            // Find the field item for this option
-            const fieldItem = conceptShelfItems.find(f => f.name === option);
-            
-            if (fieldItem) {
-                // Create a mini concept card
-                let backgroundColor = theme.palette.primary.main;
-                if (fieldItem.source == "original") {
-                    backgroundColor = theme.palette.primary.light;
-                } else if (fieldItem.source == "custom") {
-                    backgroundColor = theme.palette.custom.main;
-                }
-
-                // Add overlay logic similar to ConceptCard - make fields not in focused table more transparent
-                let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.9)';
-                
-                // Add subtle tint for non-focused fields
-                if (activeTable && !activeTable.names.includes(fieldItem.name)) {
-                    draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 1)';
-                }
-
-                // Extract only the compatible props for Card
-                const { key, ...cardProps } = props;
-
-                return (
-                    <Card 
-                        key={key}
-                        onClick={() => handleSelectOption(option)}
-                        sx={{ 
-                            minWidth: 80, 
-                            backgroundColor, 
-                            position: "relative",
-                            border: "none",
-                            cursor: "pointer",
-                            margin: '2px 4px',
-                            "&:hover": {
-                                boxShadow: "0 2px 4px 0 rgb(0 0 0 / 20%)"
-                            }
-                        }}
-                        variant="outlined"
-                        className={`data-field-list-item draggable-card`}
-                    >
-                        <Box sx={{ 
-                                cursor: "pointer", 
-                                background: draggleCardHeaderBgOverlay,
-                                display: 'flex',
-                                alignItems: 'center',
-                                minHeight: '20px',
-                                ml: 0.5
-                            }}
-                            className={`draggable-card-inner ${fieldItem.source}`}
-                        >
-                            <Typography sx={{
-                                margin: '0px 4px',
-                                fontSize: 10, 
-                                width: "100%",
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                            }} component={'span'}>
-                                {getIconFromType(activeTable?.metadata[fieldItem.name]?.type || Type.Auto)}
-                                <span style={{
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden", 
-                                    textOverflow: "ellipsis",
-                                    flexShrink: 1
-                                }}>
-                                    {fieldItem.name}
-                                </span>
-                            </Typography>
-                        </Box>
-                    </Card>
-                );
-            } else {
-                // For non-existing options (like new field creation)
-                return (
-                    <Typography 
-                        {...props} 
-                        onClick={() => handleSelectOption(option)}
-                        sx={{
-                            fontSize: "10px", 
-                            padding: '4px 6px',
-                            margin: '2px 4px',
-                            cursor: 'pointer',
-                            border: '1px dashed #ccc',
-                            borderRadius: '4px',
-                            backgroundColor: 'rgba(0,0,0,0.02)',
-                            height: '24px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            "&:hover": {
-                                backgroundColor: 'rgba(0,0,0,0.05)'
-                            },
-                            ...otherStyle
-                        }}
-                    >
-                        {renderOption || t('encoding.newFieldNamePlaceholder')}
-                    </Typography>
-                );
-            }
+            const { key, ...liProps } = props as any;
+            const dtype = activeTable?.metadata[option]?.type || Type.Auto;
+            return (
+                <Box
+                    key={key}
+                    {...liProps}
+                    onClick={() => handleSelectOption(option)}
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: 11,
+                        padding: '4px 8px !important',
+                        cursor: 'pointer',
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.05)' },
+                    }}
+                >
+                    {getIconFromType(dtype)}
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {option}
+                    </span>
+                </Box>
+            );
         }}
-        freeSolo
         renderInput={(params) => (
             <TextField {...params} variant="standard" autoComplete='off' placeholder={t('encoding.fieldPlaceholder')}
+                onKeyDownCapture={(event) => {
+                    // The MUI Autocomplete handles Enter on the input itself,
+                    // and `autoHighlight` makes it auto-select the first option
+                    // even when the typed text doesn't match. Intercept Enter in
+                    // the capture phase: only let it through when the current
+                    // input is an exact available field; otherwise neutralize it
+                    // so a stray Enter never assigns a field or bubbles up to
+                    // trigger an unrelated refresh/formulate.
+                    if (event.key === 'Enter') {
+                        const value = (event.target as HTMLInputElement).value?.trim();
+                        if (!value || !availableFieldNames.includes(value)) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    }
+                }}
                 sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
         )}
         slotProps={{
@@ -788,6 +686,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     maxWidth: '300px',
                     '& .MuiAutocomplete-listbox': {
                         maxHeight: '600px !important'
+                    },
+                    '& .MuiAutocomplete-noOptions': {
+                        fontSize: '11px',
+                        padding: '6px 12px',
                     },
                 }
             }

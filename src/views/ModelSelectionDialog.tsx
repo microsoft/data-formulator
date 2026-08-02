@@ -90,6 +90,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const testedModels = useSelector((state: DataFormulatorState) => state.testedModels);
+    const config = useSelector((state: DataFormulatorState) => state.config);
 
     const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(false);
     const [showKeys, setShowKeys] = useState<boolean>(false);
@@ -268,6 +269,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <Tooltip title={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}>
                 <span>  
                     <IconButton color={modelExists ? 'error' : 'primary'}
+                        aria-label={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}
                         disabled={!readyToTest}
                         size="small"
                         sx={{ cursor: modelExists ? 'help' : 'pointer', p: 0.25 }}
@@ -550,8 +552,33 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     return <>
         <Tooltip title={t('model.selectModel')}>
-            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color={selectedReady ? "primary" : 'warning'} onClick={()=>{setModelDialogOpen(true)}}>
+            <Button
+                sx={{
+                    fontSize: '13px',
+                    fontWeight: 400,
+                    textTransform: 'none',
+                    px: 1.5,
+                    py: 0.5,
+                    minWidth: 'auto',
+                    lineHeight: 1.5,
+                    color: selectedReady ? 'text.secondary' : undefined,
+                    '&:hover': { color: selectedReady ? 'text.primary' : undefined, backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                }}
+                variant="text"
+                color={selectedReady ? 'inherit' : 'warning'}
+                onClick={()=>{setModelDialogOpen(true)}}
+            >
                 {selectedReady ? selectedModelName : t('model.selectModels')}
+                {selectedReady && (config.miniMode ?? false) && (
+                    <Tooltip title={t('model.miniModeHint')}>
+                        <Box
+                            component="span"
+                            sx={{ ml: 0.5, fontSize: '0.8em', fontWeight: 400, color: 'text.disabled', textTransform: 'none' }}
+                        >
+                            ({t('model.miniModeBadge')})
+                        </Box>
+                    </Tooltip>
+                )}
             </Button>
         </Tooltip>
         <Dialog 
@@ -585,7 +612,33 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     </Box>
                 </Box>
                 {modelTable}
-                
+
+                <Box sx={{
+                    mt: 2,
+                    pt: 2,
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                }}>
+                    <FormControlLabel
+                        sx={{ ml: 0 }}
+                        control={
+                            <Switch
+                                size="small"
+                                checked={config.miniMode ?? false}
+                                onChange={(e) => dispatch(dfActions.setConfig({ ...config, miniMode: e.target.checked }))}
+                            />
+                        }
+                        label={
+                            <Typography variant="body2" sx={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                                {t('model.miniMode')}
+                            </Typography>
+                        }
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        {t('model.miniModeHint')}
+                    </Typography>
+                </Box>
+
             </DialogContent>
             <DialogActions>
                 {!serverConfig.DISABLE_DISPLAY_KEYS && (

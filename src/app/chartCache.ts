@@ -19,6 +19,8 @@ export interface ChartCacheEntry {
     thumbnailDataUrl: string;   // PNG data URL (for DataThread thumbnails)
     fullPngDataUrl: string;     // Full-size PNG data URL (for agent/report use)
     specKey: string;            // Deterministic key of the inputs that produced this render
+    naturalWidth: number;       // Intrinsic width (CSS px) the rendering engine chose for the chart
+    naturalHeight: number;      // Intrinsic height (CSS px) the rendering engine chose for the chart
 }
 
 const cache = new Map<string, ChartCacheEntry>();

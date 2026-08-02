@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 /**
- * Knowledge API client — CRUD, search, and experience distillation.
+ * Knowledge API client — CRUD, search, and workflow distillation.
  *
  * All endpoints use POST with JSON body.  Requests go through
  * {@link fetchWithIdentity} for identity headers and 401 retry.
@@ -14,11 +14,10 @@ import { apiRequest } from '../app/apiClient';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-export type KnowledgeCategory = 'rules' | 'experiences';
+export type KnowledgeCategory = 'rules' | 'workflows';
 
 export interface KnowledgeItem {
     title: string;
-    tags: string[];
     path: string;
     source: string;
     created: string;
@@ -27,25 +26,24 @@ export interface KnowledgeItem {
     /** Rules only: if true the rule is always injected into the agent prompt. */
     alwaysApply?: boolean;
     /**
-     * Experiences only: workspace id this experience was distilled from.
+     * Workflows only: workspace id this workflow was distilled from.
      * Set by the session-scoped distillation flow (design-docs/24); used
-     * by the KnowledgePanel to find the existing session experience.
+     * by the KnowledgePanel to find the existing session workflow.
      */
     sourceWorkspaceId?: string;
-    /** Experiences only: workspace display name at distillation time. */
+    /** Workflows only: workspace display name at distillation time. */
     sourceWorkspaceName?: string;
 }
 
 export interface KnowledgeLimits {
     rule_description_max: number;
     rules: number;
-    experiences: number;
+    workflows: number;
 }
 
 export interface KnowledgeSearchResult {
     category: KnowledgeCategory;
     title: string;
-    tags: string[];
     path: string;
     snippet: string;
     source: string;
@@ -122,7 +120,7 @@ export async function searchKnowledge(
     return data.results ?? [];
 }
 
-export interface DistillExperienceResult {
+export interface DistillWorkflowResult {
     path: string;
     category: string;
 }
@@ -134,7 +132,7 @@ export interface DistillExperienceResult {
  * a deterministic filename + title. `threads` carries one chronological
  * `events` list per leaf table on screen.
  */
-export interface SessionExperienceContext {
+export interface SessionWorkflowContext {
     context_id?: string;
     workspace_id: string;
     workspace_name: string;
@@ -146,18 +144,18 @@ export interface SessionExperienceContext {
     payload_notes?: string[];
 }
 
-export async function distillSessionExperience(
-    sessionContext: SessionExperienceContext,
+export async function distillSessionWorkflow(
+    sessionContext: SessionWorkflowContext,
     model: Record<string, any>,
     instruction?: string,
     timeoutSeconds?: number,
     signal?: AbortSignal,
-): Promise<DistillExperienceResult> {
-    const { data } = await apiRequest<{ path: string; category: string }>('/api/knowledge/distill-experience', {
+): Promise<DistillWorkflowResult> {
+    const { data } = await apiRequest<{ path: string; category: string }>('/api/knowledge/distill-workflow', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({
-            experience_context: sessionContext,
+            workflow_context: sessionContext,
             model,
             user_instruction: instruction,
             timeout_seconds: timeoutSeconds,

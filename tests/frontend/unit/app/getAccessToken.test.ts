@@ -6,21 +6,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockGetUser = vi.fn();
 const mockSigninSilent = vi.fn();
 
-vi.mock('../../../../src/app/oidcConfig', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../../../src/app/oidcConfig')>();
-    return {
-        ...original,
-        getUserManager: vi.fn(async () => ({
-            getUser: mockGetUser,
-            signinSilent: mockSigninSilent,
-        })),
-    };
-});
-
-import { getAccessToken } from '../../../../src/app/oidcConfig';
+import {
+    _resetForTesting,
+    _setUserManagerForTesting,
+    getAccessToken,
+} from '../../../../src/app/oidcConfig';
 
 beforeEach(() => {
     vi.clearAllMocks();
+    _resetForTesting();
+    _setUserManagerForTesting({
+        getUser: mockGetUser,
+        signinSilent: mockSigninSilent,
+    });
 });
 
 describe('getAccessToken', () => {

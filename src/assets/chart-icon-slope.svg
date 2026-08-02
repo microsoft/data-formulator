@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Slope Chart icon: straight lines connecting values at two periods, with end dots -->
+
+  <!-- Two period guide columns -->
+  <line x1="80"  y1="36" x2="80"  y2="208" stroke="#dcdcdc" stroke-width="3" stroke-linecap="round"/>
+  <line x1="200" y1="36" x2="200" y2="208" stroke="#dcdcdc" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Line 1 (blue): rises -->
+  <polyline points="80,170 200,60"  fill="none" stroke="#76c6ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Line 2 (gray): falls, crosses line 1 -->
+  <polyline points="80,70  200,150" fill="none" stroke="#B8B8B8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Line 3 (dark blue): gentle rise -->
+  <polyline points="80,120 200,100" fill="none" stroke="#3d7ebf" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- End dots, period 1 -->
+  <circle cx="80" cy="170" r="8" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="80" cy="70"  r="8" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <circle cx="80" cy="120" r="8" fill="#3d7ebf" stroke="#363636" stroke-width="2"/>
+
+  <!-- End dots, period 2 -->
+  <circle cx="200" cy="60"  r="8" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="200" cy="150" r="8" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <circle cx="200" cy="100" r="8" fill="#3d7ebf" stroke="#363636" stroke-width="2"/>
+
+  <!-- Y axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

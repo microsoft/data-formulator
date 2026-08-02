@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Faint plot grid — generic "chart canvas" (no data mark → type-neutral) -->
+  <line x1="52" y1="92"  x2="236" y2="92"  stroke="#e2e2e2" stroke-width="3"/>
+  <line x1="52" y1="152" x2="236" y2="152" stroke="#e2e2e2" stroke-width="3"/>
+  <line x1="114" y1="34" x2="114" y2="212" stroke="#e2e2e2" stroke-width="3"/>
+  <line x1="176" y1="34" x2="176" y2="212" stroke="#e2e2e2" stroke-width="3"/>
+  <!-- Y-axis -->
+  <line x1="52" y1="30" x2="52" y2="216" stroke="#363636" stroke-width="5" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="48" y1="212" x2="236" y2="212" stroke="#363636" stroke-width="5" stroke-linecap="round"/>
+  <!-- General "insight" sparkle overlaid on the canvas (main + accent) -->
+  <path d="M160,72 C162.4,93.6 167.2,108 208,120 C167.2,132 162.4,146.4 160,168 C157.6,146.4 152.8,132 112,120 C152.8,108 157.6,93.6 160,72 Z" fill="#76c6ff"/>
+  <path d="M100,71 C100.75,77.75 102.25,82.25 115,86 C102.25,89.75 100.75,94.25 100,101 C99.25,94.25 97.75,89.75 85,86 C97.75,82.25 99.25,77.75 100,71 Z" fill="#76c6ff"/>
+</svg>

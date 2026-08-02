@@ -5,7 +5,7 @@
  * Knowledge state management — React hooks for knowledge CRUD & search.
  *
  * Uses plain React state (not Redux) because knowledge data is server-side
- * and only needed by the KnowledgePanel and save-as-experience flows.
+ * and only needed by the KnowledgePanel and save-as-workflow flows.
  * Errors are dispatched to the global MessageSnackbar via dfActions.addMessages.
  */
 
@@ -40,16 +40,16 @@ export function useKnowledgeStore() {
     const { t } = useTranslation();
 
     const [rules, setRules] = useState<KnowledgeCategoryState>({ ...EMPTY_CATEGORY });
-    const [experiences, setExperiences] = useState<KnowledgeCategoryState>({ ...EMPTY_CATEGORY });
+    const [workflows, setWorkflows] = useState<KnowledgeCategoryState>({ ...EMPTY_CATEGORY });
 
     const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
     const [searching, setSearching] = useState(false);
 
-    const DEFAULT_LIMITS: KnowledgeLimits = { rule_description_max: 100, rules: 350, experiences: 2000 };
+    const DEFAULT_LIMITS: KnowledgeLimits = { rule_description_max: 100, rules: 350, workflows: 2000 };
     const [limits, setLimits] = useState<KnowledgeLimits>(DEFAULT_LIMITS);
 
-    const stateMap = { rules, experiences };
-    const setterMap = useRef({ rules: setRules, experiences: setExperiences });
+    const stateMap = { rules, workflows };
+    const setterMap = useRef({ rules: setRules, workflows: setWorkflows });
 
     const fetchList = useCallback(async (category: KnowledgeCategory) => {
         const setter = setterMap.current[category];
@@ -71,7 +71,7 @@ export function useKnowledgeStore() {
     const fetchAll = useCallback(async () => {
         await Promise.all([
             fetchList('rules'),
-            fetchList('experiences'),
+            fetchList('workflows'),
             fetchKnowledgeLimits().then(setLimits).catch(() => { /* best-effort */ }),
         ]);
     }, [fetchList]);
@@ -184,7 +184,7 @@ export function useKnowledgeStore() {
 
     return {
         rules,
-        experiences,
+        workflows,
         stateMap,
         limits,
         searchResults,

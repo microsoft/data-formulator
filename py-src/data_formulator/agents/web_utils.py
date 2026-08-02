@@ -303,3 +303,227 @@ def get_html_meta_description(html_content: str) -> str | None:
     except Exception as e:
         logger.error(f"Failed to extract meta description from HTML: {str(e)}")
         return None
+
+
+# Default cap on how many bytes we will read from a remote resource (20 MB).
+DEFAULT_MAX_FETCH_BYTES = 20 * 1024 * 1024  # default; override via --scratch-max-file-size-mb
+
+
+def _configured_max_fetch_bytes() -> int:
+    """Per-file scratch cap from the server's CLI_ARGS, falling back to the default."""
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            return int(current_app.config.get('CLI_ARGS', {}).get('scratch_max_file_bytes', DEFAULT_MAX_FETCH_BYTES))
+    except Exception:
+        pass
+    return DEFAULT_MAX_FETCH_BYTES
+
+_BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive',
+}
+
+
+def _ssrf_safe_session() -> requests.Session:
+    """Create a requests.Session that re-validates every request/redirect for SSRF."""
+    session = requests.Session()
+
+    class SSRFSafeHTTPAdapter(requests.adapters.HTTPAdapter):
+        def send(self, request, **kwargs):
+            try:
+                _validate_url_for_ssrf(request.url)
+            except ValueError as e:
+                logger.error(f"Blocked redirect to unsafe URL: {request.url} - {str(e)}")
+                raise
+            return super().send(request, **kwargs)
+
+    adapter = SSRFSafeHTTPAdapter()
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+
+def fetch_url_bytes(
+    url: str,
+    timeout: int = 30,
+    max_bytes: int | None = None,
+    headers: dict | None = None,
+) -> dict:
+    """
+    Fetch a remote resource (HTML page or data file) with SSRF protection and a size cap.
+
+    Unlike ``download_html_content`` this does not assume the response is HTML; it returns
+    the raw bytes plus metadata so the caller can decide how to interpret the content
+    (e.g. CSV / JSON / Excel data file vs. an HTML page to scrape).
+
+    Args:
+        url: The URL to fetch.
+        timeout: Request timeout in seconds (capped at 60).
+        max_bytes: Maximum number of bytes to read from the response body.
+        headers: Optional custom request headers.
+
+    Returns:
+        dict with keys:
+            - ``content`` (bytes): the (possibly truncated) response body
+            - ``content_type`` (str): lowercased Content-Type header (without params)
+            - ``final_url`` (str): the URL after any redirects
+            - ``truncated`` (bool): whether the body was cut off at ``max_bytes``
+
+    Raises:
+        ValueError: If the URL fails SSRF validation.
+        requests.RequestException: On network or HTTP errors.
+    """
+    logger.info(f"Fetching URL: {url}")
+    _validate_url_for_ssrf(url)
+
+    if max_bytes is None:
+        max_bytes = _configured_max_fetch_bytes()
+
+    if timeout <= 0:
+        timeout = 30
+    elif timeout > 60:
+        timeout = 60
+
+    request_headers = headers or dict(_BROWSER_HEADERS)
+
+    with _ssrf_safe_session() as session:
+        response = session.get(
+            url,
+            timeout=timeout,
+            headers=request_headers,
+            allow_redirects=True,
+            stream=True,
+        )
+        response.raise_for_status()
+
+        content_type = response.headers.get('content-type', '').split(';')[0].strip().lower()
+
+        chunks = []
+        total = 0
+        truncated = False
+        for chunk in response.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= max_bytes:
+                truncated = True
+                break
+
+        body = b"".join(chunks)[:max_bytes]
+
+    return {
+        "content": body,
+        "content_type": content_type,
+        "final_url": response.url,
+        "truncated": truncated,
+    }
+
+
+def extract_tables_from_html(html_content: str, max_tables: int = 20):
+    """
+    Extract HTML ``<table>`` elements into pandas DataFrames.
+
+    Args:
+        html_content: Raw HTML string.
+        max_tables: Maximum number of tables to return.
+
+    Returns:
+        list[pandas.DataFrame]: Parsed tables (may be empty). Never raises; on failure
+        returns an empty list.
+    """
+    if not html_content or not html_content.strip():
+        return []
+    try:
+        import pandas as pd
+        from io import StringIO
+        tables = pd.read_html(StringIO(html_content))
+        return tables[:max_tables]
+    except Exception as e:
+        logger.info(f"No parseable HTML tables (or read_html failed): {e}")
+        return []
+
+
+def playwright_available() -> bool:
+    """Return True if the optional ``playwright`` package is importable."""
+    try:
+        import importlib.util
+        return importlib.util.find_spec("playwright") is not None
+    except Exception:
+        return False
+
+
+# Signatures of interstitial "prove you're human" pages that block both plain
+# HTTP fetches and headless browsers. These are CAPTCHA-grade challenges (Cloudflare
+# Turnstile / "checking your browser") — render=true will NOT clear them.
+_CHALLENGE_MARKERS = (
+    "challenges.cloudflare.com/turnstile",
+    "cf-turnstile",
+    "verifying your browser",
+    "checking your browser before accessing",
+    "just a moment...",
+    "enable javascript and cookies to continue",
+    "attention required! | cloudflare",
+)
+
+
+def is_verification_challenge(html_content: str) -> bool:
+    """Heuristically detect a browser/human-verification interstitial (e.g. Cloudflare
+    Turnstile) rather than the real page. Such challenges cannot be cleared by a plain
+    fetch or a headless render; the caller should surface this and stop retrying."""
+    if not html_content:
+        return False
+    lowered = html_content[:8000].lower()
+    return any(marker in lowered for marker in _CHALLENGE_MARKERS)
+
+
+def render_url_with_playwright(url: str, timeout_ms: int = 30000, wait_ms: int = 1500) -> str:
+    """
+    Render a JavaScript-heavy page with a headless browser and return the final HTML.
+
+    This is an OPTIONAL fallback used only when static fetching yields no usable content.
+    The ``playwright`` package (and its browser binaries) must be installed separately::
+
+        uv pip install playwright && python -m playwright install chromium
+
+    Security note: the target URL is SSRF-validated before navigation, but a headless
+    browser can issue arbitrary sub-resource requests that are NOT individually filtered
+    by this function. Only enable rendering for content you are willing to trust at the
+    network level.
+
+    Args:
+        url: The page URL to render.
+        timeout_ms: Navigation timeout in milliseconds.
+        wait_ms: Extra settle time after load for late JS rendering.
+
+    Returns:
+        str: The rendered page HTML.
+
+    Raises:
+        RuntimeError: If playwright is not installed.
+        ValueError: If the URL fails SSRF validation.
+    """
+    _validate_url_for_ssrf(url)
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as e:
+        raise RuntimeError(
+            "Playwright is not installed. Install it with "
+            "'uv pip install playwright && python -m playwright install chromium'."
+        ) from e
+
+    logger.info(f"Rendering URL with Playwright: {url}")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(user_agent=_BROWSER_HEADERS['User-Agent'])
+            page.goto(url, timeout=timeout_ms, wait_until="networkidle")
+            if wait_ms > 0:
+                page.wait_for_timeout(wait_ms)
+            return page.content()
+        finally:
+            browser.close()

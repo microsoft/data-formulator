@@ -6,7 +6,12 @@
     "resolutions": {
         "lodash": "^4.18.1",
         "vite": "^7.3.3",
-        "dompurify": "^3.4.2"
+        "dompurify": "^3.4.2",
+        "markdown-it": "^14.3.0",
+        "linkify-it": "^5.0.2",
+        "undici": "^7.28.0",
+        "immutable": "^5.1.9",
+        "uuid": "^11.1.1"
     },
     "dependencies": {
         "@azure/msal-browser": "^5.6.3",
@@ -35,7 +40,7 @@
         "dompurify": "^3.4.0",
         "echarts": "^6.0.0",
         "exceljs": "^4.4.0",
-        "gofish-graphics": "^0.0.22",
+        "flint-chart": "^0.2.1",
         "html2canvas": "^1.4.1",
         "i18next": "^26.0.1",
         "i18next-browser-languagedetector": "^8.2.1",
@@ -60,13 +65,14 @@
         "react-katex": "^3.1.0",
         "react-markdown": "^10.1.0",
         "react-redux": "^8.0.4",
-        "react-router-dom": "^6.22.0",
+        "react-router-dom": "^6.30.4",
         "react-selectable-fast": "^3.4.0",
         "react-simple-code-editor": "^0.13.1",
         "react-vega": "^7.6.0",
         "react-virtuoso": "^4.3.10",
         "redux": "^4.2.0",
         "redux-persist": "^6.0.0",
+        "remark-gfm": "^4",
         "tiptap-markdown": "^0.9.0",
         "typescript": "^4.9.5",
         "validator": "^13.15.20",

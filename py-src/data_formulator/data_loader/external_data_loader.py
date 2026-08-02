@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 import pandas as pd
 import pyarrow as pa
 import logging
@@ -362,7 +362,29 @@ class ExternalDataLoader(ABC):
     - `fetch_data_as_arrow()`: each loader must implement; fetches data as PyArrow Table.
     - `ingest_to_workspace()`: fetches via Arrow and writes parquet to the given workspace.
     """
-    
+
+    # Optional progress sink. When set (by the connector route serving a
+    # catalog request), loaders may report high-level progress messages via
+    # ``_report_progress`` — e.g. "Querying database ContosoSales (3/8)…" —
+    # so the frontend can show what's happening alongside the spinner.
+    # Loaders that don't report progress simply never call the helper.
+    progress_callback: Callable[[str], None] | None = None
+
+    def _report_progress(self, message: str) -> None:
+        """Emit a high-level progress message if a sink is attached.
+
+        Safe to call unconditionally: no-op when no callback is set, and
+        callback failures are swallowed so progress reporting can never break
+        the underlying operation.
+        """
+        cb = self.progress_callback
+        if cb is None:
+            return
+        try:
+            cb(message)
+        except Exception:
+            logger.debug("progress_callback raised; ignoring", exc_info=True)
+
     def get_safe_params(self) -> dict[str, Any]:
         """
         Get connection parameters with sensitive values removed.
@@ -443,6 +465,7 @@ class ExternalDataLoader(ABC):
         table_name: str,
         source_table: str,
         import_options: dict[str, Any] | None = None,
+        source_metadata: dict[str, Any] | None = None,
     ) -> "TableMetadata":
         """
         Fetch data from external source and store as parquet in workspace.
@@ -451,15 +474,21 @@ class ExternalDataLoader(ABC):
         This avoids pandas conversion overhead entirely.
         
         After writing the parquet file, performs a best-effort metadata
-        enrichment: pulls table/column descriptions from the source system
-        via ``get_column_types()`` and merges them into the persisted
-        ``TableMetadata``.  Metadata failures never block the import.
+        enrichment: merges table/column descriptions into the persisted
+        ``TableMetadata``.  Prefers ``source_metadata`` supplied by the caller
+        (served from the synced catalog cache) and only falls back to a live
+        ``get_column_types()`` fetch when none is provided — so a load doesn't
+        pay an extra metadata round-trip for data the catalog already has.
+        Metadata failures never block the import.
         
         Args:
             workspace: The workspace to store data in
             table_name: Name for the table in the workspace
             source_table: Full table name to fetch from
             import_options: See fetch_data_as_arrow for details.
+            source_metadata: Optional pre-fetched source metadata
+                (``{"columns": [...], "description": str}``), typically read
+                from the catalog cache to avoid a live round-trip.
             
         Returns:
             TableMetadata for the created parquet file
@@ -482,9 +511,11 @@ class ExternalDataLoader(ABC):
             source_info=source_info,
         )
 
-        # Best-effort metadata enrichment from the source system.
+        # Best-effort metadata enrichment. Prefer caller-supplied metadata
+        # (from the synced catalog cache); only hit the source live when the
+        # catalog had nothing for this table.
         try:
-            source_meta = self.get_column_types(source_table)
+            source_meta = source_metadata or self.get_column_types(source_table)
             if source_meta:
                 _merge_source_metadata(table_metadata, source_meta)
                 workspace.add_table_metadata(table_metadata)
@@ -520,6 +551,31 @@ class ExternalDataLoader(ABC):
         When *skip_auth_tier* is True, parameters with ``tier="auth"`` are
         not checked (useful for SSO/token flows where auth comes externally).
         """
+        # Apply declared defaults before validation. Historically defaults were
+        # only placeholders in the frontend, which made required fields such as
+        # MySQL's default user fail unless the user retyped them.
+        effective = {
+            pdef["name"]: pdef["default"]
+            for pdef in cls.list_params()
+            if "default" in pdef
+        }
+        effective.update(params)
+        for name, value in effective.items():
+            params.setdefault(name, value)
+
+        paths = cls.auth_paths()
+        selected_path = str(effective.get("_auth_path") or "").strip()
+        if paths:
+            if not selected_path:
+                selected_path = cls.infer_auth_path(effective)
+                effective["_auth_path"] = selected_path
+                params.setdefault("_auth_path", selected_path)
+            path = next((item for item in paths if item.get("id") == selected_path), None)
+            if path is None:
+                raise ConnectorParamError(["_auth_path"], cls.__name__)
+        else:
+            path = None
+
         missing: list[str] = []
         for pdef in cls.list_params():
             name = pdef.get("name", "")
@@ -527,11 +583,68 @@ class ExternalDataLoader(ABC):
                 continue
             if skip_auth_tier and pdef.get("tier") == "auth":
                 continue
-            val = params.get(name)
+            val = effective.get(name)
             if val is None or (isinstance(val, str) and not val.strip()):
                 missing.append(name)
+        if path is not None:
+            for name in path.get("required_fields", []):
+                val = effective.get(name)
+                if val is None or (isinstance(val, str) and not val.strip()):
+                    missing.append(name)
         if missing:
-            raise ConnectorParamError(missing, cls.__name__)
+            raise ConnectorParamError(list(dict.fromkeys(missing)), cls.__name__)
+
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        """Declare mutually exclusive authentication paths for the form.
+
+        The compatibility adapter exposes existing auth-tier fields as one
+        credentials path. Loaders with alternatives should override this.
+        """
+        auth_fields = [
+            pdef["name"]
+            for pdef in cls.list_params()
+            if pdef.get("tier") == "auth"
+        ]
+        if not auth_fields:
+            return []
+        return [{
+            "id": "credentials",
+            "label": "Credentials",
+            "description": "Enter credentials for this data source.",
+            "fields": auth_fields,
+            "required_fields": [
+                pdef["name"]
+                for pdef in cls.list_params()
+                if pdef.get("tier") == "auth" and pdef.get("required")
+            ],
+            "kind": "credentials",
+            "default": True,
+        }]
+
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        """Choose a path for legacy callers that do not send ``_auth_path``."""
+        paths = cls.auth_paths()
+        return next(
+            (str(path["id"]) for path in paths if path.get("default")),
+            str(paths[0]["id"]) if paths else "",
+        )
+
+    @classmethod
+    def discover_param_options(
+        cls,
+        param_name: str,
+        params: dict[str, Any],
+    ) -> list[str]:
+        """Discover selectable parameter values after an explicit request.
+
+        Loaders may override this for fields whose options require a live,
+        lightweight service call. Discovery is never run automatically.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} does not support options for {param_name}"
+        )
 
     @staticmethod
     @abstractmethod
@@ -545,6 +658,12 @@ class ExternalDataLoader(ABC):
     #: ``"MySQL"`` instead of the default ``"Sqlite"`` / ``"Bigquery"`` /
     #: ``"Mysql"``).
     DISPLAY_NAME: str | None = None
+
+    #: One-line, human-readable summary of what this connector is for.
+    #: Surfaced to the data-loading agent by ``list_connectors`` so it can
+    #: reason about which source a user means.  When ``None``, callers fall
+    #: back to ``DISPLAY_NAME``.  This is NOT the verbose ``auth_instructions``.
+    DESCRIPTION: str | None = None
 
     @staticmethod
     def delegated_login_config() -> dict[str, Any] | None:
@@ -793,6 +912,32 @@ class ExternalDataLoader(ABC):
         except Exception:
             pass
         return {}
+
+    # -- Agent probing (design 37) ---------------------------------------
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Run a bounded single-table SPJQ read (design 37 §4.2).
+
+        The ``query`` object supports ``filters`` (source-agnostic ``EQ/NEQ/…``
+        vocabulary), ``columns`` (projection), ``group_by``, ``aggregates``
+        (``count/count_distinct/sum/avg/min/max``), ``order_by`` and ``limit``.
+        Count / distinct / sample / aggregate are all degenerate shapes of this
+        one object.
+
+        Native-first: each loader overrides this and runs the probe the way its
+        backend does it best, one-lining the shared helpers in
+        :mod:`data_formulator.data_loader.probe_utils` — SQL backends call
+        ``probe_via_native_sql`` (compile → run on the source engine), file /
+        object sources call ``run_probe_on_duckdb`` (read the files into DuckDB),
+        and non-SQL backends (Kusto, Mongo) compile their own native query and
+        finish with ``shape_probe_payload``. The base class has no generic way to
+        do any of these, so it reports probe as unsupported rather than silently
+        pulling a local copy and guessing.
+
+        Returns ``{rows, columns, row_count, exact, compiled_note}`` — or
+        ``{error}``. ``exact=false`` marks a sampled answer.
+        """
+        return {"error": "probe is not supported for this source"}
 
     def _tables_to_catalog_tree(self, tables: list[dict[str, Any]]) -> list[dict]:
         """Build a nested catalog tree from ``list_tables``-style entries."""

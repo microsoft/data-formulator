@@ -165,7 +165,7 @@ export async function exportWorkspace(id: string): Promise<Blob> {
             const EXCLUDED = new Set([
                 'models', 'selectedModelId', 'testedModels',
                 'dataLoaderConnectParams', 'identity', 'serverConfig',
-                'chartSynthesisInProgress', 'chartInsightInProgress',
+                'chartSynthesisInProgress',
                 'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
             ]);
             const serializable: Record<string, unknown> = {};

@@ -3,27 +3,18 @@ import logging
 import math
 from typing import Any
 
+import mssql_python
 import pyarrow as pa
-import pyodbc
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 log = logging.getLogger(__name__)
 
-
-def _is_nan(value) -> bool:
-    """Check if a value is NaN (works for float, int, None)."""
-    if value is None:
-        return True
-    try:
-        return math.isnan(float(value))
-    except (TypeError, ValueError):
-        return False
-
-
 class MSSQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "SQL Server"
+    DESCRIPTION = "Connect to a Microsoft SQL Server database to query tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -50,7 +41,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "",
                 "tier": "auth",
-                "description": "Username (leave empty for Windows Authentication)",
+                "description": "Username (leave empty for Entra ID / Windows auth)",
             },
             {
                 "name": "password",
@@ -59,7 +50,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "default": "",
                 "sensitive": True,
                 "tier": "auth",
-                "description": "Password (leave empty for Windows Authentication)",
+                "description": "Password (leave empty for Entra ID / Windows auth)",
             },
             {
                 "name": "port",
@@ -67,15 +58,8 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "1433",
                 "tier": "connection",
+                "advanced": True,
                 "description": "SQL Server port (default: 1433)",
-            },
-            {
-                "name": "driver",
-                "type": "string",
-                "required": False,
-                "default": "ODBC Driver 17 for SQL Server",
-                "tier": "connection",
-                "description": "ODBC driver name",
             },
             {
                 "name": "encrypt",
@@ -83,6 +67,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "yes",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Enable encryption (yes/no)",
             },
             {
@@ -91,6 +76,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "no",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Trust server certificate (yes/no)",
             },
             {
@@ -99,25 +85,81 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "required": False,
                 "default": "30",
                 "tier": "connection",
+                "advanced": True,
                 "description": "Connection timeout in seconds",
             },
         ]
         return params_list
 
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "entra_id",
+                "label": "Microsoft Entra ID (az login)",
+                "description": (
+                    "Run `az login` in your terminal, then connect with no "
+                    "password. Also works with Managed Identity, VS Code, and "
+                    "environment credentials."
+                ),
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+                "default": True,
+                # In local mode the UI shows an in-app "Sign in with Azure CLI"
+                # button wired to these endpoints so users can az login without
+                # leaving the app.
+                "cli_login": {
+                    "provider": "azure",
+                    "label": "Sign in with Azure CLI",
+                    "status_url": "/api/local/azure-status",
+                    "login_url": "/api/local/azure-login",
+                },
+            },
+            {
+                "id": "sql_auth",
+                "label": "SQL Server authentication",
+                "description": "Sign in with a SQL Server username and password.",
+                "fields": ["user", "password"],
+                "required_fields": ["user", "password"],
+                "kind": "credentials",
+            },
+            {
+                "id": "windows_auth",
+                "label": "Windows authentication",
+                "description": "Use the host's Windows identity (Trusted Connection). Windows only.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+            },
+        ]
+
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        selected = str(params.get("_auth_path") or "").strip()
+        if selected:
+            return selected
+        if params.get("user") and params.get("password"):
+            return "sql_auth"
+        return "entra_id"
+
     @staticmethod
     def auth_instructions() -> str:
-        return """**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`
+        return """**Microsoft Entra ID (recommended):** Run `az login` once in your terminal, then start Data Formulator. Choose *Microsoft Entra ID*, fill in only `server` and (optionally) `database`, and leave username/password empty — your Azure CLI credentials are used automatically. Managed Identity, VS Code, and environment credentials also work via `DefaultAzureCredential`.
 
-**Example (Windows auth):** server: `localhost\\SQLEXPRESS` · database: `mydb` (leave user/password empty)
+> Your Entra identity must be granted access to the database, e.g. an admin runs `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` and grants the needed roles.
 
-**Prerequisites (macOS/Linux only):**
-Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-get install unixodbc-dev msodbcsql17` (Ubuntu/Debian). Windows usually has these pre-installed.
+**Example (Entra ID):** server: `myserver.database.windows.net` · database: `mydb` (username/password empty)
 
-**Authentication:**
-- **Windows Auth:** Leave user/password empty (recommended for local dev)
-- **SQL Server Auth:** Provide username and password
+**SQL Server authentication:** Choose *SQL Server authentication* and provide username and password.
 
-**Troubleshooting:** Ensure SQL Server service is running. Verify TCP/IP is enabled in SQL Server Configuration Manager. Test with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
+**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`
+
+**Windows authentication (Windows only):** Choose *Windows authentication* and leave username/password empty.
+
+**Microsoft Entra prerequisite:** Install the Azure CLI and run `az login`. The SQL Server driver is included with Data Formulator; no separate ODBC driver installation is needed.
+
+**Troubleshooting:** Confirm you are signed in with `az account show`. Ensure the SQL Server service is running and TCP/IP is enabled. Test SQL auth with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
 
     def __init__(self, params: dict[str, Any]):
         from data_formulator.security.log_sanitizer import sanitize_params
@@ -130,30 +172,38 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
         self.port = params.get("port", "1433")
-        self.driver = params.get("driver", "ODBC Driver 17 for SQL Server")
         self.encrypt = params.get("encrypt", "yes")
         self.trust_server_certificate = params.get("trust_server_certificate", "no")
         self.connection_timeout = params.get("connection_timeout", "30")
 
+        self.auth_path = params.get("_auth_path") or self.infer_auth_path(params)
+
         # When no database specified, connect to master for catalog browsing
         connect_db = self.database or "master"
 
-        # Build ODBC connection string
+        # Build the auth-independent connection string. mssql-python uses
+        # Direct Database Connectivity, so no external ODBC driver is needed.
         conn_str = (
-            f"DRIVER={{{self.driver}}};"
             f"SERVER={self.server},{self.port};"
             f"DATABASE={connect_db};"
             f"Encrypt={self.encrypt};"
             f"TrustServerCertificate={self.trust_server_certificate};"
-            f"Connection Timeout={self.connection_timeout};"
         )
-        if self.user:
-            conn_str += f"UID={self.user};PWD={self.password};"
+
+        try:
+            connection_timeout = max(1, int(self.connection_timeout))
+        except (TypeError, ValueError) as e:
+            raise ValueError("Connection timeout must be a positive number of seconds") from e
+
+        if self.auth_path == "entra_id":
+            conn_str += "Authentication=ActiveDirectoryDefault;"
+        elif self.user or self.auth_path == "sql_auth":
+            conn_str += f"Authentication=SqlPassword;UID={self.user};PWD={self.password};"
         else:
             conn_str += "Trusted_Connection=yes;"
 
         try:
-            self._conn = pyodbc.connect(conn_str)
+            self._conn = mssql_python.connect(conn_str, timeout=connection_timeout)
             log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
             log.error(f"Failed to connect to SQL Server: {e}")
@@ -262,6 +312,27 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         log.info(f"Fetched {arrow_table.num_rows} rows from SQL Server")
         
         return arrow_table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to T-SQL (TOP / bracket quoting) and run it."""
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        src = ".".join(str(p) for p in path)
+        if "." in src:
+            schema, table = src.split(".", 1)
+        else:
+            schema, table = "dbo", src
+        dialect = probe_utils.MSSQL
+        try:
+            relation = (
+                f"{probe_utils.quote_ident(schema.strip('[]'), dialect)}."
+                f"{probe_utils.quote_ident(table.strip('[]'), dialect)}"
+            )
+        except ValueError as exc:
+            return {"error": f"invalid table identifier: {exc}"}
+        return probe_utils.probe_via_native_sql(
+            query, relation=relation, dialect=dialect, execute=self._execute_query,
+        )
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List all tables from SQL Server database.

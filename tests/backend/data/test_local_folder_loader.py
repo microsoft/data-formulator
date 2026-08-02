@@ -215,6 +215,11 @@ class TestLocalFolderDataLoader:
         loader.test_connection()
         table = loader.fetch_data_as_arrow("data.tsv")
         assert table.num_rows == 2
+        # A TSV must split on tabs into separate columns, not collapse into one
+        # field like "id\tvalue" (regression: read_csv defaulted to a comma
+        # delimiter, so a tab-separated file became a single string column).
+        assert table.column_names == ["id", "value"]
+        assert table.column("value").to_pylist() == ["foo", "bar"]
 
     def test_fetch_parquet(self, data_dir: Path) -> None:
         loader = LocalFolderDataLoader({"root_dir": str(data_dir)})

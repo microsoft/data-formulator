@@ -15,6 +15,7 @@ from data_formulator.data_loader.external_data_loader import (
     _esc_id,
     _esc_str,
 )
+from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 class MySQLDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "MySQL"
+    DESCRIPTION = "Connect to a MySQL database server to query tables with SQL."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -29,10 +31,22 @@ class MySQLDataLoader(ExternalDataLoader):
             {"name": "user", "type": "string", "required": True, "default": "root", "tier": "auth", "description": "MySQL username"}, 
             {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "server address"}, 
-            {"name": "port", "type": "int", "required": False, "default": 3306, "tier": "connection", "description": "server port"},
+            {"name": "port", "type": "int", "required": False, "default": 3306, "tier": "connection", "advanced": True, "description": "server port"},
             {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Database name (leave empty to browse all databases)"}
         ]
         return params_list
+
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [{
+            "id": "password",
+            "label": "Username and password",
+            "description": "Connect with a MySQL user. Password may be blank.",
+            "fields": ["user", "password"],
+            "required_fields": ["user"],
+            "kind": "credentials",
+            "default": True,
+        }]
 
     @staticmethod
     def auth_instructions() -> str:
@@ -115,6 +129,13 @@ class MySQLDataLoader(ExternalDataLoader):
         conn = self._get_conn()
         cur = conn.cursor()
         try:
+            # Force a fresh REPEATABLE READ snapshot on every read so rows
+            # committed by other sessions after this loader was first
+            # instantiated are visible without restarting the process.
+            try:
+                conn.commit()
+            except Exception:
+                pass
             cur.execute(query)
             if cur.description is None:
                 return pa.table({})
@@ -214,6 +235,37 @@ class MySQLDataLoader(ExternalDataLoader):
         logger.info(f"Fetched {arrow_table.num_rows} rows from MySQL")
         
         return arrow_table
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to MySQL and run it server-side."""
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        src = ".".join(str(p) for p in path)
+        dialect = probe_utils.MYSQL
+        try:
+            if "." in src:
+                db, tbl = src.split(".", 1)
+                relation = (
+                    f"{probe_utils.quote_ident(db.strip('`'), dialect)}."
+                    f"{probe_utils.quote_ident(tbl.strip('`'), dialect)}"
+                )
+            elif self.database:
+                relation = (
+                    f"{probe_utils.quote_ident(self.database, dialect)}."
+                    f"{probe_utils.quote_ident(src.strip('`'), dialect)}"
+                )
+            else:
+                relation = probe_utils.quote_ident(src.strip("`"), dialect)
+        except ValueError as exc:
+            return {"error": f"invalid table identifier: {exc}"}
+
+        def _execute(sql: str) -> pa.Table:
+            with self._lock:
+                return self._read_sql(sql)
+
+        return probe_utils.probe_via_native_sql(
+            query, relation=relation, dialect=dialect, execute=_execute,
+        )
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List available tables from MySQL database."""

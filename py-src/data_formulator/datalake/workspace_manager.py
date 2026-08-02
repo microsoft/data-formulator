@@ -169,6 +169,10 @@ class WorkspaceManager:
         workspace.  If a workspace directory lacks this file (legacy),
         it is auto-repaired via :meth:`_ensure_meta`.
 
+        Every workspace directory is listed, including empty
+        "Untitled Session" entries from data-loading chats. Users
+        manage (rename/delete) these themselves via the sidebar.
+
         Returns list of {"id": str, "display_name": str, "updated_at": str}.
         """
         workspaces = []
@@ -184,13 +188,16 @@ class WorkspaceManager:
             except Exception:
                 continue
 
+            tc = meta.get("tableCount")
+            cc = meta.get("chartCount")
+
             workspaces.append({
                 "id": child.name,
                 "display_name": meta.get("displayName", child.name),
                 "created_at": meta.get("createdAt") or meta.get("updatedAt"),
                 "updated_at": meta.get("updatedAt"),
-                "table_count": meta.get("tableCount"),
-                "chart_count": meta.get("chartCount"),
+                "table_count": tc,
+                "chart_count": cc,
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)

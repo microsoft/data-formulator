@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Range band: filled ribbon between a lower and an upper wavy bound -->
+  <path d="M48,150 Q80,120 112,135 Q150,153 188,118 Q214,94 236,108
+           L236,150 Q214,132 188,158 Q150,196 112,176 Q80,162 48,186 Z"
+        fill="#76c6ff" fill-opacity="0.55"
+        stroke="none"/>
+
+  <!-- Upper bound line -->
+  <path d="M48,150 Q80,120 112,135 Q150,153 188,118 Q214,94 236,108"
+        fill="none" stroke="#2b7fb8" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Lower bound line -->
+  <path d="M48,186 Q80,162 112,176 Q150,196 188,158 Q214,132 236,150"
+        fill="none" stroke="#2b7fb8" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

@@ -40,6 +40,7 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
+import { threadPaneWidth } from './threadLayout';
 
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
@@ -115,6 +116,15 @@ export const DataFormulatorFC = ({ }) => {
         setConnectorRefreshKey(k => k + 1);
         refreshPageConnectors();
     }, [refreshPageConnectors]);
+    // A connector created from a non-sidebar surface (e.g. the inline
+    // connection form in the data-loading chat, design 38) bumps this redux
+    // counter; refresh the connector list so the new source appears.
+    const connectorRefreshRequest = useSelector((state: DataFormulatorState) => state.connectorRefreshRequest);
+    useEffect(() => {
+        if (connectorRefreshRequest > 0) {
+            handleConnectorsChanged();
+        }
+    }, [connectorRefreshRequest, handleConnectorsChanged]);
     useEffect(() => {
         setPageConnectors([]);
         refreshPageConnectors();
@@ -301,22 +311,44 @@ export const DataFormulatorFC = ({ }) => {
     // State for unified data upload dialog
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
-    const [uploadDialogInitialChatPrompt, setUploadDialogInitialChatPrompt] = useState<string | undefined>(undefined);
-    const [uploadDialogInitialChatImages, setUploadDialogInitialChatImages] = useState<string[] | undefined>(undefined);
 
     // Loading state for sessions (from Redux, shared with App.tsx)
     const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
-    const openUploadDialog = (tab: UploadTabType, initialChatPrompt?: string, initialChatImages?: string[]) => {
+    const openUploadDialog = (tab: UploadTabType) => {
         // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
-        setUploadDialogInitialTab(tab);
-        setUploadDialogInitialChatPrompt(initialChatPrompt);
-        setUploadDialogInitialChatImages(initialChatImages);
+        // Compact mode: when opening the generic menu but a data-loading
+        // conversation is already in progress, land directly on the chat so
+        // the prior history (and any in-progress extractions / load plan) is
+        // visible instead of the empty menu hero. Explicit tab requests
+        // (connector, upload, paste, …) are respected as-is; the menu's
+        // connectors / direct-load options stay one back-arrow click away.
+        const resolvedTab = (tab === 'menu' && dataLoadingChatMessages.length > 0)
+            ? 'extract'
+            : tab;
+        setUploadDialogInitialTab(resolvedTab);
         setUploadDialogOpen(true);
+    };
+
+    // Seed the Data Loading chat through the single redux `pending` slot,
+    // then navigate to the extract tab. This is the one channel that
+    // carries text, images, AND file attachments as first-class fields —
+    // replacing the older `initialChatPrompt/Images` props that silently
+    // dropped file attachments (they had no dedicated field and only
+    // survived if their name was baked into the prompt text).
+    const startDataLoadingChat = (text: string, images: string[] = [], attachments: string[] = []) => {
+        if (text.trim().length > 0 || images.length > 0 || attachments.length > 0) {
+            // Preserve any prior conversation (Option A). `queueDataLoadingTask`
+            // drops a "new request" divider when a thread already exists, then
+            // enqueues the submission; the user resets explicitly via the
+            // header reset button when they want a blank slate.
+            dispatch(dfActions.queueDataLoadingTask({ text, images, attachments }));
+        }
+        openUploadDialog('extract');
     };
 
     // Honor cross-component requests to hand off to the Data Loading
@@ -326,7 +358,7 @@ export const DataFormulatorFC = ({ }) => {
     const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
     useEffect(() => {
         if (agentHandoffRequest && agentHandoffRequest.target === 'data_loading') {
-            openUploadDialog('extract', agentHandoffRequest.prompt, agentHandoffRequest.images);
+            startDataLoadingChat(agentHandoffRequest.prompt, agentHandoffRequest.images ?? [], []);
             dispatch(dfActions.clearAgentHandoffRequest());
         }
         // openUploadDialog is stable enough for this purpose; we only react
@@ -430,12 +462,9 @@ export const DataFormulatorFC = ({ }) => {
         //boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
-    // Discrete column snapping for DataThread
-    const CARD_WIDTH = 220;
-    const CARD_GAP = 12;
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    const PANE_PADDING = 48;
-    const columnSize = (n: number) => n * COLUMN_WIDTH + PANE_PADDING;
+    // Discrete column snapping for DataThread.
+    // Column geometry is defined once in ./threadLayout and shared with
+    // DataThread so the pane snap points line up with the rendered columns.
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -446,13 +475,13 @@ export const DataFormulatorFC = ({ }) => {
         let bestCols = 1;
         let bestDist = Infinity;
         for (let n = 1; n <= 3; n++) {
-            const dist = Math.abs(raw - columnSize(n));
+            const dist = Math.abs(raw - threadPaneWidth(n));
             if (dist < bestDist) {
                 bestDist = dist;
                 bestCols = n;
             }
         }
-        const snapped = columnSize(bestCols);
+        const snapped = threadPaneWidth(bestCols);
         if (Math.abs(raw - snapped) > 2) {
             const totalWidth = sizes.reduce((a, b) => a + b, 0);
             allotmentRef.current.resize([snapped, totalWidth - snapped]);
@@ -514,7 +543,9 @@ export const DataFormulatorFC = ({ }) => {
 
         return count;
     }, [tables]);
-    const preferredColumns = threadCount <= 1 ? 1 : 2;
+    // Default the thread pane to 2 columns so the docked chat box (rendered
+    // at the bottom of DataThread) is wide enough to read comfortably.
+    const preferredColumns = 2;
 
     // Track previous thread count to auto-resize intelligently
     const prevThreadCountRef = useRef(threadCount);
@@ -532,10 +563,11 @@ export const DataFormulatorFC = ({ }) => {
         let newSize: number | null = null;
         if (prev <= 1 && threadCount > 1) {
             // Case 1: was 1 thread, now 2+ → expand to 2 columns
-            newSize = columnSize(2);
+            newSize = threadPaneWidth(2);
         } else if (prev > 1 && threadCount <= 1) {
-            // Case 2: was 2+ threads, now 1 → shrink to 1 column
-            newSize = columnSize(1);
+            // Case 2: was 2+ threads, now 1 → keep 2 columns so the docked
+            // chat box stays wide enough to read.
+            newSize = threadPaneWidth(2);
         }
         // Case 3: was 2+ threads and still 2+ → don't change (respect user's manual setting)
 
@@ -558,8 +590,10 @@ export const DataFormulatorFC = ({ }) => {
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
             <DataSourceSidebar
-                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)}
+                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                 connectorRefreshKey={connectorRefreshKey}
+                onConnectorsChanged={handleConnectorsChanged}
+                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
             />
             <Box ref={containerRef} className="outer-allotment" sx={{
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
@@ -568,7 +602,9 @@ export const DataFormulatorFC = ({ }) => {
                     position: 'relative'}}>
                 <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
                     {tables.length > 0 ? (
-                        <Allotment.Pane minSize={columnSize(1)} preferredSize={columnSize(preferredColumns)} maxSize={columnSize(3)} snap={false}>
+                        <Allotment.Pane minSize={threadPaneWidth(1)} 
+                                preferredSize={threadPaneWidth(preferredColumns)} 
+                                maxSize={threadPaneWidth(3)} snap={false}>
                             <DataThread sx={{
                                 display: 'flex', 
                                 flexDirection: 'column',
@@ -621,13 +657,16 @@ export const DataFormulatorFC = ({ }) => {
             backgroundSize: '16px 16px',
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
-        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
+        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
+            {/* Hero — fills the viewport so title + input own the first screen;
+                Demos/Sessions live below the fold and just peek up. */}
+            <Box sx={{ minHeight: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <Box sx={{display: 'flex', mx: 'auto'}}>
-                <Typography fontSize={84} sx={{ml: 2, letterSpacing: '0.05em'}}>{toolName}</Typography> 
+                <Typography fontSize={76} sx={{letterSpacing: '0.04em'}}>{toolName}</Typography> 
             </Box>
             <Typography sx={{ 
-                fontSize: 24, color: theme.palette.text.secondary, 
-                textAlign: 'center', mb: 2}}>
+                fontSize: 20, color: theme.palette.text.secondary, 
+                textAlign: 'center', mt: 1.5, mb: 0}}>
                 {t('landing.tagline')}
             </Typography>
 
@@ -717,7 +756,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             )}
 
-            <Box sx={{mt: 4}}>
+            <Box sx={{mt: 5}}>
                 <DataLoadMenu 
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     onSelectConnector={(conn) => {
@@ -730,27 +769,26 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
-                    onStartChat={(prompt, images) => openUploadDialog('extract', prompt, images)}
+                    onStartChat={(prompt, images, attachments) => startDataLoadingChat(prompt, images, attachments)}
                     hasPriorConversation={dataLoadingChatMessages.length > 0}
                     onResumeChat={() => openUploadDialog('extract')}
                     serverConfig={serverConfig}
                     connectors={pageConnectors}
                 />
             </Box>
+            </Box>
 
             {/* Demos — promoted ahead of "Your Sessions" on the hosted
                 demo, since first-time visitors won't have any sessions
                 yet and demos are the most engaging entry point. */}
-            <Box sx={{mt: 4}}>
-                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
-                    <Typography sx={{ color: 'text.secondary' }}>
-                        {t('landing.demos')}
-                    </Typography>
-                </Divider>
+            <Box sx={{mt: 3}}>
+                <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
+                    {t('landing.demos')}
+                </Typography>
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                    gap: 2,
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 1.5,
                 }}>
                     {demoSessions.map((session) => (
                         <ExampleSessionCard
@@ -763,21 +801,20 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
 
             {/* ── Saved workspaces section ──────────────────────────── */}
-            <Box sx={{mt: 4}}>
-                <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem'}}>
-                    <Typography sx={{ color: 'text.secondary' }}>
+            <Box sx={{mt: 8}}>
+                {/* Section header — left-aligned label with the sort control
+                    on the right, aligned to the card grid. */}
+                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2 }}>
+                    <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                         {t('workspace.yourSessions')}
                     </Typography>
-                </Divider>
-                {/* Sort control — placed in the upper-right of the section
-                    so it's visible without competing with the divider title. */}
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
                     <Select
                         size="small"
                         variant="standard"
                         value={wsSort}
                         onChange={(e) => setWsSort(e.target.value as typeof wsSort)}
                         disableUnderline
+                        inputProps={{ 'aria-label': t('workspace.sortSessions') }}
                         IconComponent={(props) => (
                             <ExpandMoreIcon {...props} sx={{ fontSize: 16, color: 'text.disabled', right: 0 }} />
                         )}
@@ -807,8 +844,8 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                    gap: 2,
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 1.5,
                 }}>
                     {sortedSavedWorkspaces.map(w => {
                         const isRenaming = renamingWs === w.id;
@@ -923,8 +960,10 @@ export const DataFormulatorFC = ({ }) => {
                 {tables.length > 0 ? fixedSplitPane : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
-                            onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)}
+                            onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                             connectorRefreshKey={connectorRefreshKey}
+                            onConnectorsChanged={handleConnectorsChanged}
+                            onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
                         />
                         {dataUploadRequestBox}
                     </Box>
@@ -933,16 +972,9 @@ export const DataFormulatorFC = ({ }) => {
                     open={uploadDialogOpen}
                     onClose={() => {
                         setUploadDialogOpen(false);
-                        // Clear one-shot seed values so the next dialog
-                        // open (e.g. via the upload button) doesn't
-                        // re-fire the agent with a stale prompt/image.
-                        setUploadDialogInitialChatPrompt(undefined);
-                        setUploadDialogInitialChatImages(undefined);
                         refreshPageConnectors();
                     }}
                     initialTab={uploadDialogInitialTab}
-                    initialChatPrompt={uploadDialogInitialChatPrompt}
-                    initialChatImages={uploadDialogInitialChatImages}
                     onConnectorsChanged={handleConnectorsChanged}
                 />
                 {/* Loading overlay for session loading */}
