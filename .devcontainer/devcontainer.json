@@ -11,7 +11,7 @@
 			"version": "18"
 		},
 		"ghcr.io/devcontainers/features/azure-cli:1": {},
-		"ghcr.io/astral-sh/uv:1": {}
+		"ghcr.io/va-h/devcontainers-features/uv:1": {}
 	},
 	
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
