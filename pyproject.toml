@@ -32,6 +32,7 @@ dependencies = [
     # Windows/macOS without a Rust toolchain. Pin to the last universal-wheel
     # line; >=1.84.0 keeps the litellm CVE fix and allows aiohttp>=3.14.
     "litellm>=1.84.0,<1.92",
+    "aiohttp>=3.14.3",
     "duckdb",
     "numpy",
     "vl-convert-python",
