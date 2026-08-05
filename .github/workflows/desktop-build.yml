@@ -1,0 +1,103 @@
+name: desktop builds
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-desktop:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            artifact: data-formulator-windows-x64
+          - name: macOS
+            os: macos-latest
+            artifact: data-formulator-macos
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: '3.12'
+          enable-cache: true
+
+      - name: Install frontend dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build frontend
+        run: yarn build
+
+      - name: Install desktop dependencies
+        run: uv sync --extra desktop --frozen
+
+      - name: Build desktop application
+        run: uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
+
+      - name: Archive Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Compress-Archive -Path 'dist/Data Formulator' -DestinationPath 'release/Data-Formulator-Windows-x64.zip'
+
+      - name: Archive macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent \
+            'dist/Data Formulator.app' \
+            'release/Data-Formulator-macOS.zip'
+
+      - name: Upload desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  attach-to-release:
+    name: Attach desktop downloads to release
+    if: github.ref_type == 'tag'
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: data-formulator-*
+          path: release
+          merge-multiple: true
+
+      - name: Attach archives to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true

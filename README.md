@@ -85,6 +85,18 @@ Here are milestones that lead to the current design:
 
 Play with Data Formulator with one of the following options. 
 
+### Desktop downloads
+
+CI builds self-contained Windows and macOS applications for every update to `main`.
+Download the latest archives from the **Artifacts** section of the most recent
+[desktop builds workflow](https://github.com/microsoft/data-formulator/actions/workflows/desktop-build.yml).
+Tagged builds are also attached to the corresponding
+[GitHub Release](https://github.com/microsoft/data-formulator/releases).
+
+Extract the archive and run `Data Formulator.exe` on Windows or
+`Data Formulator.app` on macOS. These preview builds are not code-signed, so the
+operating system may ask you to confirm that you trust the application.
+
 - **Option 1: Install via uv (recommended)**
   
   [uv](https://docs.astral.sh/uv/) is an extremely fast Python package manager. If you have uv installed, you can run Data Formulator directly without any setup:
