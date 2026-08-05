@@ -96,6 +96,8 @@ export interface ModelConfig {
     api_key?: string;
     api_base?: string;
     api_version?: string;
+    /** Non-sensitive server hint describing how a global model authenticates. */
+    auth_mode?: 'key' | 'azure_identity';
     /** True for models configured server-side via .env. Their credentials never leave the server. */
     is_global?: boolean;
 }
@@ -980,6 +982,11 @@ export const dataFormulatorSlice = createSlice({
         },
         addModel: (state, action: PayloadAction<ModelConfig>) => {
             state.models = [...state.models, action.payload];
+        },
+        updateModel: (state, action: PayloadAction<ModelConfig>) => {
+            state.models = state.models.map(model =>
+                model.id === action.payload.id ? action.payload : model
+            );
         },
         removeModel: (state, action: PayloadAction<string>) => {
             state.models = state.models.filter(model => model.id != action.payload);

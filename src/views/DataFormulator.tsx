@@ -1022,10 +1022,10 @@ export const DataFormulatorFC = ({ }) => {
                             <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                                 {toolName}
                             </Typography>
-                            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
-                                {t('landing.firstSelectModelPrefix')} <ModelSelectionButton />
+                            <Typography variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
+                                {t('landing.firstSelectModelPrefix')} <ModelSelectionButton appearance="inline" />
                             </Typography>
-                            <Typography  color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 {t('landing.modelTip')}</Typography>
+                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 {t('landing.modelTip')}</Typography>
                         </Box>
                         {footer}
                     </Box>

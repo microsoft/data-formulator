@@ -1,8 +1,9 @@
 import json
 import litellm
+import os
 from types import SimpleNamespace
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.identity import AzureCliCredential, DefaultAzureCredential, get_bearer_token_provider
 
 
 def _synthesize_stream(response):
@@ -250,8 +251,13 @@ class Client(object):
             self.params["api_base"] = api_base
             self.params["api_version"] = api_version if api_version else "2025-04-01-preview"
             if api_key is None or api_key == "":
+                credential = (
+                    AzureCliCredential()
+                    if os.environ.get("DATA_FORMULATOR_DESKTOP") == "1"
+                    else DefaultAzureCredential()
+                )
                 token_provider = get_bearer_token_provider(
-                    DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+                    credential, "https://cognitiveservices.azure.com/.default"
                 )
                 self.params["azure_ad_token_provider"] = token_provider
             self.params["custom_llm_provider"] = "azure"

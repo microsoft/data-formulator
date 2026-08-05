@@ -546,7 +546,7 @@ def run_app():
     url = "http://localhost:{0}".format(args.port)
     print(f"Ready! Open {url} in your browser.", flush=True)
     
-    if not args.dev:
+    if not args.dev and os.environ.get('DATA_FORMULATOR_DESKTOP') != '1':
         threading.Timer(1.5, lambda: webbrowser.open(url, new=2)).start()
 
     debug_mode = args.dev

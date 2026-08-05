@@ -71,6 +71,10 @@ dependencies = [
 # challenge that a plain HTTP fetch cannot pass. After installing, also run:
 #   python -m playwright install chromium
 browser = ["playwright>=1.40"]
+desktop = [
+  "pyinstaller>=6.0",
+  "pywebview>=5.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/microsoft/data-formulator"
@@ -95,9 +99,15 @@ include = ["data_formulator*"]
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"
+data_formulator_desktop = "data_formulator.desktop:run_desktop"
 
 [tool.uv]
 dev-dependencies = [
     "build",
     "pytest",
 ]
+
+[[tool.uv.index]]
+name = "microsoft-package-feed"
+url = "https://packagefeedproxy.microsoft.io/pypi/simple"
+default = true

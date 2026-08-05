@@ -352,6 +352,7 @@
     "connectionTimeout": "Connection timed out. Please check your credentials and try again.",
     "delegatedLogin": "Login via service",
     "cliLoginReady": "Signed in as {{user}}. You are ready to connect.",
+    "cliLogin": "Sign in with Azure CLI",
     "cliLoginCurrentAccount": "your current account",
     "cliLoginRequired": "Sign in with Azure CLI before connecting. Run `az login` in a terminal, then reopen this form.",
     "cliNotInstalled": "Azure CLI not found. Install it and run `az login` in a terminal before connecting.",
