@@ -42,7 +42,7 @@ import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 import { threadPaneWidth } from './threadLayout';
 
-import dfLogo from '../assets/df-logo.png';
+import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
@@ -414,7 +414,7 @@ export const DataFormulatorFC = ({ }) => {
         
         // Preload imported images (public images are preloaded in index.html)
         const imagesToPreload = [
-            { src: dfLogo, type: 'image/png' },
+            { src: dfLogo, type: 'image/svg+xml' },
             { src: exampleImageTable, type: 'image/png' },
         ];
         

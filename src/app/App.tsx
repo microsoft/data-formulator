@@ -82,7 +82,7 @@ import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
-import dfLogo from '../assets/df-logo.png';
+import dfLogo from '../assets/df-logo.svg';
 import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import { LogViewerDialog } from '../views/LogViewerDialog';

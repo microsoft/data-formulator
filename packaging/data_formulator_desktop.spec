@@ -6,6 +6,9 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 project_root = Path(SPECPATH).parent
 package_root = project_root / "py-src" / "data_formulator"
+icon_path = project_root / "packaging" / "icons" / (
+    "data-formulator.icns" if sys.platform == "darwin" else "data-formulator.ico"
+)
 
 datas = [(str(package_root / "dist"), "data_formulator/dist")]
 binaries = []
@@ -42,6 +45,7 @@ exe = EXE(
     exclude_binaries=True,
     name="Data Formulator",
     console=False,
+    icon=str(icon_path),
 )
 coll = COLLECT(
     exe,
@@ -57,4 +61,5 @@ if sys.platform == "darwin":
         coll,
         name="Data Formulator.app",
         bundle_identifier="com.microsoft.data-formulator",
+        icon=str(icon_path),
     )

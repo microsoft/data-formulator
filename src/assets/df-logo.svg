@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 88" role="img" aria-labelledby="title desc">
+  <title id="title">Data Formulator</title>
+  <desc id="desc">A faceted gold bonfire with dark geometric fuel and two sparks.</desc>
+
+  <g id="sparks">
+    <path fill="#F05A3D" d="M78 7l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>
+    <path fill="#F2B43A" d="M24 17l2 4 4 2-4 2-2 4-2-4-4-2 4-2z"/>
+  </g>
+
+  <g id="flame">
+    <path fill="#C97C1E" d="M48 4l-7 30-4-14-15 28 11 21h15z"/>
+    <path fill="#DF9728" d="M48 4l9 25 10-10 7 25-11 25H48z"/>
+    <path fill="#F1B63D" d="M48 22l-4 21-3-10-10 17 8 15h9z"/>
+    <path fill="#F6CB5B" d="M48 22l7 18 7-6 4 15-8 16H48z"/>
+  </g>
+
+  <g id="fuel">
+    <path fill="#202D36" d="M14 67l29-9 9 8-30 10z"/>
+    <path fill="#3A4C56" d="M43 58l39 10-9 9-21-11z"/>
+    <path fill="#101920" d="M22 76l30-10 21 11-9 7H31z"/>
+  </g>
+</svg>
