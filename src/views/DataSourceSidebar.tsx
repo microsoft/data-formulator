@@ -34,11 +34,13 @@ import {
     Select,
     ListItemIcon,
     ListItemText,
+    ClickAwayListener,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
 import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
+import { ScrollFadeContainer } from '../components/ScrollFade';
 
 import StorageIcon from '@mui/icons-material/Storage';
 import AddIcon from '@mui/icons-material/Add';
@@ -57,6 +59,8 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
+import PushPinIcon from '@mui/icons-material/PushPin';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 
 import { KnowledgePanel } from './KnowledgePanel';
 
@@ -92,6 +96,7 @@ const MIN_PANEL_WIDTH = REFERENCE.sidebar.min;
 const MAX_PANEL_WIDTH = REFERENCE.sidebar.max;
 
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
+const SIDEBAR_PINNED_KEY = 'df-sidebar-pinned';
 
 // Above this many rows or this much uncompressed data, importing a table
 // wholesale is slow/unwieldy (and can hit backend result-size limits). Tables
@@ -223,30 +228,35 @@ export const DataSourceSidebar: React.FC<{
         const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
         return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
     });
+    const [isPinned, setIsPinned] = useState(() => localStorage.getItem(SIDEBAR_PINNED_KEY) !== 'false');
 
-    // Suppress the open/close width transition while the user is actively
-    // dragging the resize handle. Otherwise every pixel of mouse motion
-    // kicks off a 200ms width animation, producing a visibly laggy drag
-    // that always trails the cursor.
-    const [resizing, setResizing] = useState(false);
+    const togglePinned = useCallback(() => {
+        setIsPinned(previous => {
+            const next = !previous;
+            localStorage.setItem(SIDEBAR_PINNED_KEY, String(next));
+            return next;
+        });
+    }, []);
+
+    const handleClickAway = useCallback(() => {
+        if (isOpen && !isPinned) {
+            dispatch(dfActions.setDataSourceSidebarOpen(false));
+        }
+    }, [dispatch, isOpen, isPinned]);
 
     const handleResize = useCallback((delta: number) => {
-        if (!resizing) setResizing(true);
         setPanelWidth(prev => {
             const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, prev + delta));
             return next;
         });
-    }, [resizing]);
+    }, []);
 
     const handleResizeEnd = useCallback(() => {
-        setResizing(false);
         setPanelWidth(prev => {
             localStorage.setItem(SIDEBAR_WIDTH_KEY, String(prev));
             return prev;
         });
     }, []);
-
-    const totalWidth = isOpen ? RAIL_WIDTH + panelWidth : RAIL_WIDTH;
 
     // Brief sidebar-wide attention nudge whenever a focus request lands
     // (e.g. dialog → sidebar handoff). A horizontal translateX is enough to
@@ -264,36 +274,21 @@ export const DataSourceSidebar: React.FC<{
         setBounceTick(t => t + 1);
     }, [focusedConnectorId]);
 
-    // Keep the panel mounted during the close animation so its content
-    // doesn't pop out before the wrapper width has finished collapsing.
-    // We mount immediately on open and only unmount after the same
-    // duration as the wrapper transition (200ms).
-    const [showPanel, setShowPanel] = useState<boolean>(isOpen);
-    useEffect(() => {
-        if (isOpen) {
-            setShowPanel(true);
-            return;
-        }
-        const timeoutId = setTimeout(() => setShowPanel(false), 200);
-        return () => clearTimeout(timeoutId);
-    }, [isOpen]);
-
     return (
+        <ClickAwayListener onClickAway={handleClickAway} mouseEvent="onMouseDown">
         <Box
             sx={{
-                width: totalWidth,
-                minWidth: totalWidth,
-                transition: resizing ? 'none' : 'width 0.2s ease, min-width 0.2s ease',
+                width: isOpen && isPinned ? RAIL_WIDTH + panelWidth : RAIL_WIDTH,
+                minWidth: isOpen && isPinned ? RAIL_WIDTH + panelWidth : RAIL_WIDTH,
+                height: '100%',
+                flexShrink: 0,
                 display: 'flex',
                 flexDirection: 'row',
                 borderRight: `1px solid ${borderColor.view}`,
                 backgroundColor: 'background.paper',
-                // Clip during the open/close width transition so panel
-                // content doesn't bleed past the shrinking border. Tooltips
-                // and Popovers from inside still escape correctly because
-                // MUI portals them to document.body.
-                overflow: 'hidden',
+                overflow: 'visible',
                 position: 'relative',
+                zIndex: 10,
                 // One-shot horizontal nudge on each focus request.
                 // Encoding bounceTick into the @keyframes name produces a
                 // fresh CSS rule per request, which forces the browser to
@@ -362,30 +357,45 @@ export const DataSourceSidebar: React.FC<{
                 </Tooltip>
             </Box>
 
-            {/* Panel — stays mounted during the close animation so its
-                content doesn't disappear before the wrapper has finished
-                collapsing. See `showPanel` above. */}
-            {showPanel && (
-                <DataSourceSidebarPanel
-                    panelWidth={panelWidth}
-                    onOpenUploadDialog={onOpenUploadDialog}
-                    onCollapse={toggle}
-                    connectorRefreshKey={connectorRefreshKey}
-                    onConnectorsChanged={onConnectorsChanged}
-                    disableConnectors={disableConnectors}
-                    onStartDataLoadingChat={onStartDataLoadingChat}
-                />
-            )}
-
-            {/* Resize handle — draggable right edge */}
-            {showPanel && (
-                <ResizeHandle
-                    direction="horizontal"
-                    onResize={handleResize}
-                    onResizeEnd={handleResizeEnd}
-                />
+            {/* The expanded panel overlays the workspace instead of changing
+                this flex item's width and relaying out charts on every toggle. */}
+            {isOpen && (
+                <Box sx={{
+                    position: isPinned ? 'relative' : 'absolute',
+                    ...(isPinned ? {} : {
+                        left: RAIL_WIDTH,
+                        top: 0,
+                        bottom: 0,
+                    }),
+                    width: panelWidth,
+                    minWidth: panelWidth,
+                    height: '100%',
+                    flexShrink: 0,
+                    display: 'flex',
+                    backgroundColor: 'background.paper',
+                    borderRight: isPinned ? 'none' : `1px solid ${borderColor.view}`,
+                    boxShadow: isPinned ? 'none' : '2px 0 8px rgba(0, 0, 0, 0.10)',
+                }}>
+                    <DataSourceSidebarPanel
+                        panelWidth={panelWidth}
+                        onOpenUploadDialog={onOpenUploadDialog}
+                        onCollapse={toggle}
+                        isPinned={isPinned}
+                        onTogglePinned={togglePinned}
+                        connectorRefreshKey={connectorRefreshKey}
+                        onConnectorsChanged={onConnectorsChanged}
+                        disableConnectors={disableConnectors}
+                        onStartDataLoadingChat={onStartDataLoadingChat}
+                    />
+                    <ResizeHandle
+                        direction="horizontal"
+                        onResize={handleResize}
+                        onResizeEnd={handleResizeEnd}
+                    />
+                </Box>
             )}
         </Box>
+        </ClickAwayListener>
     );
 };
 
@@ -395,11 +405,13 @@ const DataSourceSidebarPanel: React.FC<{
     panelWidth: number;
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
+    isPinned: boolean;
+    onTogglePinned: () => void;
     connectorRefreshKey?: number;
     onConnectorsChanged?: () => void;
     disableConnectors?: boolean;
     onStartDataLoadingChat?: (text: string) => void;
-}> = ({ panelWidth, onOpenUploadDialog, onCollapse, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onStartDataLoadingChat }) => {
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, isPinned, onTogglePinned, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onStartDataLoadingChat }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -1588,11 +1600,36 @@ const DataSourceSidebarPanel: React.FC<{
         '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
     } as const;
 
+    const pinAction = (
+        <Tooltip
+            title={isPinned
+                ? t('sidebar.unpin', { defaultValue: 'Close when clicking outside' })
+                : t('sidebar.pin', { defaultValue: 'Keep sidebar open' })}
+            placement="bottom"
+        >
+            <IconButton
+                size="small"
+                onClick={onTogglePinned}
+                aria-pressed={isPinned}
+                sx={{
+                    ...panelHeaderActionSx,
+                    color: isPinned ? 'primary.main' : 'text.secondary',
+                    bgcolor: 'transparent',
+                    '&:hover': {
+                        color: isPinned ? 'primary.dark' : 'text.primary',
+                        bgcolor: 'transparent',
+                    },
+                }}
+            >
+                {isPinned
+                    ? <PushPinIcon sx={{ fontSize: iconVar.md }} />
+                    : <PushPinOutlinedIcon sx={{ fontSize: iconVar.md }} />}
+            </IconButton>
+        </Tooltip>
+    );
+
     return (
         <Box sx={{
-            // Pin width to the resolved panelWidth so internal layout doesn't
-            // reflow while the wrapper's width transitions on open/close —
-            // the wrapper clips us until it has caught up.
             width: panelWidth,
             minWidth: panelWidth,
             flexShrink: 0,
@@ -1646,6 +1683,7 @@ const DataSourceSidebarPanel: React.FC<{
                             </ListItemText>
                         </MenuItem>
                     </Menu>
+                    {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
                             <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
@@ -2131,13 +2169,14 @@ const DataSourceSidebarPanel: React.FC<{
                         <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortNameAsc')}</MenuItem>
                     </Select>
                     <Box sx={{ flex: 1 }} />
+                    {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
                             <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
                 </Box>
-            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
+            <ScrollFadeContainer sx={{ overflowX: 'hidden', overscrollBehavior: 'contain' }} resetKey={sessions.length}>
                 {/* New session + import actions */}
                 <Box sx={{
                     display: 'flex', alignItems: 'center', px: 1.5, py: 0.75,
@@ -2316,7 +2355,7 @@ const DataSourceSidebarPanel: React.FC<{
                         );
                     })
                 )}
-            </Box>
+            </ScrollFadeContainer>
             </Box>
             )}
 
@@ -2329,6 +2368,7 @@ const DataSourceSidebarPanel: React.FC<{
                     <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('knowledge.title', { defaultValue: 'Agent Knowledge' })}
                     </Typography>
+                    {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
                             <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />

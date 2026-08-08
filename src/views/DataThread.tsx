@@ -30,6 +30,7 @@ import { extractErrorMessage } from '../app/errorHandler';
 import { Chart, DictTable, Trigger, InteractionEntry, TextTurn } from "../components/ComponentType";
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
+import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 
@@ -2455,6 +2456,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
     const containerRef = useRef<null | HTMLDivElement>(null)
+    const threadScrollRef = useRef<null | HTMLDivElement>(null)
     // Outer wrapper containing both the thread area and the chatbox.
     const outerRef = useRef<null | HTMLDivElement>(null)
     // Column geometry follows density: bigger text needs a wider card, or table
@@ -2971,6 +2973,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // The column count is the width that fits; entries (including the segments
     // of a split thread) are spread across them balancing estimated height.
     const columnLayout: number[][] = computeThreadColumnLayout(allThreadHeights, fittableColumns);
+    const {
+        moreAbove: moreThreadContentAbove,
+        moreBelow: moreThreadContentBelow,
+        update: updateThreadScrollFade,
+    } = useScrollFade(threadScrollRef, allThreadEntries.length);
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
@@ -3017,7 +3024,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const panelWidth = '100%';
 
     let view = hasContent ? (
-        <Box sx={{ 
+        <Box ref={threadScrollRef} onScroll={updateThreadScrollFade} sx={{ 
             overflowY: 'auto',
             overflowX: 'hidden',
             position: 'relative',
@@ -3094,12 +3101,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         >
             <Box ref={containerRef} sx={{
                     overflow: 'hidden', 
+                    position: 'relative',
                     direction: 'rtl', 
                     display: 'block', 
                     flex: 1,
                     minHeight: 0,
                 }}>
                 {view}
+                <ScrollFadeEdge visible={moreThreadContentAbove} edge="top" />
+                <ScrollFadeEdge visible={moreThreadContentBelow} />
             </Box>
             <SimpleChartRecBox onInputFocus={() => setChatboxFocusTick(t => t + 1)} />
         </Box>
