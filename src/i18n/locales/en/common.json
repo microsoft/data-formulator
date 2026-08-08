@@ -348,7 +348,7 @@
     "rememberCredentials": "Remember credentials",
     "setupDetails": "Setup details",
     "askAgent": "Ask agent",
-    "askAgentPrompt": "I need help setting up a {{connector}} connection.{{auth}} Walk me through it, explain what each parameter expects, and help me troubleshoot if it fails.",
+    "askAgentPrompt": "I need help setting up a {{connector}} connection. Walk me through the available options, explain what each parameter expects, and help me troubleshoot if it fails.",
     "setupFieldsIntro": "Provide the following to connect:",
     "optional": "optional",
     "connectionTimeout": "Connection timed out. Please check your credentials and try again.",

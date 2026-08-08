@@ -349,7 +349,7 @@
     "setupDetails": "设置详情",
     "setupFieldsIntro": "请填写以下信息以建立连接：",
     "askAgent": "询问助手",
-    "askAgentPrompt": "我需要帮助配置 {{connector}} 连接。{{auth}} 请指导我完成设置，说明每个参数的含义，并在连接失败时帮我排查。",
+    "askAgentPrompt": "我需要帮助配置 {{connector}} 连接。请介绍可用的连接方式，指导我完成设置，说明每个参数的含义，并在连接失败时帮我排查。",
     "optional": "可选",
     "connectionTimeout": "连接超时。请检查凭据后重试。",
     "delegatedLogin": "通过服务登录",

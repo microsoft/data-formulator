@@ -643,26 +643,29 @@ export const DataLoaderForm: React.FC<{
     const askAgentButton = onAskAgent ? (
         <Button
             size="small"
+            variant="contained"
+            disableElevation
             startIcon={<AgentToyIcon sx={{ fontSize: `${iconVar.md} !important` }} />}
             onClick={() => {
-                const authPathLabel = authPaths.find(path => path.id === params._auth_path)?.label;
                 onAskAgent(t('db.askAgentPrompt', {
                     connector: loaderTypeKey,
-                    auth: authPathLabel ? ` I picked the ${authPathLabel} option.` : '',
-                    defaultValue: 'I need help setting up a {{connector}} connection.{{auth}} Walk me through it, explain what each parameter expects, and help me troubleshoot if it fails.',
+                    defaultValue: 'I need help setting up a {{connector}} connection. Walk me through the available options, explain what each parameter expects, and help me troubleshoot if it fails.',
                 }));
             }}
             sx={{
                 flexShrink: 0,
                 textTransform: 'none',
                 fontSize: bodyFontSize,
-                lineHeight: 1.6,
+                lineHeight: 1.5,
                 minWidth: 0,
                 minHeight: 0,
-                py: 0.25,
-                px: 0.75,
+                py: 0.5,
+                px: 1.25,
                 borderRadius: 1,
                 whiteSpace: 'nowrap',
+                bgcolor: 'primary.main',
+                color: 'primary.contrastText',
+                '&:hover': { bgcolor: 'primary.dark' },
                 // MUI's default start-icon margins are sized for a 14px label.
                 '& .MuiButton-startIcon': { ml: 0, mr: 0.5 },
             }}
