@@ -39,6 +39,7 @@ You are a data assistant helping users load and prepare data for analysis in Dat
 
 Tools available:
 - read_file / write_file / list_directory — workspace filesystem (scratch/ uploads). read_file supports paging (offset/max_lines) and regex search (pattern) for large files.
+- read_data_memory / append_data_memory / replace_data_memory — user-scoped, cross-workspace Markdown memory about data sources the user has worked with.
 - execute_python — run Python (pandas, numpy, DuckDB). All DataFrames are auto-saved to scratch/.
 - fetch_url — fetch a public http(s) URL and save the raw payload to scratch/ (the execute_python sandbox has NO network). Does not parse — read it with read_file and/or process it with execute_python.
 - list_data — browse the catalog hierarchy of connected sources (cache-only, fast)
@@ -52,6 +53,12 @@ Tools available:
 - propose_connection — show the user an inline connection form to enter credentials and connect
 
 CRITICAL: You MUST call the show_user_data_preview tool to show data. Do NOT just describe data in text.
+
+Data-source memory rules:
+- Treat data-memory.md as useful but potentially stale prior context. NEVER rely on it instead of checking live source metadata with list_data, find_data, describe_data, or probe_data before acting.
+- Use it for durable source knowledge: what a source contains, stable table meanings, known joins/relationships, business terminology, and explicit user corrections or instructions about source connections.
+- Do not store credentials, secrets, tokens, raw sensitive records, transient query results, or guesses.
+- Append concise notes after learning durable facts. Read before editing. Use replace_data_memory for targeted corrections, consolidation, or deletion (new_text=""); never replace unrelated memory content.
 
 Three workflows:
 
@@ -267,6 +274,63 @@ TOOLS = [
                     },
                 },
                 "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_data_memory",
+            "description": "Read the current user's cross-workspace data-memory.md. Use pattern to find matching line numbers, then offset and max_lines to read a relevant window. Reads start at line 1 and return up to 100 lines by default. Memory may be stale; verify important details against live data-source metadata.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "1-based line number to start reading from. Defaults to 1.",
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Maximum number of lines to return. Defaults to 100.",
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "Optional case-insensitive Python regex. Returns matching line numbers and text instead of a content window.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "append_data_memory",
+            "description": "Append a concise Markdown note containing durable, verified knowledge about a data source, relationship, terminology, or user correction. Never store secrets or raw sensitive records.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Markdown note to append."},
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_data_memory",
+            "description": "Make a sed-like exact text replacement in data-memory.md after reading it. Use new_text='' to delete matched stale content. By default replaces the first match; set replace_all only when every exact occurrence should change.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "old_text": {"type": "string", "description": "Exact existing text to find."},
+                    "new_text": {"type": "string", "description": "Replacement text, or an empty string to delete the match."},
+                    "replace_all": {"type": "boolean", "description": "Replace every exact match instead of only the first. Defaults to false."},
+                },
+                "required": ["old_text", "new_text"],
             },
         },
     },
@@ -1036,6 +1100,13 @@ class DataLoadingAgent:
 
     def _execute_tool(self, name, args):
         """Execute a tool and return result dict."""
+        if name == "read_data_memory":
+            return self._tool_read_data_memory(args)
+        elif name == "append_data_memory":
+            return self._tool_append_data_memory(args)
+        elif name == "replace_data_memory":
+            return self._tool_replace_data_memory(args)
+
         workspace_jail = self.workspace.confined_root
         scratch_jail = self.workspace.confined_scratch
 
@@ -1069,6 +1140,88 @@ class DataLoadingAgent:
             return self._tool_fetch_url(args, scratch_jail)
         else:
             return {"error": f"Unknown tool: {name}"}
+
+    def _tool_read_data_memory(self, args=None):
+        if not self._knowledge_store:
+            return {"error": "Data-source memory is unavailable"}
+        try:
+            args = args or {}
+            lines = self._knowledge_store.read_data_memory().splitlines()
+            pattern = args.get("pattern")
+            if pattern:
+                if not isinstance(pattern, str):
+                    return {"error": "pattern must be a string"}
+                try:
+                    regex = re.compile(pattern, re.IGNORECASE)
+                except re.error as exc:
+                    return {"error": f"Invalid regex pattern: {exc}"}
+                matches = [
+                    {"line": line_number, "text": line if len(line) <= 500 else line[:500] + " …"}
+                    for line_number, line in enumerate(lines, start=1)
+                    if regex.search(line)
+                ][:200]
+                return {
+                    "path": "data-memory.md",
+                    "total_lines": len(lines),
+                    "match_count": len(matches),
+                    "matches": matches,
+                }
+
+            offset = args.get("offset", 1)
+            max_lines = args.get("max_lines", 100)
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset < 1:
+                return {"error": "offset must be a positive integer"}
+            if not isinstance(max_lines, int) or isinstance(max_lines, bool) or max_lines < 1:
+                return {"error": "max_lines must be a positive integer"}
+
+            window = lines[offset - 1:offset - 1 + max_lines]
+            result = {
+                "path": "data-memory.md",
+                "content": "\n".join(window),
+                "start_line": offset,
+                "returned_lines": len(window),
+                "total_lines": len(lines),
+            }
+            next_offset = offset + len(window)
+            if next_offset <= len(lines):
+                result["next_offset"] = next_offset
+                result["truncated"] = True
+            return result
+        except Exception as exc:
+            logger.warning("Failed to read data-source memory", exc_info=True)
+            return {"error": f"Failed to read data-source memory: {exc}"}
+
+    def _tool_append_data_memory(self, args):
+        if not self._knowledge_store:
+            return {"error": "Data-source memory is unavailable"}
+        try:
+            self._knowledge_store.append_data_memory(args.get("content", ""))
+            return {"path": "data-memory.md", "updated": True}
+        except (TypeError, ValueError) as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.warning("Failed to append data-source memory", exc_info=True)
+            return {"error": f"Failed to append data-source memory: {exc}"}
+
+    def _tool_replace_data_memory(self, args):
+        if not self._knowledge_store:
+            return {"error": "Data-source memory is unavailable"}
+        try:
+            replacements = self._knowledge_store.replace_data_memory(
+                args.get("old_text", ""),
+                args.get("new_text", ""),
+                replace_all=bool(args.get("replace_all", False)),
+            )
+            return {
+                "path": "data-memory.md",
+                "updated": True,
+                "replacements": replacements,
+            }
+        except (TypeError, ValueError) as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.warning("Failed to replace data-source memory", exc_info=True)
+            return {"error": f"Failed to replace data-source memory: {exc}"}
 
     def _tool_read_file(self, args, workspace_jail):
         """Read a file from the workspace with unix-like paging (offset/max_lines) and
@@ -2248,6 +2401,19 @@ class DataLoadingAgent:
 
         if self._knowledge_store:
             prompt += self._knowledge_store.format_rules_block()
+
+            try:
+                data_memory = self._knowledge_store.read_data_memory().strip()
+                if data_memory:
+                    prompt += (
+                        "\n\n[USER DATA-SOURCE MEMORY — MAY BE STALE]\n"
+                        "Use this only as orientation. Verify important details against "
+                        "live source metadata before acting.\n\n"
+                        f"{data_memory}\n"
+                        "[END USER DATA-SOURCE MEMORY]"
+                    )
+            except Exception:
+                logger.warning("Failed to load data-source memory", exc_info=True)
 
         # Inject relevant workflows from knowledge store
         if self._knowledge_store:

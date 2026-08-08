@@ -20,6 +20,7 @@ from __future__ import annotations
 import pytest
 
 from data_formulator.knowledge.store import (
+    DATA_MEMORY_HARD_MAX,
     KnowledgeStore,
     parse_front_matter,
     VALID_CATEGORIES,
@@ -60,6 +61,57 @@ When encountering missing values in a DataFrame, consider:
 @pytest.fixture()
 def store(tmp_path):
     return KnowledgeStore(tmp_path)
+
+
+# ── User-scoped data memory ───────────────────────────────────────────────
+
+
+class TestDataMemory:
+    def test_read_creates_reserved_markdown_file(self, store, tmp_path):
+        content = store.read_data_memory()
+
+        assert "# Data source memory" in content
+        assert "may be stale" in content
+        assert (tmp_path / "knowledge" / "data-memory.md").read_text() == content
+
+    def test_persists_across_store_instances_for_same_user(self, tmp_path):
+        KnowledgeStore(tmp_path).rewrite_data_memory("# Sources\n\nWarehouse A")
+
+        assert KnowledgeStore(tmp_path).read_data_memory() == "# Sources\n\nWarehouse A"
+
+    def test_append_and_rewrite(self, store):
+        store.rewrite_data_memory("# Sources")
+        store.append_data_memory("## Warehouse A\nOrders join customers on customer_id.")
+
+        assert store.read_data_memory().endswith(
+            "## Warehouse A\nOrders join customers on customer_id.\n"
+        )
+
+        store.rewrite_data_memory("# Reorganized")
+        assert store.read_data_memory() == "# Reorganized"
+
+    def test_replace_exact_text_and_delete(self, store):
+        store.rewrite_data_memory("CRM is old. CRM is old.\nRemove this line.")
+
+        assert store.replace_data_memory("CRM is old.", "CRM is current.") == 1
+        assert store.read_data_memory() == "CRM is current. CRM is old.\nRemove this line."
+
+        assert store.replace_data_memory("CRM is old.", "CRM is current.", replace_all=True) == 1
+        assert store.replace_data_memory("\nRemove this line.", "") == 1
+        assert store.read_data_memory() == "CRM is current. CRM is current."
+
+    def test_replace_rejects_missing_match(self, store):
+        store.rewrite_data_memory("# Sources")
+
+        with pytest.raises(ValueError, match="was not found"):
+            store.replace_data_memory("Missing text", "replacement")
+        assert store.read_data_memory() == "# Sources"
+
+    def test_rejects_empty_append_and_oversized_rewrite(self, store):
+        with pytest.raises(ValueError, match="must not be empty"):
+            store.append_data_memory("  ")
+        with pytest.raises(ValueError, match="exceeds"):
+            store.rewrite_data_memory("x" * (DATA_MEMORY_HARD_MAX + 1))
 
 
 # ── CRUD: list_all ────────────────────────────────────────────────────────

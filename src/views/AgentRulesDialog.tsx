@@ -37,10 +37,10 @@ import RuleIcon from '@mui/icons-material/Rule';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import Editor from 'react-simple-code-editor';
 
 import { dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { MarkdownEditor } from '../components/MarkdownEditor';
 import { radius, borderColor } from '../app/tokens';
 import { dialogHeight, iconVar, textVar } from '../app/layout';
 import {
@@ -237,7 +237,7 @@ Write your rule content here in Markdown.
             <Dialog
                 onClose={handleClose}
                 open={open}
-                sx={{ '& .MuiDialog-paper': { maxWidth: 900, maxHeight: dialogHeight(900), width: '90%' } }}
+                sx={{ '& .MuiDialog-paper': { maxWidth: 1100, height: '90vh', maxHeight: dialogHeight(900), width: '94%' } }}
                 maxWidth={false}
             >
                 <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -346,27 +346,17 @@ Write your rule content here in Markdown.
                                 borderRadius: radius.sm,
                                 overflow: 'auto',
                                 flex: 1,
+                                minHeight: 0,
                                 boxShadow: editorDirty ? `0 2px 8px ${theme.palette.primary.main}40` : undefined,
                                 transition: 'box-shadow 0.3s ease-in-out',
                             }}>
-                                <Editor
+                                <MarkdownEditor
                                     value={editorContent}
-                                    onValueChange={(code) => {
+                                    onChange={(code: string) => {
                                         setEditorContent(code);
                                         setEditorDirty(code !== originalContent);
                                     }}
-                                    highlight={(code) => code}
-                                    padding={16}
                                     placeholder={codingPlaceholder}
-                                    style={{
-                                        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
-                                        fontSize: textVar.xs,
-                                        lineHeight: 1.3,
-                                        minHeight: 200,
-                                        whiteSpace: 'pre-wrap',
-                                        outline: 'none',
-                                        resize: 'none',
-                                    }}
                                 />
                             </Box>
                         ) : (

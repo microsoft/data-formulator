@@ -11,8 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
-from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
+from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent, TOOLS
 from data_formulator.datalake.catalog_cache import CatalogSearchError, save_catalog
+from data_formulator.knowledge.store import KnowledgeStore
 
 pytestmark = [pytest.mark.backend]
 
@@ -436,6 +437,115 @@ class TestBuildSystemPromptConnectorSummary:
         now = datetime.now()
         assert f"Current date and time: {now.strftime('%Y-%m-%d')}" in prompt
         assert f"({now.strftime('%A')})" in prompt
+
+
+# ------------------------------------------------------------------
+# User-scoped data-source memory
+# ------------------------------------------------------------------
+
+
+class TestDataMemoryTools:
+    def test_tools_are_exposed(self) -> None:
+        names = {tool["function"]["name"] for tool in TOOLS}
+        assert {
+            "read_data_memory",
+            "append_data_memory",
+            "replace_data_memory",
+        }.issubset(names)
+
+    def test_read_append_and_rewrite(self, tmp_path: Path) -> None:
+        store = KnowledgeStore(tmp_path)
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=store,
+        )
+
+        appended = agent._tool_append_data_memory({
+            "content": "## CRM\naccounts joins contacts on account_id.",
+        })
+        assert appended["updated"] is True
+        assert "account_id" in agent._tool_read_data_memory()["content"]
+
+        search = agent._execute_tool("read_data_memory", {"pattern": r"ACCOUNTS.*account_id"})
+        assert search["match_count"] == 1
+        match_line = search["matches"][0]["line"]
+        assert search["matches"][0]["text"] == "accounts joins contacts on account_id."
+
+        window = agent._execute_tool("read_data_memory", {
+            "offset": max(1, match_line - 1),
+            "max_lines": 3,
+        })
+        assert "accounts joins contacts on account_id." in window["content"]
+
+        replaced = agent._execute_tool("replace_data_memory", {
+            "old_text": "accounts joins contacts on account_id.",
+            "new_text": "accounts relates to contacts through account_id.",
+        })
+        assert replaced["updated"] is True
+        assert replaced["replacements"] == 1
+        assert "relates to contacts" in store.read_data_memory()
+
+        deleted = agent._execute_tool("replace_data_memory", {
+            "old_text": "## CRM\n",
+            "new_text": "",
+        })
+        assert deleted["updated"] is True
+        assert "## CRM" not in store.read_data_memory()
+
+    def test_read_defaults_to_one_hundred_lines_and_pages(self, tmp_path: Path) -> None:
+        store = KnowledgeStore(tmp_path)
+        store.rewrite_data_memory("\n".join(f"line {number}" for number in range(1, 151)))
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=store,
+        )
+
+        first_page = agent._execute_tool("read_data_memory", {})
+        assert first_page["returned_lines"] == 100
+        assert first_page["next_offset"] == 101
+        assert first_page["content"].splitlines()[-1] == "line 100"
+
+        second_page = agent._execute_tool("read_data_memory", {"offset": 101})
+        assert second_page["returned_lines"] == 50
+        assert second_page["content"].splitlines()[0] == "line 101"
+        assert "next_offset" not in second_page
+
+    def test_read_rejects_invalid_regex(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=KnowledgeStore(tmp_path),
+        )
+
+        result = agent._execute_tool("read_data_memory", {"pattern": "["})
+
+        assert result["error"].startswith("Invalid regex pattern:")
+
+    def test_unavailable_without_knowledge_store(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        assert "unavailable" in agent._tool_read_data_memory()["error"]
+        assert "unavailable" in agent._tool_append_data_memory({"content": "note"})["error"]
+        assert "unavailable" in agent._tool_replace_data_memory({
+            "old_text": "old",
+            "new_text": "new",
+        })["error"]
+
+    def test_prompt_labels_memory_as_stale_and_requires_verification(self, tmp_path: Path) -> None:
+        store = KnowledgeStore(tmp_path)
+        store.rewrite_data_memory("# Sources\n\nCRM contains accounts and contacts.")
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=store,
+        )
+
+        prompt = agent._build_system_prompt("find accounts")
+
+        assert "USER DATA-SOURCE MEMORY — MAY BE STALE" in prompt
+        assert "CRM contains accounts and contacts" in prompt
+        assert "Verify important details against live source metadata" in prompt
 
 
 # ------------------------------------------------------------------
