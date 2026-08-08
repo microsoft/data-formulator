@@ -23,6 +23,7 @@ import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import React from 'react';
 import { alpha, useTheme } from '@mui/material/styles';
 import { CodeBox } from './VisualizationView';
+import { iconVar, textVar } from '../app/layout';
 
 export const GroupHeader = styled('div')(({ theme }) => ({
     position: 'sticky',
@@ -64,14 +65,14 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
     const actionType = action.action;
 
     sections.push(
-        <Typography key="action-type" sx={{ fontSize: 12, fontWeight: 600, color: 'primary.main', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
+        <Typography key="action-type" sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'primary.main', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
             {actionType}
         </Typography>
     );
 
     if (action.thought) {
         sections.push(
-            <Typography key="thought" sx={{ fontSize: 12, color: 'text.secondary', fontStyle: 'italic', mb: 0.5, lineHeight: 1.4 }}>
+            <Typography key="thought" sx={{ fontSize: textVar.sm, color: 'text.secondary', fontStyle: 'italic', mb: 0.5, lineHeight: 1.4 }}>
                 {action.thought}
             </Typography>
         );
@@ -79,7 +80,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
 
     if (action.display_instruction) {
         sections.push(
-            <Typography key="display" sx={{ fontSize: 12, fontWeight: 500, mb: 0.5, lineHeight: 1.4 }}>
+            <Typography key="display" sx={{ fontSize: textVar.sm, fontWeight: 500, mb: 0.5, lineHeight: 1.4 }}>
                 {action.display_instruction}
             </Typography>
         );
@@ -87,7 +88,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
 
     if (action.message) {
         sections.push(
-            <Typography key="message" sx={{ fontSize: 12, mb: 0.5, lineHeight: 1.4 }}>
+            <Typography key="message" sx={{ fontSize: textVar.sm, mb: 0.5, lineHeight: 1.4 }}>
                 {action.message}
             </Typography>
         );
@@ -95,7 +96,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
             sections.push(
                 <Box key="options" sx={{ pl: 2, mb: 0.5 }}>
                     {action.options.map((opt: string, i: number) => (
-                        <Typography key={`opt-${i}`} sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.5 }}>
+                        <Typography key={`opt-${i}`} sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.5 }}>
                             {i + 1}. {opt}
                         </Typography>
                     ))}
@@ -114,10 +115,10 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
                     const opts = typeof q === 'object' && Array.isArray(q?.options) ? q.options : [];
                     return (
                         <Box key={`q-${i}`}>
-                            <Typography sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.4 }}>
+                            <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.4 }}>
                                 {i + 1}. {text}
                                 {responseType && (
-                                    <Typography component="span" sx={{ fontSize: 10, color: 'text.disabled', ml: 0.5 }}>
+                                    <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.disabled', ml: 0.5 }}>
                                         ({responseType})
                                     </Typography>
                                 )}
@@ -127,7 +128,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
                                     {opts.map((opt: any, j: number) => {
                                         const optLabel = typeof opt === 'string' ? opt : (opt?.label ?? JSON.stringify(opt));
                                         return (
-                                            <Typography key={`opt-${i}-${j}`} sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.5 }}>
+                                            <Typography key={`opt-${i}-${j}`} sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.5 }}>
                                                 • {optLabel}
                                             </Typography>
                                         );
@@ -144,7 +145,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
     // explain action: render the explanation text and any followup prompts
     if (action.explanation) {
         sections.push(
-            <Typography key="explanation" sx={{ fontSize: 12, mb: 0.5, lineHeight: 1.4 }}>
+            <Typography key="explanation" sx={{ fontSize: textVar.sm, mb: 0.5, lineHeight: 1.4 }}>
                 {action.explanation}
             </Typography>
         );
@@ -152,12 +153,12 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
     if (action.followups && Array.isArray(action.followups) && action.followups.length > 0) {
         sections.push(
             <Box key="followups" sx={{ mb: 0.5 }}>
-                <Typography sx={{ fontSize: 11, color: 'text.secondary', fontWeight: 500, lineHeight: 1.4 }}>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', fontWeight: 500, lineHeight: 1.4 }}>
                     Followups:
                 </Typography>
                 <Box sx={{ pl: 2 }}>
                     {action.followups.map((f: string, i: number) => (
-                        <Typography key={`fu-${i}`} sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.5 }}>
+                        <Typography key={`fu-${i}`} sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.5 }}>
                             • {f}
                         </Typography>
                     ))}
@@ -168,7 +169,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
 
     if (action.summary) {
         sections.push(
-            <Typography key="summary" sx={{ fontSize: 12, fontWeight: 500, mb: 0.5, lineHeight: 1.4 }}>
+            <Typography key="summary" sx={{ fontSize: textVar.sm, fontWeight: 500, mb: 0.5, lineHeight: 1.4 }}>
                 {action.summary}
             </Typography>
         );
@@ -197,7 +198,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
     if (action.table_names) meta.push(`tables: ${action.table_names.join(', ')}`);
     if (meta.length > 0) {
         sections.push(
-            <Typography key="meta" sx={{ fontSize: 10, color: 'text.disabled', mt: 0.5, lineHeight: 1.4 }}>
+            <Typography key="meta" sx={{ fontSize: textVar.xxs, color: 'text.disabled', mt: 0.5, lineHeight: 1.4 }}>
                 {meta.join(' · ')}
             </Typography>
         );
@@ -226,7 +227,7 @@ const renderMessageContent = (role: string, message: string) => {
             if (textContent.trim()) {
                 parts.push(
                     <Typography key={`text-${lastIndex}`} sx={{ 
-                        fontSize: 13, 
+                        fontSize: textVar.md, 
                         whiteSpace: 'pre-wrap',
                         lineHeight: 1.4,
                         marginBottom: 1
@@ -259,7 +260,7 @@ const renderMessageContent = (role: string, message: string) => {
         if (textContent.trim()) {
             parts.push(
                 <Typography key={`text-${lastIndex}`} sx={{ 
-                    fontSize: 13, 
+                    fontSize: textVar.md, 
                     whiteSpace: 'pre-wrap',
                     lineHeight: 1.4
                 }}>
@@ -273,7 +274,7 @@ const renderMessageContent = (role: string, message: string) => {
     if (parts.length === 0) {
         return (
             <Typography sx={{ 
-                fontSize: 13, 
+                fontSize: textVar.md, 
                 whiteSpace: 'pre-wrap',
                 lineHeight: 1.4
             }}>
@@ -344,7 +345,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
     if (dialog == undefined) {
         body = <Box sx={{display: "flex", overflowX: "auto", flexDirection: "column", 
                          justifyContent: "space-between", position: "relative", marginTop: "10px", minHeight: "50px"}}>
-            <Typography sx={{ fontSize: 14 }}  color="text.secondary" gutterBottom>
+            <Typography sx={{ fontSize: textVar.lg }}  color="text.secondary" gutterBottom>
                 {t('chatDialog.noHistory')}
             </Typography>
         </Box>
@@ -401,7 +402,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                         }}>
                         <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '8px 12px', paddingBottom: '8px !important'}}>
                             <Typography sx={{ 
-                                fontSize: 12, 
+                                fontSize: textVar.sm, 
                                 fontWeight: 600,
                                 color: labelColor,
                                 textTransform: 'uppercase',
@@ -434,11 +435,11 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
         >
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.25 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <QuestionAnswerIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                    <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{t('chatDialog.agentLog')}</Typography>
+                    <QuestionAnswerIcon sx={{ fontSize: iconVar.lg, color: 'text.secondary' }} />
+                    <Typography sx={{ fontSize: textVar.lg, fontWeight: 600 }}>{t('chatDialog.agentLog')}</Typography>
                 </Box>
                 <IconButton size="small" aria-label={t('app.close')} onClick={() => { handleCloseDialog() }}>
-                    <CloseIcon sx={{ fontSize: 18 }} />
+                    <CloseIcon sx={{ fontSize: iconVar.lg }} />
                 </IconButton>
             </DialogTitle>
             <DialogContent ref={dialogContentRef} sx={{overflowY: "auto", overflowX: "hidden"}} dividers>

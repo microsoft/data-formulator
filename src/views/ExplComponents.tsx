@@ -15,6 +15,7 @@ import {
 import { styled } from '@mui/material/styles';
 import { alpha } from '@mui/material/styles';
 import { borderColor, shadow, transition, radius } from '../app/tokens';
+import { textVar } from '../app/layout';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
@@ -181,7 +182,7 @@ const ConceptExplanationCard = styled(Box, {
 const ConceptName = styled(Typography, {
     shouldForwardProp: (prop) => prop !== 'secondary',
 })<{ secondary: boolean }>(({ theme, secondary }) => ({
-    fontSize: '11px',
+    fontSize: textVar.xs,
     fontWeight: 600,
     color: secondary ? theme.palette.secondary.main : theme.palette.text.secondary,
     marginBottom: '1px',
@@ -193,12 +194,12 @@ const ConceptName = styled(Typography, {
 }));
 
 const ConceptExplanation = styled(Typography)(({ theme }) => ({
-    fontSize: '11px',
+    fontSize: textVar.xs,
     lineHeight: 1.5,
     minWidth: 0,
     color: theme.palette.text.primary,
     '& .katex': {
-        fontSize: '11px',
+        fontSize: textVar.xs,
         lineHeight: 1.2,
     },
     // KaTeX block-math defaults to `overflow-x: auto` with vertical padding
@@ -217,7 +218,7 @@ const ConceptExplanation = styled(Typography)(({ theme }) => ({
     // a slightly larger glyph size than inline math so stacked structure is
     // legible — inline `\(...\)` stays compact at 11px above.
     '& .katex-display > .katex': {
-        fontSize: '15px',
+        fontSize: textVar.xl,
         lineHeight: 1.5,
     },
 }));
@@ -289,7 +290,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                                 size="small"
                                 onClick={() => setExpanded(!expanded)}
                                 sx={{
-                                    fontSize: '10px',
+                                    fontSize: textVar.xxs,
                                     color: 'text.secondary',
                                     '&:hover': {
                                         backgroundColor: 'action.hover',
@@ -359,7 +360,7 @@ export const CodeExplanationCard: FC<{
         >
             <Typography 
                 sx={{ 
-                    fontSize: 14, 
+                    fontSize: textVar.lg, 
                     margin: 1.5,
                     fontWeight: 500,
                     color: 'text.primary',

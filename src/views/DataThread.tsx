@@ -86,7 +86,8 @@ import { ComponentBorderStyle, transition, radius, borderColor } from '../app/to
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, ResolvedConversationCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
-import { CARD_WIDTH, CARD_GAP, PANEL_PADDING, fittableThreadColumns } from './threadLayout';
+import { fittableThreadColumnsFor, iconVar, textVar } from '../app/layout';
+import { useLayout } from '../app/LayoutProvider';
 
 /** Pick the icon component for a step line based on known prefixes. */
 // Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
@@ -121,7 +122,7 @@ const LiveStatus: React.FC<{ startTime?: number; resetKey?: string }> = ({ start
         : `${Math.floor(secs / 60)}m${secs % 60}s`;
     return (
         <Typography component="span" sx={{
-            fontSize: 10,
+            fontSize: textVar.xxs,
             color: 'text.disabled',
             fontVariantNumeric: 'tabular-nums',
             ml: '6px',
@@ -174,7 +175,7 @@ export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = 
             } : {}),
             ...sx,
         }}>
-            <Typography variant="body2" sx={{ fontSize: 10, color: 'text.secondary' }}>
+            <Typography variant="body2" sx={{ fontSize: textVar.xxs, color: 'text.secondary' }}>
                 {message}
             </Typography>
             {showTimer && <LiveStatus startTime={startTime} resetKey={message} />}
@@ -217,7 +218,7 @@ const WorkspacePanel: FC<{
         py: '3px',
         borderRadius: '3px',
         cursor: 'pointer',
-        fontSize: 11,
+        fontSize: textVar.xs,
         transition: transition.fast,
         backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
         '&:hover': {
@@ -244,7 +245,7 @@ const WorkspacePanel: FC<{
             return <Box sx={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'text.secondary' }}>{template.icon}</Box>;
         }
         // Fallback to generic chart icon
-        return <InsightIcon sx={{ fontSize: 14, color: 'text.secondary' }} />;
+        return <InsightIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />;
     };
 
     const getChartFields = (chart: Chart) => {
@@ -311,10 +312,10 @@ const WorkspacePanel: FC<{
                     onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
                 >
                     {workspaceExpanded ?
-                        <ExpandMoreIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} /> :
-                        <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
+                        <ExpandMoreIcon sx={{ fontSize: iconVar.sm, color: 'rgba(0,0,0,0.5)' }} /> :
+                        <ChevronRightIcon sx={{ fontSize: iconVar.sm, color: 'rgba(0,0,0,0.5)' }} />
                     }
-                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
+                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
                         {t('dataThread.workspace')}
                     </Typography>
                 </Box>
@@ -328,8 +329,8 @@ const WorkspacePanel: FC<{
                         '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.08) },
                     }}
                 >
-                    <AddIcon sx={{ fontSize: 14 }} />
-                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>{t('dataThread.addData')}</Typography>
+                    <AddIcon sx={{ fontSize: iconVar.sm }} />
+                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 600 }}>{t('dataThread.addData')}</Typography>
                 </Box>
             </Box>
 
@@ -380,7 +381,7 @@ const WorkspacePanel: FC<{
                                         {getTableIcon(table)}
                                         <Box sx={{ flex: 1, minWidth: 0 }}>
                                             <Typography sx={{
-                                                fontSize: 11,
+                                                fontSize: textVar.xs,
                                                 fontWeight: isTableActive ? 600 : 400,
                                                 color: isTableActive ? 'primary.main' : 'text.primary',
                                                 overflow: 'hidden',
@@ -391,7 +392,7 @@ const WorkspacePanel: FC<{
                                             </Typography>
                                             {originalName && (
                                                 <Typography sx={{
-                                                    fontSize: 9,
+                                                    fontSize: textVar.xxs,
                                                     color: 'text.disabled',
                                                     lineHeight: 1.2,
                                                     mt: '2px',
@@ -404,7 +405,7 @@ const WorkspacePanel: FC<{
                                             )}
                                         </Box>
                                         {table.description && (
-                                            <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
+                                            <AttachFileIcon sx={{ fontSize: textVar.xxs, color: 'text.disabled', flexShrink: 0 }} />
                                         )}
                                     </Box>
                                 </Tooltip>
@@ -459,7 +460,7 @@ const WorkspacePanel: FC<{
                                                 >
                                                     {getChartIcon(chart.chartType)}
                                                     <Typography sx={{
-                                                        fontSize: 11,
+                                                        fontSize: textVar.xs,
                                                         fontWeight: isChartActive ? 600 : 400,
                                                         color: isChartActive ? 'primary.main' : 'text.primary',
                                                         overflow: 'hidden',
@@ -722,9 +723,9 @@ let SingleThreadGroupView: FC<{
     }
 
     /** Pointer to a table whose real card lives in the shelf or a prior column. */
-    let _buildRefChip = (tableId: string, highlighted: boolean) => {
+    let _buildRefChip = (tableId: string) => {
         return buildTableRefChip({
-            tableId, table: tableById.get(tableId), highlighted,
+            tableId, table: tableById.get(tableId),
             focused: tableId === focusedTableId, dispatch,
         });
     }
@@ -856,7 +857,7 @@ let SingleThreadGroupView: FC<{
                         interactionEntry: pairs[pairs.length - 1].userEntry,
                         gutterIcon: (
                             <ForumOutlinedIcon sx={{
-                                fontSize: 16,
+                                fontSize: textVar.xl,
                                 color: highlighted ? theme.palette.text.secondary : 'rgba(0,0,0,0.25)',
                             }} />
                         ),
@@ -898,13 +899,13 @@ let SingleThreadGroupView: FC<{
                         type: 'merge',
                         highlighted,
                         element: (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '6px', rowGap: 0, color: mergeColor, fontSize: '11px' }}>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '6px', rowGap: 0, color: mergeColor, fontSize: textVar.xs }}>
                                 <Typography component="span" sx={{ fontSize: 'inherit', color: 'inherit' }}>
                                     {t('dataThread.usingSources')}
                                 </Typography>
                                 {mergeNames.map((name, idx) => (
                                     <Box key={`${name}-${idx}`} component="span" sx={{ display: 'inline-flex', alignItems: 'center', columnGap: '3px' }}>
-                                        <TableIcon sx={{ fontSize: '11px', color: 'inherit' }} />
+                                        <TableIcon sx={{ fontSize: textVar.xs, color: 'inherit' }} />
                                         <Typography component="span" sx={{ fontSize: 'inherit', color: 'inherit' }}>
                                             {name}
                                         </Typography>
@@ -1093,7 +1094,7 @@ let SingleThreadGroupView: FC<{
                     highlighted,
                     isClarifying: true,
                     tableId,
-                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
+                    element: <Typography variant="body2" sx={{ fontSize: textVar.xxs, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
                 });
             }
         }
@@ -1157,14 +1158,14 @@ let SingleThreadGroupView: FC<{
                 }}>
                     <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
                         <Typography sx={{
-                            fontSize: 11, fontWeight: 500, color: 'text.primary',
+                            fontSize: textVar.xs, fontWeight: 500, color: 'text.primary',
                             display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                             overflow: 'hidden', wordBreak: 'break-all',
                         }}>
                             {report.title || t('report.untitled')}
                         </Typography>
                         {isGenerating && (
-                            <Typography sx={{ fontSize: 9, color: 'text.disabled', lineHeight: 1.3, mt: 0.25 }}>
+                            <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled', lineHeight: 1.3, mt: 0.25 }}>
                                 {t('report.composing')}
                             </Typography>
                         )}
@@ -1174,7 +1175,7 @@ let SingleThreadGroupView: FC<{
                             sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
                             onClick={(e) => { e.stopPropagation(); dispatch(dfActions.deleteGeneratedReport(report.id)); }}
                         >
-                            <DeleteIcon sx={{ fontSize: 16 }} />
+                            <DeleteIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
                 </Box>
@@ -1236,7 +1237,7 @@ let SingleThreadGroupView: FC<{
         const gutterIcon = <Box sx={{ width: 0, height: 0 }} />;
         const conversationIcon = (
             <SwapHorizIcon sx={{
-                fontSize: 17, flexShrink: 0, mt: '6px',
+                fontSize: textVar.xxl, flexShrink: 0, mt: '6px',
                 color: rowHL ? theme.palette.text.secondary : theme.palette.text.disabled,
             }} />
         );
@@ -1259,7 +1260,7 @@ let SingleThreadGroupView: FC<{
                 <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0 }}>
                     {showPrompt && turn.prompt && (
                         <Typography sx={{
-                            fontSize: 10.5, color: 'text.secondary', fontStyle: 'italic', mb: '1px',
+                            fontSize: textVar.xs, color: 'text.secondary', fontStyle: 'italic', mb: '1px',
                             display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
                             overflow: 'hidden', wordBreak: 'break-word',
                         }}>
@@ -1267,7 +1268,7 @@ let SingleThreadGroupView: FC<{
                         </Typography>
                     )}
                     <Typography sx={{
-                        fontSize: 11,
+                        fontSize: textVar.xs,
                         // Agent clarify/explain is conversational scaffolding: soften
                         // to text.secondary so it recedes below the data + the user's
                         // decisions, yet stays more legible than the disposable
@@ -1294,7 +1295,7 @@ let SingleThreadGroupView: FC<{
                         }}
                         onClick={(e) => { e.stopPropagation(); dispatch(dfActions.removeTextTurn(turn.id)); }}
                     >
-                        <DeleteIcon sx={{ fontSize: 15 }} />
+                        <DeleteIcon sx={{ fontSize: iconVar.md }} />
                     </IconButton>
                 </Tooltip>
             </Card>
@@ -1422,11 +1423,11 @@ let SingleThreadGroupView: FC<{
     if (originTableId) {
         const isHL = highlightedTableIds.includes(originTableId);
         timelineItems.push({
-            key: `origin-ghost-${originTableId}`,
+            key: `origin-ref-${originTableId}`,
             type: 'table',
             tableId: originTableId,
             highlighted: isHL,
-            element: _buildRefChip(originTableId, isHL),
+            element: _buildRefChip(originTableId),
         });
         if (ownsOriginArtifacts) {
             buildChartCards(
@@ -1458,7 +1459,7 @@ let SingleThreadGroupView: FC<{
                 type: 'used-table',
                 highlighted: false,
                 element: (
-                    <Typography sx={{ fontSize: '10px', color: 'text.disabled' }}>
+                    <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled' }}>
                         …
                     </Typography>
                 ),
@@ -1474,11 +1475,11 @@ let SingleThreadGroupView: FC<{
         // no charts, no turns, no draft. This is what stops a fork from
         // repeating the parent's cards / messages / state per column.
         timelineItems.push({
-            key: `used-table-ghost-${tableId}`,
+            key: `used-table-ref-${tableId}`,
             type: 'table',
             tableId,
             highlighted: isHighlighted,
-            element: _buildRefChip(tableId, isHighlighted),
+            element: _buildRefChip(tableId),
         });
     });
 
@@ -1669,7 +1670,7 @@ let SingleThreadGroupView: FC<{
                     }}>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'white' }}>
-                            <CallMergeIcon sx={{ fontSize: 12, color: item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.15)', transform: 'rotate(180deg)' }} />
+                            <CallMergeIcon sx={{ fontSize: iconVar.xs, color: item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.15)', transform: 'rotate(180deg)' }} />
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
                         {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
@@ -1810,10 +1811,7 @@ let SingleThreadGroupView: FC<{
                         // so the timeline reads as a single unbroken path.
                         <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
                     )}
-                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        // Chip row: dim the gutter icon to match the muted card.
-                        ...(item.type === 'used-table' && isSplitThread ? { opacity: 0.45 } : {}),
-                    }}>
+                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {getTimelineDot(item)}
                     </Box>
                     {!isLast && (
@@ -1842,6 +1840,11 @@ let SingleThreadGroupView: FC<{
                 boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
                 borderColor: 'transparent',
                 margin: '1px 0',
+            },
+            // A reference to the focused table: acknowledge the click without
+            // competing with the ring on the card that owns the table.
+            '& .selected-ref-card': {
+                borderColor: theme.palette.primary.light,
             },
             '& .selected-report-card': { 
                 boxShadow: `0 0 0 2px ${theme.palette.secondary.light}`,
@@ -1875,7 +1878,7 @@ let SingleThreadGroupView: FC<{
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
                         <Typography sx={{ 
-                            fontSize: '11px', fontWeight: 700, 
+                            fontSize: textVar.xs, fontWeight: 700, 
                             textTransform: 'uppercase', letterSpacing: '0.02em',
                             color: headerHL ? hlColor : 'rgba(0,0,0,0.55)', 
                         }}>
@@ -1899,12 +1902,12 @@ let SingleThreadGroupView: FC<{
                             display: 'flex', flexDirection: 'column', alignItems: 'center',
                         }}>
                             <Box sx={{ flex: '1 1 0', minHeight: 4 }} />
-                            <KeyboardArrowUpIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                            <KeyboardArrowUpIcon sx={{ fontSize: iconVar.xs, color: 'text.disabled' }} />
                             <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.25, display: 'flex', alignItems: 'center' }}>
                             <Typography sx={{
-                                fontSize: '10px', color: 'text.disabled',
+                                fontSize: textVar.xxs, color: 'text.disabled',
                                 textTransform: 'uppercase', letterSpacing: '0.04em',
                             }}>
                                 {t('dataThread.continuedFromAbove')}
@@ -1922,12 +1925,12 @@ let SingleThreadGroupView: FC<{
                             display: 'flex', flexDirection: 'column', alignItems: 'center',
                         }}>
                             <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
-                            <KeyboardArrowDownIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                            <KeyboardArrowDownIcon sx={{ fontSize: iconVar.xs, color: 'text.disabled' }} />
                             <Box sx={{ flex: '1 1 0', minHeight: 4 }} />
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.25, display: 'flex', alignItems: 'center' }}>
                             <Typography sx={{
-                                fontSize: '10px', color: 'text.disabled',
+                                fontSize: textVar.xxs, color: 'text.disabled',
                                 textTransform: 'uppercase', letterSpacing: '0.04em',
                             }}>
                                 {t('dataThread.continuesBelow')}
@@ -2454,6 +2457,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const containerRef = useRef<null | HTMLDivElement>(null)
     // Outer wrapper containing both the thread area and the chatbox.
     const outerRef = useRef<null | HTMLDivElement>(null)
+    // Column geometry follows density: bigger text needs a wider card, or table
+    // names truncate. DataFormulator snaps the pane from the same tokens.
+    const { tokens: threadTokens } = useLayout();
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
     // Track container height so we can detect when the chatbox grows/shrinks
@@ -2679,7 +2685,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // benefit, since the segments would just stack in the same single column.
     // Column geometry (CARD_WIDTH / CARD_GAP / PANEL_PADDING) is defined once
     // in ./threadLayout and shared with DataFormulator's pane snapping.
-    const fittableColumns = fittableThreadColumns(containerWidth);
+    const fittableColumns = fittableThreadColumnsFor(containerWidth, threadTokens);
 
     // Adaptively split long derivation chains so the resulting segments fill
     // the available columns evenly.  See `computeSplitExtraLeaves` for the
@@ -2978,7 +2984,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             display: 'flex',
             flexDirection: 'column',
             height: 'fit-content',
-            width: CARD_WIDTH,
+            width: threadTokens.thread.cardWidth,
             transition: transition.fast,
         } as const;
 
@@ -3024,12 +3030,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 flexDirection: 'row',
                 flexWrap: 'nowrap',
                 justifyContent: 'flex-start',
-                gap: `${CARD_GAP}px`,
+                gap: `${threadTokens.thread.cardGap}px`,
                 py: 1,
                 // Bottom padding leaves room so the scroll handler can position
                 // the focused element above the chatbox even when it expands.
                 pb: '180px',
-                pl: `${PANEL_PADDING / 2}px`,
+                pl: `${threadTokens.thread.panelPadding / 2}px`,
                 pr: 0,
             }}>
                 {/* First column: workspace panel + first batch of threads */}
@@ -3038,7 +3044,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: 0,
-                    width: CARD_WIDTH,
+                    width: threadTokens.thread.cardWidth,
                     flexShrink: 0,
                 }}>
                     {(columnLayout[0] || []).map((idx: number) => {
@@ -3053,7 +3059,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 0,
-                        width: CARD_WIDTH,
+                        width: threadTokens.thread.cardWidth,
                         flexShrink: 0,
                     }}>
                         {columnIndices.map((idx: number) => {

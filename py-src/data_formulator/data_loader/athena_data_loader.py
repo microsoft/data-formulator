@@ -75,19 +75,35 @@ class AthenaDataLoader(ExternalDataLoader):
         ]
         return params_list
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example (profile):** aws_profile: `default` · region_name: `us-east-1` · workgroup: `primary` · database: `my_database`
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "profile",
+                "label": "AWS profile",
+                "description": "Use a profile from ~/.aws/credentials or ~/.aws/config, including AWS SSO profiles.",
+                "fields": ["aws_profile"],
+                "required_fields": ["aws_profile"],
+                "kind": "credentials",
+                "default": True,
+            },
+            {
+                "id": "access_keys",
+                "label": "Access keys",
+                "description": "Enter an AWS access key and secret. Temporary credentials also need a session token.",
+                "fields": ["aws_access_key_id", "aws_secret_access_key", "aws_session_token"],
+                "required_fields": ["aws_access_key_id", "aws_secret_access_key"],
+                "kind": "credentials",
+            },
+        ]
 
-**Example (keys):** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1`
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        if params.get("aws_profile"):
+            return "profile"
+        return "access_keys"
 
-**Option 1 — AWS Profile (recommended):**
-Set `aws_profile` to a profile name from `~/.aws/credentials`. Set up with `aws configure --profile <name>`. No access key or secret needed.
-
-**Option 2 — Explicit Credentials:**
-Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session_token` for temporary credentials.
-
-**Required IAM permissions:** `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults`, `athena:GetWorkGroup`, `athena:ListDatabases`, `athena:ListTableMetadata`, plus S3 and Glue permissions on your data/results buckets."""
+    AUTH_GUIDE = "athena.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

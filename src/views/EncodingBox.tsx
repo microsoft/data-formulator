@@ -51,6 +51,7 @@ import AnimateHeight from 'react-animate-height';
 import { getIconFromDtype, getIconFromType } from './ViewUtils';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { textVar } from '../app/layout';
 import { Type } from '../data/types';
 
 
@@ -646,7 +647,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         display: 'flex',
                         alignItems: 'center',
                         gap: '6px',
-                        fontSize: 11,
+                        fontSize: textVar.xs,
                         padding: '4px 8px !important',
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.05)' },
@@ -688,7 +689,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         maxHeight: '600px !important'
                     },
                     '& .MuiAutocomplete-noOptions': {
-                        fontSize: '11px',
+                        fontSize: textVar.xs,
                         padding: '6px 12px',
                     },
                 }

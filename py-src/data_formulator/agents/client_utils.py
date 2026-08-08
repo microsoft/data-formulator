@@ -248,8 +248,9 @@ class Client(object):
             else:
                 self.model = f"anthropic/{model}"
         elif self.endpoint == "azure":
-            self.params["api_base"] = api_base
-            self.params["api_version"] = api_version if api_version else "2025-04-01-preview"
+            if not api_base:
+                raise ValueError("Azure API base URL is required")
+            self.params["api_base"] = api_base.rstrip("/")
             if api_key is None or api_key == "":
                 credential = (
                     AzureCliCredential()

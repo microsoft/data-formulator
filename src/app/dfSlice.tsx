@@ -11,7 +11,7 @@ import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { migrateState } from './stateMigrations';
 import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash } from './utils';
-import { apiRequest } from './apiClient';
+import { apiRequest, ApiRequestError } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
 import i18n from '../i18n';
 import { Type } from '../data/types';
@@ -587,7 +587,7 @@ export const fetchFieldSemanticType = createAsyncThunk(
         let state = getState() as DataFormulatorState;
 
         const sampleRows = (table.rows || []).slice(0, 15);
-        const { data } = await apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
+        const request = () => apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -595,7 +595,15 @@ export const fetchFieldSemanticType = createAsyncThunk(
                 model: dfSelectors.getActiveModel(state)
             }),
         });
-        return data;
+
+        try {
+            const { data } = await request();
+            return data;
+        } catch (error) {
+            if (!(error instanceof ApiRequestError) || !error.isRetryable) throw error;
+            const { data } = await request();
+            return data;
+        }
     }
 );
 

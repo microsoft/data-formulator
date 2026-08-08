@@ -56,10 +56,12 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 
 import { getUrls } from '../app/utils';
-import { apiRequest, ApiRequestError } from '../app/apiClient';
+import { apiRequest, ApiError, ApiRequestError } from '../app/apiClient';
 import { useTranslation } from 'react-i18next';
+import { LogViewerDialog } from './LogViewerDialog';
 
 
 // Add this helper function at the top of the file, after the imports
@@ -75,6 +77,14 @@ const simpleHash = (str: string): string => {
 
 interface ModelSelectionButtonProps {
     appearance?: 'toolbar' | 'inline';
+}
+
+interface RememberedModelEndpoint {
+    endpoint: string;
+    model: string;
+    api_base: string;
+    api_version: string;
+    auth_mode: string;
 }
 
 export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appearance = 'toolbar' }) => {
@@ -117,6 +127,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const [azureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'api_key'>('azure_cli');
     const [isAddingModel, setIsAddingModel] = useState(false);
     const [newModelError, setNewModelError] = useState("");
+    const [newModelDiagnostic, setNewModelDiagnostic] = useState<ApiError | null>(null);
+    const [modelLogsOpen, setModelLogsOpen] = useState(false);
+    const [rememberedEndpoints, setRememberedEndpoints] = useState<RememberedModelEndpoint[]>([]);
     const [azureCliStatus, setAzureCliStatus] = useState<{
         installed: boolean;
         signed_in: boolean;
@@ -148,6 +161,33 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         return () => { cancelled = true; };
     }, [modelDialogOpen, usesAzureCli]);
 
+    useEffect(() => {
+        if (!modelDialogOpen) return;
+        apiRequest<RememberedModelEndpoint[]>(getUrls().MODEL_ENDPOINTS)
+            .then(({ data }) => setRememberedEndpoints(data))
+            .catch(() => setRememberedEndpoints([]));
+    }, [modelDialogOpen]);
+
+    const rememberModelEndpoint = (model: ModelConfig) => {
+        const entry = {
+            endpoint: model.endpoint,
+            model: model.model,
+            api_base: model.api_base || '',
+            api_version: model.api_version || '',
+            auth_mode: model.auth_mode || '',
+        };
+        apiRequest<RememberedModelEndpoint>(getUrls().MODEL_ENDPOINTS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry),
+        }).then(() => {
+            setRememberedEndpoints(current => [
+                entry,
+                ...current.filter(existing => JSON.stringify(existing) !== JSON.stringify(entry)),
+            ].slice(0, 20));
+        }).catch(() => undefined);
+    };
+
     const handleAzureCliLogin = async () => {
         setAzureCliLoginPending(true);
         try {
@@ -161,6 +201,11 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             const message = error instanceof ApiRequestError
                 ? error.apiError.message
                 : error instanceof Error ? error.message : String(error);
+            setNewModelDiagnostic(error instanceof ApiRequestError ? error.apiError : {
+                code: 'CLIENT_ERROR',
+                message,
+                retry: false,
+            });
             setNewModelError(message);
         } finally {
             setAzureCliLoginPending(false);
@@ -211,6 +256,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             body: JSON.stringify({ model }),
         })
             .then(({ data }) => {
+                rememberModelEndpoint(model);
                 updateModelStatus(model, 'ok', data.message || "");
                 if (!tempSelectedModelId) {
                     setTempSelectedModelId(model.id);
@@ -233,6 +279,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         setNewApiVersion("");
         setAzureAuthMethod('azure_cli');
         setNewModelError("");
+        setNewModelDiagnostic(null);
     };
 
     const handleSaveModel = async () => {
@@ -246,11 +293,15 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             api_key: newApiKey,
             api_base: newApiBase,
             api_version: newApiVersion,
+            auth_mode: newEndpoint === 'azure'
+                ? (azureAuthMethod === 'azure_cli' ? 'azure_identity' : 'key')
+                : undefined,
             id,
         };
 
         setIsAddingModel(true);
         setNewModelError("");
+        setNewModelDiagnostic(null);
         updateModelStatus(model, 'testing', "");
         try {
             const { data } = await apiRequest(getUrls().TEST_MODEL, {
@@ -258,6 +309,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ model }),
             });
+            rememberModelEndpoint(model);
             dispatch(updatingUserModel ? dfActions.updateModel(model) : dfActions.addModel(model));
             updateModelStatus(model, 'ok', data.message || "");
             setTempSelectedModelId(id);
@@ -267,6 +319,11 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             const message = error instanceof ApiRequestError
                 ? error.apiError.message
                 : error instanceof Error ? error.message : String(error);
+            setNewModelDiagnostic(error instanceof ApiRequestError ? error.apiError : {
+                code: 'CLIENT_ERROR',
+                message,
+                retry: false,
+            });
             updateModelStatus(model, 'error', message);
             setNewModelError(message);
         } finally {
@@ -288,6 +345,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 : 'api_key'
         );
         setNewModelError('');
+        setNewModelDiagnostic(null);
         setIsEditingDetails(false);
     };
 
@@ -322,6 +380,40 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
     const addModelForm = (
         <Box sx={{ display: 'grid', gap: 2 }}>
+            {isEditingDetails && rememberedEndpoints.length > 0 && (
+                <Autocomplete
+                    size="small"
+                    options={rememberedEndpoints}
+                    value={null}
+                    getOptionLabel={(option) => `${option.endpoint} / ${option.model}`}
+                    renderOption={(props, option) => (
+                        <li {...props} key={`${option.endpoint}-${option.model}-${option.api_base}-${option.api_version}`}>
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2">{option.endpoint} / {option.model}</Typography>
+                                {option.api_base && (
+                                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                                        {option.api_base}
+                                    </Typography>
+                                )}
+                            </Box>
+                        </li>
+                    )}
+                    onChange={(_event, option) => {
+                        if (!option) return;
+                        setNewEndpoint(option.endpoint);
+                        setNewModel(option.model);
+                        setNewApiBase(option.api_base);
+                        setNewApiVersion(option.api_version);
+                        setNewApiKey('');
+                        setAzureAuthMethod(option.auth_mode === 'azure_identity' ? 'azure_cli' : 'api_key');
+                        setNewModelError('');
+                        setNewModelDiagnostic(null);
+                    }}
+                    renderInput={(params) => (
+                        <TextField {...params} label={t('model.recentConfigurations')} />
+                    )}
+                />
+            )}
             <TextField
                 select
                 fullWidth
@@ -333,7 +425,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     const provider = event.target.value;
                     setNewEndpoint(provider);
                     setNewModelError("");
-                    if (provider === 'azure' && !newApiVersion) setNewApiVersion('2024-02-15');
+                    setNewModelDiagnostic(null);
                 }}
             >
                 {['openai', 'azure', 'ollama', 'anthropic', 'gemini'].map(provider => (
@@ -445,7 +537,42 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             )}
 
             {isEditingDetails && modelExists && <Typography variant="caption" color="error">{t('model.providerModelExists')}</Typography>}
-            {newModelError && <Typography variant="caption" color="error">{newModelError}</Typography>}
+            {newModelDiagnostic && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" color="error" sx={{ flex: 1 }}>
+                        {newModelError}
+                    </Typography>
+                    <Tooltip title={t('model.copyDiagnostic')}>
+                        <IconButton
+                            size="small"
+                            aria-label={t('model.copyDiagnostic')}
+                            onClick={() => navigator.clipboard.writeText([
+                                newModelDiagnostic.message,
+                                newModelDiagnostic.request_id || '',
+                            ].filter(Boolean).join('\n'))}
+                        >
+                            <ContentCopyOutlinedIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    {serverConfig.IS_LOCAL_MODE && (
+                        <Button
+                            size="small"
+                            startIcon={<TerminalOutlinedIcon />}
+                            onClick={() => setModelLogsOpen(true)}
+                            sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                        >
+                            {t('model.viewRecentLog')}
+                        </Button>
+                    )}
+                </Box>
+            )}
+            <LogViewerDialog
+                open={modelLogsOpen}
+                onOpenChange={setModelLogsOpen}
+                hideTrigger
+                tailLines={100}
+                title={t('model.recentLog')}
+            />
         </Box>
     );
 

@@ -61,6 +61,7 @@ import {
     isLeafDerivedTable,
     TOOL_USES_CODE_FONT,
 } from './workflowContext';
+import { iconVar, textVar } from '../app/layout';
 
 // ---------------------------------------------------------------------------
 // Payload size budget (design-docs/24 §3.5)
@@ -375,7 +376,7 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-            <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+            <DialogTitle sx={{ fontSize: textVar.xl, pb: 0.5 }}>
                 {updateMode
                     ? t('knowledge.updateSessionTitle', { defaultValue: 'Update Session Workflow' })
                     : t('knowledge.distillSessionTitle', { defaultValue: 'Distill Session Workflow' })}
@@ -386,7 +387,7 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
             }}>
                 {/* Hint — also acts as the heading for the framed thread list. */}
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
-                    <Typography sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.4 }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>
                         {updateMode
                             ? t('knowledge.distillSessionUpdateHint', {
                                 defaultValue: 'Re-distill this analysis into the existing workflow document.',
@@ -398,7 +399,7 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
                 </Box>
 
                 {!hasContent ? (
-                    <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 1 }}>
+                    <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic', py: 1 }}>
                         {t('knowledge.distillSessionNothing', {
                             defaultValue: 'No completed analysis threads in this session yet.',
                         })}
@@ -419,11 +420,11 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
                     value={userInstruction}
                     onChange={(e) => setUserInstruction(e.target.value)}
                     disabled={distilling}
-                    sx={{ mt: 1.5, '& .MuiInputBase-input': { fontSize: 12 } }}
-                    slotProps={{ inputLabel: { sx: { fontSize: 12 } } }}
+                    sx={{ mt: 1.5, '& .MuiInputBase-input': { fontSize: textVar.sm } }}
+                    slotProps={{ inputLabel: { sx: { fontSize: textVar.sm } } }}
                 />
                 {!selectedModel && (
-                    <Typography sx={{ fontSize: 11, color: 'error.main' }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'error.main' }}>
                         {t('report.noModelSelected')}
                     </Typography>
                 )}
@@ -438,11 +439,11 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
                         alignItems: 'center', justifyContent: 'center',
                         gap: 0.5, px: 2, overflow: 'hidden',
                     }}>
-                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 11 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: textVar.xs }}>
                             {t('knowledge.distilling')}
                         </Typography>
                         <Typography variant="caption" sx={{
-                            color: 'text.disabled', fontSize: 10,
+                            color: 'text.disabled', fontSize: textVar.xxs,
                             textAlign: 'center', lineHeight: 1.3,
                         }}>
                             {t('knowledge.distillingOverlay')}
@@ -461,21 +462,21 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
                         {built!.notes.map((n, i) => (
                             <Typography
                                 key={i}
-                                sx={{ fontSize: 10, color: 'warning.main', fontStyle: 'italic', lineHeight: 1.3 }}
+                                sx={{ fontSize: textVar.xxs, color: 'warning.main', fontStyle: 'italic', lineHeight: 1.3 }}
                             >
                                 ⚠ {n}
                             </Typography>
                         ))}
                     </Box>
                 )}
-                <Button onClick={handleClose} sx={{ textTransform: 'none', fontSize: 12 }}>
+                <Button onClick={handleClose} sx={{ textTransform: 'none', fontSize: textVar.sm }}>
                     {distilling ? t('app.close') : t('app.cancel')}
                 </Button>
                 <Button
                     onClick={handleDistill}
                     disabled={distilling || !selectedModel || !hasContent}
                     variant="contained"
-                    sx={{ textTransform: 'none', fontSize: 12 }}
+                    sx={{ textTransform: 'none', fontSize: textVar.sm }}
                 >
                     {distilling
                         ? t('knowledge.distilling')
@@ -538,11 +539,11 @@ const SessionDistillFromPanel: React.FC<{
                             >
                                 <IconButton size="small" sx={{ p: 0.125 }} tabIndex={-1} aria-label={isOpen ? t('knowledge.threadCollapse') : t('knowledge.threadExpand')}>
                                     {isOpen
-                                        ? <ExpandLessIcon sx={{ fontSize: 14 }} />
-                                        : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
+                                        ? <ExpandLessIcon sx={{ fontSize: iconVar.sm }} />
+                                        : <ExpandMoreIcon sx={{ fontSize: iconVar.sm }} />}
                                 </IconButton>
                                 <Typography sx={{
-                                    fontSize: 11, fontWeight: 500, color: 'text.primary',
+                                    fontSize: textVar.xs, fontWeight: 500, color: 'text.primary',
                                     flex: 1, minWidth: 0, overflow: 'hidden',
                                     textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                 }}>
@@ -552,7 +553,7 @@ const SessionDistillFromPanel: React.FC<{
                                         defaultValue: `Thread ${idx + 1} · ${thread.label}`,
                                     })}
                                 </Typography>
-                                <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
+                                <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled' }}>
                                     {t('knowledge.threadStepBadge', {
                                         steps: stepCount,
                                         defaultValue: `${stepCount} step${stepCount === 1 ? '' : 's'}`,
@@ -618,7 +619,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
             <Box>
                 {!isToolCall && (
                     <Typography sx={{
-                        fontSize: 11,
+                        fontSize: textVar.xs,
                         color: 'text.primary',
                         whiteSpace: 'pre-wrap',
                         overflowWrap: 'anywhere',
@@ -657,7 +658,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
         const cols = Array.isArray(ev.columns) ? ev.columns : [];
         body = (
             <Box>
-                <Typography sx={{ fontSize: 11, color: 'text.primary' }}>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.primary' }}>
                     <Box component="span" sx={{ fontFamily: 'monospace' }}>{ev.table_id ?? '?'}</Box>
                     <Box component="span" sx={{ color: 'text.disabled', ml: 0.75 }}>
                         {ev.row_count != null ? `${ev.row_count} rows` : ''}
@@ -666,7 +667,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
                 </Typography>
                 {cols.length > 0 && (
                     <Typography sx={{
-                        fontSize: 10, color: 'text.disabled', fontFamily: 'monospace',
+                        fontSize: textVar.xxs, color: 'text.disabled', fontFamily: 'monospace',
                         display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
                         overflow: 'hidden', overflowWrap: 'anywhere',
                     }}>
@@ -679,7 +680,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
         Icon = BarChartOutlinedIcon;
         iconColor = theme.palette.primary.main;
         body = (
-            <Typography sx={{ fontSize: 11, color: 'text.primary' }}>
+            <Typography sx={{ fontSize: textVar.xs, color: 'text.primary' }}>
                 <Box component="span">{ev.mark_or_type ?? '?'}</Box>
                 <Box component="span" sx={{ color: 'text.disabled', ml: 0.75, fontFamily: 'monospace' }}>
                     on {ev.related_table_id ?? '?'}
@@ -695,7 +696,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
         Icon = InfoOutlinedIcon;
         iconColor = theme.palette.text.disabled;
         body = (
-            <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
+            <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>
                 {String(kind ?? 'unknown')}
             </Typography>
         );
@@ -720,7 +721,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
             <Box sx={{ flex: 1, minWidth: 0 }}>
                 {roleBadge && (
                     <Typography component="span" sx={{
-                        fontSize: 9, fontWeight: 500, textTransform: 'uppercase',
+                        fontSize: textVar.xxs, fontWeight: 500, textTransform: 'uppercase',
                         color: 'text.disabled', letterSpacing: 0.3, mr: 0.5,
                     }}>
                         {roleBadge}

@@ -28,15 +28,7 @@ class CosmosDBDataLoader(ExternalDataLoader):
         ]
         return params_list
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example:** endpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`
-
-**Azure setup:** Find your endpoint and key in the Azure Portal under *Keys* for your Cosmos DB account.
-
-**Local emulator:** Use endpoint `https://localhost:8081` with the well-known emulator key.
-
-**Troubleshooting:** Ensure the account firewall allows your IP, or use a connection from an allowed network."""
+    AUTH_GUIDE = "cosmosdb.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

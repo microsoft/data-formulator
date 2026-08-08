@@ -12,6 +12,7 @@ import TableRow from '@mui/material/TableRow';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import { alpha, Box, useTheme } from '@mui/system';
 import Typography from '@mui/material/Typography';
+import { iconVar, textVar } from '../app/layout';
 import { formatCellValue } from './ViewUtils';
 
 
@@ -100,7 +101,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
             sx={{
                 width: '100%',
                 "& .MuiTableCell-root": {
-                    fontSize: 10, maxWidth: maxCellWidth || "60px", padding: compact ? "2px 4px" : "6px",
+                    fontSize: textVar.xxs, maxWidth: maxCellWidth || "60px", padding: compact ? "2px 4px" : "6px",
                     overflow: "clip", textOverflow: "ellipsis", whiteSpace: "nowrap"
                 }
             }}>
@@ -119,7 +120,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                                         key={column.id}
                                         align={column.align}
                                         sx={{
-                                            minWidth: column.minWidth, fontSize: 12, color: "#333",
+                                            minWidth: column.minWidth, fontSize: textVar.sm, color: "#333",
                                             backgroundColor: backgroundColor,
                                             borderBottomColor, borderBottomWidth: '1px', borderBottomStyle: 'solid',
                                             cursor: 'pointer',
@@ -131,7 +132,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                                             active={orderBy === column.id}
                                             direction={orderBy === column.id ? order : 'asc'}
                                             sx={{
-                                                '& .MuiTableSortLabel-icon': { fontSize: 14 },
+                                                '& .MuiTableSortLabel-icon': { fontSize: iconVar.sm },
                                             }}
                                         >
                                             {column.label}
@@ -180,9 +181,9 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
             {rowsPerPage < sortedRows.length ? <TablePagination
                 sx={{
                     "color": "gray",
-                    "& .MuiInputBase-root": { fontSize: 10 },
-                    "& .MuiTablePagination-selectLabel": { fontSize: 10 },
-                    "& .MuiTablePagination-displayedRows": { fontSize: 10 },
+                    "& .MuiInputBase-root": { fontSize: textVar.xxs },
+                    "& .MuiTablePagination-selectLabel": { fontSize: textVar.xxs },
+                    "& .MuiTablePagination-displayedRows": { fontSize: textVar.xxs },
                     "& .MuiButtonBase-root": { padding: 0 },
                     "& .MuiToolbar-root": { minHeight: 12, height: 18},
                     "& .MuiTablePagination-toolbar": { paddingRight: 0 },
@@ -192,7 +193,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                     MenuProps: {
                         sx: {
                             '.MuiPaper-root': {},
-                            '.MuiTablePagination-menuItem': { fontSize: 12 },
+                            '.MuiTablePagination-menuItem': { fontSize: textVar.sm },
                         },
                     }
                 }}

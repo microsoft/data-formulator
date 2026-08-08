@@ -44,6 +44,13 @@ class TestWorkspaceLifecycle:
     def test_list_workspaces(self, manager):
         manager.create_workspace("first")
         manager.create_workspace("second")
+        # Freshly created workspaces are provisional; saving state makes them
+        # real sessions the user can come back to.
+        for ws in ("first", "second"):
+            manager.save_session_state(ws, {
+                "tables": [{"id": "t1", "name": "T1"}],
+                "activeWorkspace": {"id": ws, "displayName": ws},
+            })
 
         ws_list = manager.list_workspaces()
         names = [w["id"] for w in ws_list]
@@ -471,19 +478,38 @@ class TestLegacyWorkspaceAutoRepair:
 
 
 class TestEmptyWorkspaceVisibility:
-    """list_workspaces() lists every workspace directory, including
-    empty "Untitled Session" entries from abandoned data-loading
-    chats. Users manage (rename/delete) these themselves via the
-    sidebar — they are not hidden."""
+    """A session appears in the list once it holds work.
 
-    def test_empty_workspace_is_visible(self, manager):
+    Workspace directories are created eagerly — any request carrying an
+    X-Workspace-Id gets one, including chatting before loading data. Those
+    are provisional and stay out of the list until something real lands in
+    them, so the sidebar reflects sessions the user actually started."""
+
+    def test_provisional_workspace_is_hidden(self, manager):
         manager.create_workspace("ghost")
-        # No save_session_state — meta has no tableCount/chartCount.
+        # No save_session_state — nothing but an empty directory.
 
         ws_list = manager.list_workspaces()
 
-        assert any(w["id"] == "ghost" for w in ws_list)
+        assert not any(w["id"] == "ghost" for w in ws_list)
+        # It still exists, so requests carrying its id keep working.
         assert manager.workspace_exists("ghost")
+
+    def test_naming_promotes_a_provisional_workspace(self, manager):
+        manager.create_workspace("named")
+        manager.update_display_name("named", "Sales Review")
+
+        ws_list = manager.list_workspaces()
+
+        assert any(w["display_name"] == "Sales Review" for w in ws_list)
+
+    def test_content_written_outside_save_is_still_listed(self, manager):
+        """The provisional flag is a hint, not the source of truth: anything
+        that writes real content shows up even if it never clears the flag."""
+        manager.create_workspace("stray")
+        (manager.root / "stray" / "workspace.yaml").write_text("tables: []")
+
+        assert any(w["id"] == "stray" for w in manager.list_workspaces())
 
     def test_workspace_with_tables_is_visible(self, manager):
         manager.create_workspace("real")

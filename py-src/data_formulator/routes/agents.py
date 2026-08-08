@@ -11,11 +11,10 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import request, Blueprint, current_app, Response, stream_with_context
+from flask import request, Blueprint, current_app, Response, stream_with_context, g
 import logging
 
 import json
-import html
 import pandas as pd
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
@@ -159,7 +158,7 @@ def get_client(model_config, trusted=False):
         model_config["endpoint"],
         model_config["model"],
         model_config.get("api_key") or None,
-        html.escape(model_config["api_base"]) if model_config.get("api_base") else None,
+        model_config.get("api_base") or None,
         model_config.get("api_version") or None,
     )
 
@@ -252,9 +251,8 @@ def test_model():
     logger.debug("content------------------------------")
     logger.debug(content)
 
-    client = get_client(content['model'])
-
     try:
+        client = get_client(content['model'])
         response = client.get_completion(
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
@@ -272,7 +270,11 @@ def test_model():
     except AppError:
         raise
     except Exception as e:
-        logger.exception(f"Error testing model {content['model'].get('id', '')}")
+        logger.exception(
+            "Error testing model %s request_id=%s",
+            content['model'].get('id', ''),
+            getattr(g, 'request_id', 'unknown'),
+        )
         raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/process-data-on-load', methods=['GET', 'POST'])

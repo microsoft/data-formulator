@@ -24,6 +24,7 @@ import type { AuthInfo } from "./oidcConfig";
 import { persistor } from "./store";
 import { getBrowserId } from "./identity";
 import { apiRequest } from "./apiClient";
+import { iconVar, textVar } from './layout';
 
 export const AuthButton: FC = () => {
     const { t } = useTranslation();
@@ -85,7 +86,7 @@ export const AuthButton: FC = () => {
         const label = String(identity.displayName || identity.id || '');
         return (
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, ml: 1 }}>
-                <Typography variant="body2" sx={{ fontSize: 12, opacity: 0.85 }}>
+                <Typography variant="body2" sx={{ fontSize: textVar.sm, opacity: 0.85 }}>
                     {label}
                 </Typography>
                 {(mgr || isBackend) && (
@@ -95,7 +96,7 @@ export const AuthButton: FC = () => {
                             onClick={handleSignOut}
                             sx={{ color: "inherit" }}
                         >
-                            <LogoutIcon sx={{ fontSize: 18 }} />
+                            <LogoutIcon sx={{ fontSize: iconVar.lg }} />
                         </IconButton>
                     </Tooltip>
                 )}
@@ -121,8 +122,8 @@ export const AuthButton: FC = () => {
         return (
             <Tooltip title={`SSO Error: ${initError}`}>
                 <Box sx={{ display: "flex", alignItems: "center", ml: 1, color: "error.main" }}>
-                    <ErrorOutlineIcon sx={{ fontSize: 18, mr: 0.5 }} />
-                    <Typography variant="body2" sx={{ fontSize: 12 }}>
+                    <ErrorOutlineIcon sx={{ fontSize: iconVar.lg, mr: 0.5 }} />
+                    <Typography variant="body2" sx={{ fontSize: textVar.sm }}>
                         SSO Error
                     </Typography>
                 </Box>
@@ -137,13 +138,13 @@ export const AuthButton: FC = () => {
                     <Button
                         variant="text"
                         size="small"
-                        startIcon={<LoginIcon sx={{ fontSize: 16 }} />}
+                        startIcon={<LoginIcon sx={{ fontSize: iconVar.md }} />}
                         onClick={handleSignIn}
                         sx={{
                             ml: 1,
                             textTransform: "none",
                             color: "inherit",
-                            fontSize: 12,
+                            fontSize: textVar.sm,
                         }}
                     >
                         {t("auth.ssoLogin")}

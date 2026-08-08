@@ -28,6 +28,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { TableIcon } from '../icons';
+import { iconVar, textVar } from '../app/layout';
 import type { CatalogTreeNode } from './CatalogTree';
 import { CountBadge } from './CatalogTree';
 
@@ -177,7 +178,7 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
         return (
             <div style={style}>
                 <Box sx={{ pl: placeholderPadLeft, display: 'flex', alignItems: 'center', height: '100%' }}>
-                    <Typography sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>Loading…</Typography>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontStyle: 'italic' }}>Loading…</Typography>
                 </Box>
             </div>
         );
@@ -189,7 +190,7 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                 <Box sx={{ pl: placeholderPadLeft, display: 'flex', alignItems: 'center', height: '100%' }}>
                     <Typography
                         component="span"
-                        sx={{ fontSize: 12, color: 'primary.main', cursor: 'pointer' }}
+                        sx={{ fontSize: textVar.sm, color: 'primary.main', cursor: 'pointer' }}
                         onClick={() => onLoadMore?.(node)}
                     >
                         {node.name}
@@ -318,12 +319,12 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                         >
                             {isNamespace
                                 ? (isExpanded
-                                    ? <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-                                    : <ChevronRightIcon sx={{ fontSize: 16, color: 'text.disabled' }} />)
+                                    ? <ExpandMoreIcon sx={{ fontSize: iconVar.md, color: 'text.disabled' }} />
+                                    : <ChevronRightIcon sx={{ fontSize: iconVar.md, color: 'text.disabled' }} />)
                                 : isGroup
-                                    ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
+                                    ? <DashboardOutlinedIcon sx={{ fontSize: iconVar.md, color: groupLoaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
                                     : isTable
-                                        ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
+                                        ? <TableIcon sx={{ fontSize: iconVar.md, color: loaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
                                         : null}
                         </Box>
                         {rowSelectable && (
@@ -339,31 +340,31 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                                 }}
                             >
                                 {nsIndeterminate && !isTable
-                                    ? <IndeterminateCheckBoxIcon sx={{ fontSize: 15 }} />
+                                    ? <IndeterminateCheckBoxIcon sx={{ fontSize: iconVar.md }} />
                                     : showAsChecked
-                                        ? <CheckBoxIcon sx={{ fontSize: 15 }} />
-                                        : <CheckBoxOutlineBlankIcon sx={{ fontSize: 15 }} />}
+                                        ? <CheckBoxIcon sx={{ fontSize: iconVar.md }} />
+                                        : <CheckBoxOutlineBlankIcon sx={{ fontSize: iconVar.md }} />}
                             </Box>
                         )}
                     </Box>
                     {/* Label */}
-                    <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: 13 }}>
+                    <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.md }}>
                         {node.name}
                     </Typography>
                     {/* Loaded check */}
-                    {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
+                    {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: iconVar.sm, color: 'success.main', flexShrink: 0 }} />}
                     {/* Metadata status hint — only surfaced when metadata is
                         genuinely unavailable. "partial" just means columns are
                         lazy-loaded (expected during a full-cluster browse), so
                         it's not worth flagging. */}
                     {isTable && metaStatus === 'unavailable' && (
                         <Tooltip title={t('sidebar.metadataUnavailable')} placement="top">
-                            <InfoOutlinedIcon sx={{ fontSize: 12, color: 'text.disabled', flexShrink: 0, opacity: 0.6 }} />
+                            <InfoOutlinedIcon sx={{ fontSize: iconVar.xs, color: 'text.disabled', flexShrink: 0, opacity: 0.6 }} />
                         </Tooltip>
                     )}
                     {/* Row count */}
                     {isTable && node.metadata?.row_count != null && (
-                        <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                        <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                             {Number(node.metadata.row_count).toLocaleString()}
                         </Typography>
                     )}

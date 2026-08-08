@@ -49,8 +49,8 @@
     "microsoftResearch": "微软研究院"
   },
   "logs": {
-    "title": "服务器日志",
-    "viewLogs": "查看服务器日志",
+    "title": "后端日志",
+    "viewLogs": "查看后端日志",
     "refresh": "刷新",
     "download": "下载完整日志",
     "empty": "日志文件为空。"
@@ -348,6 +348,8 @@
     "rememberCredentials": "记住凭据",
     "setupDetails": "设置详情",
     "setupFieldsIntro": "请填写以下信息以建立连接：",
+    "askAgent": "询问助手",
+    "askAgentPrompt": "我需要帮助配置 {{connector}} 连接。{{auth}} 请指导我完成设置，说明每个参数的含义，并在连接失败时帮我排查。",
     "optional": "可选",
     "connectionTimeout": "连接超时。请检查凭据后重试。",
     "delegatedLogin": "通过服务登录",
@@ -465,6 +467,8 @@
     "addData": "添加数据",
     "addMoreData": "添加更多数据",
     "dataSources": "数据源",
+    "tablesAvailableToAgent": "智能体可使用 {{count}} 个表",
+    "tablesAvailableToAgent_other": "智能体可使用 {{count}} 个表",
     "showAllTables": "显示全部 {{count}} 个",
     "showFewerTables": "收起",
     "working": "处理中...",

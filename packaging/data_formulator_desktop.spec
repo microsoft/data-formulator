@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 
 project_root = Path(SPECPATH).parent
@@ -11,6 +11,13 @@ icon_path = project_root / "packaging" / "icons" / (
 )
 
 datas = [(str(package_root / "dist"), "data_formulator/dist")]
+datas += collect_data_files(
+    "data_formulator",
+    includes=[
+        "analyst/skills/**/SKILL.md",
+        "analyst/skills/**/tools.json",
+    ],
+)
 binaries = []
 hiddenimports = collect_submodules("data_formulator")
 
@@ -18,8 +25,12 @@ for package in (
     "azure.identity",
     "azure.kusto.data",
     "flask_session",
+    "httpcore",
+    "httpx",
     "litellm",
     "mssql_python",
+    "openai",
+    "pyarrow",
     "tiktoken",
     "tiktoken_ext",
     "webview",

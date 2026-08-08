@@ -40,7 +40,15 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
-import { threadPaneWidth } from './threadLayout';
+import { MAX_THREAD_COLUMNS } from './threadLayout';
+import {
+    defaultThreadColumns,
+    maxThreadColumnsForWidth,
+    maxThreadColumnsForWidthClass,
+    threadPaneWidthFor,
+} from '../app/layout';
+import { iconVar, textVar } from '../app/layout';
+import { useContainerSize, useLayout } from '../app/LayoutProvider';
 
 import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
@@ -51,7 +59,6 @@ import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
-import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
@@ -467,126 +474,121 @@ export const DataFormulatorFC = ({ }) => {
     // DataThread so the pane snap points line up with the rendered columns.
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const paneSizesRef = useRef<number[]>([]);
 
-    const snapToColumns = useCallback((sizes: number[]) => {
-        if (!allotmentRef.current || sizes.length < 2) return;
-        const raw = sizes[0];
-        // Find nearest discrete column count (1-3)
-        let bestCols = 1;
+    const { widthClass, tokens } = useLayout();
+    const { width: splitWidth } = useContainerSize(containerRef);
+
+    // The user's chosen column *count*, not a pixel width — so a window resize
+    // preserves their intent instead of carrying a stale pixel value around.
+    // Cleared when the width class changes, handing control back to the default.
+    const [userColumns, setUserColumns] = useState<number | null>(null);
+    // Read by the drag handler, which runs before `columnCap` is in scope.
+    const columnCapRef = useRef(MAX_THREAD_COLUMNS);
+    // Pane widths must come from the same tokens DataThread renders columns
+    // with, or the snap points stop lining up with the rendered columns.
+    const paneWidth = useCallback(
+        (n: number) => threadPaneWidthFor(n, tokens),
+        [tokens],
+    );
+
+    const nearestColumnCount = useCallback((width: number) => {
+        let best = 1;
         let bestDist = Infinity;
-        for (let n = 1; n <= 3; n++) {
-            const dist = Math.abs(raw - threadPaneWidth(n));
+        for (let n = 1; n <= columnCapRef.current; n++) {
+            const dist = Math.abs(width - paneWidth(n));
             if (dist < bestDist) {
                 bestDist = dist;
-                bestCols = n;
+                best = n;
             }
         }
-        const snapped = threadPaneWidth(bestCols);
-        if (Math.abs(raw - snapped) > 2) {
-            const totalWidth = sizes.reduce((a, b) => a + b, 0);
-            allotmentRef.current.resize([snapped, totalWidth - snapped]);
-        }
-    }, []);
+        return best;
+    }, [paneWidth]);
 
-    // Compute thread count to decide preferred pane width:
-    // A "thread" is a leaf table's derivation chain displayed as a column.
-    // Must match the chain-splitting logic in DataThread (MAX_CHAIN_TABLES).
-    const threadCount = useMemo(() => {
-        // A table is a "leaf" if no other non-anchored table derives from it
-        const hasNonAnchoredChild = new Set<string>();
-        tables.forEach(t => {
-            if (t.derive && !t.anchored) {
-                hasNonAnchoredChild.add(t.derive.trigger.tableId);
+    const snapToColumns = useCallback((sizes: number[]) => {
+        if (sizes.length < 2) return;
+        const columns = nearestColumnCount(sizes[0]);
+        const target = paneWidth(columns);
+        setUserColumns(columns);
+
+        // A same-column drag does not change React state, so the pinning effect
+        // below will not rerun. Snap the panes explicitly after Allotment has
+        // finished its own drag bookkeeping.
+        requestAnimationFrame(() => {
+            try {
+                allotmentRef.current?.resize([target, splitWidth - target]);
+            } catch {
+                // The pane structure may have changed while the drag ended.
             }
         });
-        const leafTables = tables.filter(t => !hasNonAnchoredChild.has(t.id));
-        // Threads = leaf tables with derivation chains, plus one slot for the
-        // source-table shelf (source tables are not threads; they pin to the
-        // top of the first column).
-        const threaded = leafTables.filter(t => t.derive);
-        let count = threaded.length + (tables.some(t => !t.derive) ? 1 : 0);
+    }, [nearestColumnCount, paneWidth, splitWidth]);
 
-        // Account for chain-splitting: long chains are broken into sub-threads
-        // (mirrors MAX_CHAIN_TABLES logic in DataThread)
-        const MAX_CHAIN_TABLES = 5;
-        const tableById = new Map(tables.map(t => [t.id, t]));
-        const getChainLength = (t: DictTable): number => {
-            let len = 1;
-            let cur = t;
-            while (cur.derive && !cur.anchored) {
-                len++;
-                const parent = tableById.get(cur.derive.trigger.tableId);
-                if (!parent) break;
-                cur = parent;
-            }
-            return len;
-        };
-        const claimedForCount = new Set<string>();
-        for (const lt of threaded) {
-            // Walk chain
-            const chainIds: string[] = [lt.id];
-            let cur = lt;
-            while (cur.derive && !cur.anchored) {
-                const pid = cur.derive.trigger.tableId;
-                chainIds.push(pid);
-                const parent = tableById.get(pid);
-                if (!parent) break;
-                cur = parent;
-            }
-            const ownedIds = chainIds.filter(id => !claimedForCount.has(id));
-            if (ownedIds.length > MAX_CHAIN_TABLES) {
-                // Each extra split adds one more thread entry
-                const extraSplits = Math.floor((ownedIds.length - 1) / MAX_CHAIN_TABLES);
-                count += extraSplits;
-            }
-            chainIds.forEach(id => claimedForCount.add(id));
-        }
+    // The thread pane only ever rests on a whole-column width. Dragging the
+    // window edge changes how many columns *fit*; it never leaves the pane at
+    // an arbitrary size, so the canvas absorbs the whole delta.
 
-        return count;
+    // How many columns the thread could actually fill: one per leaf chain, plus
+    // a slot for the source shelf. Chain-splitting can add more, so treat this
+    // as a floor — it exists only to stop a wide screen reserving empty columns.
+    const threadColumnDemand = useMemo(() => {
+        const hasChild = new Set<string>();
+        tables.forEach(t => { if (t.derive && !t.anchored) hasChild.add(t.derive.trigger.tableId); });
+        const leaves = tables.filter(t => t.derive && !hasChild.has(t.id)).length;
+        return Math.max(1, leaves + (tables.some(t => !t.derive) ? 1 : 0));
     }, [tables]);
-    // Default the thread pane to 2 columns so the docked chat box (rendered
-    // at the bottom of DataThread) is wide enough to read comfortably.
-    const preferredColumns = 2;
 
-    // Track previous thread count to auto-resize intelligently
-    const prevThreadCountRef = useRef(threadCount);
+    const columnCap = maxThreadColumnsForWidth(
+        splitWidth,
+        tokens,
+        maxThreadColumnsForWidthClass(widthClass),
+    );
+    columnCapRef.current = columnCap;
+    const preferredColumns = Math.min(
+        userColumns ?? defaultThreadColumns(widthClass, threadColumnDemand, splitWidth),
+        columnCap,
+    );
+
+    // A new width class re-asserts the default; within a class the drag sticks.
+    const prevWidthClassRef = useRef(widthClass);
     useEffect(() => {
-        const prev = prevThreadCountRef.current;
-        prevThreadCountRef.current = threadCount;
-        if (!allotmentRef.current || !containerRef.current) return;
-        // When there are no tables the first Allotment.Pane is unmounted,
-        // so the Allotment only has one child – calling resize with two
-        // sizes would crash (accessing .minimumSize on an undefined pane).
-        if (tables.length === 0) return;
-        const totalWidth = containerRef.current.clientWidth;
-        if (totalWidth <= 0) return;
+        if (prevWidthClassRef.current === widthClass) return;
+        prevWidthClassRef.current = widthClass;
+        setUserColumns(null);
+    }, [widthClass]);
 
-        let newSize: number | null = null;
-        if (prev <= 1 && threadCount > 1) {
-            // Case 1: was 1 thread, now 2+ → expand to 2 columns
-            newSize = threadPaneWidth(2);
-        } else if (prev > 1 && threadCount <= 1) {
-            // Case 2: was 2+ threads, now 1 → keep 2 columns so the docked
-            // chat box stays wide enough to read.
-            newSize = threadPaneWidth(2);
-        }
-        // Case 3: was 2+ threads and still 2+ → don't change (respect user's manual setting)
+    // Hold the thread pane at exactly `threadPaneWidth(preferredColumns)`.
+    //
+    // Runs on every split-container resize, not just on discrete events:
+    //   - `preferredSize` only applies when a pane first mounts, and this pane
+    //     unmounts whenever there are no tables;
+    //   - Allotment otherwise redistributes a container resize across both
+    //     panes, leaving the thread at an arbitrary width where the column
+    //     count flips at unpredictable points.
+    // Pinning it here means the canvas absorbs the entire delta and the thread
+    // only ever changes in whole columns.
+    const hasTables = tables.length > 0;
+    useEffect(() => {
+        // With no tables the first Allotment.Pane is unmounted, so the Allotment
+        // has a single child and resize([a, b]) would read `.minimumSize` off
+        // undefined.
+        if (!hasTables) return;
+        if (!allotmentRef.current || splitWidth <= 0) return;
 
-        if (newSize !== null) {
-            // Defer resize to the next animation frame so the Allotment has
-            // re-rendered its pane children before we call resize.
-            const finalSize = newSize;
-            const rafId = requestAnimationFrame(() => {
-                try {
-                    const w = containerRef.current?.clientWidth ?? totalWidth;
-                    allotmentRef.current?.resize([finalSize, w - finalSize]);
-                } catch {
-                    // Allotment pane structure may not yet match; ignore.
-                }
-            });
-            return () => cancelAnimationFrame(rafId);
-        }
-    }, [threadCount, tables.length]);
+        const target = paneWidth(preferredColumns);
+        // Defer both the measurement and correction until Allotment has
+        // processed the new container size. Checking before this frame can
+        // see the old snapped width and skip just before Allotment moves it.
+        const rafId = requestAnimationFrame(() => {
+            try {
+                if (splitWidth - target < tokens.canvas.min) return;
+                if (Math.abs((paneSizesRef.current[0] ?? -1) - target) <= 1) return;
+                allotmentRef.current?.resize([target, splitWidth - target]);
+            } catch {
+                // Allotment pane structure may not yet match; ignore.
+            }
+        });
+        return () => cancelAnimationFrame(rafId);
+    }, [hasTables, preferredColumns, splitWidth, tokens.canvas.min]);
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
@@ -601,11 +603,16 @@ export const DataFormulatorFC = ({ }) => {
                     display: 'flex', height: 'calc(100% - 12px)', flex: 1, minWidth: 0, flexDirection: 'column',
                     overflow: 'hidden',
                     position: 'relative'}}>
-                <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
+                <Allotment
+                    ref={allotmentRef}
+                    onChange={(sizes) => { paneSizesRef.current = sizes; }}
+                    onDragEnd={snapToColumns}
+                    proportionalLayout={false}
+                >
                     {tables.length > 0 ? (
-                        <Allotment.Pane minSize={threadPaneWidth(1)} 
-                                preferredSize={threadPaneWidth(preferredColumns)} 
-                                maxSize={threadPaneWidth(3)} snap={false}>
+                        <Allotment.Pane minSize={paneWidth(1)} 
+                                preferredSize={paneWidth(preferredColumns)} 
+                                maxSize={paneWidth(columnCap)} snap={false}>
                             <DataThread sx={{
                                 display: 'flex', 
                                 flexDirection: 'column',
@@ -615,7 +622,7 @@ export const DataFormulatorFC = ({ }) => {
                             }}/>
                         </Allotment.Pane>
                     ) : null}
-                    <Allotment.Pane minSize={300}>
+                    <Allotment.Pane minSize={tokens.canvas.min}>
                         <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
                             {viewMode === 'editor' ? (
                                 visPane
@@ -646,14 +653,14 @@ export const DataFormulatorFC = ({ }) => {
             sx={{ textTransform: 'none'}} 
             target="_blank" rel="noopener noreferrer" 
             href="https://github.com/microsoft/data-formulator/issues">{t('footer.contactUs')}</Button>
-        <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
+        <Typography sx={{ display: 'inline', fontSize: textVar.sm, ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
             background: `
-                linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.01)} 1px, transparent 1px),
-                linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.01)} 1px, transparent 1px)
+                linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px),
+                linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px)
             `,
             backgroundSize: '16px 16px',
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
@@ -666,7 +673,7 @@ export const DataFormulatorFC = ({ }) => {
                 <Typography fontSize={76} sx={{letterSpacing: '0.04em'}}>{toolName}</Typography> 
             </Box>
             <Typography sx={{ 
-                fontSize: 20, color: theme.palette.text.secondary, 
+                fontSize: 20, color: alpha(theme.palette.text.primary, 0.7),
                 textAlign: 'center', mt: 1.5, mb: 0}}>
                 {t('landing.tagline')}
             </Typography>
@@ -695,7 +702,7 @@ export const DataFormulatorFC = ({ }) => {
                         // a rectangle behind it.
                         '& .df-sparkle': {
                             display: 'inline-block',
-                            fontSize: 18,
+                            fontSize: textVar.xxl,
                             lineHeight: 1,
                             animation: 'df-sparkle-twinkle 3.6s ease-in-out infinite',
                             transformOrigin: 'center',
@@ -727,7 +734,7 @@ export const DataFormulatorFC = ({ }) => {
                     </Box>
                     <Typography
                         variant="caption"
-                        sx={{ color: 'text.secondary', fontSize: 12.5, lineHeight: 1.5, flex: 1 }}
+                        sx={{ color: 'text.secondary', fontSize: textVar.sm, lineHeight: 1.5, flex: 1 }}
                     >
                         {t('landing.demoBannerBody', {
                             defaultValue:
@@ -783,7 +790,7 @@ export const DataFormulatorFC = ({ }) => {
                 demo, since first-time visitors won't have any sessions
                 yet and demos are the most engaging entry point. */}
             <Box sx={{mt: 3}}>
-                <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
+                <Typography sx={{ color: alpha(theme.palette.text.primary, 0.76), fontSize: textVar.md, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
                     {t('landing.demos')}
                 </Typography>
                 <Box sx={{
@@ -806,7 +813,7 @@ export const DataFormulatorFC = ({ }) => {
                 {/* Section header — left-aligned label with the sort control
                     on the right, aligned to the card grid. */}
                 <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    <Typography sx={{ color: 'text.secondary', fontSize: textVar.md, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                         {t('workspace.yourSessions')}
                     </Typography>
                     <Select
@@ -817,10 +824,10 @@ export const DataFormulatorFC = ({ }) => {
                         disableUnderline
                         inputProps={{ 'aria-label': t('workspace.sortSessions') }}
                         IconComponent={(props) => (
-                            <ExpandMoreIcon {...props} sx={{ fontSize: 16, color: 'text.disabled', right: 0 }} />
+                            <ExpandMoreIcon {...props} sx={{ fontSize: iconVar.md, color: 'text.disabled', right: 0 }} />
                         )}
                         sx={{
-                            fontSize: 12,
+                            fontSize: textVar.sm,
                             color: 'text.disabled',
                             cursor: 'pointer',
                             '& .MuiSelect-select': { py: 0.25, pl: 0, pr: '16px !important', minHeight: 0 },
@@ -837,10 +844,10 @@ export const DataFormulatorFC = ({ }) => {
                             return labels[v as typeof wsSort];
                         }}
                     >
-                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>{t('workspace.sortNewestFirst')}</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>{t('workspace.sortOldestFirst')}</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>{t('workspace.sortNameAsc')}</MenuItem>
+                        <MenuItem value="created_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNewestFirst')}</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortOldestFirst')}</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNameAsc')}</MenuItem>
                     </Select>
                 </Box>
                 <Box sx={{
@@ -876,7 +883,7 @@ export const DataFormulatorFC = ({ }) => {
                                                 cancelRenameWorkspace();
                                             }
                                         }}
-                                        slotProps={{ input: { sx: { fontSize: 14, fontWeight: 500 } } }}
+                                        slotProps={{ input: { sx: { fontSize: textVar.lg, fontWeight: 500 } } }}
                                     />
                                 ) : (
                                     <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
@@ -884,7 +891,7 @@ export const DataFormulatorFC = ({ }) => {
                                     </Typography>
                                 )}
                                 {w.saved_at && (
-                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
+                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: textVar.xs }}>
                                         {new Date(w.saved_at).toLocaleString()}
                                     </Typography>
                                 )}

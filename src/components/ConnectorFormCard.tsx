@@ -26,6 +26,7 @@ import { deriveConnectorDisplayName } from '../app/connectorNames';
 import { CONNECTOR_URLS } from '../app/utils';
 import { dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { iconVar, textVar } from '../app/layout';
 import { getConnectorIcon } from '../icons';
 import { DataLoaderForm } from '../views/DBTableManager';
 import type { ConnectorFormPrompt, ConnectorInstance, ConnectorAuthPath } from './ComponentType';
@@ -46,22 +47,25 @@ interface ConnectorFormCardProps {
     /** Whether this card should be expanded. The chat keeps only the latest
      *  pending form open; older ones collapse to a header the user can reopen. */
     defaultExpanded?: boolean;
+    /** 'bare' drops the card chrome — the canvas already frames the form. */
+    variant?: 'card' | 'bare';
 }
 
-export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId, prompt, defaultExpanded = true }) => {
+export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId, prompt, defaultExpanded = true, variant = 'card' }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
     const sourceType = prompt.sourceType;
     const isConnected = prompt.status === 'connected';
+    const isBare = variant === 'bare';
 
     const [meta, setMeta] = useState<LoaderMeta | null>(null);
     const [metaError, setMetaError] = useState<string>('');
     const [loadingMeta, setLoadingMeta] = useState(true);
     const [expanded, setExpanded] = useState(defaultExpanded);
     // Connected-state: collapsible details panel (non-sensitive only).
-    const [connExpanded, setConnExpanded] = useState(false);
+    const [connExpanded, setConnExpanded] = useState(isBare);
     const [connDetails, setConnDetails] = useState<Array<{ label: string; value: string }>>([]);
 
     const createdIdRef = useRef<string | null>(prompt.connectorId ?? null);
@@ -246,6 +250,39 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
         maxWidth: 640,
     } as const;
 
+    const formBody = loadingMeta ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
+            <CircularProgress size={16} />
+            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>
+                {t('chatConnector.loading', { defaultValue: 'Loading connector…' })}
+            </Typography>
+        </Box>
+    ) : metaError ? (
+        <Typography sx={{ fontSize: textVar.sm, color: 'error.main' }}>{metaError}</Typography>
+    ) : meta ? (
+        <DataLoaderForm
+            dataLoaderType={sourceType}
+            paramDefs={meta.params}
+            authInstructions={meta.auth_instructions || ''}
+            delegatedLogin={meta.delegated_login}
+            authMode={meta.auth_mode}
+            authPaths={meta.auth_paths}
+            compact
+            hideInstructions
+            onImport={() => {}}
+            onFinish={(status, message) => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), component: 'connector',
+                    type: status === 'success' ? 'success' : 'error',
+                    value: message,
+                }));
+            }}
+            onConnected={handleConnected}
+            onBeforeConnect={handleBeforeConnect}
+            initialSensitiveParams={sensitivePrefill}
+        />
+    ) : null;
+
     // Connected: a compact, borderless button that expands to reveal the
     // connection's non-sensitive configuration (mirrors the code-block cards).
     if (isConnected) {
@@ -262,17 +299,17 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                         transition: 'background-color 120ms',
                     }}
                 >
-                    {getConnectorIcon(sourceType, { sx: { fontSize: 16, opacity: 0.8 } })}
-                    <CheckIcon sx={{ fontSize: 14 }} />
-                    <Typography sx={{ fontSize: 12, fontWeight: 600 }}>
+                    {getConnectorIcon(sourceType, { sx: { fontSize: iconVar.md, opacity: 0.8 } })}
+                    <CheckIcon sx={{ fontSize: iconVar.sm }} />
+                    <Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }}>
                         {t('chatConnector.connectedChip', {
                             name,
                             defaultValue: 'Connected to {{name}}',
                         })}
                     </Typography>
                     {connExpanded
-                        ? <ExpandLessIcon sx={{ fontSize: 16, opacity: 0.7 }} />
-                        : <ExpandMoreIcon sx={{ fontSize: 16, opacity: 0.7 }} />}
+                        ? <ExpandLessIcon sx={{ fontSize: iconVar.md, opacity: 0.7 }} />
+                        : <ExpandMoreIcon sx={{ fontSize: iconVar.md, opacity: 0.7 }} />}
                 </Box>
                 <Collapse in={connExpanded} timeout="auto" unmountOnExit>
                     <Box sx={{
@@ -283,20 +320,20 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                     }}>
                         {connDetails.map(row => (
                             <React.Fragment key={row.label}>
-                                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{row.label}</Typography>
-                                <Typography sx={{ fontSize: 11, color: 'text.primary', wordBreak: 'break-all' }}>{row.value}</Typography>
+                                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{row.label}</Typography>
+                                <Typography sx={{ fontSize: textVar.xs, color: 'text.primary', wordBreak: 'break-all' }}>{row.value}</Typography>
                             </React.Fragment>
                         ))}
                         {typeof prompt.tableCount === 'number' && (
                             <React.Fragment>
-                                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
                                     {t('chatConnector.tablesLabel', { defaultValue: 'tables' })}
                                 </Typography>
-                                <Typography sx={{ fontSize: 11, color: 'text.primary' }}>{prompt.tableCount}</Typography>
+                                <Typography sx={{ fontSize: textVar.xs, color: 'text.primary' }}>{prompt.tableCount}</Typography>
                             </React.Fragment>
                         )}
                         {connDetails.length === 0 && typeof prompt.tableCount !== 'number' && (
-                            <Typography sx={{ fontSize: 11, color: 'text.disabled', gridColumn: '1 / -1' }}>
+                            <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', gridColumn: '1 / -1' }}>
                                 {t('chatConnector.noDetails', { defaultValue: 'No additional details.' })}
                             </Typography>
                         )}
@@ -304,6 +341,10 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                 </Collapse>
             </Box>
         );
+    }
+
+    if (isBare) {
+        return <Box sx={{ width: '100%', minWidth: 0, position: 'relative' }}>{formBody}</Box>;
     }
 
     return (
@@ -318,50 +359,19 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                 }}
                 onClick={() => setExpanded(e => !e)}
             >
-                {getConnectorIcon(sourceType, { sx: { fontSize: 18, opacity: 0.7 } })}
-                <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>
+                {getConnectorIcon(sourceType, { sx: { fontSize: iconVar.lg, opacity: 0.7 } })}
+                <Typography sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1 }}>
                     {t('chatConnector.connectTo', {
                         name: meta?.name || sourceType,
                         defaultValue: 'Connect to {{name}}',
                     })}
                 </Typography>
-                {expanded ? <ExpandLessIcon sx={{ fontSize: 18, opacity: 0.6 }} /> : <ExpandMoreIcon sx={{ fontSize: 18, opacity: 0.6 }} />}
+                {expanded ? <ExpandLessIcon sx={{ fontSize: iconVar.lg, opacity: 0.6 }} /> : <ExpandMoreIcon sx={{ fontSize: iconVar.lg, opacity: 0.6 }} />}
             </Box>
 
             <Collapse in={expanded} timeout="auto" unmountOnExit>
                 <Box sx={{ px: 1.5, py: 1.25, position: 'relative' }}>
-                    {loadingMeta ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
-                            <CircularProgress size={16} />
-                            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                                {t('chatConnector.loading', { defaultValue: 'Loading connector…' })}
-                            </Typography>
-                        </Box>
-                    ) : metaError ? (
-                        <Typography sx={{ fontSize: 12, color: 'error.main' }}>{metaError}</Typography>
-                    ) : meta ? (
-                        <DataLoaderForm
-                            dataLoaderType={sourceType}
-                            paramDefs={meta.params}
-                            authInstructions={meta.auth_instructions || ''}
-                            delegatedLogin={meta.delegated_login}
-                            authMode={meta.auth_mode}
-                            authPaths={meta.auth_paths}
-                            compact
-                            hideInstructions
-                            onImport={() => {}}
-                            onFinish={(status, message) => {
-                                dispatch(dfActions.addMessages({
-                                    timestamp: Date.now(), component: 'connector',
-                                    type: status === 'success' ? 'success' : 'error',
-                                    value: message,
-                                }));
-                            }}
-                            onConnected={handleConnected}
-                            onBeforeConnect={handleBeforeConnect}
-                            initialSensitiveParams={sensitivePrefill}
-                        />
-                    ) : null}
+                    {formBody}
                 </Box>
             </Collapse>
         </Box>

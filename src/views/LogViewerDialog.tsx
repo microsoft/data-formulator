@@ -16,10 +16,8 @@
 import React, { FC, useCallback, useEffect, useRef, useState } from 'react';
 import {
     Box,
-    Button,
     CircularProgress,
     Dialog,
-    DialogActions,
     DialogContent,
     DialogTitle,
     IconButton,
@@ -29,12 +27,14 @@ import {
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
+import CloseIcon from '@mui/icons-material/Close';
 import { useTranslation } from 'react-i18next';
 
 import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { textVar } from '../app/layout';
 
-const TAIL_LINES = 2000;
+const DEFAULT_TAIL_LINES = 500;
 
 interface LogTailResponse {
     path: string | null;
@@ -47,7 +47,15 @@ export const LogViewerDialog: FC<{
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     hideTrigger?: boolean;
-}> = ({ open: openProp, onOpenChange, hideTrigger = false }) => {
+    tailLines?: number;
+    title?: string;
+}> = ({
+    open: openProp,
+    onOpenChange,
+    hideTrigger = false,
+    tailLines = DEFAULT_TAIL_LINES,
+    title,
+}) => {
     const { t } = useTranslation();
     const [openState, setOpenState] = useState(false);
     const open = openProp ?? openState;
@@ -66,7 +74,7 @@ export const LogViewerDialog: FC<{
         setError(null);
         try {
             const { data } = await apiRequest<LogTailResponse>(
-                `${getUrls().LOGS_TAIL}?lines=${TAIL_LINES}`,
+                `${getUrls().LOGS_TAIL}?lines=${tailLines}`,
             );
             setContent(data.content || '');
             setPath(data.path ?? null);
@@ -75,7 +83,7 @@ export const LogViewerDialog: FC<{
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [tailLines]);
 
     useEffect(() => {
         if (open) {
@@ -98,7 +106,7 @@ export const LogViewerDialog: FC<{
     return (
         <>
             {!hideTrigger && (
-            <Tooltip title={t('logs.viewLogs', { defaultValue: 'View server logs' })}>
+            <Tooltip title={t('logs.viewLogs', { defaultValue: 'View backend log' })}>
                 <IconButton
                     size="small"
                     onClick={() => setOpen(true)}
@@ -107,7 +115,7 @@ export const LogViewerDialog: FC<{
                         color: 'text.secondary',
                         '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
                     }}
-                    aria-label={t('logs.viewLogs', { defaultValue: 'View server logs' })}
+                    aria-label={t('logs.viewLogs', { defaultValue: 'View backend log' })}
                 >
                     <TerminalOutlinedIcon fontSize="small" />
                 </IconButton>
@@ -116,7 +124,7 @@ export const LogViewerDialog: FC<{
             <Dialog open={open} onClose={() => setOpen(false)} maxWidth="lg" fullWidth>
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1 }}>
                     <Typography component="span" sx={{ fontWeight: 500, flexGrow: 1 }}>
-                        {t('logs.title', { defaultValue: 'Server Logs' })}
+                        {title || t('logs.title', { defaultValue: 'Backend Log' })}
                     </Typography>
                     <Tooltip title={t('logs.refresh', { defaultValue: 'Refresh' })}>
                         <span>
@@ -131,6 +139,15 @@ export const LogViewerDialog: FC<{
                                 <DownloadIcon fontSize="small" />
                             </IconButton>
                         </span>
+                    </Tooltip>
+                    <Tooltip title={t('common.close', { defaultValue: 'Close' })}>
+                        <IconButton
+                            size="small"
+                            onClick={() => setOpen(false)}
+                            aria-label={t('common.close', { defaultValue: 'Close' })}
+                        >
+                            <CloseIcon fontSize="small" />
+                        </IconButton>
                     </Tooltip>
                 </DialogTitle>
                 <DialogContent dividers sx={{ p: 0 }}>
@@ -157,7 +174,7 @@ export const LogViewerDialog: FC<{
                         </Box>
                     )}
                     {!loading && error && (
-                        <Typography color="error" sx={{ p: 2, fontSize: 13 }}>
+                        <Typography color="error" sx={{ p: 2, fontSize: textVar.md }}>
                             {error}
                         </Typography>
                     )}
@@ -170,7 +187,7 @@ export const LogViewerDialog: FC<{
                                 p: 2,
                                 maxHeight: '60vh',
                                 overflow: 'auto',
-                                fontSize: 11.5,
+                                fontSize: textVar.xs,
                                 lineHeight: 1.5,
                                 fontFamily: 'monospace',
                                 whiteSpace: 'pre-wrap',
@@ -183,11 +200,6 @@ export const LogViewerDialog: FC<{
                         </Box>
                     )}
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpen(false)} sx={{ textTransform: 'none' }}>
-                        {t('common.close', { defaultValue: 'Close' })}
-                    </Button>
-                </DialogActions>
             </Dialog>
         </>
     );

@@ -115,6 +115,32 @@ class TestAzureCredentialSelection:
             "https://cognitiveservices.azure.com/.default",
         )
 
+    def test_blank_api_version_is_not_defaulted(self):
+        client = Client(
+            "azure",
+            "deployment-name",
+            api_key="key",
+            api_base="https://example.openai.azure.com/",
+        )
+
+        assert client.params["api_base"] == "https://example.openai.azure.com"
+        assert "api_version" not in client.params
+
+    def test_explicit_api_version_is_preserved(self):
+        client = Client(
+            "azure",
+            "deployment-name",
+            api_key="key",
+            api_base="https://example.openai.azure.com",
+            api_version="2025-04-01-preview",
+        )
+
+        assert client.params["api_version"] == "2025-04-01-preview"
+
+    def test_api_base_is_required(self):
+        with pytest.raises(ValueError, match="Azure API base URL is required"):
+            Client("azure", "deployment-name", api_key="key")
+
 
 # ---------------------------------------------------------------------------
 # _strip_image_blocks

@@ -96,7 +96,7 @@ class MSSQLDataLoader(ExternalDataLoader):
         return [
             {
                 "id": "entra_id",
-                "label": "Microsoft Entra ID (az login)",
+                "label": "Microsoft Entra ID",
                 "description": (
                     "Run `az login` in your terminal, then connect with no "
                     "password. Also works with Managed Identity, VS Code, and "
@@ -143,23 +143,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             return "sql_auth"
         return "entra_id"
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Microsoft Entra ID (recommended):** Run `az login` once in your terminal, then start Data Formulator. Choose *Microsoft Entra ID*, fill in only `server` and (optionally) `database`, and leave username/password empty — your Azure CLI credentials are used automatically. Managed Identity, VS Code, and environment credentials also work via `DefaultAzureCredential`.
-
-> Your Entra identity must be granted access to the database, e.g. an admin runs `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` and grants the needed roles.
-
-**Example (Entra ID):** server: `myserver.database.windows.net` · database: `mydb` (username/password empty)
-
-**SQL Server authentication:** Choose *SQL Server authentication* and provide username and password.
-
-**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`
-
-**Windows authentication (Windows only):** Choose *Windows authentication* and leave username/password empty.
-
-**Microsoft Entra prerequisite:** Install the Azure CLI and run `az login`. The SQL Server driver is included with Data Formulator; no separate ODBC driver installation is needed.
-
-**Troubleshooting:** Confirm you are signed in with `az account show`. Ensure the SQL Server service is running and TCP/IP is enabled. Test SQL auth with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
+    AUTH_GUIDE = "mssql.md"
 
     def __init__(self, params: dict[str, Any]):
         from data_formulator.security.log_sanitizer import sanitize_params

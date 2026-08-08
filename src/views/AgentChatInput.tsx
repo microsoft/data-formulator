@@ -27,6 +27,7 @@ import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
 import { borderColor, transition, radius } from '../app/tokens';
+import { iconVar, textVar } from '../app/layout';
 
 export interface AgentChatInputProps {
     value: string;
@@ -273,7 +274,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         borderColor: alpha(theme.palette.error.main, 0.35),
                     },
                 }}>
-                <StopIcon sx={{ fontSize: 14 }} />
+                <StopIcon sx={{ fontSize: iconVar.sm }} />
             </IconButton>
         </Tooltip>
     ) : (
@@ -288,7 +289,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         '&:hover': { bgcolor: canSend ? 'primary.dark' : 'transparent' },
                         '&.Mui-disabled': { bgcolor: 'transparent', color: 'text.disabled' },
                     }}>
-                    <ArrowUpwardRoundedIcon sx={{ fontSize: 18 }} />
+                    <ArrowUpwardRoundedIcon sx={{ fontSize: iconVar.lg }} />
                 </IconButton>
             </span>
         </Tooltip>
@@ -322,7 +323,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                 width: '100%',
                 px: 1,
                 py: 0.75,
-                fontSize: 14,
+                fontSize: textVar.lg,
                 lineHeight: 1.5,
                 alignItems: 'flex-start',
                 '& .MuiInputBase-input': { width: '100%' },
@@ -414,7 +415,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                         bgcolor: 'rgba(0,0,0,0.55)', color: 'white',
                                         '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' },
                                     }}>
-                                    <CloseIcon sx={{ fontSize: 12 }} />
+                                    <CloseIcon sx={{ fontSize: iconVar.xs }} />
                                 </IconButton>
                             </Box>
                         ))}
@@ -434,12 +435,12 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 borderRadius: 1,
                                 maxWidth: 220,
                             }}>
-                                <InsertDriveFileOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
+                                <InsertDriveFileOutlinedIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', flexShrink: 0 }} />
                                 <Typography
                                     variant="caption"
                                     title={name}
                                     sx={{
-                                        fontSize: 11, lineHeight: 1.4,
+                                        fontSize: textVar.xs, lineHeight: 1.4,
                                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                     }}
                                 >
@@ -450,7 +451,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                         onClick={() => onAttachmentsChange(attachments.filter((_, idx) => idx !== i))}
                                         sx={{ width: 16, height: 16, p: 0, color: 'text.disabled',
                                             '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.text.primary, 0.06) } }}>
-                                        <CloseIcon sx={{ fontSize: 11 }} />
+                                        <CloseIcon sx={{ fontSize: textVar.xs }} />
                                     </IconButton>
                                 )}
                             </Box>
@@ -463,7 +464,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                 {layout === 'stacked' ? (
                     <>
                         {/* Input takes its own row so multi-line text aligns naturally. */}
-                        <Box sx={{ px: 1, pt: 0.5, width: '100%', display: 'flex' }}>
+                        <Box sx={{ px: 1, pt: 0.5, width: '100%', boxSizing: 'border-box', display: 'flex' }}>
                             {inputField}
                         </Box>
                         {/* Bottom toolbar: leading slot + attach on the left, send on the right. */}
@@ -571,7 +572,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 variant="body2"
                                 sx={{
                                     flex: 1, minWidth: 0,
-                                    fontSize: 14,
+                                    fontSize: textVar.lg,
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
                                     whiteSpace: 'nowrap',

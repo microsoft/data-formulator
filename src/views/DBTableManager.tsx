@@ -11,14 +11,19 @@ import {
   FormControlLabel,
   IconButton,
   Tooltip,
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
     Autocomplete,
     ToggleButton,
     ToggleButtonGroup,
+    alpha,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import { AgentToyIcon } from './AgentToyIcon';
 
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest, type ApiError } from '../app/apiClient';
@@ -29,6 +34,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
 import { DataFormulatorState } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { iconVar, textVar } from '../app/layout';
 import { ConnectorAuthPath } from '../components/ComponentType';
 
 const KUSTO_HELP_CLUSTER = 'https://help.kusto.windows.net';
@@ -111,7 +117,10 @@ export const DataLoaderForm: React.FC<{
      *  the agent in chat. Populates the transient sensitive state so the user
      *  needn't retype; never persisted (see the redux-persist transform). */
     initialSensitiveParams?: Record<string, string>,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false, initialSensitiveParams}) => {
+    /** Hands the user to the data agent chat with a seeded question when they
+     *  get stuck on setup. Omitted inside the chat card itself. */
+    onAskAgent?: (prompt: string) => void,
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const loaderTypeKey = loaderType || dataLoaderType;
@@ -287,6 +296,23 @@ export const DataLoaderForm: React.FC<{
             }));
         }
     }, [dataLoaderType, dispatch, sensitiveParamNames]);
+    const selectAuthPath = useCallback((pathId: string) => {
+        const selectedPath = authPaths.find(path => path.id === pathId);
+        if (!selectedPath) return;
+        const selectedFields = new Set(selectedPath.fields);
+        const authFieldNames = paramDefs
+            .filter(paramDef => paramDef.tier === 'auth')
+            .map(paramDef => paramDef.name);
+        const nextParams: Record<string, string> = { ...params, _auth_path: pathId };
+        for (const fieldName of authFieldNames) {
+            if (!selectedFields.has(fieldName)) delete nextParams[fieldName];
+            delete draftParamsRef.current[fieldName];
+        }
+        setSensitiveParams(previous => Object.fromEntries(
+            Object.entries(previous).filter(([fieldName]) => selectedFields.has(fieldName)),
+        ));
+        dispatch(dfActions.updateDataLoaderConnectParams({ dataLoaderType, params: nextParams }));
+    }, [authPaths, dataLoaderType, dispatch, paramDefs, params]);
 
     const loadKustoDatabases = useCallback(async (paramOverrides?: Record<string, any>) => {
         const discoveryParams = { ...getCurrentParams(), ...paramOverrides };
@@ -531,8 +557,122 @@ export const DataLoaderForm: React.FC<{
         })();
     }, [autoConnect, ssoAutoConnect, connectorId]);
 
+    // Wide surfaces read the guide beside the form; the chat card keeps it collapsed below.
+    const showSideGuide = !compact && !!setupDetailsContent;
+
+    // Type scale — the panel uses exactly two sizes: `titleFontSize` for the
+    // two section headings, `bodyFontSize` for everything else (labels, inputs,
+    // help text, buttons). Compact hosts step the whole scale down one notch.
+    const titleFontSize = compact ? '0.8125rem' : '0.9375rem';
+    const bodyFontSize = compact ? '0.75rem' : '0.8125rem';
+    const labelSx = {
+        fontSize: bodyFontSize,
+        fontWeight: 500,
+        lineHeight: 1.4,
+        mb: compact ? 0.25 : 0.5,
+    };
+    const fieldGap = compact ? 1 : 1.5;
+    const sectionGap = compact ? 1.25 : 2;
+    // Inputs otherwise keep MUI's 14px, which is the one size that breaks the scale.
+    const fieldSx = {
+        '& .MuiInputBase-root': { fontSize: bodyFontSize },
+        ...(compact ? {
+            '& .MuiOutlinedInput-input': { paddingTop: '5.5px', paddingBottom: '5.5px' },
+            '& .MuiAutocomplete-inputRoot': { paddingTop: '1px', paddingBottom: '1px' },
+            '& .MuiFormHelperText-root': { fontSize: '0.6875rem', marginTop: '2px' },
+        } : {}),
+    };
+    const actionButtonSx = {
+        textTransform: 'none' as const,
+        fontSize: bodyFontSize,
+        ...(compact ? { py: 0.25, minHeight: 0 } : {}),
+    };
+
+    const setupGuideBody = setupDetailsContent ? (
+        <Box sx={(theme) => ({
+            minWidth: 0,
+            maxWidth: '100%',
+            fontFamily: theme.typography.fontFamily,
+            fontSize: bodyFontSize,
+            lineHeight: 1.6,
+            color: 'text.primary',
+            '& *': { fontSize: 'inherit', lineHeight: 'inherit' },
+            '& p, & li': { overflowWrap: 'anywhere' },
+            '& p': { margin: '0 0 10px 0', '&:last-child': { marginBottom: 0 } },
+            '& code': {
+                fontFamily: 'monospace',
+                backgroundColor: 'action.hover',
+                padding: '1px 4px',
+                borderRadius: 0.5,
+                overflowWrap: 'anywhere',
+                boxDecorationBreak: 'clone',
+                WebkitBoxDecorationBreak: 'clone',
+            },
+            '& pre': {
+                maxWidth: '100%',
+                fontFamily: 'monospace',
+                backgroundColor: 'action.hover',
+                padding: 1,
+                overflowX: 'auto',
+                margin: '10px 0',
+                '& code': { backgroundColor: 'transparent', padding: 0, overflowWrap: 'normal' },
+            },
+            '& a': { color: 'primary.main', overflowWrap: 'anywhere' },
+            '& ul, & ol': { paddingLeft: 2.5, margin: '10px 0' },
+            '& li': { marginBottom: 0.5 },
+            '& strong': { fontWeight: 600 },
+            '& h1, & h2, & h3, & h4': { fontWeight: 600, margin: '14px 0 6px' },
+        })}>
+            <Markdown options={{
+                overrides: {
+                    a: {
+                        props: {
+                            target: '_blank',
+                            rel: 'noopener noreferrer',
+                        },
+                    },
+                },
+            }}>
+                {setupDetailsContent}
+            </Markdown>
+        </Box>
+    ) : null;
+
+    // Escape hatch when the guide isn't enough: hand the user to the data agent
+    // chat, which can inspect local config, run checks and fill the form.
+    const askAgentButton = onAskAgent ? (
+        <Button
+            size="small"
+            startIcon={<AgentToyIcon sx={{ fontSize: `${iconVar.md} !important` }} />}
+            onClick={() => {
+                const authPathLabel = authPaths.find(path => path.id === params._auth_path)?.label;
+                onAskAgent(t('db.askAgentPrompt', {
+                    connector: loaderTypeKey,
+                    auth: authPathLabel ? ` I picked the ${authPathLabel} option.` : '',
+                    defaultValue: 'I need help setting up a {{connector}} connection.{{auth}} Walk me through it, explain what each parameter expects, and help me troubleshoot if it fails.',
+                }));
+            }}
+            sx={{
+                flexShrink: 0,
+                textTransform: 'none',
+                fontSize: bodyFontSize,
+                lineHeight: 1.6,
+                minWidth: 0,
+                minHeight: 0,
+                py: 0.25,
+                px: 0.75,
+                borderRadius: 1,
+                whiteSpace: 'nowrap',
+                // MUI's default start-icon margins are sized for a 14px label.
+                '& .MuiButton-startIcon': { ml: 0, mr: 0.5 },
+            }}
+        >
+            {t('db.askAgent', { defaultValue: 'Ask agent' })}
+        </Button>
+    ) : null;
+
     return (
-        <Box sx={{p: 0, pb: 2, display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{p: 0, pb: compact ? 0.5 : 2, display: 'flex', flexDirection: 'column' }}>
             {isConnecting && <Box sx={{
                 position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, zIndex: 1000,
@@ -541,7 +681,7 @@ export const DataLoaderForm: React.FC<{
                 <CircularProgress size={20} />
                 {connectProgress && (
                     <Typography sx={{
-                        fontSize: 12.5, fontWeight: 500, color: 'text.primary',
+                        fontSize: textVar.sm, fontWeight: 500, color: 'text.primary',
                         textAlign: 'center', px: 1.5, py: 0.5, maxWidth: 380, wordBreak: 'break-word',
                         backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: 1,
                     }}>
@@ -553,136 +693,52 @@ export const DataLoaderForm: React.FC<{
                 the data-source sidebar — this dialog is for create / edit /
                 re-auth only. */}
             <Box sx={{
+                display: 'grid',
+                gridTemplateColumns: showSideGuide
+                    ? { xs: 'minmax(0, 1fr)', md: 'minmax(440px, 1.55fr) minmax(280px, 1fr)' }
+                    : 'minmax(0, 1fr)',
+                columnGap: { xs: 0, md: 4 },
+                rowGap: compact ? 2 : 3,
+                alignItems: 'start',
                 width: '100%',
-                maxWidth: compact ? '100%' : 960,
+                maxWidth: compact ? '100%' : (showSideGuide ? 940 : 520),
                 mx: 'auto',
-                px: compact ? 0 : { xs: 0, sm: 1.5 },
+                px: compact ? 0 : { xs: 0, sm: 1 },
                 boxSizing: 'border-box',
             }}>
+                <Box sx={{ minWidth: 0 }}>
                 {formTitle && (
-                    <Typography sx={{ fontSize: 13, lineHeight: 1.4, fontWeight: 400, color: 'secondary.main', mb: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5, mb: 1.5 }}>
                         {formTitle}
                     </Typography>
                 )}
                     {(() => {
                         const hasTiers = paramDefs.some(p => p.tier);
-                        const renderTimelineStep = (
-                            step: number,
-                            title: React.ReactNode,
-                            content: React.ReactNode,
-                            isLast = false,
-                        ) => (
-                            <Box sx={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', columnGap: 1.25 }}>
-                                <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                                    <Box sx={{
-                                        mt: 0.1,
-                                        width: 18,
-                                        height: 18,
-                                        borderRadius: '50%',
-                                        bgcolor: 'background.paper',
-                                        border: '1px solid',
-                                        borderColor: 'primary.main',
-                                        color: 'primary.main',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        zIndex: 1,
-                                    }}>
-                                        <Typography
-                                            component="span"
-                                            variant="caption"
-                                            sx={(theme) => ({
-                                                fontFamily: theme.typography.fontFamily,
-                                                fontSize: 10,
-                                                lineHeight: 1,
-                                                fontWeight: theme.typography.fontWeightMedium,
-                                                fontVariantNumeric: 'tabular-nums',
-                                            })}
-                                        >
-                                            {step}
-                                        </Typography>
-                                    </Box>
-                                    {!isLast && (
-                                        <Box sx={{
-                                            position: 'absolute',
-                                            top: 18,
-                                            bottom: -2,
-                                            width: '1px',
-                                            bgcolor: 'divider',
-                                        }} />
-                                    )}
-                                </Box>
-                                <Box sx={{ pb: isLast ? 0 : 2.25, minWidth: 0 }}>
-                                    {title && (
-                                        <Typography sx={{ fontSize: 12, lineHeight: '18px', fontWeight: 600, color: 'text.primary', mb: 2 }}>
-                                            {title}
-                                        </Typography>
-                                    )}
-                                    {content}
-                                </Box>
-                            </Box>
-                        );
-                        const formTextSx = {
-                            fontSize: 12,
-                            lineHeight: 1.5,
-                            fontWeight: 400,
-                            letterSpacing: 0,
-                        };
-                        const secondaryTextSx = {
-                            ...formTextSx,
-                            color: 'text.secondary',
-                        };
-                        const fieldRowSx = {
+                        const fieldStackSx = {
                             display: 'grid',
-                            gridTemplateColumns: 'minmax(0, 1fr)',
-                            rowGap: 0.25,
-                            alignItems: 'stretch',
+                            gap: fieldGap,
                             width: '100%',
-                            maxWidth: 420,
                             minWidth: 0,
                         };
-                        const fieldLabelSx = {
-                            ...secondaryTextSx,
-                            textAlign: 'left',
-                            overflowWrap: 'anywhere',
-                        };
-                        // Typical Data Formulator body size (12px). Fields, labels
-                        // and placeholders all sit on this one scale.
-                        const inputSx = {
-                            '& .MuiInputBase-root': { fontSize: 12 },
-                            '& .MuiInputBase-input': { fontSize: 12 },
-                            '& .MuiInputLabel-root': { fontSize: 12 },
-                            '& .MuiFormHelperText-root': { fontSize: 11, mx: 0 },
-                        };
-                        const labelShrinkSlotProps = { inputLabel: { shrink: true } };
-                        const paramGridSx = {
-                            display: 'grid',
-                            // Compact (inline chat) mode packs related fields two-up
-                            // (host|port, user|password, database|table_filter) so
-                            // the form stays short; the tier headers group each pair.
-                            gridTemplateColumns: compact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(2, minmax(0, 280px))',
-                            columnGap: compact ? 1.5 : 2,
-                            rowGap: compact ? 1.25 : 2.25,
-                            maxWidth: compact ? '100%' : 576,
-                        };
                         if (!hasTiers) {
-                            // Legacy: no tier field, render flat grid
+                            // Legacy connectors expose no tier metadata, so all fields share one stack.
                             return (
-                                <Box sx={{ ...paramGridSx, mt: 1 }}>
+                                <Box sx={fieldStackSx}>
                                     {paramDefs.map((paramDef) => (
-                                        <DraftTextField
-                                            key={paramDef.name}
-                                            sx={inputSx}
-                                            variant="standard" size="small" fullWidth
-                                            slotProps={labelShrinkSlotProps}
-                                            label={paramDef.name}
-                                            type={paramDef.type === 'password' ? 'password' : 'text'}
-                                            required={paramDef.required}
-                                            value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
-                                            placeholder={getParamPlaceholder(paramDef)}
-                                            onDraftChange={(value) => updateParamDraft(paramDef.name, value)}
-                                            onCommit={(value) => commitParamDraft(paramDef.name, value)}
-                                        />
+                                        <Box key={paramDef.name} sx={{ minWidth: 0 }}>
+                                            <Typography variant="body2" sx={labelSx}>
+                                                {paramDef.name}{paramDef.required ? ' *' : ''}
+                                            </Typography>
+                                            <DraftTextField
+                                                size="small" fullWidth
+                                                sx={fieldSx}
+                                                type={paramDef.type === 'password' ? 'password' : 'text'}
+                                                value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
+                                                placeholder={getParamPlaceholder(paramDef)}
+                                                onDraftChange={(value) => updateParamDraft(paramDef.name, value)}
+                                                onCommit={(value) => commitParamDraft(paramDef.name, value)}
+                                            />
+                                        </Box>
                                     ))}
                                 </Box>
                             );
@@ -697,35 +753,20 @@ export const DataLoaderForm: React.FC<{
                                 loaderTypeKey === 'kusto' && name === 'kusto_cluster';
                             const isKustoDatabase = (name: string) =>
                                 loaderTypeKey === 'kusto' && name === 'kusto_database';
-                            // Keep labels above inputs so long localized descriptions
-                            // cannot compete with or overlap the editable field.
                             const renderFieldRow = (paramDef: typeof tierParams[number], input: React.ReactNode) => (
-                                <Box
-                                    key={paramDef.name}
-                                    sx={fieldRowSx}
-                                >
-                                    <Typography sx={fieldLabelSx}>
+                                <Box key={paramDef.name} sx={{ minWidth: 0 }}>
+                                    <Typography variant="body2" sx={labelSx}>
                                         {paramDef.name}{paramDef.required ? ' *' : ''}
                                     </Typography>
-                                    <Box sx={{ minWidth: 0 }}>{input}</Box>
+                                    {input}
                                 </Box>
                             );
                             return (
-                            <Box sx={{
-                                display: 'grid',
-                                gridTemplateColumns: 'minmax(0, 1fr)',
-                                columnGap: 4,
-                                rowGap: compact ? 1.5 : 2,
-                                width: '100%',
-                                maxWidth: 860,
-                                '@container (min-width: 720px)': {
-                                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                },
-                            }}>
+                            <Box sx={fieldStackSx}>
                                 {tierParams.map((paramDef) => (
                                     isKustoCluster(paramDef.name) ? (
                                         renderFieldRow(paramDef,
-                                        <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.5 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                         <Autocomplete
                                             sx={{ flex: 1, minWidth: 0 }}
                                             freeSolo
@@ -754,22 +795,15 @@ export const DataLoaderForm: React.FC<{
                                             renderInput={(inputParams) => (
                                                 <TextField
                                                     {...inputParams}
-                                                    sx={inputSx}
-                                                    variant="standard" size="small" fullWidth
+                                                    size="small" fullWidth
+                                                    sx={fieldSx}
                                                     placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
                                                 />
                                             )}
-                                            slotProps={{
-                                                paper: {
-                                                    sx: {
-                                                        '& .MuiAutocomplete-option': { fontSize: 12, minHeight: 32, py: 0.5 },
-                                                    },
-                                                },
-                                            }}
                                         />
                                         <Tooltip title={t('db.findClusterPortal', { defaultValue: 'Find your cluster in the Azure portal' })}>
-                                            <IconButton size="small" component="a" href="https://portal.azure.com/#browse/Microsoft.Kusto%2Fclusters" target="_blank" rel="noopener noreferrer" sx={{ mb: '2px' }}>
-                                                <OpenInNewIcon sx={{ fontSize: 16 }} />
+                                            <IconButton size="small" component="a" href="https://portal.azure.com/#browse/Microsoft.Kusto%2Fclusters" target="_blank" rel="noopener noreferrer">
+                                                <OpenInNewIcon sx={{ fontSize: iconVar.md }} />
                                             </IconButton>
                                         </Tooltip>
                                         </Box>
@@ -793,7 +827,7 @@ export const DataLoaderForm: React.FC<{
                                             options={databaseOptions}
                                             loading={isLoadingDatabases}
                                             loadingText={(
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, fontSize: 12 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
                                                     <CircularProgress size={14} />
                                                     {t('db.loadingDatabases', { defaultValue: 'Loading databases…' })}
                                                 </Box>
@@ -819,22 +853,13 @@ export const DataLoaderForm: React.FC<{
                                             renderInput={(inputParams) => (
                                                 <TextField
                                                     {...inputParams}
-                                                    sx={inputSx}
-                                                    variant="standard" size="small" fullWidth
+                                                    size="small" fullWidth
+                                                    sx={fieldSx}
                                                     placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
                                                     error={!!databaseDiscoveryError}
                                                     helperText={databaseDiscoveryError || undefined}
                                                 />
                                             )}
-                                            slotProps={{
-                                                paper: {
-                                                    sx: {
-                                                        '& .MuiAutocomplete-option': { fontSize: 12, minHeight: 32, py: 0.5 },
-                                                        '& .MuiAutocomplete-noOptions': { fontSize: 12, py: 1 },
-                                                        '& .MuiAutocomplete-loading': { fontSize: 12, py: 1 },
-                                                    },
-                                                },
-                                            }}
                                         />
                                         )
                                     ) : paramDef.options ? (
@@ -862,8 +887,8 @@ export const DataLoaderForm: React.FC<{
                                             renderInput={(inputParams) => (
                                                 <TextField
                                                     {...inputParams}
-                                                    sx={inputSx}
-                                                    variant="standard" size="small" fullWidth
+                                                    size="small" fullWidth
+                                                    sx={fieldSx}
                                                     placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
                                                 />
                                             )}
@@ -872,8 +897,8 @@ export const DataLoaderForm: React.FC<{
                                     ) : (
                                     renderFieldRow(paramDef,
                                     <DraftTextField
-                                        sx={inputSx}
-                                        variant="standard" size="small" fullWidth
+                                        size="small" fullWidth
+                                        sx={fieldSx}
                                         type={paramDef.type === 'password' ? 'password' : 'text'}
                                         value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
                                         placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
@@ -901,154 +926,75 @@ export const DataLoaderForm: React.FC<{
                         const connectLabel = onBeforeConnect
                             ? t('db.createConnector', { defaultValue: 'Create Connector' })
                             : t('db.connect', { suffix: (params.table_filter || '').trim() ? t('db.withFilter') : '' });
-                        let stepNumber = 0;
-                        const connectionStep = connectionParams.length > 0 ? ++stepNumber : 0;
-                        const scopeStep = filterParams.length > 0 ? ++stepNumber : 0;
-                        const authStep = ++stepNumber;
                         const showConnectAction = !hasDelegated || selectedAuthParams.length > 0;
-                        const actionStep = showConnectAction ? ++stepNumber : 0;
 
                         return (
-                            <Box sx={{ mt: 1.5, width: '100%', containerType: 'inline-size' }}>
-                                {/* Connection identity and source coordinates belong together. */}
+                            <Box sx={{ display: 'grid', gap: sectionGap, width: '100%' }}>
                                 {connectionParams.length > 0 && (
-                                    renderTimelineStep(
-                                        connectionStep,
-                                        t('db.tierConnection'),
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: compact ? 1.5 : 2 }}>
-                                            {renderParamGrid(connectionParams)}
-                                            {advancedConnectionParams.length > 0 && (
-                                                <Box>
-                                                    <Button
-                                                        size="small"
-                                                        color="inherit"
-                                                        onClick={() => setShowAdvancedConnection(value => !value)}
-                                                        endIcon={showAdvancedConnection
-                                                            ? <ExpandLessIcon fontSize="small" />
-                                                            : <ExpandMoreIcon fontSize="small" />}
-                                                        sx={{
-                                                            px: 0,
-                                                            minWidth: 0,
-                                                            color: 'text.secondary',
-                                                            fontSize: 12,
-                                                            textTransform: 'none',
-                                                        }}
-                                                    >
-                                                        {t('db.advancedSettings', { defaultValue: 'Advanced settings' })}
-                                                    </Button>
-                                                    {showAdvancedConnection && (
-                                                        <Box sx={{ mt: 1.5 }}>
-                                                            {renderParamGrid(advancedConnectionParams)}
-                                                        </Box>
-                                                    )}
-                                                </Box>
-                                            )}
-                                        </Box>,
-                                    )
+                                    <Box sx={{ display: 'grid', gap: sectionGap }}>
+                                        {renderParamGrid(connectionParams)}
+                                        {advancedConnectionParams.length > 0 && (
+                                                <Accordion
+                                                    disableGutters
+                                                    elevation={0}
+                                                    expanded={showAdvancedConnection}
+                                                    onChange={() => setShowAdvancedConnection(value => !value)}
+                                                    sx={(theme) => ({
+                                                        // Shaded rather than outlined — an outline would read
+                                                        // as another input box.
+                                                        backgroundColor: alpha(theme.palette.text.primary, 0.04),
+                                                        borderRadius: 1,
+                                                        overflow: 'hidden',
+                                                        '&:before': { display: 'none' },
+                                                        '& .MuiAccordionSummary-root': { minHeight: compact ? 30 : 40, px: compact ? 1 : 1.5 },
+                                                        '& .MuiAccordionSummary-content': { my: compact ? 0.5 : 1 },
+                                                        '& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root': { fontSize: compact ? 18 : 24 },
+                                                        '& .MuiAccordionDetails-root': { px: compact ? 1 : 1.5, pt: 0.5, pb: compact ? 1 : 1.5 },
+                                                    })}
+                                                >
+                                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                                        <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
+                                                            {t('db.advancedSettings', { defaultValue: 'Advanced settings' })}
+                                                        </Typography>
+                                                    </AccordionSummary>
+                                                    <AccordionDetails>
+                                                        {renderParamGrid(advancedConnectionParams)}
+                                                    </AccordionDetails>
+                                                </Accordion>
+                                        )}
+                                    </Box>
                                 )}
 
-                                {/* Tier 2: connection scope and catalog filters. */}
-                                {filterParams.length > 0 && (
-                                    renderTimelineStep(
-                                        scopeStep,
-                                        t('db.tierFilter'),
-                                        renderParamGrid(filterParams),
-                                    )
-                                )}
+                                {filterParams.length > 0 && renderParamGrid(filterParams)}
 
-                                {/* Final tier: choose an authentication path, then
-                                    reveal only that path's credential fields. */}
-                                {renderTimelineStep(
-                                    authStep,
-                                    t('db.tierAuth'),
-                                    <>
+                                {/* Auth path selection reveals only the selected path's credential fields. */}
+                                <Box sx={{ display: 'grid', gap: sectionGap }}>
                                     {authPaths.length > 1 && (
                                         <ToggleButtonGroup
                                             exclusive
+                                            fullWidth
+                                            size="small"
                                             value={selectedAuthPath?.id || ''}
                                             onChange={(_event, value) => {
                                                 if (!value) return;
-                                                dispatch(dfActions.updateDataLoaderConnectParam({
-                                                    dataLoaderType,
-                                                    paramName: '_auth_path',
-                                                    paramValue: value,
-                                                }));
+                                                selectAuthPath(value);
                                             }}
                                             aria-label={t('db.tierAuth')}
-                                            sx={{
-                                                // Narrow containers (inline chat card, split
-                                                // panes) cannot fit the auth paths side by
-                                                // side, so stack them and only switch to a
-                                                // row once the form is wide enough.
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'stretch',
-                                                width: '100%',
-                                                maxWidth: 420,
+                                            sx={(theme) => ({
                                                 '& .MuiToggleButton-root': {
-                                                    minHeight: 30,
-                                                    px: 1.5,
-                                                    py: 0.25,
-                                                    ...formTextSx,
-                                                    justifyContent: 'center',
                                                     textTransform: 'none',
                                                     color: 'text.secondary',
                                                     borderColor: 'divider',
+                                                    ...(compact ? { fontSize: '0.7rem', py: 0.375, px: 1, lineHeight: 1.3 } : {}),
+                                                    '&:hover': { backgroundColor: 'action.hover' },
                                                     '&.Mui-selected': {
-                                                        color: 'primary.main',
-                                                        bgcolor: 'action.selected',
+                                                        color: 'primary.dark',
+                                                        fontWeight: 600,
+                                                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                                                        '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.14) },
                                                     },
                                                 },
-                                                '& .MuiToggleButtonGroup-grouped': {
-                                                    borderRadius: 0,
-                                                    marginLeft: 0,
-                                                    borderLeft: '1px solid',
-                                                    borderLeftColor: 'divider',
-                                                    '&:not(:first-of-type)': {
-                                                        marginTop: '-1px',
-                                                        borderTop: '1px solid',
-                                                        borderTopColor: 'divider',
-                                                    },
-                                                    '&:first-of-type': {
-                                                        borderTopLeftRadius: 4,
-                                                        borderTopRightRadius: 4,
-                                                    },
-                                                    '&:last-of-type': {
-                                                        borderBottomLeftRadius: 4,
-                                                        borderBottomRightRadius: 4,
-                                                    },
-                                                },
-                                                '@container (min-width: 560px)': {
-                                                    display: 'inline-flex',
-                                                    flexDirection: 'row',
-                                                    width: 'auto',
-                                                    maxWidth: '100%',
-                                                    '& .MuiToggleButton-root': {
-                                                        height: 30,
-                                                        py: 0,
-                                                        whiteSpace: 'nowrap',
-                                                    },
-                                                    '& .MuiToggleButtonGroup-grouped': {
-                                                        borderRadius: 0,
-                                                        '&:not(:first-of-type)': {
-                                                            marginTop: 0,
-                                                            marginLeft: '-1px',
-                                                            borderTop: '1px solid',
-                                                            borderTopColor: 'divider',
-                                                        },
-                                                        '&:first-of-type': {
-                                                            borderTopLeftRadius: 4,
-                                                            borderBottomLeftRadius: 4,
-                                                            borderTopRightRadius: 0,
-                                                        },
-                                                        '&:last-of-type': {
-                                                            borderTopRightRadius: 4,
-                                                            borderBottomRightRadius: 4,
-                                                            borderBottomLeftRadius: 0,
-                                                        },
-                                                    },
-                                                },
-                                            }}
+                                            })}
                                         >
                                             {authPaths.map(path => (
                                                 <ToggleButton
@@ -1062,41 +1008,42 @@ export const DataLoaderForm: React.FC<{
                                     )}
 
                                     {authPaths.length > 1 && selectedAuthPath?.description && (
-                                        <Box sx={{
-                                            display: 'flex',
-                                            alignItems: 'flex-start',
-                                            gap: 0.75,
-                                            width: 'fit-content',
-                                            maxWidth: 560,
-                                            mt: 1.25,
-                                            mb: selectedAuthParams.length > 0 ? 2 : 0,
-                                            px: 1,
-                                            py: 0.75,
-                                            borderRadius: 1,
-                                            bgcolor: 'action.hover',
-                                        }}>
-                                            <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary', mt: '1px', flexShrink: 0 }} />
-                                            <Typography sx={{ ...secondaryTextSx }}>
+                                        <Box sx={(theme) => ({
+                                            display: 'flex', alignItems: 'flex-start', gap: 1,
+                                            px: compact ? 1 : 1.5, py: compact ? 0.75 : 1.25,
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                                            borderLeft: '3px solid', borderColor: 'primary.main',
+                                        })}>
+                                            <InfoOutlinedIcon sx={{ fontSize: compact ? 15 : 17, color: 'primary.main', mt: '2px', flexShrink: 0 }} />
+                                            <Typography variant="body2" sx={{ fontSize: bodyFontSize, lineHeight: 1.5 }}>
                                                 {selectedAuthPath.description}
                                             </Typography>
                                         </Box>
                                     )}
 
                                     {isLocalMode && selectedAuthPath?.cli_login && (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mt: 0.5, mb: selectedAuthParams.length > 0 ? 2 : 0 }}>
+                                        <Box sx={{ display: 'grid', gap: 0.75 }}>
                                             {cliLoginStatus?.signed_in ? (
-                                                <Typography sx={{ ...secondaryTextSx, color: 'success.main', fontWeight: 500 }}>
-                                                    {t('db.cliLoginReady', {
-                                                        user: cliLoginStatus.account?.user || t('db.cliLoginCurrentAccount', { defaultValue: 'your current account' }),
-                                                        defaultValue: 'Signed in as {{user}}. You are ready to connect.',
-                                                    })}
-                                                </Typography>
+                                                <Box sx={(theme) => ({
+                                                    display: 'flex', alignItems: 'center', gap: 1,
+                                                    px: compact ? 1 : 1.5, py: compact ? 0.625 : 1,
+                                                    color: 'success.dark',
+                                                    backgroundColor: alpha(theme.palette.success.main, 0.08),
+                                                })}>
+                                                    <CheckCircleOutlineIcon sx={{ fontSize: compact ? 15 : 17, flexShrink: 0 }} />
+                                                    <Typography variant="body2" sx={{ fontSize: bodyFontSize, color: 'inherit' }}>
+                                                        {t('db.cliLoginReady', {
+                                                            user: cliLoginStatus.account?.user || t('db.cliLoginCurrentAccount', { defaultValue: 'your current account' }),
+                                                            defaultValue: 'Signed in as {{user}}. You are ready to connect.',
+                                                        })}
+                                                    </Typography>
+                                                </Box>
                                             ) : cliLoginStatus?.installed ? (
-                                                <Typography sx={{ ...secondaryTextSx }}>
+                                                <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
                                                     {t('db.cliLoginRequired', { defaultValue: 'Sign in with Azure CLI before connecting. Run `az login` in a terminal, then reopen this form.' })}
                                                 </Typography>
                                             ) : cliLoginStatus && !cliLoginStatus.installed ? (
-                                                <Typography sx={{ ...secondaryTextSx }}>
+                                                <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
                                                     {t('db.cliNotInstalled', { defaultValue: 'Azure CLI not found. Install it and run `az login` in a terminal before connecting.' })}
                                                 </Typography>
                                             ) : null}
@@ -1104,37 +1051,24 @@ export const DataLoaderForm: React.FC<{
                                     )}
 
                                     {hasDelegated && selectedAuthParams.length > 0 ? (
-                                        /* Left/right split: delegated | or | credentials */
-                                        <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'stretch' }}>
-                                            {/* Left: delegated login */}
-                                            <Box sx={{ display: 'flex', alignItems: 'center', pr: 2.5, borderRight: '1px solid', borderColor: 'divider' }}>
-                                                <Button
-                                                    variant="outlined"
-                                                    color="primary"
-                                                    size="small"
-                                                    sx={{ textTransform: "none", minWidth: 80, height: 30, fontSize: 12, whiteSpace: 'nowrap' }}
-                                                    disabled={isConnecting}
-                                                    onClick={handleDelegatedLogin}
-                                                >
-                                                    {delegatedLogin!.label || t('db.delegatedLogin')}
-                                                </Button>
-                                            </Box>
-                                            {/* Right: credential fields + connect */}
-                                            <Box sx={{ flex: 1 }}>
-                                                {renderParamGrid(selectedAuthParams)}
-                                            </Box>
+                                        <Box sx={{ display: 'grid', gap: sectionGap }}>
+                                            <Button
+                                                variant="outlined"
+                                                color="primary"
+                                                size="small"
+                                                sx={{ ...actionButtonSx, justifySelf: 'start' }}
+                                                disabled={isConnecting}
+                                                onClick={handleDelegatedLogin}
+                                            >
+                                                {delegatedLogin!.label || t('db.delegatedLogin')}
+                                            </Button>
+                                            {renderParamGrid(selectedAuthParams)}
                                         </Box>
                                     ) : hasDelegated ? (
                                         /* Delegated only */
                                         <Button
                                             variant="contained" color="primary" size="small"
-                                            sx={{
-                                                textTransform: "none",
-                                                minWidth: 80,
-                                                height: 30,
-                                                fontSize: 12,
-                                                mt: 1,
-                                            }}
+                                            sx={{ ...actionButtonSx, justifySelf: 'start' }}
                                             disabled={isConnecting}
                                             onClick={handleDelegatedLogin}
                                         >
@@ -1145,31 +1079,22 @@ export const DataLoaderForm: React.FC<{
                                         renderParamGrid(selectedAuthParams)
                                     )}
 
-                                    </>,
-                                    !showConnectAction,
-                                )}
+                                    </Box>
 
-                                {showConnectAction && renderTimelineStep(
-                                    actionStep,
-                                    null,
+                                {showConnectAction && (
                                     <Box sx={{
                                         display: 'flex',
                                         flexWrap: 'wrap',
                                         alignItems: 'center',
                                         justifyContent: 'space-between',
-                                        gap: 1.5,
+                                        gap: compact ? 1 : 1.5,
                                         width: '100%',
-                                        maxWidth: 860,
+                                        mt: compact ? 0 : 1,
                                     }}>
                                         <Button
                                             variant="contained" color="primary" size="small"
                                             disabled={isConnecting}
-                                            sx={{
-                                                textTransform: "none",
-                                                minWidth: 80,
-                                                height: 30,
-                                                fontSize: 12,
-                                            }}
+                                            sx={actionButtonSx}
                                             onClick={() => connectAndListTables()}>
                                             {connectLabel}
                                         </Button>
@@ -1179,80 +1104,82 @@ export const DataLoaderForm: React.FC<{
                                                 control={(
                                                     <Checkbox
                                                         size="small"
+                                                        sx={compact ? { p: 0.5 } : undefined}
                                                         checked={persistCredentials}
                                                         onChange={(event) => setPersistCredentials(event.target.checked)}
-                                                        sx={{ p: 0.25, mr: 0.25 }}
                                                     />
                                                 )}
                                                 label={(
-                                                    <Typography sx={{ ...secondaryTextSx, fontSize: 11 }}>
+                                                    <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
                                                         {t('db.rememberCredentials')}
                                                     </Typography>
                                                 )}
                                             />
                                         )}
-                                    </Box>,
-                                    true,
+                                    </Box>
                                 )}
                             </Box>
                         );
                     })()}
-                    {setupDetailsContent && (
-                        <Box
-                            sx={{
-                                mt: 2,
-                                ml: 4.75,
-                                maxWidth: 860,
-                                borderRadius: 1,
-                                bgcolor: 'action.hover',
-                                color: 'text.secondary',
-                                overflow: 'hidden',
-                            }}
-                        >
-                            <Button
-                                fullWidth
-                                color="inherit"
-                                onClick={() => setInstructionsExpanded(value => !value)}
-                                endIcon={instructionsExpanded
-                                    ? <ExpandLessIcon fontSize="small" />
-                                    : <ExpandMoreIcon fontSize="small" />}
-                                sx={{
-                                    justifyContent: 'space-between',
-                                    px: 1.5,
-                                    py: 1,
-                                    fontSize: 11.5,
-                                    lineHeight: 1.5,
-                                    fontWeight: 600,
-                                    color: 'text.primary',
-                                    textTransform: 'none',
-                                }}
-                            >
-                                {t('db.setupDetails', { defaultValue: 'Setup details' })}
-                            </Button>
-                            {instructionsExpanded && (
-                            <Box sx={(theme) => ({
-                                px: 1.5,
-                                pb: 1.5,
-                                maxWidth: 720,
-                                fontFamily: theme.typography.fontFamily,
-                                fontSize: 11.5,
-                                lineHeight: 1.5,
-                                color: 'text.secondary',
-                                '& *': { fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' },
-                                '& p': { margin: '0 0 8px 0', '&:last-child': { marginBottom: 0 } },
-                                '& code': { fontFamily: 'monospace', backgroundColor: 'action.hover', padding: '1px 3px', borderRadius: 0.5 },
-                                '& pre': { fontFamily: 'monospace', backgroundColor: 'action.hover', padding: 1, overflow: 'auto', margin: '8px 0', '& code': { backgroundColor: 'transparent', padding: 0 } },
-                                '& a': { color: 'primary.main' },
-                                '& ul, & ol': { paddingLeft: 2.5, margin: '8px 0' },
-                                '& li': { marginBottom: 0.5 },
-                                '& strong': { fontWeight: 600, color: 'text.primary' },
-                                '& h1, & h2, & h3, & h4': { fontSize: 11.5, fontWeight: 600, color: 'text.primary', margin: '8px 0' },
-                            })}>
-                                <Markdown>{setupDetailsContent}</Markdown>
-                            </Box>
+                    {!showSideGuide && setupDetailsContent && (
+                        <Box sx={{ mt: compact ? 1.5 : 3 }}>
+                            {askAgentButton && (
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+                                    {askAgentButton}
+                                </Box>
                             )}
+                        <Accordion
+                            disableGutters
+                            elevation={0}
+                            expanded={instructionsExpanded}
+                            onChange={() => setInstructionsExpanded(value => !value)}
+                            sx={(theme) => ({
+                                backgroundColor: alpha(theme.palette.text.primary, 0.04),
+                                borderRadius: 1,
+                                overflow: 'hidden',
+                                '&:before': { display: 'none' },
+                                '& .MuiAccordionSummary-root': { minHeight: compact ? 30 : 48, px: compact ? 1 : 2 },
+                                '& .MuiAccordionSummary-content': { my: compact ? 0.5 : 1.5 },
+                                '& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root': { fontSize: compact ? 18 : 24 },
+                                '& .MuiAccordionDetails-root': { px: compact ? 1 : 2, pt: 0.5, pb: compact ? 1 : 2 },
+                            })}
+                        >
+                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
+                                    {t('db.setupDetails', { defaultValue: 'Setup details' })}
+                                </Typography>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                                {setupGuideBody}
+                            </AccordionDetails>
+                        </Accordion>
                         </Box>
                     )}
+                </Box>
+                {showSideGuide && (
+                    <Box sx={(theme) => ({
+                        minWidth: 0,
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        backgroundColor: alpha(theme.palette.text.primary, 0.035),
+                    })}>
+                        <Box sx={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1,
+                            px: 2.25, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', backgroundColor: 'background.paper',
+                        }}>
+                            <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
+                                {t('db.setupDetails', { defaultValue: 'Setup details' })}
+                            </Typography>
+                            {askAgentButton}
+                        </Box>
+                        <Box sx={{ minWidth: 0, px: 2.25, py: 2 }}>
+                            {setupGuideBody}
+                        </Box>
+                    </Box>
+                )}
                 </Box>
         </Box>
     );

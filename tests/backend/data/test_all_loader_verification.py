@@ -29,7 +29,7 @@ _EXPECTED_HIERARCHIES = {
     "mysql": ["database", "table"],
     "clickhouse": ["database", "table"],
     "postgresql": ["database", "schema", "table"],
-    "mssql": ["database", "schema", "table"],
+    "mssql": ["database", "schema", "object_type", "table"],
     "bigquery": ["project_id", "dataset_id", "table"],
     "kusto": ["kusto_database", "table"],
     "athena": ["database", "table"],

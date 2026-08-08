@@ -9,10 +9,12 @@ import {
 import CheckIcon from '@mui/icons-material/Check';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { useTranslation } from 'react-i18next';
-import { apiRequest } from '../app/apiClient';
+import { apiRequest, ApiRequestError } from '../app/apiClient';
+import { getErrorMessage } from '../app/errorCodes';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { getConnectorIcon } from '../icons';
 import { transition } from '../app/tokens';
+import { iconVar, textVar } from '../app/layout';
 import { TablePreviewRow, TablePreviewData } from './TablePreviewRow';
 import { formatFilterChipLabel } from './filterFormat';
 import type { LoadPlan, LoadPlanCandidate, PendingTableLoad } from './ComponentType';
@@ -27,12 +29,19 @@ interface LoadPlanCardProps {
      *  When false (empty/new workspace), a single "Load selected" button
      *  loads directly with no ambiguity. */
     canLoadInNewWorkspace?: boolean;
+    /** 'bare' drops the card chrome (the canvas frames it), scrolls the
+     *  candidate list and pins the actions to the bottom. */
+    variant?: 'card' | 'bare';
 }
 
 // Reserve a stable area while a remote preview request is in flight. Resolved
 // previews return to natural height: five data rows plus a quiet row-count
 // caption provide enough validation without making multi-candidate plans tall.
 const LOAD_PLAN_LOADING_HEIGHT = 158;
+
+// Failures worth re-establishing the connection for. Anything else (a missing
+// table, a bad query) will fail again no matter how often we reconnect.
+const RECONNECTABLE_CODES = ['CONNECTOR_AUTH_FAILED', 'AUTH_EXPIRED', 'DB_CONNECTION_FAILED', 'CONNECTOR_ERROR'];
 
 interface PreviewState {
     loading: boolean;
@@ -41,6 +50,9 @@ interface PreviewState {
     columns: string[];
     totalRows?: number;
     error?: string;
+    /** True when the failure looks like a dropped/expired connection rather
+     *  than a bad table, so recovery should re-establish the session first. */
+    needsReconnect?: boolean;
 }
 
 const buildImportOptions = (candidate: LoadPlanCandidate, size: number) => ({
@@ -52,7 +64,7 @@ const buildImportOptions = (candidate: LoadPlanCandidate, size: number) => ({
     } : {}),
 });
 
-export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed, canLoadInNewWorkspace }) => {
+export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed, canLoadInNewWorkspace, variant = 'card' }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const [selection, setSelection] = useState<Record<number, boolean>>(
@@ -108,6 +120,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                 },
             }));
         } catch (err: any) {
+            const code = err?.apiError?.code;
             setPreviews(prev => ({
                 ...prev,
                 [idx]: {
@@ -115,11 +128,49 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                     expanded: true,
                     rows: [],
                     columns: [],
-                    error: err?.message || t('dataLoading.loadPlan.previewFailed'),
+                    error: err instanceof ApiRequestError
+                        ? getErrorMessage(err.apiError)
+                        : (err?.message || t('dataLoading.loadPlan.previewFailed')),
+                    needsReconnect: err instanceof ApiRequestError
+                        && (err.isAuthError || RECONNECTABLE_CODES.includes(code)),
                 },
             }));
         }
     }, [t]);
+
+    // Recovery for a failed preview. The backend already retries stored
+    // credentials / SSO on every request, so a plain retry is enough for
+    // transient faults; a dropped session additionally needs an explicit
+    // connect, which only succeeds when the source can re-auth unattended.
+    const retryPreview = React.useCallback(async (candidate: LoadPlanCandidate, idx: number) => {
+        if (previews[idx]?.needsReconnect) {
+            setPreviews(prev => ({
+                ...prev,
+                [idx]: { ...(prev[idx] || { rows: [], columns: [] }), loading: true, expanded: true },
+            }));
+            try {
+                const { data: status } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_STATUS, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connector_id: candidate.sourceId }),
+                });
+                if (!status.connected && (status.has_stored_credentials || status.sso_available)) {
+                    await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connector_id: candidate.sourceId,
+                            params: {},
+                            persist: !status.sso_available,
+                        }),
+                    });
+                }
+            } catch {
+                // Fall through: the preview below reports why it still fails.
+            }
+        }
+        await fetchPreview(candidate, idx);
+    }, [previews, fetchPreview]);
 
     // Fetch every preview once on mount. We don't await — each row already
     // displays its fixed-height spinner and resolves independently.
@@ -158,8 +209,13 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         ? '0 2px 4px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3)'
         : '0 2px 4px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04)';
 
+    const isBare = variant === 'bare';
+
     return (
-        <Box sx={{
+        <Box sx={isBare ? {
+            display: 'flex', flexDirection: 'column',
+            width: '100%', height: '100%', minWidth: 0, minHeight: 0,
+        } : {
             my: 0.75,
             p: 1,
             border: `1px solid ${borderColorBase}`,
@@ -172,6 +228,10 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
             },
         }}>
             {/* Candidate list */}
+            <Box sx={isBare
+                // pr keeps the tables clear of the scrollbar.
+                ? { flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', pr: 1 }
+                : { minWidth: 0 }}>
             {plan.candidates.map((c, i) => {
                 const preview = previews[i];
                 const unresolved = !!c.resolutionError;
@@ -196,7 +256,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                       <TablePreviewRow
                         name={c.displayName}
                         leading={confirmed
-                            ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} />
+                            ? <CheckIcon sx={{ fontSize: iconVar.md, color: 'success.main', mx: 0.25 }} />
                             : <Checkbox size="small" checked={!!selection[i]} disabled={unresolved}
                                 onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
                         trailing={!unresolved ? (
@@ -207,9 +267,9 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                                     color: 'text.secondary',
                                 }}>
                                     {getConnectorIcon(c.sourceId.split(':', 1)[0], {
-                                        sx: { fontSize: 13, flexShrink: 0, color: 'text.secondary' },
+                                        sx: { fontSize: iconVar.sm, flexShrink: 0, color: 'text.secondary' },
                                     })}
-                                    <Typography noWrap sx={{ fontSize: 10.5, color: 'text.secondary' }}>
+                                    <Typography noWrap sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
                                         {c.sourceId}
                                     </Typography>
                                 </Box>
@@ -218,8 +278,8 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                         filterChips={hasFilters ? (
                             <>
                                 <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, mr: 0.25, color: 'text.secondary' }}>
-                                    <FilterAltOutlinedIcon sx={{ fontSize: 12 }} />
-                                    <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'text.secondary' }}>
+                                    <FilterAltOutlinedIcon sx={{ fontSize: iconVar.xs }} />
+                                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary' }}>
                                         {t('dataLoading.loadPlan.filtersLabel', { defaultValue: 'Filters:' })}
                                     </Typography>
                                 </Box>
@@ -227,18 +287,22 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                                     <Chip key={fi}
                                         label={formatFilterChipLabel(f.column, f.operator, f.value)}
                                         size="small" variant="outlined"
-                                        sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
+                                        sx={{ height: 18, fontSize: textVar.xxs, '& .MuiChip-label': { px: 0.75 } }} />
                                 ))}
                                 {c.sortBy && (
                                     <Chip label={`${c.sortBy} ${c.sortOrder === 'desc' ? '↓' : '↑'}`}
                                         size="small" variant="outlined"
-                                        sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
+                                        sx={{ height: 18, fontSize: textVar.xxs, '& .MuiChip-label': { px: 0.75 } }} />
                                 )}
                             </>
                         ) : undefined}
                         preview={previewData}
                         expanded={!unresolved}
                         loadingHeight={LOAD_PLAN_LOADING_HEIGHT}
+                        onRetryPreview={preview?.error ? () => void retryPreview(c, i) : undefined}
+                        retryLabel={preview?.needsReconnect
+                            ? t('dataLoading.loadPlan.reconnectAndRetry', { defaultValue: 'Reconnect' })
+                            : t('dataLoading.loadPlan.retryPreview', { defaultValue: 'Retry' })}
                         dim={unresolved}
                         unresolved={unresolved ? {
                             message: t('dataLoading.loadPlan.unresolved', {
@@ -250,13 +314,17 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                     </Box>
                 );
             })}
+            </Box>
 
             {/* Footer: keep actions available after loading and show the
                 prior-load status immediately to their left. */}
-            <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{
+                mt: 0.75, display: 'flex', alignItems: 'center', gap: 1,
+                ...(isBare ? { flexShrink: 0, pt: 1, borderTop: '1px solid', borderColor: 'divider' } : {}),
+            }}>
                 <Box sx={{ flex: 1 }} />
                 {confirmed && (
-                    <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'success.main', fontWeight: 500 }}>
                         {t('dataLoading.loadPlan.loadedCount', {
                             count: plan.candidates.filter(c => !c.resolutionError).length,
                             defaultValue: '✓ Loaded',
@@ -274,7 +342,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             onClick={() => handleConfirm(true)}
                             startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{
-                                textTransform: 'none', fontSize: 12,
+                                textTransform: 'none', fontSize: textVar.sm,
                                 py: 0.5, px: 1.5, minHeight: 0,
                                 borderRadius: 1.5,
                             }}
@@ -288,7 +356,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             onClick={() => handleConfirm(false)}
                             startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{
-                                textTransform: 'none', fontSize: 12,
+                                textTransform: 'none', fontSize: textVar.sm,
                                 py: 0.5, px: 2, minHeight: 0,
                                 borderRadius: 1.5, boxShadow: 'none',
                             }}
@@ -304,7 +372,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                         onClick={() => handleConfirm(false)}
                         startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                         sx={{
-                            textTransform: 'none', fontSize: 12,
+                            textTransform: 'none', fontSize: textVar.sm,
                             py: 0.5, px: 2, minHeight: 0,
                             borderRadius: 1.5, boxShadow: 'none',
                         }}
@@ -416,7 +484,7 @@ export const PendingLoadsCard: React.FC<PendingLoadsCardProps> = ({ pendingLoads
                         name={p.name}
                         meta={meta}
                         leading={p.confirmed
-                            ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} />
+                            ? <CheckIcon sx={{ fontSize: iconVar.md, color: 'success.main', mx: 0.25 }} />
                             : <Checkbox size="small" checked={!!selection[i]}
                                 onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
                         preview={previewData}
@@ -429,7 +497,7 @@ export const PendingLoadsCard: React.FC<PendingLoadsCardProps> = ({ pendingLoads
             <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center' }}>
                 <Box sx={{ flex: 1 }} />
                 {allConfirmed ? (
-                    <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'success.main', fontWeight: 500 }}>
                         {t('dataLoading.loadPlan.loadedCount', {
                             count: pendingLoads.length,
                             defaultValue: '✓ Loaded',
@@ -443,7 +511,7 @@ export const PendingLoadsCard: React.FC<PendingLoadsCardProps> = ({ pendingLoads
                         onClick={handleConfirm}
                         startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                         sx={{
-                            textTransform: 'none', fontSize: 12,
+                            textTransform: 'none', fontSize: textVar.sm,
                             py: 0.5, px: 2, minHeight: 0,
                             borderRadius: 1.5, boxShadow: 'none',
                         }}

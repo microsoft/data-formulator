@@ -22,6 +22,7 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { InteractionEntry } from '../components/ComponentType';
 import { AgentIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
+import { textVar } from '../app/layout';
 
 /** Pick the icon component for a step line based on known prefixes. */
 export const getStepIconComponent = (line: string) => {
@@ -85,7 +86,7 @@ const PlanStepItem: React.FC<{
         >
             <IconComp sx={{ width: 10, height: 10, color: iconColor, flexShrink: 0, mt: '2px' }} />
             <Typography component="span" sx={{
-                fontSize: '10px',
+                fontSize: textVar.xxs,
                 color: textColor,
                 fontStyle: 'italic',
                 lineHeight: 1.4,
@@ -274,7 +275,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         // instruction card itself stays free of chip-strip chrome.
         return (
             <Box onClick={handleClick} sx={{
-                fontSize: '11px',
+                fontSize: textVar.xs,
                 color: theme.palette.text.primary,
                 py: 0.5, px: 1,
                 borderRadius: radius.sm,
@@ -299,13 +300,13 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         {entry.attachments.map((name, i) => (
                             <Box key={i} sx={{
                                 display: 'inline-flex', alignItems: 'center', gap: '2px',
-                                maxWidth: '100%', fontSize: 10, fontFamily: theme.typography.fontFamily,
+                                maxWidth: '100%', fontSize: textVar.xxs, fontFamily: theme.typography.fontFamily,
                                 color: theme.palette.text.secondary,
                                 backgroundColor: alpha(theme.palette.text.primary, 0.05),
                                 border: `1px solid ${borderColor.divider}`,
                                 borderRadius: '4px', px: '5px', py: '1px',
                             }}>
-                                <AttachFileIcon sx={{ fontSize: 11, transform: 'rotate(45deg)' }} />
+                                <AttachFileIcon sx={{ fontSize: textVar.xs, transform: 'rotate(45deg)' }} />
                                 <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
                             </Box>
                         ))}
@@ -516,7 +517,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                     {hasPlan && <Box sx={{ borderBottom: `1px solid ${borderColor.component}`, my: '2px' }} />}
                     {collapsedLabel && (
                         <Typography component="div" sx={{
-                            fontSize: '11px',
+                            fontSize: textVar.xs,
                             color,
                             py: '1px',
                         }}>
@@ -541,12 +542,12 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         </Typography>
                     )
                 ) : entry.role === 'summary' ? (
-                    <Box sx={{ fontSize: '11px', py: '1px' }}>
+                    <Box sx={{ fontSize: textVar.xs, py: '1px' }}>
                         <CompactMarkdown content={displayText} color={color} />
                     </Box>
                 ) : (
                     <Typography component="div" sx={{
-                        fontSize: '11px',
+                        fontSize: textVar.xs,
                         color,
                         py: '1px',
                         wordBreak: 'break-word',
@@ -562,7 +563,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                             <Box component="span" sx={{
                                 display: 'inline',
                                 fontWeight: 600,
-                                fontSize: '10px',
+                                fontSize: textVar.xxs,
                                 mr: '4px',
                             }}>
                                 ({entry.role === 'delegate'
@@ -588,7 +589,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     // Fallback for any remaining entries
     return (
         <Typography component="div" onClick={handleClick} sx={{
-            fontSize: '11px',
+            fontSize: textVar.xs,
             color: theme.palette.text.secondary,
             py: '1px',
             ...clickSx,
@@ -682,14 +683,14 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
                         <Box sx={{ display: 'flex', gap: '4px', alignItems: 'baseline' }}>
                             {turnCount > 1 && (
                                 <Typography component="span" sx={{
-                                    fontSize: 9, fontWeight: 600, color: theme.palette.text.disabled,
+                                    fontSize: textVar.xxs, fontWeight: 600, color: theme.palette.text.disabled,
                                     flexShrink: 0, fontVariantNumeric: 'tabular-nums', mt: '1px',
                                 }}>
                                     ×{turnCount}
                                 </Typography>
                             )}
                             <Typography component="div" sx={{
-                                fontSize: 11, color: theme.palette.text.primary, lineHeight: 1.4,
+                                fontSize: textVar.xs, color: theme.palette.text.primary, lineHeight: 1.4,
                                 display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                             }}>
                                 {agentPreview}
@@ -698,7 +699,7 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
                     )}
                     {followup && (
                         <Typography component="div" sx={{
-                            fontSize: 10.5, color: theme.palette.text.secondary, lineHeight: 1.35,
+                            fontSize: textVar.xs, color: theme.palette.text.secondary, lineHeight: 1.35,
                             display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                         }}>
                             ↳ {followup}
@@ -710,7 +711,7 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
                     {pairs.map((p, idx) => (
                         <React.Fragment key={idx}>
                             <Box sx={{
-                                fontSize: '11px',
+                                fontSize: textVar.xs,
                                 color: theme.palette.text.primary,
                                 py: 0.5, px: 1,
                                 borderRadius: radius.sm,
@@ -722,7 +723,7 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
                                 </Typography>
                             </Box>
                             <Box sx={{
-                                fontSize: '11px',
+                                fontSize: textVar.xs,
                                 color: theme.palette.text.primary,
                                 py: 0.5, px: 1,
                                 borderRadius: radius.sm,

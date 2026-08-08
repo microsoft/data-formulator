@@ -56,12 +56,13 @@ import {
 
 import MuiAppBar from '@mui/material/AppBar';
 import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
-
 import LogoutIcon from '@mui/icons-material/Logout';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
+import { LayoutProvider } from './LayoutProvider';
+import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
@@ -113,6 +114,7 @@ import TranslateIcon from '@mui/icons-material/Translate';
 import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
 import { syncVegaLocale } from '../i18n/vega-locale';
+import { iconVar, textVar } from './layout';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -145,7 +147,7 @@ const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to
         sx={{
             textDecoration: 'none',
             textTransform: 'none',
-            fontSize: '13px',
+            fontSize: textVar.md,
             fontWeight: 400,
             border: 'none',
             borderRadius: 0,
@@ -214,7 +216,7 @@ const LanguageSwitcher: React.FC = () => {
                 my: 'auto',
                 '& .MuiToggleButton-root': {
                     textTransform: 'none',
-                    fontSize: '12px',
+                    fontSize: textVar.sm,
                     py: 0,
                     minWidth: '40px',
                     color: 'text.secondary',
@@ -256,7 +258,7 @@ const useIsNarrow = (ref: React.RefObject<HTMLElement | null>, threshold: number
     return narrow;
 };
 
-const menuItemSx = { fontSize: 13, minHeight: 34, py: 0.5 };
+const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
 
 /** Language options rendered as menu rows for the compact overflow menu. */
 const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
@@ -282,7 +284,7 @@ const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => 
                             ? <CheckIcon fontSize="small" />
                             : <TranslateIcon fontSize="small" sx={{ opacity: 0.3 }} />}
                     </ListItemIcon>
-                    <ListItemText primaryTypographyProps={{ fontSize: 13 }}>
+                    <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>
                         {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
                     </ListItemText>
                 </MenuItem>
@@ -307,7 +309,7 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
             <Button
                 color="inherit"
                 onClick={(event) => setAnchorEl(event.currentTarget)}
-                endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 16, color: 'text.secondary' }} />}
+                endIcon={<KeyboardArrowDownIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
                 aria-haspopup="menu"
                 sx={{
                     textTransform: 'none',
@@ -317,10 +319,10 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
                     '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
                 }}
             >
-                <Typography noWrap component="h1" sx={{ fontSize: 15, fontWeight: 300, letterSpacing: '0.03em' }}>
+                <Typography noWrap component="h1" sx={{ fontSize: textVar.xl, fontWeight: 300, letterSpacing: '0.03em' }}>
                     {toolName}
                 </Typography>
-                <Typography noWrap sx={{ fontSize: 13, color: 'text.secondary' }}>
+                <Typography noWrap sx={{ fontSize: textVar.md, color: 'text.secondary' }}>
                     {`: ${currentLabel}`}
                 </Typography>
             </Button>
@@ -344,7 +346,7 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
                         <ListItemIcon>
                             {page.selected ? <CheckIcon fontSize="small" /> : null}
                         </ListItemIcon>
-                        <ListItemText primaryTypographyProps={{ fontSize: 13 }}>
+                        <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>
                             {`${toolName}: ${page.label}`}
                         </ListItemText>
                     </MenuItem>
@@ -416,7 +418,7 @@ const ToolbarOverflowMenu: React.FC<{
                         onClick={() => { close(); item.onClick?.(); }}
                     >
                         <ListItemIcon>{item.icon}</ListItemIcon>
-                        <ListItemText primaryTypographyProps={{ fontSize: 13 }}>{item.label}</ListItemText>
+                        <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>{item.label}</ListItemText>
                     </MenuItem>
                 ))}
             </Menu>
@@ -576,9 +578,9 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                             {activeWorkspace?.id !== s.id && (
                                 confirmDelete === s.id ? (
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
-                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
                                             onClick={() => handleDelete(s.id)}>{t('workspace.delete')}</Button>
-                                        <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        <Button size="small" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
                                             onClick={() => setConfirmDelete(null)}>{t('workspace.cancel')}</Button>
                                     </Box>
                                 ) : (
@@ -631,7 +633,7 @@ const WorkspaceMenu: React.FC = () => {
                     }}
                 >
                     <Typography noWrap sx={{ 
-                        fontSize: 14, 
+                        fontSize: textVar.lg, 
                         fontWeight: 500, 
                         color: 'text.primary',
                         maxWidth: 280,
@@ -639,7 +641,7 @@ const WorkspaceMenu: React.FC = () => {
                     }}>
                         {activeWorkspace?.displayName || activeWorkspace?.id}
                     </Typography>
-                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: 16, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
+                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: iconVar.md, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
                 </Box>
             </Tooltip>
             <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
@@ -669,10 +671,10 @@ const ExitSessionButton: React.FC = () => {
                 size="small"
                 variant="text"
                 onClick={handleExit}
-                startIcon={<LogoutIcon sx={{ fontSize: 16 }} />}
+                startIcon={<LogoutIcon sx={{ fontSize: iconVar.md }} />}
                 sx={{
                     textTransform: 'none',
-                    fontSize: '13px',
+                    fontSize: textVar.md,
                     fontWeight: 400,
                     px: 1.5,
                     py: 0.5,
@@ -756,20 +758,20 @@ const ConfigDialog: React.FC<{
                     }}>
                         <Divider><Typography variant="caption">{t('config.frontend')}</Typography></Divider>
                         <FormControl fullWidth size="small">
-                            <InputLabel id="palette-select-label" sx={{ fontSize: 13 }}>{t('config.colorTheme')}</InputLabel>
+                            <InputLabel id="palette-select-label" sx={{ fontSize: textVar.md }}>{t('config.colorTheme')}</InputLabel>
                             <Select
                                 labelId="palette-select-label"
                                 value={paletteKey}
                                 label={t('config.colorTheme')}
                                 onChange={(e) => setPaletteKey(e.target.value)}
-                                sx={{ fontSize: 13 }}
+                                sx={{ fontSize: textVar.md }}
                                 renderValue={(key) => {
                                     const p = palettes[key];
                                     return (
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                             <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.primary.main, flexShrink: 0 }} />
                                             <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.custom.main, flexShrink: 0 }} />
-                                            <Typography sx={{ fontSize: 13 }}>{p.name}</Typography>
+                                            <Typography sx={{ fontSize: textVar.md }}>{p.name}</Typography>
                                         </Box>
                                     );
                                 }}
@@ -782,7 +784,7 @@ const ConfigDialog: React.FC<{
                                                 <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: '1px solid rgba(0,0,0,0.1)' }} />
                                                 <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: '1px solid rgba(0,0,0,0.1)' }} />
                                             </Box>
-                                            <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: 13 } } }} />
+                                            <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: textVar.md } } }} />
                                         </MenuItem>
                                     );
                                 })}
@@ -1010,13 +1012,13 @@ const AppShell: FC = () => {
     const isAppPage = !isAboutPage;
 
     // The canvas (threads, encoding shelf, viz cards) genuinely needs room, so
-    // the app shell floors content at 1000px and scrolls horizontally below
-    // that. The landing page (app route with no tables yet) has none of that —
-    // its hero, chips, connected-sources row and demo grid all reflow — so we
-    // relax its floor to 640px, a comfortable width where everything still
-    // wraps cleanly before a horizontal scrollbar appears.
+    // the app shell floors content at MIN_SUPPORTED and scrolls horizontally
+    // below that. The landing page (app route with no tables yet) has none of
+    // that — its hero, chips, connected-sources row and demo grid all reflow —
+    // so we relax its floor to 640px, a comfortable width where everything
+    // still wraps cleanly before a horizontal scrollbar appears.
     const isLandingView = isAppPage && tables.length === 0;
-    const shellMinWidth = isLandingView ? '640px' : '1000px';
+    const shellMinWidth = isLandingView ? '640px' : `${MIN_SUPPORTED.width}px`;
 
     // Narrow toolbars fold their controls into menus instead of letting the
     // nav buttons, session name and trailing actions overlap.
@@ -1037,7 +1039,7 @@ const AppShell: FC = () => {
             overflow: 'auto',
             '& > *': {
                 minWidth: shellMinWidth,
-                minHeight: '600px'
+                minHeight: `${MIN_SUPPORTED.height}px`
             },
         }}>
             <Box sx={{
@@ -1119,7 +1121,7 @@ const AppShell: FC = () => {
                                         },
                                         ...(serverConfig.IS_LOCAL_MODE ? [{
                                             key: 'logs',
-                                            label: t('logs.viewLogs', { defaultValue: 'View server logs' }),
+                                            label: t('logs.viewLogs', { defaultValue: 'View backend log' }),
                                             icon: <TerminalOutlinedIcon fontSize="small" />,
                                             onClick: () => setLogsOpen(true),
                                         }] : []),
@@ -1175,8 +1177,17 @@ const AppShell: FC = () => {
                         )}
                         {isAboutPage && isCompactToolbar && (
                             <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
+                                {serverConfig.IS_LOCAL_MODE && (
+                                    <LogViewerDialog open={logsOpen} onOpenChange={setLogsOpen} hideTrigger />
+                                )}
                                 <ToolbarOverflowMenu
                                     items={[
+                                        ...(serverConfig.IS_LOCAL_MODE ? [{
+                                            key: 'logs',
+                                            label: t('logs.viewLogs', { defaultValue: 'View backend log' }),
+                                            icon: <TerminalOutlinedIcon fontSize="small" />,
+                                            onClick: () => setLogsOpen(true),
+                                        }] : []),
                                         {
                                             key: 'video',
                                             label: t('appBar.watchVideo'),
@@ -1208,6 +1219,7 @@ const AppShell: FC = () => {
                         {isAboutPage && !isCompactToolbar && (
                             <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
                                 <LanguageSwitcher />
+                                {serverConfig.IS_LOCAL_MODE && <LogViewerDialog />}
                                 <Tooltip title={t('appBar.watchVideo')}>
                                     <IconButton
                                         component="a"
@@ -1560,17 +1572,19 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     return (
         <ThemeProvider theme={theme}>
-            {configLoaded && authChecked ? (
-                <RouterProvider router={router} />
-            ) : (
-                <AnvilLoader label="loading data formulator..." />
-            )}
-            {migrationBrowserId && (
-                <IdentityMigrationDialog
-                    oldBrowserId={migrationBrowserId}
-                    onDone={() => setMigrationBrowserId(null)}
-                />
-            )}
+            <LayoutProvider>
+                {configLoaded && authChecked ? (
+                    <RouterProvider router={router} />
+                ) : (
+                    <AnvilLoader label="loading data formulator..." />
+                )}
+                {migrationBrowserId && (
+                    <IdentityMigrationDialog
+                        oldBrowserId={migrationBrowserId}
+                        onDone={() => setMigrationBrowserId(null)}
+                    />
+                )}
+            </LayoutProvider>
         </ThemeProvider>
     );
 }

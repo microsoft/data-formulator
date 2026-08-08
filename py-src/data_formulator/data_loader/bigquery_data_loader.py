@@ -26,20 +26,33 @@ class BigQueryDataLoader(ExternalDataLoader):
             {"name": "location", "type": "text", "required": False, "tier": "connection", "advanced": True, "description": "BigQuery location (default: US)", "default": "US"}
         ]
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Authentication**
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "default_credentials",
+                "label": "Application default credentials",
+                "description": "Use gcloud login, GOOGLE_APPLICATION_CREDENTIALS, or the host's service account.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+                "default": True,
+            },
+            {
+                "id": "service_account_file",
+                "label": "Service account file",
+                "description": "Use a service account JSON key file on this machine.",
+                "fields": ["credentials_path"],
+                "required_fields": ["credentials_path"],
+                "kind": "credentials",
+            },
+        ]
 
-**Example:** project_id: `my-gcp-project` · dataset_id: `analytics` · credentials_path: `/path/to/key.json` · location: `US`
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        return "service_account_file" if params.get("credentials_path") else "default_credentials"
 
-**Option 1 — Application Default Credentials (recommended):**
-Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), then run `gcloud auth application-default login`. Leave `credentials_path` empty.
-
-**Option 2 — Service Account Key File:**
-Create a service account in Google Cloud Console, download the JSON key, and enter the full path in `credentials_path`. Grant the account **BigQuery Data Viewer** and **BigQuery Job User** roles.
-
-**Option 3 — Environment Variable:**
-Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Leave `credentials_path` empty."""
+    AUTH_GUIDE = "bigquery.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

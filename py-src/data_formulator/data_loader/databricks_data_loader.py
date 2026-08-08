@@ -102,15 +102,7 @@ class DatabricksDataLoader(ExternalDataLoader):
         # against the workspace OAuth endpoint), then return its login URL here.
         return None
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example:** server_hostname: `adb-1234567890.11.azuredatabricks.net` · http_path: `/sql/1.0/warehouses/abc123`
-
-**Connection:** Find both values on your SQL warehouse's **Connection details** tab in the Databricks workspace (SQL → SQL Warehouses → your warehouse).
-
-**Personal access token:** In Databricks, open **Settings → Developer → Access tokens** and generate a token (starts with `dapi`). The token's user needs `USE CATALOG` / `USE SCHEMA` and `SELECT` on the Unity Catalog objects you want to read.
-
-**Scope:** Leave *catalog* and *schema* empty to browse everything you can access, or set them to jump straight to a specific catalog/schema."""
+    AUTH_GUIDE = "databricks.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

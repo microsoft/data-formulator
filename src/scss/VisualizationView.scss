@@ -119,51 +119,6 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
     }
 }
 
-.vega-container-carousel {
-    width: 200px;
-    min-width: 200px;
-    display: flex;
-    flex-direction: column;
-    overflow-y: scroll;
-    border-right: 1px lightgray solid;
-    align-content: flex-start;
-    padding-top: 0px;
-    direction: rtl;
-    padding-bottom: 6px;
-    height: calc(100vh - 50px);
-
-    .vega-thumbnail {
-        //border-bottom: 0.5px dashed lightgray;
-        //width: calc(100% - 16px);
-        //margin: 0 8px 0 12px;
-        display: flex;
-        cursor: pointer !important;
-        border: lightgray solid 0.5px;
-
-        canvas {
-            margin: 10px auto;
-        }
-    }
-
-    .vega-thumbnail-box {
-        //width: calc(100% - 16px);
-        display: block;
-        //color: #fff;
-        border-radius: 3px;
-    }
-
-    .vega-thumbnail-box-animation {
-        transform-origin: bottom left;
-        animation: appear 0.5s ease-out;
-    }
-
-    .vega-thumbnail:hover {
-        transform: translateY(1px);
-        box-shadow: 0 0 3px rgba(33,33,33,.2);
-        z-index: 1;
-    }
-}
-
 .visualization-carousel {
     display: flex;
     flex-grow: 1;

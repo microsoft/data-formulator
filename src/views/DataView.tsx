@@ -23,6 +23,7 @@ import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
 import { borderColor } from '../app/tokens';
+import { iconVar, textVar } from '../app/layout';
 
 export interface FreeDataViewProps {
     // When true, render a maximize/restore toggle that pops the table into a
@@ -185,29 +186,29 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                         {targetTable?.displayId || targetTable?.id || 'table'}
                     </Typography>
                     {searchQuery ? (
                         <Chip
                             size="small"
-                            icon={<SearchIcon sx={{ fontSize: 14 }} />}
+                            icon={<SearchIcon sx={{ fontSize: iconVar.sm }} />}
                             label={`"${searchQuery}"`}
                             onDelete={clearSearch}
-                            deleteIcon={<ClearIcon sx={{ fontSize: 14 }} />}
+                            deleteIcon={<ClearIcon sx={{ fontSize: iconVar.sm }} />}
                             sx={{
                                 height: 22, maxWidth: 220, flexShrink: 0,
                                 borderRadius: '6px',
                                 backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
                                 color: 'primary.main',
-                                '& .MuiChip-label': { fontSize: 11.5, px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis' },
+                                '& .MuiChip-label': { fontSize: textVar.xs, px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis' },
                                 '& .MuiChip-icon': { color: 'primary.main', ml: 0.5 },
                                 '& .MuiChip-deleteIcon': { color: 'primary.main', '&:hover': { color: 'primary.dark' } },
                             }}
                         />
                     ) : null}
                 </Box>
-                <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.25 }}>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.25 }}>
                     {t('dataGrid.rowCount', { count: headerRowCount })} · {headerColCount} {headerColCount === 1 ? 'column' : 'columns'}
                 </Typography>
             </Box>
@@ -228,7 +229,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                         <InputAdornment position="start">
                             <Tooltip title={t('dataGrid.search', { defaultValue: 'Search' })}>
                                 <IconButton size="small" onClick={submitSearch} sx={{ p: 0.25 }}>
-                                    <SearchIcon sx={{ fontSize: 16, color: searchDraft ? 'primary.main' : 'text.disabled' }} />
+                                    <SearchIcon sx={{ fontSize: iconVar.md, color: searchDraft ? 'primary.main' : 'text.disabled' }} />
                                 </IconButton>
                             </Tooltip>
                         </InputAdornment>
@@ -236,14 +237,14 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                     endAdornment: (searchDraft || searchQuery) ? (
                         <InputAdornment position="end">
                             <IconButton size="small" onClick={clearSearch} sx={{ p: 0.25 }}>
-                                <ClearIcon sx={{ fontSize: 14 }} />
+                                <ClearIcon sx={{ fontSize: iconVar.sm }} />
                             </IconButton>
                         </InputAdornment>
                     ) : undefined,
                 }}
                 sx={{
                     width: 220,
-                    '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: 12, backgroundColor: 'background.paper' },
+                    '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: textVar.sm, backgroundColor: 'background.paper' },
                     '& .MuiOutlinedInput-input': { py: '6px' },
                 }}
             />
@@ -286,7 +287,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                     '&:hover': { color: 'primary.main', backgroundColor: 'transparent' },
                 }}
             >
-                {maximized ? <CloseFullscreenIcon sx={{ fontSize: 16 }} /> : <OpenInFullIcon sx={{ fontSize: 16 }} />}
+                {maximized ? <CloseFullscreenIcon sx={{ fontSize: iconVar.md }} /> : <OpenInFullIcon sx={{ fontSize: iconVar.md }} />}
             </IconButton>
         </Tooltip>
     );

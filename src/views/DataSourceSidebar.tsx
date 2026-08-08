@@ -81,13 +81,15 @@ import {
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ResizeHandle } from '../components/ResizeHandle';
+import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout';
+import { useLayout } from '../app/LayoutProvider';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const RAIL_WIDTH = 40;
-const DEFAULT_PANEL_WIDTH = 280;
-const MIN_PANEL_WIDTH = 240;
-const MAX_PANEL_WIDTH = 450;
+const RAIL_WIDTH = REFERENCE.rail;
+const DEFAULT_PANEL_WIDTH = REFERENCE.sidebar.default;
+const MIN_PANEL_WIDTH = REFERENCE.sidebar.min;
+const MAX_PANEL_WIDTH = REFERENCE.sidebar.max;
 
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 
@@ -177,6 +179,19 @@ export const DataSourceSidebar: React.FC<{
     const focusedConnectorId = useSelector((state: DataFormulatorState) => state.focusedConnectorId);
 
     const toggle = () => dispatch(dfActions.setDataSourceSidebarOpen(!isOpen));
+
+    // Rail the sidebar when the shell can no longer seat it beside one thread
+    // column and a usable canvas (design-docs/45 §6.7). Only ever closes — the
+    // user reopening it at a narrow width is their call, not a bug to correct.
+    const { width: shellWidth, widthClass } = useLayout();
+    const lastWidthClassRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (lastWidthClassRef.current === widthClass) return;
+        lastWidthClassRef.current = widthClass;
+        if (isOpen && !sidebarFitsExpanded(shellWidth)) {
+            dispatch(dfActions.setDataSourceSidebarOpen(false));
+        }
+    }, [widthClass, shellWidth, isOpen, dispatch]);
 
     // Default landing tab is 'sources' — even in browser-only mode the
     // built-in sample_datasets connector is shown there, giving users
@@ -1218,11 +1233,11 @@ const DataSourceSidebarPanel: React.FC<{
         const cols: any[] = Array.isArray(meta.columns) ? meta.columns : [];
         return (
             <Box sx={{ p: 1.25, maxWidth: 300 }}>
-                <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'text.primary', wordBreak: 'break-word' }}>
+                <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'text.primary', wordBreak: 'break-word' }}>
                     {node.name}
                 </Typography>
                 {(rowCount != null || cols.length > 0 || sizeLabel) && (
-                    <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.5 }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.5 }}>
                         {[
                             rowCount != null ? t('sidebar.hoverRowCount', { count: Number(rowCount).toLocaleString(), defaultValue: `${Number(rowCount).toLocaleString()} rows` }) : null,
                             cols.length > 0 ? t('sidebar.hoverColumns', { count: cols.length, defaultValue: `${cols.length} columns` }) : null,
@@ -1231,7 +1246,7 @@ const DataSourceSidebarPanel: React.FC<{
                     </Typography>
                 )}
                 {desc && (
-                    <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         {desc}
                     </Typography>
                 )}
@@ -1242,7 +1257,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 key={c?.name ?? i}
                                 component="span"
                                 sx={{
-                                    fontSize: 10, lineHeight: 1.5, px: 0.5, borderRadius: 0.5,
+                                    fontSize: textVar.xxs, lineHeight: 1.5, px: 0.5, borderRadius: 0.5,
                                     bgcolor: 'action.hover', color: 'text.secondary',
                                     maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                 }}
@@ -1252,7 +1267,7 @@ const DataSourceSidebarPanel: React.FC<{
                             </Box>
                         ))}
                         {cols.length > 24 && (
-                            <Box component="span" sx={{ fontSize: 10, lineHeight: 1.5, px: 0.5, color: 'text.disabled' }}>
+                            <Box component="span" sx={{ fontSize: textVar.xxs, lineHeight: 1.5, px: 0.5, color: 'text.disabled' }}>
                                 +{cols.length - 24}
                             </Box>
                         )}
@@ -1551,6 +1566,28 @@ const DataSourceSidebarPanel: React.FC<{
 
     // ── Render ───────────────────────────────────────────────────────────────
 
+    const panelHeaderSx = {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.5,
+        height: 40,
+        minHeight: 40,
+        px: 1.5,
+        py: 0,
+        borderBottom: '1px solid rgba(0, 0, 0, 0.16)',
+        backgroundColor: 'rgba(255, 255, 255, 0.76)',
+        flexShrink: 0,
+        boxSizing: 'border-box',
+    } as const;
+
+    const panelHeaderActionSx = {
+        width: 24,
+        height: 24,
+        p: 0,
+        color: 'text.secondary',
+        '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
+    } as const;
+
     return (
         <Box sx={{
             // Pin width to the resolved panelWidth so internal layout doesn't
@@ -1562,6 +1599,7 @@ const DataSourceSidebarPanel: React.FC<{
             display: 'flex',
             flexDirection: 'column',
             borderLeft: `1px solid ${borderColor.view}`,
+            backgroundColor: 'rgba(0, 0, 0, 0.018)',
             overflow: 'hidden',
         }}>
 
@@ -1573,18 +1611,18 @@ const DataSourceSidebarPanel: React.FC<{
             {activeTab === 'sources' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
-                    sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                    sx={panelHeaderSx}
                 >
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
                     </Typography>
                     <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
                         <IconButton
                             size="small"
                             onClick={(e) => setAddConnectorAnchor(e.currentTarget)}
-                            sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
+                            sx={panelHeaderActionSx}
                         >
-                            <AddIcon sx={{ fontSize: 16 }} />
+                            <AddIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
                     <Menu
@@ -1595,29 +1633,29 @@ const DataSourceSidebarPanel: React.FC<{
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                         slotProps={{ paper: { sx: { minWidth: 180 } } }}
                     >
-                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.(); }} sx={{ fontSize: 12, py: 0.75 }}>
-                            <ListItemIcon><StorageIcon sx={{ fontSize: 16 }} /></ListItemIcon>
-                            <ListItemText slotProps={{ primary: { sx: { fontSize: 12 } } }}>
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('add-connection'); }} sx={{ fontSize: textVar.sm, py: 0.75 }}>
+                            <ListItemIcon><StorageIcon sx={{ fontSize: iconVar.md }} /></ListItemIcon>
+                            <ListItemText slotProps={{ primary: { sx: { fontSize: textVar.sm } } }}>
                                 {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
                             </ListItemText>
                         </MenuItem>
-                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('local-folder'); }} sx={{ fontSize: 12, py: 0.75 }}>
-                            <ListItemIcon><FolderOpenIcon sx={{ fontSize: 16 }} /></ListItemIcon>
-                            <ListItemText slotProps={{ primary: { sx: { fontSize: 12 } } }}>
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('local-folder'); }} sx={{ fontSize: textVar.sm, py: 0.75 }}>
+                            <ListItemIcon><FolderOpenIcon sx={{ fontSize: iconVar.md }} /></ListItemIcon>
+                            <ListItemText slotProps={{ primary: { sx: { fontSize: textVar.sm } } }}>
                                 {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
                             </ListItemText>
                         </MenuItem>
                     </Menu>
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
+                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
                 </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }} ref={setConnectorScrollEl}>
 
                 {/* Search box: typing filters local cache, Enter/button searches backend. */}
-                <Box sx={{ px: 1.5, pt: 1, pb: 0.5 }}>
+                <Box sx={{ px: 1.5, pt: 1, pb: 0.75, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }}>
                     <TextField
                         size="small"
                         fullWidth
@@ -1634,7 +1672,7 @@ const DataSourceSidebarPanel: React.FC<{
                             input: {
                                 startAdornment: (
                                     <InputAdornment position="start">
-                                        <SearchIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                                        <SearchIcon sx={{ fontSize: iconVar.md, color: 'text.disabled' }} />
                                     </InputAdornment>
                                 ),
                                 endAdornment: catalogSearch ? (
@@ -1648,19 +1686,19 @@ const DataSourceSidebarPanel: React.FC<{
                                         >
                                             {anyCatalogSearchLoading
                                                 ? <CircularProgress size={12} />
-                                                : <SearchIcon sx={{ fontSize: 14, color: 'text.disabled' }} />}
+                                                : <SearchIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled' }} />}
                                         </IconButton>
                                         <IconButton size="small" onClick={clearCatalogSearch} aria-label={t('sidebar.clearCatalogSearch')} sx={{ p: 0.25 }}>
-                                            <ClearIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                            <ClearIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled' }} />
                                         </IconButton>
                                     </InputAdornment>
                                 ) : null,
                             },
                         }}
                         sx={{
-                            '& .MuiInputBase-root': { fontSize: 12, height: 30, borderRadius: 1 },
+                            '& .MuiInputBase-root': { fontSize: textVar.sm, height: 30, borderRadius: 1 },
                             '& .MuiInputBase-input': { py: 0.5, px: 0.5 },
-                            '& .MuiInputBase-input::placeholder': { fontSize: 11 },
+                            '& .MuiInputBase-input::placeholder': { fontSize: textVar.xs },
                         }}
                     />
                 </Box>
@@ -1742,7 +1780,8 @@ const DataSourceSidebarPanel: React.FC<{
                                     pr: 0.5,
                                     py: 0.75,
                                     cursor: 'pointer',
-                                    '&:hover': { bgcolor: 'action.hover' },
+                                    backgroundColor: isExpanded ? 'rgba(25, 118, 210, 0.055)' : 'transparent',
+                                    '&:hover': { bgcolor: isExpanded ? 'rgba(25, 118, 210, 0.085)' : 'rgba(0, 0, 0, 0.045)' },
                                     '&:hover .connector-row-action': { visibility: 'visible' },
                                     userSelect: 'none',
                                 }}
@@ -1759,10 +1798,10 @@ const DataSourceSidebarPanel: React.FC<{
                                     }}
                                 >
                                     {(connector.connected || connector.auth_mode === 'none') && isExpanded
-                                        ? <ExpandMoreIcon sx={{ fontSize: 14 }} />
-                                        : <ChevronRightIcon sx={{ fontSize: 14 }} />}
+                                        ? <ExpandMoreIcon sx={{ fontSize: iconVar.sm }} />
+                                        : <ChevronRightIcon sx={{ fontSize: iconVar.sm }} />}
                                 </Box>
-                                {getConnectorIcon(connector.icon || connector.source_type, { sx: { fontSize: 16, opacity: 0.7 } })}
+                                {getConnectorIcon(connector.icon || connector.source_type, { sx: { fontSize: iconVar.md, opacity: 0.7 } })}
                                 {/* Status dot — green for live connections
                                     and for always-on built-ins (which are
                                     ready by definition), warning for
@@ -1776,7 +1815,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         ? 'success.main'
                                         : 'warning.main',
                                 }} />
-                                <Typography noWrap sx={{ fontSize: 12, flex: 1, fontWeight: 500, color: (connector.connected || connector.auth_mode === 'none') ? 'text.primary' : 'text.secondary' }}>
+                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, fontWeight: 500, color: (connector.connected || connector.auth_mode === 'none') ? 'text.primary' : 'text.secondary' }}>
                                     {connector.display_name}
                                 </Typography>
                                 {(connector.connected || connector.auth_mode === 'none') && (
@@ -1801,7 +1840,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         >
                                             {(isLoading && !bodySpinnerVisible)
                                                 ? <CircularProgress size={12} />
-                                                : <RefreshIcon sx={{ fontSize: 14 }} />}
+                                                : <RefreshIcon sx={{ fontSize: iconVar.sm }} />}
                                         </IconButton>
                                     </Tooltip>
                                 )}
@@ -1822,7 +1861,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         }}
                                         sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
                                     >
-                                        <SettingsOutlinedIcon sx={{ fontSize: 14 }} />
+                                        <SettingsOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                     </IconButton>
                                 </Tooltip>
                                 )}
@@ -1837,7 +1876,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             }}
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
                                         >
-                                            <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                            <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                 ) : connector.connected && connector.auth_mode !== 'none' && (
@@ -1856,7 +1895,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             }}
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'warning.main' } }}
                                         >
-                                            <LinkOffOutlinedIcon sx={{ fontSize: 14 }} />
+                                            <LinkOffOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                 )}
@@ -1884,7 +1923,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                 <Typography
                                                     variant="caption"
                                                     color="text.secondary"
-                                                    sx={{ fontSize: 11, textAlign: 'center', px: 1, wordBreak: 'break-word' }}
+                                                    sx={{ fontSize: textVar.xs, textAlign: 'center', px: 1, wordBreak: 'break-word' }}
                                                 >
                                                     {catalogProgress[connector.id]}
                                                 </Typography>
@@ -1942,7 +1981,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                             onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
                                                             sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
                                                         >
-                                                            <RefreshIcon sx={{ fontSize: 13 }} />
+                                                            <RefreshIcon sx={{ fontSize: iconVar.sm }} />
                                                         </IconButton>
                                                     </Tooltip>
                                                 );
@@ -1953,12 +1992,12 @@ const DataSourceSidebarPanel: React.FC<{
                                         />
                                     )}
                                     {displayCache && displayCache.tree.length === 0 && !isLoading && (
-                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
+                                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
                                             {t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
                                         </Typography>
                                     )}
                                     {!displayCache && !isLoading && (
-                                        <Typography sx={{ fontSize: 11, color: catalogError ? 'error.main' : 'text.disabled', pl: 1, fontStyle: 'italic' }}>
+                                        <Typography sx={{ fontSize: textVar.xs, color: catalogError ? 'error.main' : 'text.disabled', pl: 1, fontStyle: 'italic' }}>
                                             {catalogError || t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
                                         </Typography>
                                     )}
@@ -1978,7 +2017,7 @@ const DataSourceSidebarPanel: React.FC<{
                     {batchProgress ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <CircularProgress size={14} thickness={5} />
-                            <Typography sx={{ fontSize: 12, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {t('sidebar.batchLoading', {
                                     current: batchProgress.current,
                                     total: batchProgress.total,
@@ -1990,7 +2029,7 @@ const DataSourceSidebarPanel: React.FC<{
                     ) : (
                         <>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <Typography sx={{ fontSize: 12, color: 'text.primary', fontWeight: 600 }}>
+                                <Typography sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 600 }}>
                                     {t('sidebar.selectedCount', {
                                         count: Object.keys(selection.nodes).length,
                                         defaultValue: `${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'} selected`,
@@ -2001,7 +2040,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     variant="text"
                                     color="inherit"
                                     onClick={clearSelection}
-                                    sx={{ fontSize: 11, textTransform: 'none', py: 0, px: 0.5, minWidth: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'transparent' } }}
+                                    sx={{ fontSize: textVar.xs, textTransform: 'none', py: 0, px: 0.5, minWidth: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'transparent' } }}
                                 >
                                     {t('sidebar.clear', { defaultValue: 'Clear' })}
                                 </Button>
@@ -2012,7 +2051,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 disableElevation
                                 fullWidth
                                 onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
-                                sx={{ fontSize: 13, fontWeight: 600, textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
+                                sx={{ fontSize: textVar.md, fontWeight: 600, textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
                             >
                                 {t('sidebar.loadNTables', {
                                     count: Object.keys(selection.nodes).length,
@@ -2025,7 +2064,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     variant="outlined"
                                     fullWidth
                                     onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes), { newSession: true })}
-                                    sx={{ fontSize: 12, textTransform: 'none', py: 0.5, borderRadius: 1.5, color: 'text.secondary', borderColor: borderColor.view, '&:hover': { borderColor: 'primary.main', color: 'primary.main', backgroundColor: 'transparent' } }}
+                                    sx={{ fontSize: textVar.sm, textTransform: 'none', py: 0.5, borderRadius: 1.5, color: 'text.secondary', borderColor: borderColor.view, '&:hover': { borderColor: 'primary.main', color: 'primary.main', backgroundColor: 'transparent' } }}
                                 >
                                     {t('sidebar.loadInNewSession', { defaultValue: 'Load in new session' })}
                                 </Button>
@@ -2041,9 +2080,9 @@ const DataSourceSidebarPanel: React.FC<{
             {activeTab === 'sessions' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
-                    sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                    sx={panelHeaderSx}
                 >
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
                     {/* Sort selector — sits next to the title so it reads
@@ -2058,12 +2097,15 @@ const DataSourceSidebarPanel: React.FC<{
                         disableUnderline
                         inputProps={{ 'aria-label': t('sidebar.sortSessions') }}
                         IconComponent={(props) => (
-                            <ExpandMoreIcon {...props} sx={{ fontSize: 14, color: 'text.disabled', right: 0 }} />
+                            <ExpandMoreIcon {...props} sx={{ fontSize: iconVar.sm, color: 'text.disabled', right: 0 }} />
                         )}
                         sx={{
-                            fontSize: 11,
-                            color: 'text.disabled',
+                            fontSize: textVar.xs,
+                            color: 'text.secondary',
                             cursor: 'pointer',
+                            height: 24,
+                            display: 'flex',
+                            alignItems: 'center',
                             '& .MuiSelect-select': {
                                 py: 0,
                                 pl: 0,
@@ -2083,21 +2125,26 @@ const DataSourceSidebarPanel: React.FC<{
                             return labels[v as SessionSortKey];
                         }}
                     >
-                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>{t('sidebar.sortNewestFirst')}</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>{t('sidebar.sortOldestFirst')}</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>{t('sidebar.sortRecentlyModifiedFirst')}</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>{t('sidebar.sortNameAsc')}</MenuItem>
+                        <MenuItem value="created_desc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortNewestFirst')}</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortOldestFirst')}</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortRecentlyModifiedFirst')}</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortNameAsc')}</MenuItem>
                     </Select>
                     <Box sx={{ flex: 1 }} />
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
+                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
                 </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
                 {/* New session + import actions */}
-                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, userSelect: 'none' }}>
+                <Box sx={{
+                    display: 'flex', alignItems: 'center', px: 1.5, py: 0.75,
+                    userSelect: 'none',
+                    backgroundColor: 'rgba(255, 255, 255, 0.62)',
+                    borderBottom: '1px solid rgba(0, 0, 0, 0.07)',
+                }}>
                     <Box
                         onClick={() => {
                             const now = new Date();
@@ -2117,21 +2164,21 @@ const DataSourceSidebarPanel: React.FC<{
                             '&:hover': { bgcolor: 'action.hover' },
                         }}
                     >
-                        <AddIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                        <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: 'text.secondary' }}>
+                        <AddIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
+                        <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 500, color: 'rgba(0, 0, 0, 0.72)' }}>
                             {t('sidebar.newSession', { defaultValue: 'New session' })}
                         </Typography>
                     </Box>
                     <Tooltip title={t('workspace.importZip')} placement="bottom">
                         <IconButton size="small" onClick={() => importRef.current?.click()} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <UploadFileIcon sx={{ fontSize: 16 }} />
+                            <UploadFileIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
                     <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                 </Box>
                 {sessions.length === 0 ? (
                     <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic' }}>
+                        <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic' }}>
                             {t('sidebar.noSessions', { defaultValue: 'No saved sessions' })}
                         </Typography>
                     </Box>
@@ -2157,10 +2204,14 @@ const DataSourceSidebarPanel: React.FC<{
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 0.75,
-                                px: 1.5,
+                                mx: 0.75,
+                                px: 0.75,
                                 py: 0.5,
+                                borderRadius: 0.75,
+                                backgroundColor: activeWorkspace?.id === s.id ? 'rgba(25, 118, 210, 0.075)' : 'transparent',
+                                boxShadow: activeWorkspace?.id === s.id ? 'inset 2px 0 0 rgba(25, 118, 210, 0.8)' : 'none',
                                 cursor: isRenaming ? 'default' : (activeWorkspace?.id === s.id ? 'default' : 'pointer'),
-                                '&:hover': { bgcolor: 'action.hover' },
+                                '&:hover': { bgcolor: activeWorkspace?.id === s.id ? 'rgba(25, 118, 210, 0.1)' : 'rgba(0, 0, 0, 0.045)' },
                                 '&:hover .row-actions': { display: 'flex' },
                                 '&:hover .row-timestamp': { visibility: 'hidden' },
                                 userSelect: 'none',
@@ -2189,13 +2240,13 @@ const DataSourceSidebarPanel: React.FC<{
                                     sx={{ flex: 1 }}
                                     slotProps={{
                                         input: {
-                                            sx: { fontSize: 12, fontWeight: 500, py: 0 },
+                                            sx: { fontSize: textVar.sm, fontWeight: 500, py: 0 },
                                         },
                                     }}
                                 />
                             ) : (
                                 <Typography noWrap sx={{
-                                    fontSize: 12, flex: 1, fontWeight: 500,
+                                    fontSize: textVar.sm, flex: 1, fontWeight: 500,
                                     color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
                                 }}>
                                     {s.display_name}
@@ -2212,8 +2263,8 @@ const DataSourceSidebarPanel: React.FC<{
                                     <Typography
                                         className="row-timestamp"
                                         sx={{
-                                            fontSize: 10,
-                                            color: 'text.disabled',
+                                            fontSize: textVar.xxs,
+                                            color: 'text.secondary',
                                             flexShrink: 0,
                                             ml: 0.5,
                                         }}
@@ -2240,7 +2291,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}
                                             sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
                                         >
-                                            <EditOutlinedIcon sx={{ fontSize: 14 }} />
+                                            <EditOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                     <Tooltip title={t('sidebar.exportSession', { defaultValue: 'Export' })}>
@@ -2249,7 +2300,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             onClick={(e) => { e.stopPropagation(); handleExportSession(s.id, s.display_name); }}
                                             sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
                                         >
-                                            <DownloadIcon sx={{ fontSize: 14 }} />
+                                            <DownloadIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                     <IconButton
@@ -2257,7 +2308,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         onClick={(e) => handleDeleteSession(s.id, e)}
                                         sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'warning.main' } }}
                                     >
-                                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                        <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
                                     </IconButton>
                                 </Box>
                             )}
@@ -2274,14 +2325,14 @@ const DataSourceSidebarPanel: React.FC<{
             {activeTab === 'knowledge' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
-                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                    sx={panelHeaderSx}
                 >
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('knowledge.title', { defaultValue: 'Agent Knowledge' })}
                     </Typography>
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
+                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
                 </Box>
@@ -2364,11 +2415,11 @@ const DataSourceSidebarPanel: React.FC<{
                 open={!!deleteTarget}
                 onClose={() => { if (!deleting) setDeleteTarget(null); }}
             >
-                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+                <DialogTitle sx={{ fontSize: textVar.xl, pb: 0.5 }}>
                     {t('sidebar.deleteConnectorTitle', { defaultValue: 'Delete connector' })}
                 </DialogTitle>
                 <DialogContent>
-                    <DialogContentText sx={{ fontSize: 13 }}>
+                    <DialogContentText sx={{ fontSize: textVar.md }}>
                         {t('sidebar.deleteConnectorConfirm', {
                             name: deleteTarget?.display_name,
                             defaultValue: `Are you sure you want to delete "{{name}}"? Imported data will not be affected.`,
@@ -2379,7 +2430,7 @@ const DataSourceSidebarPanel: React.FC<{
                     <Button
                         onClick={() => setDeleteTarget(null)}
                         disabled={deleting}
-                        sx={{ textTransform: 'none', fontSize: 12 }}
+                        sx={{ textTransform: 'none', fontSize: textVar.sm }}
                     >
                         {t('app.cancel', { defaultValue: 'Cancel' })}
                     </Button>
@@ -2388,7 +2439,7 @@ const DataSourceSidebarPanel: React.FC<{
                         disabled={deleting}
                         color="error"
                         variant="contained"
-                        sx={{ textTransform: 'none', fontSize: 12 }}
+                        sx={{ textTransform: 'none', fontSize: textVar.sm }}
                     >
                         {deleting
                             ? t('sidebar.deletingEllipsis', { defaultValue: 'Deleting...' })

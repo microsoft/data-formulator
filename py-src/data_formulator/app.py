@@ -273,6 +273,7 @@ def _register_blueprints():
 
     # Import server-log inspection routes (local-mode gated)
     from data_formulator.routes.logs import logs_bp
+    from data_formulator.routes.model_endpoints import model_endpoints_bp
 
     # Register blueprints
     app.register_blueprint(tables_bp)
@@ -280,6 +281,7 @@ def _register_blueprints():
     app.register_blueprint(session_bp)
     app.register_blueprint(demo_stream_bp)
     app.register_blueprint(logs_bp)
+    app.register_blueprint(model_endpoints_bp)
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider

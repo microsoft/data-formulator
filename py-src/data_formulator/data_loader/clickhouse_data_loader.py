@@ -165,13 +165,7 @@ class ClickHouseDataLoader(ExternalDataLoader):
             }
         ]
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**ClickHouse Cloud:** use the service hostname, port `8443`, and enable TLS.
-
-**Self-hosted ClickHouse:** the HTTP interface usually uses port `8123`; enable TLS if your server exposes HTTPS.
-
-Use a read-only ClickHouse account. Leave *database* empty to browse accessible databases, or set it to open tables directly."""
+    AUTH_GUIDE = "clickhouse.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = dict(params)

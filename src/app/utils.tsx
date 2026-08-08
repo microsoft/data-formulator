@@ -71,6 +71,7 @@ export function getUrls() {
         LOGS_INFO: `/api/logs/info`,
         LOGS_TAIL: `/api/logs/tail`,
         LOGS_DOWNLOAD: `/api/logs/download`,
+        MODEL_ENDPOINTS: `/api/model-endpoints`,
 
         // Session management
         SESSION_SAVE: `/api/sessions/save`,

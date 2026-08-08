@@ -49,8 +49,8 @@
     "microsoftResearch": "Microsoft Research"
   },
   "logs": {
-    "title": "Server Logs",
-    "viewLogs": "View server logs",
+    "title": "Backend Log",
+    "viewLogs": "View backend log",
     "refresh": "Refresh",
     "download": "Download full log",
     "empty": "Log file is empty."
@@ -347,6 +347,8 @@
     "dashboards": "Dashboards",
     "rememberCredentials": "Remember credentials",
     "setupDetails": "Setup details",
+    "askAgent": "Ask agent",
+    "askAgentPrompt": "I need help setting up a {{connector}} connection.{{auth}} Walk me through it, explain what each parameter expects, and help me troubleshoot if it fails.",
     "setupFieldsIntro": "Provide the following to connect:",
     "optional": "optional",
     "connectionTimeout": "Connection timed out. Please check your credentials and try again.",
@@ -465,6 +467,8 @@
     "addData": "add data",
     "addMoreData": "Add more data",
     "dataSources": "Data sources",
+    "tablesAvailableToAgent": "{{count}} table available to the agent",
+    "tablesAvailableToAgent_other": "{{count}} tables available to the agent",
     "showAllTables": "Show all {{count}}",
     "showFewerTables": "Show fewer",
     "working": "working...",

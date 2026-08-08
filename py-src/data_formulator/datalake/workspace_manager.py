@@ -87,6 +87,7 @@ class WorkspaceManager:
         *,
         table_count: Optional[int] = None,
         chart_count: Optional[int] = None,
+        provisional: Optional[bool] = None,
     ) -> None:
         """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
 
@@ -122,6 +123,8 @@ class WorkspaceManager:
             meta["tableCount"] = table_count
         if chart_count is not None:
             meta["chartCount"] = chart_count
+        if provisional:
+            meta["provisional"] = True
         meta_file.write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
         )
@@ -161,6 +164,19 @@ class WorkspaceManager:
         logger.info("Auto-created workspace_meta.json for legacy workspace '%s'", safe)
         return json.loads(meta_file.read_text(encoding="utf-8"))
 
+    def _has_content(self, ws_dir: Path) -> bool:
+        """True when a workspace holds work worth listing.
+
+        Used as a safety net alongside the ``provisional`` flag: any path that
+        writes real content without clearing the flag still shows up.
+        """
+        if (ws_dir / SESSION_STATE_FILENAME).exists():
+            return True
+        if (ws_dir / "workspace.yaml").exists():
+            return True
+        data_dir = ws_dir / "data"
+        return data_dir.is_dir() and any(data_dir.iterdir())
+
     def list_workspaces(self) -> list[dict]:
         """
         List all workspaces (newest first).
@@ -169,9 +185,9 @@ class WorkspaceManager:
         workspace.  If a workspace directory lacks this file (legacy),
         it is auto-repaired via :meth:`_ensure_meta`.
 
-        Every workspace directory is listed, including empty
-        "Untitled Session" entries from data-loading chats. Users
-        manage (rename/delete) these themselves via the sidebar.
+        Provisional workspaces — directories created just to give a request a
+        home, e.g. chatting before any data is loaded — are omitted until they
+        hold real work, so the list reflects sessions the user actually made.
 
         Returns list of {"id": str, "display_name": str, "updated_at": str}.
         """
@@ -186,6 +202,9 @@ class WorkspaceManager:
             try:
                 meta = self._ensure_meta(child.name)
             except Exception:
+                continue
+
+            if meta.get("provisional") and not self._has_content(child):
                 continue
 
             tc = meta.get("tableCount")
@@ -335,7 +354,10 @@ class WorkspaceManager:
         ws_dir = self._root / safe
         ws_dir.mkdir(parents=True, exist_ok=True)
         (ws_dir / "data").mkdir(exist_ok=True)
-        self._write_meta(workspace_id, "Untitled Session")
+        # Provisional until the session holds real work — the directory is
+        # created eagerly by `get_workspace()` on the first request that
+        # carries an X-Workspace-Id, which includes chatting with no data.
+        self._write_meta(workspace_id, "Untitled Session", provisional=True)
 
         logger.info(f"Created workspace '{safe}' at {ws_dir}")
         return ws_dir
@@ -431,6 +453,8 @@ class WorkspaceManager:
                 meta = {}
             meta["displayName"] = display_name
             meta["updatedAt"] = datetime.now(tz=timezone.utc).isoformat()
+            # Naming a session is a deliberate act — it stops being provisional.
+            meta.pop("provisional", None)
             meta_file.write_text(
                 json.dumps(meta, ensure_ascii=False), encoding="utf-8",
             )
@@ -477,6 +501,7 @@ class WorkspaceManager:
         tc = len(tables) if isinstance(tables, list) else None
         charts = clean_state.get("charts")
         cc = len(charts) if isinstance(charts, list) else None
+        # Saving state is the moment a session stops being provisional.
         self._write_meta(workspace_id, dn, table_count=tc, chart_count=cc)
 
         logger.debug(f"Saved session state to {state_file}")

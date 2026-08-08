@@ -97,6 +97,7 @@ include = ["data_formulator*"]
 # Scoped to the exact skill filenames so unrelated data JSON is not bundled.
 [tool.setuptools.package-data]
 "*" = ["SKILL.md", "tools.json"]
+"data_formulator.data_loader.guides" = ["*.md"]
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"

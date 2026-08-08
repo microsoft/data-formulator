@@ -40,6 +40,7 @@ import {
     DelegateTarget,
 } from '../components/ComponentType';
 import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
+import { iconVar, textVar } from '../app/layout';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -114,7 +115,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                     {icon}
                 </Box>
                 <Typography sx={{
-                    fontSize: 11, fontWeight: 600,
+                    fontSize: textVar.xs, fontWeight: 600,
                     color: theme.palette.text.primary,
                     textTransform: 'uppercase',
                     letterSpacing: '0.06em', flex: 1,
@@ -131,7 +132,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                             '&:hover': { color: primaryColor },
                         }}
                     >
-                        <CloseRoundedIcon sx={{ fontSize: 14 }} />
+                        <CloseRoundedIcon sx={{ fontSize: iconVar.sm }} />
                     </IconButton>
                 </Tooltip>
             </Box>
@@ -282,7 +283,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // Shared muted standard-input chrome for all freeform fields.
     const freeTextSx = {
         '& .MuiInput-root': {
-            fontSize: 11,
+            fontSize: textVar.xs,
             color: theme.palette.text.secondary,
             '&:before': { borderBottomColor: alpha(theme.palette.text.primary, 0.1) },
             '&:hover:not(.Mui-disabled):before': { borderBottomColor: alpha(theme.palette.text.primary, 0.25) },
@@ -291,7 +292,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         '& .MuiInput-input::placeholder': {
             color: theme.palette.text.disabled,
             opacity: 0.7,
-            fontSize: 11,
+            fontSize: textVar.xs,
         },
     } as const;
 
@@ -328,7 +329,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             input: {
                                 endAdornment: hasTypedAnswer ? (
                                     <InputAdornment position="end">
-                                        <CheckRoundedIcon sx={{ fontSize: 14, color: alpha(chromeAccent, 0.7) }} />
+                                        <CheckRoundedIcon sx={{ fontSize: iconVar.sm, color: alpha(chromeAccent, 0.7) }} />
                                     </InputAdornment>
                                 ) : undefined,
                             },
@@ -365,7 +366,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         },
                     }}
                 >
-                    <ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />
+                    <ArrowForwardRoundedIcon sx={{ fontSize: iconVar.md }} />
                 </IconButton>
             </span>
         </Tooltip>
@@ -418,7 +419,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         <AgentPauseShell
             icon={<AgentToyIcon
                 variant={isExplain ? 'explain' : 'clarify'}
-                sx={{ fontSize: 16, color: badgeAccent }}
+                sx={{ fontSize: textVar.xl, color: badgeAccent }}
             />}
             accentColor={chromeAccent}
             title={title}
@@ -451,7 +452,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             overflowY: 'auto',
                             pr: '4px',
                         }}>
-                            <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5 }}>
+                            <Typography component="div" sx={{ fontSize: textVar.sm, color: theme.palette.text.primary, lineHeight: 1.5 }}>
                                 {!isExplain && questions.length > 1 && (
                                     <>
                                         {t('chartRec.clarificationQuestionLabel', { index: questionIndex + 1 })}{' '}
@@ -471,7 +472,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                     <>
                                         {isExplain && (
                                             <Typography sx={{
-                                                fontSize: 10,
+                                                fontSize: textVar.xxs,
                                                 color: theme.palette.text.disabled,
                                                 fontStyle: 'italic',
                                                 mt: '2px',
@@ -500,7 +501,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                                 border: `1px solid ${isSelected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
                                                                 backgroundColor: isSelected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
                                                                 cursor: 'pointer',
-                                                                fontSize: 11,
+                                                                fontSize: textVar.xs,
                                                                 fontWeight: isSelected ? 600 : 400,
                                                                 display: 'inline-block',
                                                                 whiteSpace: 'normal',
@@ -555,7 +556,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                     '&.Mui-disabled': { color: theme.palette.common.white, backgroundColor: alpha(theme.palette.text.primary, 0.18) },
                                 }}
                             >
-                                <ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />
+                                <ArrowForwardRoundedIcon sx={{ fontSize: iconVar.md }} />
                             </IconButton>
                         </span>
                     </Tooltip>
@@ -626,7 +627,7 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
         <AgentPauseShell
             icon={<AgentToyIcon
                 variant="explain"
-                sx={{ fontSize: 16, color: theme.palette.primary.main }}
+                sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }}
             />}
             accentColor={theme.palette.primary.main}
             title={t('chartRec.delegateTitle')}
@@ -645,7 +646,7 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
                         overflowY: 'auto',
                     }}>
                         <Typography component="div" sx={{
-                            fontSize: 12,
+                            fontSize: textVar.sm,
                             color: theme.palette.text.primary,
                             lineHeight: 1.5,
                         }}>
@@ -655,7 +656,7 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
                 )}
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <Typography sx={{
-                        fontSize: 10,
+                        fontSize: textVar.xxs,
                         color: theme.palette.text.disabled,
                         fontStyle: 'italic',
                     }}>
@@ -680,7 +681,7 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
                                         border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
                                         backgroundColor: theme.palette.background.paper,
                                         cursor: 'pointer',
-                                        fontSize: 11,
+                                        fontSize: textVar.xs,
                                         fontWeight: 400,
                                         display: 'inline-flex',
                                         alignItems: 'center',
@@ -697,7 +698,7 @@ export const DelegatePanel: FC<DelegatePanelProps> = ({
                                     }}
                                 >
                                     <CtaIcon sx={{
-                                        fontSize: 14,
+                                        fontSize: textVar.lg,
                                         color: theme.palette.primary.main,
                                         flexShrink: 0,
                                     }} />
@@ -740,7 +741,7 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
         <AgentPauseShell
             icon={<AgentToyIcon
                 variant="explain"
-                sx={{ fontSize: 16, color: theme.palette.primary.main }}
+                sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }}
             />}
             accentColor={theme.palette.primary.main}
             title={t('chartRec.explanationTitle')}
@@ -753,7 +754,7 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
                 maxHeight: 'clamp(120px, 32vh, 360px)',
                 overflowY: 'auto',
                 pb: '8px', pl: '20px', pr: '8px',
-                fontSize: 12,
+                fontSize: textVar.sm,
             }}>
                 <CompactMarkdown content={content} color={theme.palette.text.primary} />
             </Box>

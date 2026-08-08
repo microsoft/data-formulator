@@ -4,6 +4,7 @@
 import React from "react";
 import ts from "typescript";
 import { runCodeOnInputListsInVM } from "../app/utils";
+import { textVar } from '../app/layout';
 import { FieldItem } from "../components/ComponentType";
 import { Type } from "../data/types";
 import { BooleanIcon, NumericalIcon, StringIcon, DateIcon, DateTimeIcon, TimeIcon, DurationIcon, UnknownIcon } from '../icons';
@@ -23,7 +24,7 @@ export const DENSE_MENU_SLOT_PROPS = {
     paper: {
         sx: {
             '& .MuiMenuItem-root': {
-                fontSize: 12,
+                fontSize: textVar.sm,
                 minHeight: 28,
                 py: 0.25,
                 px: 1,

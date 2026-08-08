@@ -48,17 +48,7 @@ class MySQLDataLoader(ExternalDataLoader):
             "default": True,
         }]
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example:** user: `root` · host: `localhost` · port: `3306` · database: `mydb`
-
-**Local setup:** Ensure MySQL is running — `brew services list` (macOS) or `systemctl status mysql` (Linux). Leave password blank if none is set.
-
-**Remote setup:** Get host, port, username, and password from your database administrator. Ensure the server allows remote connections and your IP is whitelisted.
-
-**Scope:** Leave *database* empty to browse all databases on the server, or fill it in to go straight to tables in that database.
-
-**Troubleshooting:** Test with `mysql -u <user> -p -h <host> -P <port> <database>`"""
+    AUTH_GUIDE = "mysql.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

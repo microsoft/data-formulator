@@ -6,8 +6,8 @@
 // The shelf is deliberately NOT part of the thread system: it owns no timeline,
 // no thread index, and no artifacts. It is the single home of every source
 // table's full card and of the source-table actions (rename / metadata /
-// refresh / streaming / delete). Threads reference a source table with a muted
-// ghost card instead of repeating its actions, so "which column owns this
+// refresh / streaming / delete). Threads reference a source table with a plain
+// reference card instead of repeating its actions, so "which column owns this
 // table" never has to be arbitrated.
 
 import React, { FC, memo, useEffect, useMemo, useState } from 'react';
@@ -16,8 +16,10 @@ import {
     Box,
     Button,
     ClickAwayListener,
+    Collapse,
     CircularProgress,
     FormControlLabel,
+    IconButton,
     Menu,
     MenuItem,
     Paper,
@@ -41,7 +43,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { DictTable } from '../components/ComponentType';
@@ -52,6 +54,7 @@ import { StreamIcon, TableIcon } from '../icons';
 import { buildTableCard } from './DataThreadCards';
 import { RefreshDataDialog } from './RefreshDataDialog';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
+import { iconVar, textVar } from '../app/layout';
 
 /** Seconds options for stream/database auto-refresh interval (labels in i18n: dataThread.refreshInterval.*). */
 const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86400] as const;
@@ -155,7 +158,7 @@ const StreamingSettingsPopup = memo<{
                 <Paper
                     elevation={8}
                     sx={{
-                        fontSize: 12,
+                        fontSize: textVar.sm,
                         p: 1.5,
                         mt: 1,
                         ...ViewBorderStyle,
@@ -172,7 +175,7 @@ const StreamingSettingsPopup = memo<{
                                     />
                                 }
                                 label={
-                                    <Typography variant="body2" sx={{ fontSize: 11 }}>
+                                    <Typography variant="body2" sx={{ fontSize: textVar.xs }}>
                                         {t('dataThread.watchForUpdates')}
                                     </Typography>
                                 }
@@ -180,7 +183,7 @@ const StreamingSettingsPopup = memo<{
                             />
                             {autoRefresh && (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
-                                    <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                    <Typography variant="body2" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
                                         {t('dataThread.every')}
                                     </Typography>
                                     <TextField
@@ -197,7 +200,7 @@ const StreamingSettingsPopup = memo<{
                                         }}
                                         sx={{
                                             minWidth: 70,
-                                            '& .MuiInputBase-root': { fontSize: 11, height: 28 },
+                                            '& .MuiInputBase-root': { fontSize: textVar.xs, height: 28 },
                                             '& .MuiSelect-select': { py: 0.5 }
                                         }}
                                     >
@@ -215,9 +218,9 @@ const StreamingSettingsPopup = memo<{
                                     size="small"
                                     onClick={handleRefreshNow}
                                     disabled={isRefreshing}
-                                    startIcon={isRefreshing ? <CircularProgress size={14} /> : <RefreshIcon sx={{ fontSize: 14 }} />}
+                                    startIcon={isRefreshing ? <CircularProgress size={14} /> : <RefreshIcon sx={{ fontSize: iconVar.sm }} />}
                                     sx={{
-                                        fontSize: 11,
+                                        fontSize: textVar.xs,
                                         textTransform: 'none',
                                         height: 28,
                                         alignSelf: 'flex-start'
@@ -266,7 +269,7 @@ const MetadataPopup = memo<{
                         width: 480,
                         maxHeight: '70vh',
                         overflow: 'auto',
-                        fontSize: 12,
+                        fontSize: textVar.sm,
                         p: 2,
                         mt: 1,
                         ...ViewBorderStyle,
@@ -277,24 +280,24 @@ const MetadataPopup = memo<{
                     </Typography>
 
                     {description && (
-                        <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.primary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                             {description}
                         </Typography>
                     )}
 
                     {!description && codeExplanation && (
                         <Box>
-                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                            <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
                                 {t('dataThread.derivationSummary', { defaultValue: 'Derivation summary' })}
                             </Typography>
-                            <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                            <Typography sx={{ fontSize: textVar.xs, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
                                 {codeExplanation}
                             </Typography>
                         </Box>
                     )}
 
                     {!description && !codeExplanation && (
-                        <Typography sx={{ fontSize: 11.5, color: 'text.disabled', fontStyle: 'italic' }}>
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontStyle: 'italic' }}>
                             {t('dataThread.noMetadata', { defaultValue: 'No description available for this table.' })}
                         </Typography>
                     )}
@@ -350,9 +353,9 @@ const RenameTablePopup = memo<{
             <ClickAwayListener onClickAway={onClose}>
                 <Paper
                     elevation={8}
-                    sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, ...ViewBorderStyle }}
+                    sx={{ width: 240, fontSize: textVar.sm, p: 1.5, mt: 1, ...ViewBorderStyle }}
                 >
-                    <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: 12 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: textVar.sm }}>
                         {t('dataThread.renameTable')}
                     </Typography>
                     <TextField
@@ -363,7 +366,7 @@ const RenameTablePopup = memo<{
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        sx={{ my: 0.5, '& .MuiInputBase-input': { fontSize: 12 } }}
+                        sx={{ my: 0.5, '& .MuiInputBase-input': { fontSize: textVar.sm } }}
                     />
                     <Box sx={{ mt: 0.5, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
                         <Button size="small" onClick={onClose}>{t('app.cancel')}</Button>
@@ -390,9 +393,9 @@ export const SourceTableShelf: FC<{
     const { manualRefresh } = useDataRefresh();
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const charts = useSelector(dfSelectors.getAllCharts);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
 
+    const [sectionExpanded, setSectionExpanded] = useState(true);
     const [expanded, setExpanded] = useState(false);
     const [addDataDialogOpen, setAddDataDialogOpen] = useState(false);
 
@@ -645,7 +648,6 @@ export const SourceTableShelf: FC<{
                 {buildTableCard({
                     tableId: tbl.id,
                     tables,
-                    charts,
                     // The shelf never shows artifacts — charts live in the thread
                     // started from the table.
                     chartElements: [],
@@ -653,7 +655,6 @@ export const SourceTableShelf: FC<{
                     highlightedTableIds,
                     focusedTableId,
                     focusedChartId: undefined,
-                    focusedChart: undefined,
                     parentTable: undefined,
                     tableIdList: [],
                     collapsed: false,
@@ -665,7 +666,7 @@ export const SourceTableShelf: FC<{
                 })}
             </Box>
         </Box>;
-    }), [visibleTables, tables, charts, highlightedTableIds, focusedTableId, theme, t]);
+    }), [visibleTables, tables, highlightedTableIds, focusedTableId, theme, t]);
 
     return <Box sx={{
         ...sx,
@@ -682,43 +683,99 @@ export const SourceTableShelf: FC<{
                 Left-aligned: unlike a thread header there's no dot to sit beside. */}
             <Box sx={{ pr: CARD_INSET_RIGHT, display: 'flex', alignItems: 'center', minHeight: 16 }}>
                 <Typography sx={{
-                    fontSize: '11px', fontWeight: 700,
+                    flex: 1,
+                    fontSize: textVar.xs, fontWeight: 700,
                     textTransform: 'uppercase', letterSpacing: '0.02em',
                     color: 'rgba(0,0,0,0.55)',
                 }}>
                     {t('dataThread.dataSources', { defaultValue: 'Data sources' })}
                 </Typography>
+                <IconButton
+                    size="small"
+                    aria-label={t(`dataThread.${sectionExpanded ? 'collapse' : 'expand'}`)}
+                    aria-expanded={sectionExpanded}
+                    aria-controls="data-source-shelf-content"
+                    onClick={() => setSectionExpanded(current => !current)}
+                    sx={{ p: 0.25, color: 'text.secondary' }}
+                >
+                    {sectionExpanded
+                        ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} />
+                        : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
+                </IconButton>
             </Box>
 
-            {/* Just enough rail to link the label to the first card. The card
-                row draws its own lead-in above the icon, so anything longer
-                here reads as a gap between the label and the list. */}
-            <Box aria-hidden sx={{ ml: RAIL_OFFSET, height: '2px', borderLeft: RAIL_LINE }} />
+            <Collapse in={sectionExpanded} timeout="auto">
+                <Box id="data-source-shelf-content">
+                    {/* Just enough rail to link the label to the first card. The card
+                        row draws its own lead-in above the icon, so anything longer
+                        here reads as a gap between the label and the list. */}
+                    <Box aria-hidden sx={{ ml: RAIL_OFFSET, height: '2px', borderLeft: RAIL_LINE }} />
 
-            {/* Each card carries its own gutter icon and rail segments (see the
-                `cards` memo), so the rail is punctuated exactly like a thread's
-                timeline rather than running as one long stroke. */}
-            {cards}
+                    {/* Each card carries its own gutter icon and rail segments (see the
+                        `cards` memo), so the rail is punctuated exactly like a thread's
+                        timeline rather than running as one long stroke. */}
+                    {cards}
 
-            {collapsible && (
-                <Box sx={{ pl: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, pr: CARD_INSET_RIGHT }}>
-                    <Button
-                        size="small"
-                        onClick={() => setExpanded(!expanded)}
-                        endIcon={expanded
-                            ? <KeyboardArrowUpIcon sx={{ fontSize: 14 }} />
-                            : <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />}
-                        sx={{
-                            textTransform: 'none', fontSize: 11, fontWeight: 500,
-                            minHeight: 0, py: 0.25, px: 0.5,
-                            color: 'text.secondary',
-                            '& .MuiButton-endIcon': { ml: 0.25 },
-                        }}
-                    >
-                        {expanded
-                            ? t('dataThread.showFewerTables', { defaultValue: 'Show fewer' })
-                            : t('dataThread.showAllTables', { count: sourceTables.length, defaultValue: `Show all ${sourceTables.length}` })}
-                    </Button>
+                    {collapsible && (
+                        <Box sx={{ pl: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, pr: CARD_INSET_RIGHT }}>
+                            <Button
+                                size="small"
+                                onClick={() => setExpanded(!expanded)}
+                                endIcon={expanded
+                                    ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} />
+                                    : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
+                                sx={{
+                                    textTransform: 'none', fontSize: textVar.xs, fontWeight: 500,
+                                    minHeight: 0, py: 0.25, px: 0.5,
+                                    color: 'text.secondary',
+                                    '& .MuiButton-endIcon': { ml: 0.25 },
+                                }}
+                            >
+                                {expanded
+                                    ? t('dataThread.showFewerTables', { defaultValue: 'Show fewer' })
+                                    : t('dataThread.showAllTables', { count: sourceTables.length, defaultValue: `Show all ${sourceTables.length}` })}
+                            </Button>
+                        </Box>
+                    )}
+                </Box>
+            </Collapse>
+
+            {!sectionExpanded && (
+                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                    <Box sx={{
+                        width: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`,
+                        flexShrink: 0,
+                        display: 'flex',
+                    }}>
+                        <Box aria-hidden sx={{ ml: RAIL_OFFSET, borderLeft: RAIL_LINE }} />
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, pt: 0.5, pr: CARD_INSET_RIGHT }}>
+                        <Button
+                            fullWidth
+                            size="small"
+                            startIcon={<TableIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.35)' }} />}
+                            aria-label={t('dataThread.expand')}
+                            aria-controls="data-source-shelf-content"
+                            onClick={() => setSectionExpanded(true)}
+                            sx={{
+                                justifyContent: 'flex-start',
+                                px: 1, py: 0.75,
+                                borderRadius: '6px',
+                                backgroundColor: 'rgba(0,0,0,0.045)',
+                                color: 'text.secondary',
+                                textTransform: 'none',
+                                fontSize: textVar.xs,
+                                fontWeight: 400,
+                                '& .MuiButton-startIcon': { mr: 0.75 },
+                                '&:hover': { backgroundColor: 'rgba(0,0,0,0.08)' },
+                            }}
+                        >
+                            {t('dataThread.tablesAvailableToAgent', {
+                                count: sourceTables.length,
+                                defaultValue: `${sourceTables.length} tables available to the agent`,
+                            })}
+                        </Button>
+                    </Box>
                 </Box>
             )}
 
@@ -740,12 +797,12 @@ export const SourceTableShelf: FC<{
                     <Button
                         fullWidth
                         size="small"
-                        startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                        startIcon={<AddIcon sx={{ fontSize: iconVar.sm }} />}
                         onClick={() => setAddDataDialogOpen(true)}
                         sx={{
                             justifyContent: 'flex-start',
                             textTransform: 'none',
-                            fontSize: 11,
+                            fontSize: textVar.xs,
                             fontWeight: 500,
                             py: 0.5,
                             borderRadius: '6px',
@@ -804,9 +861,9 @@ export const SourceTableShelf: FC<{
                     }
                     handleCloseTableMenu();
                 }}
-                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
             >
-                <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                <EditIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
                 {t('dataThread.rename')}
             </MenuItem>
             {/* View metadata — read-only viewer of the source description */}
@@ -819,10 +876,10 @@ export const SourceTableShelf: FC<{
                         }
                         handleCloseTableMenu();
                     }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                    sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <AttachFileIcon sx={{
-                        fontSize: 16,
+                        fontSize: textVar.xl,
                         color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
                     }} />
                     {t('dataThread.viewMetadata', { defaultValue: 'View metadata' })}
@@ -839,9 +896,9 @@ export const SourceTableShelf: FC<{
                             }
                             handleCloseTableMenu();
                         }}
-                        sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                        sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
                     >
-                        <StreamIcon sx={{ fontSize: 16, color: selectedTableForMenu.source?.autoRefresh ? 'success.main' : 'text.secondary' }} />
+                        <StreamIcon sx={{ fontSize: iconVar.md, color: selectedTableForMenu.source?.autoRefresh ? 'success.main' : 'text.secondary' }} />
                         {selectedTableForMenu.source?.autoRefresh ? t('dataThread.refreshSettings') : t('dataThread.watchForUpdates')}
                     </MenuItem>
                 )}
@@ -854,9 +911,9 @@ export const SourceTableShelf: FC<{
                             handleOpenRefreshDialog(selectedTableForMenu);
                         }
                     }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                    sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
                 >
-                    <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                    <RefreshIcon sx={{ fontSize: iconVar.md, color: 'primary.main' }} />
                     {t('dataThread.replaceData')}
                 </MenuItem>
             )}
@@ -890,9 +947,9 @@ export const SourceTableShelf: FC<{
                 disabled={selectedTableForMenu
                     ? tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id)
                     : true}
-                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
+                sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
             >
-                <DeleteIcon sx={{ fontSize: 16 }} color='warning' />
+                <DeleteIcon sx={{ fontSize: iconVar.md }} color='warning' />
                 {t('dataThread.deleteTable')}
             </MenuItem>
         </Menu>

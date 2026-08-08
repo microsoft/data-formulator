@@ -24,6 +24,9 @@ import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlin
 import SearchIcon from '@mui/icons-material/Search';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import CloseIcon from '@mui/icons-material/Close';
+import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -38,10 +41,13 @@ import { createTableFromText } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
 import { LoadPlanCard, PendingLoadsCard } from '../components/LoadPlanCard';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
+import { getConnectorIcon } from '../icons';
 import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
 import { formatFilterChipLabel } from '../components/filterFormat';
 import { AgentChatInput } from './AgentChatInput';
+import { useScrollFade, ScrollFadeEdge } from '../components/ScrollFade';
 import { generateUUID } from '../app/identity';
+import { iconVar, textVar } from '../app/layout';
 
 // ---------------------------------------------------------------------------
 // Helper: fresh workspace session id (mirrors DataSourceSidebar's scheme)
@@ -75,32 +81,53 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
 // Modern monospace font stack for code blocks
 const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
 
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+// Single source of truth for the conversation / canvas split. Pane minimums,
+// the auto-size clamp and the column gutters all read from here, so the
+// conversation keeps the same measure whether the canvas is open or not.
+const LAYOUT = {
+    /** Reading width of the conversation column. */
+    readingWidth: 640,
+    /** Horizontal breathing room around it (MUI spacing units). */
+    gutter: 3,
+    /** Narrowest the conversation may become — the sash stops here. */
+    minChatWidth: 520,
+    /** Canvas bounds; its preferred width depends on what it hosts. */
+    minCanvasWidth: 320,
+    canvasWidth: {
+        connector: 440,
+        loadPlan: (tables: number) => Math.min(720, 460 + tables * 40),
+    },
+} as const;
+
 // Memoized so typing in the chat input (which re-renders the parent
 // `DataLoadingChat` on every keystroke) doesn't re-parse every assistant
 // message through react-markdown. `content` is a stable string per
 // committed message, so the default shallow equality is sufficient.
 const MarkdownContent = React.memo(({ content }: { content: string }) => {
     return (
-        <Box sx={{ wordBreak: 'break-word' }}>
+        <Box sx={{ minWidth: 0, maxWidth: '100%', wordBreak: 'break-word' }}>
             <Markdown
                 components={{
                     // Block elements
                     p: ({ children }) => (
-                        <Typography variant="body2" sx={{ fontSize: 13, lineHeight: 1.7, mb: 0.75, '&:last-child': { mb: 0 } }}>
+                        <Typography variant="body2" sx={{ fontSize: textVar.md, lineHeight: 1.7, mb: 0.75, '&:last-child': { mb: 0 } }}>
                             {children}
                         </Typography>
                     ),
                     h1: ({ children }) => (
-                        <Typography variant="h6" sx={{ fontSize: 16, fontWeight: 600, mb: 0.5, mt: 1 }}>{children}</Typography>
+                        <Typography variant="h6" sx={{ fontSize: textVar.xl, fontWeight: 600, mb: 0.5, mt: 1 }}>{children}</Typography>
                     ),
                     h2: ({ children }) => (
-                        <Typography variant="h6" sx={{ fontSize: 15, fontWeight: 600, mb: 0.5, mt: 0.75 }}>{children}</Typography>
+                        <Typography variant="h6" sx={{ fontSize: textVar.xl, fontWeight: 600, mb: 0.5, mt: 0.75 }}>{children}</Typography>
                     ),
                     h3: ({ children }) => (
-                        <Typography variant="subtitle1" sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, mt: 0.75 }}>{children}</Typography>
+                        <Typography variant="subtitle1" sx={{ fontSize: textVar.lg, fontWeight: 600, mb: 0.5, mt: 0.75 }}>{children}</Typography>
                     ),
                     h4: ({ children }) => (
-                        <Typography variant="subtitle2" sx={{ fontSize: 13, fontWeight: 600, mb: 0.5, mt: 0.5 }}>{children}</Typography>
+                        <Typography variant="subtitle2" sx={{ fontSize: textVar.md, fontWeight: 600, mb: 0.5, mt: 0.5 }}>{children}</Typography>
                     ),
                     // Lists
                     ul: ({ children }) => (
@@ -110,7 +137,7 @@ const MarkdownContent = React.memo(({ content }: { content: string }) => {
                         <Box component="ol" sx={{ m: 0, mb: 0.75, pl: 2.5, '&:last-child': { mb: 0 } }}>{children}</Box>
                     ),
                     li: ({ children }) => (
-                        <Typography component="li" variant="body2" sx={{ fontSize: 13, lineHeight: 1.7, mb: 0.25 }}>
+                        <Typography component="li" variant="body2" sx={{ fontSize: textVar.md, lineHeight: 1.7, mb: 0.25 }}>
                             {children}
                         </Typography>
                     ),
@@ -136,12 +163,12 @@ const MarkdownContent = React.memo(({ content }: { content: string }) => {
                                 <Box component="pre" sx={{
                                     m: 0, my: 0.75, p: 1.5, borderRadius: 1.5,
                                     bgcolor: '#f6f6f6', color: '#1a1a1a',
-                                    overflow: 'auto', maxHeight: 240,
+                                    overflowX: 'hidden', overflowY: 'auto', maxHeight: 240,
                                     border: '1px solid', borderColor: 'divider',
                                 }}>
                                     <Typography component="code" sx={{
-                                        fontFamily: CODE_FONT, fontSize: 12,
-                                        whiteSpace: 'pre-wrap', lineHeight: 1.5,
+                                        fontFamily: CODE_FONT, fontSize: textVar.sm,
+                                        whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.5,
                                     }}>
                                         {children}
                                     </Typography>
@@ -176,10 +203,10 @@ const MarkdownContent = React.memo(({ content }: { content: string }) => {
                         </Box>
                     ),
                     th: ({ children }) => (
-                        <Typography component="th" variant="caption" sx={{ fontWeight: 600, fontSize: 12 }}>{children}</Typography>
+                        <Typography component="th" variant="caption" sx={{ fontWeight: 600, fontSize: textVar.sm }}>{children}</Typography>
                     ),
                     td: ({ children }) => (
-                        <Typography component="td" variant="caption" sx={{ fontSize: 12 }}>{children}</Typography>
+                        <Typography component="td" variant="caption" sx={{ fontSize: textVar.sm }}>{children}</Typography>
                     ),
                 }}
             >
@@ -237,7 +264,7 @@ const InlineTablePreviewView: React.FC<{
             <TablePreviewRow
                 name={preview.name}
                 meta={meta}
-                leading={confirmed ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} /> : undefined}
+                leading={confirmed ? <CheckIcon sx={{ fontSize: iconVar.md, color: 'success.main', mx: 0.25 }} /> : undefined}
                 preview={{
                     state: 'ready',
                     columns: preview.columns,
@@ -253,14 +280,14 @@ const InlineTablePreviewView: React.FC<{
                 <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Box sx={{ flex: 1 }} />
                     {confirmed && (
-                        <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
+                        <Typography sx={{ fontSize: textVar.xs, color: 'success.main', fontWeight: 500 }}>
                             {t('dataLoading.loadPlan.loadedCount', { count: 1, defaultValue: '✓ Loaded' })}
                         </Typography>
                     )}
                     {onLoad && (
                         <Button size="small" variant="contained" onClick={onLoad}
                             sx={{
-                                textTransform: 'none', fontSize: 12,
+                                textTransform: 'none', fontSize: textVar.sm,
                                 py: 0.5, px: 2, minHeight: 0,
                                 borderRadius: 1.5, boxShadow: 'none',
                             }}>
@@ -291,26 +318,26 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
                 }}
                 onClick={() => setExpanded(!expanded)}
             >
-                <TerminalIcon sx={{ fontSize: 14, color: 'text.secondary', mr: 0.75 }} />
-                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', flex: 1 }}>
+                <TerminalIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary', mr: 0.75 }} />
+                <Typography variant="caption" sx={{ fontSize: textVar.xs, color: 'text.secondary', flex: 1 }}>
                     {t('dataLoading.ranPythonCode')}
                 </Typography>
                 {block.error
-                    ? <ErrorOutlineIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
-                    : <CheckCircleIcon sx={{ fontSize: 13, color: 'success.main', opacity: 0.7, mr: 0.5 }} />
+                    ? <ErrorOutlineIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', mr: 0.5 }} />
+                    : <CheckCircleIcon sx={{ fontSize: iconVar.sm, color: 'success.main', opacity: 0.7, mr: 0.5 }} />
                 }
-                {expanded ? <ExpandLessIcon sx={{ fontSize: 14 }} /> : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
+                {expanded ? <ExpandLessIcon sx={{ fontSize: iconVar.sm }} /> : <ExpandMoreIcon sx={{ fontSize: iconVar.sm }} />}
             </Box>
             <Collapse in={expanded}>
                 <Box sx={{ px: 1.5, py: 1, bgcolor: '#f6f6f6', overflow: 'auto', maxHeight: 200, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Typography component="pre" sx={{ fontFamily: CODE_FONT, fontSize: 12, m: 0, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                    <Typography component="pre" sx={{ fontFamily: CODE_FONT, fontSize: textVar.sm, m: 0, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                         {block.code}
                     </Typography>
                 </Box>
                 {block.stdout && (
                     <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
                         <Typography component="pre" sx={{
-                            fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                            fontFamily: CODE_FONT, fontSize: textVar.xs, m: 0,
                             whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto', color: 'text.secondary', lineHeight: 1.5,
                         }}>
                             {block.stdout}
@@ -320,7 +347,7 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
                 {block.error && (
                     <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
                         <Typography component="pre" sx={{
-                            fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                            fontFamily: CODE_FONT, fontSize: textVar.xs, m: 0,
                             whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.5,
                         }}>
                             {block.error}
@@ -351,7 +378,7 @@ const TaskDivider: React.FC = () => {
     return (
         <Box sx={{ my: 1.5 }}>
             <Divider>
-                <Typography variant="caption" sx={{ fontSize: 10, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <Typography variant="caption" sx={{ fontSize: textVar.xxs, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     {t('dataLoading.newRequestDivider', 'New request')}
                 </Typography>
             </Divider>
@@ -376,9 +403,9 @@ const ContinueSectionButton: React.FC<{ onClick: () => void }> = ({ onClick }) =
                 size="small"
                 variant="text"
                 onClick={onClick}
-                startIcon={<QuestionAnswerOutlinedIcon sx={{ fontSize: 14 }} />}
+                startIcon={<QuestionAnswerOutlinedIcon sx={{ fontSize: iconVar.sm }} />}
                 sx={{
-                    fontSize: 11, textTransform: 'none', color: 'text.secondary',
+                    fontSize: textVar.xs, textTransform: 'none', color: 'text.secondary',
                     py: 0.25, px: 1, minHeight: 0, borderRadius: radius.pill,
                     '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
                 }}
@@ -389,6 +416,68 @@ const ContinueSectionButton: React.FC<{ onClick: () => void }> = ({ onClick }) =
     );
 };
 
+
+// ---------------------------------------------------------------------------
+// Canvas widgets
+// ---------------------------------------------------------------------------
+
+/** Long interaction widgets the chat hands off to the canvas. */
+type CanvasKind = 'connector' | 'loadPlan';
+
+// Every plan opens on the canvas, whatever its size, so the interaction is the
+// same every time. Only a *resolved* connection collapses back into the chat,
+// where it is a status chip rather than a widget.
+const isShortConnectorForm = (form: ConnectorFormPrompt) => form.status === 'connected';
+/** Width the widget wants on open: plans grow with the number of tables. */
+const canvasWidthFor = (kind: CanvasKind, message: ChatMessage) =>
+    kind === 'connector'
+        ? LAYOUT.canvasWidth.connector
+        : LAYOUT.canvasWidth.loadPlan(message.loadPlan?.candidates.length ?? 0);
+
+/**
+ * Chat-side stand-in for a canvas widget: one compact line that says what is
+ * waiting and opens it on the right.
+ */
+const CanvasInvite: React.FC<{
+    icon: React.ReactNode;
+    title: string;
+    caption: string;
+    action: string;
+    active?: boolean;
+    onClick: () => void;
+}> = ({ icon, title, caption, action, active, onClick }) => {
+    const theme = useTheme();
+    return (
+        <Box
+            role="button"
+            tabIndex={0}
+            onClick={onClick}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+            sx={{
+                mt: 1, width: '100%', maxWidth: 420, minWidth: 0,
+                display: 'flex', alignItems: 'center', gap: 1,
+                px: 1.25, py: 0.875,
+                border: '1px solid',
+                borderColor: active ? 'primary.main' : 'divider',
+                borderRadius: radius.md,
+                cursor: 'pointer',
+                bgcolor: active ? alpha(theme.palette.primary.main, 0.06) : 'background.paper',
+                transition: transition.normal,
+                '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.06), borderColor: 'primary.main' },
+            }}
+        >
+            <Box sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary' }}>{icon}</Box>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 600, lineHeight: 1.4 }}>{title}</Typography>
+                <Typography noWrap sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>{caption}</Typography>
+            </Box>
+            <Typography sx={{ fontSize: textVar.xs, flexShrink: 0, color: active ? 'primary.main' : 'text.secondary' }}>
+                {action}
+            </Typography>
+            <ChevronRightIcon sx={{ fontSize: iconVar.md, flexShrink: 0, color: active ? 'primary.main' : 'text.disabled' }} />
+        </Box>
+    );
+};
 
 // ---------------------------------------------------------------------------
 // Single chat message bubble
@@ -403,9 +492,12 @@ const ChatBubble = React.memo<{
     message: ChatMessage;
     existingNames: Set<string>;
     onTableLoaded?: () => void;
-    isLatestPendingConnector?: boolean;
     onContinue?: () => void;
-}>(({ message, existingNames, onTableLoaded, isLatestPendingConnector, onContinue }) => {
+    /** Opens this message's long widget on the canvas. */
+    onOpenCanvas?: (kind: CanvasKind, messageId: string) => void;
+    /** Message whose widget the canvas currently shows. */
+    canvasMessageId?: string;
+}>(({ message, existingNames, onTableLoaded, onContinue, onOpenCanvas, canvasMessageId }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
@@ -476,23 +568,23 @@ const ChatBubble = React.memo<{
                             borderRadius: 1,
                             maxWidth: 220,
                         }}>
-                            <InsertDriveFileOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
+                            <InsertDriveFileOutlinedIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', flexShrink: 0 }} />
                             <Typography variant="caption" title={att.name}
-                                sx={{ fontSize: 11, lineHeight: 1.4,
+                                sx={{ fontSize: textVar.xs, lineHeight: 1.4,
                                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {att.name}
                             </Typography>
                         </Box>
                     ))}
                     {message.content && (
-                        <Typography sx={{ fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        <Typography sx={{ fontSize: textVar.md, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                             {message.content}
                         </Typography>
                     )}
                     {/* Timestamp on hover */}
                     {hovered && (
                         <Typography sx={{
-                            fontSize: 10, color: 'text.disabled', position: 'absolute',
+                            fontSize: textVar.xxs, color: 'text.disabled', position: 'absolute',
                             bottom: -16, right: 4, whiteSpace: 'nowrap',
                         }}>
                             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -518,100 +610,55 @@ const ChatBubble = React.memo<{
                     />
                 )}
 
-                {/* Load plan card — Agent-proposed multi-table import.
-                    The plan's reasoning is rendered *above* the card as
-                    plain assistant text so it reads as a continuation of
-                    the agent's voice rather than a callout inside the
-                    card's visual container. */}
+                {/* Load plan — the agent's reasoning stays in its own voice
+                    above the plan; the plan itself always opens on the canvas. */}
                 {message.loadPlan?.reasoning && (
                     <Box sx={{ mt: message.content ? 0.5 : 0 }}>
                         <MarkdownContent content={message.loadPlan.reasoning} />
                     </Box>
                 )}
-                {message.loadPlan && (
-                    <LoadPlanCard
-                        plan={message.loadPlan}
-                        confirmed={message.loadPlan.candidates.every(c => c.selected === false)}
-                        canLoadInNewWorkspace={existingNames.size > 0}
-                        onConfirm={async (selected: LoadPlanCandidate[], opts?: { newWorkspace?: boolean }) => {
-                            // When data already exists, the user may choose to
-                            // start a fresh workspace instead of appending. We
-                            // reset *before* loading so the X-Workspace-Id
-                            // header (read live from the store at fetch time)
-                            // targets the new session.
-                            if (opts?.newWorkspace) {
-                                const displayName = selected[0]?.displayName || 'Untitled Session';
-                                dispatch(dfActions.resetForNewWorkspace({ id: newWorkspaceSessionId(), displayName }));
-                            }
-                            try {
-                                for (const item of selected) {
-                                    const sourceTableName = item.sourceTableName || item.displayName;
-                                    const table = {
-                                        kind: 'table' as const,
-                                        id: item.displayName,
-                                        displayId: item.displayName,
-                                        names: [] as string[],
-                                        metadata: {},
-                                        rows: [] as any[],
-                                        virtual: { tableId: item.displayName, rowCount: 0 },
-                                        anchored: true,
-                                        description: '',
-                                        source: {
-                                            type: 'database' as const,
-                                            databaseTable: sourceTableName,
-                                            canRefresh: true,
-                                            lastRefreshed: Date.now(),
-                                            connectorId: item.sourceId,
-                                        },
-                                    };
-                                    // `.unwrap()` rethrows if the ingest thunk rejects, so a
-                                    // failed load skips markLoadPlanConfirmed below — the card
-                                    // stays actionable instead of falsely showing "Loaded".
-                                    await dispatch(loadTable({
-                                        table,
-                                        connectorId: item.sourceId,
-                                        sourceTableRef: { id: item.sourceTable, name: item.displayName },
-                                        importOptions: {
-                                            source_filters: item.filters || [],
-                                            sort_columns: item.sortBy ? [item.sortBy] : undefined,
-                                            sort_order: item.sortOrder,
-                                        },
-                                    })).unwrap();
-                                }
-                            } catch (err: any) {
-                                console.error('Failed to load plan:', err);
-                                dispatch(dfActions.addMessages({
-                                    timestamp: Date.now(),
-                                    type: 'error',
-                                    component: 'data loader',
-                                    value: `Failed to load data: ${err?.message || err}`,
-                                }));
-                                // Leave the plan unconfirmed so the user can retry.
-                                return;
-                            }
-                            dispatch(dfActions.markLoadPlanConfirmed({ messageId: message.id }));
-                            if (selected.length > 0) {
-                                // Return the user to the canvas after a
-                                // deliberate batch load.
-                                onTableLoaded?.();
-                            }
-                        }}
-                    />
-                )}
-                {/* Inline connection form — Agent-proposed via propose_connection.
-                    Only the latest still-pending form stays expanded; older ones
-                    collapse to a header the user can reopen (design 38). */}
-                {message.connectorForm && (
+                {message.loadPlan && (() => {
+                    const plan = message.loadPlan;
+                    const confirmed = plan.candidates.every(c => c.selected === false);
+                    return (
+                        <CanvasInvite
+                            icon={<TableChartOutlinedIcon sx={{ fontSize: 17 }} />}
+                            title={t('dataLoading.canvasLoadPlan', { defaultValue: 'Table loading plan' })}
+                            caption={confirmed
+                                ? t('dataLoading.canvasPlanLoaded', { defaultValue: 'Loaded' })
+                                : t('dataLoading.canvasPlanCaption', {
+                                    count: plan.candidates.length,
+                                    defaultValue: '{{count}} tables proposed',
+                                })}
+                            action={confirmed
+                                ? t('dataLoading.canvasView', { defaultValue: 'View' })
+                                : t('dataLoading.canvasReview', { defaultValue: 'Review' })}
+                            active={canvasMessageId === message.id}
+                            onClick={() => onOpenCanvas?.('loadPlan', message.id)}
+                        />
+                    );
+                })()}
+                {/* Connection form — Agent-proposed via propose_connection. The
+                    form opens on the canvas; once connected it collapses to an
+                    inline status chip. */}
+                {message.connectorForm && (isShortConnectorForm(message.connectorForm) ? (
                     <ConnectorFormCard
                         messageId={message.id}
                         prompt={message.connectorForm}
-                        defaultExpanded={
-                            message.connectorForm.status === 'connected'
-                                ? false
-                                : (isLatestPendingConnector ?? true)
-                        }
                     />
-                )}
+                ) : (
+                    <CanvasInvite
+                        icon={getConnectorIcon(message.connectorForm.sourceType, { sx: { fontSize: 17 } })}
+                        title={t('chatConnector.connectTo', {
+                            name: message.connectorForm.connectionName || message.connectorForm.sourceType,
+                            defaultValue: 'Connect to {{name}}',
+                        })}
+                        caption={t('dataLoading.canvasConnectCaption', { defaultValue: 'Fill in the connection details' })}
+                        action={t('dataLoading.canvasOpen', { defaultValue: 'Open' })}
+                        active={canvasMessageId === message.id}
+                        onClick={() => onOpenCanvas?.('connector', message.id)}
+                    />
+                ))}
                 {/* Continue affordance — agent paused at the tool-call limit and
                     asked whether to keep going. Clicking resumes the task. */}
                 {message.canContinue && onContinue && (
@@ -620,7 +667,7 @@ const ChatBubble = React.memo<{
                             size="small"
                             variant="outlined"
                             onClick={onContinue}
-                            sx={{ textTransform: 'none', fontSize: 12, borderRadius: radius.pill, py: 0.25 }}
+                            sx={{ textTransform: 'none', fontSize: textVar.sm, borderRadius: radius.pill, py: 0.25 }}
                         >
                             {t('dataLoading.continueTask', 'Continue')}
                         </Button>
@@ -628,19 +675,19 @@ const ChatBubble = React.memo<{
                 )}
                 {/* Timestamp + debug — always reserves space, content visible on hover */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, height: 18, opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}>
-                    <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
+                    <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled' }}>
                         {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Typography>
                     <Tooltip title={t('dataLoading.showRawData')} placement="top">
                         <IconButton size="small" onClick={() => setShowDebug(!showDebug)}
                             sx={{ width: 16, height: 16, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <TerminalIcon sx={{ fontSize: 12 }} />
+                            <TerminalIcon sx={{ fontSize: iconVar.xs }} />
                         </IconButton>
                     </Tooltip>
                 </Box>
                 {showDebug && (
                     <Paper variant="outlined" sx={{ mt: 0.5, p: 1, borderRadius: 1, bgcolor: 'rgba(0,0,0,0.02)', maxHeight: 200, overflow: 'auto' }}>
-                        <Typography component="pre" sx={{ fontFamily: 'monospace', fontSize: 10, m: 0, whiteSpace: 'pre-wrap', color: 'text.secondary' }}>
+                        <Typography component="pre" sx={{ fontFamily: 'monospace', fontSize: textVar.xxs, m: 0, whiteSpace: 'pre-wrap', color: 'text.secondary' }}>
                             {JSON.stringify(message, null, 2)}
                         </Typography>
                     </Paper>
@@ -795,16 +842,16 @@ const StreamingIndicator = React.memo<{ content: string; toolSteps: ToolStep[] }
                             {step.status === 'running' ? (
                                 <CircularProgress size={10} thickness={5} sx={{ color: 'text.disabled' }} />
                             ) : (
-                                <CheckCircleIcon sx={{ fontSize: 12, color: 'success.main' }} />
+                                <CheckCircleIcon sx={{ fontSize: iconVar.xs, color: 'success.main' }} />
                             )}
-                            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
                                 {step.label}
                                 {step.detail ? (
                                     <Box component="span" sx={{
                                         ml: 0.75,
                                         color: 'text.disabled',
                                         fontFamily: 'monospace',
-                                        fontSize: 10.5,
+                                        fontSize: textVar.xs,
                                     }}>
                                         {step.detail}
                                     </Box>
@@ -895,15 +942,179 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         [existingTables],
     );
 
-    // Id of the last message whose inline connection form is still pending, so
-    // only that card stays expanded (older forms auto-collapse) — design 38.
-    const latestPendingConnectorMsgId = React.useMemo(() => {
+    // ── Canvas ────────────────────────────────────────────────────
+    // Long widgets render beside the conversation, not inside it. The split is
+    // a plain flex row: the conversation flexes, the canvas keeps an explicit
+    // width, and the drag handle only ever moves that one number.
+    const [canvasWidget, setCanvasWidget] = useState<{ kind: CanvasKind; messageId: string } | null>(null);
+    const [canvasWidth, setCanvasWidth] = useState<number>(LAYOUT.canvasWidth.connector);
+    const splitContainerRef = useRef<HTMLDivElement>(null);
+    const sizedForRef = useRef<string>('');
+
+    /** Keeps the conversation above its minimum whatever the container size. */
+    const clampCanvasWidth = useCallback((width: number) => {
+        const total = splitContainerRef.current?.clientWidth ?? 0;
+        const max = Math.max(LAYOUT.minCanvasWidth, total - LAYOUT.minChatWidth);
+        return Math.round(Math.min(Math.max(width, LAYOUT.minCanvasWidth), max));
+    }, []);
+
+    const handleOpenCanvas = useCallback((kind: CanvasKind, messageId: string) => {
+        setCanvasWidget(prev =>
+            prev && prev.kind === kind && prev.messageId === messageId ? null : { kind, messageId });
+    }, []);
+
+    const startCanvasResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        const container = splitContainerRef.current;
+        if (!container) return;
+        const right = container.getBoundingClientRect().right;
+        const handle = event.currentTarget;
+        handle.setPointerCapture(event.pointerId);
+        // Suppress selection while dragging — otherwise the drag selects chat text.
+        const previousSelect = document.body.style.userSelect;
+        document.body.style.userSelect = 'none';
+        const onMove = (e: PointerEvent) => setCanvasWidth(clampCanvasWidth(right - e.clientX));
+        const onUp = (e: PointerEvent) => {
+            handle.releasePointerCapture(e.pointerId);
+            document.body.style.userSelect = previousSelect;
+            handle.removeEventListener('pointermove', onMove);
+            handle.removeEventListener('pointerup', onUp);
+        };
+        handle.addEventListener('pointermove', onMove);
+        handle.addEventListener('pointerup', onUp);
+    }, [clampCanvasWidth]);
+
+    // The active task section: everything after the last "new request" divider.
+    // The canvas belongs to the task in progress, so both the auto-open scan and
+    // the collapse-on-new-task rule are scoped to it.
+    const activeSection = React.useMemo(() => {
+        let start = 0;
         for (let i = chatMessages.length - 1; i >= 0; i--) {
-            const cf = chatMessages[i].connectorForm;
-            if (cf && cf.status !== 'connected') return chatMessages[i].id;
+            if (chatMessages[i].divider) { start = i; break; }
         }
-        return undefined;
+        return { anchorId: chatMessages[start]?.id ?? '', items: chatMessages.slice(start) };
     }, [chatMessages]);
+
+    // Starting (or promoting) a task collapses whatever the previous one left
+    // open. Declared before the auto-open effect so a new task that proposes a
+    // widget of its own still ends up showing it.
+    useEffect(() => {
+        setCanvasWidget(null);
+    }, [activeSection.anchorId]);
+
+    // Newest widget in the active task still waiting on the user — the canvas
+    // follows it. Widgets that render inline never steal the canvas.
+    const pendingWidget = React.useMemo(() => {
+        for (let i = activeSection.items.length - 1; i >= 0; i--) {
+            const msg = activeSection.items[i];
+            if (msg.connectorForm && !isShortConnectorForm(msg.connectorForm)) {
+                return { kind: 'connector' as CanvasKind, messageId: msg.id };
+            }
+            if (msg.loadPlan
+                && !msg.loadPlan.candidates.every(c => c.selected === false)) {
+                return { kind: 'loadPlan' as CanvasKind, messageId: msg.id };
+            }
+        }
+        return null;
+    }, [activeSection]);
+    const pendingWidgetKey = pendingWidget ? `${pendingWidget.kind}:${pendingWidget.messageId}` : '';
+    useEffect(() => {
+        if (pendingWidget) setCanvasWidget(pendingWidget);
+    }, [pendingWidgetKey]);
+
+    const canvasMessage = React.useMemo(
+        () => (canvasWidget ? chatMessages.find(m => m.id === canvasWidget.messageId) : undefined),
+        [canvasWidget, chatMessages],
+    );
+    // Close if the widget's message disappears (chat reset / new session).
+    useEffect(() => {
+        if (canvasWidget && !canvasMessage) setCanvasWidget(null);
+    }, [canvasWidget, canvasMessage]);
+
+    // Size the canvas to what it hosts, once per widget kind. Drags in between
+    // are the user's and are left alone.
+    useEffect(() => {
+        if (!canvasWidget || !canvasMessage) { sizedForRef.current = ''; return; }
+        if (sizedForRef.current === canvasWidget.kind) return;
+        sizedForRef.current = canvasWidget.kind;
+        setCanvasWidth(clampCanvasWidth(canvasWidthFor(canvasWidget.kind, canvasMessage)));
+    }, [canvasWidget, canvasMessage, clampCanvasWidth]);
+
+    // A shrinking dialog must not push the conversation under its minimum.
+    useEffect(() => {
+        const container = splitContainerRef.current;
+        if (!container || !canvasWidget) return;
+        const observer = new ResizeObserver(() => setCanvasWidth(w => clampCanvasWidth(w)));
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, [canvasWidget, clampCanvasWidth]);
+
+    // Load-plan confirmation, shared by the inline and canvas renderings.
+    const handleConfirmPlan = useCallback(async (
+        messageId: string,
+        selected: LoadPlanCandidate[],
+        opts?: { newWorkspace?: boolean },
+    ) => {
+        // When data already exists, the user may choose to start a fresh
+        // workspace instead of appending. We reset *before* loading so the
+        // X-Workspace-Id header (read live from the store at fetch time)
+        // targets the new session.
+        if (opts?.newWorkspace) {
+            const displayName = selected[0]?.displayName || 'Untitled Session';
+            dispatch(dfActions.resetForNewWorkspace({ id: newWorkspaceSessionId(), displayName }));
+        }
+        try {
+            for (const item of selected) {
+                const sourceTableName = item.sourceTableName || item.displayName;
+                const table = {
+                    kind: 'table' as const,
+                    id: item.displayName,
+                    displayId: item.displayName,
+                    names: [] as string[],
+                    metadata: {},
+                    rows: [] as any[],
+                    virtual: { tableId: item.displayName, rowCount: 0 },
+                    anchored: true,
+                    description: '',
+                    source: {
+                        type: 'database' as const,
+                        databaseTable: sourceTableName,
+                        canRefresh: true,
+                        lastRefreshed: Date.now(),
+                        connectorId: item.sourceId,
+                    },
+                };
+                // `.unwrap()` rethrows if the ingest thunk rejects, so a failed
+                // load skips markLoadPlanConfirmed below — the plan stays
+                // actionable instead of falsely showing "Loaded".
+                await dispatch(loadTable({
+                    table,
+                    connectorId: item.sourceId,
+                    sourceTableRef: { id: item.sourceTable, name: item.displayName },
+                    importOptions: {
+                        source_filters: item.filters || [],
+                        sort_columns: item.sortBy ? [item.sortBy] : undefined,
+                        sort_order: item.sortOrder,
+                    },
+                })).unwrap();
+            }
+        } catch (err: any) {
+            console.error('Failed to load plan:', err);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data loader',
+                value: `Failed to load data: ${err?.message || err}`,
+            }));
+            // Leave the plan unconfirmed so the user can retry.
+            return;
+        }
+        dispatch(dfActions.markLoadPlanConfirmed({ messageId }));
+        if (selected.length > 0) {
+            // Loading data is a deliberate commit — return the user to the canvas.
+            handleTableLoaded();
+        }
+    }, [dispatch, handleTableLoaded]);
 
     // Group the flat message list into task "sections" split on the "new
     // request" dividers. Each section is anchored by the id of its first
@@ -970,6 +1181,8 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     const latestSection = sections[sections.length - 1];
     latestHasDividerRef.current = !!latestSection?.dividerId;
 
+    const { moreAbove, moreBelow, update: updateScrollFade } = useScrollFade(scrollContainerRef, chatMessages.length);
+
     const scrollToBottom = () => {
         const el = scrollContainerRef.current;
         if (!el) return;
@@ -1005,6 +1218,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         // Treat "within 80px of the bottom" as pinned so a slightly-short
         // scroll still counts and content growth keeps following.
         pinnedToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        updateScrollFade();
     };
 
     // Auto-scroll to bottom on new messages / streaming text — but only when
@@ -1418,41 +1632,53 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     const isEmpty = chatMessages.length === 0 && !streamingContent;
 
     const capabilities = [
-        { icon: <QuestionAnswerOutlinedIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilityAsk') },
-        { icon: <SearchIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilitySearch') },
-        { icon: <ImageOutlinedIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilityExtractImage') },
-        { icon: <DescriptionOutlinedIcon sx={{ fontSize: 14 }} />, text: t('dataLoading.capabilityExtractFile') },
+        { icon: <QuestionAnswerOutlinedIcon sx={{ fontSize: iconVar.sm }} />, text: t('dataLoading.capabilityAsk') },
+        { icon: <SearchIcon sx={{ fontSize: iconVar.sm }} />, text: t('dataLoading.capabilitySearch') },
+        { icon: <ImageOutlinedIcon sx={{ fontSize: iconVar.sm }} />, text: t('dataLoading.capabilityExtractImage') },
+        { icon: <DescriptionOutlinedIcon sx={{ fontSize: iconVar.sm }} />, text: t('dataLoading.capabilityExtractFile') },
     ];
 
     return (
+        <Box
+            ref={splitContainerRef}
+            sx={{ display: 'flex', height: '100%', minHeight: 0, width: '100%', overflow: 'hidden' }}
+        >
         <Box sx={{
             display: 'flex', flexDirection: 'column',
-            height: '100%', minHeight: 0, width: '100%', overflow: 'hidden',
+            flex: 1, height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden',
         }}>
             {/* ── Messages area ─────────────────────────────────── */}
+            <Box sx={{ position: 'relative', flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
             <Box
                 ref={scrollContainerRef}
                 onScroll={updatePinned}
                 sx={{
-                    flex: 1, minHeight: 0, overflow: 'auto',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    flex: 1, minHeight: 0, minWidth: 0,
+                    // Plain block, not a flex column: a flex line sizes itself to
+                    // its widest item, which would let one wide message stretch
+                    // the conversation past its pane. Capped and centred with
+                    // auto margins instead, so it always fits and never scrolls
+                    // sideways.
+                    display: 'block',
+                    overflowY: 'auto', overflowX: 'hidden',
                 }}
             >
               <Box
                 ref={messagesContentRef}
                 sx={{
-                    width: '100%', maxWidth: 640,
-                    px: 2, py: 2,
+                    width: '100%', minWidth: 0, maxWidth: LAYOUT.readingWidth, mx: 'auto',
+                    px: LAYOUT.gutter, py: 2,
+                    boxSizing: 'border-box',
                     display: 'flex', flexDirection: 'column',
-                    ...(isEmpty ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}),
+                    ...(isEmpty ? { minHeight: '100%', justifyContent: 'center', alignItems: 'center' } : {}),
                 }}
               >
                 {isEmpty ? (
                     <Box sx={{ maxWidth: 520, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
+                        <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
                             {t('dataLoading.title')}
                         </Typography>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5, textAlign: 'center', mb: 1.5 }}>
+                        <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', lineHeight: 1.5, textAlign: 'center', mb: 1.5 }}>
                             {t('dataLoading.subtitle')}
                         </Typography>
                         <Box component="ul" sx={{
@@ -1469,13 +1695,13 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                     }}>
                                         {cap.icon}
                                     </Box>
-                                    <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5 }}>
+                                    <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', lineHeight: 1.5 }}>
                                         {cap.text}
                                     </Typography>
                                 </Box>
                             ))}
                         </Box>
-                        <Typography sx={{ fontSize: 11, color: 'text.disabled', textAlign: 'center', fontStyle: 'italic', mt: 0.5 }}>
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', textAlign: 'center', fontStyle: 'italic', mt: 0.5 }}>
                             {t('dataLoading.capabilityHint')}
                         </Typography>
                     </Box>
@@ -1491,7 +1717,8 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                         message={msg}
                                         existingNames={existingNames}
                                         onTableLoaded={handleTableLoaded}
-                                        isLatestPendingConnector={msg.id === latestPendingConnectorMsgId}
+                                        onOpenCanvas={handleOpenCanvas}
+                                        canvasMessageId={canvasWidget?.messageId}
                                         onContinue={() => sendMessage({ text: 'Please continue.', images: [], attachments: [] })}
                                     />
                             ));
@@ -1530,10 +1757,13 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 )}
               </Box>
             </Box>
+            <ScrollFadeEdge visible={moreAbove} edge="top" />
+            <ScrollFadeEdge visible={moreBelow} />
+            </Box>
 
             {/* ── Input area ─────────────────────────────────────── */}
-            <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, pb: 1.5, pt: 0.75 }}>
-                <Box sx={{ width: '100%', maxWidth: 640 }}>
+            <Box sx={{ minWidth: 0, px: LAYOUT.gutter, pb: 1.5, pt: 0.75 }}>
+                <Box sx={{ width: '100%', minWidth: 0, maxWidth: LAYOUT.readingWidth, mx: 'auto' }}>
                     {isEmpty && quickActions.length > 0 && (
                         <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
                             {quickActions.map((qa) => (
@@ -1545,10 +1775,10 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                     variant="outlined"
                                     size="small"
                                     sx={{
-                                        fontSize: 11.5, height: 26, borderRadius: 2,
+                                        fontSize: textVar.xs, height: 26, borderRadius: 2,
                                         color: 'text.secondary',
                                         borderColor: alpha(theme.palette.text.primary, 0.12),
-                                        '& .MuiChip-icon': { fontSize: 14, ml: 0.5, color: 'text.disabled' },
+                                        '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
                                         '&:hover': {
                                             bgcolor: 'action.hover',
                                             borderColor: alpha(theme.palette.text.primary, 0.2),
@@ -1589,11 +1819,95 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                         focusSuggestionsLabel={t('dataLoading.sectionTry')}
                         focusSuggestionsPlacement="top"
                     />
-                    <Typography sx={{ fontSize: 10, color: 'text.disabled', textAlign: 'center', mt: 0.5 }}>
+                    <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled', textAlign: 'center', mt: 0.5 }}>
                         {t('dataLoading.shiftEnterHint')}
                     </Typography>
                 </Box>
             </Box>
+        </Box>
+
+        {/* ── Canvas ─────────────────────────────────────────────
+            Holds the long interaction widgets the agent proposes (connection
+            form, multi-table loading plan) so the conversation stays prose.
+            Resizable, and sized on open to what the widget needs. */}
+        {canvasWidget && canvasMessage && (
+            <>
+            {/* Drag handle — invisible at rest so the canvas border is the only
+                edge; the grip appears on hover, inset from top and bottom. The
+                left margin keeps it clear of the conversation's scrollbar. */}
+            <Box
+                onPointerDown={startCanvasResize}
+                sx={{
+                    flexShrink: 0, width: 12, ml: 0.75,
+                    cursor: 'col-resize', touchAction: 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    '&:hover .canvas-grip': { opacity: 1 },
+                }}
+            >
+                <Box className="canvas-grip" sx={{
+                    width: 4, height: 'calc(100% - 32px)', borderRadius: 1,
+                    bgcolor: 'primary.main', opacity: 0,
+                    transition: transition.normal,
+                }} />
+            </Box>
+            <Box sx={{
+                width: canvasWidth, flexShrink: 0,
+                height: '100%', minHeight: 0,
+                boxSizing: 'border-box', py: 1, pr: 1,
+            }}>
+                <Box sx={{
+                    height: '100%', minHeight: 0, minWidth: 0,
+                    display: 'flex', flexDirection: 'column',
+                    // Same surface as the visualization pane.
+                    border: `1px solid ${borderColor.view}`,
+                    borderRadius: radius.pill,
+                    overflow: 'hidden',
+                    boxSizing: 'border-box',
+                    bgcolor: 'background.paper',
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, px: 2, py: 1 }}>
+                        <Typography sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
+                            {canvasWidget.kind === 'connector'
+                                ? t('dataLoading.canvasConnection', { defaultValue: 'Connection setup' })
+                                : t('dataLoading.canvasLoadPlan', { defaultValue: 'Table loading plan' })}
+                        </Typography>
+                        <Tooltip title={t('dataLoading.canvasClose', { defaultValue: 'Close' })}>
+                            <IconButton size="small" onClick={() => setCanvasWidget(null)}>
+                                <CloseIcon sx={{ fontSize: iconVar.md }} />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                    <Box sx={{
+                        flex: 1, minHeight: 0, minWidth: 0, px: 2, pb: 1.5,
+                        // The plan scrolls itself (its actions stay pinned); the
+                        // form is a plain document. Never two scrollers deep.
+                        ...(canvasWidget.kind === 'loadPlan'
+                            // Its scrollbar sits near the edge; the list keeps
+                            // its own inset so the tables stay clear of it.
+                            ? { overflow: 'hidden', display: 'flex', pr: 1 }
+                            : { overflowY: 'auto', overflowX: 'hidden' }),
+                    }}>
+                        {canvasWidget.kind === 'connector' && canvasMessage.connectorForm && (
+                            <ConnectorFormCard
+                                messageId={canvasMessage.id}
+                                prompt={canvasMessage.connectorForm}
+                                variant="bare"
+                            />
+                        )}
+                        {canvasWidget.kind === 'loadPlan' && canvasMessage.loadPlan && (
+                            <LoadPlanCard
+                                plan={canvasMessage.loadPlan}
+                                variant="bare"
+                                confirmed={canvasMessage.loadPlan.candidates.every(c => c.selected === false)}
+                                canLoadInNewWorkspace={existingNames.size > 0}
+                                onConfirm={(selected, opts) => handleConfirmPlan(canvasMessage.id, selected, opts)}
+                            />
+                        )}
+                    </Box>
+                </Box>
+            </Box>
+            </>
+        )}
         </Box>
     );
 };

@@ -42,6 +42,7 @@ import Editor from 'react-simple-code-editor';
 import { dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { radius, borderColor } from '../app/tokens';
+import { dialogHeight, iconVar, textVar } from '../app/layout';
 import {
     listKnowledge,
     readKnowledge,
@@ -236,7 +237,7 @@ Write your rule content here in Markdown.
             <Dialog
                 onClose={handleClose}
                 open={open}
-                sx={{ '& .MuiDialog-paper': { maxWidth: 900, maxHeight: '90vh', width: '90%' } }}
+                sx={{ '& .MuiDialog-paper': { maxWidth: 900, maxHeight: dialogHeight(900), width: '90%' } }}
                 maxWidth={false}
             >
                 <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -249,16 +250,23 @@ Write your rule content here in Markdown.
                         <CloseIcon />
                     </IconButton>
                 </DialogTitle>
-                <DialogContent sx={{ display: 'flex', gap: 2, minHeight: 400 }}>
+                <DialogContent sx={{ display: 'flex', gap: 2, minHeight: dialogHeight(400) }}>
                     {/* Rules list */}
-                    <Box sx={{ width: 200, minWidth: 200, borderRight: `1px solid ${borderColor.divider}`, pr: 1.5 }}>
+                    <Box sx={{
+                        width: 200, minWidth: 200,
+                        borderRight: `1px solid ${borderColor.divider}`,
+                        backgroundColor: 'rgba(0, 0, 0, 0.018)',
+                        borderRadius: 1,
+                        px: 1,
+                        py: 0.75,
+                    }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1, color: 'text.secondary' }}>
+                            <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, flex: 1, color: 'text.secondary' }}>
                                 {t('knowledge.rules')}
                             </Typography>
                             <Tooltip title={t('knowledge.newItem')}>
                                 <IconButton size="small" onClick={handleStartCreate} sx={{ p: 0.25 }}>
-                                    <AddIcon sx={{ fontSize: 16 }} />
+                                    <AddIcon sx={{ fontSize: iconVar.md }} />
                                 </IconButton>
                             </Tooltip>
                         </Box>
@@ -273,11 +281,18 @@ Write your rule content here in Markdown.
                                         key={rule.path}
                                         selected={selectedRule?.path === rule.path}
                                         onClick={() => handleSelectRule(rule)}
-                                        sx={{ borderRadius: 1, py: 0.5, px: 1, mb: 0.25 }}
+                                        sx={{
+                                            borderRadius: 1, py: 0.5, px: 1, mb: 0.25,
+                                            '&.Mui-selected': {
+                                                bgcolor: 'rgba(25, 118, 210, 0.08)',
+                                                boxShadow: 'inset 2px 0 0 rgba(25, 118, 210, 0.8)',
+                                            },
+                                            '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.045)' },
+                                        }}
                                     >
                                         <ListItemText
                                             primary={rule.title}
-                                            primaryTypographyProps={{ fontSize: 12, noWrap: true }}
+                                            primaryTypographyProps={{ fontSize: textVar.sm, noWrap: true }}
                                         />
                                         <ListItemSecondaryAction>
                                             <IconButton
@@ -286,13 +301,13 @@ Write your rule content here in Markdown.
                                                 onClick={(e) => handleDeleteRule(rule, e)}
                                                 sx={{ p: 0.25, opacity: 0, '.MuiListItemButton-root:hover &': { opacity: 1 }, '&:hover': { color: 'error.main' } }}
                                             >
-                                                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                                <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
                                             </IconButton>
                                         </ListItemSecondaryAction>
                                     </ListItemButton>
                                 ))}
                                 {rules.length === 0 && !loading && (
-                                    <Typography sx={{ fontSize: 11, color: 'text.disabled', py: 2, textAlign: 'center', fontStyle: 'italic' }}>
+                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', py: 2, textAlign: 'center', fontStyle: 'italic' }}>
                                         {t('knowledge.noItems')}
                                     </Typography>
                                 )}
@@ -309,14 +324,14 @@ Write your rule content here in Markdown.
                                 placeholder={t('knowledge.fileNamePlaceholder')}
                                 value={newFileName}
                                 onChange={(e) => setNewFileName(e.target.value)}
-                                sx={{ mb: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
-                                slotProps={{ inputLabel: { sx: { fontSize: 12 } } }}
+                                sx={{ mb: 1, '& .MuiInputBase-input': { fontSize: textVar.sm } }}
+                                slotProps={{ inputLabel: { sx: { fontSize: textVar.sm } } }}
                             />
                         )}
                         {selectedRule && (
-                            <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5, fontWeight: 500 }}>
+                            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mb: 0.5, fontWeight: 500 }}>
                                 {selectedRule.title}
-                                <Typography component="span" sx={{ fontSize: 10, color: 'text.disabled', ml: 1 }}>
+                                <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.disabled', ml: 1 }}>
                                     {selectedRule.path}
                                 </Typography>
                             </Typography>
@@ -345,7 +360,7 @@ Write your rule content here in Markdown.
                                     placeholder={codingPlaceholder}
                                     style={{
                                         fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
-                                        fontSize: 11,
+                                        fontSize: textVar.xs,
                                         lineHeight: 1.3,
                                         minHeight: 200,
                                         whiteSpace: 'pre-wrap',
@@ -356,7 +371,7 @@ Write your rule content here in Markdown.
                             </Box>
                         ) : (
                             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic' }}>
+                                <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic' }}>
                                     {t('knowledge.emptyState')}
                                 </Typography>
                             </Box>
