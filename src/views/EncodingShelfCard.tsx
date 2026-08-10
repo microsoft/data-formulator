@@ -469,9 +469,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // check if the current table contains all fields already exists a table that fullfills the user's specification
     let existsWorkingTable = activeFields.length == 0 || activeFields.every(f => currentTable.names.includes(f.name));
     
-    // All root/anchored tables, with current source tables ordered first for context priority
-    let rootTables = tables.filter(t => t.derive === undefined || t.anchored);
-    let priorityIds = (currentTable.derive && !currentTable.anchored)
+    // All source tables, with the current table's inputs ordered first.
+    let rootTables = tables.filter(t => t.derive === undefined);
+    let priorityIds = currentTable.derive
         ? currentTable.derive.source
         : [currentTable.id];
     let actionTableIds = [

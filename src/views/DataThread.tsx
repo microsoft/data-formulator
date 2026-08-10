@@ -761,7 +761,7 @@ let SingleThreadGroupView: FC<{
     // from `displayId || stripExt(sid)` and can drift between sides.
     //
     // Why "root parents" instead of `parentTable.id`: `derive.source`
-    // contains *root/anchored* table IDs (computation parents), while
+    // contains source table IDs (computation parents), while
     // `parentTable` may itself be a derived intermediate. Comparing the
     // intermediate's own id against an instruction's root-id source set
     // would always mismatch and emit a redundant merge node on the very
@@ -769,7 +769,7 @@ let SingleThreadGroupView: FC<{
     const sourceSetKey = (ids: string[]): string => [...ids].sort().join('\x1F');
     const initialSourceIds: string[] = (() => {
         if (!parentTable) return [];
-        // If parentTable is a root (no derive) or anchored, it IS the source.
+        // If parentTable is a root (no derive), it is the source.
         const src = parentTable.derive?.source as string[] | undefined;
         if (!src || src.length === 0) return [parentTable.id];
         return src;
@@ -2500,7 +2500,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 metadata: {},
                 rows: [],
                 virtual: { tableId: item.tableName, rowCount: 0 },
-                anchored: true,
                 description: '',
                 source: {
                     type: 'database' as const,
@@ -2667,14 +2666,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         });
     }, [charts, tables, conceptShelfItems, chartSynthesisInProgress]);
 
-    // anchors are considered leaf tables to simplify the view
-
     let isLeafTable = (table: DictTable) => {
-        // A table with no (non-anchored) derivations is a leaf. Conversation-
+        // A table with no derivations is a leaf. Conversation-
         // produced tables are NORMAL tables now (design-docs/42): they fork into
         // their own column via the standard leaf partition, so no special case.
         let children = tables.filter(t => t.derive?.trigger.tableId == table.id);
-        if (children.length == 0 || children.every(t => t.anchored)) {
+        if (children.length == 0) {
             return true;
         }
         return false;
@@ -2698,7 +2695,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         : computeSplitExtraLeaves(
             leafTables, tables, chartElements, fittableColumns, textTurnItemsByTable,
         );
-    // Avoid duplicating tables that are already leaves (e.g. anchored mids).
+    // Avoid duplicating tables that are already leaves.
     // Also never split at a table that carries a terminal text turn
     // (clarify/explain with no result table): promoting it as a segment
     // endpoint would strand its explanation in a separate thread column,
@@ -2715,8 +2712,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     // we want to sort the leaf tables by the order of their ancestors
     // for example if ancestor of list a is [0, 3] and the ancestor of list b is [0, 2] then b should come before a
-    // when tables are anchored, we want to give them a higher order (so that they are displayed after their peers)
-    let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index + (table.anchored ? 1 : 0) * tables.length]));
+    let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index]));
     let getAncestorOrders = (leafTable: DictTable) => {
         let triggers = getCachedTriggers(leafTable);
         return [...triggers.map(t => tableOrder[t.resultTableId]), tableOrder[leafTable.id]];
@@ -2752,7 +2748,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 ids.add(sid);
             }
         }
-        while (current.derive && !current.anchored) {
+        while (current.derive) {
             let parentId = current.derive.trigger.tableId;
             ids.add(parentId);
             // Add derive.source tables for each ancestor

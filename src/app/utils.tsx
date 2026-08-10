@@ -651,18 +651,13 @@ export const assembleVegaChart = (
 export { resolveRecommendedChart, resolveChartFields } from './chartRecommendation';
 
 export let getTriggers = (leafTable: DictTable, tables: DictTable[]): Trigger[] => {
-    // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)
+    // Recursively find the complete trigger chain from the source to leafTable.
     let triggers : Trigger[] = [];
     let t = leafTable;
     
     while(true) {
         // this is when we find an original table
         if (t.derive == undefined) {
-            break;
-        }
-
-        // this is when we find an anchored table (which is not the leaf table)
-        if (t !== leafTable && t.anchored) {
             break;
         }
 

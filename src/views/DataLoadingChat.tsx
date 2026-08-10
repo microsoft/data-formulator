@@ -1074,7 +1074,6 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                     metadata: {},
                     rows: [] as any[],
                     virtual: { tableId: item.displayName, rowCount: 0 },
-                    anchored: true,
                     description: '',
                     source: {
                         type: 'database' as const,

@@ -532,7 +532,7 @@ export const DataFormulatorFC = ({ }) => {
     // as a floor — it exists only to stop a wide screen reserving empty columns.
     const threadColumnDemand = useMemo(() => {
         const hasChild = new Set<string>();
-        tables.forEach(t => { if (t.derive && !t.anchored) hasChild.add(t.derive.trigger.tableId); });
+        tables.forEach(t => { if (t.derive) hasChild.add(t.derive.trigger.tableId); });
         const leaves = tables.filter(t => t.derive && !hasChild.has(t.id)).length;
         return Math.max(1, leaves + (tables.some(t => !t.derive) ? 1 : 0));
     }, [tables]);

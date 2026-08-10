@@ -478,7 +478,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     state.charts = charts;
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
-    let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
+    let tableIdsToDelete = state.tables.filter(t => unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
     
     // Clean up virtual tables from workspace before removing from state
     let tablesToDelete = state.tables.filter(t => tableIdsToDelete.includes(t.id));
@@ -487,7 +487,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 
     // If the focus we just set lands on a table that has now been cascade-
-    // deleted (e.g. an unanchored derived table whose only chart we just
+    // deleted (e.g. a derived table whose only chart we just
     // removed), walk up the derive chain to land on a still-present chart
     // — the "previous chart above this table" the user expects. Falls
     // through to the parent table itself, then to any remaining chart.
@@ -1041,11 +1041,6 @@ export const dataFormulatorSlice = createSlice({
         removeTableLocally: (state, action: PayloadAction<string>) => {
             removeTableStateRoutine(state, action.payload);
         },
-        updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
-            let tableId = action.payload.tableId;
-            let anchored = action.payload.anchored;
-            state.tables = state.tables.map(t => t.id == tableId ? {...t, anchored} : t);
-        },
         updateTableDisplayId: (state, action: PayloadAction<{tableId: string, displayId: string}>) => {
             let tableId = action.payload.tableId;
             let displayId = action.payload.displayId;
@@ -1576,7 +1571,6 @@ export const dataFormulatorSlice = createSlice({
                 kind: 'draft',
                 id,
                 displayId,
-                anchored: false,
                 derive: {
                     source,
                     trigger: {
@@ -1626,7 +1620,6 @@ export const dataFormulatorSlice = createSlice({
                 kind: 'table',
                 id: draft.id,
                 displayId: draft.displayId,
-                anchored: draft.anchored,
                 derive: {
                     ...draft.derive,
                     status: 'completed' as const,

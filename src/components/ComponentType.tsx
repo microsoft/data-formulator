@@ -95,7 +95,6 @@ export interface DraftNode {
     kind: 'draft';
     id: string;
     displayId: string;
-    anchored: boolean;
     derive: {
         source: string[];
         trigger: Trigger;
@@ -351,7 +350,6 @@ export interface DictTable {
         tableId: string; // the canonical server-side table name (sanitized)
         rowCount: number; // total number of rows (rows.length may be a sample)
     };
-    anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
     description: string; // table-level description sourced from the loader (read-only). Empty string when none.
 
     /**
@@ -383,7 +381,6 @@ export function createDictTable(
             trigger: Trigger
         } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },
-    anchored: boolean = false,
     description: string = '',
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
@@ -410,7 +407,6 @@ export function createDictTable(
         }, {}),
         derive,
         virtual,
-        anchored,
         description,
         source,
     }

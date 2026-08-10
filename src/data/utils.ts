@@ -31,7 +31,7 @@ export const loadTextDataWrapper = (title: string, text: string, fileType: strin
     if (fileType == "text/csv" || fileType == "text/tab-separated-values") {
         table = createTableFromText(tableName, text);
     } else if (fileType == "application/json") {
-        table = createTableFromFromObjectArray(tableName, JSON.parse(text), true);
+        table = createTableFromFromObjectArray(tableName, JSON.parse(text));
     } 
     return table;
 };
@@ -89,14 +89,13 @@ export const createTableFromText = (title: string, text: string): DictTable | un
         return record;
     });
 
-    return createTableFromFromObjectArray(title, records, true, undefined);
+    return createTableFromFromObjectArray(title, records);
 };
 
-export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any): DictTable => {
+export const createTableFromFromObjectArray = (title: string, values: any[], derive?: any): DictTable => {
     /*
     * title: the title of the table
     * values: the values of the table
-    * anchored: whether the table is anchored
     * derive: the derive of the table
     */
 
@@ -153,7 +152,6 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         rows: columnTable.objects(),
         derive: derive,
         virtual: { tableId: title, rowCount: len },
-        anchored: anchored,
         description: ''
     }
 };
@@ -304,7 +302,7 @@ export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuf
                 }
 
                 // Create a table from the JSON data with sheet name included in the title
-                const sheetTable = createTableFromFromObjectArray(`${title}-${worksheet.name}`, jsonData, true);
+                const sheetTable = createTableFromFromObjectArray(`${title}-${worksheet.name}`, jsonData);
                 tables.push(sheetTable);
             } catch (error) {
                 console.error(`Error processing sheet ${worksheet.name}:`, error);

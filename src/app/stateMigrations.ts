@@ -26,7 +26,7 @@
  */
 
 /** Current persisted-state schema version. Bump when adding a migration. */
-export const DF_STATE_VERSION = 1;
+export const DF_STATE_VERSION = 2;
 
 type SavedState = Record<string, any>;
 
@@ -60,6 +60,21 @@ const MIGRATIONS: Migration[] = [
                 ),
             };
         },
+    },
+    {
+        // Derived tables are reproducible workspace outputs. The legacy
+        // `anchored` flag promoted some outputs into persistent roots and
+        // truncated their lineage, so remove it from saved tables and drafts.
+        to: 2,
+        migrate: (s) => ({
+            ...s,
+            tables: Array.isArray(s.tables)
+                ? s.tables.map(({ anchored: _anchored, ...table }: any) => table)
+                : s.tables,
+            draftNodes: Array.isArray(s.draftNodes)
+                ? s.draftNodes.map(({ anchored: _anchored, ...draft }: any) => draft)
+                : s.draftNodes,
+        }),
     },
 ];
 

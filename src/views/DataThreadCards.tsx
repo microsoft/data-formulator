@@ -19,7 +19,6 @@ import { dfActions } from '../app/dfSlice';
 import { DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import { AnchorIcon } from '../icons';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
@@ -250,64 +249,6 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             default: return null;
         }
     };
-
-    if (parentTable && tableId == parentTable.id && parentTable.anchored && tableIdList.length > 1) {
-        let table = tables.find(t => t.id == tableId);
-        const anchoredOriginalName = getOriginalName(table);
-        const anchoredTooltip = getSourceTooltip(table);
-        const anchoredContent = (
-            <Box 
-                sx={{ 
-                    margin: '0px', 
-                    width: 'fit-content',
-                    display: 'flex', 
-                    cursor: 'pointer',
-                    padding: '2px 4px',
-                    borderRadius: '4px',
-                    '&:hover': {
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                        boxShadow: shadow.sm
-                    }
-                }}
-                onClick={(event) => {
-                    event.stopPropagation();
-                    dispatch(dfActions.setFocused({ type: 'table', tableId }));
-                }}
-            >
-                <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: textVar.sm }} alignItems="center" gap={"2px"}>
-                    <AnchorIcon sx={{ fontSize: iconVar.sm, color: 'rgba(0,0,0,0.5)' }} />
-                    <Box>
-                        <Typography fontSize="inherit" sx={{
-                            textAlign: 'center',
-                            color: 'rgba(0,0,0,0.7)', 
-                            maxWidth: '100px',
-                            wordWrap: 'break-word',
-                            whiteSpace: 'normal'
-                        }}>
-                            {table?.displayId || tableId}
-                        </Typography>
-                        {anchoredOriginalName && (
-                            <Typography sx={{
-                                fontSize: textVar.xxs,
-                                color: 'text.disabled',
-                                lineHeight: 1.2,
-                                mt: 0.5,
-                                wordBreak: 'break-all',
-                                maxWidth: '100px',
-                            }}>
-                                {anchoredOriginalName}
-                            </Typography>
-                        )}
-                    </Box>
-                </Stack>
-            </Box>
-        );
-        return <Typography sx={{ background: 'transparent' }}>
-            {anchoredTooltip
-                ? <Tooltip title={anchoredTooltip} placement="right" arrow><span>{anchoredContent}</span></Tooltip>
-                : anchoredContent}
-        </Typography>
-    }
 
     // filter charts relevant to this
     let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId));

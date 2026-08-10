@@ -1442,7 +1442,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     const sheetTitle = result.sheets.length > 1
                                         ? `${uniqueName}-${sheet.sheet_name}`
                                         : uniqueName;
-                                    const table = createTableFromFromObjectArray(sheetTitle, sheet.data, true);
+                                    const table = createTableFromFromObjectArray(sheetTitle, sheet.data);
                                     previewTables.push(table);
                                 }
                             } else {
@@ -1638,7 +1638,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
         try {
             let content = JSON.parse(pasteContent);
-            table = createTableFromFromObjectArray(uniqueName, content, true);
+            table = createTableFromFromObjectArray(uniqueName, content);
         } catch (error) {
             table = createTableFromText(uniqueName, pasteContent);
         }
@@ -1690,7 +1690,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     if (!Array.isArray(jsonContent)) {
                         throw new Error('JSON content must be an array of objects.');
                     }
-                    table = createTableFromFromObjectArray(tableName, jsonContent, true);
+                    table = createTableFromFromObjectArray(tableName, jsonContent);
                 } catch (jsonError) {
                     // If JSON parsing fails, try JSONL (JSON Lines) format
                     try {
@@ -1703,7 +1703,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             }
                         });
                         if (jsonlObjects.length > 0 && typeof jsonlObjects[0] === 'object' && jsonlObjects[0] !== null) {
-                            table = createTableFromFromObjectArray(tableName, jsonlObjects, true);
+                            table = createTableFromFromObjectArray(tableName, jsonlObjects);
                         } else {
                             throw new Error('JSONL must contain objects.');
                         }

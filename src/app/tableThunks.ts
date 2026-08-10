@@ -308,7 +308,6 @@ export const loadTable = createAsyncThunk<
                                 }
                             };
                         }, {}),
-                        anchored: true,
                     };
                 } catch (err) {
                     console.error('Failed to fetch data from external source:', err);
@@ -464,7 +463,6 @@ export function buildDictTableFromWorkspace(
             tableId: wsTable.name,
             rowCount: wsTable.row_count,
         },
-        anchored: true,
         // Loader-supplied table description, surfaced read-only in the
         // table-card metadata viewer and used directly by the agent's
         // prompt builders (server-side, via TableMetadata.description).

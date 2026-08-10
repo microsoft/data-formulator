@@ -339,9 +339,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [focusedId]);
 
     // Root tables and priority ordering for API calls
-    const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
+    const rootTables = tables.filter(t => t.derive === undefined);
     const currentTable = tables.find(t => t.id === focusedTableId);
-    const priorityIds = (currentTable?.derive && !currentTable.anchored)
+    const priorityIds = currentTable?.derive
         ? currentTable.derive.source
         : focusedTableId ? [focusedTableId] : [];
     const selectedTableIds = [
@@ -352,7 +352,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Default primary tables: source tables the focused table uses (or the focused source table itself)
     const defaultPrimaryTableIds = React.useMemo(() => {
         if (!currentTable) return [];
-        if (currentTable.derive && !currentTable.anchored) {
+        if (currentTable.derive) {
             // Derived table: all its source inputs that are root tables
             return (currentTable.derive.source as string[]).filter(id => rootTables.some(t => t.id === id));
         }
@@ -505,7 +505,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let current = tables.find(t => t.id === focusedTableId);
         while (current) {
             ids.add(current.id);
-            if (current.derive && !current.anchored && current.derive.trigger) {
+            if (current.derive?.trigger) {
                 const parentId = current.derive.trigger.tableId;
                 if (ids.has(parentId)) break;
                 current = tables.find(t => t.id === parentId);
@@ -629,10 +629,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const focusedThread = focusedSteps.length > 0 ? focusedSteps : undefined;
 
         // Tier 3: Peripheral threads — one-line summary per step
-        // Find all leaf tables (no children or all children are anchored)
+        // Find all leaf tables (tables with no derived children).
         const leafTables = tables.filter(t => {
             const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
-            return children.length === 0 || children.every(c => c.anchored);
+            return children.length === 0;
         });
 
         const peripheralThreads: any[] = [];
@@ -712,9 +712,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...attachedImages.map((_, i) => attachedImages.length > 1 ? `image ${i + 1}` : 'image'),
         ];
 
-        const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
+        const rootTables = tables.filter(t => t.derive === undefined);
         const currentTable = tables.find(t => t.id === focusedTableId);
-        const priorityIds = (currentTable?.derive && !currentTable.anchored)
+        const priorityIds = currentTable?.derive
             ? currentTable.derive.source
             : [focusedTableId];
         const selectedTableIds = [
@@ -1540,7 +1540,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             component: 'data-agent', value: errMsg,
                         }));
                         // Finalize and anchor any report streamed so far so a
-                        // partial report isn't left unanchored (invisible in the
+                        // partial report isn't left incomplete (invisible in the
                         // thread) and stuck in the 'generating' state.
                         if (reportId) {
                             reportFlushNow();

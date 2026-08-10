@@ -15,7 +15,6 @@ function makeTable(id: string, overrides?: Partial<DictTable>): DictTable {
         metadata: { col1: { type: 'string' } },
         rows: [{ col1: 'a' }],
         virtual: { tableId: id, rowCount: 1 },
-        anchored: false,
         description: '',
         ...overrides,
     } as DictTable;
@@ -27,7 +26,6 @@ function makeDerived(
     opts?: {
         interaction?: any[];
         dialog?: any[];
-        anchored?: boolean;
         chart?: any;
         names?: string[];
         rows?: any[];
@@ -36,7 +34,6 @@ function makeDerived(
     },
 ): DictTable {
     return makeTable(id, {
-        anchored: opts?.anchored ?? false,
         names: opts?.names ?? ['col1'],
         rows: opts?.rows ?? [{ col1: 'a' }],
         virtual: { tableId: id, rowCount: opts?.rowCount ?? (opts?.rows ? opts.rows.length : 1) },
@@ -69,19 +66,12 @@ describe('isLeafDerivedTable', () => {
         expect(isLeafDerivedTable(t1, [root, t1])).toBe(true);
     });
 
-    it('returns false for a derived table that has un-anchored children', () => {
+    it('returns false for a derived table that has children', () => {
         const root = makeTable('root');
         const t1 = makeDerived('t1', 'root');
         const t2 = makeDerived('t2', 't1');
         expect(isLeafDerivedTable(t1, [root, t1, t2])).toBe(false);
         expect(isLeafDerivedTable(t2, [root, t1, t2])).toBe(true);
-    });
-
-    it('returns true when children are all anchored', () => {
-        const root = makeTable('root');
-        const t1 = makeDerived('t1', 'root');
-        const t2 = makeDerived('t2', 't1', { anchored: true });
-        expect(isLeafDerivedTable(t1, [root, t1, t2])).toBe(true);
     });
 
     it('returns false for non-derived tables', () => {

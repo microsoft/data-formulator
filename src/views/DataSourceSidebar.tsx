@@ -1316,7 +1316,6 @@ const DataSourceSidebarPanel: React.FC<{
             metadata: {},
             rows: [],
             virtual: { tableId: node.name, rowCount: node.metadata?.row_count || 0 },
-            anchored: true,
             description: '',
             source: {
                 type: 'database' as const,

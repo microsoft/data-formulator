@@ -474,8 +474,6 @@
     "working": "处理中...",
     "waitingForClarification": "等待澄清...",
     "rename": "重命名",
-    "unpinTable": "取消固定",
-    "pinTable": "固定表",
     "refreshSettings": "刷新设置",
     "replaceData": "替换数据",
     "viewMetadata": "查看元数据",

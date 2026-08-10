@@ -140,10 +140,9 @@ export function collectSessionThreads(
     charts: Chart[],
     conceptShelfItems: FieldItem[],
 ): SessionThread[] {
-    // Match DataThread's render ordering: tables in slice order with
-    // anchored ones promoted later.
+    // Match DataThread's render ordering: tables in slice order.
     const tableOrder: Record<string, number> = Object.fromEntries(
-        tables.map((t, i) => [t.id, i + (t.anchored ? 1 : 0) * tables.length]),
+        tables.map((t, i) => [t.id, i]),
     );
     const leaves = tables
         .filter(t => isLeafDerivedTable(t, tables))
