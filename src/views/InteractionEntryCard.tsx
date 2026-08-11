@@ -183,6 +183,18 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                     </Box>
                 ),
                 pre: ({ children }) => <>{children}</>,
+                // Without this the UA default (margin: 1em 40px) dwarfs the
+                // prose above it; a reply is a close follow-on, not a pull quote.
+                blockquote: ({ children }) => (
+                    <Box component="blockquote" sx={{
+                        m: 0, mt: 0.5, pl: 1,
+                        borderLeft: '2px solid',
+                        borderColor: 'divider',
+                        color: theme.palette.text.secondary,
+                    }}>
+                        {children}
+                    </Box>
+                ),
                 table: ({ children }) => (
                     <Box sx={{ overflowX: 'auto', my: 0.5 }}>
                         <Box component="table" sx={{ borderCollapse: 'collapse', width: '100%', fontSize: 'inherit', color }}>
@@ -461,12 +473,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         const bubbleHover = bubbleAccent
             ? alpha(bubbleAccent, 0.09)
             : alpha(theme.palette.text.primary, 0.05);
-        // Conversational bubbles get card chrome, except resolved pauses and
-        // summaries — both render chrome-less. A summary is the agent's
-        // closing remark on a turn; reading it as plain prose (no box, no
-        // fill) keeps the timeline foregrounding charts/data rather than
-        // persisting the remark as a card.
-        const bubbleSx = (isConversational && !isResolvedPause && !isSummary) ? {
+        // Card chrome marks an entry the reader can act on (clarify / explain /
+        // delegate). The agent's own narration — instructions and summaries — and
+        // resolved pauses read as prose so the timeline foregrounds charts/data.
+        const isInstruction = entry.role === 'instruction';
+        const bubbleSx = (isConversational && !isResolvedPause && !isSummary && !isInstruction) ? {
             py: 0.5, px: 1,
             borderRadius: radius.sm,
             backgroundColor: bubbleBg,
@@ -476,9 +487,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             // the gutter icon and adjacent bubbles. No bg, no border.
             py: '2px', px: '4px',
             opacity: 0.7,
-        } : isSummary ? {
-            // Summary as flowing prose: no card chrome, just inline padding
-            // so it aligns with the gutter icon and adjacent bubbles.
+        } : (isSummary || isInstruction) ? {
             py: '2px', px: '4px',
         } : {};
 

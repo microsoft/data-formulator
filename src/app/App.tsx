@@ -11,7 +11,6 @@ import {
     dfSelectors,
     fetchGlobalModelList,
     DEFAULT_ROW_LIMIT,
-    DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
 import { getBrowserId, generateUUID } from './identity';
 import type { AuthInfo } from './oidcConfig';
@@ -494,7 +493,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
             const result = await loadWorkspace(wsId);
             if (result) {
                 const displayName = result.displayName || wsEntry?.display_name || wsId;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName } }));
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName, readOnly: result.readOnly } }));
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
             } else {
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
@@ -708,8 +707,7 @@ const ConfigDialog: React.FC<{
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const isEphemeral = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral');
-    const rowLimitDefault = isEphemeral ? DEFAULT_ROW_LIMIT_EPHEMERAL : DEFAULT_ROW_LIMIT;
+    const rowLimitDefault = DEFAULT_ROW_LIMIT;
     const rowLimitMax = DEFAULT_ROW_LIMIT;
 
 
@@ -985,7 +983,7 @@ const AppShell: FC = () => {
     const location = useLocation();
     const [searchParams, setSearchParams] = useSearchParams();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -1329,7 +1327,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     // Validate persisted workspace still exists on the backend
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     
     // Debug: log persisted state on startup
     useEffect(() => {
@@ -1483,7 +1481,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         })(),
         components: {
             MuiButton: {
+                defaultProps: {
+                    disableElevation: true,
+                },
                 styleOverrides: {
+                    root: {
+                        textTransform: 'none',
+                    },
                     text: ({ ownerState, theme: t }) => {
                         const c = ownerState.color;
                         if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {

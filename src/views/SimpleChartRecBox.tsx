@@ -23,14 +23,15 @@ import {
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { persistEphemeralDerivedTable } from '../app/tableThunks';
-import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn } from "../components/ComponentType";
+import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
+import { parseDataOperation } from '../dataOperations/models';
+import { buildDictTableFromWorkspace } from '../app/tableThunks';
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
@@ -46,7 +47,7 @@ import { borderColor, transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
-import { ClarificationPanel, DelegatePanel, ExplanationPanel } from './AgentPausePanel';
+import { ClarificationPanel, ExplanationPanel } from './AgentPausePanel';
 import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
 
@@ -191,15 +192,14 @@ const resolveNodeTable = (
 
 export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ onInputFocus }) {
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const charts = useSelector(dfSelectors.getAllCharts);
     const starterQuestions = useSelector((state: DataFormulatorState) => state.starterQuestions);
     const starterQuestionsStatus = useSelector((state: DataFormulatorState) => state.starterQuestionsStatus);    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const activeModel = useSelector(dfSelectors.getActiveModel);
-    const workspaceBackend = useSelector((state: DataFormulatorState) => state.serverConfig.WORKSPACE_BACKEND);
-    const activeWorkspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
+    const workspaceReadOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly === true);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     // Text turns (clarify / explain / delegate) — design-docs/41. The focused
     // one (if any) drives the overlay panel above the chat.
@@ -541,23 +541,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Extract the active structured clarification (or explanation) from
     // DraftNode interaction log. Both are stored as ClarificationQuestion[]
     // — the entry's role ('clarify' vs 'explain') is what differs.
-    // `delegate` pauses share the same slot but render a different panel
-    // (a one-click handoff to the target peer agent).
     const clarificationQuestions = React.useMemo(() => {
         if (!pendingClarification?.draftId) return null;
         const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
         const interaction = draft?.derive?.trigger?.interaction || [];
-        // Find the most recent pause entry (clarify / explain / delegate).
+        // Find the most recent clarification or explanation pause.
         for (let i = interaction.length - 1; i >= 0; i--) {
             const entry = interaction[i];
-            if (entry.role === 'delegate') {
-                return {
-                    kind: 'delegate' as const,
-                    target: entry.delegateTarget || 'data_loading',
-                    message: entry.content || '',
-                    options: entry.delegateOptions || [],
-                };
-            }
             if (entry.role === 'clarify' || entry.role === 'explain') {
                 return {
                     kind: 'clarification' as const,
@@ -575,12 +565,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // (exploreFromChat), so the report has the actual exploration narrative —
     // user questions, agent thinking, findings — instead of just a flat list
     // of charts.
-    const buildThreadContext = useCallback((targetTableId: string): {
+    const buildThreadContext = useCallback((targetNodeId: string): {
         focusedThread: any[] | undefined;
         otherThreads: any[] | undefined;
     } => {
         // Tier 2: Focused thread — detailed per-step info
         const focusedSteps: any[] = [];
+        const targetTableId = resolveNodeTable(targetNodeId, textTurns, tables) ?? targetNodeId;
         let walkTable = tables.find(t => t.id === targetTableId);
         const visited = new Set<string>();
         const focusedChainIds = new Set<string>();
@@ -626,6 +617,29 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
             walkTable = tables.find(t => t.id === trigger.tableId);
         }
+
+        const conversationSteps: any[] = [];
+        let walkTurn = textTurns.find(turn => turn.id === targetNodeId);
+        const visitedTurns = new Set<string>();
+        while (walkTurn && !visitedTurns.has(walkTurn.id)) {
+            visitedTurns.add(walkTurn.id);
+            conversationSteps.unshift({
+                user_question: walkTurn.prompt || '',
+                agent_response: walkTurn.content || '',
+                user_answer: walkTurn.answer || '',
+                data_operation: walkTurn.dataOperation ? {
+                    reason: walkTurn.dataOperation.reason,
+                    status: walkTurn.dataOperation.status,
+                    options: walkTurn.dataOperation.plans.map(plan => plan.label),
+                    selected_plan: walkTurn.dataOperation.plans.find(
+                        plan => plan.id === walkTurn!.dataOperation?.selectedPlanId,
+                    )?.label || '',
+                    result_tables: walkTurn.dataOperation.resultTableIds,
+                } : undefined,
+            });
+            walkTurn = textTurns.find(turn => turn.id === walkTurn!.parentNodeId);
+        }
+        focusedSteps.push(...conversationSteps);
         const focusedThread = focusedSteps.length > 0 ? focusedSteps : undefined;
 
         // Tier 3: Peripheral threads — one-line summary per step
@@ -689,7 +703,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const otherThreads = peripheralThreads.length > 0 ? peripheralThreads : undefined;
 
         return { focusedThread, otherThreads };
-    }, [tables, charts, conceptShelfItems]);
+    }, [tables, charts, conceptShelfItems, textTurns]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory?: any[];
@@ -697,6 +711,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         actionId?: string;
         lastCreatedTableId?: string | null;
         parentNodeId?: string;
+        interactionResponse?: {
+            operation_id: string;
+            plan_id?: string;
+            action?: 'elaborate';
+        };
     }, displayPrompt?: string) => {
         if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
@@ -787,7 +806,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // Skip on resume — the trajectory already carries the prior context.
         const { focusedThread, otherThreads } = isResume
             ? { focusedThread: undefined, otherThreads: undefined }
-            : buildThreadContext(focusedTableId);
+            : buildThreadContext(askedFromNode ?? focusedTableId);
 
         // Resolve primary table names from primaryTableIds (includes defaults + @-mentioned)
         const primaryTableNames = primaryTableIds.map(id => {
@@ -795,6 +814,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
         });
         const requestBody: any = {
+            conversation_id: actionId,
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
             })),
@@ -843,6 +863,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             requestBody.trajectory = clarificationContext!.trajectory;
             requestBody.user_question = agentPrompt;
             requestBody.completed_step_count = clarificationContext!.completedStepCount || 0;
+            if (clarificationContext!.interactionResponse) {
+                requestBody.interaction_response = clarificationContext!.interactionResponse;
+            }
         } else {
             requestBody.user_question = agentPrompt;
             if (focusedThread) requestBody.focused_thread = focusedThread;
@@ -993,6 +1016,59 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // backend now stamps trajectory/completed_step_count for resume).
             if (result.type === "interact") {
                 result = { ...result, type: "clarify" };
+            }
+
+            if (result.type === "data_operation_result") {
+                const operation = parseDataOperation(result.operation);
+                if (askedFromNode?.startsWith('textTurn')) {
+                    dispatch(dfActions.updateTextTurn({
+                        id: askedFromNode,
+                        dataOperation: operation,
+                    }));
+                }
+                if (operation.status === 'loaded' || operation.status === 'partially_loaded') {
+                    const { data } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                    const publishedIds = new Set(operation.resultTableIds);
+                    const publishedTables = (data.tables || [])
+                        .filter((table: any) => publishedIds.has(table.name));
+                    // The loaded table continues the conversation that produced
+                    // it, so author the thread edge back to that turn.
+                    const operationTurnId = askedFromNode?.startsWith('textTurn') ? askedFromNode : undefined;
+                    for (const workspaceTable of publishedTables) {
+                        if (tables.some(table => table.id === workspaceTable.name)) continue;
+                        const loaded = buildDictTableFromWorkspace(workspaceTable, undefined);
+                        const table = operationTurnId
+                            ? { ...loaded, threadParentId: operationTurnId }
+                            : loaded;
+                        dispatch(dfActions.addTableToStore(table));
+                        dispatch(fetchFieldSemanticType(table));
+                        dispatch(fetchColumnStats(table));
+                    }
+                    if (publishedTables.length > 0) {
+                        dispatch(dfActions.setFocused({
+                            type: 'table',
+                            tableId: publishedTables[0].name,
+                        }));
+                    }
+                    if (operation.status === 'partially_loaded') {
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(),
+                            type: 'error',
+                            component: 'data-agent',
+                            value: t('dataLoading.operation.partialFailure', {
+                                count: operation.failedSteps.length,
+                            }),
+                        }));
+                    }
+                } else if (operation.status === 'failed') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        type: 'error',
+                        component: 'data-agent',
+                        value: operation.error?.message || t('chartRec.explorationFailed', { message: '' }),
+                    }));
+                }
+                return;
             }
 
             // ── report streaming (AnalystAgent only) ──
@@ -1190,16 +1266,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
 
                 const fieldMetadata = refinedGoal?.['field_metadata'];
+                const semanticFields: TableSemanticsInfo['fields'] = {};
                 if (fieldMetadata && typeof fieldMetadata === 'object') {
                     for (const [fieldName, meta] of Object.entries(fieldMetadata)) {
                         if (!candidateTable.metadata[fieldName]) continue;
                         if (typeof meta === 'string') {
-                            candidateTable.metadata[fieldName].semanticType = meta;
+                            semanticFields[fieldName] = { semanticType: meta };
                         } else if (typeof meta === 'object' && meta !== null) {
                             const m = meta as Record<string, any>;
-                            if (m['semantic_type']) candidateTable.metadata[fieldName].semanticType = m['semantic_type'];
-                            if (m['unit']) candidateTable.metadata[fieldName].unit = m['unit'];
-                            if (m['intrinsic_domain']) candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
+                            semanticFields[fieldName] = {
+                                ...(m['semantic_type'] ? { semanticType: m['semantic_type'] } : {}),
+                                ...(m['unit'] ? { unit: m['unit'] } : {}),
+                                ...(m['intrinsic_domain'] ? { intrinsicDomain: m['intrinsic_domain'] } : {}),
+                            };
                         }
                     }
                 }
@@ -1208,9 +1287,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
                     for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
                         if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
-                            candidateTable.metadata[fieldName].displayName = displayName;
+                            semanticFields[fieldName] = { ...semanticFields[fieldName], displayName };
                         }
                     }
+                }
+
+                if (Object.keys(semanticFields).length > 0) {
+                    dispatch(dfActions.upsertTableSemantics({ tableId: candidateTableId, fields: semanticFields }));
                 }
 
                 createdTables.push(candidateTable);
@@ -1226,14 +1309,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     candidateTable.threadParentId = runLastNodeRef.current;
                 }
                 runLastNodeRef.current = candidateTableId;
-
-                // Ephemeral mode: persist full rows to IndexedDB (keeps only a
-                // sample + virtual marker in Redux). Other backends store on the server.
-                if (workspaceBackend === 'ephemeral' && activeWorkspaceId) {
-                    const persisted = await persistEphemeralDerivedTable(activeWorkspaceId, candidateTable);
-                    candidateTable.rows = persisted.rows;
-                    candidateTable.virtual = persisted.virtual;
-                }
 
                 const names = candidateTable.names;
                 const missingNames = names.filter(name =>
@@ -1307,8 +1382,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (result.type === "clarify" || result.type === "explain") {
                 const isExplainEvent = result.type === "explain";
                 let normalizedClarification;
+                let dataOperation;
                 try {
                     normalizedClarification = normalizeClarifyEvent(result);
+                    dataOperation = result.data_operation
+                        ? parseDataOperation(result.data_operation)
+                        : undefined;
                 } catch {
                     const errMsg = t(isExplainEvent ? 'chartRec.invalidExplanation' : 'chartRec.invalidClarification');
                     dispatch(dfActions.addMessages({
@@ -1342,15 +1421,20 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             id: turnId,
                             displayId: turnId,
                             textKind: isExplainEvent ? 'explain' : 'clarify',
-                            content: normalizedClarification.summary,
+                            content: dataOperation?.description || normalizedClarification.summary,
                             ...(!runIsContinuationRef.current && currentDraftInteraction[0]?.role === 'prompt' ? { prompt: currentDraftInteraction[0].displayContent || currentDraftInteraction[0].content } : {}),
                             ...(isExplainEvent ? {} : { options: normalizedClarification.questions }),
+                            ...(dataOperation ? { dataOperation } : {}),
                             parentNodeId,
                             ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
                             actionId,
                             // Resume token (§12): present iff the backend stamped a
                             // trajectory on the event (clarify/interact does today).
-                            ...(result.trajectory ? { resume: { trajectory: result.trajectory, completedStepCount: result.completed_step_count || 0 } } : {}),
+                            ...(result.trajectory ? { resume: {
+                                trajectory: result.trajectory,
+                                completedStepCount: result.completed_step_count || 0,
+                                ...(result.data_operation?.id ? { operationId: result.data_operation.id } : {}),
+                            } } : {}),
                             createdAt: Date.now(),
                         }));
                         // Advance the chain: a later node in this run follows this turn.
@@ -1359,55 +1443,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
                     dispatch(dfActions.removeDraftNode(currentDraftId));
                     currentDraftId = null;
-                }
-                setIsChatFormulating(false);
-                agentAbortRef.current = null;
-                clearTimeout(timeoutId);
-                setChatPrompt("");
-                setAttachedImages([]);
-                setAttachedFiles([]);
-                isCompleted = true;
-            }
-
-            // ── delegate: agent hands off to a peer agent ──
-            // The data agent has decided the conversation is better
-            // served by another agent (data loading when the workspace
-            // lacks needed data; report gen when the user wants a
-            // narrative). We render the rationale + a one-click handoff
-            // card. Shares the 'clarifying' status / pending-clarification
-            // slot with the clarify/explain pauses so the panel renders in
-            // the same UI position above the input box.
-            if (result.type === "delegate") {
-                const message = String(result.message || '').trim();
-                // The agent now emits a single `delegate_prompt` (auto-sent —
-                // the user no longer picks from choices). Fall back to the
-                // legacy `options[]` shape for older backends / cached specs.
-                const delegatePrompt = String(result.delegate_prompt || '').trim();
-                const legacyOption = Array.isArray(result.options)
-                    ? String(result.options.find((o: any) => typeof o === 'string' && o.trim()) || '').trim()
-                    : '';
-                const target = (result.target === 'report_gen' ? 'report_gen' : 'data_loading') as 'data_loading' | 'report_gen';
-
-                // Auto-delegate for both targets — no user approval gate. When
-                // the agent decides a peer agent should take over (report gen
-                // for a narrative, data loading when the workspace lacks the
-                // needed data), we hand off directly using the agent's
-                // delegate prompt (falling back to a legacy option, then its
-                // message). The matching handoff consumer (SimpleChartRecBox
-                // for report_gen, DataFormulator for data_loading) picks it up
-                // and starts the target agent with the seeded prompt. The
-                // placeholder draft has no role once we hand off, so we drop it
-                // like a normal completion would.
-                if (currentDraftId) {
-                    thinkingSteps = [];
-                    pendingThought = '';
-                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
-                    dispatch(dfActions.removeDraftNode(currentDraftId));
-                    currentDraftId = null;
-                }
-                const seedPrompt = delegatePrompt || legacyOption || message;
-                if (seedPrompt) {
-                    dispatch(dfActions.requestAgentHandoff({ target, prompt: seedPrompt }));
                 }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
@@ -1575,7 +1610,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                     allResults.push(data);
                     await processStreamingResult(data);
-                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "interact" || data.type === "delegate") {
+                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "interact") {
                         handleCompletion();
                         return;
                     }
@@ -1629,7 +1664,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // a report instruction.
             exploreFromChat(promptText.trim() || REPORT_SEED_PROMPT);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [agentHandoffRequest]);
 
     // ── Unified submit handler ───────────────────────────────────────
@@ -1756,9 +1790,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // means there's nothing to send beyond clicks; the user must either
     // click the remaining options (which auto-submits) or type something.
     const canSend = React.useMemo(() => {
-        if (!focusedTableId) return false;
+        if (!focusedTableId || workspaceReadOnly) return false;
         return chatPrompt.trim().length > 0;
-    }, [chatPrompt, focusedTableId]);
+    }, [chatPrompt, focusedTableId, workspaceReadOnly]);
 
     // Handle a single clicked option (or confirmed free-text) inside the
     // ClarificationPanel. We record the selection by question index — the
@@ -1892,7 +1926,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const ctx = {
             parentNodeId: turn.id,
             ...(turn.resume
-                ? { trajectory: turn.resume.trajectory, completedStepCount: turn.resume.completedStepCount, actionId: turn.actionId || '', lastCreatedTableId: null }
+                ? {
+                    trajectory: turn.resume.trajectory,
+                    completedStepCount: turn.resume.completedStepCount,
+                    actionId: turn.actionId || '',
+                    lastCreatedTableId: null,
+                    ...(turn.resume.operationId && responses[0]?.value
+                        ? { interactionResponse: responses[0].value === 'elaborate'
+                            ? { operation_id: turn.resume.operationId, action: 'elaborate' as const }
+                            : { operation_id: turn.resume.operationId, plan_id: responses[0].value } }
+                        : {}),
+                }
                 : {}),
         };
         exploreFromChat(displayPrompt, ctx);
@@ -1969,15 +2013,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     onDelete={cancelAgent}
                 />
             )}
-            {clarificationQuestions?.kind === 'delegate' && pendingClarification && !isChatFormulating && (
-                <DelegatePanel
-                    target={clarificationQuestions.target}
-                    message={clarificationQuestions.message}
-                    options={clarificationQuestions.options}
-                    onClose={closePause}
-                    onDelete={cancelAgent}
-                />
-            )}
             {/* Focused text turn (design-docs/41): a clarify / explain node the
                 user focused by clicking its thread card. An OPEN clarify gets
                 the interactive panel; an ANSWERED clarify or any explanation is
@@ -1987,6 +2022,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 (focusedTextTurn.textKind === 'clarify' && !focusedTextTurn.answered && focusedTextTurn.options && focusedTextTurn.options.length > 0) ? (
                     <ClarificationPanel
                         questions={focusedTextTurn.options}
+                        dataOperation={focusedTextTurn.dataOperation}
                         variant="clarify"
                         selectedAnswers={clarifyAnswers}
                         onSelectAnswer={handleSelectTextTurnAnswer}
@@ -2210,6 +2246,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }}
                 inputRef={chatInputRef}
                 value={chatPrompt}
+                disabled={workspaceReadOnly}
                 placeholder={
                     pendingClarification
                         ? t('chartRec.replyPlaceholder')

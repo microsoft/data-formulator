@@ -36,7 +36,7 @@ import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, assertDownloadResponseOk } from '../app/apiClient';
 import { useDrag } from 'react-dnd';
 import { useSelector } from 'react-redux';
-import { DataFormulatorState } from '../app/dfSlice';
+import { DataFormulatorState, dfSelectors } from '../app/dfSlice';
 import { ColumnFilter, ColumnFilterPopover } from './ColumnFilterPopover';
 import { iconVar, textVar } from '../app/layout';
 
@@ -142,7 +142,8 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const semanticType = useSelector(
-        (state: DataFormulatorState) => state.tables.find(t => t.id === tableId)?.metadata?.[columnDef.id]?.semanticType,
+        (state: DataFormulatorState) =>
+            state.tableSemantics.find(info => info.tableId === tableId)?.fields[columnDef.id]?.semanticType,
     );
     
     // Find the corresponding FieldItem for this column
@@ -353,7 +354,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
     // Lookup of per-column metadata (distinctCount/nullCount/levels/levelCounts/type)
     // to drive the filter popover's variant selection synchronously.
     const tableMetadata = useSelector(
-        (state: DataFormulatorState) => state.tables.find(t => t.id === tableId)?.metadata,
+        (state: DataFormulatorState) => dfSelectors.getAllTables(state).find(t => t.id === tableId)?.metadata,
     );
 
     // Ref-based bridge to fetchVirtualData (declared further below); lets stable

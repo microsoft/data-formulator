@@ -443,6 +443,7 @@ class MiniAnalystAgent(AnalystAgent):
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
+        conversation_id: str = "",
     ) -> Generator[dict[str, Any], None, None]:
         """Make a single analytic decision and stop.
 
@@ -462,6 +463,8 @@ class MiniAnalystAgent(AnalystAgent):
             "focused_thread": focused_thread,
             "other_threads": other_threads,
             "primary_tables": primary_tables,
+            "conversation_id": conversation_id,
+            "skill_state": {},
         }
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count + 1

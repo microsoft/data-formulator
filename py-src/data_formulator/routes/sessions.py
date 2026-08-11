@@ -4,14 +4,8 @@
 """
 Workspace management routes.
 
-For local / azure_blob backends:
-  Standard workspace CRUD — list, create, delete, rename, save/load state.
-
-For ephemeral backend:
-  Workspace data is sent inline with every request via ``_workspace_tables``
-  and materialized by ``get_workspace()`` in workspace_factory.
-  Session routes (list, save, load, create, rename) return no-ops — the
-  frontend manages all state in IndexedDB.
+All backends expose the same workspace CRUD API. The ephemeral backend selects
+a TTL-managed local WorkspaceManager in ``workspace_factory``.
 
 Routes:
   POST /api/sessions/save        — auto-persist state to active workspace
@@ -42,16 +36,11 @@ from data_formulator.workspace_factory import (
     get_workspace,
     get_workspace_manager,
     get_active_workspace_id,
-    _get_backend,
 )
 
 logger = logging.getLogger(__name__)
 
 session_bp = Blueprint("sessions", __name__, url_prefix="/api/sessions")
-
-
-def _is_ephemeral() -> bool:
-    return _get_backend() == "ephemeral"
 
 
 def _raise_if_storage_full(exc: OSError) -> NoReturn:
@@ -67,17 +56,12 @@ def _raise_if_storage_full(exc: OSError) -> NoReturn:
 
 
 # ---------------------------------------------------------------------------
-# Routes — standard for local/azure, no-ops for ephemeral
-# (ephemeral mode: workspace data is sent inline with every request via
-#  _workspace_tables, materialized by get_workspace() in workspace_factory)
+# Routes
 # ---------------------------------------------------------------------------
 
 @session_bp.route("/save", methods=["POST"])
 def save_session():
     """Auto-persist frontend state to the active workspace."""
-    if _is_ephemeral():
-        return json_ok({"message": "No-op in ephemeral mode"})
-
     data = request.get_json(force=True)
     state: dict = data.get("state")
     workspace_id: str = data.get("id", "").strip() or data.get("name", "").strip()
@@ -95,6 +79,11 @@ def save_session():
     try:
         # Lazy creation: frontend generates the ID, first save triggers creation
         if not mgr.workspace_exists(ws_id):
+            if getattr(mgr, "workspace_was_evicted", lambda _workspace_id: False)(ws_id):
+                raise AppError(
+                    "WORKSPACE_EXPIRED",
+                    "This temporary workspace has expired.",
+                )
             mgr.create_workspace(ws_id)
 
         mgr.save_session_state(ws_id, state)
@@ -112,9 +101,6 @@ def list_sessions():
     authenticated ``user:`` identity peek at an anonymous identity's workspace
     list — used by the migration dialog to check whether there is data to import.
     """
-    if _is_ephemeral():
-        return json_ok({"sessions": []})
-
     identity_id = get_identity_id()
 
     source = request.args.get("source_identity", "").strip()
@@ -147,9 +133,6 @@ def list_sessions():
 @session_bp.route("/load", methods=["POST"])
 def load_session():
     """Switch to a workspace (open it) and return its state."""
-    if _is_ephemeral():
-        return json_ok({"id": "", "state": {}, "message": "No-op in ephemeral mode"})
-
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
     if not workspace_id:
@@ -159,6 +142,11 @@ def load_session():
     mgr = get_workspace_manager(identity_id)
 
     if not mgr.workspace_exists(workspace_id):
+        if getattr(mgr, "workspace_was_evicted", lambda _workspace_id: False)(workspace_id):
+            raise AppError(
+                "WORKSPACE_EXPIRED",
+                "This temporary workspace has expired.",
+            )
         raise AppError(ErrorCode.TABLE_NOT_FOUND, f"Workspace '{workspace_id}' not found")
 
     # Load session state
@@ -172,9 +160,6 @@ def load_session():
 @session_bp.route("/delete", methods=["POST"])
 def delete_session():
     """Delete a workspace."""
-    if _is_ephemeral():
-        return json_ok({"id": (request.get_json(force=True).get("id") or "")})
-
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
     if not workspace_id:
@@ -192,9 +177,6 @@ def delete_session():
 @session_bp.route("/create", methods=["POST"])
 def create_workspace_route():
     """Create a new workspace."""
-    if _is_ephemeral():
-        return json_ok({"message": "No-op in ephemeral mode (frontend owns workspace creation)"})
-
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
     if not workspace_id:
@@ -214,9 +196,6 @@ def create_workspace_route():
 @session_bp.route("/rename", methods=["POST"])
 def rename_workspace_route():
     """Rename a workspace (change its folder ID)."""
-    if _is_ephemeral():
-        return json_ok({"message": "No-op in ephemeral mode (frontend owns workspace naming)"})
-
     data = request.get_json(force=True)
     old_id: str = (data.get("old_id") or data.get("old_name", "")).strip()
     new_id: str = (data.get("new_id") or data.get("new_name", "")).strip()
@@ -237,9 +216,6 @@ def rename_workspace_route():
 @session_bp.route("/update-meta", methods=["POST"])
 def update_workspace_meta():
     """Update workspace display name without writing full session state."""
-    if _is_ephemeral():
-        return json_ok({"message": "No-op in ephemeral mode"})
-
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or "").strip()
     display_name: str = (data.get("display_name") or "").strip()
@@ -268,9 +244,6 @@ def export_session():
     This avoids the need for an ``X-Workspace-Id`` header, allowing
     export from the landing page where no workspace is active.
     """
-    if _is_ephemeral():
-        raise AppError(ErrorCode.INVALID_REQUEST, "Export is handled client-side in ephemeral mode")
-
     data = request.get_json(force=True)
     state: dict = data.get("state")
     workspace_id: str = (data.get("workspace_id") or "").strip()
@@ -303,9 +276,6 @@ def import_session():
     automatically, so callers can generate a fresh ID client-side.
     When omitted, falls back to the ``X-Workspace-Id`` header.
     """
-    if _is_ephemeral():
-        return json_ok({"state": {}, "message": "Import handled client-side in ephemeral mode"})
-
     if "file" not in request.files:
         raise AppError(ErrorCode.INVALID_REQUEST, "No file uploaded")
 
@@ -344,9 +314,6 @@ def migrate_workspaces():
     (new data files + metadata entries added).  The anonymous source
     workspaces are deleted after a successful move.
     """
-    if _is_ephemeral():
-        return json_ok({"moved": [], "message": "No-op in ephemeral mode"})
-
     target_id = get_identity_id()
     if not target_id.startswith("user:"):
         raise AppError(ErrorCode.ACCESS_DENIED, "Migration requires an authenticated user")
@@ -385,9 +352,6 @@ def cleanup_anonymous():
     Used by the "Start Fresh" migration option so the anonymous data
     does not linger and trigger another migration prompt later.
     """
-    if _is_ephemeral():
-        return json_ok({"deleted": 0, "message": "No-op in ephemeral mode"})
-
     target_id = get_identity_id()
     if not target_id.startswith("user:"):
         raise AppError(ErrorCode.ACCESS_DENIED, "Cleanup requires an authenticated user")

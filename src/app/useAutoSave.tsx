@@ -13,6 +13,7 @@ import { DF_STATE_VERSION } from './stateMigrations';
  * Must match the backend's _SENSITIVE_FIELDS in workspace_manager.py.
  */
 const EXCLUDED_FIELDS = new Set([
+    'tables',
     'models', 'selectedModelId', 'testedModels',
     'dataLoaderConnectParams', 'identity', 'serverConfig',
     // Transient fields that shouldn't trigger or be included in saves
@@ -63,7 +64,7 @@ export function useAutoSave() {
 
     useEffect(() => {
         // Don't auto-save while a session is loading, no workspace active, or no tables loaded
-        if (state.sessionLoading || !state.activeWorkspace || state.tables.length === 0) {
+        if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly || state.inputTables.length + state.derivedTables.length === 0) {
             return;
         }
 

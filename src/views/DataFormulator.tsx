@@ -30,8 +30,9 @@ import {
     Select,
     MenuItem,
     TextField,
+    Alert,
 } from '@mui/material';
-import { borderColor, radius } from '../app/tokens';
+import { borderColor, radius, transition } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
@@ -90,7 +91,7 @@ function generateSessionId(): string {
 
 export const DataFormulatorFC = ({ }) => {
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const models = useSelector(dfSelectors.getAllModels);
@@ -184,7 +185,7 @@ export const DataFormulatorFC = ({ }) => {
             const result = await loadWorkspace(name);
             if (result && Object.keys(result.state).length > 0) {
                 const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName } }));
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName, readOnly: result.readOnly } }));
             } else {
                 dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
             }
@@ -324,6 +325,7 @@ export const DataFormulatorFC = ({ }) => {
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
     const openUploadDialog = (tab: UploadTabType) => {
+        if (activeWorkspace?.readOnly) return;
         // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
@@ -357,21 +359,6 @@ export const DataFormulatorFC = ({ }) => {
         }
         openUploadDialog('extract');
     };
-
-    // Honor cross-component requests to hand off to the Data Loading
-    // chat seeded with a prompt (e.g. Data Agent's `delegate` card with
-    // target='data_loading'). Hand-offs targeting other agents (e.g.
-    // `report_gen`) are consumed elsewhere — we only clear our own.
-    const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
-    useEffect(() => {
-        if (agentHandoffRequest && agentHandoffRequest.target === 'data_loading') {
-            startDataLoadingChat(agentHandoffRequest.prompt, agentHandoffRequest.images ?? [], []);
-            dispatch(dfActions.clearAgentHandoffRequest());
-        }
-        // openUploadDialog is stable enough for this purpose; we only react
-        // to changes in the handoff request itself.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agentHandoffRequest]);
 
     const handleLoadExampleSession = async (session: ExampleSession) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
@@ -602,7 +589,16 @@ export const DataFormulatorFC = ({ }) => {
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
                     display: 'flex', height: 'calc(100% - 12px)', flex: 1, minWidth: 0, flexDirection: 'column',
                     overflow: 'hidden',
-                    position: 'relative'}}>
+                    position: 'relative',
+                    // Allotment waits 300ms before adding its hover class.
+                    // Native hover responds immediately with the app's fast token.
+                    '& [class*="sash_"][class*="vertical"]::before': {
+                        transition: `${transition.fast} !important`,
+                    },
+                    '& [class*="sash_"][class*="vertical"]:hover::before': {
+                        background: 'var(--focus-border)',
+                    },
+                }}>
                 <Allotment
                     ref={allotmentRef}
                     onChange={(sizes) => { paneSizesRef.current = sizes; }}
@@ -964,6 +960,11 @@ export const DataFormulatorFC = ({ }) => {
     
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
+            {activeWorkspace?.readOnly && (
+                <Alert severity="warning" sx={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 720 }}>
+                    {t('workspace.expiredReadOnly', 'This temporary session has expired on the server. You are viewing a read-only browser snapshot.')}
+                </Alert>
+            )}
             <DndProvider backend={HTML5Backend}>
                 {tables.length > 0 ? fixedSplitPane : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>

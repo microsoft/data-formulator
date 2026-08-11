@@ -37,7 +37,6 @@ import { AppDispatch } from '../app/store';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { TableIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
@@ -82,6 +81,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
+import SaveAltIcon from '@mui/icons-material/SaveAlt';
 
 import { ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 
@@ -528,7 +528,7 @@ let SingleThreadGroupView: FC<{
     sx
 }) {
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
     const { t } = useTranslation();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
@@ -563,10 +563,11 @@ let SingleThreadGroupView: FC<{
             return chart?.tableRef;
         }
         if (focusedId.type === 'text') {
-            // Highlight the text turn's thread-parent table (or its source
-            // chart's table), mirroring chart focus (design-docs/41/42).
             const turn = textTurns.find(tt => tt.id === focusedId.textId);
             if (!turn) return undefined;
+            // A data-operation turn replaces the canvas, so no table is the
+            // canvas subject; other turns leave the chart/table canvas up.
+            if (turn.dataOperation) return undefined;
             if (turn.sourceChartId) {
                 const chart = charts.find(c => c.id === turn.sourceChartId);
                 if (chart?.tableRef) return chart.tableRef;
@@ -627,6 +628,7 @@ let SingleThreadGroupView: FC<{
     const leadUpTurnIds = useMemo(() => {
         const s = new Set<string>();
         for (const t of tables) {
+            if (!t.derive) continue; // a loaded source table renders with its turn, not instead of it
             let cur: string | undefined = t.threadParentId;
             const seen = new Set<string>();
             while (cur && !seen.has(cur)) {
@@ -660,6 +662,18 @@ let SingleThreadGroupView: FC<{
         return out.reverse();
     };
 
+    // Tables an agent LOADED during a turn. Their real card is the shelf, so the
+    // thread carries a pointer plus whatever was built on them afterwards — the
+    // conversation continues on the data it just brought in.
+    const loadedTablesByTurn = useMemo(() => {
+        const map = new Map<string, DictTable[]>();
+        for (const table of tables) {
+            if (table.derive || !table.threadParentId) continue;
+            map.set(table.threadParentId, [...(map.get(table.threadParentId) || []), table]);
+        }
+        return map;
+    }, [tables]);
+
     const runningAgentTableIds = useMemo(() => {
         const ids = new Map<string, { description: string }>();
         for (const d of draftNodes) {
@@ -690,6 +704,8 @@ let SingleThreadGroupView: FC<{
     const dispatch = useDispatch();
 
     let [collapsed, setCollapsed] = useState<boolean>(false);
+    // Conversation chains keyed by their first turn; folded until opened.
+    const [expandedTurnChains, setExpandedTurnChains] = useState<Set<string>>(new Set());
 
     const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
     
@@ -1233,22 +1249,26 @@ let SingleThreadGroupView: FC<{
         const rowHL = highlighted || isFocused;
         const preview = (turn.content || '')
             .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
-        // No timeline dot for text turns — instead an exchange (⇄) glyph sits
-        // OUTSIDE the box, to its left, flowing with the card (design-docs/41).
-        const gutterIcon = <Box sx={{ width: 0, height: 0 }} />;
-        const conversationIcon = (
-            <SwapHorizIcon sx={{
-                fontSize: textVar.xxl, flexShrink: 0, mt: '6px',
-                color: rowHL ? theme.palette.text.secondary : theme.palette.text.disabled,
-            }} />
+        // Once answered, the turn is history: it drops its card chrome and reads
+        // as muted agent prose so the thread foregrounds what it produced.
+        const resolved = !!turn.answered;
+        const producedTables = (loadedTablesByTurn.get(turn.id) || []).length > 0;
+        // Removing a turn doesn't re-parent what points at it, so deleting one
+        // with dependents would strand child turns and dangle table edges.
+        const hasDependents = producedTables
+            || (textTurnChildrenOf.get(turn.id) || []).length > 0
+            || tables.some(table => table.threadParentId === turn.id);
+        // Every turn is an agent remark, so its glyph sits ON the spine like any
+        // other entry, while the card keeps the exchange readable as one unit.
+        const awaitingAnswer = !turn.answered && (turn.options?.length ?? 0) > 0;
+        const gutterIcon = getEntryGutterIcon(
+            { from: 'data-agent', to: 'user', role: turn.textKind, content: '' },
+            rowHL ? theme.palette.text.secondary : 'rgba(0,0,0,0.15)',
         );
         const card = (
             <Card className={`data-thread-card ${isFocused ? 'selected-card' : ''}`} elevation={0}
                 sx={{
                     width: '100%',
-                    // Same gray fill as the agent thinking bubbles
-                    // (InteractionEntryCard neutral bubbleBg) for consistency;
-                    // border matches other cards. Focus → selected-card ring.
                     backgroundColor: alpha(theme.palette.text.primary, 0.03),
                     ...ComponentBorderStyle,
                     borderRadius: '6px', cursor: 'pointer',
@@ -1270,12 +1290,9 @@ let SingleThreadGroupView: FC<{
                     )}
                     <Typography sx={{
                         fontSize: textVar.xs,
-                        // Agent clarify/explain is conversational scaffolding: soften
-                        // to text.secondary so it recedes below the data + the user's
-                        // decisions, yet stays more legible than the disposable
-                        // thinking steps (text.disabled). A still-unanswered clarify
-                        // stays prominent (text.primary) — it's a live ask.
-                        color: (turn.textKind === 'clarify' && !turn.answered) ? 'text.primary' : 'text.secondary',
+                        // A still-unanswered question stays prominent — it's a
+                        // live ask; everything else recedes into history.
+                        color: awaitingAnswer ? 'text.primary' : 'text.secondary',
                         lineHeight: 1.4, fontWeight: 500,
                         display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                         overflow: 'hidden', wordBreak: 'break-word',
@@ -1286,6 +1303,7 @@ let SingleThreadGroupView: FC<{
                 {/* Delete floats over the top-right corner so it doesn't take
                     horizontal space from the text; a translucent bg + blur keeps
                     the trash icon readable over the content on hover. */}
+                {!hasDependents && (
                 <Tooltip title={t('chartRec.pauseDelete')}>
                     <IconButton className="textturn-delete-btn" size="small" color="error"
                         sx={{
@@ -1299,27 +1317,15 @@ let SingleThreadGroupView: FC<{
                         <DeleteIcon sx={{ fontSize: iconVar.md }} />
                     </IconButton>
                 </Tooltip>
+                )}
             </Card>
         );
-        // The follow-up reply renders as its OWN box below the card, using the
-        // user-response bubble style (InteractionEntryCard user prompt) so it
-        // reads as the user's turn (design-docs/41).
-        const answerBox = turn.answered && turn.answer ? (
-            <Box sx={{ mt: '4px' }}
-                onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}
-            >
-                <InteractionEntryCard
-                    entry={{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.answer }}
-                    highlighted={false}
-                />
-            </Box>
-        ) : null;
+        // The reply is its own timeline entry so it anchors to the spine with a
+        // user glyph, like the prompt that opened the exchange.
         const element = (
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%', minWidth: 0 }}>
-                {conversationIcon}
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                     {card}
-                    {answerBox}
                 </Box>
             </Box>
         );
@@ -1339,6 +1345,15 @@ let SingleThreadGroupView: FC<{
             );
         }
         timelineItems.push(buildTextTurnTimelineItem(turn, highlighted, false));
+        // A turn that loaded tables skips the reply — the tables below already
+        // say which option was taken.
+        const loadedTables = loadedTablesByTurn.get(turn.id) || [];
+        if (turn.answered && turn.answer && loadedTables.length === 0) {
+            pushInteractionEntries(
+                [{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.answer }],
+                keyNode, triggerType, highlighted, `textturn-answer-${turn.id}`,
+            );
+        }
     };
 
     // Render the text-turn subtree rooted at a node (design-docs/42): the node's
@@ -1346,14 +1361,67 @@ let SingleThreadGroupView: FC<{
     // (recursion). SKIPS lead-up turns — those produced a table and render WITH
     // that result table (see leadUpTurnsOf / pushTableBlock), so here we render
     // only the terminal / still-pending conversation on `nodeId`.
+    const pushTurnChainToggle = (chainId: string, hiddenCount: number, expanded: boolean) => {
+        timelineItems.push({
+            key: `turn-chain-toggle-${chainId}`,
+            type: 'artifact' as const,
+            highlighted: false,
+            gutterIcon: <ForumOutlinedIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.25)' }} />,
+            element: (
+                <Box
+                    onClick={() => setExpandedTurnChains(prev => {
+                        const next = new Set(prev);
+                        if (next.has(chainId)) next.delete(chainId); else next.add(chainId);
+                        return next;
+                    })}
+                    sx={{
+                        display: 'inline-flex', alignItems: 'center', gap: 0.25,
+                        cursor: 'pointer', color: 'text.disabled',
+                        '&:hover': { color: 'text.secondary' },
+                    }}
+                >
+                    {expanded
+                        ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} />
+                        : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
+                    <Typography sx={{ fontSize: textVar.xxs }}>
+                        {expanded
+                            ? t('dataThread.hideEarlierTurns', { defaultValue: 'Hide earlier turns' })
+                            : t('dataThread.earlierTurns', {
+                                count: hiddenCount,
+                                defaultValue: `${hiddenCount} earlier turns`,
+                            })}
+                    </Typography>
+                </Box>
+            ),
+        });
+    };
+
     const pushTextTurnSubtree = (nodeId: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
         const turns = textTurnChildrenOf.get(nodeId);
         if (!turns) return;
         for (const turn of turns) {
             if (leadUpTurnIds.has(turn.id)) continue; // renders with its result table
-            pushSingleTurn(turn, nodeId, highlighted, triggerType);
-            // Chained follow-ups hang off this turn.
-            pushTextTurnSubtree(turn.id, highlighted, triggerType);
+            // Flatten the linear follow-up chain so settled rounds can fold away.
+            const chain: TextTurn[] = [turn];
+            for (;;) {
+                const next = (textTurnChildrenOf.get(chain[chain.length - 1].id) || [])
+                    .filter(item => !leadUpTurnIds.has(item.id));
+                if (next.length !== 1) break;
+                chain.push(next[0]);
+            }
+            // Only pure conversation folds — a turn that loaded tables must keep
+            // rendering them.
+            const foldable = chain.length > 2
+                && chain.every(item => (loadedTablesByTurn.get(item.id) || []).length === 0);
+            const expanded = expandedTurnChains.has(chain[0].id);
+            if (foldable) pushTurnChainToggle(chain[0].id, chain.length - 1, expanded);
+            const visible = foldable && !expanded ? chain.slice(-1) : chain;
+            for (const item of visible) {
+                pushSingleTurn(item, nodeId, highlighted, triggerType);
+                pushLoadedTables(item.id, triggerType);
+            }
+            // Branches hanging off the chain's tail.
+            pushTextTurnSubtree(chain[chain.length - 1].id, highlighted, triggerType);
         }
     };
 
@@ -1362,6 +1430,35 @@ let SingleThreadGroupView: FC<{
     // as a used-parent chip elsewhere renders no conversation there.
     const pushTableTextTurns = (tableId: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
         pushTextTurnSubtree(tableId, highlighted, triggerType);
+    };
+
+    // The tables a turn loaded, rendered right after it: a reference chip (the
+    // card itself lives in the shelf) followed by everything built on them, so
+    // the thread reads as one continuous line through the new data.
+    const pushLoadedTables = (turnId: string, triggerType: 'trigger' | 'leaf-trigger') => {
+        for (const table of loadedTablesByTurn.get(turnId) || []) {
+            const isHL = highlightedTableIds.includes(table.id);
+            timelineItems.push({
+                key: `loaded-table-${table.id}`,
+                type: 'table',
+                tableId: table.id,
+                highlighted: isHL,
+                element: _buildRefChip(table.id),
+            });
+            if (usedIntermediateTableIds.includes(table.id)) continue;
+            buildChartCards(
+                chartElements.filter(ce => ce.tableId === table.id),
+                focusedChartId, collapsed,
+            ).forEach((el, i) => timelineItems.push({
+                key: `loaded-chart-${table.id}-${i}`,
+                type: 'chart',
+                highlighted: isHL,
+                element: el,
+            }));
+            pushReportItems(table.id, isHL, triggerType);
+            pushTableTextTurns(table.id, isHL, triggerType);
+            pushAgentDraftItems(table.id, triggerType, isHL);
+        }
     };
 
     // Render one table's full block in the thread body: its trigger interaction
@@ -1603,6 +1700,11 @@ let SingleThreadGroupView: FC<{
                     },
                 }} />;
             }
+            // Loaded into the workspace by this conversation, rather than
+            // referenced from the shelf.
+            if (tableForDot && !tableForDot.derive && tableForDot.threadParentId) {
+                return <SaveAltIcon sx={iconSx} />;
+            }
             if (tableForDot?.virtual) {
                 return <TableIcon sx={{ ...iconSx, width: 14, height: 14 }} />;
             }
@@ -1743,6 +1845,7 @@ let SingleThreadGroupView: FC<{
 
             return (
                 <Box key={`timeline-row-${item.key}`}
+                    data-thread-item={item.key}
                     {...(item.isClarifying ? { 'data-clarifying': 'true' } : {})}
                     sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx,
                     ...(clarifyClickHandler ? { cursor: 'pointer', '&:hover': { backgroundColor: 'rgba(0,0,0,0.02)' } } : {}),
@@ -1769,7 +1872,7 @@ let SingleThreadGroupView: FC<{
         // Charts: chart-type icon on the timeline
         if (isChart) {
             return (
-                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                <Box key={`timeline-row-${item.key}`} data-thread-item={item.key} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
                     <Box sx={{
                         width: TIMELINE_WIDTH, flexShrink: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -1792,7 +1895,7 @@ let SingleThreadGroupView: FC<{
         // Tables (primary nodes): settings icon on the timeline, more vertical spacing
         const tableForItem = item.tableId ? tableById.get(item.tableId) : undefined;
         return (
-            <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+            <Box key={`timeline-row-${item.key}`} data-thread-item={item.key} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
                 <Box sx={{ 
                     width: TIMELINE_WIDTH, flexShrink: 0, 
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -2368,7 +2471,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let charts = useSelector(dfSelectors.getAllCharts);
 
@@ -2406,6 +2509,26 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         () => new Set([...textTurnRootByTurn.values()]),
         [textTurnRootByTurn],
     );
+    // The one node whose position isn't implied by trigger dependency: an input
+    // table produced by a turn. It renders inside that turn's thread instead of
+    // opening a column, and is hosted by the table its turn is rooted at.
+    // (A shelf table roots a new thread; a derived table follows its trigger.)
+    const loadedTableHosts = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const table of tables) {
+            if (table.derive || !table.threadParentId) continue;
+            const host = textTurnRootByTurn.get(table.threadParentId);
+            if (host) map.set(table.id, host);
+        }
+        return map;
+    }, [tables, textTurnRootByTurn]);
+    const loadedTablesByHost = useMemo(() => {
+        const map = new Map<string, string[]>();
+        for (const [tableId, host] of loadedTableHosts) {
+            map.set(host, [...(map.get(host) || []), tableId]);
+        }
+        return map;
+    }, [loadedTableHosts]);
     // Rendered timeline-item count each table's conversation adds (card +
     // optional prompt bubble), keyed by the root table — feeds thread height +
     // split budgeting so text-turn cards count as taking vertical space.
@@ -2447,8 +2570,14 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return undefined;
     }, [focusedId, charts, generatedReports, textTurnsForHome, textTurnRootByTurn]);
 
-    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
+    // A data-operation turn replaces the canvas, so no table is "on screen" —
+    // the table above stays a context highlight rather than a selection.
+    const canvasOwnedByTurn = useMemo(() => (
+        focusedId?.type === 'text'
+        && !!textTurnsForHome.find(tt => tt.id === focusedId.textId)?.dataOperation
+    ), [focusedId, textTurnsForHome]);
 
+    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     // Subscribe to draftNodes so the scroll-to-target effect re-runs when an
@@ -2456,6 +2585,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
     const containerRef = useRef<null | HTMLDivElement>(null)
+    // The thread row the user last clicked. Identity is the row, not the table or
+    // chart it shows: the same table renders in several rows, and only this one
+    // needs to stay in context when the viewport shrinks.
+    const selectedItemKeyRef = useRef<string | null>(null);
     const threadScrollRef = useRef<null | HTMLDivElement>(null)
     // Outer wrapper containing both the thread area and the chatbox.
     const outerRef = useRef<null | HTMLDivElement>(null)
@@ -2464,13 +2597,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const { tokens: threadTokens } = useLayout();
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
-    // Track container height so we can detect when the chatbox grows/shrinks
-    // (which compresses/expands containerRef as a flex sibling).  Used to
-    // trigger the scroll-to-target effect below.
+    // The chat box and clarify panels are flex siblings, so their growth shrinks
+    // the thread viewport — that's the signal to pull the selection back in view.
     const [containerHeight, setContainerHeight] = useState(0);
-    // Increments every time the chat input is focused.  Used to retrigger the
-    // scroll-to-target effect even when neither focusedId nor containerHeight
-    // changes (e.g. user just clicks into the input without typing).
     const [chatboxFocusTick, setChatboxFocusTick] = useState(0);
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -2546,21 +2675,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     const theme = useTheme();
 
-    // Keep the relevant element fully visible above the chatbox.
-    //
-    // Triggered whenever:
-    //   - focusedId changes (user clicked a different chart/table)
-    //   - containerHeight changes (chatbox grew/shrank, e.g. when an
-    //     explain/clarify panel appears or the input expands)
-    //
-    // Three target priorities:
-    //   1. Active clarify/explain inline block (data-clarifying="true")
-    //   2. Focused chart card (data-chart-id)
-    //   3. Focused table card (data-table-id)
-    //
-    // "Fully visible" means the target's top..bottom fits within
-    // containerRef's rect (which already shrinks as the chatbox grows below
-    // it).  If already in view, don't scroll.  If too tall, align top.
+    // Keep the selected thread row centred-ish and in view: on click, and when
+    // the viewport changes (chat box growing, a clarify panel opening, a pane
+    // resize). Addressed by ROW, so the copy the user clicked is the one that
+    // moves — the same table also renders in the shelf and in other threads.
     useEffect(() => {
         if (!containerRef.current) return;
         const t = setTimeout(() => {
@@ -2569,25 +2687,37 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             const scroller = container.firstElementChild as HTMLElement | null;
             if (!scroller) return;
 
-            // Find the target element in priority order.
+            // The clicked row only counts while it still shows what's focused;
+            // focus moved from the canvas should retarget, not chase a stale row.
+            const rowMatchesFocus = (row: HTMLElement) => {
+                if (!focusedId) return false;
+                if (focusedId.type === 'table') return !!row.querySelector(`[data-table-id="${focusedId.tableId}"]`);
+                if (focusedId.type === 'chart') return !!row.querySelector(`[data-chart-id="${focusedId.chartId}"]`);
+                return true;
+            };
+
             let target: HTMLElement | null = null;
 
-            // 1. Active clarify/explain inline block (most recent)
+            // An agent pause outranks the selection — it needs an answer.
             const clarifyEls = container.querySelectorAll<HTMLElement>('[data-clarifying="true"]');
             if (clarifyEls.length > 0) {
                 target = clarifyEls[clarifyEls.length - 1];
             }
 
-            // 2. Focused chart
+            const selectedKey = selectedItemKeyRef.current;
+            if (!target && selectedKey) {
+                const row = container.querySelector<HTMLElement>(`[data-thread-item="${CSS.escape(selectedKey)}"]`);
+                if (row && rowMatchesFocus(row)) target = row;
+            }
+
+            // Focus arrived from elsewhere (canvas, agent run): aim at the
+            // artifact itself.
             if (!target && focusedId?.type === 'chart') {
                 target = container.querySelector<HTMLElement>(`[data-chart-id="${focusedId.chartId}"]`);
             }
-
-            // 3. Focused table
             if (!target && focusedId?.type === 'table') {
                 target = container.querySelector<HTMLElement>(`[data-table-id="${focusedId.tableId}"]`);
             }
-
             if (!target) return;
 
             const containerRect = container.getBoundingClientRect();
@@ -2599,29 +2729,27 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             const visibleBottom = containerRect.bottom - BOTTOM_MARGIN;
             const visibleHeight = visibleBottom - visibleTop;
 
-            // Already fully visible? Don't scroll — don't bother the user.
-            if (targetRect.top >= visibleTop && targetRect.bottom <= visibleBottom) return;
+            // Leave it alone only when it sits comfortably inside the viewport.
+            // Bare visibility isn't enough: a row jammed against the chat box is
+            // technically visible but reads as cut off.
+            const EDGE_COMFORT = Math.min(80, visibleHeight * 0.15);
+            const comfortTop = visibleTop + EDGE_COMFORT;
+            const comfortBottom = visibleBottom - EDGE_COMFORT;
+            const fitsComfortZone = targetRect.height <= comfortBottom - comfortTop;
+            if (fitsComfortZone
+                ? (targetRect.top >= comfortTop && targetRect.bottom <= comfortBottom)
+                : (targetRect.top >= visibleTop && targetRect.bottom <= visibleBottom)) return;
 
-            // When we do need to scroll, leave generous breathing room above
-            // the target so the user has context (the prior thread items
-            // remain visible).  We aim to place the target's top about 60%
-            // of the way down the visible area — this feels natural since
-            // the user is usually interacting at the bottom and the target
-            // is most often a leaf chart/table near the end.  Clamped so
-            // the target's bottom never gets pushed below the visible area.
-            //
-            // If the target is taller than the visible area, just align its
-            // top with TOP_MARGIN so the start is in view (bottom may be
-            // cut off — preferable to hiding the start).
+            // Leave breathing room above so prior thread items stay as context;
+            // a row taller than the viewport aligns to the top instead.
             const targetTopInScroller = targetRect.top - scrollerRect.top + scroller.scrollTop;
             const targetHeight = targetRect.height;
-            const tooTall = targetHeight + TOP_MARGIN + BOTTOM_MARGIN > visibleHeight + TOP_MARGIN + BOTTOM_MARGIN;
+            const tooTall = targetHeight > visibleHeight;
             const desiredOffsetFromTop = tooTall
                 ? TOP_MARGIN
                 : Math.max(TOP_MARGIN, Math.min(visibleHeight * 0.6, visibleHeight - targetHeight - BOTTOM_MARGIN));
             const newScrollTop = targetTopInScroller - desiredOffsetFromTop;
 
-            // Only scroll if it would meaningfully change position.
             if (Math.abs(newScrollTop - scroller.scrollTop) > 4) {
                 scroller.scrollTo({ top: Math.max(0, newScrollTop), behavior: 'smooth' });
             }
@@ -2737,32 +2865,27 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // Also includes derive.source tables (all input tables used in computation)
     let globalHighlightedTableIds: string[] = useMemo(() => {
         if (!focusedTableId) return [];
-        let focusedTable = tableById.get(focusedTableId);
-        if (!focusedTable) return [];
-        // Walk up the trigger chain from the focused table to collect all ancestor IDs
-        let ids = new Set<string>([focusedTableId]);
-        let current = focusedTable;
-        // Add derive.source tables for the focused table itself
-        if (current.derive?.source) {
-            for (const sid of current.derive.source as string[]) {
-                ids.add(sid);
+        const ids = new Set<string>();
+        // A loaded table has no `derive`, so its lineage is the conversation
+        // that produced it — walk both graphs to light the whole path.
+        const pending = [focusedTableId];
+        while (pending.length > 0) {
+            const id = pending.pop()!;
+            if (ids.has(id)) continue;
+            ids.add(id);
+            const table = tableById.get(id);
+            if (!table) continue;
+            if (table.derive) {
+                pending.push(table.derive.trigger.tableId);
+                for (const sid of (table.derive.source || []) as string[]) pending.push(sid);
             }
-        }
-        while (current.derive) {
-            let parentId = current.derive.trigger.tableId;
-            ids.add(parentId);
-            // Add derive.source tables for each ancestor
-            if (current.derive.source) {
-                for (const sid of current.derive.source as string[]) {
-                    ids.add(sid);
-                }
-            }
-            let parent = tableById.get(parentId);
-            if (!parent) break;
-            current = parent;
+            const host = table.threadParentId
+                ? textTurnRootByTurn.get(table.threadParentId)
+                : undefined;
+            if (host) pending.push(host);
         }
         return [...ids];
-    }, [focusedTableId, tableById]);
+    }, [focusedTableId, tableById, textTurnRootByTurn]);
 
     // Determine which leaf table's thread the focused table belongs to
     let focusedThreadLeafId: string | undefined = useMemo(() => {
@@ -2869,6 +2992,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // names only, so the artifacts would otherwise have nowhere to hang.
     for (const st of sourceTables) {
         if (sourcesWithColumn.has(st.id)) continue;
+        if (loadedTableHosts.has(st.id)) continue; // renders inline in the thread that loaded it
         const hasArtifacts = chartElements.some(ce => ce.tableId === st.id)
             || (textTurnItemsByTable.get(st.id) || 0) > 0
             || generatedReports.some(r => r.triggerTableId === st.id)
@@ -2928,11 +3052,26 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
             let tableRows = 0, entryRows = 0, artifactRows = 0;
 
+            // A loaded table renders inline with the turn that produced it, so
+            // the hosting entry owns it and its artifacts. Loading chains, so a
+            // table loaded from a loaded table belongs to the same entry.
+            const claimLoadedTables = (hostId: string) => {
+                for (const loadedId of loadedTablesByHost.get(hostId) || []) {
+                    if (accumulated.includes(loadedId)) continue;
+                    tableRows += 1;
+                    artifactRows += artifactRowsOf(loadedId);
+                    entryRows += textTurnItemsByTable.get(loadedId) || 0;
+                    accumulated.push(loadedId);
+                    claimLoadedTables(loadedId);
+                }
+            };
+
             if (entry.originTableId) {
                 tableRows += 1; // origin reference chip
                 if (!accumulated.includes(entry.originTableId)) {
                     artifactRows += artifactRowsOf(entry.originTableId);
                     entryRows += textTurnItemsByTable.get(entry.originTableId) || 0;
+                    claimLoadedTables(entry.originTableId);
                 }
                 accumulated.push(entry.originTableId);
             }
@@ -2955,6 +3094,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 // Include both source (tableId) and result (resultTableId) IDs from the chain
                 for (const tp of triggers) accumulated.push(tp.tableId, tp.resultTableId);
                 accumulated.push(lt.id);
+                for (const id of chainIds) claimLoadedTables(id);
             }
 
             allThreadHeights.push(estimateThreadHeight(tableRows, entryRows, artifactRows));
@@ -2998,7 +3138,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 key={entry.key}
                 sourceTables={sourceTables}
                 highlightedTableIds={globalHighlightedTableIds}
-                focusedTableId={focusedTableId}
+                focusedTableId={canvasOwnedByTurn ? undefined : focusedTableId}
                 sx={entrySx} />;
         }
 
@@ -3095,7 +3235,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 }),
             }}
         >
-            <Box ref={containerRef} sx={{
+            <Box ref={containerRef}
+                onClickCapture={(event) => {
+                    const row = (event.target as HTMLElement).closest<HTMLElement>('[data-thread-item]');
+                    if (row) selectedItemKeyRef.current = row.getAttribute('data-thread-item');
+                }}
+                sx={{
                     overflow: 'hidden', 
                     position: 'relative',
                     direction: 'rtl', 

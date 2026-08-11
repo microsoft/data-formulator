@@ -64,6 +64,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def get_azure_workspace_scratch_path(blob_prefix: str, safe_id: str) -> Path:
+    safe_scratch_rel = blob_prefix.strip("/").replace("/", os.sep) or safe_id
+    return get_data_formulator_home() / "scratch" / safe_scratch_rel
+
+
 def _data_cache_ttl() -> float:
     """Seconds a cached *data* blob may be served without re-validating.
 
@@ -152,8 +157,7 @@ class AzureBlobWorkspace(Workspace):
         # home so it survives across requests handled by this instance.
         # ``confined_scratch`` (inherited from :class:`Workspace`) returns this
         # jail, so callers work identically to the local backend.
-        safe_scratch_rel = self._prefix.strip("/").replace("/", os.sep) or self._safe_id
-        scratch_base = get_data_formulator_home() / "scratch" / safe_scratch_rel
+        scratch_base = get_azure_workspace_scratch_path(self._prefix, self._safe_id)
         scratch_base.mkdir(parents=True, exist_ok=True)
         self._scratch_dir = scratch_base
         self._confined_scratch = ConfinedDir(scratch_base, mkdir=False)

@@ -31,6 +31,8 @@ from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
+from data_formulator.data_operations import DataOperationExecutor, DataOperationRepository
+from data_formulator.datalake.parquet_utils import make_json_safe
 
 from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.mini_agent import MiniAnalystAgent
@@ -67,6 +69,65 @@ def _get_knowledge_store(identity_id: str) -> KnowledgeStore | None:
 
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
+
+# Enough rows to scroll through and judge the data, small enough that proposing
+# several tables stays cheap on the source.
+PREVIEW_ROW_LIMIT = 50
+
+
+@agent_bp.route('/data-operation-preview', methods=['POST'])
+def preview_data_operation():
+    """Return bounded display rows for an opaque operation plan."""
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
+    identity_id = get_identity_id()
+    if not identity_id:
+        raise AppError(ErrorCode.AUTH_REQUIRED, "Identity ID required")
+
+    content = request.get_json()
+    operation_id = str(content.get("operation_id", "")).strip()
+    plan_id = str(content.get("plan_id", "")).strip()
+    if not operation_id or not plan_id:
+        raise AppError(ErrorCode.INVALID_REQUEST, "operation_id and plan_id are required")
+
+    workspace = get_workspace(identity_id)
+    operation = DataOperationRepository.for_workspace(workspace).get(operation_id)
+    if operation is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Unknown data operation")
+    plan = next((item for item in operation.plans if item.id == plan_id), None)
+    if plan is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Unknown data operation plan")
+
+    from data_formulator.data_connector import resolve_live_loader
+    previews = []
+    for step in plan.steps:
+        # Per-step failures: one unreachable source shouldn't blank the whole
+        # canvas, and the frontend needs the source to offer a reconnect.
+        try:
+            loader = resolve_live_loader(step.source_id)
+            options = DataOperationExecutor._build_import_options(step)
+            requested = options.get("size")
+            preview_size = min(requested, PREVIEW_ROW_LIMIT) if isinstance(requested, int) and requested > 0 else PREVIEW_ROW_LIMIT
+            options["size"] = preview_size
+            table = loader.fetch_data_as_arrow(step.source_table, options)
+            from data_formulator.data_loader.external_data_loader import apply_import_projection
+            table = apply_import_projection(table, options)
+            table = table.slice(0, preview_size)
+        except Exception as exc:
+            logger.warning("Preview failed for %s", step.display_name, exc_info=True)
+            previews.append({
+                "display_name": step.display_name,
+                "source_id": step.source_id,
+                "error": str(exc),
+            })
+            continue
+        previews.append({
+            "display_name": step.display_name,
+            "source_id": step.source_id,
+            "columns": table.column_names,
+            "rows": make_json_safe(table.to_pylist()),
+        })
+    return json_ok({"previews": previews})
 
 
 def _with_warnings(gen):
@@ -380,7 +441,6 @@ def analyst_streaming():
     if not identity_id:
         return stream_preflight_error(AppError(ErrorCode.AUTH_REQUIRED, "Identity ID required"))
 
-    client = get_client(content['model'])
     workspace = get_workspace(identity_id)
 
     input_tables = content["input_tables"]
@@ -400,9 +460,50 @@ def analyst_streaming():
     charts = content.get("charts", None)
     resume_trajectory = content.get("trajectory", None)
     completed_step_count = content.get("completed_step_count", 0)
+    conversation_id = str(content.get("conversation_id", "")).strip()
+    interaction_response = content.get("interaction_response")
+    execution_operation = None
+    operation_repository = None
 
     if resume_trajectory is not None and not str(user_question or "").strip():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "user_question is required to resume after interaction"))
+
+    if interaction_response is not None:
+        from data_formulator.data_operations import (
+            DataOperationRepository,
+            resolve_interaction_response,
+        )
+
+        if resume_trajectory is None or not isinstance(interaction_response, dict):
+            return stream_preflight_error(AppError(
+                ErrorCode.INVALID_REQUEST,
+                "interaction_response requires an interaction resume",
+            ))
+        try:
+            operation_repository = DataOperationRepository.for_workspace(workspace)
+            user_question = resolve_interaction_response(
+                operation_repository,
+                interaction_response,
+            )
+            if interaction_response.get("action") != "elaborate":
+                operation_id = str(interaction_response.get("operation_id", ""))
+                execution_operation = operation_repository.get(operation_id)
+                if execution_operation is None:
+                    raise KeyError(f"Unknown data operation: {operation_id}")
+        except KeyError:
+            execution_operation = None
+            operation_repository = None
+            interaction_response = None
+            user_question = (
+                "The previous loading proposal expired because temporary session "
+                "state is unavailable. Reassess the user's request, rediscover the "
+                "source, and propose fresh loading options if the data is still needed."
+            )
+        except ValueError as exc:
+            return stream_preflight_error(AppError(
+                ErrorCode.INVALID_REQUEST,
+                str(exc),
+            ))
 
     logger.setLevel(logging.INFO)
     logger.info(f"# analyst-streaming request (agent_mode={agent_mode})")
@@ -417,6 +518,54 @@ def analyst_streaming():
 
     def generate():
         try:
+            if execution_operation is not None and operation_repository is not None:
+                from data_formulator.data_operations import (
+                    DataOperationExecutor,
+                    DataOperationStatus,
+                    OperationError,
+                )
+
+                try:
+                    if execution_operation.status in {
+                        DataOperationStatus.LOADED,
+                        DataOperationStatus.PARTIALLY_LOADED,
+                        DataOperationStatus.FAILED,
+                    }:
+                        completed_operation = execution_operation
+                    else:
+                        execution_result = DataOperationExecutor(workspace).execute(
+                            execution_operation
+                        )
+                        completed_operation = operation_repository.finish(
+                            execution_operation.id,
+                            execution_result.result_table_ids,
+                            execution_result.failed_steps,
+                        )
+                except Exception as exc:
+                    logger.error(
+                        "Data operation execution failed: %s",
+                        execution_operation.id,
+                        exc_info=exc,
+                    )
+                    app_error = (
+                        exc if isinstance(exc, AppError)
+                        else classify_and_wrap_llm_error(exc)
+                    )
+                    completed_operation = operation_repository.fail(
+                        execution_operation.id,
+                        OperationError(
+                            code=str(app_error.code),
+                            message=app_error.message,
+                        ),
+                    )
+                yield json.dumps({
+                    "type": "data_operation_result",
+                    "operation": completed_operation.to_public_dict(),
+                }, ensure_ascii=False) + '\n'
+                logger.setLevel(logging.WARNING)
+                return
+
+            client = get_client(content['model'])
             if agent_mode == "mini":
                 # Single-decision agent; it forces max_iterations=1 internally and
                 # may run one optional data inspection before answering.
@@ -465,6 +614,7 @@ def analyst_streaming():
                 attached_images=attached_images,
                 charts=charts,
                 scratch_files=scratch_files,
+                conversation_id=conversation_id,
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 

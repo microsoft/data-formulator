@@ -6,6 +6,7 @@ import { dataFormulatorReducer } from './dfSlice';
 
 import { persistReducer, persistStore, createTransform } from 'redux-persist'
 import localforage from 'localforage';
+import { migrateState } from './stateMigrations';
 
 export type AppDispatch = typeof store.dispatch
 
@@ -39,6 +40,7 @@ const persistConfig = {
     // In-progress flags are transient and should not survive page refreshes.
     blacklist: ['serverConfig', 'globalModels', 'chartSynthesisInProgress', 'starterQuestionsStatus'],
     transforms: [stripConnectorPrefill],
+    migrate: async (state: any): Promise<any> => migrateState(state),
 }
 
 const persistedReducer = persistReducer(persistConfig, dataFormulatorReducer)

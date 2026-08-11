@@ -215,7 +215,7 @@ export interface BuildTableCardProps {
     primaryBgColor: string | undefined;
     /** i18n `t` from `useTranslation()` */
     t: (key: string, options?: Record<string, unknown>) => string;
-    /** Whether to show the original file name under the table name (default: true) */
+    /** Whether source cards show their original name alongside the workspace identifier. */
     showOriginalName?: boolean;
 }
 
@@ -256,6 +256,14 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     let table = tables.find(t => t.id == tableId);
     const originalName = getOriginalName(table);
     const sourceTooltip = getSourceTooltip(table);
+    const workspaceName = table?.displayId || tableId;
+    const normalizeTableName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
+    const friendlyName = workspaceName;
+    const rawName = showOriginalName
+        && originalName
+        && normalizeTableName(originalName) !== normalizeTableName(workspaceName)
+        ? originalName
+        : null;
 
     let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
 
@@ -272,27 +280,35 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     const isHighlighted = highlightedTableIds.includes(tableId);
 
     const tableNameBlock = (
-        <Box sx={{ margin: '4px 8px 4px 2px', minWidth: 0, flex: 1 }}>
+        <Box sx={{
+            margin: '4px 8px 4px 2px', minWidth: 0, flex: 1,
+            display: 'flex', alignItems: 'baseline', flexWrap: 'wrap',
+            columnGap: 0.75, rowGap: 0.25,
+        }}>
             <Typography fontSize="inherit" sx={{
-                color: 'text.primary', 
+                color: 'text.primary',
                 fontWeight: 500,
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
+                flex: '0 0 auto',
+                minWidth: 0,
+                maxWidth: '100%',
                 overflow: 'hidden',
-                wordBreak: 'break-all',
-            }}>{table?.displayId || tableId}</Typography>
-            {showOriginalName && originalName && (
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+            }}>{friendlyName}</Typography>
+            {rawName && (
                 <Typography sx={{
                     fontSize: textVar.xxs,
                     color: 'text.disabled',
                     lineHeight: 1.3,
-                    mt: 0.5,
+                    flex: '0 0 auto',
+                    minWidth: 0,
+                    maxWidth: '100%',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    fontFamily: 'monospace',
                 }}>
-                    {originalName}
+                    {rawName}
                 </Typography>
             )}
         </Box>

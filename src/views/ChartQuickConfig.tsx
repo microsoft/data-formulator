@@ -25,12 +25,12 @@ import { iconVar, textVar } from '../app/layout';
 export interface ChartQuickConfigProps {
     chartId: string;
     /**
-     * Working-table metadata (`{ [fieldName]: { type, semanticType, ... } }`).
+    * Working-table physical metadata (`{ [fieldName]: { type, ... } }`).
      * Used to resolve a field's concrete encoding type when the encoding's own
      * `dtype` is left on "auto" — so type-aware action applicability (e.g. Sort
      * needing a discrete category axis) matches what the compiler renders.
      */
-    tableMetadata?: Record<string, { type?: string; semanticType?: string }>;
+    tableMetadata?: Record<string, { type?: string }>;
     /**
      * Flint's annotated option catalog for the current render (the spec's
      * `_options`). Each entry carries `applicable` (whether the option passed its
@@ -85,7 +85,7 @@ function tableTypeToEncodingType(t?: string): ChartEncoding['type'] | undefined 
 function buildEncodings(
     chart: Chart,
     conceptShelfItems: FieldItem[],
-    tableMetadata?: Record<string, { type?: string; semanticType?: string }>,
+    tableMetadata?: Record<string, { type?: string }>,
 ): Record<string, ChartEncoding> {
     const out: Record<string, ChartEncoding> = {};
     for (const [channel, item] of Object.entries(chart.encodingMap)) {

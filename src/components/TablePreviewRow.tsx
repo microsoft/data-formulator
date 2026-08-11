@@ -8,8 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { DataFrameTable } from '../views/DataFrameTable';
 import { iconVar, textVar } from '../app/layout';
 
-// Shared header+collapsible-preview row used by LoadPlanCard and the
-// inline previews in DataLoadingChat. Pure visual; no fetching, no state.
+// Shared header and collapsible preview row used by connector and scratch
+// candidates in LoadPlanCard. Pure visual; no fetching, no state.
 
 export interface TablePreviewData {
     state: 'idle' | 'loading' | 'error' | 'ready';

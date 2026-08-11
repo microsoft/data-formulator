@@ -168,7 +168,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let theme = useTheme();
 
     // use tables for infer domains
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
+    const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
 
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let activeModel = useSelector(dfSelectors.getActiveModel);
@@ -262,7 +263,13 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     let fieldComponent = field === undefined ? "" : (
         <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} 
-            tableMetadata={activeTable?.metadata || {}}
+            tableMetadata={Object.fromEntries(Object.entries(activeTable?.metadata || {}).map(([name, metadata]) => [
+                name,
+                {
+                    ...metadata,
+                    semanticType: tableSemantics.find(info => info.tableId === tableId)?.fields[name]?.semanticType || '',
+                },
+            ]))}
             field={field} encoding={encoding} 
             handleUnbind={() => {
             handleResetEncoding();

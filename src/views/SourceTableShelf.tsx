@@ -43,7 +43,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { DictTable } from '../components/ComponentType';
@@ -392,7 +392,7 @@ export const SourceTableShelf: FC<{
     const dispatch = useDispatch();
     const { manualRefresh } = useDataRefresh();
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
 
     const [sectionExpanded, setSectionExpanded] = useState(true);

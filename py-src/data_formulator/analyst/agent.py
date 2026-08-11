@@ -372,6 +372,7 @@ class AnalystAgent:
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
+        conversation_id: str = "",
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -380,7 +381,6 @@ class AnalystAgent:
             ``"result"``        – a visualization result (data + chart)
             ``"tool_start"`` / ``"tool_result"`` – inspection tool activity
             ``"skill_loaded"``  – a skill's gate opened
-            ``"delegate"``      – hand-off to a peer agent
             ``"completion"``    – the run's final answer (ends the run)
             ``"error"``         – error information
 
@@ -408,6 +408,12 @@ class AnalystAgent:
             "focused_thread": focused_thread,
             "other_threads": other_threads,
             "primary_tables": primary_tables,
+            "conversation_id": conversation_id,
+            # Skill instances are registry singletons, so mutable per-run state
+            # belongs here. SkillContext receives shallow payload copies; this
+            # nested mapping intentionally remains shared across tool calls in
+            # one run and is replaced at the beginning of the next run.
+            "skill_state": {},
         }
 
         try:
@@ -844,9 +850,8 @@ class AnalystAgent:
                             "display_instruction": content.get("question", ""),
                             "code": result.get("code", ""),
                         })
-                    elif etype in ("delegate", "interact"):
-                        # Both pause the run; the frontend needs the trajectory +
-                        # step count to resume after the user answers / hands off.
+                    elif etype == "interact":
+                        # Pauses need trajectory and step count for resume.
                         ev.setdefault("trajectory", self._strip_images(trajectory))
                         ev.setdefault("completed_step_count", len(completed_steps))
                     yield ev
@@ -1296,12 +1301,11 @@ class AnalystAgent:
                 "The user attached file(s), saved in the workspace scratch/ "
                 "folder:\n"
                 f"{file_list}\n\n"
-                "You can use them two ways: read a file with execute_python_script "
+                "Read them with execute_python_script "
                 "(e.g. pd.read_excel('scratch/<name>') or "
-                "pd.read_csv('scratch/<name>')) to use as context for your "
-                "analysis, or \u2014 if it's data to bring into the workspace \u2014 "
-                "delegate to data_loading, which can read the same scratch/ "
-                "files.\n\n"
+                "pd.read_csv('scratch/<name>')) to use as temporary context for "
+                "your analysis. Only tables materialized by a supported data "
+                "operation become workspace inputs.\n\n"
             )
 
         user_content += f"[USER QUESTION]\n\n{user_question}"

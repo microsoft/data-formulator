@@ -3,7 +3,27 @@
  * flows from the list-tables API response into DictTable.metadata.
  */
 import { describe, it, expect } from 'vitest';
-import { buildDictTableFromWorkspace } from '../../../../src/app/tableThunks';
+import {
+    buildDictTableFromWorkspace,
+    resolveDatabaseImportLimit,
+} from '../../../../src/app/tableThunks';
+
+describe('resolveDatabaseImportLimit', () => {
+    it('does not treat an intentional query limit as safety truncation', () => {
+        expect(resolveDatabaseImportLimit(500, 2_000_000)).toEqual({
+            limit: 500,
+            safetyCapApplied: false,
+        });
+    });
+
+    it('applies the safety cap to unbounded and oversized imports', () => {
+        expect(resolveDatabaseImportLimit(undefined, 2_000_000).safetyCapApplied).toBe(true);
+        expect(resolveDatabaseImportLimit(3_000_000, 2_000_000)).toEqual({
+            limit: 2_000_000,
+            safetyCapApplied: true,
+        });
+    });
+});
 
 describe('buildDictTableFromWorkspace', () => {
     const baseTable = {

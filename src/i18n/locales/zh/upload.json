@@ -117,6 +117,8 @@
     "selectFolder": "选择文件夹",
     "storedInAzure": "数据存储在 Azure Blob Storage",
     "storedInBrowser": "数据仅保留在浏览器中",
+    "storedTemporarily": "数据临时存储在此服务器上",
+    "temporaryServerLabel": "临时服务器",
     "storedOnDisk": "数据存储在磁盘上",
     "connectorDesc": {
       "sample_datasets": "使用示例数据快速体验",

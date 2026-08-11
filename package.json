@@ -16,6 +16,7 @@
     },
     "dependencies": {
         "@azure/msal-browser": "^5.6.3",
+        "@codemirror/lang-json": "^6.0.2",
         "@codemirror/lang-markdown": "^6.5.1",
         "@emotion/react": "^11.14.0",
         "@emotion/styled": "^11.14.0",

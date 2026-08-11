@@ -26,7 +26,7 @@
  */
 
 /** Current persisted-state schema version. Bump when adding a migration. */
-export const DF_STATE_VERSION = 2;
+export const DF_STATE_VERSION = 3;
 
 type SavedState = Record<string, any>;
 
@@ -76,6 +76,111 @@ const MIGRATIONS: Migration[] = [
                 : s.draftNodes,
         }),
     },
+    {
+        // design-docs/47: consolidate the input/derived split and semantic
+        // extraction into the one v3 migration shipped during 0.8 development.
+        // Prefer partially split fields when present and merge any remaining
+        // legacy `tables` entries by id.
+        to: 3,
+        migrate: (s) => {
+            const legacyTables = Array.isArray(s.tables) ? s.tables : [];
+            const partialInputs = Array.isArray(s.inputTables) ? s.inputTables : [];
+            const partialDerived = Array.isArray(s.derivedTables) ? s.derivedTables : [];
+            const semanticsByTable = new Map<string, any>();
+
+            for (const info of Array.isArray(s.tableSemantics) ? s.tableSemantics : []) {
+                if (info?.tableId) semanticsByTable.set(info.tableId, info);
+            }
+
+            const cleanMetadata = (tableId: string, metadata: Record<string, any> | undefined) => {
+                const existing = semanticsByTable.get(tableId);
+                const fields = { ...(existing?.fields || {}) };
+                const physicalMetadata: Record<string, any> = {};
+                for (const [name, value] of Object.entries(metadata || {})) {
+                    const {
+                        semanticType,
+                        intrinsicDomain,
+                        unit,
+                        displayName,
+                        ...physical
+                    } = value || {};
+                    const hasCuratedSortOrder = Array.isArray(physical.levels)
+                        && physical.levels.length > 0
+                        && !Array.isArray(physical.levelCounts);
+                    if (hasCuratedSortOrder) physical.levels = [];
+                    physicalMetadata[name] = physical;
+                    const field = {
+                        ...(fields[name] || {}),
+                        ...(semanticType ? { semanticType } : {}),
+                        ...(intrinsicDomain ? { intrinsicDomain } : {}),
+                        ...(unit ? { unit } : {}),
+                        ...(displayName ? { displayName } : {}),
+                        ...(hasCuratedSortOrder ? { sortOrder: value.levels } : {}),
+                    };
+                    if (Object.keys(field).length > 0) fields[name] = field;
+                }
+                if (Object.keys(fields).length > 0) {
+                    semanticsByTable.set(tableId, { ...existing, tableId, fields });
+                }
+                return physicalMetadata;
+            };
+
+            const inputById = new Map<string, any>();
+            for (const table of partialInputs) {
+                if (!table?.id) continue;
+                const columns = (table.snapshot?.columns || []).map((column: any) => {
+                    const { name, ...metadata } = column;
+                    return { name, ...cleanMetadata(table.id, { [name]: metadata })[name] };
+                });
+                inputById.set(table.id, { ...table, snapshot: { ...table.snapshot, columns } });
+            }
+            const cleanDerived = (table: any) => table && ({
+                ...table,
+                ...(table.metadata ? { metadata: cleanMetadata(table.id, table.metadata) } : {}),
+            });
+            const derivedById = new Map<string, any>(partialDerived.map((table: any) => [table.id, cleanDerived(table)]));
+
+            for (const table of legacyTables) {
+                if (!table?.id) continue;
+                if (table.derive) {
+                    if (!derivedById.has(table.id)) derivedById.set(table.id, cleanDerived(table));
+                    continue;
+                }
+
+                if (!inputById.has(table.id)) {
+                    const names = table.names?.length ? table.names : Object.keys(table.metadata || {});
+                    const physicalMetadata = cleanMetadata(table.id, table.metadata);
+                    const columns = names.map((name: string) => ({ name, ...(physicalMetadata[name] || {}) }));
+                    inputById.set(table.id, {
+                        kind: 'input-table',
+                        id: table.id,
+                        displayId: table.displayId || table.id,
+                        source: { kind: 'workspace', tableId: table.virtual?.tableId || table.id },
+                        snapshot: {
+                            columns,
+                            rowCount: table.virtual?.rowCount ?? table.rows?.length ?? null,
+                            capturedAt: Date.now(),
+                            ...(table.contentHash ? { contentHash: table.contentHash } : {}),
+                        },
+                        description: typeof table.description === 'string' ? table.description : '',
+                        ...(table.source ? { sourceConfig: table.source } : {}),
+                        addedAt: Date.now(),
+                    });
+                }
+
+                cleanMetadata(table.id, table.metadata);
+            }
+
+            const { tables: _tables, ...rest } = s;
+            return {
+                ...rest,
+                inputTables: [...inputById.values()],
+                derivedTables: [...derivedById.values()],
+                tableSemantics: [...semanticsByTable.values()],
+                __stateVersion: 3,
+            };
+        },
+    },
 ];
 
 /**
@@ -85,7 +190,15 @@ const MIGRATIONS: Migration[] = [
  */
 export function migrateState(saved: SavedState | null | undefined): SavedState {
     if (!saved || typeof saved !== 'object') return saved ?? {};
-    let from = typeof saved.__stateVersion === 'number' ? saved.__stateVersion : 0;
+    const savedVersion = typeof saved.__stateVersion === 'number' ? saved.__stateVersion : 0;
+    // Pre-release builds briefly stamped intermediate versions 3-5. They are
+    // all inputs to the single released v3 schema, not distinct migrations.
+    // A split payload without legacy `tables` is already normalized and only
+    // needs its stamp corrected; partial payloads rerun the idempotent v3 merge.
+    if (savedVersion >= 3 && savedVersion <= 5 && !Array.isArray(saved.tables)) {
+        return { ...saved, __stateVersion: DF_STATE_VERSION };
+    }
+    let from = savedVersion >= 3 && savedVersion <= 5 ? 2 : savedVersion;
     if (from >= DF_STATE_VERSION) return saved;
     let migrated = saved;
     for (const m of MIGRATIONS) {

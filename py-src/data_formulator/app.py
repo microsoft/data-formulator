@@ -484,8 +484,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace-backend", type=str,
         default=os.environ.get('WORKSPACE_BACKEND', 'local'),
         choices=['local', 'azure_blob', 'ephemeral'],
-        help="Workspace storage backend: 'local' (default, filesystem), "
-             "'azure_blob' (Azure Blob Storage), or 'ephemeral' (temp dirs, data does not survive restart)")
+           help="Workspace storage backend: 'local' (default, durable filesystem without TTL cleanup), "
+               "'azure_blob' (Azure Blob Storage), or 'ephemeral' "
+               "(temporary server-local storage with TTL/LRU cleanup)")
     parser.add_argument("--azure-blob-connection-string", type=str,
         default=os.environ.get('AZURE_BLOB_CONNECTION_STRING'),
         help="Azure Blob Storage connection string (mutually exclusive with --azure-blob-account-url)")
@@ -515,7 +516,7 @@ def run_app():
         args.disable_custom_models = True
         args.disable_display_keys = True
         print("  Multi-user anonymous mode (--disable-database): "
-              "ephemeral workspace, no connectors, no custom models, keys hidden", flush=True)
+              "TTL-managed ephemeral workspace, no connectors, no custom models, keys hidden", flush=True)
 
     # Override config from CLI args
     app.config['CLI_ARGS'] = {

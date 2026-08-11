@@ -65,18 +65,20 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    // Follow the same target the canvas renders, so a focused text turn shows
+    // the table behind its chart instead of emptying the grid.
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const allCharts = useSelector(dfSelectors.getAllCharts);
 
     // Derive the table to display based on focusedId
     const focusedTableId = useMemo(() => {
         if (tableId) return tableId;
-        if (!focusedId) return undefined;
-        if (focusedId.type === 'table') return focusedId.tableId;
-        if (focusedId.type !== 'chart') return undefined;
-        const chartId = focusedId.chartId;
-        const chart = allCharts.find(c => c.id === chartId);
+        if (!canvasTarget) return undefined;
+        if (canvasTarget.type === 'table') return canvasTarget.tableId;
+        if (canvasTarget.type !== 'chart') return undefined;
+        const chart = allCharts.find(c => c.id === canvasTarget.chartId);
         return chart?.tableRef;
-    }, [focusedId, allCharts, tableId]);
+    }, [canvasTarget, allCharts, tableId]);
 
     // The search term is temporary/per-table: clear it when switching tables.
     React.useEffect(() => {
@@ -87,10 +89,13 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     // Only subscribe to the focused table and table count — NOT the full tables array.
     // This prevents re-rendering the entire data grid when the agent adds unrelated tables.
     const targetTable = useSelector(
-        (state: DataFormulatorState) => state.tables.find(t => t.id === focusedTableId),
+        (state: DataFormulatorState) => dfSelectors.getAllTables(state).find(t => t.id === focusedTableId),
     );
-    const tableCount = useSelector((state: DataFormulatorState) => state.tables.length);
-    const firstTableId = useSelector((state: DataFormulatorState) => state.tables[0]?.id);
+    const tableCount = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state).length);
+    const firstTableId = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state)[0]?.id);
+    const tableSemantics = useSelector((state: DataFormulatorState) =>
+        state.tableSemantics.find(info => info.tableId === focusedTableId),
+    );
 
     useEffect(() => {
         if (focusedId == undefined && tableCount > 0 && firstTableId) {
@@ -130,10 +135,10 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         const cols = targetTable.names.map((name) => {
             const { minWidth, width } = calculateColumnWidth(name);
             const dataType = targetTable.metadata[name].type as Type;
-            const semanticType = targetTable.metadata[name].semanticType;
+            const semanticType = tableSemantics?.fields[name]?.semanticType;
             return {
                 id: name,
-                label: targetTable.metadata[name]?.displayName || name,
+                label: tableSemantics?.fields[name]?.displayName || name,
                 description: targetTable.metadata[name]?.description,
                 minWidth,
                 width,

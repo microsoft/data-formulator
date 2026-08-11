@@ -1,0 +1,63 @@
+---
+name: data_loading
+description: >-
+  Discover connected data sources, inspect table metadata, and run bounded
+  read-only probes when the current workspace data is insufficient.
+when_to_use: >-
+  The user's question needs data that is not already available as a workspace
+  input, or the user asks what connected data is available. Not for analyzing
+  tables already listed in the workspace context.
+always_on: false
+tools:
+  - list_data
+  - find_data
+  - describe_data
+  - probe_data
+actions:
+   - propose_data_operation
+---
+
+# Skill: Data discovery
+
+Use these tools to determine whether connected sources contain data needed for
+the user's goal. They are read-only: discovering, describing, or probing a
+source does not add anything to the workspace analysis inputs.
+
+## Discovery sequence
+
+1. Use `find_data` when the user names a business concept or table. Use
+   `list_data` when you need to browse available sources or hierarchy.
+2. Use `describe_data` before relying on columns, types, row counts, or filter
+   values. Pass the exact `source_id` and `table_key` returned by discovery.
+3. Use `probe_data` only when metadata is insufficient to choose a useful
+   bounded result. Probes are limited, read-only, and may be approximate.
+4. First reconcile discoveries with every table in `[PRIMARY TABLE(S)]`,
+   `[OTHER AVAILABLE TABLES]`, or `[AVAILABLE TABLES]`. If the needed data is
+   already loaded, use or explain that workspace table instead of proposing it.
+5. When there are genuinely missing useful alternatives, call
+   `propose_data_operation` with one
+   to three complete immutable plans. This pauses for the user's choice; it
+   does not load data yet.
+
+## Proposing loading options
+
+- Write one brief `response` that answers the user and explains why loading is
+   proposed. Each `option` is a complete alternative with a concise action label
+   and one or more tables. The application displays table previews separately.
+- Use only source IDs, table keys, columns, and values grounded by discovery.
+- For a whole table, omit `query`. Use the optional raw-row query only when the
+   request needs filters, projection, ordering, or an intentional limit. It uses
+   the same `filters` / `columns` / `order_by` / `limit` vocabulary as
+   `probe_data`, without aggregation.
+- Do not invent operation IDs, plan IDs, or hashes. The server creates them.
+- Never propose an exact connector query already represented by a workspace
+   table. The server also enforces this using persisted load provenance.
+
+## Grounding rules
+
+- Never invent source IDs, table keys, columns, or category values.
+- Prefer cached catalog discovery before a live probe.
+- Treat probe rows as evidence for planning, not as analysis input data.
+- Keep queries structured and bounded. Do not generate source-specific SQL.
+- If a source is unavailable or permissions changed, report the tool result and
+  ask the user for the needed connection or choose another source.

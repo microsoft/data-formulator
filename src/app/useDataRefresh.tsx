@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, selectRefreshConfigs } from './dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, selectRefreshConfigs } from './dfSlice';
 import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
@@ -31,13 +31,13 @@ interface RefreshResult {
  * It sets up intervals for each table that has auto-refresh enabled.
  *
  * Performance: timers are driven by `selectRefreshConfigs` (which is stable when
- * only row data changes) instead of the full `state.tables` array.  A ref keeps
+ * only row data changes) instead of the full materialized table array. A ref keeps
  * track of the latest tables snapshot so callbacks always have fresh data without
  * causing the effect to re-run.
  */
 export function useDataRefresh() {
     const dispatch = useDispatch<AppDispatch>();
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const refreshConfigs = useSelector(selectRefreshConfigs);
     const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
     const refreshInProgressRef = useRef<Map<string, boolean>>(new Map());
@@ -437,7 +437,7 @@ export function useDataRefresh() {
  */
 export function useDerivedTableRefresh() {
     const dispatch = useDispatch<AppDispatch>();
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const prevTableRowsRef = useRef<Map<string, string>>(new Map());
     const refreshInProgressRef = useRef<boolean>(false);
 

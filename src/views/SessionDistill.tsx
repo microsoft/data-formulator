@@ -46,7 +46,7 @@ import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import { TableIcon } from '../icons';
 import type { Chart, DictTable, FieldItem } from '../components/ComponentType';
 import {
-    DataFormulatorState, dfActions, type ModelConfig,
+    DataFormulatorState, dfActions, dfSelectors, type ModelConfig,
 } from '../app/dfSlice';
 import { store, type AppDispatch } from '../app/store';
 import { handleApiError } from '../app/errorHandler';
@@ -295,7 +295,7 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
-    const tables = useSelector((s: DataFormulatorState) => s.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const charts = useSelector((s: DataFormulatorState) => s.charts);
     const conceptShelfItems = useSelector((s: DataFormulatorState) => s.conceptShelfItems);
     const activeWorkspace = useSelector((s: DataFormulatorState) => s.activeWorkspace);

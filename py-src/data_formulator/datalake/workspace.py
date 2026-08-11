@@ -298,7 +298,7 @@ class Workspace:
         """
         if max_bytes is None:
             max_bytes = _configured_scratch_max_bytes()
-        scratch = self._path / "scratch"
+        scratch = self.confined_scratch.root
         if not scratch.exists():
             return 0
         try:
@@ -443,7 +443,7 @@ class Workspace:
     def add_table_metadata(self, table: TableMetadata) -> None:
         """Atomically add or update a table entry in workspace metadata."""
         self._atomic_update_metadata(lambda m: m.add_table(table))
-    
+
     def get_table_metadata(self, table_name: str) -> Optional[TableMetadata]:
         """Look up table metadata, falling back to sanitized name."""
         ws_metadata = self.get_metadata()

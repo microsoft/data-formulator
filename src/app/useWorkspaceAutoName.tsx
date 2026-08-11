@@ -23,7 +23,7 @@ export function isUntitledWorkspaceName(displayName: string | undefined): boolea
 export function useWorkspaceAutoName() {
     const dispatch = useDispatch<AppDispatch>();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);

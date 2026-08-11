@@ -48,7 +48,7 @@ import {
 } from '../api/knowledgeApi';
 import type { KnowledgeItem } from '../api/knowledgeApi';
 import { borderColor, radius } from '../app/tokens';
-import { dfActions, type DataFormulatorState } from '../app/dfSlice';
+import { dfActions, dfSelectors, type DataFormulatorState } from '../app/dfSlice';
 import { isLeafDerivedTable, buildLeafEvents } from './workflowContext';
 import { SessionDistillDialog, findSessionWorkflow } from './SessionDistill';
 import { iconVar, textVar } from '../app/layout';
@@ -114,7 +114,7 @@ export const KnowledgePanel: React.FC = () => {
     const dispatch = useDispatch();
 
     // For the "distill from this session" placeholder under WORKFLOWS.
-    const tables = useSelector((s: DataFormulatorState) => s.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     // Workflow replay needs data to run on — disable replay when the
     // workspace has no tables loaded.
     const hasTables = tables.length > 0;

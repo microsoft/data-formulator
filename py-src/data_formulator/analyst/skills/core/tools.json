@@ -128,35 +128,5 @@
         "required": ["questions"]
       }
     }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "delegate",
-      "description": "Hand off to a peer agent (e.g. data loading) when the question needs work outside this agent's scope, then end the run.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "thought": {
-            "type": "string",
-            "description": "Brief rationale (not shown to the user)."
-          },
-          "target": {
-            "type": "string",
-            "enum": ["data_loading"],
-            "description": "The peer agent to hand off to."
-          },
-          "message": {
-            "type": "string",
-            "description": "Short note to the user that you're handing off, e.g. 'I'll hand this to the data loading agent to find the data you need.'"
-          },
-          "delegate_prompt": {
-            "type": "string",
-            "description": "A single, complete instruction for the target agent describing exactly what data to find/load (sources, tables, columns, filters, time ranges as relevant). Write a full sentence or two — be specific, not a short search phrase."
-          }
-        },
-        "required": ["target", "delegate_prompt"]
-      }
-    }
   }
 ]

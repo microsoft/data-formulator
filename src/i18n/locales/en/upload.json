@@ -117,6 +117,8 @@
     "selectFolder": "Select Folder",
     "storedInAzure": "Data stored in Azure Blob Storage",
     "storedInBrowser": "Data stays in browser only",
+    "storedTemporarily": "Data is stored temporarily on this server",
+    "temporaryServerLabel": "Temporary server",
     "storedOnDisk": "Data stored on disk",
     "connectorDesc": {
       "sample_datasets": "Try it out with sample data",

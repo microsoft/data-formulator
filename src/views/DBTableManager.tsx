@@ -1015,7 +1015,6 @@ export const DataLoaderForm: React.FC<{
                                             display: 'flex', alignItems: 'flex-start', gap: 1,
                                             px: compact ? 1 : 1.5, py: compact ? 0.75 : 1.25,
                                             backgroundColor: alpha(theme.palette.primary.main, 0.06),
-                                            borderLeft: '3px solid', borderColor: 'primary.main',
                                         })}>
                                             <InfoOutlinedIcon sx={{ fontSize: compact ? 15 : 17, color: 'primary.main', mt: '2px', flexShrink: 0 }} />
                                             <Typography variant="body2" sx={{ fontSize: bodyFontSize, lineHeight: 1.5 }}>

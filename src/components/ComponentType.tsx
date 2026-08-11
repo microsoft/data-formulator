@@ -4,6 +4,7 @@
 import { Type } from '../data/types';
 import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
+import type { DataOperation, LoadQuery } from '../dataOperations/models';
 
 export type FieldSource = "custom" | "original";
 
@@ -41,6 +42,8 @@ export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-age
 
 export interface ClarificationOption {
     label: string;
+    /** Opaque backend-owned identifier submitted separately from the label. */
+    value?: string;
 }
 
 export interface ClarificationQuestion {
@@ -55,9 +58,12 @@ export interface ClarificationResponse {
      *  use a negative value (e.g. -1) or set `source: 'freeform'`. */
     question_index: number;
     answer: string;
+    /** Opaque selected option value; never rendered as the user's answer. */
+    value?: string;
     source: 'option' | 'free_text' | 'freeform';
 }
 
+/** Legacy persisted value retained only for rendering historical sessions. */
 export type DelegateTarget = 'data_loading' | 'report_gen';
 
 export interface InteractionEntry {
@@ -73,12 +79,8 @@ export interface InteractionEntry {
     attachments?: string[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
-    /** For 'delegate' entries: which peer agent the Data Agent wants to
-     *  hand off to. Rendered as one or two one-click button cards. */
+    /** Legacy persisted delegate metadata; new AnalystAgent runs do not emit it. */
     delegateTarget?: DelegateTarget;
-    /** For 'delegate' entries: 1–2 hand-off option prompts. Each string
-     *  is shown on its own button and used as the seed prompt sent to
-     *  the target agent on click. */
     delegateOptions?: string[];
     timestamp?: number;
 }
@@ -133,6 +135,8 @@ export interface TextTurn {
     prompt?: string;
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
+    /** Display-only immutable loading alternatives for a data-operation pause. */
+    dataOperation?: DataOperation;
     /** True once the user has responded to THIS clarify — it then locks
      *  (read-only). A later response is a *new* conversation, not a re-answer. */
     answered?: boolean;
@@ -156,7 +160,11 @@ export interface TextTurn {
      * §12 opaque resume token — set iff the backend stamped a trajectory on the
      * emitting event (continuation opt-in). Absent ⇒ followups are fresh turns.
      */
-    resume?: { trajectory: any[]; completedStepCount: number };
+    resume?: {
+        trajectory: any[];
+        completedStepCount: number;
+        operationId?: string;
+    };
     createdAt: number;
 }
 
@@ -224,17 +232,15 @@ export interface LoadPlanCandidate {
     displayName: string;
     sourceTable: string;
     sourceTableName?: string;
-    filters?: Array<{ column: string; operator: string; value?: any }>;
-    sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
-    selected?: boolean;
+    query?: LoadQuery;
     /** Backend-detected reason this candidate cannot be loaded (unknown source_id, missing table_key, etc.). */
     resolutionError?: string;
 }
 
 export interface LoadPlan {
-    candidates: LoadPlanCandidate[];
-    reasoning?: string;
+    response: string;
+    options: Array<{ label: string; tables: LoadPlanCandidate[] }>;
+    confirmed?: boolean;
 }
 
 /**
@@ -260,6 +266,7 @@ export interface ChatMessage {
     codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
     pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
     loadPlan?: LoadPlan;                // Agent-proposed data loading plan
+    dataOperation?: DataOperation;      // Immutable option-based loading proposal
     connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
     divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
     hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
@@ -304,6 +311,71 @@ export interface DataSourceConfig {
     originalTableName?: string;
 }
 
+export type InputTableSource =
+    | {
+        kind: 'connector';
+        connectorId: string;
+        sourceTable: { id: string; name: string };
+        path: string[];
+        workspaceTableId?: string;
+    }
+    | {
+        kind: 'workspace';
+        tableId: string;
+    };
+
+export interface InputTableColumn {
+    name: string;
+    type: Type;
+    sourceType?: string;
+    description?: string;
+    levels?: any[];
+    levelCounts?: number[];
+    distinctCount?: number;
+    nullCount?: number;
+}
+
+export interface FieldSemanticsInfo {
+    semanticType?: string;
+    intrinsicDomain?: [number, number];
+    unit?: string;
+    sortOrder?: any[];
+    displayName?: string;
+}
+
+export interface TableSemanticsInfo {
+    tableId: string;
+    displayName?: string;
+    fields: Record<string, FieldSemanticsInfo>;
+}
+
+export interface InputTableSnapshot {
+    columns: InputTableColumn[];
+    rowCount: number | null;
+    capturedAt: number;
+    contentHash?: string;
+}
+
+export interface InputTablePreview {
+    tableId: string;
+    rows: Record<string, unknown>[];
+    fetchedAt: number;
+    contentHash?: string;
+}
+
+export interface InputTable {
+    kind: 'input-table';
+    id: string;
+    displayId: string;
+    source: InputTableSource;
+    snapshot: InputTableSnapshot;
+    description: string;
+    sourceConfig?: DataSourceConfig;
+    /** Set when an agent loaded this table mid-conversation: the turn it follows. */
+    threadParentId?: string;
+    addedAt: number;
+}
+
 export interface DictTable {
     kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
@@ -312,7 +384,6 @@ export interface DictTable {
     names: string[]; // column names
     metadata: {[key: string]: {
         type: Type,
-        semanticType: string, 
         levels: any[],
         // Parallel to `levels` (same order); only populated when `levels`
         // was filled by the backend column-stats pass (design-doc 31).
@@ -323,9 +394,6 @@ export interface DictTable {
         // (≤ 100 → checklist, > 100 → keyword search).
         distinctCount?: number,
         nullCount?: number,
-        intrinsicDomain?: [number, number],
-        unit?: string,
-        displayName?: string,
         description?: string,
     }}; // metadata of the table
 
@@ -369,6 +437,8 @@ export interface DictTable {
     contentHash?: string;
 }
 
+export type TableNode = InputTable | DictTable;
+
 export function createDictTable(
     id: string, rows: any[], 
     derive: {
@@ -400,7 +470,6 @@ export function createDictTable(
                 ...acc,
                 [name]: {
                     type: refineTemporalType(colValues, inferred),
-                    semanticType: "",
                     levels: []
                 }
             };

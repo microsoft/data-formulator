@@ -198,7 +198,7 @@ export const TriggerCard: FC<{
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
 
     const dispatch = useDispatch<AppDispatch>();
 
@@ -371,7 +371,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     };
 
     // reference to states
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
 
     let allCharts = useSelector(dfSelectors.getAllCharts);

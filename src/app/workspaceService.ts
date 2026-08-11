@@ -4,30 +4,16 @@
 /**
  * Unified workspace service — single API for all workspace operations.
  *
- * Components call these functions without knowing whether the backend is
- * local, azure_blob, or ephemeral.  The routing is handled internally
- * based on ``serverConfig.WORKSPACE_BACKEND``.
- *
- * - local / azure_blob  → server API calls via fetchWithIdentity
- * - ephemeral           → IndexedDB via workspaceDB / tableDataDB
+ * Components call these functions without knowing which server-side workspace
+ * manager is active. All backends expose the same API contract.
  */
 
 import { fetchWithIdentity, getUrls } from './utils';
-import { apiRequest, assertDownloadResponseOk } from './apiClient';
-import {
-    workspaceDB,
-    tableDataDB,
-    exportWorkspaceToZip,
-    importWorkspaceFromZip,
-    TableIndexEntry,
-} from './workspaceDB';
-
-// ── Helpers ─────────────────────────────────────────────────────────────
-
-async function _getBackend(): Promise<'local' | 'azure_blob' | 'ephemeral'> {
-    const { store } = await import('./store');
-    return store.getState().serverConfig?.WORKSPACE_BACKEND || 'local';
-}
+import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
+import { workspaceDB, TableIndexEntry } from './workspaceDB';
+import { clearInputTablePreviewCache, INPUT_TABLE_PREVIEW_ROW_LIMIT, setInputTablePreview } from './inputTablePreviewCache';
+import { migrateState } from './stateMigrations';
+import type { InputTable } from '../components/ComponentType';
 
 export interface WorkspaceSummary {
     id: string;
@@ -36,6 +22,48 @@ export interface WorkspaceSummary {
     saved_at: string | null;
     table_count?: number | null;
     chart_count?: number | null;
+    read_only?: boolean;
+}
+
+async function isEphemeralBackend(): Promise<boolean> {
+    const { store } = await import('./store');
+    return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+}
+
+function createRecoveryState(state: Record<string, unknown>): Record<string, unknown> {
+    const snapshot = JSON.parse(JSON.stringify(state)) as Record<string, any>;
+    snapshot.derivedTables = Array.isArray(snapshot.derivedTables)
+        ? snapshot.derivedTables.map((table: Record<string, unknown>) => ({ ...table, rows: [] }))
+        : [];
+    delete snapshot.tables;
+    return snapshot;
+}
+
+function createTableIndex(state: Record<string, any>): TableIndexEntry[] {
+    const inputs = Array.isArray(state.inputTables) ? state.inputTables : [];
+    const derived = Array.isArray(state.derivedTables) ? state.derivedTables : [];
+    return [
+        ...inputs.map((table: any) => ({
+            name: table.source?.kind === 'workspace'
+                ? table.source.tableId
+                : (table.source?.workspaceTableId || table.id),
+            rowCount: table.snapshot?.rowCount || 0,
+            columns: (table.snapshot?.columns || []).map((column: any) => ({
+                name: column.name,
+                type: String(column.type || 'unknown'),
+            })),
+            contentHash: table.snapshot?.contentHash,
+        })),
+        ...derived.map((table: any) => ({
+            name: table.virtual?.tableId || table.id,
+            rowCount: table.virtual?.rowCount || table.rows?.length || 0,
+            columns: (table.names || []).map((name: string) => ({
+                name,
+                type: String(table.metadata?.[name]?.type || 'unknown'),
+            })),
+            contentHash: table.contentHash,
+        })),
+    ];
 }
 
 // ── Workspace list change event ─────────────────────────────────────
@@ -53,71 +81,106 @@ function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
+async function hydrateInputTablePreviews(state: Record<string, any>): Promise<void> {
+    clearInputTablePreviewCache();
+    const inputTables = (state.inputTables || []) as InputTable[];
+    await Promise.all(inputTables.map(async table => {
+        const workspaceTableId = table.source.kind === 'workspace'
+            ? table.source.tableId
+            : (table.source.workspaceTableId || table.id);
+        try {
+            const { data } = await apiRequest<{ rows: Record<string, unknown>[] }>(getUrls().SAMPLE_TABLE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ table: workspaceTableId, size: INPUT_TABLE_PREVIEW_ROW_LIMIT }),
+            });
+            setInputTablePreview(table, data.rows || []);
+        } catch (error) {
+            console.warn(`Failed to hydrate preview for ${table.id}:`, error);
+        }
+    }));
+}
+
 // ── Workspace CRUD ──────────────────────────────────────────────────────
 
 /** List all workspaces (newest first). */
 export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
-    const backend = await _getBackend();
-    if (backend === 'ephemeral') {
-        const entries = await workspaceDB.list();
-        return entries.map(e => ({
-            id: e.id,
-            display_name: e.displayName,
-            created_at: e.createdAt,
-            saved_at: e.updatedAt,
-        }));
-    }
     const { data } = await apiRequest(getUrls().SESSION_LIST);
-    return data.sessions ?? [];
+    const serverWorkspaces = (data.sessions ?? []) as WorkspaceSummary[];
+    if (!await isEphemeralBackend()) return serverWorkspaces;
+
+    const serverIds = new Set(serverWorkspaces.map(workspace => workspace.id));
+    const recoveryWorkspaces = await workspaceDB.list();
+    const expiredWorkspaces = recoveryWorkspaces
+        .filter(workspace => !serverIds.has(workspace.id))
+        .map(workspace => ({
+            id: workspace.id,
+            display_name: workspace.displayName,
+            created_at: workspace.createdAt,
+            saved_at: workspace.updatedAt,
+            read_only: true,
+        }));
+    return [...serverWorkspaces, ...expiredWorkspaces]
+        .sort((left, right) => (right.saved_at || '').localeCompare(left.saved_at || ''));
 }
 
 /** Load a workspace's saved state. Returns null if not found. */
-export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string } | null> {
-    const backend = await _getBackend();
-    if (backend === 'ephemeral') {
-        const entry = await workspaceDB.load(id);
-        if (!entry?.state) return null;
-        return { state: entry.state as Record<string, any>, displayName: entry.displayName };
+export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean } | null> {
+    const ephemeral = await isEphemeralBackend();
+    try {
+        const { data } = await apiRequest(getUrls().SESSION_LOAD, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+        });
+        if (!data.state) return null;
+        const state = migrateState(data.state);
+        await hydrateInputTablePreviews(state);
+        const savedWs = state.activeWorkspace;
+        const displayName = savedWs?.displayName || id;
+        if (ephemeral) {
+            await workspaceDB.save(id, displayName, createRecoveryState(state), createTableIndex(state));
+        }
+        return { state, displayName, readOnly: false };
+    } catch (error) {
+        const unavailable = error instanceof ApiRequestError
+            && ['WORKSPACE_EXPIRED', 'TABLE_NOT_FOUND'].includes(error.apiError.code);
+        if (!ephemeral || !unavailable) throw error;
+        const recovery = await workspaceDB.load(id);
+        if (!recovery) return null;
+        return {
+            state: createRecoveryState(migrateState(recovery.state)),
+            displayName: recovery.displayName,
+            readOnly: true,
+        };
     }
-    const { data } = await apiRequest(getUrls().SESSION_LOAD, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-    });
-    if (!data.state) return null;
-    const savedWs = data.state.activeWorkspace;
-    return { state: data.state, displayName: savedWs?.displayName || id };
 }
 
 /** Delete a workspace. */
 export async function deleteWorkspace(id: string): Promise<void> {
-    const backend = await _getBackend();
-    if (backend === 'ephemeral') {
-        await workspaceDB.delete(id);
-        _notifyListChanged();
-        return;
+    try {
+        await apiRequest(getUrls().SESSION_DELETE, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+        });
+    } catch (error) {
+        const alreadyUnavailable = error instanceof ApiRequestError
+            && ['WORKSPACE_EXPIRED', 'TABLE_NOT_FOUND'].includes(error.apiError.code);
+        if (!await isEphemeralBackend() || !alreadyUnavailable) throw error;
     }
-    await apiRequest(getUrls().SESSION_DELETE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-    });
+    if (await isEphemeralBackend()) await workspaceDB.delete(id);
     _notifyListChanged();
 }
 
 /** Update only the display name in workspace_meta.json (lightweight, no full state). */
 export async function updateWorkspaceMeta(id: string, displayName: string): Promise<void> {
-    const backend = await _getBackend();
-    if (backend === 'ephemeral') {
-        await workspaceDB.updateDisplayName(id, displayName);
-        _notifyListChanged();
-        return;
-    }
     await apiRequest(getUrls().SESSION_UPDATE_META, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, display_name: displayName }),
     });
+    if (await isEphemeralBackend()) await workspaceDB.updateDisplayName(id, displayName);
     _notifyListChanged();
 }
 
@@ -125,30 +188,22 @@ export async function updateWorkspaceMeta(id: string, displayName: string): Prom
 export async function saveWorkspaceState(state: Record<string, unknown>): Promise<void> {
     const { store } = await import('./store');
     const fullState = store.getState();
-    const backend = fullState.serverConfig?.WORKSPACE_BACKEND || 'local';
     const ws = fullState.activeWorkspace;
-    if (!ws) return;
+    if (!ws || isWorkspaceReadOnly(ws)) return;
 
-    if (backend === 'ephemeral') {
-        const tables = (fullState.tables || []) as any[];
-        const tableIndex: TableIndexEntry[] = tables.map((t: any) => ({
-            name: t.virtual?.tableId || t.id,
-            rowCount: t.virtual?.rowCount || t.rows?.length || 0,
-            columns: (t.names || []).map((n: string) => ({
-                name: n,
-                type: String(t.metadata?.[n]?.type || 'unknown'),
-            })),
-            contentHash: t.contentHash,
-        }));
-        await workspaceDB.save(ws.id, ws.displayName, state, tableIndex);
-        _notifyListChanged();
-        return;
-    }
     await apiRequest(getUrls().SESSION_SAVE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: ws.id, state }),
     });
+    if (fullState.serverConfig?.WORKSPACE_BACKEND === 'ephemeral') {
+        await workspaceDB.save(
+            ws.id,
+            ws.displayName,
+            createRecoveryState(state),
+            createTableIndex(fullState),
+        );
+    }
     _notifyListChanged();
 }
 
@@ -156,27 +211,6 @@ export async function saveWorkspaceState(state: Record<string, unknown>): Promis
 
 /** Export a workspace as a downloadable zip Blob. */
 export async function exportWorkspace(id: string): Promise<Blob> {
-    const backend = await _getBackend();
-    if (backend === 'ephemeral') {
-        // Ensure latest state is saved before exporting
-        const { store } = await import('./store');
-        const state = store.getState();
-        if (state.activeWorkspace?.id === id) {
-            const EXCLUDED = new Set([
-                'models', 'selectedModelId', 'testedModels',
-                'dataLoaderConnectParams', 'identity', 'serverConfig',
-                'chartSynthesisInProgress',
-                'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
-            ]);
-            const serializable: Record<string, unknown> = {};
-            for (const [key, value] of Object.entries(state)) {
-                if (!EXCLUDED.has(key)) serializable[key] = value;
-            }
-            await saveWorkspaceState(serializable);
-        }
-        return exportWorkspaceToZip(id);
-    }
-    // Server: load state, then export via server endpoint
     const { data } = await apiRequest<{ state: any }>(getUrls().SESSION_LOAD, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,12 +234,6 @@ export async function importWorkspace(
     workspaceId: string,
     displayName: string,
 ): Promise<Record<string, any>> {
-    const backend = await _getBackend();
-    if (backend === 'ephemeral') {
-        const { state } = await importWorkspaceFromZip(file, workspaceId, displayName);
-        return state as Record<string, any>;
-    }
-    // Server: upload zip with target workspace ID
     const formData = new FormData();
     formData.append('file', file);
     formData.append('workspace_id', workspaceId);
@@ -213,22 +241,13 @@ export async function importWorkspace(
         method: 'POST',
         body: formData,
     });
-    return data.state;
+    return migrateState(data.state);
 }
 
 // ── Table operations ────────────────────────────────────────────────────
 
-/** Delete a table from the workspace (server or IndexedDB). */
+/** Delete a table from the workspace. */
 export async function deleteTableFromWorkspace(tableId: string): Promise<void> {
-    const backend = await _getBackend();
-    if (backend === 'ephemeral') {
-        const { store } = await import('./store');
-        const wsId = store.getState().activeWorkspace?.id;
-        if (wsId) {
-            await tableDataDB.delete(wsId, tableId);
-        }
-        return;
-    }
     await apiRequest(getUrls().DELETE_TABLE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -245,6 +264,6 @@ export function deleteTablesFromWorkspace(tableIds: string[]): void {
     }
 }
 
-// ── Table data (ephemeral only) ─────────────────────────────────────────
-
-export { tableDataDB } from './workspaceDB';
+export function isWorkspaceReadOnly(workspace: { readOnly?: boolean } | null | undefined): boolean {
+    return workspace?.readOnly === true;
+}

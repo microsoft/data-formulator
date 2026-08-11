@@ -8,7 +8,7 @@ automatically at the start of each run, so the agent is never truly empty. It
 contributes the built-in data-inspection **tools** (``explore`` /
 ``inspect_source_data`` — ``load_skill`` is assembled by the shell because its
 enum is dynamic) and the always-available **actions** — the committing tool
-calls the agent acts with (``visualize`` / ``interact`` / ``delegate``; see
+calls the agent acts with (``visualize`` / ``interact``; see
 ``design-docs/36``).
 
 Each handler does *processing* (validate the action arguments, run/normalize,
@@ -41,14 +41,9 @@ from data_formulator.analyst.skills.base import (
 
 logger = logging.getLogger(__name__)
 
-# Valid targets for a ``delegate`` action. Report generation is NOT a delegate
-# target — it is the ``write_report`` action unlocked by the report skill.
-_DELEGATE_TARGETS: tuple[str, ...] = ("data_loading",)
-
-
 class CoreSkill:
     """The core skill processor: the ``explore`` / ``inspect_source_data`` tool
-    handlers and the ``visualize`` / ``interact`` / ``delegate`` action handlers.
+    handlers and the ``visualize`` / ``interact`` action handlers.
 
     Tool/action *schemas* live in ``core/tools.json`` and the skill's metadata
     in ``SKILL.md`` frontmatter (``load_skill`` is assembled by the shell because
@@ -104,8 +99,6 @@ class CoreSkill:
             return (yield from self._handle_visualize(spec, ctx))
         if action == "ask_user":
             return (yield from self._handle_interact(spec, ctx))
-        if action == "delegate":
-            return (yield from self._handle_delegate(spec, ctx))
         yield {
             "type": "error",
             "message": f"core cannot handle action '{action}'.",
@@ -219,33 +212,6 @@ class CoreSkill:
             **payload,
         }
         return None
-
-    # ------------------------------------------------------------------
-    # delegate — hand off to a peer agent
-    # ------------------------------------------------------------------
-
-    def _handle_delegate(
-        self, action: dict[str, Any], ctx: SkillContext,
-    ) -> Generator[Event, None, str | None]:
-        try:
-            payload = self._normalize_delegate_action(action)
-        except ValueError as exc:
-            msg = str(exc) or "delegate action requires target and delegate_prompt."
-            yield {
-                "type": "error",
-                "message": msg,
-                "message_code": "agent.parseActionFailed",
-            }
-            return msg
-        yield {
-            "type": "delegate",
-            "thought": action.get("thought", ""),
-            **payload,
-        }
-        return (
-            f"[DELEGATED to {payload['target']}] Handed off to the "
-            f"'{payload['target']}' agent; this run is complete."
-        )
 
     # ------------------------------------------------------------------
     # Observation formatting
@@ -371,33 +337,6 @@ class CoreSkill:
         if not questions:
             raise ValueError("ask_user action requires non-empty questions[]")
         return {"questions": questions}
-
-    @classmethod
-    def _normalize_delegate_action(cls, action: dict[str, Any]) -> dict[str, Any]:
-        target = str(action.get("target", "")).strip()
-        if target not in _DELEGATE_TARGETS:
-            raise ValueError(
-                f"delegate action requires 'target' ∈ {_DELEGATE_TARGETS}, got {target!r}"
-            )
-        message = str(action.get("message") or "").strip()
-        # The agent writes a single complete instruction in `delegate_prompt`.
-        # Fall back to the legacy `options[]` shape so older callers / cached
-        # specs still hand off gracefully.
-        delegate_prompt = str(action.get("delegate_prompt") or "").strip()
-        if not delegate_prompt:
-            raw_options = action.get("options")
-            if isinstance(raw_options, list):
-                for opt in raw_options:
-                    if isinstance(opt, str) and opt.strip():
-                        delegate_prompt = opt.strip()
-                        break
-        if not delegate_prompt:
-            raise ValueError("delegate action requires a non-empty 'delegate_prompt'")
-        payload: dict[str, Any] = {"target": target, "delegate_prompt": delegate_prompt}
-        if message:
-            payload["message"] = message
-        return payload
-
 
 def get_skill() -> CoreSkill:
     """Factory used by the registry's eager instantiation."""

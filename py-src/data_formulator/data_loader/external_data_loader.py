@@ -10,13 +10,27 @@ from data_formulator.datalake.table_names import sanitize_external_loader_table_
 
 MAX_IMPORT_ROWS = 2_000_000
 
+
+def apply_import_projection(
+    table: pa.Table,
+    import_options: dict[str, Any] | None,
+) -> pa.Table:
+    """Apply and validate the shared load-query projection after source fetch."""
+    columns = (import_options or {}).get("columns")
+    if not columns:
+        return table
+    if not isinstance(columns, list) or not all(isinstance(column, str) for column in columns):
+        raise ValueError("columns must be a list of column names")
+    missing = [column for column in columns if column not in table.column_names]
+    if missing:
+        raise ValueError(f"Unknown projected columns: {', '.join(missing)}")
+    return table.select(columns)
+
 if TYPE_CHECKING:
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.datalake.workspace_metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
-
-MAX_IMPORT_ROWS = 2_000_000
 
 
 class ConnectorParamError(ValueError):
@@ -458,6 +472,7 @@ class ExternalDataLoader(ABC):
             source_table=source_table,
             import_options=import_options,
         )
+        arrow_table = apply_import_projection(arrow_table, import_options)
         return arrow_table.to_pandas()
     
     def ingest_to_workspace(

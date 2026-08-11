@@ -59,6 +59,8 @@ export interface DataFrameTableProps {
      * the column count keeps the ones that remain readable.
      */
     minColumnWidth?: number;
+    /** Use flatter, quieter styling for dense draft previews. */
+    simple?: boolean;
 }
 
 export const DataFrameTable: React.FC<DataFrameTableProps> = ({
@@ -75,6 +77,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     truncationIndicator = 'row',
     autoWidth = false,
     minColumnWidth,
+    simple = false,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -135,7 +138,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                 minWidth: autoWidth ? '100%' : undefined,
                 tableLayout: autoWidth ? 'auto' : 'fixed',
                 '& th, & td': {
-                    px: 0.75, py: 0.3, textAlign: 'left',
+                    px: simple ? 0.6 : 0.75, py: 0.3, textAlign: 'left',
                     borderBottom: '1px solid', borderColor: 'divider',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 },
@@ -145,13 +148,21 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     fontSize: headerFontSize,
                     position: 'sticky',
                     top: 0,
-                    bgcolor: 'background.paper',
-                    zIndex: 1,
+                    // Matches .table-header-container / .data-view-header-cell
+                    // so a scrolled row passes cleanly beneath the header.
+                    bgcolor: simple
+                        ? 'background.paper'
+                        : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : '#fafafa',
+                    borderBottom: simple ? '1px solid' : '2px solid',
+                    borderColor: 'divider',
+                    zIndex: 2,
                 },
                 '& td': { color: 'text.primary' },
                 '& tr:last-child td': { borderBottom: 'none' },
                 '& tbody tr:nth-of-type(even)': {
-                    bgcolor: theme.palette.mode === 'dark'
+                    bgcolor: simple
+                        ? 'transparent'
+                        : theme.palette.mode === 'dark'
                         ? 'rgba(255,255,255,0.02)'
                         : 'rgba(0,0,0,0.02)',
                 },
@@ -160,7 +171,11 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     <tr>
                         {showIndex && (
                             <Typography component="th" variant="caption"
-                                sx={{ fontWeight: 600, fontSize: headerFontSize, color: 'text.disabled', minWidth: 28, textAlign: 'right' }}>
+                                sx={{
+                                    fontWeight: 600, fontSize: headerFontSize, color: 'text.disabled', textAlign: 'right',
+                                    width: simple ? 24 : undefined, minWidth: simple ? 24 : 28, maxWidth: simple ? 24 : undefined,
+                                    px: simple ? 0.5 : undefined,
+                                }}>
                             </Typography>
                         )}
                         {displayCols.map((col, i) => {
@@ -192,7 +207,11 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                         <tr key={ri}>
                             {showIndex && (
                                 <Typography component="td" variant="caption"
-                                    sx={{ fontSize, color: 'text.disabled', textAlign: 'right', pr: 1 }}>
+                                    sx={{
+                                        fontSize, color: 'text.disabled', textAlign: 'right', pr: simple ? 0.5 : 1,
+                                        pl: simple ? 0.25 : undefined, width: simple ? 24 : undefined,
+                                        minWidth: simple ? 24 : undefined, maxWidth: simple ? 24 : undefined,
+                                    }}>
                                     {ri}
                                 </Typography>
                             )}

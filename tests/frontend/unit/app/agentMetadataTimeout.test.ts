@@ -74,7 +74,15 @@ describe('agent metadata thunks', () => {
         ...dataFormulatorSlice.getInitialState(),
         selectedModelId: model.id,
         globalModels: [model],
-        tables: [sourceTable],
+        inputTables: [{
+            kind: 'input-table',
+            id: sourceTable.id,
+            displayId: sourceTable.displayId,
+            source: { kind: 'workspace', tableId: sourceTable.id },
+            snapshot: { columns: [{ name: 'value', type: 'integer', levels: [] }], rowCount: 1, capturedAt: 1 },
+            description: '',
+            addedAt: 1,
+        }],
     });
 
     let setTimeoutSpy: ReturnType<typeof vi.spyOn>;

@@ -11,7 +11,7 @@
  * See design-docs/28-chart-style-refinement-agent.md.
  */
 
-import { Chart, ChartStyleVariant, VariantConfigControl, FieldItem, DictTable, computeEncodingFingerprint } from '../components/ComponentType';
+import { Chart, ChartStyleVariant, VariantConfigControl, FieldItem, FieldSemanticsInfo, DictTable, computeEncodingFingerprint } from '../components/ComponentType';
 import { assembleVegaChart, getUrls } from './utils';
 import { apiRequest } from './apiClient';
 import { checkChartAvailability } from '../views/ChartUtils';
@@ -39,6 +39,7 @@ export function buildEmbeddedDataForChart(
     rows: any[],
     tableMetadata: any,
     conceptShelfItems: FieldItem[],
+    fieldSemantics?: Record<string, FieldSemanticsInfo>,
 ): any[] {
     const fullSpec = assembleVegaChart(
         chart.chartType,
@@ -46,7 +47,7 @@ export function buildEmbeddedDataForChart(
         conceptShelfItems,
         rows,
         tableMetadata,
-        300, 300, false, chart.config,
+        300, 300, false, chart.config, 1, undefined, undefined, fieldSemantics,
     );
     if (!fullSpec || fullSpec === 'Table') return rows;
     const values = (fullSpec as any)?.data?.values;
@@ -74,6 +75,7 @@ export function buildSpecForRestyle(
     table: DictTable,
     conceptShelfItems: FieldItem[],
     basedOnVariant?: ChartStyleVariant,
+    fieldSemantics?: Record<string, FieldSemanticsInfo>,
 ): { spec: any; basedOnVariantId?: string; embeddedData: any[] } | null {
     if (!table) return null;
     if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) return null;
@@ -84,7 +86,7 @@ export function buildSpecForRestyle(
         conceptShelfItems,
         table.rows,
         table.metadata,
-        300, 300, true, chart.config,
+        300, 300, true, chart.config, 1, undefined, undefined, fieldSemantics,
     );
     if (!fullSpec || fullSpec === 'Table') return null;
     const embeddedValues = (fullSpec as any)?.data?.values;

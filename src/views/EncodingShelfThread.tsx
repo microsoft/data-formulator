@@ -33,7 +33,7 @@ export interface EncodingShelfThreadProps {
 export let ChartElementFC: FC<{
     chart: Chart, 
     tableRows: any[], 
-    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[]}}, 
+    tableMetadata: {[key: string]: {type: Type, levels: any[]}},
     boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, tableMetadata, boxWidth, boxHeight}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);

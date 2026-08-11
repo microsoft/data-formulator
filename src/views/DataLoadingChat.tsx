@@ -26,9 +26,9 @@ import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
-import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
@@ -39,15 +39,17 @@ import { apiRequest, streamRequest } from '../app/apiClient';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate, ConnectorFormPrompt } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
-import { LoadPlanCard, PendingLoadsCard } from '../components/LoadPlanCard';
+import { buildLoadQueryImportOptions, LoadPlanCard, PresentedLoadCandidate } from '../components/LoadPlanCard';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
-import { getConnectorIcon } from '../icons';
+import { getConnectorIcon, TableIcon } from '../icons';
 import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
 import { formatFilterChipLabel } from '../components/filterFormat';
 import { AgentChatInput } from './AgentChatInput';
 import { useScrollFade, ScrollFadeEdge } from '../components/ScrollFade';
 import { generateUUID } from '../app/identity';
 import { iconVar, textVar } from '../app/layout';
+import { parseDataOperation, type DataOperation } from '../dataOperations/models';
+import { DataOperationCard } from '../components/DataOperationCard';
 
 // ---------------------------------------------------------------------------
 // Helper: fresh workspace session id (mirrors DataSourceSidebar's scheme)
@@ -428,11 +430,43 @@ type CanvasKind = 'connector' | 'loadPlan';
 // same every time. Only a *resolved* connection collapses back into the chat,
 // where it is a status chip rather than a widget.
 const isShortConnectorForm = (form: ConnectorFormPrompt) => form.status === 'connected';
+const loadPlanTables = (plan?: LoadPlan) => plan?.options.flatMap(option => option.tables) ?? [];
+const loadPlanCandidateCount = (message: ChatMessage) =>
+    loadPlanTables(message.loadPlan).length + (message.pendingLoads?.length ?? 0);
+const hasLoadPlan = (message: ChatMessage) => loadPlanCandidateCount(message) > 0;
+const isLoadPlanComplete = (message: ChatMessage) => hasLoadPlan(message)
+    && (!message.loadPlan || message.loadPlan.confirmed === true)
+    && (!message.pendingLoads || message.pendingLoads.every(p => p.confirmed || !p.csvScratchPath));
+interface CanvasInviteDetail {
+    source: string;
+    table: string;
+    rows?: string;
+}
+const formatInviteRowCount = (count: number, t: TFunction) => t(
+    count === 1 ? 'dataLoading.canvasRow' : 'dataLoading.canvasRows',
+    {
+        formatted: count.toLocaleString(),
+        defaultValue: `${count.toLocaleString()} ${count === 1 ? 'row' : 'rows'}`,
+    },
+);
+const loadPlanInviteDetails = (message: ChatMessage, t: TFunction): CanvasInviteDetail[] => [
+    ...loadPlanTables(message.loadPlan).map(candidate => ({
+        source: candidate.sourceId,
+        table: candidate.displayName,
+    })),
+    ...(message.pendingLoads || []).map(pending => ({
+        source: message.codeBlocks?.length
+            ? t('dataLoading.canvasPythonSource', { defaultValue: 'Python' })
+            : t('dataLoading.canvasExtractedSource', { defaultValue: 'Extracted' }),
+        table: pending.name,
+        rows: formatInviteRowCount(pending.preview.totalRows, t),
+    })),
+];
 /** Width the widget wants on open: plans grow with the number of tables. */
 const canvasWidthFor = (kind: CanvasKind, message: ChatMessage) =>
     kind === 'connector'
         ? LAYOUT.canvasWidth.connector
-        : LAYOUT.canvasWidth.loadPlan(message.loadPlan?.candidates.length ?? 0);
+        : LAYOUT.canvasWidth.loadPlan(loadPlanCandidateCount(message));
 
 /**
  * Chat-side stand-in for a canvas widget: one compact line that says what is
@@ -441,12 +475,15 @@ const canvasWidthFor = (kind: CanvasKind, message: ChatMessage) =>
 const CanvasInvite: React.FC<{
     icon: React.ReactNode;
     title: string;
-    caption: string;
+    caption?: string;
+    details?: CanvasInviteDetail[];
+    moreCount?: number;
     action: string;
     active?: boolean;
     onClick: () => void;
-}> = ({ icon, title, caption, action, active, onClick }) => {
+}> = ({ icon, title, caption, details, moreCount = 0, action, active, onClick }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     return (
         <Box
             role="button"
@@ -455,26 +492,67 @@ const CanvasInvite: React.FC<{
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
             sx={{
                 mt: 1, width: '100%', maxWidth: 420, minWidth: 0,
-                display: 'flex', alignItems: 'center', gap: 1,
-                px: 1.25, py: 0.875,
+                display: 'flex', alignItems: 'flex-start', gap: 1,
+                px: 1.25, py: 1,
                 border: '1px solid',
-                borderColor: active ? 'primary.main' : 'divider',
+                borderColor: active
+                    ? alpha(theme.palette.primary.main, 0.55)
+                    : alpha(theme.palette.text.primary, 0.14),
                 borderRadius: radius.md,
                 cursor: 'pointer',
-                bgcolor: active ? alpha(theme.palette.primary.main, 0.06) : 'background.paper',
+                bgcolor: active
+                    ? alpha(theme.palette.primary.main, 0.05)
+                    : alpha(theme.palette.text.primary, 0.025),
                 transition: transition.normal,
-                '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.06), borderColor: 'primary.main' },
+                '&:hover': {
+                    bgcolor: alpha(theme.palette.text.primary, 0.045),
+                    borderColor: alpha(theme.palette.primary.main, 0.55),
+                    '& .canvas-invite-action': { color: 'primary.main' },
+                },
+                '&:focus-visible': {
+                    outline: `2px solid ${alpha(theme.palette.primary.main, 0.65)}`,
+                    outlineOffset: 2,
+                },
             }}
         >
-            <Box sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary' }}>{icon}</Box>
+            <Box sx={{ display: 'flex', flexShrink: 0, color: 'text.disabled', mt: 0.15 }}>{icon}</Box>
             <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 600, lineHeight: 1.4 }}>{title}</Typography>
-                <Typography noWrap sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>{caption}</Typography>
+                <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 600, lineHeight: 1.35 }}>{title}</Typography>
+                {details?.length ? (
+                    <Box sx={{ mt: 0.35, display: 'flex', flexDirection: 'column', gap: 0.15 }}>
+                        {details.map((detail, index) => {
+                            const source = `${t('dataLoading.canvasSourceLabel', { defaultValue: 'source' })}: ${detail.source}`;
+                            const metadata = [source, detail.rows].filter(Boolean).join(', ');
+                            const label = `${detail.table} (${metadata})`;
+                            return (
+                                <Typography key={`${detail.source}:${detail.table}:${index}`} noWrap title={label}
+                                    sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>
+                                    <Box component="span" sx={{ color: 'text.primary', fontWeight: 500 }}>{detail.table}</Box>
+                                    {' ('}{metadata}{')'}
+                                </Typography>
+                            );
+                        })}
+                        {moreCount > 0 && (
+                            <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled', lineHeight: 1.4 }}>
+                                {t('dataLoading.canvasMoreTables', {
+                                    count: moreCount,
+                                    defaultValue: `+${moreCount} more`,
+                                })}
+                            </Typography>
+                        )}
+                    </Box>
+                ) : caption ? (
+                    <Typography noWrap sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>{caption}</Typography>
+                ) : null}
             </Box>
-            <Typography sx={{ fontSize: textVar.xs, flexShrink: 0, color: active ? 'primary.main' : 'text.secondary' }}>
-                {action}
-            </Typography>
-            <ChevronRightIcon sx={{ fontSize: iconVar.md, flexShrink: 0, color: active ? 'primary.main' : 'text.disabled' }} />
+            <Box className="canvas-invite-action" sx={{
+                display: 'flex', alignItems: 'center', flexShrink: 0, mt: 0.1,
+                color: active ? 'primary.main' : 'text.disabled',
+                transition: transition.fast,
+            }}>
+                <Typography sx={{ fontSize: textVar.xs, fontWeight: 500 }}>{action}</Typography>
+                <ChevronRightIcon sx={{ fontSize: iconVar.sm, ml: 0.15 }} />
+            </Box>
         </Box>
     );
 };
@@ -490,51 +568,17 @@ const CanvasInvite: React.FC<{
 // keystrokes.
 const ChatBubble = React.memo<{
     message: ChatMessage;
-    existingNames: Set<string>;
-    onTableLoaded?: () => void;
     onContinue?: () => void;
     /** Opens this message's long widget on the canvas. */
     onOpenCanvas?: (kind: CanvasKind, messageId: string) => void;
     /** Message whose widget the canvas currently shows. */
     canvasMessageId?: string;
-}>(({ message, existingNames, onTableLoaded, onContinue, onOpenCanvas, canvasMessageId }) => {
+}>(({ message, onContinue, onOpenCanvas, canvasMessageId }) => {
     const theme = useTheme();
     const { t } = useTranslation();
-    const dispatch = useDispatch<AppDispatch>();
     const isUser = message.role === 'user';
     const [hovered, setHovered] = useState(false);
     const [showDebug, setShowDebug] = useState(false);
-
-    const handleLoadTable = async (pending: PendingTableLoad) => {
-        const unique = getUniqueTableName(pending.name, existingNames);
-        try {
-            if (pending.csvScratchPath) {
-                const scratchUrl = `${getUrls().SCRATCH_BASE_URL}/${pending.csvScratchPath.replace(/^scratch\//, '')}`;
-                const res = await fetchWithIdentity(scratchUrl);
-                if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
-                const csvText = await res.text();
-                const table = createTableFromText(unique, csvText);
-                if (table) {
-                    // Only flip to "loaded" once the table is actually in the
-                    // workspace — `.unwrap()` throws if the load thunk rejects,
-                    // so a failure skips confirmTableLoad and keeps the button.
-                    await dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } })).unwrap();
-                    dispatch(dfActions.confirmTableLoad({ messageId: message.id, tableName: pending.name }));
-                    // Loading data is a deliberate commit — return the
-                    // user to the canvas (the dialog closes via this hook).
-                    onTableLoaded?.();
-                }
-            }
-        } catch (err: any) {
-            console.error('Failed to load table:', err);
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'data loader',
-                value: `Failed to load "${pending.name}": ${err?.message || err}`,
-            }));
-        }
-    };
 
     // User messages: compact right-aligned bubble
     if (isUser) {
@@ -603,34 +647,18 @@ const ChatBubble = React.memo<{
                 {message.content && <MarkdownContent content={message.content} />}
                 {message.codeBlocks?.map((block, i) => <CodeBlockView key={i} block={block} />)}
                 {message.tables?.map((table, i) => <InlineTablePreviewView key={i} preview={table} />)}
-                {message.pendingLoads && message.pendingLoads.length > 0 && (
-                    <PendingLoadsCard
-                        pendingLoads={message.pendingLoads}
-                        onLoad={handleLoadTable}
-                    />
-                )}
-
                 {/* Load plan — the agent's reasoning stays in its own voice
                     above the plan; the plan itself always opens on the canvas. */}
-                {message.loadPlan?.reasoning && (
-                    <Box sx={{ mt: message.content ? 0.5 : 0 }}>
-                        <MarkdownContent content={message.loadPlan.reasoning} />
-                    </Box>
-                )}
-                {message.loadPlan && (() => {
-                    const plan = message.loadPlan;
-                    const confirmed = plan.candidates.every(c => c.selected === false);
+                {hasLoadPlan(message) && (() => {
+                    const complete = isLoadPlanComplete(message);
+                    const details = loadPlanInviteDetails(message, t);
                     return (
                         <CanvasInvite
-                            icon={<TableChartOutlinedIcon sx={{ fontSize: 17 }} />}
+                            icon={<TableIcon sx={{ fontSize: 17 }} />}
                             title={t('dataLoading.canvasLoadPlan', { defaultValue: 'Table loading plan' })}
-                            caption={confirmed
-                                ? t('dataLoading.canvasPlanLoaded', { defaultValue: 'Loaded' })
-                                : t('dataLoading.canvasPlanCaption', {
-                                    count: plan.candidates.length,
-                                    defaultValue: '{{count}} tables proposed',
-                                })}
-                            action={confirmed
+                            details={details.slice(0, 3)}
+                            moreCount={Math.max(0, details.length - 3)}
+                            action={complete
                                 ? t('dataLoading.canvasView', { defaultValue: 'View' })
                                 : t('dataLoading.canvasReview', { defaultValue: 'Review' })}
                             active={canvasMessageId === message.id}
@@ -638,6 +666,9 @@ const ChatBubble = React.memo<{
                         />
                     );
                 })()}
+                {message.dataOperation && (
+                    <DataOperationCard operation={message.dataOperation} />
+                )}
                 {/* Connection form — Agent-proposed via propose_connection. The
                     form opens on the canvas; once connected it collapses to an
                     inline status chip. */}
@@ -776,9 +807,10 @@ const summarizeToolArgs = (tool: string, args: any): string => {
             }
             break;
         case 'propose_load_plan':
-            if (Array.isArray(args.candidates)) {
-                detail = args.candidates
-                    .map((c: any) => c?.display_name || c?.table_key)
+            if (Array.isArray(args.options)) {
+                detail = args.options
+                    .flatMap((option: any) => option?.tables || [])
+                    .map((table: any) => table?.table_key)
                     .filter(Boolean).join(', ');
             }
             break;
@@ -931,9 +963,10 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
     // carried payload as a fresh user message via `sendMessage`.
     // Single redux signal = no prop race.
     const pendingSubmission = useSelector((state: DataFormulatorState) => state.dataLoadingChatPending);
-    const existingTables = useSelector((state: DataFormulatorState) => state.tables);
+    const existingTables = useSelector(dfSelectors.getAllTables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
+    const workspaceReadOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly === true);
     // Stable reference across renders that don't actually change the
     // table list — without this, every keystroke in the chat input
     // would rebuild the Set and bust `ChatBubble`'s memo equality.
@@ -1010,8 +1043,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
             if (msg.connectorForm && !isShortConnectorForm(msg.connectorForm)) {
                 return { kind: 'connector' as CanvasKind, messageId: msg.id };
             }
-            if (msg.loadPlan
-                && !msg.loadPlan.candidates.every(c => c.selected === false)) {
+            if (hasLoadPlan(msg) && !isLoadPlanComplete(msg)) {
                 return { kind: 'loadPlan' as CanvasKind, messageId: msg.id };
             }
         }
@@ -1049,20 +1081,11 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         return () => observer.disconnect();
     }, [canvasWidget, clampCanvasWidth]);
 
-    // Load-plan confirmation, shared by the inline and canvas renderings.
+    // Connector loading strategy used by the unified canvas plan.
     const handleConfirmPlan = useCallback(async (
         messageId: string,
         selected: LoadPlanCandidate[],
-        opts?: { newWorkspace?: boolean },
     ) => {
-        // When data already exists, the user may choose to start a fresh
-        // workspace instead of appending. We reset *before* loading so the
-        // X-Workspace-Id header (read live from the store at fetch time)
-        // targets the new session.
-        if (opts?.newWorkspace) {
-            const displayName = selected[0]?.displayName || 'Untitled Session';
-            dispatch(dfActions.resetForNewWorkspace({ id: newWorkspaceSessionId(), displayName }));
-        }
         try {
             for (const item of selected) {
                 const sourceTableName = item.sourceTableName || item.displayName;
@@ -1090,11 +1113,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                     table,
                     connectorId: item.sourceId,
                     sourceTableRef: { id: item.sourceTable, name: item.displayName },
-                    importOptions: {
-                        source_filters: item.filters || [],
-                        sort_columns: item.sortBy ? [item.sortBy] : undefined,
-                        sort_order: item.sortOrder,
-                    },
+                    importOptions: buildLoadQueryImportOptions(item),
                 })).unwrap();
             }
         } catch (err: any) {
@@ -1106,14 +1125,67 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 value: `Failed to load data: ${err?.message || err}`,
             }));
             // Leave the plan unconfirmed so the user can retry.
-            return;
+            return false;
         }
         dispatch(dfActions.markLoadPlanConfirmed({ messageId }));
-        if (selected.length > 0) {
-            // Loading data is a deliberate commit — return the user to the canvas.
-            handleTableLoaded();
+        return selected.length > 0;
+    }, [dispatch]);
+
+    const handleLoadPending = useCallback(async (messageId: string, pending: PendingTableLoad) => {
+        const unique = getUniqueTableName(pending.name, existingNames);
+        try {
+            if (!pending.csvScratchPath) return false;
+            const scratchUrl = `${getUrls().SCRATCH_BASE_URL}/${pending.csvScratchPath.replace(/^scratch\//, '')}`;
+            const res = await fetchWithIdentity(scratchUrl);
+            if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+            const csvText = await res.text();
+            const table = createTableFromText(unique, csvText);
+            if (!table) return false;
+            await dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } })).unwrap();
+            dispatch(dfActions.confirmTableLoad({ messageId, tableName: pending.name }));
+            return true;
+        } catch (err: any) {
+            console.error('Failed to load table:', err);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data loader',
+                value: `Failed to load "${pending.name}": ${err?.message || err}`,
+            }));
+            return false;
         }
-    }, [dispatch, handleTableLoaded]);
+    }, [dispatch, existingNames]);
+
+    const handleConfirmPresentedPlan = useCallback(async (
+        messageId: string,
+        selected: PresentedLoadCandidate[],
+        opts?: { newWorkspace?: boolean },
+    ) => {
+        if (opts?.newWorkspace) {
+            const first = selected[0];
+            const displayName = first?.kind === 'connector'
+                ? first.candidate.displayName
+                : first?.candidate.name;
+            dispatch(dfActions.resetForNewWorkspace({
+                id: newWorkspaceSessionId(),
+                displayName: displayName || 'Untitled Session',
+            }));
+        }
+
+        const connectors = selected.flatMap(item =>
+            item.kind === 'connector' ? [item.candidate] : []
+        );
+        const scratch = selected.flatMap(item =>
+            item.kind === 'scratch' ? [item.candidate] : []
+        );
+        let loadedAny = connectors.length > 0
+            ? await handleConfirmPlan(messageId, connectors)
+            : false;
+        for (const pending of scratch) {
+            loadedAny = await handleLoadPending(messageId, pending) || loadedAny;
+        }
+        if (loadedAny) handleTableLoaded();
+    }, [dispatch, handleConfirmPlan, handleLoadPending, handleTableLoaded]);
 
     // Group the flat message list into task "sections" split on the "new
     // request" dividers. Each section is anchored by the id of its first
@@ -1247,7 +1319,6 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
             scrollLatestSectionToTop();
         });
         return () => cancelAnimationFrame(id);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sections]);
 
 
@@ -1282,7 +1353,6 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         ro.observe(content);
         if (scrollEl) ro.observe(scrollEl);
         return () => ro.disconnect();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Auto-focus input
@@ -1389,6 +1459,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                 const tables: InlineTablePreview[] = [];
                 const pendingLoads: PendingTableLoad[] = [];
                 let loadPlanRef: LoadPlan | undefined;
+                let dataOperationRef: DataOperation | undefined;
                 let connectorFormRef: ConnectorFormPrompt | undefined;
                 const rawEvents: any[] = [];
                 let streamingToolStepsRef: ToolStep[] = [];
@@ -1413,24 +1484,32 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                             preview, confirmed: false,
                         });
                     } else if (action.type === 'load_plan') {
+                        const parseCandidate = (c: any): LoadPlanCandidate => ({
+                            sourceId: c.source_id,
+                            tableKey: c.table_key,
+                            displayName: c.display_name,
+                            sourceTable: c.source_table,
+                            sourceTableName: c.source_table_name,
+                            query: c.query ? {
+                                filters: c.query.filters,
+                                columns: c.query.columns,
+                                orderBy: c.query.order_by?.map((item: any) => ({
+                                    column: item.column,
+                                    direction: item.dir || 'asc',
+                                })),
+                                limit: c.query.limit,
+                            } : undefined,
+                            resolutionError: c.resolution_error,
+                        });
                         loadPlanRef = {
-                            candidates: (action.candidates || []).map((c: any) => ({
-                                sourceId: c.source_id,
-                                tableKey: c.table_key,
-                                displayName: c.display_name,
-                                sourceTable: c.source_table,
-                                sourceTableName: c.source_table_name,
-                                filters: c.filters,
-                                sortBy: c.sort_by,
-                                sortOrder: c.sort_order,
-                                resolutionError: c.resolution_error,
-                                // Honor the agent's recommendation. Missing
-                                // `selected` means an older backend, so retain
-                                // the historical select-all fallback.
-                                selected: !c.resolution_error && c.selected !== false,
+                            response: action.response || '',
+                            options: (action.options || []).map((option: any) => ({
+                                label: option.label,
+                                tables: (option.tables || []).map(parseCandidate),
                             })),
-                            reasoning: action.reasoning,
                         };
+                    } else if (action.type === 'data_operation') {
+                        dataOperationRef = parseDataOperation(action.operation);
                     } else if (action.type === 'connect_form') {
                         connectorFormRef = {
                             sourceType: action.source_type,
@@ -1523,11 +1602,12 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
 
             const assistantMsg: ChatMessage = {
                 id: `msg-${Date.now()}-assistant`, role: 'assistant',
-                content: fullText,
+                content: loadPlanRef?.response || fullText,
                 codeBlocks: codeBlocks.length > 0 ? codeBlocks : undefined,
                 tables: tables.length > 0 && pendingLoads.length === 0 ? tables : undefined,
                 pendingLoads: pendingLoads.length > 0 ? pendingLoads : undefined,
                 loadPlan: loadPlanRef,
+                dataOperation: dataOperationRef,
                 connectorForm: connectorFormRef,
                 canContinue: continueOffered || undefined,
                 timestamp: Date.now(),
@@ -1614,7 +1694,6 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
             // the submission rather than wiping the thread.
             dispatch(dfActions.queueDataLoadingTask(payload));
         },
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [t, dispatch]);
 
     const quickActions = React.useMemo(() => buildDataLoadingQuickActions({
@@ -1625,7 +1704,6 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
         requestAutoSend: (payload) => {
             dispatch(dfActions.queueDataLoadingTask(payload));
         },
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [t, dispatch]);
 
     const isEmpty = chatMessages.length === 0 && !streamingContent;
@@ -1651,6 +1729,9 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
             <Box
                 ref={scrollContainerRef}
                 onScroll={updatePinned}
+                tabIndex={0}
+                role="region"
+                aria-label={t('dataLoading.title')}
                 sx={{
                     flex: 1, minHeight: 0, minWidth: 0,
                     // Plain block, not a flex column: a flex line sizes itself to
@@ -1714,8 +1795,6 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                     : <ChatBubble
                                         key={msg.id}
                                         message={msg}
-                                        existingNames={existingNames}
-                                        onTableLoaded={handleTableLoaded}
                                         onOpenCanvas={handleOpenCanvas}
                                         canvasMessageId={canvasWidget?.messageId}
                                         onContinue={() => sendMessage({ text: 'Please continue.', images: [], attachments: [] })}
@@ -1771,6 +1850,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                     icon={<BoltOutlinedIcon />}
                                     label={qa.label}
                                     onClick={qa.onClick}
+                                    disabled={workspaceReadOnly}
                                     variant="outlined"
                                     size="small"
                                     sx={{
@@ -1795,6 +1875,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                         onSend={() => sendMessage()}
                         onStop={stopGeneration}
                         inProgress={chatInProgress}
+                        disabled={workspaceReadOnly}
                         placeholder={t('dataLoading.placeholder')}
                         autoFocus
                         inputRef={inputRef}
@@ -1830,29 +1911,11 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
             form, multi-table loading plan) so the conversation stays prose.
             Resizable, and sized on open to what the widget needs. */}
         {canvasWidget && canvasMessage && (
-            <>
-            {/* Drag handle — invisible at rest so the canvas border is the only
-                edge; the grip appears on hover, inset from top and bottom. The
-                left margin keeps it clear of the conversation's scrollbar. */}
-            <Box
-                onPointerDown={startCanvasResize}
-                sx={{
-                    flexShrink: 0, width: 12, ml: 0.75,
-                    cursor: 'col-resize', touchAction: 'none',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    '&:hover .canvas-grip': { opacity: 1 },
-                }}
-            >
-                <Box className="canvas-grip" sx={{
-                    width: 4, height: 'calc(100% - 32px)', borderRadius: 1,
-                    bgcolor: 'primary.main', opacity: 0,
-                    transition: transition.normal,
-                }} />
-            </Box>
             <Box sx={{
                 width: canvasWidth, flexShrink: 0,
                 height: '100%', minHeight: 0,
-                boxSizing: 'border-box', py: 1, pr: 1,
+                boxSizing: 'border-box', py: 1, pr: 1, ml: 1.5,
+                position: 'relative',
             }}>
                 <Box sx={{
                     height: '100%', minHeight: 0, minWidth: 0,
@@ -1893,19 +1956,56 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                                 variant="bare"
                             />
                         )}
-                        {canvasWidget.kind === 'loadPlan' && canvasMessage.loadPlan && (
+                        {canvasWidget.kind === 'loadPlan' && hasLoadPlan(canvasMessage) && (
                             <LoadPlanCard
+                                key={canvasMessage.id}
                                 plan={canvasMessage.loadPlan}
-                                variant="bare"
-                                confirmed={canvasMessage.loadPlan.candidates.every(c => c.selected === false)}
+                                pendingLoads={canvasMessage.pendingLoads}
+                                connectorConfirmed={canvasMessage.loadPlan?.confirmed === true}
                                 canLoadInNewWorkspace={existingNames.size > 0}
-                                onConfirm={(selected, opts) => handleConfirmPlan(canvasMessage.id, selected, opts)}
+                                onConfirm={(selected, opts) => handleConfirmPresentedPlan(canvasMessage.id, selected, opts)}
                             />
                         )}
                     </Box>
                 </Box>
+                {/* Wide hit target centered on the panel border. The border is
+                    the sash; a compact midpoint grip makes resizing discoverable. */}
+                <Box
+                    onPointerDown={startCanvasResize}
+                    sx={{
+                        position: 'absolute', zIndex: 2,
+                        // 8px wrapper inset + 16px panel radius: keep the sash
+                        // entirely on the straight border between the corners.
+                        top: 24, bottom: 24, left: -6, width: 12,
+                        cursor: 'col-resize', touchAction: 'none',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        '&::before': {
+                            content: '""', position: 'absolute',
+                            top: 0, bottom: 0, left: '50%', width: 2,
+                            transform: 'translateX(-50%)',
+                            bgcolor: 'transparent',
+                        },
+                        '&:hover::before, &:active::before': { bgcolor: 'primary.main' },
+                        '&:hover .canvas-resize-grip, &:active .canvas-resize-grip': {
+                            borderColor: 'primary.main', color: 'primary.main',
+                        },
+                    }}
+                >
+                    <Box className="canvas-resize-grip" sx={{
+                        position: 'relative', zIndex: 1,
+                        width: 10, height: 24,
+                        display: 'grid', gridTemplateColumns: 'repeat(2, 2px)',
+                        gridAutoRows: '2px', placeContent: 'center', gap: '3px',
+                        bgcolor: 'background.paper',
+                        color: 'text.disabled',
+                        transition: transition.fast,
+                    }}>
+                        {[0, 1, 2, 3, 4, 5].map(index => (
+                            <Box key={index} sx={{ width: 2, height: 2, bgcolor: 'currentColor', borderRadius: '50%' }} />
+                        ))}
+                    </Box>
+                </Box>
             </Box>
-            </>
         )}
         </Box>
     );

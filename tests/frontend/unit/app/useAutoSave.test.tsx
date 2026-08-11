@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
     state: {
         sessionLoading: false,
         activeWorkspace: { id: 'ws-1', displayName: 'Workspace 1' },
-        tables: [{ id: 'table-1' }],
+        inputTables: [{ id: 'table-1' }],
+        derivedTables: [],
     },
     saveWorkspaceState: vi.fn(),
     handleApiError: vi.fn(),

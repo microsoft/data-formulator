@@ -118,6 +118,24 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
         lines.append(f"\nStep {i}:")
         if step.get("user_question"):
             lines.append(f"  User: {step['user_question']}")
+        if step.get("agent_response"):
+            lines.append(f"  Analyst: {step['agent_response']}")
+        if step.get("user_answer"):
+            lines.append(f"  User reply: {step['user_answer']}")
+        operation = step.get("data_operation")
+        if operation:
+            options = ", ".join(operation.get("options") or [])
+            lines.append(
+                f"  Data discovery decision: {operation.get('reason', '')} "
+                f"(status: {operation.get('status', 'unknown')}; options: {options})"
+            )
+            if operation.get("selected_plan"):
+                lines.append(f"  Selected loading option: {operation['selected_plan']}")
+            if operation.get("result_tables"):
+                lines.append(
+                    "  Loaded workspace tables: "
+                    + ", ".join(operation["result_tables"])
+                )
         if step.get("agent_thinking"):
             lines.append(f"  Agent thinking: {step['agent_thinking']}")
         if step.get("display_instruction"):

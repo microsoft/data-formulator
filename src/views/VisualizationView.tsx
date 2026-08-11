@@ -47,7 +47,7 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
@@ -90,9 +90,10 @@ import { FreeDataViewFC } from './DataView';
 import { formatCellValue } from './ViewUtils';
 
 
-import { dfSelectors } from '../app/dfSlice';
 import { CodeExplanationCard, ConceptExplCards, extractConceptExplanations } from './ExplComponents';
 import CodeIcon from '@mui/icons-material/Code';
+import type { DataOperation } from '../dataOperations/models';
+import { DataFrameTable } from './DataFrameTable';
 
 export interface VisPanelProps { }
 
@@ -101,6 +102,153 @@ export interface VisPanelState {
     focusUpdated: boolean;
     viewMode: "gallery" | "carousel";
 }
+
+interface OperationPreviewTable {
+    display_name: string;
+    source_id?: string;
+    error?: string;
+    columns: string[];
+    rows: Record<string, unknown>[];
+}
+
+// Wide tables scroll horizontally; past this the row count makes the DOM the
+// bottleneck, so the remainder collapses into the trailing marker column.
+const PREVIEW_MAX_COLUMNS = 40;
+
+const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) => {
+    const { t } = useTranslation();
+    const dispatch = useDispatch();
+    const [previews, setPreviews] = useState<Record<string, OperationPreviewTable[]>>({});
+    const [failedPlans, setFailedPlans] = useState<Set<string>>(new Set());
+    const previewGroups = useMemo(() => {
+        const seen = new Set<string>();
+        return operation.plans.map(plan => ({
+            plan,
+            tables: plan.steps
+                .map((step, stepIndex) => ({ step, stepIndex }))
+                .filter(({ step }) => {
+                    const key = step.displayName.trim().toLocaleLowerCase();
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }),
+        })).filter(group => group.tables.length > 0);
+    }, [operation.plans]);
+
+    // Several proposals have to stay comparable on one screen, so each table
+    // keeps a shorter scroll window as the count grows.
+    const previewMaxHeight = previewGroups.reduce((count, group) => count + group.tables.length, 0) > 2 ? 240 : 340;
+
+    useEffect(() => {
+        let active = true;
+        setPreviews({});
+        setFailedPlans(new Set());
+        const previewPlanIds = new Set(previewGroups.map(({ plan }) => plan.id));
+        operation.plans.filter(plan => previewPlanIds.has(plan.id)).forEach(plan => {
+            apiRequest<{ previews: OperationPreviewTable[] }>('/api/agent/data-operation-preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ operation_id: operation.id, plan_id: plan.id }),
+            }).then(({ data }) => {
+                if (active) setPreviews(current => ({ ...current, [plan.id]: data.previews }));
+            }).catch(() => {
+                if (active) setFailedPlans(current => new Set(current).add(plan.id));
+            });
+        });
+        return () => { active = false; };
+    }, [operation.id, operation.plans, previewGroups]);
+
+    return (
+        <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflowY: 'auto', bgcolor: 'background.default' }}>
+            <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', boxSizing: 'border-box', px: { xs: 1.5, sm: 2.5, md: 3 }, py: { xs: 1.5, md: 2.25 } }}>
+                <Box sx={{ mb: 1.75 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
+                        {operation.canvasTitle || t('dataLoading.operation.previewHeading', { defaultValue: 'Tables to load' })}
+                    </Typography>
+                    <Typography sx={{ mt: 0.25, fontSize: textVar.xs, color: 'text.secondary' }}>
+                        {operation.canvasSummary
+                            || t('dataLoading.operation.previewGuide', { defaultValue: 'A preview of each table before it is added to your workspace.' })}
+                    </Typography>
+                </Box>
+                {previewGroups.map(({ plan, tables }) => (
+                    <Box key={plan.id}>
+                        {tables.map(({ step, stepIndex }) => {
+                            const preview = previews[plan.id]?.[stepIndex];
+                            const failed = failedPlans.has(plan.id);
+                            return (
+                                <Box key={`${plan.id}-${stepIndex}`} sx={{
+                                    mb: 1.75,
+                                }}>
+                                    <Box sx={{
+                                        display: 'flex', alignItems: 'center', gap: 0.75,
+                                        px: 0.25, mb: 0.5,
+                                    }}>
+                                        <Typography title={preview?.display_name || step.displayName}
+                                            sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'text.primary', minWidth: 0 }} noWrap>
+                                            {preview?.display_name || step.displayName}
+                                        </Typography>
+                                        <Typography sx={{
+                                            fontSize: textVar.xxs, fontWeight: 500, color: 'text.secondary',
+                                            border: '1px solid', borderColor: 'divider', borderRadius: 0.75,
+                                            px: 0.5, lineHeight: 1.6, flexShrink: 0,
+                                        }}>
+                                            {t('preview.preview', { defaultValue: 'Preview' })}
+                                        </Typography>
+                                        <Box sx={{ flex: 1 }} />
+                                        {preview && (
+                                            <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0 }}>
+                                                {t('dataLoading.operation.previewColumns', {
+                                                    count: preview.columns.length,
+                                                    defaultValue: `${preview.columns.length} columns`,
+                                                })}
+                                                {preview.rows.length > 0 && ` · ${t('dataLoading.operation.previewShowingRows', {
+                                                    count: preview.rows.length,
+                                                    defaultValue: `showing ${preview.rows.length} rows`,
+                                                })}`}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                    <Box sx={{
+                                        borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider',
+                                        bgcolor: 'background.paper', overflow: 'hidden',
+                                    }}>
+                                        {failed ? (
+                                            <Typography sx={{ px: 1.5, py: 1.25, fontSize: textVar.xs, color: 'error.main' }}>
+                                                {t('dataLoading.operation.previewUnavailable', { defaultValue: 'Preview unavailable' })}
+                                            </Typography>
+                                        ) : preview ? (
+                                            // Natural column widths: the pane scrolls both ways rather
+                                            // than squeezing a wide table until every cell is elided.
+                                            <Box sx={{ maxHeight: previewMaxHeight, overflow: 'auto' }}>
+                                            <DataFrameTable
+                                                columns={preview.columns}
+                                                rows={preview.rows}
+                                                maxColumns={PREVIEW_MAX_COLUMNS}
+                                                maxCellLength={32}
+                                                truncationIndicator="none"
+                                                autoWidth
+                                                showIndex
+                                                simple
+                                            />
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, height: 96 }}>
+                                                <CircularProgress size={14} />
+                                                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                                                    {t('dataLoading.loadPlan.previewing')}
+                                                </Typography>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </Box>
+                            );
+                        })}
+                    </Box>
+                ))}
+            </Box>
+        </Box>
+    );
+};
 
 // Re-export shared utilities from ChartUtils (canonical location)
 import { generateChartSkeleton, getDataTable, checkChartAvailability } from './ChartUtils';
@@ -557,7 +705,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Add ref for the container box that holds all exploration components
 
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
     
     let charts = useSelector(dfSelectors.getAllCharts);
     // Resolve via the canvas target so a focused text turn keeps the chart
@@ -1470,6 +1618,11 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const { t } = useTranslation();
     let allCharts = useSelector(dfSelectors.getAllCharts);
+    const rawFocusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
+    const focusedOperationTurn = rawFocusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === rawFocusedId.textId && turn.dataOperation)
+        : undefined;
     // Resolve the canvas target: a focused text turn (clarify/explain) is
     // non-canvas-owning — the canvas keeps showing its source chart, or the
     // source table when no chart exists (design-docs/41).
@@ -1486,13 +1639,17 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const dispatch = useDispatch();
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
 
     // Virtual-pagination state reported up from the focused-table grid, so the
     // bottom toolbar can show the loaded/total count and drive the random dice.
     const [tableGridReport, setTableGridReport] = React.useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null>(null);
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
+
+    if (focusedOperationTurn?.dataOperation) {
+        return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;
+    }
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;

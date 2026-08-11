@@ -137,7 +137,7 @@ export const ChartRenderService: FC = () => {
     const dispatch = useDispatch();
 
     const charts = useSelector(dfSelectors.getAllCharts);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const maxStretchFactor = useSelector((state: DataFormulatorState) => state.config.maxStretchFactor);

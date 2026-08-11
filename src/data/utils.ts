@@ -145,7 +145,6 @@ export const createTableFromFromObjectArray = (title: string, values: any[], der
             ...acc,
             [name]: {
                 type: (columnTable.column(name) as Column).type,
-                semanticType: "",
                 levels: []
             }
         }), {}),

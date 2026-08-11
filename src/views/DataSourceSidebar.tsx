@@ -64,7 +64,7 @@ import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 
 import { KnowledgePanel } from './KnowledgePanel';
 
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
@@ -426,7 +426,7 @@ const DataSourceSidebarPanel: React.FC<{
     // Lightweight selector: only extract the fields we need from tables to avoid
     // re-rendering the entire sidebar when table row data changes.
     const tableIdentities = useSelector(
-        (state: DataFormulatorState) => state.tables.map(t => ({
+        (state: DataFormulatorState) => dfSelectors.getAllTables(state).map(t => ({
             id: t.id,
             connectorId: t.source?.connectorId,
             databaseTable: t.source?.databaseTable,
@@ -484,6 +484,8 @@ const DataSourceSidebarPanel: React.FC<{
     // Preview popover state
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
+    const [previewLoading, setPreviewLoading] = useState<{ connectorId: string; itemId: string } | null>(null);
+    const previewRequestIdRef = useRef(0);
     const [importing, setImporting] = useState(false);
     // Cache of fetched sample previews, keyed by `${connectorId}:${pathKey}`,
     // so re-opening a table's preview is instant and costs no extra query.
@@ -511,6 +513,28 @@ const DataSourceSidebarPanel: React.FC<{
         (tab: 'sources' | 'sessions' | 'knowledge') => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
     );
+
+    useEffect(() => {
+        if (activeTab === 'sources') return;
+        previewRequestIdRef.current += 1;
+        setPreviewLoading(null);
+        setPreview(null);
+        setPreviewAnchor(null);
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (!previewLoading) return;
+        const cancelPendingPreview = (event: PointerEvent) => {
+            const target = event.target instanceof Element
+                ? event.target.closest<HTMLElement>('[data-catalog-item-id]')
+                : null;
+            if (target?.dataset.catalogItemId === previewLoading.itemId) return;
+            previewRequestIdRef.current += 1;
+            setPreviewLoading(null);
+        };
+        document.addEventListener('pointerdown', cancelPendingPreview, true);
+        return () => document.removeEventListener('pointerdown', cancelPendingPreview, true);
+    }, [previewLoading]);
 
     // ── Sessions ─────────────────────────────────────────────────────────────
 
@@ -670,7 +694,7 @@ const DataSourceSidebarPanel: React.FC<{
             const result = await loadWorkspace(sessionId);
             if (result && Object.keys(result.state).length > 0) {
                 const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName } }));
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName, readOnly: result.readOnly } }));
             } else {
                 dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: metaDisplayName || 'Untitled Session' }));
             }
@@ -758,6 +782,8 @@ const DataSourceSidebarPanel: React.FC<{
             setSearchingCatalog({});
             setExpandedConnectorId(null);
             setTreeExpanded({});
+            previewRequestIdRef.current += 1;
+            setPreviewLoading(null);
             setPreview(null);
             setPreviewAnchor(null);
         }
@@ -1041,6 +1067,10 @@ const DataSourceSidebarPanel: React.FC<{
     catalogCacheRef.current = catalogCache;
 
     const toggleSource = useCallback((connectorId: string) => {
+        previewRequestIdRef.current += 1;
+        setPreviewLoading(null);
+        setPreview(null);
+        setPreviewAnchor(null);
         setExpandedConnectorId(prev => {
             if (prev === connectorId) return null;
             if (!catalogCacheRef.current[connectorId]) {
@@ -1120,10 +1150,17 @@ const DataSourceSidebarPanel: React.FC<{
         const nodeMeta = node.metadata || {};
         const pathKey = node.path.join('/');
         const cacheKey = `${connectorId}:${pathKey}`;
+        const requestId = ++previewRequestIdRef.current;
+
+        // A new preview intent replaces any open or pending preview. Keep the
+        // row-level progress indicator, but don't open an empty popover.
+        setPreview(null);
+        setPreviewAnchor(null);
 
         // Cache hit: re-open instantly, no query. Repeats are free.
         const cached = previewCacheRef.current[cacheKey];
         if (cached && !cached.loading) {
+            setPreviewLoading(null);
             setPreview({ ...cached, connectorId, node });
             setPreviewAnchor(anchorEl);
             return;
@@ -1149,21 +1186,13 @@ const DataSourceSidebarPanel: React.FC<{
                 loading: false,
             };
             previewCacheRef.current[cacheKey] = embedded;
+            setPreviewLoading(null);
             setPreview(embedded);
             setPreviewAnchor(anchorEl);
             return;
         }
 
-        setPreview({
-            connectorId,
-            node,
-            columns: [],
-            sampleRows: [],
-            rowCount: node.metadata?.row_count ?? null,
-            tableDescription: nodeMeta.source_description || nodeMeta.description,
-            loading: true,
-        });
-        setPreviewAnchor(anchorEl);
+        setPreviewLoading({ connectorId, itemId: pathKey });
 
         apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
             method: 'POST',
@@ -1217,22 +1246,39 @@ const DataSourceSidebarPanel: React.FC<{
                         loading: false,
                     };
                     previewCacheRef.current[cacheKey] = resolved;
-                    setPreview(prev => (prev && prev.connectorId === connectorId && prev.node.path.join('/') === pathKey)
-                        ? resolved
-                        : prev);
-                } else {
-                    setPreview(prev => prev ? { ...prev, loading: false } : null);
+                    if (previewRequestIdRef.current === requestId) {
+                        setPreviewLoading(null);
+                        if (anchorEl.isConnected && anchorEl.dataset.catalogItemId === pathKey) {
+                            setPreview(resolved);
+                            setPreviewAnchor(anchorEl);
+                        }
+                    }
+                } else if (previewRequestIdRef.current === requestId) {
+                    setPreviewLoading(null);
                 }
             })
             .catch(() => {
-                setPreview(prev => prev ? { ...prev, loading: false } : null);
+                if (previewRequestIdRef.current === requestId) {
+                    setPreviewLoading(null);
+                }
             });
     }, [buildSourceTableRef]);
 
     const closePreview = useCallback(() => {
+        previewRequestIdRef.current += 1;
+        setPreviewLoading(null);
         setPreview(null);
         setPreviewAnchor(null);
     }, []);
+
+    const closePreviewForTable = useCallback((connectorId: string, node: CatalogTreeNode) => {
+        const itemId = node.path.join('/');
+        const isPending = previewLoading?.connectorId === connectorId
+            && previewLoading.itemId === itemId;
+        const isOpen = preview?.connectorId === connectorId
+            && preview.node.path.join('/') === itemId;
+        if (isPending || isOpen) closePreview();
+    }, [closePreview, preview, previewLoading]);
 
     // Lightweight hover card — basic metadata built entirely from data already
     // in the catalog node, so hovering costs no network query. Clicking the row
@@ -1976,7 +2022,13 @@ const DataSourceSidebarPanel: React.FC<{
                                             selectedIds={selection?.connectorId === connector.id
                                                 ? new Set(Object.keys(selection.nodes))
                                                 : undefined}
-                                            onToggleSelectTable={(node, checked) => toggleSelectTable(connector.id, node, checked)}
+                                            loadingItemId={previewLoading?.connectorId === connector.id
+                                                ? previewLoading.itemId
+                                                : null}
+                                            onToggleSelectTable={(node, checked) => {
+                                                toggleSelectTable(connector.id, node, checked);
+                                                if (!checked) closePreviewForTable(connector.id, node);
+                                            }}
                                             onToggleSelectNamespace={(node, tables, checked) => toggleSelectNamespace(connector.id, tables, checked)}
                                             onExpandedChange={(newIds) => {
                                                 setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
@@ -1984,11 +2036,15 @@ const DataSourceSidebarPanel: React.FC<{
                                             onLazyExpand={undefined}
                                             onItemClick={(node, e) => {
                                                 if (node.node_type === 'table') {
-                                                    // Row/name click: open the preview and add the
-                                                    // table to the selection. Unselecting is done via
-                                                    // the row's checkbox.
-                                                    toggleSelectTable(connector.id, node, true);
-                                                    handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
+                                                    const pathKey = node.path.join('/');
+                                                    const isChecked = selection?.connectorId === connector.id
+                                                        && !!selection.nodes[pathKey];
+                                                    toggleSelectTable(connector.id, node, !isChecked);
+                                                    if (isChecked) {
+                                                        closePreviewForTable(connector.id, node);
+                                                    } else {
+                                                        handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
+                                                    }
                                                 }
                                             }}
                                             renderHoverCard={renderTableHoverCard}

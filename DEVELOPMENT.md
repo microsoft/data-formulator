@@ -372,7 +372,7 @@ data_formulator \
 
 ### Profile 2: Multi-User Anonymous (demo / public hosting)
 
-A shared server (e.g., for demos, workshops, public access). No login, no server-side state, no sensitive features.
+A shared server (e.g., for demos, workshops, public access). No login, short-lived server-side workspaces, and no sensitive features.
 
 ```bash
 data_formulator \
@@ -388,6 +388,10 @@ Or via environment variables:
 
 ```env
 WORKSPACE_BACKEND=ephemeral
+# Ephemeral retention only; local mode is durable and ignores these settings.
+EPHEMERAL_WORKSPACE_TTL_HOURS=24
+EPHEMERAL_WORKSPACE_MAX_BYTES=10737418240
+EPHEMERAL_WORKSPACE_CLEANUP_INTERVAL_SECONDS=1800
 DISABLE_DATA_CONNECTORS=true
 DISABLE_CUSTOM_MODELS=true
 DISABLE_DISPLAY_KEYS=true
@@ -400,14 +404,16 @@ OPENAI_MODELS=gpt-4.1
 | Setting | Value | Why |
 |---------|-------|-----|
 | `AUTH_PROVIDER` | *(unset)* | Anonymous access for demos |
-| `WORKSPACE_BACKEND` | `ephemeral` | No server-side persistence — data lives only in browser IndexedDB |
+| `WORKSPACE_BACKEND` | `ephemeral` | Temporary server-local workspaces with TTL/LRU cleanup |
 | `DISABLE_DATA_CONNECTORS` | `true` | **Critical** — prevents DB credential exposure via identity spoofing |
 | `DISABLE_CUSTOM_MODELS` | `true` | Prevents users from adding arbitrary LLM endpoints (SSRF risk) |
 | `DISABLE_DISPLAY_KEYS` | `true` | Hides server-configured API keys from UI |
 | Credential vault | N/A | No connectors → no credentials to store |
-| Identity | anonymous (`browser:<uuid>`) | Acceptable — no sensitive server-side state to protect |
+| Identity | anonymous (`browser:<uuid>`) | Isolates temporary workspaces by browser identity |
 
-**Security notes:** With data connectors disabled, the anonymous identity spoofing risk is eliminated — there are no DB credentials or persistent workspaces on the server to access. Each user's data lives entirely in their browser. The only server-side resource is the LLM proxy, which is locked down by `DF_ALLOWED_API_BASES`.
+**Retention notes:** Ephemeral workspaces may disappear after inactivity or when the configured byte cap is reached. The browser keeps only a row-free recovery snapshot for read-only viewing. Use `WORKSPACE_BACKEND=local` for durable workspaces; ephemeral TTL/LRU cleanup never scans or deletes local-mode workspaces.
+
+**Security notes:** Keep data connectors and custom models disabled for anonymous deployments. Browser identities are client-provided and are suitable for isolating disposable demo workspaces, not for protecting durable credentials or sensitive server-side state.
 
 ### Profile 3: Multi-User Authenticated (enterprise / team)
 

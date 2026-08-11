@@ -36,7 +36,7 @@ export const ReportView: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);

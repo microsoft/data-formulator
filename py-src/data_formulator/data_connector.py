@@ -816,6 +816,40 @@ def resolve_live_loader(source_id: str) -> "ExternalDataLoader":
     return connector._require_loader()
 
 
+def connector_is_available(source_id: str) -> bool | None:
+    """Whether ``source_id`` could be loaded from right now, without touching it.
+
+    Deliberately avoids ``test_connection`` so discovery can screen every source
+    cheaply: a live loader, stored credentials, or usable SSO all count, since
+    each lets the load path reconnect on demand. Returns ``None`` when this
+    can't be determined (no request context, connectors disabled, unknown id) —
+    callers must not treat that as unavailable.
+    """
+    try:
+        _, connector = _resolve_connector_with_key({"connector_id": source_id})
+    except Exception:
+        return None
+    try:
+        if _loader_auth_mode(connector._loader_class) == "none":
+            return True
+        identity = connector._get_identity()
+        if connector._get_loader(identity) is not None:
+            return True
+        if connector.has_stored_credentials(identity):
+            return True
+        from data_formulator.auth.identity import get_sso_token
+        from data_formulator.auth.token_store import TokenStore
+        auth_mode = _loader_auth_mode(connector._loader_class)
+        return (
+            auth_mode in ("token", "sso_exchange", "delegated")
+            and not TokenStore().is_sso_reconnect_blocked(source_id)
+            and get_sso_token() is not None
+        )
+    except Exception:
+        logger.debug("availability check failed for %s", source_id, exc_info=True)
+        return None
+
+
 def _parse_source_table(raw: Any) -> tuple[str, str]:
     """Normalise the ``source_table`` value from a request body.
 
@@ -2226,6 +2260,8 @@ def connector_preview_data():
             source_table=source_id,
             import_options=import_options,
         )
+        from data_formulator.data_loader.external_data_loader import apply_import_projection
+        arrow_table = apply_import_projection(arrow_table, import_options)
         df = arrow_table.to_pandas()
         rows = df_to_safe_records(df)
         columns = [{"name": col, "type": normalize_dtype_to_app_type(str(df[col].dtype))} for col in df.columns]

@@ -37,7 +37,7 @@ import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
@@ -745,6 +745,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         icon={<BoltOutlinedIcon />}
                         label={qa.label}
                         onClick={qa.onClick}
+                        disabled={activeWorkspace?.readOnly === true}
                         variant="outlined"
                         size="small"
                         sx={{
@@ -767,6 +768,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 images={agentImages}
                 onImagesChange={setAgentImages}
                 onSend={submitAgentChat}
+                disabled={activeWorkspace?.readOnly === true}
                 layout="stacked"
                 sx={{
                     // Landing hero: a gentle lift + faint primary-tinted
@@ -1232,7 +1234,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
-    const existingTables = useSelector((state: DataFormulatorState) => state.tables);
+    const existingTables = useSelector(dfSelectors.getAllTables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
@@ -1272,7 +1274,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
-    const storeOnServer = !isEphemeral; // used to decide file upload behavior
+    const storeOnServer = true;
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
@@ -1991,20 +1993,20 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {activeTab !== 'menu' && (
                     <Tooltip title={
                         isEphemeral
-                            ? t('upload.storedInBrowser', 'Data is stored in your browser (IndexedDB)')
+                            ? t('upload.storedTemporarily', 'Data is stored temporarily on this server')
                             : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
                                 ? t('upload.storedInAzure', 'Data is stored in Azure Blob Storage')
                                 : t('upload.storedOnDisk', `Data is stored on disk (${serverConfig.DATA_FORMULATOR_HOME || '~/.data_formulator'})`)
                     } placement="bottom">
                         <Box sx={{ ml: 'auto', mr: 0, display: 'flex', alignItems: 'center', gap: 0.5, px: 1 }}>
                             {isEphemeral
-                                ? <LanguageIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
+                                ? <FolderOpenIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
                                 : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
                                     ? <CloudIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
                                     : <FolderOpenIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />}
                             <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary' }}>
                                 {isEphemeral
-                                    ? t('upload.browserLabel', 'Browser')
+                                    ? t('upload.temporaryServerLabel', 'Temporary server')
                                     : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
                                         ? t('upload.azureLabel', 'Azure')
                                         : t('upload.diskLabel', 'Disk')}
@@ -2512,7 +2514,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {/* Per-connector Tabs — one per registered instance */}
                 {connectorInstances.map((conn) => (
                     <TabPanel key={conn.id} value={activeTab} index={`connector:${conn.id}` as UploadTabType}>
-                        <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box' }}>
+                        <Box sx={{ height: '100%', minHeight: 0, display: 'flex' }}>
+                            <ScrollFadeContainer sx={{ p: 2, boxSizing: 'border-box' }} resetKey={conn.id}>
                             <DataLoaderForm
                                 dataLoaderType={conn.id}
                                 loaderType={conn.icon}
@@ -2552,6 +2555,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     dispatch(dfActions.focusConnector(conn.id));
                                 }}
                             />
+                            </ScrollFadeContainer>
                         </Box>
                     </TabPanel>
                 ))}

@@ -37,6 +37,7 @@ export interface AgentChatInputProps {
     onSend: () => void;
     onStop?: () => void;
     inProgress?: boolean;
+    disabled?: boolean;
     placeholder?: string;
     autoFocus?: boolean;
     /**
@@ -126,6 +127,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     onSend,
     onStop,
     inProgress = false,
+    disabled = false,
     placeholder,
     autoFocus = false,
     fileAccept = 'image/*,.csv,.json,.xlsx,.xls,.txt,.tsv',
@@ -164,7 +166,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const canSend = (value.trim().length > 0 || images.length > 0) && !inProgress;
+    const canSend = (value.trim().length > 0 || images.length > 0) && !inProgress && !disabled;
 
     // Shared file intake: images become inline previews, everything else is
     // handed to `onNonImageFile` (scratch upload → attachment chip). Used by
@@ -190,13 +192,13 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         Array.from(e.dataTransfer?.types ?? []).includes('Files');
 
     const handleDragOver = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress) return;
+        if (!dragHasFiles(e) || inProgress || disabled) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
     };
 
     const handleDragEnter = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress) return;
+        if (!dragHasFiles(e) || inProgress || disabled) return;
         e.preventDefault();
         setIsDragActive(true);
     };
@@ -208,7 +210,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     };
 
     const handleDrop = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress) return;
+        if (!dragHasFiles(e) || inProgress || disabled) return;
         e.preventDefault();
         setIsDragActive(false);
         const files = e.dataTransfer?.files;
@@ -253,7 +255,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     const attachButton = showAttachButton ? (
         <Tooltip title={attachTooltip ?? t('dataLoading.attachTooltip')} placement="top">
             <IconButton size="small" onClick={() => fileInputRef.current?.click()}
-                disabled={inProgress}
+                disabled={inProgress || disabled}
                 sx={{ color: 'text.secondary' }}>
                 <AddIcon sx={{ fontSize: 20 }} />
             </IconButton>
@@ -317,7 +319,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
             // in practice the textarea stays focused while we fill it.
             onBlur={() => window.setTimeout(() => setFocused(false), 120)}
             placeholder={placeholder}
-            disabled={inProgress}
+            disabled={inProgress || disabled}
             sx={{
                 flex: 1,
                 width: '100%',

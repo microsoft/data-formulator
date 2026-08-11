@@ -6,8 +6,7 @@
  * 
  * All data loaders (file, paste, URL, example, database, extract) should use
  * this thunk to load tables into the application. It handles:
- * - Optionally storing data on the server (workspace) via API calls
- * - Applying row limits when data stays local (storeOnServer = false)
+ * - Storing data in the configured server workspace via API calls
  * - Building DictTable with appropriate virtual/source fields
  * - Adding the table to Redux state + fetching semantic types
  */
@@ -15,52 +14,11 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type, mapApiTypeToAppType } from '../data/types';
-import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
+import { refineTemporalType } from '../data/utils';
 import { getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
 import { apiRequest } from './apiClient';
-import { DataFormulatorState, dfActions, fetchColumnStats, fetchFieldSemanticType } from './dfSlice';
-import { tableDataDB } from './workspaceDB';
+import { DataFormulatorState, dfActions, dfSelectors, fetchColumnStats, fetchFieldSemanticType } from './dfSlice';
 import i18n from '../i18n';
-
-/**
- * Persist a derived / agent-generated table's full rows to IndexedDB for
- * **ephemeral mode**, returning a copy that keeps only a sample + a `virtual`
- * marker in Redux (mirroring how the `loadTable` thunk handles ephemeral data).
- *
- * In ephemeral mode the IndexedDB `table_data` store is the only durable source
- * of truth: every API call ships those rows back to the server as
- * `_workspace_tables`. Tables inserted straight into Redux (via
- * `insertDerivedTables` / `overrideDerivedTables`) would otherwise never reach
- * IndexedDB, leaving the server's scratch workspace — and the grid's pagination
- * — with an empty data body.
- *
- * Callers must invoke this only when in ephemeral mode (they own that check).
- * On save failure the original table is returned unchanged so the session keeps
- * working with the full rows in Redux.
- */
-export async function persistEphemeralDerivedTable(workspaceId: string, table: DictTable): Promise<DictTable> {
-    if (table.rows.length === 0) {
-        return table;
-    }
-
-    const tableId = table.virtual?.tableId || table.id;
-    const fullRows = table.rows;
-    const fullRowCount = Math.max(table.virtual?.rowCount ?? 0, fullRows.length);
-
-    try {
-        await tableDataDB.save(workspaceId, tableId, fullRows);
-    } catch (e) {
-        console.warn('[persistEphemeralDerivedTable] IndexedDB save failed; keeping full rows in Redux:', e);
-        return table;
-    }
-
-    const sampleSize = Math.min(1000, fullRows.length);
-    return {
-        ...table,
-        rows: fullRows.slice(0, sampleSize),
-        virtual: { tableId, rowCount: fullRowCount },
-    };
-}
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
@@ -86,6 +44,8 @@ export interface LoadTablePayload {
     sourceTableRef?: SourceTableRef;
     connectorId?: string;
     importOptions?: {
+        size?: number;
+        columns?: string[];
         sortColumns?: string[];
         sort_columns?: string[];
         sortOrder?: 'asc' | 'desc';
@@ -97,17 +57,28 @@ export interface LoadTablePayload {
 
 export interface LoadTableResult {
     table: DictTable;
-    truncated?: boolean;      // whether rows were truncated due to frontendRowLimit
-    originalRowCount?: number; // original count before truncation
-    duplicate?: boolean;      // whether the table was already loaded (skipped)
+    truncated?: boolean;
+    originalRowCount?: number;
+    duplicate?: boolean;
 }
+
+export const resolveDatabaseImportLimit = (
+    requestedValue: unknown,
+    safetyCap: number,
+): { limit: number; safetyCapApplied: boolean } => {
+    const requestedLimit = Number(requestedValue);
+    const hasRequestedLimit = Number.isFinite(requestedLimit) && requestedLimit > 0;
+    return {
+        limit: hasRequestedLimit ? Math.min(safetyCap, requestedLimit) : safetyCap,
+        safetyCapApplied: !hasRequestedLimit || requestedLimit > safetyCap,
+    };
+};
 
 /**
  * Unified thunk to load a table from any source.
  * 
- * Storage is determined by the server config:
- * - local / azure_blob: store on server (workspace parquet)
- * - ephemeral: keep data local (frontend-owned, sent with each request)
+ * All workspace backends store table data on the server. Ephemeral workspaces
+ * use TTL-managed local storage.
  * 
  * In all cases: adds table to Redux state + fetches semantic types
  */
@@ -121,10 +92,7 @@ export const loadTable = createAsyncThunk<
         const { table, file, replaceSource, sourceTableRef, connectorId, importOptions } = payload;
         const state = getState();
         const frontendRowLimit = state.config?.frontendRowLimit ?? 2_000_000;
-        const existingTables = state.tables;
-
-        // Storage determined by backend config
-        const storeOnServer = state.serverConfig?.WORKSPACE_BACKEND !== 'ephemeral';
+        const existingTables = dfSelectors.getAllTables(state);
 
         // === DUPLICATE CHECK ===
         // Skip when replaceSource is true — the user explicitly wants to
@@ -171,19 +139,22 @@ export const loadTable = createAsyncThunk<
             : undefined;
         let finalTable: DictTable = { ...table, source: enrichedSource || table.source };
 
-        if (storeOnServer) {
-            // === STORE ON SERVER PATH ===
+        {
             if (sourceType === 'database' && sourceTableRef && connectorId) {
                 // Database source: ingest to workspace via data connector
                 try {
                     const ingestUrl = CONNECTOR_ACTION_URLS.IMPORT_DATA;
+                    const { limit: effectiveRowLimit, safetyCapApplied } = resolveDatabaseImportLimit(
+                        importOptions?.size,
+                        frontendRowLimit,
+                    );
                     const ingestBody = {
                         connector_id: connectorId,
                         source_table: sourceTableRef,
                         table_name: sourceTableRef.name,
                         import_options: {
                             ...importOptions,
-                            size: frontendRowLimit,
+                            size: effectiveRowLimit,
                         },
                     };
                     const { data } = await apiRequest(ingestUrl, {
@@ -198,8 +169,8 @@ export const loadTable = createAsyncThunk<
                     }
                     const loadedRowCount = Number(data.row_count);
                     if (
-                        Number.isFinite(frontendRowLimit) && frontendRowLimit > 0 &&
-                        Number.isFinite(loadedRowCount) && loadedRowCount >= frontendRowLimit
+                        safetyCapApplied &&
+                        Number.isFinite(loadedRowCount) && loadedRowCount >= effectiveRowLimit
                     ) {
                         truncated = true;
                         originalRowCount = loadedRowCount;
@@ -263,91 +234,6 @@ export const loadTable = createAsyncThunk<
                     console.error('Failed to save data to workspace:', err);
                     throw err;
                 }
-            }
-        } else {
-            // === LOCAL ONLY PATH (storeOnServer = false) ===
-            if (sourceType === 'database' && connectorId && sourceTableRef) {
-                // Database source: fetch data via data connector preview (no workspace save)
-                try {
-                    const { data } = await apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            connector_id: connectorId,
-                            source_table: sourceTableRef,
-                            import_options: {
-                                size: frontendRowLimit,
-                                sort_columns: importOptions?.sortColumns,
-                                sort_order: importOptions?.sortOrder,
-                                source_filters: importOptions?.source_filters,
-                            },
-                        }),
-                    });
-                    const rows = data.rows;
-                    const names = rows.length > 0 ? Object.keys(rows[0]) : [];
-                    const totalCount: number = data.total_row_count ?? table.virtual?.rowCount ?? rows.length;
-                    originalRowCount = totalCount;
-                    truncated = rows.length < totalCount;
-                    
-                    finalTable = {
-                        ...table,
-                        source: enrichedSource || table.source,
-                        id: table.id,
-                        displayId: table.displayId || table.id,
-                        names,
-                        rows,
-                        metadata: names.reduce((acc: Record<string, any>, name: string) => {
-                            const colVals = rows.map((r: any) => r[name]);
-                            const inferred = inferTypeFromValueArray(colVals);
-                            return {
-                                ...acc,
-                                [name]: {
-                                    type: refineTemporalType(colVals, inferred),
-                                    semanticType: "",
-                                    levels: []
-                                }
-                            };
-                        }, {}),
-                    };
-                } catch (err) {
-                    console.error('Failed to fetch data from external source:', err);
-                    throw err;
-                }
-            } else {
-                // Other sources: apply row limit
-                originalRowCount = table.rows.length;
-                if (table.rows.length > frontendRowLimit) {
-                    truncated = true;
-                    finalTable = {
-                        ...table,
-                        source: enrichedSource || table.source,
-                        rows: table.rows.slice(0, frontendRowLimit),
-                    };
-                } else {
-                    finalTable = { ...table, source: enrichedSource || table.source };
-                }
-            }
-        }
-
-        // Ephemeral mode: store full rows in IndexedDB, keep only samples in Redux
-        const isEphemeral = state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
-        if (isEphemeral && finalTable.rows.length > 0) {
-            const wsId = state.activeWorkspace?.id;
-            if (wsId) {
-                const tableId = finalTable.virtual?.tableId || finalTable.id;
-                const fullRows = finalTable.rows;
-                const fullRowCount = fullRows.length;
-
-                // Store full data in IndexedDB
-                await tableDataDB.save(wsId, tableId, fullRows);
-
-                // Keep only sample rows in Redux + set virtual
-                const sampleSize = Math.min(1000, fullRowCount);
-                finalTable = {
-                    ...finalTable,
-                    rows: fullRows.slice(0, sampleSize),
-                    virtual: { tableId, rowCount: fullRowCount },
-                };
             }
         }
 

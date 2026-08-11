@@ -78,7 +78,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const allCharts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const activeModel = useSelector(dfSelectors.getActiveModel);
