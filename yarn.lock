@@ -5970,10 +5970,10 @@ react-vega@^7.6.0:
     prop-types "^15.8.1"
     vega-embed "6.5.1"
 
-react-virtuoso@^4.3.10:
-  version "4.18.3"
-  resolved "https://registry.npmjs.org/react-virtuoso/-/react-virtuoso-4.18.3.tgz"
-  integrity sha512-fLz/peHAx4Eu0DLHurFEEI7Y6n5CqEoxBh04rgJM9yMuOJah2a9zWg/MUOmZLcp7zuWYorXq5+5bf3IRgkNvWg==
+react-virtuoso@^4.18.11:
+  version "4.18.11"
+  resolved "https://registry.yarnpkg.com/react-virtuoso/-/react-virtuoso-4.18.11.tgz#5221abb0cf0dfb1d8d2f2617cd7cb0f787719efa"
+  integrity sha512-Qeeq9vqa5seCxACvzbQTUeq3s2/Bu+VlwOMF0jfy3E/ZKHLiXWwJpXBhv2rckqYkvm1XRVFLCBMCmqCU8JNEJg==
 
 react-window@^1.8.11:
   version "1.8.11"

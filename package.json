@@ -73,7 +73,7 @@
         "react-router-dom": "^7.18.2",
         "react-selectable-fast": "^3.4.0",
         "react-vega": "^7.6.0",
-        "react-virtuoso": "^4.3.10",
+        "react-virtuoso": "^4.18.11",
         "redux": "^4.2.0",
         "redux-persist": "^6.0.0",
         "remark-gfm": "^4",
