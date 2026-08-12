@@ -1724,9 +1724,9 @@ let SingleThreadGroupView: FC<{
                     },
                 }} />;
             }
-            // Loaded into the workspace by this conversation, rather than
-            // referenced from the shelf.
-            if (tableForDot && !tableForDot.derive && tableForDot.threadParentId) {
+            // Only the table's actual load site gets the load icon. The same
+            // table can also appear elsewhere as a parent/reference node.
+            if (item.key.startsWith('loaded-table-')) {
                 return <SaveAltIcon sx={iconSx} />;
             }
             if (tableForDot?.virtual) {
