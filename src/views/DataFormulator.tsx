@@ -75,10 +75,14 @@ import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CloseIcon from '@mui/icons-material/Close';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+
+/** Quick enough not to feel like waiting, slow enough to read as a movement. */
+const CANVAS_TRANSITION_MS = 140;
 
 /** Generate a session ID like session_20260408_193052_a1b2 */
 function generateSessionId(): string {
@@ -93,24 +97,23 @@ export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
+    const [canvasClosing, setCanvasClosing] = useState(false);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
+    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
 
-    // Auto-focus: when focusedId is undefined but tables exist, select the first table
-    useEffect(() => {
-        if (!focusedId && tables.length > 0) {
-            dispatch(dfActions.setFocused({ type: 'table', tableId: tables[0].id }));
-        }
-    }, [focusedId, tables, dispatch]);
+    // Auto-focus removed: focus is the only thing that opens the canvas, so
+    // re-focusing whenever it clears would make closing impossible. Table
+    // creation focuses its own table (see `addTable`).
 
     // ── Connector instances (for landing page menu) ─────────────
     const [pageConnectors, setPageConnectors] = useState<ConnectorInstance[]>([]);
@@ -170,10 +173,10 @@ export const DataFormulatorFC = ({ }) => {
     }, []);
 
     useEffect(() => {
-        if (!activeWorkspace || tables.length === 0) {
+        if (!activeWorkspace) {
             fetchWorkspaces();
         }
-    }, [activeWorkspace, tables.length, fetchWorkspaces]);
+    }, [activeWorkspace, fetchWorkspaces]);
 
     useEffect(() => {
         return onWorkspaceListChanged(fetchWorkspaces);
@@ -343,6 +346,10 @@ export const DataFormulatorFC = ({ }) => {
         setUploadDialogOpen(true);
     };
 
+    // The dialog needs a workspace id to talk to the backend, but opening it is
+    // not entering a session: stay on the landing page until data lands.
+    const provisionalSession = uploadDialogOpen && sessionEmpty;
+
     // Seed the Data Loading chat through the single redux `pending` slot,
     // then navigate to the extract tab. This is the one channel that
     // carries text, images, AND file attachments as first-class fields —
@@ -358,6 +365,19 @@ export const DataFormulatorFC = ({ }) => {
             dispatch(dfActions.queueDataLoadingTask({ text, images, attachments }));
         }
         openUploadDialog('extract');
+    };
+
+    // The landing box starts the unified analyst conversation — loading data is
+    // its first skill, so there's no separate loading chat to hand off to.
+    const startAnalystChat = (text: string, images: string[] = [], attachments: string[] = []) => {
+        if (activeWorkspace?.readOnly) return;
+        if (text.trim().length === 0 && images.length === 0 && attachments.length === 0) return;
+        // Every agent call carries X-Workspace-Id; the landing page can be used
+        // before a workspace exists, so mint one the way openUploadDialog does.
+        if (!activeWorkspace) {
+            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
+        }
+        dispatch(dfActions.queueAnalystTask({ text, images, attachments }));
     };
 
     const handleLoadExampleSession = async (session: ExampleSession) => {
@@ -531,7 +551,7 @@ export const DataFormulatorFC = ({ }) => {
     );
     columnCapRef.current = columnCap;
     const preferredColumns = Math.min(
-        userColumns ?? defaultThreadColumns(widthClass, threadColumnDemand, splitWidth),
+        userColumns ?? defaultThreadColumns(widthClass, threadColumnDemand, splitWidth, tokens),
         columnCap,
     );
 
@@ -547,18 +567,47 @@ export const DataFormulatorFC = ({ }) => {
     //
     // Runs on every split-container resize, not just on discrete events:
     //   - `preferredSize` only applies when a pane first mounts, and this pane
-    //     unmounts whenever there are no tables;
+    //     unmounts whenever the session is empty;
     //   - Allotment otherwise redistributes a container resize across both
     //     panes, leaving the thread at an arbitrary width where the column
     //     count flips at unpredictable points.
     // Pinning it here means the canvas absorbs the entire delta and the thread
     // only ever changes in whole columns.
-    const hasTables = tables.length > 0;
+    // The canvas shows the focused item, and nothing else opens or closes it.
+    // Resolved, not raw: a text turn with no chart or table behind it (an
+    // explanation on a rootless thread) has nothing to draw, so stay closed.
+    const canvasOpen = !!canvasTarget && !canvasClosing;
+
+    // Closing collapses the pane first and drops the focus only once it has
+    // gone; clearing focus up front would swap the chart for the empty-canvas
+    // gallery and slide *that* away.
+    const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const closeCanvas = useCallback(() => {
+        setCanvasClosing(true);
+        if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = setTimeout(() => {
+            closeTimerRef.current = null;
+            setCanvasClosing(false);
+            dispatch(dfActions.setFocused(undefined));
+        }, CANVAS_TRANSITION_MS);
+    }, [dispatch]);
+    useEffect(() => () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); }, []);
     useEffect(() => {
-        // With no tables the first Allotment.Pane is unmounted, so the Allotment
-        // has a single child and resize([a, b]) would read `.minimumSize` off
-        // undefined.
-        if (!hasTables) return;
+        // Something grabbed focus mid-close (a new table, say) — keep the canvas.
+        if (!canvasTarget || !closeTimerRef.current) return;
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+        setCanvasClosing(false);
+    }, [canvasTarget]);
+
+    // Always armed except while dragging: arming it from an effect would land
+    // after Allotment has already written the new widths, so nothing would ease.
+    const [sashDragging, setSashDragging] = useState(false);
+
+    useEffect(() => {
+        // With the canvas hidden the thread owns the whole split, so there is
+        // nothing to pin and resize([a, b]) would fight the visibility change.
+        if (!canvasOpen) return;
         if (!allotmentRef.current || splitWidth <= 0) return;
 
         const target = paneWidth(preferredColumns);
@@ -575,7 +624,17 @@ export const DataFormulatorFC = ({ }) => {
             }
         });
         return () => cancelAnimationFrame(rafId);
-    }, [hasTables, preferredColumns, splitWidth, tokens.canvas.min]);
+    }, [canvasOpen, preferredColumns, splitWidth, tokens.canvas.min]);
+
+    const threadPanel = (
+        <DataThread centered={!canvasOpen} sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            alignContent: 'flex-start',
+            height: '100%',
+        }}/>
+    );
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
@@ -598,28 +657,47 @@ export const DataFormulatorFC = ({ }) => {
                     '& [class*="sash_"][class*="vertical"]:hover::before': {
                         background: 'var(--focus-border)',
                     },
+                    // Allotment lays out with `left` + `width`, so both must ease
+                    // or the panes resize while their positions jump. Suspended
+                    // mid-drag, where easing would lag the cursor.
+                    ...(sashDragging ? {} : {
+                        '& .split-view-view, & [class*="sash_"]': {
+                            transition: `left ${CANVAS_TRANSITION_MS}ms ease, width ${CANVAS_TRANSITION_MS}ms ease`,
+                        },
+                    }),
                 }}>
                 <Allotment
                     ref={allotmentRef}
                     onChange={(sizes) => { paneSizesRef.current = sizes; }}
-                    onDragEnd={snapToColumns}
+                    onDragStart={() => setSashDragging(true)}
+                    onDragEnd={(sizes) => { setSashDragging(false); snapToColumns(sizes); }}
                     proportionalLayout={false}
                 >
-                    {tables.length > 0 ? (
-                        <Allotment.Pane minSize={paneWidth(1)} 
-                                preferredSize={paneWidth(preferredColumns)} 
-                                maxSize={paneWidth(columnCap)} snap={false}>
-                            <DataThread sx={{
-                                display: 'flex', 
-                                flexDirection: 'column',
-                                overflow: 'hidden',
-                                alignContent: 'flex-start',
-                                height: '100%',
-                            }}/>
-                        </Allotment.Pane>
-                    ) : null}
-                    <Allotment.Pane minSize={tokens.canvas.min}>
-                        <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+                    <Allotment.Pane minSize={paneWidth(1)} 
+                            preferredSize={paneWidth(preferredColumns)} 
+                            // Uncapped with the canvas away, so the thread can take
+                            // the whole surface. Must be an explicit Infinity:
+                            // Allotment skips `undefined` and keeps the old cap.
+                            maxSize={canvasOpen ? paneWidth(columnCap) : Number.POSITIVE_INFINITY} snap={false}>
+                        {threadPanel}
+                    </Allotment.Pane>
+                    <Allotment.Pane minSize={tokens.canvas.min} visible={canvasOpen}>
+                        <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', position: 'relative' }}>
+                            <Tooltip title={t('canvas.close', { defaultValue: 'Close canvas' })}>
+                                <IconButton
+                                    size="small"
+                                    onClick={closeCanvas}
+                                    sx={{
+                                        // Above the canvas's own floating toolbar, which
+                                        // paints an opaque bar across the top edge.
+                                        position: 'absolute', top: 8, right: 8, zIndex: 20,
+                                        color: 'text.secondary',
+                                        '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
+                                    }}
+                                >
+                                    <CloseIcon sx={{ fontSize: iconVar.md }} />
+                                </IconButton>
+                            </Tooltip>
                             {viewMode === 'editor' ? (
                                 visPane
                             ) : (
@@ -773,7 +851,7 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
-                    onStartChat={(prompt, images, attachments) => startDataLoadingChat(prompt, images, attachments)}
+                    onStartChat={(prompt, images, attachments) => startAnalystChat(prompt, images, attachments)}
                     hasPriorConversation={dataLoadingChatMessages.length > 0}
                     onResumeChat={() => openUploadDialog('extract')}
                     serverConfig={serverConfig}
@@ -966,7 +1044,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {tables.length > 0 ? fixedSplitPane : (
+                {activeWorkspace && !provisionalSession ? fixedSplitPane : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
@@ -981,6 +1059,9 @@ export const DataFormulatorFC = ({ }) => {
                     open={uploadDialogOpen}
                     onClose={() => {
                         setUploadDialogOpen(false);
+                        // Nothing was added, so the workspace minted to open the
+                        // dialog is discarded rather than left as a stub session.
+                        if (sessionEmpty) dispatch(dfActions.setActiveWorkspace(null));
                         refreshPageConnectors();
                     }}
                     initialTab={uploadDialogInitialTab}

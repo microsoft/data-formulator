@@ -91,6 +91,12 @@ export const floatingPillSx: SxProps = {
     '&:hover': { backgroundColor: 'action.hover', color: 'primary.main' },
 };
 
+/**
+ * Width of the conversation column — the agent composer, and the thread block
+ * when it has the panel to itself. Shared so the two stay aligned.
+ */
+export const conversationWidth = 640;
+
 // ── Border radius ──────────────────────────────────────────────────────
 // Values are MUI spacing units (1 unit = 4px via theme.spacing)
 

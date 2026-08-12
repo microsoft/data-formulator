@@ -43,13 +43,18 @@ class _Loader:
         return {"rows": [{"n": 1}], "columns": ["n"], "exact": True}
 
 
-def _context(workspace: _Workspace, skill_state: dict | None = None) -> SkillContext:
+def _context(
+    workspace: _Workspace,
+    skill_state: dict | None = None,
+    narration: str = "",
+) -> SkillContext:
     return SkillContext(
         client=None,
         workspace=workspace,
         payload={
             "skill_state": skill_state if skill_state is not None else {},
             "conversation_id": "conversation-1",
+            "action_narration": narration,
         },
     )
 
@@ -131,6 +136,26 @@ def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path
         "op": "GTE",
         "value": "2025-01-01",
     }
+
+
+def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:
+    _save_orders_catalog(tmp_path)
+    skill = build_registry().get_skill("data_loading")
+    assert skill is not None
+
+    events = list(skill.handle_action(
+        "propose_data_operation",
+        {
+            "response": "terse fallback",
+            "options": [{
+                "label": "Recent orders",
+                "tables": [{"source_id": "warehouse", "table_key": "public.orders"}],
+            }],
+        },
+        _context(_Workspace(tmp_path), narration="Here is what I found and why it matters."),
+    ))
+
+    assert events[0]["data_operation"]["description"] == "Here is what I found and why it matters."
 
 
 def test_invalid_proposal_returns_recoverable_observation(tmp_path: Path) -> None:

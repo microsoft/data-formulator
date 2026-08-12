@@ -41,9 +41,20 @@ source does not add anything to the workspace analysis inputs.
 
 ## Proposing loading options
 
-- Write one brief `response` that answers the user and explains why loading is
-   proposed. Each `option` is a complete alternative with a concise action label
-   and one or more tables. The application displays table previews separately.
+Write your answer as **message text alongside the call** — that prose is what
+the user reads, so it carries the whole answer. Do not put it in an action
+field, and do not leave the call bare. Say what you went looking for, what you
+actually found, and what each option would give them — enough that they can
+choose without opening a single preview. Two to four sentences; more when the
+options differ in ways that matter (grain, coverage, freshness, joins needed),
+fewer when the choice is obvious. Name real tables and columns you saw during
+discovery, and say plainly when an option is a compromise or when you'd pick one
+yourself. Write it as you'd say it to a colleague, not as a schema summary.
+
+- Each `option` is a complete alternative: a concise action label (2–6 words)
+   and one or more tables. The labels are buttons, not sentences — the
+   reasoning belongs in your message text. The application displays table
+   previews separately, so don't list columns as a substitute for explaining.
 - Use only source IDs, table keys, columns, and values grounded by discovery.
 - For a whole table, omit `query`. Use the optional raw-row query only when the
    request needs filters, projection, ordering, or an intentional limit. It uses

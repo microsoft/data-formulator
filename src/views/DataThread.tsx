@@ -27,7 +27,7 @@ import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { extractErrorMessage } from '../app/errorHandler';
-import { Chart, DictTable, Trigger, InteractionEntry, TextTurn } from "../components/ComponentType";
+import { Chart, DictTable, Trigger, InteractionEntry, TextTurn, ROOTLESS_THREAD_ID } from "../components/ComponentType";
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
@@ -83,7 +83,7 @@ import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 
-import { ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
+import { ComponentBorderStyle, transition, radius, borderColor, conversationWidth } from '../app/tokens';
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, ResolvedConversationCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
@@ -497,12 +497,17 @@ const WorkspacePanel: FC<{
     );
 };
 
+// A session can start with no data at all, so the first run has no table to
+// hang from. Those turns/drafts are keyed by `ROOTLESS_THREAD_ID` instead and
+// render as a thread rooted at the question (design-docs/42).
 let SingleThreadGroupView: FC<{
     threadLabel?: string, // Header label; absent on continuation segments
     // A continuation of the thread above: renders the "↑ continued" header +
     // a chip for the carried-over parent, and no label of its own.
     isSplitThread?: boolean,
     hasContinuationBelow?: boolean, // When true, render "↓ continues below" footer
+    // Thread rooted at the conversation itself, for runs that predate any table.
+    isRootless?: boolean,
     // The source table this thread grows out of. Source tables are NOT part of
     // the thread system (they live in the shelf); a thread only echoes its
     // origin as a compact reference chip so the reader can see where it started.
@@ -519,6 +524,7 @@ let SingleThreadGroupView: FC<{
     threadLabel,
     isSplitThread = false,
     hasContinuationBelow = false,
+    isRootless = false,
     originTableId,
     leafTable,
     chartElements,
@@ -529,6 +535,7 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector(dfSelectors.getAllTables);
+    const inferredTableNames = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const { t } = useTranslation();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
@@ -601,21 +608,29 @@ let SingleThreadGroupView: FC<{
         return map;
     }, [generatedReports]);
 
+    // A cascade delete can leave a turn or draft pointing at a node that no
+    // longer exists. Those resolve to the rootless root so the conversation
+    // still renders somewhere instead of silently disappearing.
+    const anchorOf = useMemo(() => {
+        const known = new Set<string>(tables.map(t => t.id));
+        for (const turn of textTurns) known.add(turn.id);
+        return (id: string | undefined) => (id && known.has(id) ? id : ROOTLESS_THREAD_ID);
+    }, [tables, textTurns]);
+
     // Text turns render by their authored parent edge (design-docs/42): each
     // turn is a child of its `parentNodeId` — a table (a fresh turn on it) or
     // another turn (a chained follow-up).
     const textTurnChildrenOf = useMemo(() => {
         const map = new Map<string, TextTurn[]>();
         for (const turn of textTurns) {
-            const key = turn.parentNodeId;
-            if (!key) continue;
+            const key = anchorOf(turn.parentNodeId);
             const list = map.get(key) || [];
             list.push(turn);
             map.set(key, list);
         }
         for (const list of map.values()) list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
         return map;
-    }, [textTurns]);
+    }, [textTurns, anchorOf]);
 
     const turnById = useMemo(() => new Map(textTurns.map(tt => [tt.id, tt])), [textTurns]);
 
@@ -678,11 +693,11 @@ let SingleThreadGroupView: FC<{
         const ids = new Map<string, { description: string }>();
         for (const d of draftNodes) {
             if (d.derive?.status === 'running') {
-                ids.set(d.derive.trigger.tableId, { description: d.derive.runningPlan || '' });
+                ids.set(anchorOf(d.derive.trigger.tableId), { description: d.derive.runningPlan || '' });
             }
         }
         return ids;
-    }, [draftNodes]);
+    }, [draftNodes, anchorOf]);
 
     const clarifyAgentTableIds = useMemo(() => {
         const ids = new Map<string, { question: string }>();
@@ -693,11 +708,11 @@ let SingleThreadGroupView: FC<{
                 // same way (an attention row above the input box).
                 const pauseEntry = d.derive.trigger.interaction
                     ?.filter(e => e.role === 'clarify' || e.role === 'explain' || e.role === 'delegate').pop();
-                ids.set(d.derive.trigger.tableId, { question: pauseEntry?.content || '' });
+                ids.set(anchorOf(d.derive.trigger.tableId), { question: pauseEntry?.content || '' });
             }
         }
         return ids;
-    }, [draftNodes]);
+    }, [draftNodes, anchorOf]);
 
     const theme = useTheme();
 
@@ -736,13 +751,15 @@ let SingleThreadGroupView: FC<{
     };
 
     let _buildTableCard = (tableId: string) => {
-        return buildTableCard({ tableId, ...tableCardProps });
+        const inferredDisplayName = inferredTableNames.find(info => info.tableId === tableId)?.displayName;
+        return buildTableCard({ tableId, inferredDisplayName, ...tableCardProps });
     }
 
     /** Pointer to a table whose real card lives in the shelf or a prior column. */
     let _buildRefChip = (tableId: string) => {
+        const displayName = inferredTableNames.find(info => info.tableId === tableId)?.displayName;
         return buildTableRefChip({
-            tableId, table: tableById.get(tableId),
+            tableId, table: tableById.get(tableId), displayName,
             focused: tableId === focusedTableId, dispatch,
         });
     }
@@ -1035,7 +1052,7 @@ let SingleThreadGroupView: FC<{
         };
 
         if (runningAgentTableIds.has(tableId)) {
-            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && anchorOf(d.derive.trigger.tableId) === tableId);
             if (runningDraft && renderedDraftIds.has(runningDraft.id)) {
                 return;
             }
@@ -1087,7 +1104,7 @@ let SingleThreadGroupView: FC<{
                 timelineItems.push(buildReportTimelineItem(report, highlighted));
             }
         } else if (clarifyAgentTableIds.has(tableId)) {
-            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && anchorOf(d.derive.trigger.tableId) === tableId);
             if (clarifyDraft && renderedDraftIds.has(clarifyDraft.id)) {
                 return;
             }
@@ -1514,6 +1531,13 @@ let SingleThreadGroupView: FC<{
         pushAgentDraftItems(tableId, triggerType, highlighted);
     };
 
+    // A thread rooted at the question: the conversation came first and the
+    // tables it loaded hang off it, rather than the other way round.
+    if (isRootless) {
+        pushTextTurnSubtree(ROOTLESS_THREAD_ID, false, 'trigger');
+        pushAgentDraftItems(ROOTLESS_THREAD_ID, 'trigger', false);
+    }
+
     // The thread's origin: a source table lives in the shelf, never in a
     // thread, so we echo it here as a compact chip that says "this thread
     // starts from X". The FIRST thread growing out of a source also hosts that
@@ -1829,7 +1853,7 @@ let SingleThreadGroupView: FC<{
             const clarifyClickHandler = (item.isClarifying && item.tableId)
                 ? () => {
                     const tableId = item.tableId!;
-                    const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+                    const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && anchorOf(d.derive.trigger.tableId) === tableId);
                     if (clarifyDraft) {
                         window.dispatchEvent(new CustomEvent('df-reopen-pause', { detail: { draftId: clarifyDraft.id } }));
                     }
@@ -2467,7 +2491,7 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
     return columns;
 }
 
-export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
+export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx, centered = false }) {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -2485,22 +2509,21 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const textTurnRootByTurn = useMemo(() => {
         const tableIds = new Set(tables.map(t => t.id));
         const turnById = new Map(textTurnsForHome.map(tt => [tt.id, tt]));
-        const rootOf = (tt: TextTurn): string | undefined => {
+        const rootOf = (tt: TextTurn): string => {
             let cur: TextTurn | undefined = tt;
             const seen = new Set<string>();
             while (cur && !seen.has(cur.id)) {
                 seen.add(cur.id);
                 const p = cur.parentNodeId;
-                if (!p) return undefined;
+                if (!p) return ROOTLESS_THREAD_ID;
                 if (tableIds.has(p)) return p;
                 cur = turnById.get(p);
             }
-            return undefined;
+            return ROOTLESS_THREAD_ID;
         };
         const map = new Map<string, string>();
         for (const tt of textTurnsForHome) {
-            const r = rootOf(tt);
-            if (r) map.set(tt.id, r);
+            map.set(tt.id, rootOf(tt));
         }
         return map;
     }, [textTurnsForHome, tables]);
@@ -2904,7 +2927,16 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return undefined;
     }, [focusedTableId, leafTables, tables]);
 
-    let hasContent = leafTables.length > 0 || tables.length > 0;
+    // Conversation that predates any table: the first run of a session that
+    // started from a question rather than from data.
+    const rootlessTurns = useMemo(
+        () => textTurnsForHome.filter(tt => textTurnRootByTurn.get(tt.id) === ROOTLESS_THREAD_ID),
+        [textTurnsForHome, textTurnRootByTurn],
+    );
+    const hasRootlessContent = rootlessTurns.length > 0
+        || draftNodes.some(d => !!d.derive && !tableById.has(d.derive.trigger.tableId));
+
+    let hasContent = leafTables.length > 0 || tables.length > 0 || hasRootlessContent;
 
     // Collect all tables (including derived ones) for the workspace panel.
     let baseTables = tables;
@@ -2928,8 +2960,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         leafTable?: DictTable;            // absent → source-artifact-only thread
         originTableId?: string;           // source table this thread grew out of (reference chip)
         threadLabel?: string;
-        isSplitThread?: boolean;          // true → continuation: "↑ continued" header + parent chip, no label
+        isSplitThread?: boolean;           // true → continuation: "↑ continued" header + parent chip, no label
         hasContinuationBelow?: boolean;   // true → render "↓ continues below" footer
+        isRootless?: boolean;             // true → thread rooted at the conversation, not a table
         usedTableIds?: string[];
     };
     let allThreadEntries: ThreadEntry[] = [];
@@ -2947,6 +2980,16 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // so it packs alongside the threads as slot 0.
     if (sourceTables.length > 0) {
         allThreadEntries.push({ key: 'source-shelf', isShelf: true });
+    }
+
+    // The question-rooted thread leads: everything else grew out of it.
+    if (hasRootlessContent) {
+        realThreadIdx++;
+        allThreadEntries.push({
+            key: 'rootless-thread',
+            isRootless: true,
+            threadLabel: t('dataThread.threadIndex', { index: String(realThreadIdx) }),
+        });
     }
 
     // Pre-scan: group every threaded leaf (extras + real leaves) by the *real
@@ -3066,11 +3109,17 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 }
             };
 
+            if (entry.isRootless) {
+                entryRows += rootlessTurns.length;
+                claimLoadedTables(ROOTLESS_THREAD_ID);
+                allThreadHeights.push(estimateThreadHeight(tableRows, entryRows + 1, artifactRows));
+                continue;
+            }
+
             if (entry.originTableId) {
                 tableRows += 1; // origin reference chip
                 if (!accumulated.includes(entry.originTableId)) {
-                    artifactRows += artifactRowsOf(entry.originTableId);
-                    entryRows += textTurnItemsByTable.get(entry.originTableId) || 0;
+                    artifactRows += artifactRowsOf(entry.originTableId);                    entryRows += textTurnItemsByTable.get(entry.originTableId) || 0;
                     claimLoadedTables(entry.originTableId);
                 }
                 accumulated.push(entry.originTableId);
@@ -3147,6 +3196,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             threadLabel={entry.threadLabel}
             isSplitThread={entry.isSplitThread}
             hasContinuationBelow={entry.hasContinuationBelow}
+            isRootless={entry.isRootless}
             originTableId={entry.originTableId}
             leafTable={entry.leafTable}
             chartElements={chartElements}
@@ -3173,12 +3223,21 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 flexDirection: 'row',
                 flexWrap: 'nowrap',
                 justifyContent: 'flex-start',
+                // Centered mode centers the BLOCK, not the columns inside it, and
+                // floors it at the composer's width so a single thread lines up
+                // with the chat box below instead of drifting to the middle.
+                ...(centered ? {
+                    width: 'fit-content',
+                    minWidth: `min(100%, ${conversationWidth}px)`,
+                    maxWidth: '100%',
+                    mx: 'auto',
+                } : {}),
                 gap: `${threadTokens.thread.cardGap}px`,
                 py: 1,
                 // Bottom padding leaves room so the scroll handler can position
                 // the focused element above the chatbox even when it expands.
                 pb: '180px',
-                pl: `${threadTokens.thread.panelPadding / 2}px`,
+                pl: centered ? 0 : `${threadTokens.thread.panelPadding / 2}px`,
                 pr: 0,
             }}>
                 {/* First column: workspace panel + first batch of threads */}
@@ -3213,7 +3272,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 ))}
             </Box>
         </Box>
-    ) : null;
+    ) : (
+        // A session can open before any data exists (the agent loads it), so
+        // say so rather than leaving the panel blank.
+        <Box sx={{ direction: 'ltr', boxSizing: 'border-box', px: 2, py: 3, width: panelWidth }}>
+            <Typography variant="body2" sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>
+                {t('dataThread.emptySession')}
+            </Typography>
+        </Box>
+    );
 
     return (
         <Box

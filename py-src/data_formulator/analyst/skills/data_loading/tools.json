@@ -120,7 +120,7 @@
         "properties": {
           "response": {
             "type": "string",
-            "description": "Briefly answer the user and explain why these tables are being offered."
+            "description": "Fallback only. Leave empty when you narrate in your message text, which is what the user reads."
           },
           "options": {
             "type": "array",
@@ -182,7 +182,7 @@
             }
           }
         },
-        "required": ["response", "options"]
+        "required": ["options"]
       }
     }
   }

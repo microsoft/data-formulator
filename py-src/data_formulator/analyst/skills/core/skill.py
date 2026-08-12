@@ -120,6 +120,7 @@ class CoreSkill:
         field_display_names = action.get("field_display_names", {})
         display_instruction = action.get("display_instruction", "")
         title = action.get("title", "")
+        subtitle = action.get("subtitle", "")
         step_index = int((ctx.payload or {}).get("completed_step_count", 0)) + 1
 
         yield {
@@ -137,6 +138,7 @@ class CoreSkill:
             field_display_names=field_display_names,
             display_instruction=display_instruction,
             title=title,
+            subtitle=subtitle,
             messages=ctx.trajectory,
         )
 

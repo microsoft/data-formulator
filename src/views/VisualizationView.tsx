@@ -53,7 +53,7 @@ import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
-import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
+import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, computeInsightKey } from '../components/ComponentType';
 
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
@@ -488,8 +488,10 @@ const VegaChartRenderer: FC<{
     maxStretchFactor?: number;
     chartUnavailable: boolean;
     insightTitle?: string;
+    insightSubtitle?: string;
+    fieldSemantics?: Record<string, FieldSemanticsInfo>;
     onSpecReady?: (spec: any | null) => void;
-}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, displayScale = 1, maxStretchFactor, chartUnavailable, insightTitle, onSpecReady }) => {
+}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, displayScale = 1, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, fieldSemantics, onSpecReady }) => {
 
     const dispatch = useDispatch();
     const elementId = `focused-chart-element-${chart.id}`;
@@ -557,6 +559,10 @@ const VegaChartRenderer: FC<{
                 // compiled output instead — see the uniform scale below.
                 1,
                 maxStretchFactor,
+                undefined,
+                fieldSemantics,
+                insightTitle,
+                insightSubtitle,
             );
         }
 
@@ -581,10 +587,10 @@ const VegaChartRenderer: FC<{
         // (frame: 'group'), so it stays centered over the actual chart area even
         // when a legend pushes the embed wrapper off-center. We don't override a
         // title already supplied by a style variant.
-        if (insightTitle && !spec.title) {
-            const faceted = !!(chart.encodingMap.column?.fieldID || chart.encodingMap.row?.fieldID);
+        if (activeVariant && insightTitle && !spec.title) {
             spec.title = {
                 text: insightTitle,
+            ...(insightSubtitle ? { subtitle: insightSubtitle } : {}),
                 anchor: 'middle',
                 fontWeight: 500,
                 fontSize: textVar.md,
@@ -631,7 +637,7 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, fieldSemantics, onSpecReady, elementId]);
 
     // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
     // width (with `height: auto` from the wrapper) scales the chart uniformly
@@ -777,6 +783,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const dispatch = useDispatch();
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
 
     const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
@@ -999,9 +1006,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let triggerTable = tables.find(t => t.derive?.trigger?.chart?.id == focusedChart?.id);
 
     // Chart title: surfaced as the rendered chart heading. The title is kept
-    // only while its key matches the chart's current encoded fields (chartType
-    // + field ids), so it stays through property edits (e.g. sort order) but is
-    // dropped once the encoded fields change.
+    // only while its key matches the chart's analytical encoding (chart type,
+    // channels, fields, and aggregations), so it stays through cosmetic edits
+    // but is dropped once the chart's meaning changes.
     const titleFresh = !!focusedChart.title && focusedChart.titleKey === computeInsightKey(focusedChart);
     
     const actionBtnSx = {
@@ -1122,6 +1129,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         maxStretchFactor={chartStretch}
                                         chartUnavailable={chartUnavailable}
                                         insightTitle={titleFresh ? focusedChart.title : undefined}
+                                        insightSubtitle={titleFresh ? focusedChart.subtitle : undefined}
+                                        fieldSemantics={tableSemantics.find(info => info.tableId === table.id)?.fields}
                                         onSpecReady={handleSpecReady}
                                     />
                                 </Box>
@@ -1387,7 +1396,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 edit this chart" controls grouped together (agent log + code +
                 encoding shelf). Chart deletion lives in the chart property-config
                 bar below the chart. */}
-            <Box sx={{ ml: 'auto', mr: '8px', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {/* `mr` leaves room for the pane's close-canvas button, which floats
+                above this bar at the same corner. */}
+            <Box sx={{ ml: 'auto', mr: '40px', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {hasDerived && (
                     <Tooltip title={t('chart.log')} placement="bottom">
                         <IconButton

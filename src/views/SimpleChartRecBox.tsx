@@ -28,7 +28,7 @@ import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo } from "../components/ComponentType";
+import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo, ROOTLESS_THREAD_ID } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -43,7 +43,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { borderColor, transition } from '../app/tokens';
+import { borderColor, transition, conversationWidth } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
@@ -306,6 +306,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, []);
 
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
+    const analystChatPending = useSelector((state: DataFormulatorState) => state.analystChatPending);
 
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
@@ -565,10 +566,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // (exploreFromChat), so the report has the actual exploration narrative —
     // user questions, agent thinking, findings — instead of just a flat list
     // of charts.
-    const buildThreadContext = useCallback((targetNodeId: string): {
+    const buildThreadContext = useCallback((targetNodeId: string | undefined): {
         focusedThread: any[] | undefined;
         otherThreads: any[] | undefined;
     } => {
+        // Nothing loaded yet — there's no thread to summarize.
+        if (!targetNodeId) return { focusedThread: undefined, otherThreads: undefined };
         // Tier 2: Focused thread — detailed per-step info
         const focusedSteps: any[] = [];
         const targetTableId = resolveNodeTable(targetNodeId, textTurns, tables) ?? targetNodeId;
@@ -717,7 +720,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             action?: 'elaborate';
         };
     }, displayPrompt?: string) => {
-        if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
+        // A session can start with no data at all — the agent's first job is then
+        // to load some, so don't require a table to ask.
+        const emptyWorkspace = tables.length === 0;
+        if ((!focusedTableId && !emptyWorkspace) || (!clarificationContext && prompt.trim() === "")) return;
 
         // Non-image attachments live in the workspace scratch/ folder; we pass
         // their paths to the agent (see requestBody.scratch_files) rather than
@@ -735,12 +741,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const currentTable = tables.find(t => t.id === focusedTableId);
         const priorityIds = currentTable?.derive
             ? currentTable.derive.source
-            : [focusedTableId];
+            : focusedTableId ? [focusedTableId] : [];
         const selectedTableIds = [
             ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
             ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
         ];
-        if (selectedTableIds.length === 0) return;
+        if (selectedTableIds.length === 0 && !emptyWorkspace) return;
 
         // A real resume replays a trajectory; answering a clarify WITHOUT a
         // trajectory token is a fresh turn that still threads the conversation.
@@ -930,7 +936,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                     timestamp: Date.now() }
             ];
-            createNextDraft(askedFromTable || focusedTableId!, initialEntries);
+            createNextDraft(askedFromTable || focusedTableId || ROOTLESS_THREAD_ID, initialEntries);
         }
 
         // Track the last agent display_instruction (from "action" events)
@@ -1346,6 +1352,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 const insightTitle = refinedGoal?.title;
                 if (typeof insightTitle === 'string' && insightTitle.trim()) {
                     newChart.title = insightTitle.trim();
+                    const insightSubtitle = refinedGoal?.subtitle;
+                    if (typeof insightSubtitle === 'string' && insightSubtitle.trim()) {
+                        newChart.subtitle = insightSubtitle.trim();
+                    }
                     newChart.titleKey = computeInsightKey(newChart);
                 }
                 runCreatedChartIds.push(newChart.id);
@@ -1414,7 +1424,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const turnId = `textTurn_${actionId}_${String(Date.now())}`;
                     // design-docs/42: the turn FOLLOWS the run's last node
                     // (the asked-from table, or the previous node in the run).
-                    const parentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId;
+                    const parentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId || ROOTLESS_THREAD_ID;
                     if (parentNodeId) {
                         dispatch(dfActions.addTextTurn({
                             kind: 'text',
@@ -1508,7 +1518,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const turnId = `textTurn_${actionId}_${String(Date.now())}`;
                     // design-docs/42: this closing explanation FOLLOWS the run's
                     // last node (the produced table, or the asked-from node).
-                    const parentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId;
+                    const parentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId || ROOTLESS_THREAD_ID;
                     const resumeTraj = result.trajectory || result.content?.trajectory;
                     if (parentNodeId) {
                         dispatch(dfActions.addTextTurn({
@@ -1790,9 +1800,24 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // means there's nothing to send beyond clicks; the user must either
     // click the remaining options (which auto-submits) or type something.
     const canSend = React.useMemo(() => {
-        if (!focusedTableId || workspaceReadOnly) return false;
+        if (workspaceReadOnly) return false;
+        // No tables yet: the first ask is how data gets here.
+        if (!focusedTableId && tables.length > 0) return false;
         return chatPrompt.trim().length > 0;
-    }, [chatPrompt, focusedTableId, workspaceReadOnly]);
+    }, [chatPrompt, focusedTableId, tables.length, workspaceReadOnly]);
+
+    // A prompt seeded from the landing box: send it once the chat is idle.
+    // The ref makes this one-shot even if the effect is double-invoked before
+    // the store update lands (StrictMode).
+    const seededPromptRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!analystChatPending || isChatFormulating) return;
+        const text = analystChatPending.text;
+        if (seededPromptRef.current === text) return;
+        seededPromptRef.current = text;
+        dispatch(dfActions.clearAnalystChatPending());
+        if (text.trim().length > 0) submitChat(text);
+    }, [analystChatPending, isChatFormulating, submitChat, dispatch]);
 
     // Handle a single clicked option (or confirmed free-text) inside the
     // ClarificationPanel. We record the selection by question index — the
@@ -2254,7 +2279,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
                 fullWidth
                 multiline
-                minRows={3}
+                minRows={2}
                 maxRows={6}
             />
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
@@ -2473,7 +2498,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 closeTextTurn(focusedTextTurn);
             }}
         >
-            <Box>
+            {/* Shares its width with the thread block above (see tokens). */}
+            <Box sx={{ width: '100%', maxWidth: conversationWidth, mx: 'auto' }}>
                 {gettingStartedBlock}
                 {/* The input box */}
                 {inputBox}

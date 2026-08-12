@@ -314,6 +314,15 @@ describe('default thread columns', () => {
         expect(defaultThreadColumns('standard', 1, needed)).toBe(2);
     });
 
+    it('lets a measured split open a second column the width class would veto', () => {
+        // A 1279px viewport is `compact`, which offers one column — but the
+        // split still seats two without crowding the canvas, and the measured
+        // width is the better answer.
+        const needed = threadPaneWidthFor(2) + COMFORTABLE_CANVAS;
+        expect(defaultThreadColumns('compact', 1, needed)).toBe(2);
+        expect(defaultThreadColumns('compact', 1, needed - 1)).toBe(1);
+    });
+
     it('leaves the canvas comfortable at every count it suggests', () => {
         for (let width = 600; width <= 4000; width += 1) {
             const columns = comfortableThreadColumns(width);

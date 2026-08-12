@@ -649,15 +649,25 @@ const WorkspaceMenu: React.FC = () => {
 };
 
 // Exit the current session and return to the front-page (no workspace).
-// Saves work first so the session is recoverable from the workspace picker.
+// Saves work first so the session is recoverable from the workspace picker —
+// unless the session is empty, in which case it's discarded rather than left
+// behind as an untitled shell in the picker.
 const useExitSession = () => {
     const dispatch = useDispatch();
     const state = useSelector((s: DataFormulatorState) => s);
+    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
 
     return useCallback(async () => {
-        try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
+        const workspaceId = state.activeWorkspace?.id;
+        if (sessionEmpty) {
+            if (workspaceId) {
+                try { await deleteWorkspace(workspaceId); } catch { /* may never have been created */ }
+            }
+        } else {
+            try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
+        }
         dispatch(dfActions.resetState());
-    }, [state, dispatch]);
+    }, [state, sessionEmpty, dispatch]);
 };
 
 const ExitSessionButton: React.FC = () => {
@@ -1015,7 +1025,7 @@ const AppShell: FC = () => {
     // that — its hero, chips, connected-sources row and demo grid all reflow —
     // so we relax its floor to 640px, a comfortable width where everything
     // still wraps cleanly before a horizontal scrollbar appears.
-    const isLandingView = isAppPage && tables.length === 0;
+    const isLandingView = isAppPage && !activeWorkspace;
     const shellMinWidth = isLandingView ? '640px' : `${MIN_SUPPORTED.width}px`;
 
     // Narrow toolbars fold their controls into menus instead of letting the
@@ -1025,6 +1035,7 @@ const AppShell: FC = () => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
     const exitSession = useExitSession();
+    const inSession = isAppPage && !!activeWorkspace;
 
     return (
         <Box sx={{
@@ -1083,7 +1094,7 @@ const AppShell: FC = () => {
                         </Box>
                         </>
                         )}
-                        {!isCompactToolbar && tables.length === 0 && !activeWorkspace && (
+                        {!isCompactToolbar && !activeWorkspace && (
                             <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.secondary', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                                 {t('appBar.microsoftResearch')}
                             </Typography>
@@ -1129,7 +1140,7 @@ const AppShell: FC = () => {
                                             icon: <GitHubIcon fontSize="small" />,
                                             href: EXTERNAL_LINKS.github,
                                         },
-                                        ...(activeWorkspace ? [{
+                                        ...(inSession ? [{
                                             key: 'exit',
                                             label: t('workspace.exit', { defaultValue: 'Exit' }),
                                             icon: <LogoutIcon fontSize="small" />,
@@ -1165,7 +1176,7 @@ const AppShell: FC = () => {
                                         </IconButton>
                                     </Tooltip>
                                 </Box>
-                                {activeWorkspace && (
+                                {inSession && (
                                     <>
                                         <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
                                         <ExitSessionButton />
@@ -1335,8 +1346,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             console.log('[DEBUG] activeWorkspace:', activeWorkspace);
             console.log('[DEBUG] tables:', tables.length, tables.map(t => ({ id: t.id, virtual: t.virtual, rowLen: t.rows?.length })));
             
-            // Recover orphaned state: tables exist but activeWorkspace was lost
-            if (!activeWorkspace && tables.length > 0) {
+            // Recover orphaned state: content exists but activeWorkspace was lost
+            if (!activeWorkspace && !dfSelectors.selectSessionEmpty(store.getState())) {
                 const recoveredId = `recovered_${Date.now()}`;
                 dispatch(dfActions.setActiveWorkspace({ id: recoveredId, displayName: t('workspace.recoveredSession') }));
             }

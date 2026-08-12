@@ -42,6 +42,12 @@
     "agentChatTabSuggestion": "这里有哪些数据集？",
     "agentChatSuggestionsLabel": "试试这样问",
     "agentChatSendTooltip": "开始与助手对话",
+    "dataSourcesLabel": "已连接：",
+    "addSourceLabel": "或直接添加数据：",
+    "agentChatQuickAction": {
+      "connect": "帮我连接数据源",
+      "askConnected": "已连接的数据源里有哪些数据？"
+    },
     "agentChatSuggestion": {
       "askConnected": "已连接的数据源里有哪些数据集？",
       "findCPI": "帮我加载消费者价格指数数据",

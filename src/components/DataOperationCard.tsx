@@ -4,6 +4,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { textVar } from '../app/layout';
+import { radius } from '../app/tokens';
 import type { DataOperation } from '../dataOperations/models';
 
 interface DataOperationCardProps {
@@ -24,17 +25,11 @@ export const DataOperationCard: React.FC<DataOperationCardProps> = ({
         <Box sx={{
             mt: compact ? 0 : 1,
             width: '100%',
-            maxWidth: 520,
         }}>
             {/* The response is already recorded by the turn/message that carries
                 this card, so the card only offers the choices. */}
-            <Box sx={{ py: 0.25 }}>
-                <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, lineHeight: 1.35 }}>
-                    {t('dataLoading.operation.title')}
-                </Typography>
-            </Box>
-            <List dense disablePadding>
-                {operation.plans.map((plan, index) => {
+            <List dense disablePadding sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {operation.plans.map((plan) => {
                     const content = (
                         <>
                             {onSelectPlan && (
@@ -61,18 +56,29 @@ export const DataOperationCard: React.FC<DataOperationCardProps> = ({
                             />
                         </>
                     );
+                    // Options flow and wrap; each stays readable rather than
+                    // stretching across a wide panel.
+                    const itemSx = {
+                        px: 0.5, py: 0.5,
+                        alignItems: 'flex-start',
+                        width: 'auto',
+                        flex: '1 1 260px',
+                        maxWidth: 520,
+                        borderRadius: radius.sm,
+                        border: '1px solid',
+                        borderColor: selectedPlanId === plan.id ? 'primary.main' : 'divider',
+                    } as const;
                     return onSelectPlan ? (
                         <ListItemButton
                             key={plan.id}
                             selected={selectedPlanId === plan.id}
-                            divider={index < operation.plans.length - 1}
                             onClick={() => onSelectPlan(plan.id)}
-                            sx={{ px: 0.5, py: 0.5, alignItems: 'flex-start' }}
+                            sx={itemSx}
                         >
                             {content}
                         </ListItemButton>
                     ) : (
-                        <ListItem key={plan.id} divider={index < operation.plans.length - 1} sx={{ px: 0.5, py: 0.5, alignItems: 'flex-start' }}>
+                        <ListItem key={plan.id} sx={itemSx}>
                             {content}
                         </ListItem>
                     );

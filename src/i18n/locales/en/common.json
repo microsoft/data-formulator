@@ -406,6 +406,9 @@
     },
     "loadInNewSession": "Load in new session"
   },
+  "canvas": {
+    "close": "Close canvas"
+  },
   "dataThread": {
     "title": "Data Threads",
     "refreshNow": "Refresh now",
@@ -476,6 +479,7 @@
     "hideEarlierTurns": "Hide earlier turns",
     "working": "working...",
     "waitingForClarification": "waiting for clarification...",
+    "emptySession": "No data yet \u2014 ask the agent below to load some, and it will show up here.",
     "rename": "Rename",
     "refreshSettings": "Refresh settings",
     "replaceData": "Replace data",
@@ -620,6 +624,9 @@
     "loading": "Loading ...",
     "sortBy": "Sort by {{label}}",
     "rowCount": "{{count}} rows",
+    "columnCount_one": "{{count}} column",
+    "columnCount_other": "{{count}} columns",
+    "filename": "filename: {{name}}",
     "loadedOfTotal": "{{loaded}} / {{total}} rows",
     "viewRandomRows": "view 10000 random rows from this table",
     "restoreOrder": "Restore original order",

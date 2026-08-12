@@ -68,6 +68,9 @@ the run and any per-step commentary — are shown verbatim to the user and doubl
 as the artifact summary. Keep the closing answer to **one short sentence (≤20
 words)**: state the finding, not the process. Never narrate what you're about to
 do or recap the chart's axes; let the charts and report speak for themselves.
+The exception is an action that pauses for the user: the text you write
+alongside it *is* your answer to them, so give it the room it needs to explain
+what you found and what the choices mean.
 
 ### `visualize` — chart a transform
 
@@ -77,16 +80,35 @@ result and decide your next move.
 - `display_instruction` — ≤12 words; the question/hypothesis the chart
   investigates (don't recap x/y/color — those are visible). Wrap a **column** in
   `**…**` if it anchors the question.
-- `title` — short descriptive chart heading (5–10 words, title case): the
-  subject, the dimensions compared, and the scope. Do NOT include the chart
-  type. This is shown as the chart's title.
+- `title` — a concise, neutral analytical heading naming the subject, measure,
+  and analytical lens, such as “Year-over-year price change peaks.” Prefer a
+  stable description of the view over a takeaway claim or narrated trend. Do
+  not mention the chart type, imply causality, or editorialize. This field is
+  required; put interpretation in the closing response instead.
+- `subtitle` — optional factual context: what is measured, population or
+  geography, time period, aggregation, important filters, and units or index
+  baseline. Do not repeat the title.
 - `code` — Python producing a DataFrame assigned to `output_variable`.
 - `output_variable` — snake_case name the code assigns.
 - `chart` — `{chart_type, encodings:{x,y,…}, config:{}}` (chart_type from the
   chart type reference).
 - `input_tables` — table names from [SOURCE TABLES] the code reads.
-- `field_metadata` — field → SemanticType; `field_display_names` — field →
-  human-readable label.
+- `field_metadata` — field → semantic annotation. Include units, index
+  baselines, intrinsic domains, and ordinal order when supported by the data;
+  never invent a unit. Distinguish percentages from percentage points and
+  identifiers from quantities.
+- `field_display_names` — field → concise human-readable label for axes,
+  legends, and table headers. Expand technical names, preserve established
+  domain abbreviations, include units when useful, and use the user's language.
+
+Silently classify the analytical intent before choosing a chart: comparison,
+trend, distribution, relationship, composition, deviation, ranking,
+uncertainty, or spatial pattern. Choose encodings and chart type from that
+intent and the data shape. Set ordering deliberately: chronological for time,
+semantic order for ordinal fields, and measure order for rankings. Avoid line
+charts or legends with excessive series, labels that collide, and color that
+does not encode additional information; aggregate, bin, facet, or limit
+categories when needed without hiding material data.
 
 ### `ask_user` — ask the user and pause for their reply (pauses the run)
 

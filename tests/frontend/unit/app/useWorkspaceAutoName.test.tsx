@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
         activeWorkspace: { id: 'ws-1', displayName: 'Untitled Session' },
         inputTables: [{ id: 'orders', displayId: '订单' }],
         derivedTables: [],
+        textTurns: [] as any[],
         draftNodes: [
             {
                 derive: {

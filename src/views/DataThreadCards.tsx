@@ -133,10 +133,11 @@ export let buildChartCards = (
 export let buildTableRefChip = (props: {
     tableId: string;
     table: DictTable | undefined;
+    displayName?: string;
     focused: boolean;
     dispatch: any;
 }) => {
-    const { tableId, table, focused, dispatch } = props;
+    const { tableId, table, displayName, focused, dispatch } = props;
     return <Box key={`regular-table-box-${tableId}`}
         data-table-id={tableId}
         className="data-thread-card-wrapper"
@@ -160,7 +161,7 @@ export let buildTableRefChip = (props: {
                             WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
                             wordBreak: 'break-all',
-                        }}>{table?.displayId || tableId}</Typography>
+                        }}>{displayName?.trim() || table?.displayId || tableId}</Typography>
                     </Box>
                 </Stack>
             </Box>
@@ -201,6 +202,7 @@ export let buildTriggerCard = (
 export interface BuildTableCardProps {
     tableId: string;
     tables: DictTable[];
+    inferredDisplayName?: string;
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[];
     highlightedTableIds: string[];
@@ -221,7 +223,7 @@ export interface BuildTableCardProps {
 
 export let buildTableCard = (props: BuildTableCardProps) => {
     const {
-        tableId, tables, chartElements, usedIntermediateTableIds,
+        tableId, tables, inferredDisplayName, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId,
         parentTable, tableIdList, collapsed, dispatch,
         handleOpenTableMenu, primaryBgColor, t, showOriginalName = true,
@@ -229,9 +231,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
 
     const getOriginalName = (tbl: DictTable | undefined): string | null => {
         if (!tbl || tbl.derive) return null;
-        const name = tbl.source?.originalTableName;
-        if (!name || name === (tbl.displayId || tbl.id)) return null;
-        return name;
+        return tbl.source?.originalTableName || tbl.virtual?.tableId || tbl.id;
     };
 
     const getSourceTooltip = (tbl: DictTable | undefined): string | null => {
@@ -258,10 +258,12 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     const sourceTooltip = getSourceTooltip(table);
     const workspaceName = table?.displayId || tableId;
     const normalizeTableName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
-    const friendlyName = workspaceName;
+    const friendlyName = inferredDisplayName?.trim()
+        ? inferredDisplayName.trim()
+        : workspaceName;
     const rawName = showOriginalName
         && originalName
-        && normalizeTableName(originalName) !== normalizeTableName(workspaceName)
+        && normalizeTableName(originalName) !== normalizeTableName(friendlyName)
         ? originalName
         : null;
 

@@ -127,15 +127,18 @@ class DataLoadingSkill:
             plans = tuple(
                 resolved_plans
             )
-            response = str(spec.get("response", "")).strip()
+            # The agent's own prose is the answer; `response` is only a fallback
+            # for models that emit a bare tool call with no accompanying text.
+            narration = str(ctx.payload.get("action_narration") or "").strip()
+            response = narration or str(spec.get("response", "")).strip()
             operation = DataOperation(
-                reason=str(spec.get("reason", "")).strip(),
+                reason="",
                 plans=plans,
                 description=response,
             )
             if not operation.description or any(not plan.label for plan in plans):
                 raise ValueError(
-                    "response and option labels must be non-empty"
+                    "say what you found and why in your reply text, and give each option a label"
                 )
             conversation_id = str(ctx.payload.get("conversation_id", "")).strip()
             loaded_tables = DataLoadingSkill._already_loaded_tables(

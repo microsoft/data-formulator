@@ -484,6 +484,7 @@ class AnalystAgent:
                 action_reason = "ok"
                 action_error = ""
                 final_text = ""
+                action_narration = ""
                 action_tool_call_id = None
                 for event in self._get_next_action(trajectory, input_tables, outer_iteration=iteration):
                     if event.get("type") == "agent_action":
@@ -491,6 +492,7 @@ class AnalystAgent:
                         action_reason = event.get("reason", "ok")
                         action_error = event.get("error_message", "")
                         final_text = event.get("final_text", "")
+                        action_narration = event.get("narration", "")
                         action_tool_call_id = event.get("tool_call_id")
                         total_llm_calls += event.get("llm_calls", 0)
                     else:
@@ -576,6 +578,7 @@ class AnalystAgent:
                 try:
                     observation = yield from self._dispatch_skill_action(
                         owner, action_type, action, trajectory, iteration, completed_steps,
+                        narration=action_narration,
                     )
                 finally:
                     self._suppress_stream_channel = None
@@ -742,6 +745,7 @@ class AnalystAgent:
         trajectory: list[dict],
         iteration: int,
         completed_steps: list[dict[str, Any]],
+        narration: str = "",
     ) -> Generator[Event, None, str | None]:
         """Render a skill's action via ``handle_action`` and return its
         observation string (or ``None``).
@@ -782,7 +786,13 @@ class AnalystAgent:
             workspace=self.workspace,
             language_instruction=self.language_instruction,
             trajectory=trajectory,
-            payload={**self._run_payload, "completed_step_count": len(completed_steps)},
+            payload={
+                **self._run_payload,
+                "completed_step_count": len(completed_steps),
+                # The prose the model wrote alongside this action — its own
+                # words, not a field we asked it to fill in.
+                "action_narration": narration,
+            },
             runtime=self,
         )
         rlog.log("action_execution", action=action_type, status="ok",
@@ -1003,6 +1013,7 @@ class AnalystAgent:
         field_display_names: dict,
         display_instruction: str,
         title: str = "",
+        subtitle: str = "",
         messages: list[dict] | None = None,
     ) -> dict[str, Any]:
         """Run visualize code in sandbox and assemble chart."""
@@ -1097,6 +1108,7 @@ class AnalystAgent:
             refined_goal = {
                 "display_instruction": display_instruction,
                 "title": title,
+                "subtitle": subtitle,
                 "output_variable": output_variable,
                 "output_fields": list(query_output.columns),
                 "chart": chart_spec,
@@ -1860,7 +1872,8 @@ class AnalystAgent:
                  input_summary="action_committed", output_summary="ok",
                  latency_ms=0, status="ok")
         yield {"type": "agent_action", "action_data": action_data, "reason": "ok",
-               "tool_call_id": chosen.id, "llm_calls": llm_calls_in_cycle}
+               "tool_call_id": chosen.id, "llm_calls": llm_calls_in_cycle,
+               "narration": (content or "").strip()}
         return True
 
     _MAX_LLM_RETRIES = 3

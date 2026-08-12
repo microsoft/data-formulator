@@ -4,7 +4,7 @@
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
 import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification, TextTurn, InputTable, TableSemanticsInfo } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
-import { DictTable } from "../components/ComponentType";
+import { DictTable, ROOTLESS_THREAD_ID } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
@@ -256,6 +256,8 @@ export interface DataFormulatorState {
      * cancel the auto-send for the new prompt. Transient — not persisted.
      */
     dataLoadingChatPending: { text: string; images: string[]; attachments: string[]; hidden?: boolean } | null;
+    /** Seeded prompt for the analyst (data-thread) chat, e.g. from the landing box. */
+    analystChatPending: { text: string; images: string[]; attachments: string[] } | null;
     /**
      * Monotonic counter bumped whenever a connector is created/changed from a
      * surface that is not the sidebar itself (e.g. the inline connection form
@@ -367,6 +369,7 @@ const initialState: DataFormulatorState = {
     dataLoadingChatInProgress: false,
     dataLoadingChatResetCounter: 0,
     dataLoadingChatPending: null,
+    analystChatPending: null,
     connectorRefreshRequest: 0,
     agentHandoffRequest: null,
 
@@ -622,15 +625,23 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     const chartIdsToDelete = state.charts.filter(c => c.tableRef === tableId).map(c => c.id);
     deleteChartsRoutine(state, chartIdsToDelete);
 
-    // Also clean up any draft nodes that were chained from this table
-    state.draftNodes = state.draftNodes.filter(d => d.derive?.trigger.tableId !== tableId);
-
     // Delete reports triggered from this table
     state.generatedReports = state.generatedReports.filter(r => r.triggerTableId !== tableId);
 
-    // Delete text turns anchored to this table (design-docs/42): those whose
-    // authored thread edge points directly at it (`parentNodeId === tableId`).
-    state.textTurns = state.textTurns.filter(a => a.parentNodeId !== tableId);
+    // The data goes; the conversation about it stays. Turns and any live run
+    // anchored here move to the nearest surviving anchor — the table this one
+    // was derived from, else the thread's rootless origin (design-docs/42).
+    const survivingTables = collectAllTables(state);
+    const triggerId = tableToDelete.derive?.trigger.tableId;
+    const reanchorId = triggerId && survivingTables.some(t => t.id === triggerId)
+        ? triggerId
+        : ROOTLESS_THREAD_ID;
+    state.textTurns = state.textTurns.map(a =>
+        a.parentNodeId === tableId ? { ...a, parentNodeId: reanchorId } : a);
+    state.draftNodes = state.draftNodes.map(d =>
+        d.derive?.trigger.tableId === tableId
+            ? { ...d, derive: { ...d.derive, trigger: { ...d.derive.trigger, tableId: reanchorId } } }
+            : d);
 
     // Drop this table's starter questions / generation status
     delete state.starterQuestions[tableId];
@@ -857,6 +868,7 @@ export const dataFormulatorSlice = createSlice({
             state.dataLoadingChatInProgress = false;
             state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
             state.dataLoadingChatPending = null;
+            state.analystChatPending = null;
 
             state.generatedReports = [];
             state.textTurns = [];
@@ -1007,6 +1019,7 @@ export const dataFormulatorSlice = createSlice({
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
                 dataLoadingChatPending: null,
+                analystChatPending: null,
                 generatedReports: saved.generatedReports || [],
                 textTurns: saved.textTurns || [],
 
@@ -1905,6 +1918,15 @@ export const dataFormulatorSlice = createSlice({
         ) => {
             state.dataLoadingChatPending = action.payload;
         },
+        queueAnalystTask: (
+            state,
+            action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
+        ) => {
+            state.analystChatPending = action.payload;
+        },
+        clearAnalystChatPending: (state) => {
+            state.analystChatPending = null;
+        },
         queueDataLoadingTask: (
             state,
             action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
@@ -2464,6 +2486,26 @@ const selectTriggerCharts = createSelector(
 
 export const dfSelectors = {
     getAllTables: selectAllTables,
+    /**
+     * True when the session holds nothing worth keeping.
+     *
+     * This answers "is this worth saving on exit?" — NOT "is a session active?".
+     * A session's existence is `activeWorkspace`: it starts when one is
+     * assigned and ends when the user exits. Deleting the last table empties
+     * the workspace without ending the session.
+     */
+    selectSessionEmpty: (state: DataFormulatorState): boolean => (
+        // Counted raw rather than via `selectAllTables`, which materializes
+        // every table from its snapshot just to answer "are there any?".
+        state.inputTables.length === 0
+        && state.derivedTables.length === 0
+        && state.textTurns.length === 0
+        && state.draftNodes.length === 0
+        && state.generatedReports.length === 0
+        && state.dataLoadingChatMessages.length === 0
+        && state.analystChatPending === null
+        && state.dataLoadingChatPending === null
+    ),
     /** All models visible in the UI: global (server-managed) first, then user-added. */
     getAllModels: (state: DataFormulatorState): ModelConfig[] => {
         return [...(state.globalModels ?? []), ...state.models];

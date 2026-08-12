@@ -543,6 +543,8 @@ export const assembleVegaChart = (
     maxStretchFactor?: number,
     assembleOptions?: AssembleOptions,
     fieldSemantics?: Record<string, FieldSemanticsInfo>,
+    title?: string,
+    subtitle?: string,
 ) => {
 
     // Convert app-level EncodingMap (fieldID-based) to library-level encodings (field-name-based)
@@ -584,7 +586,7 @@ export const assembleVegaChart = (
         if (info.displayName) fieldDisplayNames[name] = info.displayName;
     }
 
-    return assembleVegaLite({
+    const spec = assembleVegaLite({
         data: { values: workingTable },
         semantic_types: semanticTypes,
         chart_spec: {
@@ -607,6 +609,24 @@ export const assembleVegaChart = (
         },
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     });
+
+    // flint-chart 0.4.1 does not yet consume chart-level title/subtitle fields.
+    // Keep this compatibility shim at the adapter boundary until DF upgrades to
+    // a Flint release that supports the newer authoring contract natively.
+    if (title && !spec.title) {
+        spec.title = {
+            text: title,
+            ...(subtitle ? { subtitle } : {}),
+            anchor: 'middle',
+            fontWeight: 500,
+            fontSize: 13,
+            subtitleFontSize: 11,
+            color: '#555',
+            offset: 12,
+        };
+    }
+
+    return spec;
 }
 
 // resolveRecommendedChart & resolveChartFields remain in app layer (need generateFreshChart, Chart)

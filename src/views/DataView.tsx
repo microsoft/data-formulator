@@ -96,6 +96,15 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     const tableSemantics = useSelector((state: DataFormulatorState) =>
         state.tableSemantics.find(info => info.tableId === focusedTableId),
     );
+    const displayName = tableSemantics?.displayName?.trim()
+        || targetTable?.displayId
+        || targetTable?.id
+        || 'table';
+    const realName = targetTable?.derive
+        ? targetTable.virtual?.tableId
+        : targetTable?.source?.originalTableName || targetTable?.virtual?.tableId;
+    const showRealName = !!realName
+        && realName.toLowerCase().replace(/[\s_-]+/g, '') !== displayName.toLowerCase().replace(/[\s_-]+/g, '');
 
     useEffect(() => {
         if (focusedId == undefined && tableCount > 0 && firstTableId) {
@@ -166,7 +175,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                 <Box sx={{height: '100%'}}>
                     <SelectableDataGrid
                         tableId={targetTable?.id || ""}
-                        tableName={targetTable?.displayId || targetTable?.id || "table"}
+                        tableName={displayName}
                         rows={rowData}
                         columnDefs={colDefs}
                         rowCount={targetTable?.virtual?.rowCount || targetTable?.rows.length || 0}
@@ -192,7 +201,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                     <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                        {targetTable?.displayId || targetTable?.id || 'table'}
+                        {displayName}
                     </Typography>
                     {searchQuery ? (
                         <Chip
@@ -213,9 +222,16 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                         />
                     ) : null}
                 </Box>
-                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.25 }}>
-                    {t('dataGrid.rowCount', { count: headerRowCount })} · {headerColCount} {headerColCount === 1 ? 'column' : 'columns'}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5, mt: 0.25 }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                        {t('dataGrid.rowCount', { count: headerRowCount })} · {t('dataGrid.columnCount', { count: headerColCount })}
+                    </Typography>
+                    {showRealName && (
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontFamily: 'monospace' }}>
+                            · {t('dataGrid.filename', { name: realName })}
+                        </Typography>
+                    )}
+                </Box>
             </Box>
             <Box sx={{ flex: 1 }} />
             <TextField

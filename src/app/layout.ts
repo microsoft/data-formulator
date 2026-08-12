@@ -173,17 +173,27 @@ export const maxThreadColumnsForWidthClass = (widthClass: WidthClass): number =>
  * it. The docked chat box sits under the thread, and a single 248px column is
  * too narrow to compose in. A user drag overrides this entirely.
  *
- * `containerWidth` (the split's width, not the viewport's) additionally holds
- * the default to one column while a second would squeeze the canvas — see
- * `comfortableThreadColumns`. Omit it to ask purely by width class.
+ * When `containerWidth` is given it is the authority on whether a second column
+ * fits: the split is what the panes actually divide, and `comfortableThreadColumns`
+ * already refuses to squeeze the canvas. The width class is a coarser proxy —
+ * a 1279px viewport is `compact` and would otherwise veto a second column that
+ * comfortably fits — so it only decides for callers that cannot measure.
+ *
+ * Pass the active `tokens`: at compact density a column is 223px, not the
+ * reference 248px, and judging the fit by reference widths asks for more room
+ * than the layout actually takes.
  */
 export const defaultThreadColumns = (
     widthClass: WidthClass,
     contentDemand: number,
     containerWidth = Infinity,
+    t: LayoutTokens = REFERENCE,
 ): number => {
+    const measured = Number.isFinite(containerWidth) && containerWidth > 0;
     const offered = threadColumnsForWidthClass(widthClass);
-    const ceiling = Math.min(offered, comfortableThreadColumns(containerWidth));
+    const ceiling = measured
+        ? Math.min(Math.max(offered, 2), comfortableThreadColumns(containerWidth, t))
+        : offered;
     const floor = Math.min(ceiling, 2);
     return Math.min(ceiling, Math.max(floor, contentDemand));
 };

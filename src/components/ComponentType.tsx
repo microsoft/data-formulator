@@ -25,8 +25,12 @@ export const duplicateField = (field: FieldItem) => {
     } as FieldItem;
 }
 
+export const ROOTLESS_THREAD_ID = '__rootless_thread__';
+
 export interface Trigger {
-    tableId: string, // on which table this action is triggered
+    // On which table this action is triggered. A run started before any data
+    // exists has none, so it carries `ROOTLESS_THREAD_ID` instead.
+    tableId: string,
 
     chart?: Chart, // what's the intented chart from the user when running formulation
 
@@ -546,20 +550,17 @@ export type Chart = {
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
     title?: string,  // AI-generated chart title (from the analyst's visualize action)
-    titleKey?: string,  // "chartType|sortedFieldIds" snapshot when title was set; used to detect staleness
+    subtitle?: string,  // factual scope, period, aggregation, and units for the title
+    titleKey?: string,  // analytical encoding fingerprint captured when title/subtitle were set
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
     scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)
     unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
 
-/** Compute a string key for title-staleness invalidation: chartType|sortedFieldIds */
+/** Compute a key for title/subtitle staleness using the chart's analytical encoding. */
 export function computeInsightKey(chart: Chart): string {
-    const fieldIds = Object.values(chart.encodingMap)
-        .map(enc => enc.fieldID)
-        .filter((id): id is string => !!id)
-        .sort();
-    return `${chart.chartType}|${fieldIds.join(',')}`;
+    return computeEncodingFingerprint(chart);
 }
 
 /**

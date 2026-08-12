@@ -3,7 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
-import { DataFormulatorState } from './dfSlice';
+import { DataFormulatorState, dfSelectors } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
 import { handleApiError } from './errorHandler';
 import { DF_STATE_VERSION } from './stateMigrations';
@@ -63,8 +63,10 @@ export function useAutoSave() {
     const lastErrorNotifyRef = useRef(0);
 
     useEffect(() => {
-        // Don't auto-save while a session is loading, no workspace active, or no tables loaded
-        if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly || state.inputTables.length + state.derivedTables.length === 0) {
+        // Nothing to save while a session is loading, read-only, workspace-less,
+        // or still empty. A conversation with no tables yet IS worth saving.
+        if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly
+            || dfSelectors.selectSessionEmpty(state)) {
             return;
         }
 

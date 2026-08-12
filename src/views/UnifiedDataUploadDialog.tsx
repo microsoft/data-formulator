@@ -226,6 +226,9 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
 // (an existing source, an "add connection" action, or a one-off upload)
 // rather than a mix of pills and links competing with the composer.
 // `accent` marks an entry with a faint primary icon at rest.
+/** Landing hero column: the composer and the source rows share this edge. */
+const HERO_WIDTH = 720;
+
 const SourceLink: React.FC<DataSourceCardProps> = ({
     icon,
     title,
@@ -604,17 +607,27 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             // for screenshots), with the home-collapsed full path on hover.
             const folderDisplay = displayPath(folderPath, 2);
             const folderTooltip = displayPath(folderPath);
+            const isConnected = !!conn.connected || !!conn.sso_auto_connect;
+            const statusLabel = isConnected
+                ? t('upload.connectorConnected')
+                : t('upload.connectorDisconnected');
+            const detail = isLocalFolder
+                ? (folderDisplay || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
+                : getConnectorTypeDescription(conn.source_type, conn.connected, t);
             return {
                 value: `connector:${conn.id}` as UploadTabType,
                 title: conn.display_name,
-                description: isLocalFolder
-                    ? (folderDisplay || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
-                    : getConnectorTypeDescription(conn.source_type, conn.connected, t),
-                icon: isLocalFolder
-                    ? <FolderOpenIcon />
-                    : getConnectorIcon(conn.icon || conn.source_type),
+                description: detail,
+                // The label already names the source, so the glyph carries the
+                // one thing it can't: whether we can reach it.
+                icon: (
+                    <Box sx={{
+                        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                        bgcolor: isConnected ? 'success.main' : 'error.main',
+                    }} />
+                ),
                 disabled: false,
-                tooltip: isLocalFolder && folderTooltip ? folderTooltip : undefined,
+                tooltip: `${statusLabel}${detail ? ` · ${detail}` : ''}${isLocalFolder && folderTooltip ? ` · ${folderTooltip}` : ''}`,
             };
         }),
     ];
@@ -737,7 +750,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [t, onStartChat]);
     const agentChatBox = (
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: HERO_WIDTH, alignSelf: 'center' }}>
             <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
                 {quickActions.map((qa) => (
                     <Chip
@@ -809,7 +822,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}
                 attachments={agentAttachments}
                 onAttachmentsChange={setAgentAttachments}
-                minRows={4}
+                minRows={3}
                 tabSuggestion={t('upload.agentChatTabSuggestion', {
                     defaultValue: 'What dataset do we have here?',
                 })}
@@ -836,7 +849,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             {agentChatBox}
 
             {/* Sources — same width as the chat box so they read as part of it */}
-            <Box sx={{ width: '100%', maxWidth: 900, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Box sx={{ width: '100%', maxWidth: HERO_WIDTH, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {/* Row 1 — connected data sources (as lightweight links):
                     the already-connected instances. The "add a connection"
                     actions live on their own row below so they read as
@@ -852,7 +865,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         variant="body2"
                         sx={{ fontSize: '0.75rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
-                        {t('upload.dataSourcesLabel', { defaultValue: 'View connected data sources:' })}
+                        {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
                     </Typography>
                     {connectionSources.map((source) => (
                         <SourceLink

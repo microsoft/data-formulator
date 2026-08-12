@@ -55,7 +55,6 @@ describe('DataOperationCard', () => {
 
         render(<DataOperationCard operation={operation} />);
 
-        expect(screen.getByText('Data loading options')).toBeInTheDocument();
         // The response is recorded by the turn that carries the card.
         expect(screen.queryByText('I found two order datasets that support different analysis scopes.')).not.toBeInTheDocument();
         expect(screen.getByText('Recent orders')).toBeInTheDocument();
