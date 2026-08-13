@@ -95,7 +95,8 @@ function generateSessionId(): string {
 
 export const DataFormulatorFC = ({ }) => {
 
-    const tables = useSelector(dfSelectors.getAllTables);
+    const derivedTables = useSelector(dfSelectors.getDerivedTables);
+    const hasInputTables = useSelector((state: DataFormulatorState) => state.inputTables.length > 0);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const [canvasClosing, setCanvasClosing] = useState(false);
@@ -539,10 +540,10 @@ export const DataFormulatorFC = ({ }) => {
     // as a floor — it exists only to stop a wide screen reserving empty columns.
     const threadColumnDemand = useMemo(() => {
         const hasChild = new Set<string>();
-        tables.forEach(t => { if (t.derive) hasChild.add(t.derive.trigger.tableId); });
-        const leaves = tables.filter(t => t.derive && !hasChild.has(t.id)).length;
-        return Math.max(1, leaves + (tables.some(t => !t.derive) ? 1 : 0));
-    }, [tables]);
+        derivedTables.forEach(t => { if (t.derive) hasChild.add(t.derive.trigger.tableId); });
+        const leaves = derivedTables.filter(t => !hasChild.has(t.id)).length;
+        return Math.max(1, leaves + (hasInputTables ? 1 : 0));
+    }, [derivedTables, hasInputTables]);
 
     const columnCap = maxThreadColumnsForWidth(
         splitWidth,

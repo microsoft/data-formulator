@@ -19,7 +19,7 @@ import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporal
 import { Identity, IdentityType, getBrowserId } from './identity';
 import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
-import { materializeTables } from './tableResolution';
+import { materializeInputTablePreview, materializeTables } from './tableResolution';
 
 enableMapSet();
 
@@ -2405,6 +2405,12 @@ const selectAllTables = createSelector(
     materializeTables,
 );
 
+/** The workspace input tables, materialized for components that render table cards. */
+const selectInputTables = createSelector(
+    [(state: DataFormulatorState) => state.inputTables],
+    (inputTables) => inputTables.map(materializeInputTablePreview),
+);
+
 /** Returns a stable array of table IDs. Only changes when tables are added/removed/reordered. */
 export const selectTableIds = createSelector(
     [selectAllTables],
@@ -2486,6 +2492,8 @@ const selectTriggerCharts = createSelector(
 
 export const dfSelectors = {
     getAllTables: selectAllTables,
+    getInputTables: selectInputTables,
+    getDerivedTables: (state: DataFormulatorState) => state.derivedTables,
     /**
      * True when the session holds nothing worth keeping.
      *

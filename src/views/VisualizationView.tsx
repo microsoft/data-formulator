@@ -33,6 +33,7 @@ import {
     Fade,
     Grow,
     CircularProgress,
+    alpha,
 } from '@mui/material';
 
 import _ from 'lodash';
@@ -106,6 +107,7 @@ export interface VisPanelState {
 interface OperationPreviewTable {
     display_name: string;
     source_id?: string;
+    table_description?: string;
     error?: string;
     columns: string[];
     rows: Record<string, unknown>[];
@@ -118,6 +120,7 @@ const PREVIEW_MAX_COLUMNS = 40;
 const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch();
+    const connectors = useSelector((state: DataFormulatorState) => state.serverConfig.CONNECTORS ?? []);
     const [previews, setPreviews] = useState<Record<string, OperationPreviewTable[]>>({});
     const [failedPlans, setFailedPlans] = useState<Set<string>>(new Set());
     const previewGroups = useMemo(() => {
@@ -137,7 +140,16 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
 
     // Several proposals have to stay comparable on one screen, so each table
     // keeps a shorter scroll window as the count grows.
-    const previewMaxHeight = previewGroups.reduce((count, group) => count + group.tables.length, 0) > 2 ? 240 : 340;
+    const previewTableCount = previewGroups.reduce((count, group) => count + group.tables.length, 0);
+    const previewMaxHeight = previewTableCount > 2 ? 240 : 340;
+    const selectedTableKeys = useMemo(() => new Set(
+        operation.plans
+            .find(plan => plan.id === operation.selectedPlanId)
+            ?.steps.map(step => step.displayName.trim().toLocaleLowerCase()) ?? [],
+    ), [operation.plans, operation.selectedPlanId]);
+    const connectorNames = useMemo(() => new Map(
+        connectors.map(connector => [connector.source_id, connector.name]),
+    ), [connectors]);
 
     useEffect(() => {
         let active = true;
@@ -175,26 +187,55 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                         {tables.map(({ step, stepIndex }) => {
                             const preview = previews[plan.id]?.[stepIndex];
                             const failed = failedPlans.has(plan.id);
+                            const selected = selectedTableKeys.has(step.displayName.trim().toLocaleLowerCase());
+                            const connectorName = preview?.source_id
+                                ? connectorNames.get(preview.source_id) || preview.source_id
+                                : undefined;
                             return (
                                 <Box key={`${plan.id}-${stepIndex}`} sx={{
-                                    mb: 1.75,
+                                    mb: 2.5,
+                                    '&:not(:first-of-type)': {
+                                        pt: 2.5,
+                                        borderTop: '1px solid',
+                                        borderColor: 'divider',
+                                    },
                                 }}>
                                     <Box sx={{
-                                        display: 'flex', alignItems: 'center', gap: 0.75,
+                                        display: 'flex', alignItems: 'flex-start', gap: 0.75,
                                         px: 0.25, mb: 0.5,
                                     }}>
-                                        <Typography title={preview?.display_name || step.displayName}
-                                            sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'text.primary', minWidth: 0 }} noWrap>
-                                            {preview?.display_name || step.displayName}
-                                        </Typography>
-                                        <Typography sx={{
-                                            fontSize: textVar.xxs, fontWeight: 500, color: 'text.secondary',
-                                            border: '1px solid', borderColor: 'divider', borderRadius: 0.75,
-                                            px: 0.5, lineHeight: 1.6, flexShrink: 0,
-                                        }}>
-                                            {t('preview.preview', { defaultValue: 'Preview' })}
-                                        </Typography>
-                                        <Box sx={{ flex: 1 }} />
+                                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                                <Typography title={preview?.display_name || step.displayName}
+                                                    sx={{
+                                                        fontSize: textVar.sm, fontWeight: 600,
+                                                        color: selected ? 'primary.main' : 'text.primary', minWidth: 0,
+                                                    }} noWrap>
+                                                    {preview?.display_name || step.displayName}
+                                                </Typography>
+                                                <Typography sx={{
+                                                    fontSize: textVar.xxs, fontWeight: 500, color: 'text.secondary',
+                                                    border: '1px solid', borderColor: 'divider', borderRadius: 0.75,
+                                                    px: 0.5, lineHeight: 1.6, flexShrink: 0,
+                                                }}>
+                                                    {t('preview.preview', { defaultValue: 'Preview' })}
+                                                </Typography>
+                                            </Box>
+                                            {(connectorName || preview?.table_description) && (
+                                                <Typography
+                                                    title={preview?.table_description || preview?.source_id}
+                                                    sx={{ mt: 0.25, fontSize: textVar.xxs, color: 'text.secondary' }}
+                                                    noWrap
+                                                >
+                                                    {connectorName && <>
+                                                        {t('dataLoading.loadPlan.fromSource', { defaultValue: 'From' })}{' '}
+                                                        <Box component="span" sx={{ fontWeight: 600 }}>{connectorName}</Box>
+                                                    </>}
+                                                    {connectorName && preview?.table_description && ' · '}
+                                                    {preview?.table_description}
+                                                </Typography>
+                                            )}
+                                        </Box>
                                         {preview && (
                                             <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0 }}>
                                                 {t('dataLoading.operation.previewColumns', {
@@ -209,8 +250,14 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                         )}
                                     </Box>
                                     <Box sx={{
-                                        borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider',
-                                        bgcolor: 'background.paper', overflow: 'hidden',
+                                        border: '1px solid',
+                                        borderColor: selected ? 'primary.main' : 'divider',
+                                        borderRadius: 1,
+                                        bgcolor: 'background.paper',
+                                        overflow: 'hidden',
+                                        boxShadow: theme => selected
+                                            ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
+                                            : 'none',
                                     }}>
                                         {failed ? (
                                             <Typography sx={{ px: 1.5, py: 1.25, fontSize: textVar.xs, color: 'error.main' }}>
@@ -228,7 +275,6 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                                 truncationIndicator="none"
                                                 autoWidth
                                                 showIndex
-                                                simple
                                             />
                                             </Box>
                                         ) : (

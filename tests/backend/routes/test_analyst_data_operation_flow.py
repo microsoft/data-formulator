@@ -17,6 +17,7 @@ from data_formulator.data_operations import (
     DataOperationStatus,
 )
 from data_formulator.datalake.workspace import Workspace
+from data_formulator.datalake.catalog_cache import save_catalog
 
 
 pytestmark = [pytest.mark.backend]
@@ -56,6 +57,11 @@ def test_operation_preview_is_bounded_and_display_only(
         operation,
         conversation_id="conversation-1",
     )
+    save_catalog(workspace.user_home, "warehouse", [{
+        "table_key": "public.orders",
+        "name": "orders",
+        "metadata": {"source_description": "Customer orders from the warehouse"},
+    }])
     loader = _Loader()
 
     with (
@@ -72,6 +78,7 @@ def test_operation_preview_is_bounded_and_display_only(
     assert response.get_json()["data"] == {"previews": [{
         "display_name": "Recent orders",
         "source_id": "warehouse",
+        "table_description": "Customer orders from the warehouse",
         "columns": ["id", "amount"],
         "rows": [{"id": 1, "amount": 10.0}, {"id": 2, "amount": 20.0}],
     }]}

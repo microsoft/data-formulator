@@ -33,18 +33,12 @@ import {
     Slider,
     CircularProgress,
     LinearProgress,
-    Button,
     Collapse,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import React from 'react';
-import { useDragLayer } from 'react-dnd';
-import { ThinkingBufferEffect, WritingPencil } from '../components/FunComponents';
+import { WritingPencil } from '../components/FunComponents';
 import { Channel, Chart, FieldItem, Trigger, duplicateChart, ChartStyleVariant, computeEncodingFingerprint, isVariantStale } from "../components/ComponentType";
 
 import _ from 'lodash';
@@ -120,21 +114,12 @@ const chartCategoryToI18nKey: Record<string, string> = {
     "Tables & Maps": "tablesAndMaps",
     "Custom": "custom",
 };
-import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
-import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
-import AddIcon from '@mui/icons-material/Add';
-import CheckIcon from '@mui/icons-material/Check';
-import { ThinkingBanner } from './DataThread';
 
 import { AppDispatch } from '../app/store';
 import { borderColor, radius, transition } from '../app/tokens';
 
-import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 
-import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import { iconVar, textVar } from '../app/layout';
 
 // Property and state of an encoding shelf
@@ -453,32 +438,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             </Box>
             return component;
         });
-
-    // derive active fields from encoding map so that we can keep the order of which fields will be visualized
-    let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
-                                .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
-    let activeSimpleEncodings: { [key: string]: string } = {};
-    for (let channel of getChartChannels(chart.chartType)) {
-        if (chart.encodingMap[channel as Channel]?.fieldID) {
-            activeSimpleEncodings[channel] = activeFields.find(f => f.id == chart.encodingMap[channel as Channel].fieldID)?.name as string;
-        }
-    }
-    
-    let activeCustomFields = activeFields.filter(field => field.source == "custom");
-
-    // check if the current table contains all fields already exists a table that fullfills the user's specification
-    let existsWorkingTable = activeFields.length == 0 || activeFields.every(f => currentTable.names.includes(f.name));
-    
-    // All source tables, with the current table's inputs ordered first.
-    let rootTables = tables.filter(t => t.derive === undefined);
-    let priorityIds = currentTable.derive
-        ? currentTable.derive.source
-        : [currentTable.id];
-    let actionTableIds = [
-        ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
-        ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
-    ];
-
 
     // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
     // Chip strip for navigating user-authored "skins" of the current chart's

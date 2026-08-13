@@ -379,13 +379,13 @@ const RenameTablePopup = memo<{
 });
 
 export const SourceTableShelf: FC<{
-    /** Source (non-derived) tables, in display order. */
-    sourceTables: DictTable[];
+    /** The workspace input tables, in display order, materialized for the cards. */
+    inputTables: DictTable[];
     /** Tables highlighted by the current focus (computed once in DataThread). */
     highlightedTableIds: string[];
     focusedTableId?: string;
     sx?: SxProps;
-}> = function ({ sourceTables, highlightedTableIds, focusedTableId, sx }) {
+}> = function ({ inputTables, highlightedTableIds, focusedTableId, sx }) {
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -609,10 +609,10 @@ export const SourceTableShelf: FC<{
 
     // A long list drowns the threads beside it, so show only the first few by
     // default — the focused table always stays visible, even below the cut.
-    const collapsible = sourceTables.length > SHELF_VISIBLE_LIMIT;
+    const collapsible = inputTables.length > SHELF_VISIBLE_LIMIT;
     const visibleTables = !collapsible || expanded
-        ? sourceTables
-        : sourceTables.filter((tbl, index) => index < SHELF_VISIBLE_LIMIT || tbl.id === focusedTableId);
+        ? inputTables
+        : inputTables.filter((tbl, index) => index < SHELF_VISIBLE_LIMIT || tbl.id === focusedTableId);
 
     // One row per table, laid out exactly like a DataThread timeline row: a
     // gutter carrying the table's icon with rail segments above and below it,
@@ -735,7 +735,7 @@ export const SourceTableShelf: FC<{
                             >
                                 {expanded
                                     ? t('dataThread.showFewerTables', { defaultValue: 'Show fewer' })
-                                    : t('dataThread.showAllTables', { count: sourceTables.length, defaultValue: `Show all ${sourceTables.length}` })}
+                                    : t('dataThread.showAllTables', { count: inputTables.length, defaultValue: `Show all ${inputTables.length}` })}
                             </Button>
                         </Box>
                     )}
@@ -773,8 +773,8 @@ export const SourceTableShelf: FC<{
                             }}
                         >
                             {t('dataThread.tablesAvailableToAgent', {
-                                count: sourceTables.length,
-                                defaultValue: `${sourceTables.length} tables available to the agent`,
+                                count: inputTables.length,
+                                defaultValue: `${inputTables.length} tables available to the agent`,
                             })}
                         </Button>
                     </Box>
@@ -927,7 +927,7 @@ export const SourceTableShelf: FC<{
                         // session itself — a workspace with no source
                         // table is effectively empty and the user would
                         // otherwise be left staring at a blank thread.
-                        const remainingSources = tables.filter(t => !t.derive && t.id !== selectedTableForMenu.id);
+                        const remainingSources = inputTables.filter(t => t.id !== selectedTableForMenu.id);
                         const shouldDeleteSession = remainingSources.length === 0;
                         const wsToDelete = shouldDeleteSession ? activeWorkspace?.id : undefined;
                         dispatch(dfActions.deleteTable(selectedTableForMenu.id));

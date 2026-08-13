@@ -99,8 +99,24 @@ def preview_data_operation():
         raise AppError(ErrorCode.INVALID_REQUEST, "Unknown data operation plan")
 
     from data_formulator.data_connector import resolve_live_loader
+    from data_formulator.datalake.catalog_cache import load_catalog
     previews = []
     for step in plan.steps:
+        table_description = None
+        user_home = getattr(workspace, "user_home", None)
+        if user_home:
+            catalog = load_catalog(user_home, step.source_id) or []
+            catalog_table = next(
+                (item for item in catalog if item.get("table_key") == step.table_key),
+                None,
+            )
+            if catalog_table:
+                metadata = catalog_table.get("metadata") or {}
+                table_description = (
+                    metadata.get("source_description")
+                    or metadata.get("description")
+                    or catalog_table.get("description")
+                )
         # Per-step failures: one unreachable source shouldn't blank the whole
         # canvas, and the frontend needs the source to offer a reconnect.
         try:
@@ -118,12 +134,14 @@ def preview_data_operation():
             previews.append({
                 "display_name": step.display_name,
                 "source_id": step.source_id,
+                **({"table_description": str(table_description).strip()} if table_description else {}),
                 "error": str(exc),
             })
             continue
         previews.append({
             "display_name": step.display_name,
             "source_id": step.source_id,
+            **({"table_description": str(table_description).strip()} if table_description else {}),
             "columns": table.column_names,
             "rows": make_json_safe(table.to_pylist()),
         })

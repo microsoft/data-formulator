@@ -32,6 +32,7 @@ import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, In
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
+import { toAnalystTableRef, workspaceTableIdOf } from '../app/tableResolution';
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
@@ -193,6 +194,7 @@ const resolveNodeTable = (
 export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ onInputFocus }) {
 
     const tables = useSelector(dfSelectors.getAllTables);
+    const inputTables = useSelector((state: DataFormulatorState) => state.inputTables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const charts = useSelector(dfSelectors.getAllCharts);
     const starterQuestions = useSelector((state: DataFormulatorState) => state.starterQuestions);
@@ -210,6 +212,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const dispatch = useDispatch<AppDispatch>();
 
     const [chatPrompt, setChatPrompt] = useState("");
+    const [chatInputFocused, setChatInputFocused] = useState(false);
     // ── Clarification accumulated answers ────────────────────────────
     // When the agent asks one or more clarification questions, clicking an
     // option does NOT submit immediately and does NOT mutate the chat box.
@@ -339,36 +342,27 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (focusedId?.type === 'chart') lastChartFocusRef.current = focusedId.chartId;
     }, [focusedId]);
 
-    // Root tables and priority ordering for API calls
-    const rootTables = tables.filter(t => t.derive === undefined);
     const currentTable = tables.find(t => t.id === focusedTableId);
-    const priorityIds = currentTable?.derive
-        ? currentTable.derive.source
-        : focusedTableId ? [focusedTableId] : [];
-    const selectedTableIds = [
-        ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
-        ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
-    ];
 
     // Default primary tables: source tables the focused table uses (or the focused source table itself)
     const defaultPrimaryTableIds = React.useMemo(() => {
         if (!currentTable) return [];
         if (currentTable.derive) {
             // Derived table: all its source inputs that are root tables
-            return (currentTable.derive.source as string[]).filter(id => rootTables.some(t => t.id === id));
+            return (currentTable.derive.source as string[]).filter(id => inputTables.some(t => t.id === id));
         }
         // Source table: just this table
-        return rootTables.some(t => t.id === currentTable.id) ? [currentTable.id] : [];
-    }, [currentTable, rootTables]);
+        return inputTables.some(t => t.id === currentTable.id) ? [currentTable.id] : [];
+    }, [currentTable, inputTables]);
 
     // Combined primary table IDs: defaults + user @-mentioned (deduplicated, source tables only)
     const primaryTableIds = React.useMemo(() => {
         const ids = new Set(defaultPrimaryTableIds);
         for (const id of mentionedTableIds) {
-            if (rootTables.some(t => t.id === id)) ids.add(id);
+            if (inputTables.some(t => t.id === id)) ids.add(id);
         }
         return [...ids];
-    }, [defaultPrimaryTableIds, mentionedTableIds, rootTables]);
+    }, [defaultPrimaryTableIds, mentionedTableIds, inputTables]);
 
     // Extract the filter text from after the last @ in the prompt
     const mentionFilter = React.useMemo(() => {
@@ -380,14 +374,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     // Filtered available options for the @ dropdown (tables only)
     const mentionAvailableTables = React.useMemo(() => {
-        return rootTables
+        return inputTables
             .filter(t => !primaryTableIds.includes(t.id))
             .filter(t => {
                 if (!mentionFilter) return true;
                 const name = (t.displayId || t.id).toLowerCase();
                 return name.includes(mentionFilter);
             });
-    }, [rootTables, primaryTableIds, mentionFilter]);
+    }, [inputTables, primaryTableIds, mentionFilter]);
 
     // Reset highlight index when filter changes
     React.useEffect(() => {
@@ -401,10 +395,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // signature (all root table ids) refreshes questions when tables change;
     // the 500ms debounce collapses batch loads into a single call.
     const rootTableSignature = React.useMemo(
-        () => rootTables.map(t => t.id).sort().join('|'),
-        [rootTables]
+        () => inputTables.map(t => t.id).sort().join('|'),
+        [inputTables]
     );
-    const focusedRootTableId = (focusedTableId && rootTables.some(t => t.id === focusedTableId))
+    const focusedRootTableId = (focusedTableId && inputTables.some(t => t.id === focusedTableId))
         ? focusedTableId
         : undefined;
     React.useEffect(() => {
@@ -737,14 +731,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...attachedImages.map((_, i) => attachedImages.length > 1 ? `image ${i + 1}` : 'image'),
         ];
 
-        const rootTables = tables.filter(t => t.derive === undefined);
-        const currentTable = tables.find(t => t.id === focusedTableId);
+        // Every input table is in play, with the focused table's own inputs first.
         const priorityIds = currentTable?.derive
-            ? currentTable.derive.source
+            ? (currentTable.derive.source as string[])
             : focusedTableId ? [focusedTableId] : [];
+        const inputTableIds = inputTables.map(t => t.id);
         const selectedTableIds = [
-            ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
-            ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
+            ...priorityIds.filter(id => inputTableIds.includes(id)),
+            ...inputTableIds.filter(id => !priorityIds.includes(id))
         ];
         if (selectedTableIds.length === 0 && !emptyWorkspace) return;
 
@@ -752,7 +746,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // trajectory token is a fresh turn that still threads the conversation.
         const isResume = !!(clarificationContext?.trajectory && clarificationContext.trajectory.length > 0);
         const actionId = clarificationContext?.actionId || `exploreDataFromNL_${String(Date.now())}`;
-        const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
+        const inputTableById = new Map(inputTables.map(input => [input.id, input]));
+        const actionTables = selectedTableIds
+            .map(id => inputTableById.get(id))
+            .filter((input): input is NonNullable<typeof input> => !!input);
 
         // Seed the auto-focus baseline with whatever chart the user is
         // currently looking at. Otherwise the lock effect would compare the
@@ -814,16 +811,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ? { focusedThread: undefined, otherThreads: undefined }
             : buildThreadContext(askedFromNode ?? focusedTableId);
 
-        // Resolve primary table names from primaryTableIds (includes defaults + @-mentioned)
+        // Analyst references resolve against the persisted input tables (durable
+        // workspace id + snapshot schema), not the preview rows held for display.
         const primaryTableNames = primaryTableIds.map(id => {
-            const t = tables.find(tbl => tbl.id === id);
-            return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+            const input = inputTableById.get(id);
+            return input ? workspaceTableIdOf(input) : id.replace(/\.[^/.]+$/, "");
         });
         const requestBody: any = {
             conversation_id: actionId,
-            input_tables: actionTables.map(t => ({
-                name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-            })),
+            input_tables: actionTables.map(toAnalystTableRef),
             primary_tables: primaryTableNames,
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             ...(attachedFiles.length > 0 ? { scratch_files: attachedFiles.map(f => f.scratchPath) } : {}),
@@ -1658,7 +1654,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
             }
         })();
-    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles]);
+    }, [focusedTableId, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles]);
 
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').
@@ -1978,6 +1974,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (textTurnSubmittedRef.current === turn.id) return;
         const newAnswers = { ...clarifyAnswers, [questionIndex]: response };
         setClarifyAnswers(newAnswers);
+        if (questionIndex === 0 && turn.dataOperation?.plans.some(plan => plan.id === response.value)) {
+            dispatch(dfActions.updateTextTurn({
+                id: turn.id,
+                dataOperation: { ...turn.dataOperation, selectedPlanId: response.value },
+            }));
+        }
         const allAnswered = questions.every((_q, idx) => !!newAnswers[idx]);
         const allOptions = questions.every((_q, idx) => newAnswers[idx]?.source === 'option');
         if (allAnswered && allOptions && autoSubmit) {
@@ -1985,7 +1987,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             const responses: ClarificationResponse[] = questions.map((_q, idx) => newAnswers[idx]);
             submitTextTurnAnswer(responses);
         }
-    }, [focusedTextTurn, clarifyAnswers, submitTextTurnAnswer]);
+    }, [focusedTextTurn, clarifyAnswers, submitTextTurnAnswer, dispatch]);
+
+    const handleClearTextTurnAnswer = useCallback((questionIndex: number) => {
+        handleClearAnswer(questionIndex);
+        if (questionIndex === 0 && focusedTextTurn?.dataOperation) {
+            dispatch(dfActions.updateTextTurn({
+                id: focusedTextTurn.id,
+                dataOperation: { ...focusedTextTurn.dataOperation, selectedPlanId: undefined },
+            }));
+        }
+    }, [focusedTextTurn, handleClearAnswer, dispatch]);
 
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
@@ -2001,18 +2013,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
             transition: transition.fast,
+            borderColor: chatInputFocused ? theme.palette.primary.main : borderColor.divider,
             backgroundColor: isChatFormulating
                 ? alpha(theme.palette.action.disabledBackground, 0.06)
                 : theme.palette.background.paper,
             // Neutral elevation shadow recipe shared with AgentChatInput;
             // hover lifts the card a touch without shifting any colors.
-            boxShadow: '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
+            boxShadow: chatInputFocused
+                ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`
+                : '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
             '&:hover': {
-                boxShadow: '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
-            },
-            '&:focus-within': {
-                borderColor: theme.palette.primary.main,
-                boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
+                boxShadow: chatInputFocused
+                    ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`
+                    : '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
             },
         }}
         >
@@ -2051,7 +2064,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         variant="clarify"
                         selectedAnswers={clarifyAnswers}
                         onSelectAnswer={handleSelectTextTurnAnswer}
-                        onClearAnswer={handleClearAnswer}
+                        onClearAnswer={handleClearTextTurnAnswer}
                         onSubmit={submitTextTurnAnswer}
                         onClose={() => closeTextTurn(focusedTextTurn)}
                         onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
@@ -2092,9 +2105,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             {/* @-mention table chips and image attachments.
                 Skip the table-chip row entirely when there's only one root table —
                 there's nothing else the user could @-mention, so the chip is noise. */}
-            {((primaryTableIds.length > 0 && rootTables.length > 1) || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
+            {((primaryTableIds.length > 0 && inputTables.length > 1) || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
-                    {rootTables.length > 1 && primaryTableIds.map(id => {
+                    {inputTables.length > 1 && primaryTableIds.map(id => {
                         const tbl = tables.find(t => t.id === id);
                         const isDefault = defaultPrimaryTableIds.includes(id);
                         return (
@@ -2260,11 +2273,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }}
                 onPaste={handlePaste}
                 onFocus={() => {
+                    setChatInputFocused(true);
                     // Notify the parent (DataThread) that the chat input was
                     // focused.  The parent's scroll-to-target effect handles
                     // the actual scroll based on focusedId / clarify state.
                     onInputFocus?.();
                 }}
+                onBlur={() => setChatInputFocused(false)}
                 slotProps={{ 
                     inputLabel: { shrink: true },
                     input: { readOnly: isChatFormulating },
@@ -2275,7 +2290,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 placeholder={
                     pendingClarification
                         ? t('chartRec.replyPlaceholder')
-                        : t(rootTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
+                        : t(inputTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
                 }
                 fullWidth
                 multiline

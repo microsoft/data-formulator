@@ -13,6 +13,7 @@ import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClie
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { clearInputTablePreviewCache, INPUT_TABLE_PREVIEW_ROW_LIMIT, setInputTablePreview } from './inputTablePreviewCache';
 import { migrateState } from './stateMigrations';
+import { workspaceTableIdOf } from './tableResolution';
 import type { InputTable } from '../components/ComponentType';
 
 export interface WorkspaceSummary {
@@ -44,9 +45,7 @@ function createTableIndex(state: Record<string, any>): TableIndexEntry[] {
     const derived = Array.isArray(state.derivedTables) ? state.derivedTables : [];
     return [
         ...inputs.map((table: any) => ({
-            name: table.source?.kind === 'workspace'
-                ? table.source.tableId
-                : (table.source?.workspaceTableId || table.id),
+            name: workspaceTableIdOf(table),
             rowCount: table.snapshot?.rowCount || 0,
             columns: (table.snapshot?.columns || []).map((column: any) => ({
                 name: column.name,
@@ -85,9 +84,7 @@ async function hydrateInputTablePreviews(state: Record<string, any>): Promise<vo
     clearInputTablePreviewCache();
     const inputTables = (state.inputTables || []) as InputTable[];
     await Promise.all(inputTables.map(async table => {
-        const workspaceTableId = table.source.kind === 'workspace'
-            ? table.source.tableId
-            : (table.source.workspaceTableId || table.id);
+        const workspaceTableId = workspaceTableIdOf(table);
         try {
             const { data } = await apiRequest<{ rows: Record<string, unknown>[] }>(getUrls().SAMPLE_TABLE, {
                 method: 'POST',

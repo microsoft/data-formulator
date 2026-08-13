@@ -535,6 +535,7 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector(dfSelectors.getAllTables);
+    const derivedTables = useSelector(dfSelectors.getDerivedTables);
     const inferredTableNames = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const { t } = useTranslation();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
@@ -642,8 +643,7 @@ let SingleThreadGroupView: FC<{
     // real card instead (design-docs/42).
     const leadUpTurnIds = useMemo(() => {
         const s = new Set<string>();
-        for (const t of tables) {
-            if (!t.derive) continue; // a loaded source table renders with its turn, not instead of it
+        for (const t of derivedTables) {
             let cur: string | undefined = t.threadParentId;
             const seen = new Set<string>();
             while (cur && !seen.has(cur)) {
@@ -656,7 +656,7 @@ let SingleThreadGroupView: FC<{
             }
         }
         return s;
-    }, [tables, turnById, tableById]);
+    }, [derivedTables, turnById, tableById]);
 
     // The lead-up conversation for a table: the turn chain from its
     // `threadParentId` up to (not including) the root table, oldest first.
@@ -2496,6 +2496,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
     const dispatch = useDispatch<AppDispatch>();
 
     let tables = useSelector(dfSelectors.getAllTables);
+    let inputTables = useSelector(dfSelectors.getInputTables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let charts = useSelector(dfSelectors.getAllCharts);
 
@@ -2974,11 +2975,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
     // every numbered thread, whatever roots it, takes the next index.
     let realThreadIdx = 0;
 
-    let sourceTables = tables.filter(t => !t.derive);
-
     // The shelf is not a thread, but it occupies the top of the first column,
     // so it packs alongside the threads as slot 0.
-    if (sourceTables.length > 0) {
+    if (inputTables.length > 0) {
         allThreadEntries.push({ key: 'source-shelf', isShelf: true });
     }
 
@@ -3033,7 +3032,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
     // A source table that owns artifacts (charts, reports, conversation, a live
     // run) but roots NO derivation gets a column of its own — the shelf holds
     // names only, so the artifacts would otherwise have nowhere to hang.
-    for (const st of sourceTables) {
+    for (const st of inputTables) {
         if (sourcesWithColumn.has(st.id)) continue;
         if (loadedTableHosts.has(st.id)) continue; // renders inline in the thread that loaded it
         const hasArtifacts = chartElements.some(ce => ce.tableId === st.id)
@@ -3089,7 +3088,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
                 // Collapsed by default past the limit, so estimate the collapsed height.
                 // +1 row for the "Add more data" button, which sits below the
                 // bracketed set (the section label is covered by the thread overhead).
-                allThreadHeights.push(estimateThreadHeight(Math.min(sourceTables.length, SHELF_VISIBLE_LIMIT) + 1, 0, 0));
+                allThreadHeights.push(estimateThreadHeight(Math.min(inputTables.length, SHELF_VISIBLE_LIMIT) + 1, 0, 0));
                 continue;
             }
 
@@ -3185,7 +3184,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
         if (entry.isShelf) {
             return <SourceTableShelf
                 key={entry.key}
-                sourceTables={sourceTables}
+                inputTables={inputTables}
                 highlightedTableIds={globalHighlightedTableIds}
                 focusedTableId={canvasOwnedByTurn ? undefined : focusedTableId}
                 sx={entrySx} />;

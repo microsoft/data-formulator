@@ -31,7 +31,7 @@
           "table_names": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "List of table names from [SOURCE TABLES] to inspect."
+            "description": "List of workspace table names, as listed in the available-tables context, to inspect."
           }
         },
         "required": ["table_names"]
@@ -61,7 +61,7 @@
           "input_tables": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Table names from [SOURCE TABLES] that the code reads."
+            "description": "Workspace table names, as listed in the available-tables context, that the code reads."
           },
           "code": {
             "type": "string",

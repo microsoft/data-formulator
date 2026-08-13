@@ -19,6 +19,11 @@ actions:
 
 # Skill: Data discovery
 
+The workspace tables listed in your context are the data already loaded into the
+system, and the only data that can be read directly. Everything these tools
+return is *not* loaded yet — it lives in a connected source and only becomes
+usable after the user selects a loading option and the server materializes it.
+
 Use these tools to determine whether connected sources contain data needed for
 the user's goal. They are read-only: discovering, describing, or probing a
 source does not add anything to the workspace analysis inputs.

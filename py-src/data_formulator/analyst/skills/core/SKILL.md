@@ -92,7 +92,8 @@ result and decide your next move.
 - `output_variable` — snake_case name the code assigns.
 - `chart` — `{chart_type, encodings:{x,y,…}, config:{}}` (chart_type from the
   chart type reference).
-- `input_tables` — table names from [SOURCE TABLES] the code reads.
+- `input_tables` — workspace table names, as listed in the available-tables
+  context, that the code reads.
 - `field_metadata` — field → semantic annotation. Include units, index
   baselines, intrinsic domains, and ordinal order when supported by the data;
   never invent a unit. Distinguish percentages from percentage points and
