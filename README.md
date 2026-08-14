@@ -87,10 +87,12 @@ Play with Data Formulator with one of the following options.
 
 ### Desktop downloads
 
-CI builds self-contained Windows and macOS applications for every update to `main`.
-Download the latest archives from the **Artifacts** section of the most recent
+CI builds self-contained Windows and macOS applications for pull requests and
+every update to `main`. Download the latest archives from the **Artifacts**
+section of the most recent
 [desktop builds workflow](https://github.com/microsoft/data-formulator/actions/workflows/desktop-build.yml).
-Tagged builds are also attached to the corresponding
+Workflow artifacts are retained for 30 days. Tagged builds are also attached
+as permanent downloads to the corresponding
 [GitHub Release](https://github.com/microsoft/data-formulator/releases).
 
 Extract the archive and run `Data Formulator.exe` on Windows or
