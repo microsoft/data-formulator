@@ -27,7 +27,7 @@ import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { extractErrorMessage } from '../app/errorHandler';
-import { Chart, DictTable, Trigger, InteractionEntry, TextTurn, ROOTLESS_THREAD_ID } from "../components/ComponentType";
+import { Chart, DictTable, Trigger, InteractionEntry, TextTurn, LoadedTableNode, ROOTLESS_THREAD_ID } from "../components/ComponentType";
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
@@ -563,6 +563,7 @@ let SingleThreadGroupView: FC<{
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
+    const loadedTableNodes = useSelector((state: DataFormulatorState) => state.loadedTableNodes);
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
@@ -596,16 +597,30 @@ let SingleThreadGroupView: FC<{
     let draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
 
-    // Build a map from tableId → reports triggered from that table
+    // Legacy reports without an authored edge, plus generating reports whose
+    // live card still renders in the active draft block.
     const reportsByTriggerTable = useMemo(() => {
         const map = new Map<string, GeneratedReport[]>();
         for (const report of generatedReports) {
+            if (report.parentNodeId && report.status !== 'generating') continue;
             const triggerId = report.triggerTableId;
             if (!triggerId) continue;
             const list = map.get(triggerId) || [];
             list.push(report);
             map.set(triggerId, list);
         }
+        return map;
+    }, [generatedReports]);
+
+    const reportsByParentNode = useMemo(() => {
+        const map = new Map<string, GeneratedReport[]>();
+        for (const report of generatedReports) {
+            if (!report.parentNodeId) continue;
+            const list = map.get(report.parentNodeId) || [];
+            list.push(report);
+            map.set(report.parentNodeId, list);
+        }
+        for (const list of map.values()) list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
         return map;
     }, [generatedReports]);
 
@@ -636,7 +651,7 @@ let SingleThreadGroupView: FC<{
     const turnById = useMemo(() => new Map(textTurns.map(tt => [tt.id, tt])), [textTurns]);
 
     // A turn is a "lead-up" if it PRODUCED a table — i.e. it sits on some table's
-    // `threadParentId` chain (the clarify/answer that resolved into that table).
+    // `parentNodeId` chain (the clarify/answer that resolved into that table).
     // Such turns render WITH their result table (as its lead-in, in the table's
     // thread) so the conversation and its result stay connected — NOT at the root
     // table. Terminal / still-pending turns (no result yet) render at the root's
@@ -644,7 +659,7 @@ let SingleThreadGroupView: FC<{
     const leadUpTurnIds = useMemo(() => {
         const s = new Set<string>();
         for (const t of derivedTables) {
-            let cur: string | undefined = t.threadParentId;
+            let cur: string | undefined = t.parentNodeId;
             const seen = new Set<string>();
             while (cur && !seen.has(cur)) {
                 seen.add(cur);
@@ -659,12 +674,12 @@ let SingleThreadGroupView: FC<{
     }, [derivedTables, turnById, tableById]);
 
     // The lead-up conversation for a table: the turn chain from its
-    // `threadParentId` up to (not including) the root table, oldest first.
+    // `parentNodeId` up to (not including) the root table, oldest first.
     const leadUpTurnsOf = (tableId: string): TextTurn[] => {
         const t = tableById.get(tableId);
-        if (!t?.threadParentId) return [];
+        if (!t?.parentNodeId) return [];
         const out: TextTurn[] = [];
-        let cur: string | undefined = t.threadParentId;
+        let cur: string | undefined = t.parentNodeId;
         const seen = new Set<string>();
         while (cur && !seen.has(cur)) {
             seen.add(cur);
@@ -677,27 +692,39 @@ let SingleThreadGroupView: FC<{
         return out.reverse();
     };
 
-    // Tables an agent LOADED during a turn. Their real card is the shelf, so the
-    // thread carries a pointer plus whatever was built on them afterwards — the
-    // conversation continues on the data it just brought in.
+    // Explicit loaded-table reference nodes. The table data stays in the shelf;
+    // each node contributes only authored thread position and a compact pointer.
     const loadedTablesByTurn = useMemo(() => {
-        const map = new Map<string, DictTable[]>();
-        for (const table of tables) {
-            if (table.derive || !table.threadParentId) continue;
-            map.set(table.threadParentId, [...(map.get(table.threadParentId) || []), table]);
+        const map = new Map<string, LoadedTableNode[]>();
+        for (const node of loadedTableNodes) {
+            map.set(node.parentNodeId, [...(map.get(node.parentNodeId) || []), node]);
         }
+        for (const list of map.values()) list.sort((a, b) => a.createdAt - b.createdAt);
         return map;
-    }, [tables]);
+    }, [loadedTableNodes]);
+
+    const tableAnchorOfNode = (nodeId: string | undefined): string => {
+        let current = nodeId;
+        const seen = new Set<string>();
+        while (current && !seen.has(current)) {
+            seen.add(current);
+            if (tableById.has(current)) return current;
+            const turn = turnById.get(current);
+            if (!turn) break;
+            current = turn.parentNodeId;
+        }
+        return ROOTLESS_THREAD_ID;
+    };
 
     const runningAgentTableIds = useMemo(() => {
         const ids = new Map<string, { description: string }>();
         for (const d of draftNodes) {
             if (d.derive?.status === 'running') {
-                ids.set(anchorOf(d.derive.trigger.tableId), { description: d.derive.runningPlan || '' });
+                ids.set(tableAnchorOfNode(d.parentNodeId), { description: d.derive.runningPlan || '' });
             }
         }
         return ids;
-    }, [draftNodes, anchorOf]);
+    }, [draftNodes, tableById, turnById]);
 
     const clarifyAgentTableIds = useMemo(() => {
         const ids = new Map<string, { question: string }>();
@@ -708,11 +735,11 @@ let SingleThreadGroupView: FC<{
                 // same way (an attention row above the input box).
                 const pauseEntry = d.derive.trigger.interaction
                     ?.filter(e => e.role === 'clarify' || e.role === 'explain' || e.role === 'delegate').pop();
-                ids.set(anchorOf(d.derive.trigger.tableId), { question: pauseEntry?.content || '' });
+                ids.set(tableAnchorOfNode(d.parentNodeId), { question: pauseEntry?.content || '' });
             }
         }
         return ids;
-    }, [draftNodes, anchorOf]);
+    }, [draftNodes, tableById, turnById]);
 
     const theme = useTheme();
 
@@ -1052,7 +1079,7 @@ let SingleThreadGroupView: FC<{
         };
 
         if (runningAgentTableIds.has(tableId)) {
-            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && anchorOf(d.derive.trigger.tableId) === tableId);
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && tableAnchorOfNode(d.parentNodeId) === tableId);
             if (runningDraft && renderedDraftIds.has(runningDraft.id)) {
                 return;
             }
@@ -1104,7 +1131,7 @@ let SingleThreadGroupView: FC<{
                 timelineItems.push(buildReportTimelineItem(report, highlighted));
             }
         } else if (clarifyAgentTableIds.has(tableId)) {
-            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && anchorOf(d.derive.trigger.tableId) === tableId);
+            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && tableAnchorOfNode(d.parentNodeId) === tableId);
             if (clarifyDraft && renderedDraftIds.has(clarifyDraft.id)) {
                 return;
             }
@@ -1220,37 +1247,20 @@ let SingleThreadGroupView: FC<{
             reportId: report.id, gutterIcon, element: card,
         };
     };
-    // Push report artifacts triggered from the given table. A report is an
-    // *output card* of the run (like a chart) that OWNS its closing summary:
-    // the card renders, then the report's own summary renders right below it
-    // (from `report.summary`, not a table-anchored interaction entry), so the
-    // report and its summary live and die together.
-    //
-    // Only COMPLETED (non-generating) reports render here. A still-generating
-    // report is rendered live inside the running draft block (see
-    // pushAgentDraftItems) so it appears below the prompt, not above it.
+    // Push reports whose authored parent is this table, plus unmigrated legacy
+    // reports. Generating reports stay in the active draft block.
     const pushReportItems = (
         tableId: string,
         highlighted: boolean,
-        triggerType: 'trigger' | 'leaf-trigger',
+        _triggerType: 'trigger' | 'leaf-trigger',
     ) => {
-        const reports = reportsByTriggerTable.get(tableId);
-        if (!reports) return;
+        const reports = [
+            ...(reportsByParentNode.get(tableId) || []),
+            ...(reportsByTriggerTable.get(tableId) || []),
+        ].filter((report, index, all) => all.findIndex(item => item.id === report.id) === index);
         for (const report of reports) {
             if (report.status === 'generating') continue;
             timelineItems.push(buildReportTimelineItem(report, highlighted));
-            if (report.summary) {
-                const summaryEntry: InteractionEntry = {
-                    from: 'data-agent', to: 'user', role: 'summary',
-                    plan: report.summaryThought,
-                    content: report.summary,
-                    timestamp: report.updatedAt,
-                };
-                pushInteractionEntries(
-                    [summaryEntry], tableId, triggerType, highlighted,
-                    `report-summary-${report.id}`,
-                );
-            }
         }
     };
 
@@ -1270,11 +1280,14 @@ let SingleThreadGroupView: FC<{
         // as muted agent prose so the thread foregrounds what it produced.
         const resolved = !!turn.answered;
         const producedTables = (loadedTablesByTurn.get(turn.id) || []).length > 0;
-        // Removing a turn doesn't re-parent what points at it, so deleting one
-        // with dependents would strand child turns and dangle table edges.
+        const producedReports = (reportsByParentNode.get(turn.id) || []).length > 0;
+        // Keep the UI from deleting a turn that visibly owns results. The
+        // reducer still repairs these edges for programmatic removals.
         const hasDependents = producedTables
+            || producedReports
             || (textTurnChildrenOf.get(turn.id) || []).length > 0
-            || tables.some(table => table.threadParentId === turn.id);
+            || tables.some(table => table.parentNodeId === turn.id)
+            || draftNodes.some(draft => draft.parentNodeId === turn.id);
         // Every turn is an agent remark, so its glyph sits ON the spine like any
         // other entry, while the card keeps the exchange readable as one unit.
         const awaitingAnswer = !turn.answered && (turn.options?.length ?? 0) > 0;
@@ -1362,6 +1375,9 @@ let SingleThreadGroupView: FC<{
             );
         }
         timelineItems.push(buildTextTurnTimelineItem(turn, highlighted, false));
+        for (const report of reportsByParentNode.get(turn.id) || []) {
+            timelineItems.push(buildReportTimelineItem(report, highlighted));
+        }
         // A turn that loaded tables skips the reply — the tables below already
         // say which option was taken.
         const loadedTables = loadedTablesByTurn.get(turn.id) || [];
@@ -1429,7 +1445,9 @@ let SingleThreadGroupView: FC<{
             // Only pure conversation folds — a turn that loaded tables must keep
             // rendering them.
             const foldable = chain.length > 2
-                && chain.every(item => (loadedTablesByTurn.get(item.id) || []).length === 0);
+                && chain.every(item =>
+                    (loadedTablesByTurn.get(item.id) || []).length === 0
+                    && (reportsByParentNode.get(item.id) || []).length === 0);
             const expanded = expandedTurnChains.has(chain[0].id);
             if (foldable) pushTurnChainToggle(chain[0].id, chain.length - 1, expanded);
             const visible = foldable && !expanded ? chain.slice(-1) : chain;
@@ -1449,14 +1467,15 @@ let SingleThreadGroupView: FC<{
         pushTextTurnSubtree(tableId, highlighted, triggerType);
     };
 
-    // The tables a turn loaded, rendered right after it: a reference chip (the
-    // card itself lives in the shelf) followed by everything built on them, so
-    // the thread reads as one continuous line through the new data.
+    // Loaded-table reference nodes rendered right after their parent turn,
+    // followed by everything built on the referenced shelf tables.
     const pushLoadedTables = (turnId: string, triggerType: 'trigger' | 'leaf-trigger') => {
-        for (const table of loadedTablesByTurn.get(turnId) || []) {
+        for (const node of loadedTablesByTurn.get(turnId) || []) {
+            const table = tableById.get(node.tableId);
+            if (!table) continue;
             const isHL = highlightedTableIds.includes(table.id);
             timelineItems.push({
-                key: `loaded-table-${table.id}`,
+                key: node.id,
                 type: 'table',
                 tableId: table.id,
                 highlighted: isHL,
@@ -1496,7 +1515,7 @@ let SingleThreadGroupView: FC<{
         keyPrefix: string,
     ) => {
         // Lead-up conversation that PRODUCED this table (design-docs/42): the
-        // clarify/answer turns on its threadParentId chain, rendered BEFORE the
+        // clarify/answer turns on its parentNodeId chain, rendered BEFORE the
         // trigger + card so the conversation and its result read as one thread.
         for (const turn of leadUpTurnsOf(tableId)) {
             pushSingleTurn(turn, tableId, highlighted, triggerType);
@@ -1853,7 +1872,7 @@ let SingleThreadGroupView: FC<{
             const clarifyClickHandler = (item.isClarifying && item.tableId)
                 ? () => {
                     const tableId = item.tableId!;
-                    const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && anchorOf(d.derive.trigger.tableId) === tableId);
+                    const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && tableAnchorOfNode(d.parentNodeId) === tableId);
                     if (clarifyDraft) {
                         window.dispatchEvent(new CustomEvent('df-reopen-pause', { detail: { draftId: clarifyDraft.id } }));
                     }
@@ -2501,6 +2520,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
     let charts = useSelector(dfSelectors.getAllCharts);
 
     let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
+    const loadedTableNodes = useSelector((state: DataFormulatorState) => state.loadedTableNodes);
 
     // Text turns (clarify/explain) — needed at this level to assign each a
     // single "home" thread entry (see the home-assignment block below).
@@ -2533,19 +2553,17 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
         () => new Set([...textTurnRootByTurn.values()]),
         [textTurnRootByTurn],
     );
-    // The one node whose position isn't implied by trigger dependency: an input
-    // table produced by a turn. It renders inside that turn's thread instead of
-    // opening a column, and is hosted by the table its turn is rooted at.
-    // (A shelf table roots a new thread; a derived table follows its trigger.)
+    // Loaded-table reference nodes render inside their parent conversation
+    // instead of opening source-table columns. Resolve each reference to the
+    // root table that hosts its parent turn.
     const loadedTableHosts = useMemo(() => {
         const map = new Map<string, string>();
-        for (const table of tables) {
-            if (table.derive || !table.threadParentId) continue;
-            const host = textTurnRootByTurn.get(table.threadParentId);
-            if (host) map.set(table.id, host);
+        for (const node of loadedTableNodes) {
+            const host = textTurnRootByTurn.get(node.parentNodeId);
+            if (host) map.set(node.tableId, host);
         }
         return map;
-    }, [tables, textTurnRootByTurn]);
+    }, [loadedTableNodes, textTurnRootByTurn]);
     const loadedTablesByHost = useMemo(() => {
         const map = new Map<string, string[]>();
         for (const [tableId, host] of loadedTableHosts) {
@@ -2553,6 +2571,10 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
         }
         return map;
     }, [loadedTableHosts]);
+    const draftHostOf = (draft: typeof draftNodes[number]): string => {
+        if (tableById.has(draft.parentNodeId)) return draft.parentNodeId;
+        return textTurnRootByTurn.get(draft.parentNodeId) || ROOTLESS_THREAD_ID;
+    };
     // Rendered timeline-item count each table's conversation adds (card +
     // optional prompt bubble), keyed by the root table — feeds thread height +
     // split budgeting so text-turn cards count as taking vertical space.
@@ -2903,8 +2925,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
                 pending.push(table.derive.trigger.tableId);
                 for (const sid of (table.derive.source || []) as string[]) pending.push(sid);
             }
-            const host = table.threadParentId
-                ? textTurnRootByTurn.get(table.threadParentId)
+            const host = table.parentNodeId
+                ? textTurnRootByTurn.get(table.parentNodeId)
                 : undefined;
             if (host) pending.push(host);
         }
@@ -2935,7 +2957,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
         [textTurnsForHome, textTurnRootByTurn],
     );
     const hasRootlessContent = rootlessTurns.length > 0
-        || draftNodes.some(d => !!d.derive && !tableById.has(d.derive.trigger.tableId));
+        || draftNodes.some(d => draftHostOf(d) === ROOTLESS_THREAD_ID);
 
     let hasContent = leafTables.length > 0 || tables.length > 0 || hasRootlessContent;
 
@@ -3038,7 +3060,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
         const hasArtifacts = chartElements.some(ce => ce.tableId === st.id)
             || (textTurnItemsByTable.get(st.id) || 0) > 0
             || generatedReports.some(r => r.triggerTableId === st.id)
-            || draftNodes.some(d => d.derive?.trigger.tableId === st.id);
+            || draftNodes.some(d => draftHostOf(d) === st.id);
         if (!hasArtifacts) continue;
         realThreadIdx++;
         allThreadEntries.push({

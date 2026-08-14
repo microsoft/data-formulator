@@ -26,7 +26,7 @@
  */
 
 /** Current persisted-state schema version. Bump when adding a migration. */
-export const DF_STATE_VERSION = 3;
+export const DF_STATE_VERSION = 4;
 
 type SavedState = Record<string, any>;
 
@@ -181,6 +181,93 @@ const MIGRATIONS: Migration[] = [
             };
         },
     },
+    {
+        // Thread placement is represented by explicit lightweight nodes and
+        // one `parentNodeId` field. Input tables remain shelf-owned data;
+        // derive.trigger / derive.source remain data provenance.
+        to: 4,
+        migrate: (s) => {
+            const loadedTableNodes = Array.isArray(s.loadedTableNodes)
+                ? [...s.loadedTableNodes]
+                : [];
+            const knownNodeIds = new Set(loadedTableNodes.map((node: any) => node?.id));
+            const textTurns = Array.isArray(s.textTurns) ? [...s.textTurns] : [];
+            const knownTurnIds = new Set(textTurns.map((turn: any) => turn?.id));
+            const inputTables = Array.isArray(s.inputTables)
+                ? s.inputTables.map((table: any) => {
+                    if (!table?.threadParentId) return table;
+                    const nodeId = `loaded-table-${table.id}`;
+                    if (!knownNodeIds.has(nodeId)) {
+                        loadedTableNodes.push({
+                            kind: 'loaded-table',
+                            id: nodeId,
+                            tableId: table.id,
+                            parentNodeId: table.threadParentId,
+                            createdAt: table.addedAt || 0,
+                        });
+                        knownNodeIds.add(nodeId);
+                    }
+                    const { threadParentId: _threadParentId, ...rest } = table;
+                    return rest;
+                })
+                : s.inputTables;
+            const generatedReports = Array.isArray(s.generatedReports)
+                ? s.generatedReports.map((report: any) => {
+                    if (!report) return report;
+                    const {
+                        summary,
+                        summaryThought: _summaryThought,
+                        ...rest
+                    } = report;
+                    const parentNodeId = rest.parentNodeId
+                        ?? rest.triggerTableId
+                        ?? '__rootless_thread__';
+                    if (typeof summary !== 'string' || !summary.trim()) {
+                        return { ...rest, parentNodeId };
+                    }
+                    const turnId = `textTurn-report-summary-${rest.id}`;
+                    if (!knownTurnIds.has(turnId)) {
+                        textTurns.push({
+                            kind: 'text',
+                            id: turnId,
+                            displayId: turnId,
+                            textKind: 'explain',
+                            content: summary,
+                            parentNodeId,
+                            createdAt: rest.updatedAt ?? rest.createdAt ?? 0,
+                        });
+                        knownTurnIds.add(turnId);
+                    }
+                    return { ...rest, parentNodeId: turnId };
+                })
+                : s.generatedReports;
+            return {
+                ...s,
+                inputTables,
+                loadedTableNodes,
+                derivedTables: Array.isArray(s.derivedTables)
+                    ? s.derivedTables.map((table: any) => {
+                        const parentNodeId = table.parentNodeId
+                            ?? table.threadParentId
+                            ?? table.derive?.trigger?.tableId;
+                        const { threadParentId: _threadParentId, ...rest } = table;
+                        return parentNodeId ? { ...rest, parentNodeId } : rest;
+                    })
+                    : s.derivedTables,
+                draftNodes: Array.isArray(s.draftNodes)
+                    ? s.draftNodes.map((draft: any) => ({
+                        ...draft,
+                        parentNodeId: draft.parentNodeId
+                            ?? draft.derive?.trigger?.tableId
+                            ?? '__rootless_thread__',
+                    }))
+                    : s.draftNodes,
+                generatedReports,
+                textTurns,
+                __stateVersion: 4,
+            };
+        },
+    },
 ];
 
 /**
@@ -193,12 +280,24 @@ export function migrateState(saved: SavedState | null | undefined): SavedState {
     const savedVersion = typeof saved.__stateVersion === 'number' ? saved.__stateVersion : 0;
     // Pre-release builds briefly stamped intermediate versions 3-5. They are
     // all inputs to the single released v3 schema, not distinct migrations.
-    // A split payload without legacy `tables` is already normalized and only
-    // needs its stamp corrected; partial payloads rerun the idempotent v3 merge.
-    if (savedVersion >= 3 && savedVersion <= 5 && !Array.isArray(saved.tables)) {
-        return { ...saved, __stateVersion: DF_STATE_VERSION };
+    // Re-run the idempotent v4 transform when an intermediate payload still
+    // carries legacy edges or lacks the loaded-reference collection.
+    let from = savedVersion;
+    if (savedVersion >= 3 && savedVersion <= 5) {
+        if (Array.isArray(saved.tables)) from = 2;
+        else {
+            const needsV4 = !Array.isArray(saved.loadedTableNodes)
+                || (saved.inputTables || []).some((table: any) => table?.threadParentId)
+                || (saved.derivedTables || []).some((table: any) =>
+                    table?.threadParentId || (table?.derive && !table?.parentNodeId))
+                || (saved.draftNodes || []).some((draft: any) => !draft?.parentNodeId)
+                || (saved.generatedReports || []).some((report: any) =>
+                    (report?.triggerTableId && !report?.parentNodeId)
+                    || report?.summary !== undefined
+                    || report?.summaryThought !== undefined);
+            if (needsV4 || savedVersion > DF_STATE_VERSION) from = 3;
+        }
     }
-    let from = savedVersion >= 3 && savedVersion <= 5 ? 2 : savedVersion;
     if (from >= DF_STATE_VERSION) return saved;
     let migrated = saved;
     for (const m of MIGRATIONS) {

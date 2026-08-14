@@ -1320,6 +1320,11 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
     const [configLoaded, setConfigLoaded] = useState(false);
+    const [startupLogsOpen, setStartupLogsOpen] = useState(false);
+    const isDesktopApp = useMemo(
+        () => new URLSearchParams(window.location.search).get('desktop') === '1',
+        [],
+    );
 
     useEffect(() => {
         syncVegaLocale();
@@ -1591,7 +1596,37 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 {configLoaded && authChecked ? (
                     <RouterProvider router={router} />
                 ) : (
-                    <AnvilLoader label="loading data formulator..." />
+                    <>
+                        <AnvilLoader
+                            label="loading data formulator..."
+                            action={isDesktopApp ? (
+                                <Button
+                                    variant="text"
+                                    size="small"
+                                    startIcon={<TerminalOutlinedIcon sx={{ fontSize: 15 }} />}
+                                    onClick={() => setStartupLogsOpen(true)}
+                                    sx={{
+                                        minWidth: 0,
+                                        px: 0.5,
+                                        color: 'text.disabled',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 400,
+                                        textTransform: 'none',
+                                        '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' },
+                                    }}
+                                >
+                                    View backend log
+                                </Button>
+                            ) : undefined}
+                        />
+                        {isDesktopApp && (
+                            <LogViewerDialog
+                                open={startupLogsOpen}
+                                onOpenChange={setStartupLogsOpen}
+                                hideTrigger
+                            />
+                        )}
+                    </>
                 )}
                 {migrationBrowserId && (
                     <IdentityMigrationDialog

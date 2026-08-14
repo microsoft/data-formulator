@@ -115,6 +115,8 @@ class TestSystemPrompt:
         assert '"tool": "visualize"' in ma._MINI_PROMPT_TEMPLATE
         assert '"tool": "explain"' in ma._MINI_PROMPT_TEMPLATE
         assert "ONE JSON object" in ma._MINI_PROMPT_TEMPLATE
+        assert "at most 16 words" in ma._MINI_PROMPT_TEMPLATE
+        assert "not restate the measure or analytical lens" in ma._MINI_PROMPT_TEMPLATE
 
     def test_chart_reference_is_reduced_set(self):
         # Exactly the seven reduced types, nothing more exotic.

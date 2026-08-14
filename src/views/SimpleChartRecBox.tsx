@@ -255,7 +255,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Authored thread edge, chained (design-docs/42): the LAST thread node this
     // run created — starts as the node the user asked from (a table, or the turn
     // being answered), then advances to each turn/table as it's emitted. Every
-    // new node's parentNodeId/threadParentId = this ref, so one run reads as a
+    // new node's parentNodeId = this ref, so one run reads as a
     // linear chain (table → clarify → table → explain). Set once at run start,
     // advanced at each emit — never re-derived at render.
     const runLastNodeRef = useRef<string | null>(null);
@@ -512,10 +512,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return ids;
     }, [focusedTableId, tables]);
 
-    // Agent actions relevant to all tables in this thread, sorted by creation time
-    // Agent actions relevant to the focused table's thread.
-    // An action is relevant if:
-    const hasRunningAgent = draftNodes.some(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId));
+    const draftBelongsToFocusedThread = (draft: typeof draftNodes[number]) => {
+        const parentTableId = resolveNodeTable(draft.parentNodeId, textTurns, tables);
+        return parentTableId ? threadTableIds.has(parentTableId) : focusedTableId == null;
+    };
+
+    const hasRunningAgent = draftNodes.some(d =>
+        d.derive?.status === 'running' && draftBelongsToFocusedThread(d));
 
     // Derive pending clarification from DraftNodes
     const pendingClarification = React.useMemo(() => {
@@ -525,13 +528,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // treated as pending — so its panel hides, it can't mask a newer
             // pause, and it doesn't block re-opening explanations.
             d.id !== dismissedPauseDraftId &&
-            threadTableIds.has(d.derive.trigger.tableId)
+            draftBelongsToFocusedThread(d)
         );
         if (clarifyingDraft?.derive?.pendingClarification) {
             return { ...clarifyingDraft.derive.pendingClarification, actionId: clarifyingDraft.actionId || '', draftId: clarifyingDraft.id };
         }
         return null;
-    }, [draftNodes, threadTableIds, dismissedPauseDraftId]);
+    }, [draftNodes, threadTableIds, dismissedPauseDraftId, textTurns, tables, focusedTableId]);
 
     // Extract the active structured clarification (or explanation) from
     // DraftNode interaction log. Both are stored as ClarificationQuestion[]
@@ -893,11 +896,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let currentDraftInteraction: InteractionEntry[] = [];
         let currentDraftId: string | null = null;
         let currentDraftParentTableId: string | null = null;
-        const createNextDraft = (parentTableId: string, initialInteraction: InteractionEntry[]) => {
+        const createNextDraft = (parentNodeId: string, parentTableId: string, initialInteraction: InteractionEntry[]) => {
             const draftId = `draft-${actionId}-${Date.now()}`;
             dispatch(dfActions.createDraftNode({
                 id: draftId,
                 displayId: draftId,
+            parentNodeId,
                 parentTableId,
                 source: selectedTableIds,
                 interaction: initialInteraction,
@@ -932,7 +936,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                     timestamp: Date.now() }
             ];
-            createNextDraft(askedFromTable || focusedTableId || ROOTLESS_THREAD_ID, initialEntries);
+            createNextDraft(
+                askedFromNode || focusedTableId || ROOTLESS_THREAD_ID,
+                askedFromTable || focusedTableId || ROOTLESS_THREAD_ID,
+                initialEntries,
+            );
         }
 
         // Track the last agent display_instruction (from "action" events)
@@ -997,6 +1005,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 createdAt: Date.now(),
                 status: 'generating',
                 prompt: agentPrompt,
+                parentNodeId: runLastNodeRef.current
+                    || askedFromNode
+                    || focusedTableId
+                    || ROOTLESS_THREAD_ID,
                 // Anchor to the run's current table (the draft's table) so the
                 // thread can render the generating card. While streaming, the
                 // card is rendered INSIDE the draft block (after the thinking
@@ -1038,11 +1050,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const operationTurnId = askedFromNode?.startsWith('textTurn') ? askedFromNode : undefined;
                     for (const workspaceTable of publishedTables) {
                         if (tables.some(table => table.id === workspaceTable.name)) continue;
-                        const loaded = buildDictTableFromWorkspace(workspaceTable, undefined);
-                        const table = operationTurnId
-                            ? { ...loaded, threadParentId: operationTurnId }
-                            : loaded;
+                        const table = buildDictTableFromWorkspace(workspaceTable, undefined);
                         dispatch(dfActions.addTableToStore(table));
+                        if (operationTurnId) {
+                            dispatch(dfActions.addLoadedTableNode({
+                                kind: 'loaded-table',
+                                id: `loaded-table-${workspaceTable.name}`,
+                                tableId: workspaceTable.name,
+                                parentNodeId: operationTurnId,
+                                createdAt: Date.now(),
+                            }));
+                        }
                         dispatch(fetchFieldSemanticType(table));
                         dispatch(fetchColumnStats(table));
                     }
@@ -1301,15 +1319,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 createdTables.push(candidateTable);
                 lastCreatedTableId = candidateTableId;
 
-                // design-docs/42 chain: this table FOLLOWS the run's last node.
-                // If that was a clarify turn, author the thread edge back to it
-                // (so `table → clarifyTurn → askedFromTable` reads as one branch);
-                // if it was a table, the data edge (derive.trigger) already places
-                // it, so leave threadParentId unset. Then advance the chain so a
-                // later turn/table in this run follows THIS table.
-                if (runLastNodeRef.current && runLastNodeRef.current.startsWith('textTurn')) {
-                    candidateTable.threadParentId = runLastNodeRef.current;
-                }
+                // The authored edge controls appearance; derive.trigger remains
+                // the data/agent anchor even when both happen to name one table.
+                candidateTable.parentNodeId = runLastNodeRef.current
+                    || currentDraftParentTableId
+                    || ROOTLESS_THREAD_ID;
                 runLastNodeRef.current = candidateTableId;
 
                 const names = candidateTable.names;
@@ -1378,7 +1392,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     dispatch(dfActions.removeDraftNode(currentDraftId));
                     currentDraftId = null;
                 }
-                createNextDraft(candidateTableId, []);
+                createNextDraft(candidateTableId, candidateTableId, []);
             }
 
             // ── clarify / explain: pause and let user respond ──
@@ -1474,16 +1488,33 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (reportId) {
                     reportFlushNow();
                     const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
+                    let reportParentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId || ROOTLESS_THREAD_ID;
+                    if (summary) {
+                        const turnId = `textTurn_${actionId}_${String(Date.now())}`;
+                        dispatch(dfActions.addTextTurn({
+                            kind: 'text',
+                            id: turnId,
+                            displayId: turnId,
+                            textKind: 'explain',
+                            content: summary,
+                            ...(!lastCreatedTableId && !runIsContinuationRef.current && currentDraftInteraction[0]?.role === 'prompt'
+                                ? { prompt: currentDraftInteraction[0].displayContent || currentDraftInteraction[0].content }
+                                : {}),
+                            parentNodeId: reportParentNodeId,
+                            ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
+                            actionId,
+                            createdAt: Date.now(),
+                        }));
+                        reportParentNodeId = turnId;
+                        runLastNodeRef.current = turnId;
+                    }
                     dispatch(dfActions.updateGeneratedReportContent({
                         id: reportId,
                         content: accumulatedReportMarkdown,
                         status: 'completed',
                         title: titleMatch ? titleMatch[1].trim() : undefined,
                         triggerTableId: reportAnchorTableId || undefined,
-                        // The closing answer lives on the report (rendered below
-                        // its card, deleted with it) — not on a table.
-                        summary: summary || undefined,
-                        summaryThought: result.content?.thought || undefined,
+                        parentNodeId: summary ? reportParentNodeId : undefined,
                     }));
                 }
                 // For a NON-report run, the closing answer renders once as the
@@ -2397,7 +2428,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             {/* Agent working overlay — covers entire card during chat formulation */}
             {isChatFormulating && (
                 <AgentWorkingOverlay 
-                    message={draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
+                    message={draftNodes.find(d => d.derive?.status === 'running' && draftBelongsToFocusedThread(d))
                             ?.derive?.runningPlan}
                     theme={theme}
                     color={'primary'}

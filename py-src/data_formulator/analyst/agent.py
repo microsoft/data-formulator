@@ -251,15 +251,9 @@ execute — you'll be asked to load it first. Extension skills available this ru
 ## Working within your budget
 
 - You have a budget of **{max_iterations} actions** for this run — a **hard
-  ceiling, not a target**. Use as few as the goal requires.
-- **Stop as soon as the user's goal is met.** End the run by giving your final
-  answer in plain text rather than taking more actions just because you can.
-- For concrete/progressive questions, take a follow-up action only when it
-  addresses a gap the previous step actually raised. For open-ended
-  exploration, the opposite applies: deliberately spend your budget covering
-  distinct analytical angles (see the core skill's "Choosing what to do").
-- If the request is genuinely ambiguous, ask the user in plain text (no action)
-  rather than guessing.
+    ceiling, not a target**.
+- Match the response depth to the user's request. Create charts that materially
+    contribute to the answer, and stop when the answer is sufficient.
 
 {agent_exploration_rules}"""
 

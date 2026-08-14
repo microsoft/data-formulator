@@ -149,6 +149,7 @@ describe("split table collections", () => {
       dfActions.insertDerivedTables(derivedTable as any)
     );
     expect(state.derivedTables.map((table) => table.id)).toEqual(["summary"]);
+    expect(state.derivedTables[0].parentNodeId).toBe("orders");
 
     state = dataFormulatorReducer(
       state,
@@ -156,5 +157,208 @@ describe("split table collections", () => {
     );
     expect(state.inputTables).toEqual([]);
     expect(state.derivedTables).toEqual([]);
+  });
+
+  it("stores an authored parent edge when a report is finalized", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.saveGeneratedReport({
+        id: "report-1",
+        content: "",
+        selectedChartIds: [],
+        createdAt: 1,
+        triggerTableId: "orders",
+        status: "generating",
+      })
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateGeneratedReportContent({
+        id: "report-1",
+        content: "# Report",
+        status: "completed",
+        parentNodeId: "textTurn-response",
+      })
+    );
+
+    expect(state.generatedReports[0]).toEqual(
+      expect.objectContaining({
+        triggerTableId: "orders",
+        parentNodeId: "textTurn-response",
+      })
+    );
+  });
+
+  it("preserves a draft parent edge when promoting its result", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.createDraftNode({
+        id: "draft-result",
+        displayId: "Result",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.promoteDraft({
+        draftId: "draft-result",
+        rows: [{ order_id: 1 }],
+        names: ["order_id"],
+        metadata: { order_id: { type: "integer", levels: [] } },
+        code: "result_df = orders",
+        outputVariable: "result_df",
+        virtual: { tableId: "result_workspace", rowCount: 1 },
+      })
+    );
+
+    expect(state.draftNodes).toEqual([]);
+    expect(state.derivedTables[0]).toMatchObject({
+      id: "draft-result",
+      parentNodeId: "textTurn-answer",
+      derive: {
+        trigger: { tableId: "orders" },
+      },
+    });
+  });
+
+  it("repairs authored child edges when a text turn is removed", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-response",
+        displayId: "Response",
+        textKind: "explain",
+        content: "Report written.",
+        parentNodeId: "orders",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-followup",
+        displayId: "Follow-up",
+        textKind: "explain",
+        content: "More detail",
+        parentNodeId: "textTurn-response",
+        createdAt: 2,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.saveGeneratedReport({
+        id: "report-1",
+        content: "# Report",
+        selectedChartIds: [],
+        createdAt: 3,
+        triggerTableId: "orders",
+        parentNodeId: "textTurn-response",
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addLoadedTableNode({
+        kind: "loaded-table",
+        id: "loaded-table-orders",
+        tableId: "orders",
+        parentNodeId: "textTurn-response",
+        createdAt: 4,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-followup",
+        displayId: "Draft follow-up",
+        parentNodeId: "textTurn-response",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.removeTextTurn("textTurn-response")
+    );
+
+    expect(state.textTurns).toEqual([
+      expect.objectContaining({
+        id: "textTurn-followup",
+        parentNodeId: "orders",
+      }),
+    ]);
+    expect(state.generatedReports[0].parentNodeId).toBe("orders");
+    expect(state.loadedTableNodes[0].parentNodeId).toBe("orders");
+    expect(state.draftNodes[0].parentNodeId).toBe("orders");
+  });
+
+  it("removes loaded-table references with their shelf table", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addLoadedTableNode({
+        kind: "loaded-table",
+        id: "loaded-table-orders",
+        tableId: "orders",
+        parentNodeId: "textTurn-load",
+        createdAt: 1,
+      })
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeTableLocally("orders"));
+
+    expect(state.inputTables).toEqual([]);
+    expect(state.loadedTableNodes).toEqual([]);
+  });
+
+  it("reparents authored children when a derived table is removed", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.insertDerivedTables({ ...derivedTable, parentNodeId: "orders" } as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-child",
+        displayId: "Child",
+        textKind: "explain",
+        content: "Follow-up",
+        parentNodeId: "summary",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-child",
+        displayId: "Draft child",
+        parentNodeId: "summary",
+        parentTableId: "summary",
+        source: ["summary"],
+        interaction: [],
+      })
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeTableLocally("summary"));
+
+    expect(state.textTurns[0].parentNodeId).toBe("orders");
+    expect(state.draftNodes[0].parentNodeId).toBe("orders");
+    expect(state.draftNodes[0].derive.trigger.tableId).toBe("orders");
   });
 });

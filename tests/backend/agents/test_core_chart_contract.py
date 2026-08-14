@@ -22,6 +22,9 @@ def test_visualize_schema_requires_title_and_exposes_subtitle():
 
     assert "title" in parameters["required"]
     assert "subtitle" in parameters["properties"]
+    subtitle_description = parameters["properties"]["subtitle"]["description"]
+    assert "at most 16 words" in subtitle_description
+    assert "Do not restate the measure or analytical lens" in subtitle_description
 
 
 def test_visualize_handler_forwards_title_and_subtitle():

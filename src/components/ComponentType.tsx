@@ -91,6 +91,15 @@ export interface InteractionEntry {
 
 export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'interrupted';
 
+/** A lightweight thread reference to a table that remains owned by the shelf. */
+export interface LoadedTableNode {
+    kind: 'loaded-table';
+    id: string;
+    tableId: string;
+    parentNodeId: string;
+    createdAt: number;
+}
+
 export interface PendingClarification {
     trajectory: any[];
     completedStepCount: number;
@@ -101,6 +110,7 @@ export interface DraftNode {
     kind: 'draft';
     id: string;
     displayId: string;
+    parentNodeId: string;
     derive: {
         source: string[];
         trigger: Trigger;
@@ -115,7 +125,7 @@ export interface DraftNode {
     actionId?: string;
 }
 
-export type ThreadNode = DraftNode | DictTable;
+export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
 
 /**
  * A first-class **text turn** (clarify / explain) in the thread — a sibling to
@@ -375,8 +385,6 @@ export interface InputTable {
     snapshot: InputTableSnapshot;
     description: string;
     sourceConfig?: DataSourceConfig;
-    /** Set when an agent loaded this table mid-conversation: the turn it follows. */
-    threadParentId?: string;
     addedAt: number;
 }
 
@@ -424,15 +432,8 @@ export interface DictTable {
     };
     description: string; // table-level description sourced from the loader (read-only). Empty string when none.
 
-    /**
-     * Authored THREAD edge (design-docs/42): the node this table FOLLOWS in the
-     * thread — set to a text-turn id when a conversation produced the table (the
-     * chain `table → clarifyTurn → askedFromTable`). It overrides
-     * `derive.trigger.tableId` for POSITION only; data provenance
-     * (`derive.source` / `derive.trigger`) is unchanged. Unset ⇒ the table's
-     * thread parent is its data parent (`derive.trigger.tableId`).
-     */
-    threadParentId?: string;
+    /** Authored thread edge. Data provenance remains in `derive`. */
+    parentNodeId?: string;
 
     source?: DataSourceConfig;
     

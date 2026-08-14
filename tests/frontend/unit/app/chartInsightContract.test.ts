@@ -67,6 +67,6 @@ describe("chart insight contract", () => {
     ) as any;
 
     expect(spec.title?.text).toBe("Revenue Concentrated in Product A");
-    expect(spec.title?.subtitle).toBe("US revenue by product, USD");
+    expect([spec.title?.subtitle].flat().join(" ")).toBe("US revenue by product, USD");
   });
 });

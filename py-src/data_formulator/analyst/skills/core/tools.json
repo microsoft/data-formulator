@@ -52,7 +52,7 @@
           },
           "subtitle": {
             "type": "string",
-            "description": "Optional factual context that helps interpret the chart: what is measured, population or geography, time period, aggregation, filters, and units or index baseline. Do not repeat the title."
+            "description": "Concise supporting context not already clear from the title or axes. Use one phrase of at most 16 words to provide contextual details. Do not restate the measure or analytical lens named in the title."
           },
           "display_instruction": {
             "type": "string",

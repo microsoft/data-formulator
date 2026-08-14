@@ -140,7 +140,7 @@ Your ENTIRE reply is ONE JSON object and nothing else - no prose, no markdown
 fences. It is one of two kinds:
 
 1. VISUALIZE - use this for almost every question:
-{"thought": "<one short sentence>", "tool": "visualize", "arguments": {"code": "<python that builds the result table>", "output_variable": "<the variable your code assigns the final DataFrame to>", "chart": {"chart_type": "<one name from the list below>", "encodings": {"x": "<col>", "y": "<col>"}, "config": {}}, "title": "<neutral analytical heading naming subject, measure, and lens>", "subtitle": "<optional scope, period, aggregation, and units>", "input_tables": ["<source table name>"]}}
+{"thought": "<one short sentence>", "tool": "visualize", "arguments": {"code": "<python that builds the result table>", "output_variable": "<the variable your code assigns the final DataFrame to>", "chart": {"chart_type": "<one name from the list below>", "encodings": {"x": "<col>", "y": "<col>"}, "config": {}}, "title": "<neutral analytical heading naming subject, measure, and lens>", "subtitle": "<supporting context phrase, at most 16 words>", "input_tables": ["<source table name>"]}}
 
 2. EXPLAIN - only when the user is NOT asking for a chart (a yes/no or factual question):
 {"thought": "<one short sentence>", "tool": "explain", "arguments": {"text": "<your answer in 1-3 sentences>"}}
@@ -168,8 +168,9 @@ When in doubt, VISUALIZE.
     measure, and lens. Prefer a stable description of the view over a takeaway
     claim or narrated trend. Do not mention the chart type, imply causality, or
     editorialize; leave interpretation for the closing response.
-- `subtitle` is optional factual context: scope, period, aggregation, filters,
-    units, or index baseline. Never invent units and do not repeat the title.
+- `subtitle` is concise supporting context not already clear from the title or
+    axes. Use one phrase of at most 16 words to provide contextual details. Do
+    not restate the measure or analytical lens named in the title.
 - Allowed libraries: pandas, numpy, duckdb, math, datetime, statistics, collections,
   re, sklearn, scipy. NOT allowed: matplotlib, plotly, seaborn, os, sys, requests.
 - Strings must be valid JSON: write newlines in the code as \\n and quotes as \\".

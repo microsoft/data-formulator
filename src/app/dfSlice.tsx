@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification, TextTurn, InputTable, TableSemanticsInfo } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification, TextTurn, InputTable, TableSemanticsInfo, LoadedTableNode } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable, ROOTLESS_THREAD_ID } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -143,15 +143,12 @@ export interface GeneratedReport {
     title?: string;
     updatedAt?: number;
     triggerTableId?: string;
+    /** The authored thread node this report follows. `triggerTableId` remains
+     *  source provenance; this edge controls narrative placement. */
+    parentNodeId?: string;
     contentSnapshotHash?: string;
     prompt?: string;
     status?: 'generating' | 'completed' | 'error';
-    // The run's closing answer (the agent's summary of what the report covers).
-    // Owned by the report — not borrowed onto a table's interaction log — so it
-    // is rendered and deleted together with the report (no cross-collection
-    // tagging). `summaryThought` is the agent's reasoning behind that summary.
-    summary?: string;
-    summaryThought?: string;
     generatingPhase?: 'inspecting' | 'writing';  // transient: which phase the agent is in while generating
     // transient: accumulated inspect steps, flipped to done on completion.
     // `charts` carries lightweight descriptors (chartType for the icon + a
@@ -186,6 +183,7 @@ export interface DataFormulatorState {
 
     inputTables: InputTable[];
     derivedTables: DictTable[];
+    loadedTableNodes: LoadedTableNode[];
     tableSemantics: TableSemanticsInfo[];
     draftNodes: DraftNode[];
     charts: Chart[];
@@ -322,6 +320,7 @@ const initialState: DataFormulatorState = {
 
     inputTables: [],
     derivedTables: [],
+    loadedTableNodes: [],
     tableSemantics: [],
     draftNodes: [],
     charts: [],
@@ -408,6 +407,11 @@ const collectAllCharts = (state: DataFormulatorState): Chart[] => {
 const collectAllTables = (state: DataFormulatorState): DictTable[] =>
     materializeTables(state.inputTables, state.derivedTables);
 
+const withDerivedParent = (table: DictTable): DictTable =>
+    table.derive && !table.parentNodeId
+        ? { ...table, parentNodeId: table.derive.trigger.tableId }
+        : table;
+
 const toInputTable = (table: DictTable): InputTable => ({
     kind: 'input-table',
     id: table.id,
@@ -441,12 +445,12 @@ const toInputTable = (table: DictTable): InputTable => ({
     },
     description: table.description || '',
     ...(table.source ? { sourceConfig: table.source } : {}),
-    ...(table.threadParentId ? { threadParentId: table.threadParentId } : {}),
     addedAt: Date.now(),
 });
 
 const replaceStoredTable = (state: DataFormulatorState, table: DictTable): void => {
     if (table.derive) {
+    table = withDerivedParent(table);
         const index = state.derivedTables.findIndex(item => item.id === table.id);
         if (index >= 0) state.derivedTables[index] = table;
         else state.derivedTables.push(table);
@@ -619,6 +623,7 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
 
     state.inputTables = state.inputTables.filter(t => t.id !== tableId);
     state.derivedTables = state.derivedTables.filter(t => t.id !== tableId);
+    state.loadedTableNodes = state.loadedTableNodes.filter(node => node.tableId !== tableId);
     state.tableSemantics = state.tableSemantics.filter(info => info.tableId !== tableId);
     state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== tableId);
 
@@ -638,9 +643,21 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
         : ROOTLESS_THREAD_ID;
     state.textTurns = state.textTurns.map(a =>
         a.parentNodeId === tableId ? { ...a, parentNodeId: reanchorId } : a);
+    state.derivedTables = state.derivedTables.map(table =>
+        table.parentNodeId === tableId ? { ...table, parentNodeId: reanchorId } : table);
+    state.loadedTableNodes = state.loadedTableNodes.map(node =>
+        node.parentNodeId === tableId ? { ...node, parentNodeId: reanchorId } : node);
+    state.generatedReports = state.generatedReports.map(report =>
+        report.parentNodeId === tableId ? { ...report, parentNodeId: reanchorId } : report);
     state.draftNodes = state.draftNodes.map(d =>
-        d.derive?.trigger.tableId === tableId
-            ? { ...d, derive: { ...d.derive, trigger: { ...d.derive.trigger, tableId: reanchorId } } }
+        d.derive?.trigger.tableId === tableId || d.parentNodeId === tableId
+            ? {
+                ...d,
+                ...(d.parentNodeId === tableId ? { parentNodeId: reanchorId } : {}),
+                ...(d.derive?.trigger.tableId === tableId
+                    ? { derive: { ...d.derive, trigger: { ...d.derive.trigger, tableId: reanchorId } } }
+                    : {}),
+            }
             : d);
 
     // Drop this table's starter questions / generation status
@@ -842,6 +859,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.inputTables = [];
             state.derivedTables = [];
+            state.loadedTableNodes = [];
             state.tableSemantics = [];
             state.draftNodes = [];
             state.charts = [];
@@ -977,6 +995,7 @@ export const dataFormulatorSlice = createSlice({
                         virtual: rest.virtual || { tableId: rest.id, rowCount: rest.rows?.length || 0 },
                     };
                 }),
+                loadedTableNodes: saved.loadedTableNodes || [],
                 tableSemantics: saved.tableSemantics || [],
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
@@ -1106,6 +1125,7 @@ export const dataFormulatorSlice = createSlice({
             }
 
             if (table.derive) {
+                table = withDerivedParent(table);
                 const existingIdx = state.derivedTables.findIndex(t => t.id === table.id);
                 if (existingIdx >= 0) state.derivedTables[existingIdx] = table;
                 else state.derivedTables.push(table);
@@ -1123,6 +1143,12 @@ export const dataFormulatorSlice = createSlice({
             state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
             state.focusedId = { type: 'table', tableId: table.id };
+        },
+        addLoadedTableNode: (state, action: PayloadAction<LoadedTableNode>) => {
+            const node = action.payload;
+            const existingIdx = state.loadedTableNodes.findIndex(item => item.id === node.id);
+            if (existingIdx >= 0) state.loadedTableNodes[existingIdx] = node;
+            else state.loadedTableNodes.push(node);
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             const tableId = action.payload;
@@ -1660,15 +1686,16 @@ export const dataFormulatorSlice = createSlice({
         insertDerivedTables: (state, action: PayloadAction<DictTable>) => {
             // Guard against duplicate IDs (e.g. race conditions or backend name collisions)
             if (collectAllTables(state).some(t => t.id === action.payload.id)) return;
-            state.derivedTables = [...state.derivedTables, action.payload];
+            state.derivedTables = [...state.derivedTables, withDerivedParent(action.payload)];
         },
         // ?? Draft node reducers ??????????????????????????????????
-        createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string }>) => {
-            const { id, displayId, parentTableId, source, interaction, chart, actionId } = action.payload;
+        createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentNodeId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string }>) => {
+            const { id, displayId, parentNodeId, parentTableId, source, interaction, chart, actionId } = action.payload;
             const draft: DraftNode = {
                 kind: 'draft',
                 id,
                 displayId,
+                parentNodeId,
                 derive: {
                     source,
                     trigger: {
@@ -1733,6 +1760,7 @@ export const dataFormulatorSlice = createSlice({
                 virtual: virtual,
                 description: description || '',
                 source,
+                parentNodeId: draft.parentNodeId,
             };
             state.derivedTables = [...state.derivedTables, table];
             state.draftNodes = state.draftNodes.filter(d => d.id !== draftId);
@@ -1762,7 +1790,7 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
-            let table = action.payload;
+            let table = withDerivedParent(action.payload);
             
             // Clean up old virtual table from workspace since it's being replaced
             let oldTable = state.derivedTables.find(t => t.id == table.id);
@@ -2073,6 +2101,28 @@ export const dataFormulatorSlice = createSlice({
             const turn = state.textTurns.find(a => a.id === turnId);
             const wasFocused = state.focusedId?.type === 'text' && state.focusedId.textId === turnId;
             state.textTurns = state.textTurns.filter(a => a.id !== turnId);
+            if (turn) {
+                state.textTurns = state.textTurns.map(child =>
+                    child.parentNodeId === turnId
+                        ? { ...child, parentNodeId: turn.parentNodeId }
+                        : child);
+                state.derivedTables = state.derivedTables.map(table =>
+                    table.parentNodeId === turnId
+                        ? { ...table, parentNodeId: turn.parentNodeId }
+                        : table);
+                state.loadedTableNodes = state.loadedTableNodes.map(node =>
+                    node.parentNodeId === turnId
+                        ? { ...node, parentNodeId: turn.parentNodeId }
+                        : node);
+                state.draftNodes = state.draftNodes.map(draft =>
+                    draft.parentNodeId === turnId
+                        ? { ...draft, parentNodeId: turn.parentNodeId }
+                        : draft);
+                state.generatedReports = state.generatedReports.map(report =>
+                    report.parentNodeId === turnId
+                        ? { ...report, parentNodeId: turn.parentNodeId }
+                        : report);
+            }
             // Fallback focus (design-docs/42): the source chart it came from,
             // else its thread-parent table (walk parentNodeId), else nothing.
             if (wasFocused && turn) {
@@ -2138,20 +2188,17 @@ export const dataFormulatorSlice = createSlice({
                 state.viewMode = 'editor';
             }
         },
-        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string; triggerTableId?: string; summary?: string; summaryThought?: string }>) => {
-            const { id, content, status, title, triggerTableId, summary, summaryThought } = action.payload;
+        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string; triggerTableId?: string; parentNodeId?: string }>) => {
+            const { id, content, status, title, triggerTableId, parentNodeId } = action.payload;
             const report = state.generatedReports.find(r => r.id === id);
             if (report) {
                 report.content = content;
                 if (title) report.title = title;
                 if (status) report.status = status;
-                // The run's closing answer is owned by the report (rendered and
-                // deleted with it), not appended to a table's interaction log.
-                if (summary !== undefined) report.summary = summary;
-                if (summaryThought !== undefined) report.summaryThought = summaryThought;
                 // Re-anchor the report to the latest table produced during the
                 // run so it renders against the newest thread item (like charts).
                 if (triggerTableId) report.triggerTableId = triggerTableId;
+                if (parentNodeId) report.parentNodeId = parentNodeId;
                 // Once real report text starts streaming, switch the indicator to
                 // the "writing" phase. When generation ends, clear transient state.
                 if (content) report.generatingPhase = 'writing';
@@ -2201,6 +2248,11 @@ export const dataFormulatorSlice = createSlice({
             // `loadState` performs for session loads.
             const incoming = action.payload;
             if (!incoming) return;
+            const migrated = migrateState(incoming);
+            if (migrated !== incoming) {
+                for (const key of Object.keys(incoming)) delete incoming[key];
+                Object.assign(incoming, migrated);
+            }
             if (Array.isArray(incoming.draftNodes)) {
                 incoming.draftNodes = incoming.draftNodes.map((node: DraftNode) => {
                     if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
@@ -2505,14 +2557,14 @@ export const dfSelectors = {
     selectSessionEmpty: (state: DataFormulatorState): boolean => (
         // Counted raw rather than via `selectAllTables`, which materializes
         // every table from its snapshot just to answer "are there any?".
-        state.inputTables.length === 0
-        && state.derivedTables.length === 0
-        && state.textTurns.length === 0
-        && state.draftNodes.length === 0
-        && state.generatedReports.length === 0
-        && state.dataLoadingChatMessages.length === 0
-        && state.analystChatPending === null
-        && state.dataLoadingChatPending === null
+        (state.inputTables?.length ?? 0) === 0
+        && (state.derivedTables?.length ?? 0) === 0
+        && (state.textTurns?.length ?? 0) === 0
+        && (state.draftNodes?.length ?? 0) === 0
+        && (state.generatedReports?.length ?? 0) === 0
+        && (state.dataLoadingChatMessages?.length ?? 0) === 0
+        && state.analystChatPending == null
+        && state.dataLoadingChatPending == null
     ),
     /** All models visible in the UI: global (server-managed) first, then user-added. */
     getAllModels: (state: DataFormulatorState): ModelConfig[] => {

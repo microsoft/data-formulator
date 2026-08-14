@@ -24,8 +24,8 @@ describe('state migrations', () => {
             draftNodes: [{ id: 'draft', anchored: true }],
         });
 
-        expect(DF_STATE_VERSION).toBe(3);
-        expect(migrated.__stateVersion).toBe(3);
+        expect(DF_STATE_VERSION).toBe(4);
+        expect(migrated.__stateVersion).toBe(4);
         expect(migrated).not.toHaveProperty('tables');
         expect(migrated.inputTables).toEqual([
             expect.objectContaining({ id: 'source', source: { kind: 'workspace', tableId: 'source_workspace' } }),
@@ -43,7 +43,10 @@ describe('state migrations', () => {
             { tableId: 'source', fields: { amount: { semanticType: 'Currency', unit: 'USD' } } },
             { tableId: 'derived', fields: { amount: { semanticType: 'Currency', sortOrder: ['low', 'high'] } } },
         ]);
-        expect(migrated.draftNodes).toEqual([{ id: 'draft' }]);
+        expect(migrated.draftNodes).toEqual([{
+            id: 'draft',
+            parentNodeId: '__rootless_thread__',
+        }]);
     });
 
     it('normalizes partial pre-release states into v3 without duplicates', () => {
@@ -62,10 +65,10 @@ describe('state migrations', () => {
         expect(migrated.derivedTables).toEqual([derived]);
         expect(migrated.tableSemantics).toEqual([semantics]);
         expect(migrated).not.toHaveProperty('tables');
-        expect(migrated.__stateVersion).toBe(3);
+        expect(migrated.__stateVersion).toBe(4);
     });
 
-    it('retags an already split pre-release state as v3', () => {
+    it('upgrades an already split pre-release state to v4', () => {
         const migrated = migrateState({
             __stateVersion: 5,
             inputTables: [{ kind: 'input-table', id: 'source' }],
@@ -73,7 +76,59 @@ describe('state migrations', () => {
             tableSemantics: [],
         });
 
-        expect(migrated.__stateVersion).toBe(3);
+        expect(migrated.__stateVersion).toBe(4);
         expect(migrated.inputTables).toEqual([{ kind: 'input-table', id: 'source' }]);
+        expect(migrated.loadedTableNodes).toEqual([]);
+    });
+
+    it('moves loaded-table thread edges into reference nodes', () => {
+        const migrated = migrateState({
+            __stateVersion: 3,
+            inputTables: [{
+                kind: 'input-table',
+                id: 'loaded-orders',
+                displayId: 'Loaded orders',
+                snapshot: { columns: [] },
+                threadParentId: 'textTurn-load',
+                addedAt: 42,
+            }],
+            derivedTables: [],
+        });
+
+        expect(migrated.inputTables[0]).not.toHaveProperty('threadParentId');
+        expect(migrated.loadedTableNodes).toEqual([{
+            kind: 'loaded-table',
+            id: 'loaded-table-loaded-orders',
+            tableId: 'loaded-orders',
+            parentNodeId: 'textTurn-load',
+            createdAt: 42,
+        }]);
+    });
+
+    it('unifies authored table, draft, and report edges on parentNodeId', () => {
+        const migrated = migrateState({
+            __stateVersion: 4,
+            inputTables: [],
+            loadedTableNodes: [],
+            derivedTables: [{
+                id: 'result',
+                threadParentId: 'textTurn-answer',
+                derive: { trigger: { tableId: 'source' } },
+            }],
+            draftNodes: [{
+                id: 'draft',
+                derive: { trigger: { tableId: 'source' } },
+            }],
+            generatedReports: [{ id: 'report', triggerTableId: 'result' }],
+        });
+
+        expect(migrated.derivedTables[0]).toMatchObject({
+            id: 'result',
+            parentNodeId: 'textTurn-answer',
+        });
+        expect(migrated.derivedTables[0]).not.toHaveProperty('threadParentId');
+        expect(migrated.draftNodes[0].parentNodeId).toBe('source');
+        expect(migrated.generatedReports[0].parentNodeId).toBe('result');
+        expect(migrated.__stateVersion).toBe(4);
     });
 });

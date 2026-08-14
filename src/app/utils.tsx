@@ -592,6 +592,8 @@ export const assembleVegaChart = (
         chart_spec: {
             chartType,
             encodings,
+            ...(title ? { title } : {}),
+            ...(subtitle ? { subtitle } : {}),
             // DF's default chart width/height is the *target* size → flint `baseSize`.
             // The hard ceiling is base × stretch (see `stretch` above), so charts render
             // at the configured size and only grow under pressure up to that ceiling.
@@ -610,9 +612,9 @@ export const assembleVegaChart = (
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     });
 
-    // flint-chart 0.4.1 does not yet consume chart-level title/subtitle fields.
-    // Keep this compatibility shim at the adapter boundary until DF upgrades to
-    // a Flint release that supports the newer authoring contract natively.
+    // Published flint-chart 0.4.1 ignores chart-level title/subtitle fields;
+    // live Flint consumes them above and owns fitting. Keep this fallback until
+    // the package release catches up with the live authoring contract.
     if (title && !spec.title) {
         spec.title = {
             text: title,

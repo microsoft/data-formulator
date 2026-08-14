@@ -48,7 +48,6 @@ export const materializeInputTablePreview = (table: InputTable): DictTable => ({
   },
   description: table.description,
   source: table.sourceConfig,
-  ...(table.threadParentId ? { threadParentId: table.threadParentId } : {}),
   contentHash: table.snapshot.contentHash,
 });
 

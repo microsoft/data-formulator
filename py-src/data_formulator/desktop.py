@@ -149,7 +149,7 @@ def run_desktop() -> None:
         ).start()
 
         port = _available_port()
-        url = f"http://127.0.0.1:{port}"
+        url = f"http://127.0.0.1:{port}?desktop=1"
         os.environ["DATA_FORMULATOR_DESKTOP"] = "1"
         from data_formulator.auth.azure_cli import expose_azure_cli
         expose_azure_cli()
