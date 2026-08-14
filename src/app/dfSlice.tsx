@@ -2286,6 +2286,14 @@ export const dataFormulatorSlice = createSlice({
                     return node;
                 });
             }
+            // A payload saved before a collection existed rehydrates that key as
+            // undefined, and consumers treat these as always-present arrays
+            // (e.g. `draftNodes.length`). Backfill them the way `loadState` does.
+            for (const [key, value] of Object.entries(initialState)) {
+                if (Array.isArray(value) && !Array.isArray(incoming[key])) {
+                    incoming[key] = [];
+                }
+            }
             // Reset other transient in-progress flags that snuck into the
             // persisted blob (chartSynthesisInProgress is already blacklisted
             // in store.ts).

@@ -75,6 +75,7 @@ import {
     RouterProvider,
     useLocation,
     useNavigate,
+    useRouteError,
     useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
@@ -970,11 +971,73 @@ const ConfigDialog: React.FC<{
 
 const ErrorBoundaryFallback: React.FC = () => {
     const { t } = useTranslation();
+    const routeError = useRouteError() as any;
+    const [logsOpen, setLogsOpen] = useState(false);
+    const [detailsOpen, setDetailsOpen] = useState(false);
+    // Read the desktop flag off the URL rather than the store — the store may be
+    // exactly what failed, and this screen has to render regardless.
+    const isDesktopApp = new URLSearchParams(window.location.search).get('desktop') === '1';
+    const detail = routeError?.message || (typeof routeError === 'string' ? routeError : '');
+    const stack = typeof routeError?.stack === 'string' ? routeError.stack : '';
+    const mutedActionSx = {
+        minWidth: 0, px: 0.5,
+        color: 'text.disabled', fontSize: '0.7rem', fontWeight: 400,
+        textTransform: 'none',
+        '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' },
+    } as const;
     return (
         <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
-            <Typography color="gray" sx={{ margin: "150px auto" }}>
-                {t('workspace.errorOccurred')} <Link href="/app">{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
-            </Typography>
+            <Box sx={{
+                margin: "150px auto",
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                maxWidth: 640, px: 2,
+            }}>
+                <Typography color="gray">
+                    {t('workspace.errorOccurred')} <Link href="/app">{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {(detail || stack) && (
+                        <Button
+                            variant="text"
+                            size="small"
+                            startIcon={<KeyboardArrowDownIcon sx={{
+                                fontSize: 15,
+                                transform: detailsOpen ? 'rotate(180deg)' : 'none',
+                                transition: 'transform 0.15s',
+                            }} />}
+                            onClick={() => setDetailsOpen(open => !open)}
+                            sx={mutedActionSx}
+                        >
+                            View error details
+                        </Button>
+                    )}
+                    {isDesktopApp && (
+                        <Button
+                            variant="text"
+                            size="small"
+                            startIcon={<TerminalOutlinedIcon sx={{ fontSize: 15 }} />}
+                            onClick={() => setLogsOpen(true)}
+                            sx={mutedActionSx}
+                        >
+                            View backend log
+                        </Button>
+                    )}
+                </Box>
+                {detailsOpen && (detail || stack) && (
+                    <Typography
+                        component="pre"
+                        sx={{
+                            fontFamily: 'monospace', fontSize: '0.65rem', color: 'text.disabled',
+                            whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                            m: 0, maxHeight: 260, overflowY: 'auto', textAlign: 'left',
+                            width: '100%',
+                        }}
+                    >
+                        {[detail, stack].filter(Boolean).join('\n\n')}
+                    </Typography>
+                )}
+                {isDesktopApp && <LogViewerDialog open={logsOpen} onOpenChange={setLogsOpen} hideTrigger />}
+            </Box>
         </Box>
     );
 };

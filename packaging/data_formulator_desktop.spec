@@ -41,6 +41,20 @@ for package in (
     binaries += package_binaries
     hiddenimports += package_hiddenimports
 
+if sys.platform == "win32":
+    # pywebview's WinForms backend loads Python.Runtime.dll via pythonnet. That
+    # file is a managed .NET assembly, not a native DLL: collected as a binary,
+    # PyInstaller rewrites it and the CLR can no longer resolve
+    # Python.Runtime.Loader.Initialize. Ship it verbatim as data instead.
+    datas += collect_data_files("pythonnet")
+    datas += collect_data_files("clr_loader")
+    hiddenimports += [
+        "clr",
+        "clr_loader",
+        "clr_loader.netfx",
+        "clr_loader.util",
+    ]
+
 a = Analysis(
     [str(project_root / "packaging" / "data_formulator_desktop.py")],
     pathex=[str(project_root / "py-src")],
@@ -49,6 +63,15 @@ a = Analysis(
     hiddenimports=hiddenimports,
     noarchive=False,
 )
+
+if sys.platform == "win32":
+    # Drop the binary copies the analysis picked up, so the verbatim data copies
+    # above are the ones that land in the bundle.
+    _managed = ("python.runtime.dll",)
+    a.binaries = [
+        entry for entry in a.binaries
+        if not str(entry[0]).lower().endswith(_managed)
+    ]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

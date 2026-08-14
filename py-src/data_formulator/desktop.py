@@ -126,10 +126,29 @@ def _run_self_test() -> int:
 
     if result.get("status") == "ok" and len(result["content"]) == 3:
         print("self-test sandbox parquet read: PASS")
-        return 0
+    else:
+        print(f"self-test sandbox parquet read: FAIL - {result.get('content')}")
+        return 1
 
-    print(f"self-test sandbox parquet read: FAIL - {result.get('content')}")
-    return 1
+    return _self_test_clr()
+
+
+def _self_test_clr() -> int:
+    """Load the managed pythonnet assembly the WinForms backend depends on.
+
+    Python.Runtime.dll is a .NET assembly; if packaging rewrites it the CLR
+    cannot resolve Loader.Initialize and the GUI dies at startup. Importing
+    `clr` reproduces that load without needing a desktop session.
+    """
+    if sys.platform != "win32":
+        return 0
+    try:
+        import clr  # noqa: F401
+    except Exception as exc:  # pragma: no cover - exercised only in frozen builds
+        print(f"self-test clr import: FAIL - {exc}")
+        return 1
+    print("self-test clr import: PASS")
+    return 0
 
 
 def run_desktop() -> None:

@@ -60,6 +60,15 @@ jobs:
       - name: Build desktop application
         run: uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
 
+      - name: Self-test packaged application (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          DF_DESKTOP_SELF_TEST: '1'
+        run: |
+          & 'dist/Data Formulator/Data Formulator.exe' | Tee-Object -Variable output
+          if ($LASTEXITCODE -ne 0) { throw "self-test failed with exit code $LASTEXITCODE" }
+
       - name: Archive Windows application
         if: runner.os == 'Windows'
         shell: pwsh
