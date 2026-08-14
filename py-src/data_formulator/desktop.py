@@ -114,7 +114,9 @@ def _run_self_test() -> int:
         def local_dir(self):
             yield self._path
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    # Windows holds the sandbox's parquet handle open past the run, so a strict
+    # cleanup raises before the test can report its result.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         pd.DataFrame({"value": [1, 2, 3]}).to_parquet(
             os.path.join(tmp_dir, "sample.parquet")
         )
