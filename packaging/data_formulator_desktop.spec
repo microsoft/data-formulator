@@ -46,6 +46,19 @@ if sys.platform == "win32":
     # file is a managed .NET assembly, not a native DLL: collected as a binary,
     # PyInstaller rewrites it and the CLR can no longer resolve
     # Python.Runtime.Loader.Initialize. Ship it verbatim as data instead.
+    # `collect_data_files` skips shared libraries, so the DLLs are listed by hand.
+    import importlib.util
+
+    for _pkg, _subdir in (("pythonnet", "runtime"), ("clr_loader", None)):
+        _spec = importlib.util.find_spec(_pkg)
+        if not _spec or not _spec.origin:
+            continue
+        _root = Path(_spec.origin).parent
+        _search = _root / _subdir if _subdir else _root
+        for _dll in _search.rglob("*.dll"):
+            _dest = Path(_pkg) / _dll.parent.relative_to(_root)
+            datas.append((str(_dll), str(_dest)))
+
     datas += collect_data_files("pythonnet")
     datas += collect_data_files("clr_loader")
     hiddenimports += [

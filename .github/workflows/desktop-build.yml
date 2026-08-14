@@ -60,6 +60,25 @@ jobs:
       - name: Build desktop application
         run: uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
 
+      - name: Compare bundled managed assembly (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $src = (uv run python -c "import pythonnet, os; print(os.path.join(os.path.dirname(pythonnet.__file__), 'runtime', 'Python.Runtime.dll'))").Trim()
+          $dst = 'dist/Data Formulator/_internal/pythonnet/runtime/Python.Runtime.dll'
+          Write-Host "source : $src"
+          if (Test-Path $src) {
+            Write-Host "  hash=$((Get-FileHash $src).Hash) size=$((Get-Item $src).Length)"
+          } else { Write-Host '  MISSING' }
+          Write-Host "bundled: $dst"
+          if (Test-Path $dst) {
+            Write-Host "  hash=$((Get-FileHash $dst).Hash) size=$((Get-Item $dst).Length)"
+          } else { Write-Host '  MISSING' }
+          Write-Host 'clr_loader files in bundle:'
+          Get-ChildItem -Recurse 'dist/Data Formulator/_internal/clr_loader' -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty FullName
+
       - name: Self-test packaged application (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
