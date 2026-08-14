@@ -1,3 +1,4 @@
+import ctypes
 import os
 import socket
 import sys
@@ -93,6 +94,49 @@ def _wait_until_ready(url: str, timeout: float = 30) -> None:
     raise RuntimeError("Data Formulator did not start within 30 seconds")
 
 
+_LOADING_HTML = """\
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center;
+         background: #fafafa; color: #444; font-family: "Segoe UI", system-ui, sans-serif; }
+  .spinner { width: 36px; height: 36px; border: 4px solid #e0e0e0; border-top-color: #1976d2;
+             border-radius: 50%; animation: spin 0.9s linear infinite; margin-bottom: 18px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .title { font-size: 15px; font-weight: 500; }
+  .hint { font-size: 12px; color: #999; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <div class="title">Data Formulator is starting&hellip;</div>
+  <div class="hint">First launch may take a little longer</div>
+</body>
+</html>
+"""
+
+
+def _enable_per_monitor_dpi() -> None:
+    """Upgrade DPI awareness to Per-Monitor V2 before the GUI starts.
+
+    pywebview's WinForms backend only calls SetProcessDPIAware() (system DPI
+    aware), which locks the scale factor at startup; on high-DPI displays the
+    WebView2 content is then stretched after resizing or maximizing. Per-Monitor
+    V2 lets Windows re-render the window for the monitor it is on. It requires
+    Windows 10 1703+; failures degrade silently to the backend's default.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except (AttributeError, OSError):
+        pass
+
+
 def _run_self_test() -> int:
     """Exercise sandbox execution inside a packaged build.
 
@@ -173,6 +217,8 @@ def run_desktop() -> None:
             "Desktop support is not installed. Run: uv pip install -e '.[desktop]'"
         ) from exc
 
+    _enable_per_monitor_dpi()
+
     try:
         activate = threading.Event()
         threading.Thread(
@@ -183,20 +229,12 @@ def run_desktop() -> None:
 
         port = _available_port()
         url = f"http://127.0.0.1:{port}?desktop=1"
-        os.environ["DATA_FORMULATOR_DESKTOP"] = "1"
-        from data_formulator.auth.azure_cli import expose_azure_cli
-        expose_azure_cli()
-        sys.argv = [sys.argv[0], "--host", "127.0.0.1", "--port", str(port)]
 
-        from data_formulator.app import run_app
-
-        server_thread = threading.Thread(target=run_app, daemon=True)
-        server_thread.start()
-        _wait_until_ready(url)
-
+        # Show a lightweight loading page first so the user gets feedback while
+        # the heavy backend imports and the Flask server start up.
         window = webview.create_window(
             "Data Formulator",
-            url,
+            html=_LOADING_HTML,
             width=1440,
             height=900,
             min_size=(960, 640),
@@ -206,6 +244,28 @@ def run_desktop() -> None:
             args=(window, activate),
             daemon=True,
         ).start()
+
+        def _start_backend() -> None:
+            # Importing the app pulls in heavy dependencies (litellm, pyarrow,
+            # azure, ...) and takes a while; run it off the GUI thread so the
+            # loading page stays responsive, then swap in the real URL.
+            try:
+                os.environ["DATA_FORMULATOR_DESKTOP"] = "1"
+                from data_formulator.auth.azure_cli import expose_azure_cli
+                expose_azure_cli()
+                sys.argv = [sys.argv[0], "--host", "127.0.0.1", "--port", str(port)]
+
+                from data_formulator.app import run_app
+
+                server_thread = threading.Thread(target=run_app, daemon=True)
+                server_thread.start()
+                _wait_until_ready(url)
+            except Exception as exc:  # pragma: no cover - error path
+                print(f"Failed to start the backend: {exc}")
+                return
+            window.load_url(url)
+
+        threading.Thread(target=_start_backend, daemon=True).start()
         webview.start()
     finally:
         coordinator.close()
