@@ -16,6 +16,11 @@ from data_formulator.data_operations import (
 )
 
 _PROBE_BUDGET_KEY = "data_loading.probe_budget"
+_CONNECTORS_LISTED_KEY = "data_loading.connectors_listed"
+_CONNECTORS_DISABLED_NOTE = (
+    "External data connectors are disabled in this deployment. Use file upload "
+    "or built-in sample datasets instead."
+)
 
 
 class DataLoadingSkill:
@@ -36,6 +41,10 @@ class DataLoadingSkill:
             result = service.describe_data(args)
         elif name == "probe_data":
             result = service.probe_data(args, self._probe_budget(ctx))
+        elif name == "list_connectors":
+            result = self._list_connectors(ctx)
+        elif name == "describe_connector":
+            result = self._describe_connector(args)
         else:
             result = {"error": f"data_loading has no tool '{name}'."}
         return ToolResult(text=json.dumps(result, ensure_ascii=False, default=str))
@@ -48,6 +57,8 @@ class DataLoadingSkill:
     ) -> Generator[Event, None, str | None]:
         if action == "propose_data_operation":
             return (yield from self._propose_data_operation(spec, ctx))
+        if action == "propose_connection":
+            return (yield from self._propose_connection(spec, ctx))
         message = f"data_loading has no committing action '{action}' in this phase."
         yield {
             "type": "error",
@@ -55,6 +66,151 @@ class DataLoadingSkill:
             "message_code": "agent.unknownAction",
         }
         return message
+
+    @staticmethod
+    def _connectors_disabled() -> bool:
+        try:
+            from flask import current_app
+            return bool(current_app.config.get("CLI_ARGS", {}).get("disable_data_connectors"))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _skill_state(ctx: SkillContext) -> dict[str, Any]:
+        state = ctx.payload.get("skill_state")
+        if not isinstance(state, dict):
+            state = {}
+            ctx.payload["skill_state"] = state
+        return state
+
+    def _list_connectors(self, ctx: SkillContext) -> dict[str, Any]:
+        self._skill_state(ctx)[_CONNECTORS_LISTED_KEY] = True
+        if self._connectors_disabled():
+            return {"connectors": [], "unavailable": [], "note": _CONNECTORS_DISABLED_NOTE}
+
+        from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
+
+        connectors = []
+        for key, loader_class in DATA_LOADERS.items():
+            if key in ("local_folder", "sample_datasets"):
+                continue
+            try:
+                auth_mode = loader_class.auth_mode()
+            except Exception:
+                auth_mode = None
+            connectors.append({
+                "type": key,
+                "name": loader_class.DISPLAY_NAME or key.replace("_", " ").title(),
+                "summary": loader_class.DESCRIPTION or "",
+                "auth_mode": auth_mode,
+                "available": True,
+            })
+        return {
+            "connectors": connectors,
+            "unavailable": [
+                {
+                    "type": key,
+                    "name": key.replace("_", " ").title(),
+                    "install_hint": hint,
+                }
+                for key, hint in DISABLED_LOADERS.items()
+                if key not in ("local_folder", "sample_datasets")
+            ],
+            "next_action": (
+                "If the user requested one of these connector types, call "
+                "propose_connection now. Do not end the turn by saying you will open a form."
+            ),
+        }
+
+    def _describe_connector(self, args: dict[str, Any]) -> dict[str, Any]:
+        if self._connectors_disabled():
+            return {"error": _CONNECTORS_DISABLED_NOTE}
+
+        from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
+
+        source_type = str(args.get("source_type") or "").strip()
+        loader_class = DATA_LOADERS.get(source_type)
+        if loader_class is None:
+            hint = DISABLED_LOADERS.get(source_type)
+            detail = f" (needs: {hint})" if hint else ""
+            return {"error": f"Connector {source_type!r} is unavailable{detail}. Call list_connectors."}
+
+        def safe(callable_):
+            try:
+                return callable_()
+            except Exception:
+                return None
+
+        return {
+            "type": source_type,
+            "name": loader_class.DISPLAY_NAME or source_type.replace("_", " ").title(),
+            "summary": loader_class.DESCRIPTION or "",
+            "auth_mode": safe(loader_class.auth_mode),
+            "auth_paths": safe(loader_class.auth_paths),
+            "auth_instructions": safe(loader_class.auth_instructions),
+            "params": [
+                {
+                    "name": param.get("name"),
+                    "required": bool(param.get("required")),
+                    "tier": param.get("tier"),
+                    "sensitive": bool(param.get("sensitive") or param.get("type") == "password"),
+                    "description": param.get("description"),
+                }
+                for param in (safe(loader_class.list_params) or [])
+                if isinstance(param, dict)
+            ],
+            "next_action": (
+                "Call propose_connection now to open this form. Describing the "
+                "requirements in text does not open it."
+            ),
+        }
+
+    def _propose_connection(
+        self,
+        spec: dict[str, Any],
+        ctx: SkillContext,
+    ) -> Generator[Event, None, str | None]:
+        if self._connectors_disabled():
+            yield {"type": "error", "message": _CONNECTORS_DISABLED_NOTE, "message_code": "agent.connectorsDisabled"}
+            return _CONNECTORS_DISABLED_NOTE
+        if not self._skill_state(ctx).get(_CONNECTORS_LISTED_KEY):
+            message = "Call list_connectors before propose_connection."
+            yield {"type": "error", "message": message, "message_code": "agent.invalidConnector"}
+            return message
+
+        from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
+
+        source_type = str(spec.get("source_type") or "").strip()
+        if source_type not in DATA_LOADERS or source_type in ("local_folder", "sample_datasets"):
+            hint = DISABLED_LOADERS.get(source_type)
+            message = f"Connector {source_type!r} is unavailable" + (f" (needs: {hint})." if hint else ".")
+            yield {"type": "error", "message": message, "message_code": "agent.invalidConnector"}
+            return message
+
+        prefilled_raw = spec.get("prefilled") or {}
+        prefilled = {}
+        if isinstance(prefilled_raw, dict):
+            prefilled = {
+                str(key): str(value)
+                for key, value in prefilled_raw.items()
+                if value not in (None, "")
+            }
+        display_name = DATA_LOADERS[source_type].DISPLAY_NAME or source_type
+        response = str(ctx.payload.get("action_narration") or "").strip()
+        yield {
+            "type": "interact",
+            "thought": spec.get("thought", ""),
+            "form": {
+                "kind": "connector",
+            "title": f"Connect to {display_name}",
+            "response": response or f"Complete the {display_name} connection form to add this data source.",
+                "connector": {
+                    "source_type": source_type,
+                    "prefilled": prefilled,
+                },
+            },
+        }
+        return None
 
     @staticmethod
     def _already_loaded_tables(steps: tuple[ConnectorQueryStep, ...], workspace) -> list[str]:

@@ -8,6 +8,7 @@ const { dispatch, mockState } = vi.hoisted(() => ({
     dispatch: vi.fn(),
     mockState: {
         dataSourceSidebarOpen: true,
+        dataSourceSidebarTab: 'sources',
         serverConfig: { DISABLE_DATA_CONNECTORS: false },
         activeWorkspace: null,
         identity: { type: 'browser', id: 'test-browser' },
@@ -42,6 +43,7 @@ vi.mock('../../../../src/app/dfSlice', () => ({
         setSessionLoading: (payload: any) => ({ type: 'session/setLoading', payload }),
         loadState: (payload: any) => ({ type: 'state/load', payload }),
         setActiveWorkspace: (payload: any) => ({ type: 'workspace/setActive', payload }),
+        resetState: () => ({ type: 'state/reset' }),
     },
     dfSelectors: {
         getAllTables: (state: any) => [...(state.inputTables ?? []), ...(state.derivedTables ?? [])],
@@ -99,7 +101,14 @@ vi.mock('../../../../src/views/KnowledgePanel', () => ({
 describe('DataSourceSidebar', () => {
     beforeEach(() => {
         dispatch.mockClear();
+        mockState.dataSourceSidebarTab = 'sources';
+        vi.stubGlobal('ResizeObserver', class {
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        });
         vi.mocked(apiRequest).mockReset();
+        vi.mocked(apiRequest).mockResolvedValue({ data: { connectors: [] } });
     });
 
     it('leaves loading state when catalog fetch fails', async () => {
@@ -137,5 +146,20 @@ describe('DataSourceSidebar', () => {
                 }),
             }));
         });
+    });
+
+    it('returns to the landing state without creating an empty workspace', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        render(<DataSourceSidebar />);
+
+        fireEvent.click(await screen.findByText('New session'));
+
+        expect(dispatch).toHaveBeenCalledWith({ type: 'state/reset' });
+        expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({
+            type: 'state/load',
+            payload: expect.objectContaining({
+                activeWorkspace: expect.objectContaining({ displayName: 'Untitled Session' }),
+            }),
+        }));
     });
 });

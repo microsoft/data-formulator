@@ -816,6 +816,34 @@ def resolve_live_loader(source_id: str) -> "ExternalDataLoader":
     return connector._require_loader()
 
 
+def resolve_catalog_refresh_target(
+    source_id: str,
+) -> "tuple[type[ExternalDataLoader], ExternalDataLoader | None]":
+    """Resolve policy and an existing loader without reconnecting credentials."""
+    if source_id in _ADMIN_CONNECTOR_IDS and source_id in DATA_CONNECTORS:
+        connector = DATA_CONNECTORS[source_id]
+    else:
+        _, connector = _resolve_connector_with_key({"connector_id": source_id})
+    loader_class = connector._loader_class
+    loader = None
+    if hasattr(connector, "_get_identity") and hasattr(connector, "_get_loader"):
+        identity = connector._get_identity()
+        loader = connector._get_loader(identity)
+    try:
+        auth_mode = _loader_auth_mode(loader_class)
+    except AttributeError:
+        auth_mode = (
+            "credentials"
+            if any(param.get("required") for param in loader_class.list_params())
+            else "none"
+        )
+    if loader is None and auth_mode == "none":
+        loader = loader_class(connector._default_params or {})
+        if hasattr(connector, "_loaders") and 'identity' in locals():
+            connector._loaders[identity] = loader
+    return loader_class, loader
+
+
 def connector_is_available(source_id: str) -> bool | None:
     """Whether ``source_id`` could be loaded from right now, without touching it.
 
@@ -1680,6 +1708,7 @@ def connector_connect():
             save_catalog(
                 user_home, source._source_id, flat_tables,
                 mode=cache_mode,
+                refresh_kind="listing",
             )
         except Exception:
             logger.debug("Failed to save catalog cache on connect for '%s'",
@@ -1938,6 +1967,7 @@ def connector_get_catalog_tree():
                     save_catalog(
                         user_home, source._source_id, flat_tables,
                         mode="replace",
+                        refresh_kind="listing",
                     )
                 except Exception:
                     logger.debug(

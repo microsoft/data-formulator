@@ -128,13 +128,13 @@ export interface DraftNode {
 export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
 
 /**
- * A first-class **text turn** (clarify / explain) in the thread — a sibling to
- * charts, tables, and reports (see design-docs/41). Placed in the thread by its
- * one authored edge, `parentNodeId` (design-docs/42): the node the user was
- * asking from when the turn was created. Focusing one overlays a panel above the
- * chat without taking over the canvas (the canvas keeps showing `sourceChartId`);
- * deleting one is a generic artifact delete. (Delegate is NOT a text turn — a
- * hand-off is an agent action, handled directly.)
+ * A first-class interaction in the thread: either a clarify/explain turn or a
+ * canvas-owning artifact such as a data operation or form. It is placed by its
+ * one authored edge, `parentNodeId` (design-docs/42). Plain text turns overlay
+ * the chat without taking over the canvas. Embedded artifacts own the canvas;
+ * form artifacts also show their accompanying text above chat as feedback.
+ * Deleting either uses the same generic artifact path. Delegate is not a turn;
+ * a hand-off is an agent action handled directly.
  */
 export interface TextTurn {
     kind: 'text';
@@ -151,6 +151,8 @@ export interface TextTurn {
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */
     dataOperation?: DataOperation;
+    /** A user-confirmed form artifact that owns the canvas while focused. */
+    form?: FormArtifact;
     /** True once the user has responded to THIS clarify — it then locks
      *  (read-only). A later response is a *new* conversation, not a re-answer. */
     answered?: boolean;
@@ -270,6 +272,15 @@ export interface ConnectorFormPrompt {
     connectionName?: string;            // display name of the created connection
     tableCount?: number;                // optional: tables discovered on connect
 }
+
+export interface ConnectorFormArtifact {
+    kind: 'connector';
+    title: string;
+    connector: ConnectorFormPrompt;
+}
+
+/** Canvas-owning form artifacts. Add future form kinds to this union. */
+export type FormArtifact = ConnectorFormArtifact;
 
 export interface ChatMessage {
     id: string;

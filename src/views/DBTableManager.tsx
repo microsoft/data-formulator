@@ -9,6 +9,7 @@ import {
   CircularProgress,
   Checkbox,
   FormControlLabel,
+    Switch,
   IconButton,
   Tooltip,
     Accordion,
@@ -111,6 +112,8 @@ export const DataLoaderForm: React.FC<{
     /** When true, lay parameters out in a single column and tighten spacing
      *  so the form fits inside a chat card (design 38). */
     compact?: boolean,
+    /** Retain compact control sizing while adding canvas-appropriate spacing. */
+    comfortableSpacing?: boolean,
     /** When true, keep setup instructions collapsed initially in compact forms. */
     hideInstructions?: boolean,
     /** One-time seed for sensitive fields (passwords/tokens) the user handed to
@@ -120,7 +123,7 @@ export const DataLoaderForm: React.FC<{
     /** Hands the user to the data agent chat with a seeded question when they
      *  get stuck on setup. Omitted inside the chat card itself. */
     onAskAgent?: (prompt: string) => void,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBeforeConnect, hasStoredCredentials, compact = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBeforeConnect, hasStoredCredentials, compact = false, comfortableSpacing = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const loaderTypeKey = loaderType || dataLoaderType;
@@ -296,6 +299,39 @@ export const DataLoaderForm: React.FC<{
             }));
         }
     }, [dataLoaderType, dispatch, sensitiveParamNames]);
+    const renderBooleanParam = useCallback((paramDef: typeof paramDefs[number]) => {
+        const rawValue = params[paramDef.name] ?? paramDef.default ?? false;
+        const checked = String(rawValue).toLowerCase() === 'true';
+        return (
+            <FormControlLabel
+                control={(
+                    <Switch
+                        size="small"
+                        checked={checked}
+                        onChange={(_event, nextChecked) => {
+                            dispatch(dfActions.updateDataLoaderConnectParam({
+                                dataLoaderType,
+                                paramName: paramDef.name,
+                                paramValue: String(nextChecked),
+                            }));
+                        }}
+                        inputProps={{ 'aria-label': paramDef.name }}
+                    />
+                )}
+                label={checked
+                    ? t('common.on', { defaultValue: 'On' })
+                    : t('common.off', { defaultValue: 'Off' })}
+                sx={{
+                    m: 0,
+                    minHeight: 40,
+                    '& .MuiFormControlLabel-label': {
+                        fontSize: compact ? '0.75rem' : '0.8125rem',
+                        lineHeight: 1.4,
+                    },
+                }}
+            />
+        );
+    }, [compact, dataLoaderType, dispatch, paramDefs, params, t]);
     const selectAuthPath = useCallback((pathId: string) => {
         const selectedPath = authPaths.find(path => path.id === pathId);
         if (!selectedPath) return;
@@ -569,16 +605,24 @@ export const DataLoaderForm: React.FC<{
         fontSize: bodyFontSize,
         fontWeight: 500,
         lineHeight: 1.4,
-        mb: compact ? 0.25 : 0.5,
+        mb: compact && !comfortableSpacing ? 0.25 : 0.5,
     };
-    const fieldGap = compact ? 1 : 1.5;
-    const sectionGap = compact ? 1.25 : 2;
+    const fieldGap = compact ? (comfortableSpacing ? 1.75 : 1) : 1.5;
+    const sectionGap = compact ? (comfortableSpacing ? 2.25 : 1.25) : 2;
     // Inputs otherwise keep MUI's 14px, which is the one size that breaks the scale.
     const fieldSx = {
         '& .MuiInputBase-root': { fontSize: bodyFontSize },
         ...(compact ? {
+            '& .MuiOutlinedInput-root': { height: 32 },
             '& .MuiOutlinedInput-input': { paddingTop: '5.5px', paddingBottom: '5.5px' },
-            '& .MuiAutocomplete-inputRoot': { paddingTop: '1px', paddingBottom: '1px' },
+            '& .MuiAutocomplete-inputRoot': {
+                paddingTop: '0 !important',
+                paddingBottom: '0 !important',
+            },
+            '& .MuiAutocomplete-inputRoot .MuiAutocomplete-input': {
+                paddingTop: '5.5px !important',
+                paddingBottom: '5.5px !important',
+            },
             '& .MuiFormHelperText-root': { fontSize: '0.6875rem', marginTop: '2px' },
         } : {}),
     };
@@ -701,7 +745,7 @@ export const DataLoaderForm: React.FC<{
                     ? { xs: 'minmax(0, 1fr)', md: 'minmax(440px, 1.55fr) minmax(280px, 1fr)' }
                     : 'minmax(0, 1fr)',
                 columnGap: { xs: 0, md: 4 },
-                rowGap: compact ? 2 : 3,
+                rowGap: compact ? (comfortableSpacing ? 2.5 : 2) : 3,
                 alignItems: 'start',
                 width: '100%',
                 maxWidth: compact ? '100%' : (showSideGuide ? 940 : 520),
@@ -732,7 +776,7 @@ export const DataLoaderForm: React.FC<{
                                             <Typography variant="body2" sx={labelSx}>
                                                 {paramDef.name}{paramDef.required ? ' *' : ''}
                                             </Typography>
-                                            <DraftTextField
+                                            {paramDef.type === 'boolean' || paramDef.type === 'bool' ? renderBooleanParam(paramDef) : <DraftTextField
                                                 size="small" fullWidth
                                                 sx={fieldSx}
                                                 type={paramDef.type === 'password' ? 'password' : 'text'}
@@ -740,7 +784,7 @@ export const DataLoaderForm: React.FC<{
                                                 placeholder={getParamPlaceholder(paramDef)}
                                                 onDraftChange={(value) => updateParamDraft(paramDef.name, value)}
                                                 onCommit={(value) => commitParamDraft(paramDef.name, value)}
-                                            />
+                                            />}
                                         </Box>
                                     ))}
                                 </Box>
@@ -756,12 +800,25 @@ export const DataLoaderForm: React.FC<{
                                 loaderTypeKey === 'kusto' && name === 'kusto_cluster';
                             const isKustoDatabase = (name: string) =>
                                 loaderTypeKey === 'kusto' && name === 'kusto_database';
-                            const renderFieldRow = (paramDef: typeof tierParams[number], input: React.ReactNode) => (
+                            const renderFieldRow = (paramDef: typeof tierParams[number], input: React.ReactNode, action?: React.ReactNode) => (
                                 <Box key={paramDef.name} sx={{ minWidth: 0 }}>
                                     <Typography variant="body2" sx={labelSx}>
                                         {paramDef.name}{paramDef.required ? ' *' : ''}
                                     </Typography>
-                                    {input}
+                                    <Box sx={{
+                                        display: 'grid',
+                                        gridTemplateColumns: action ? 'minmax(0, 1fr) 32px' : 'minmax(0, 1fr)',
+                                        columnGap: action ? 0.5 : 0,
+                                        alignItems: 'center',
+                                        minWidth: 0,
+                                    }}>
+                                        {input}
+                                        {action && (
+                                            <Box sx={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {action}
+                                            </Box>
+                                        )}
+                                    </Box>
                                 </Box>
                             );
                             return (
@@ -769,11 +826,11 @@ export const DataLoaderForm: React.FC<{
                                 {tierParams.map((paramDef) => (
                                     isKustoCluster(paramDef.name) ? (
                                         renderFieldRow(paramDef,
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                         <Autocomplete
-                                            sx={{ flex: 1, minWidth: 0 }}
+                                            sx={{ width: '100%', minWidth: 0 }}
                                             freeSolo
                                             options={[KUSTO_HELP_CLUSTER]}
+                                            slotProps={{ listbox: { sx: { fontSize: bodyFontSize } } }}
                                             value={params[paramDef.name] ?? ''}
                                             onChange={(_event, value) => {
                                                 dispatch(dfActions.updateDataLoaderConnectParam({
@@ -803,18 +860,18 @@ export const DataLoaderForm: React.FC<{
                                                     placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
                                                 />
                                             )}
-                                        />
+                                        />,
                                         <Tooltip title={t('db.findClusterPortal', { defaultValue: 'Find your cluster in the Azure portal' })}>
                                             <IconButton size="small" component="a" href="https://portal.azure.com/#browse/Microsoft.Kusto%2Fclusters" target="_blank" rel="noopener noreferrer">
                                                 <OpenInNewIcon sx={{ fontSize: iconVar.md }} />
                                             </IconButton>
                                         </Tooltip>
-                                        </Box>
                                         )
                                     ) : isKustoDatabase(paramDef.name) ? (
                                         renderFieldRow(paramDef,
                                         <Autocomplete
                                             freeSolo
+                                            slotProps={{ listbox: { sx: { fontSize: bodyFontSize } } }}
                                             open={databaseMenuOpen}
                                             onOpen={() => {
                                                 setDatabaseMenuOpen(true);
@@ -865,11 +922,14 @@ export const DataLoaderForm: React.FC<{
                                             )}
                                         />
                                         )
+                                    ) : paramDef.type === 'boolean' || paramDef.type === 'bool' ? (
+                                        renderFieldRow(paramDef, renderBooleanParam(paramDef))
                                     ) : paramDef.options ? (
                                         renderFieldRow(paramDef,
                                         <Autocomplete
                                             freeSolo
                                             options={paramDef.options}
+                                            slotProps={{ listbox: { sx: { fontSize: bodyFontSize } } }}
                                             value={params[paramDef.name] ?? ''}
                                             onChange={(_event, value) => {
                                                 dispatch(dfActions.updateDataLoaderConnectParam({

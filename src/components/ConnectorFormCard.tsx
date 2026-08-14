@@ -49,9 +49,15 @@ interface ConnectorFormCardProps {
     defaultExpanded?: boolean;
     /** 'bare' drops the card chrome — the canvas already frames the form. */
     variant?: 'card' | 'bare';
+    /** Analyst canvas owns TextTurn state; standalone chat uses its message reducer. */
+    onResolved?: (resolution: {
+        status: 'connected';
+        connectorId?: string;
+        connectionName: string;
+    }) => void;
 }
 
-export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId, prompt, defaultExpanded = true, variant = 'card' }) => {
+export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId, prompt, defaultExpanded = true, variant = 'card', onResolved }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
@@ -202,12 +208,16 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                 // Connection succeeded even if the follow-up list fetch fails.
             }
         }
-        dispatch(dfActions.resolveConnectorForm({
-            messageId,
-            status: 'connected',
+        const resolution = {
+            status: 'connected' as const,
             connectorId: cid ?? undefined,
             connectionName: resolvedName,
-        }));
+        };
+        if (onResolved) {
+            onResolved(resolution);
+        } else {
+            dispatch(dfActions.resolveConnectorForm({ messageId, ...resolution }));
+        }
         // Make the new source show up in the data-source sidebar.
         dispatch(dfActions.requestConnectorRefresh());
         dispatch(dfActions.addMessages({
@@ -221,24 +231,26 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
         // source and give a comprehensive overview). Sent as a hidden trigger —
         // it is part of the agent's context but never shown as a user bubble;
         // the agent's reply is visible (design 38 §7).
-        dispatch(dfActions.setDataLoadingChatPending({
-            text: t('chatConnector.connectedAgentTrigger', {
-                name: resolvedName,
-                type: sourceType,
-                defaultValue:
-                    'I just connected a new data source "{{name}}" (type: {{type}}). '
-                    + 'Browse it and give me a concise but comprehensive overview: what '
-                    + 'databases/schemas it contains, the notable tables in each (with a '
-                    + 'one-line hint of what they hold and their approximate size where '
-                    + 'known), and any groupings or themes you notice. Then suggest a '
-                    + 'couple of good starting points and ask what I would like to '
-                    + 'explore or load.',
-            }),
-            images: [],
-            attachments: [],
-            hidden: true,
-        }));
-    }, [messageId, meta, sourceType, dispatch, t]);
+        if (!onResolved) {
+            dispatch(dfActions.setDataLoadingChatPending({
+                text: t('chatConnector.connectedAgentTrigger', {
+                    name: resolvedName,
+                    type: sourceType,
+                    defaultValue:
+                        'I just connected a new data source "{{name}}" (type: {{type}}). '
+                        + 'Browse it and give me a concise but comprehensive overview: what '
+                        + 'databases/schemas it contains, the notable tables in each (with a '
+                        + 'one-line hint of what they hold and their approximate size where '
+                        + 'known), and any groupings or themes you notice. Then suggest a '
+                        + 'couple of good starting points and ask what I would like to '
+                        + 'explore or load.',
+                }),
+                images: [],
+                attachments: [],
+                hidden: true,
+            }));
+        }
+    }, [messageId, meta, sourceType, dispatch, t, onResolved]);
 
     const cardSx = {
         mt: 1,
@@ -268,7 +280,8 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
             authMode={meta.auth_mode}
             authPaths={meta.auth_paths}
             compact
-            hideInstructions
+            comfortableSpacing={isBare}
+            hideInstructions={!isBare}
             onImport={() => {}}
             onFinish={(status, message) => {
                 dispatch(dfActions.addMessages({

@@ -185,7 +185,7 @@ async function _doFetch(
         headers.set('X-Identity-Id', namespacedIdentity);
 
         const workspaceId = await getActiveWorkspaceId();
-        if (workspaceId) {
+        if (workspaceId && !headers.has('X-Workspace-Id')) {
             headers.set('X-Workspace-Id', workspaceId);
         }
 

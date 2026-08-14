@@ -38,3 +38,12 @@ export const invalidateInputTablePreview = (tableId: string): void => {
 };
 
 export const clearInputTablePreviewCache = (): void => previewCache.clear();
+
+export const replaceInputTablePreviews = (
+    previews: Array<{ table: InputTable; rows: Record<string, unknown>[]; fetchedAt?: number }>,
+): void => {
+    previewCache.clear();
+    for (const { table, rows, fetchedAt } of previews) {
+        setInputTablePreview(table, rows, fetchedAt);
+    }
+};

@@ -19,66 +19,12 @@ from data_formulator.agents.agent_utils import (
     _format_import_options,
 )
 from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
+from data_formulator.data_operations.discovery import ensure_no_auth_catalogs_cached
 
 logger = logging.getLogger(__name__)
 
 TABLE_SAMPLE_MAX_ROWS = 5
 TABLE_SAMPLE_CHAR_LIMIT = 1000
-
-
-def _ensure_no_auth_catalogs_cached(user_home: Any) -> None:
-    """Populate the disk catalog cache for any admin connector that has no
-    required auth parameters and isn't cached yet.
-
-    Used to surface zero-config admin connectors (notably the built-in
-    ``sample_datasets`` connector) to the agent's search/read tools on
-    first use, without requiring an explicit "Connect" step in the UI.
-    Silent on failure — auth-gated connectors will simply remain
-    un-synced until the user provides credentials through the normal
-    flow.
-    """
-    if not user_home:
-        return
-    try:
-        from pathlib import Path
-        from data_formulator.data_connector import (
-            DATA_CONNECTORS,
-            _ADMIN_CONNECTOR_IDS,
-        )
-        from data_formulator.datalake.catalog_cache import save_catalog
-
-        cache_dir = Path(user_home) / "catalog_cache"
-        for source_id in list(_ADMIN_CONNECTOR_IDS):
-            cache_path = cache_dir / f"{source_id}.json"
-            if cache_path.exists():
-                continue
-            connector = DATA_CONNECTORS.get(source_id)
-            if not connector:
-                continue
-            loader_class = connector._loader_class
-            try:
-                params = loader_class.list_params()
-            except Exception:
-                continue
-            # Only auto-sync if no params are required (true no-auth case)
-            if any(p.get("required") for p in params):
-                continue
-            try:
-                loader = loader_class(connector._default_params or {})
-                if not loader.test_connection():
-                    continue
-                tables = loader.sync_catalog_metadata()
-                save_catalog(Path(user_home), source_id, tables)
-                logger.info(
-                    "Auto-synced catalog for '%s' (%d tables)",
-                    source_id, len(tables),
-                )
-            except Exception:
-                logger.debug(
-                    "Auto-sync failed for '%s'", source_id, exc_info=True,
-                )
-    except Exception:
-        logger.debug("Catalog auto-sync setup failed", exc_info=True)
 
 
 def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, str]]:
@@ -430,7 +376,7 @@ def handle_read_catalog_metadata(
         return "Cannot read catalog metadata: user home not available."
 
     # Surface zero-config admin connectors (e.g. sample_datasets) on first use.
-    _ensure_no_auth_catalogs_cached(user_home)
+    ensure_no_auth_catalogs_cached(user_home)
 
     from pathlib import Path
     from data_formulator.datalake.catalog_cache import load_catalog

@@ -33,6 +33,7 @@ import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
+import dfLogo from '../assets/df-logo.svg';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
@@ -576,7 +577,7 @@ let SingleThreadGroupView: FC<{
             if (!turn) return undefined;
             // A data-operation turn replaces the canvas, so no table is the
             // canvas subject; other turns leave the chart/table canvas up.
-            if (turn.dataOperation) return undefined;
+            if (turn.dataOperation || turn.form) return undefined;
             if (turn.sourceChartId) {
                 const chart = charts.find(c => c.id === turn.sourceChartId);
                 if (chart?.tableRef) return chart.tableRef;
@@ -1259,7 +1260,12 @@ let SingleThreadGroupView: FC<{
     const buildTextTurnTimelineItem = (turn: TextTurn, highlighted: boolean, showPrompt: boolean) => {
         const isFocused = focusedId?.type === 'text' && focusedId.textId === turn.id;
         const rowHL = highlighted || isFocused;
-        const preview = (turn.content || '')
+        const formStatus = turn.form?.kind === 'connector'
+            ? (turn.form.connector.status === 'connected'
+                ? `Connected to ${turn.form.connector.connectionName || turn.form.connector.sourceType}`
+                : turn.form.title)
+            : undefined;
+        const preview = (formStatus || turn.content || '')
             .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
         // Once answered, the turn is history: it drops its card chrome and reads
         // as muted agent prose so the thread foregrounds what it produced.
@@ -1275,11 +1281,14 @@ let SingleThreadGroupView: FC<{
             || draftNodes.some(draft => draft.parentNodeId === turn.id);
         // Every turn is an agent remark, so its glyph sits ON the spine like any
         // other entry, while the card keeps the exchange readable as one unit.
-        const awaitingAnswer = !turn.answered && (turn.options?.length ?? 0) > 0;
-        const gutterIcon = getEntryGutterIcon(
-            { from: 'data-agent', to: 'user', role: turn.textKind, content: '' },
-            rowHL ? theme.palette.text.secondary : 'rgba(0,0,0,0.15)',
-        );
+        const awaitingAnswer = !turn.answered && ((turn.options?.length ?? 0) > 0 || !!turn.form);
+        const iconColor = rowHL ? theme.palette.text.secondary : 'rgba(0,0,0,0.15)';
+        const gutterIcon = turn.form
+            ? <AttachFileIcon sx={{ width: 14, height: 14, color: iconColor }} />
+            : getEntryGutterIcon(
+                { from: 'data-agent', to: 'user', role: turn.textKind, content: '' },
+                iconColor,
+            );
         const card = (
             <Card className={`data-thread-card ${isFocused ? 'selected-card' : ''}`} elevation={0}
                 sx={{
@@ -3311,7 +3320,17 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     ) : (
         // A session can open before any data exists (the agent loads it), so
         // say so rather than leaving the panel blank.
-        <Box sx={{ direction: 'ltr', boxSizing: 'border-box', px: 2, py: 3, width: panelWidth }}>
+        <Box sx={{
+            direction: 'ltr',
+            boxSizing: 'border-box',
+            px: 2,
+            width: panelWidth,
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+        }}>
             {workPending ? (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
@@ -3320,9 +3339,23 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                     </Typography>
                 </Box>
             ) : (
-                <Typography variant="body2" sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>
-                    {t('dataThread.emptySession')}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, maxWidth: 560, textAlign: 'left' }}>
+                    <Box
+                        component="img"
+                        src={dfLogo}
+                        alt=""
+                        aria-hidden="true"
+                        sx={{ width: 32, height: 30, opacity: 0.82, flexShrink: 0 }}
+                    />
+                    <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.4, fontWeight: 600, color: 'text.primary' }}>
+                            {t('dataThread.emptySessionTitle')}
+                        </Typography>
+                        <Typography variant="body2" sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary' }}>
+                            {t('dataThread.emptySession')}
+                        </Typography>
+                    </Box>
+                </Box>
             )}
         </Box>
     );

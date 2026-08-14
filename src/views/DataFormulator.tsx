@@ -25,7 +25,6 @@ import {
     useTheme,
     useMediaQuery,
     alpha,
-    CircularProgress,
     Backdrop,
     Link,
     Select,
@@ -39,6 +38,7 @@ import { borderColor, radius, transition } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
+import { AnvilLoader } from '../components/AnvilLoader';
 
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
@@ -66,7 +66,7 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { AppDispatch, store } from '../app/store';
 import { generateUUID } from '../app/identity';
@@ -190,14 +190,21 @@ export const DataFormulatorFC = ({ }) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
         try {
             const result = await loadWorkspace(name);
-            if (result && Object.keys(result.state).length > 0) {
+            if (result) {
                 const displayName = metaDisplayName || result.displayName;
                 dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName, readOnly: result.readOnly } }));
             } else {
-                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error', component: 'workspace',
+                    value: t('workspace.failedToOpenWorkspace'),
+                }));
             }
-        } catch {
-            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
+        } catch (error) {
+            if (error instanceof WorkspaceLoadSupersededError) return;
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error', component: 'workspace',
+                value: t('workspace.failedToOpenWorkspace'),
+            }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
     }, [dispatch]);
@@ -1146,18 +1153,21 @@ export const DataFormulatorFC = ({ }) => {
                         gap: 2,
                     }}
                 >
-                    <CircularProgress size={40} />
-                    <Typography variant="body1" color="text.secondary">
-                        {sessionLoadingLabel || t('session.loadingSessions')}
-                    </Typography>
-                    <Button
-                        variant="text"
-                        size="small"
-                        onClick={() => dispatch(dfActions.setSessionLoading({ loading: false }))}
-                        sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
-                    >
-                        {t('app.cancel')}
-                    </Button>
+                    <AnvilLoader
+                        height="100%"
+                        label={sessionLoadingLabel || t('session.loadingSessions')}
+                        action={(
+                            <Button
+                                variant="text"
+                                size="small"
+                                onClick={() => dispatch(dfActions.setSessionLoading({ loading: false }))}
+                                sx={{ minWidth: 0, px: 0.5, textTransform: 'none', color: 'text.secondary' }}
+                            >
+                                {t('app.cancel')}
+                            </Button>
+                        )}
+                        sx={{ width: '100%' }}
+                    />
                 </Backdrop>
                 {selectedModelId == undefined && (
                     <Box sx={{

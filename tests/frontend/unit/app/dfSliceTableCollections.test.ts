@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dataFormulatorReducer,
   dfActions,
+  dfSelectors,
   fetchFieldSemanticType,
 } from "../../../../src/app/dfSlice";
 
@@ -300,6 +301,45 @@ describe("split table collections", () => {
     expect(state.draftNodes[0].parentNodeId).toBe("orders");
   });
 
+  it("removes a terminal response's paired follow-up question", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-parent",
+        displayId: "Parent response",
+        textKind: "explain",
+        content: "How can I help?",
+        parentNodeId: "root",
+        answered: true,
+        answer: "Tell me more",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-child",
+        displayId: "Child response",
+        textKind: "explain",
+        content: "Here is more detail.",
+        parentNodeId: "textTurn-parent",
+        createdAt: 2,
+      })
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeTextTurn("textTurn-child"));
+
+    expect(state.textTurns).toEqual([
+      expect.objectContaining({
+        id: "textTurn-parent",
+        answered: false,
+      }),
+    ]);
+    expect(state.textTurns[0]).not.toHaveProperty("answer");
+  });
+
   it("removes loaded-table references with their shelf table", () => {
     let state = dataFormulatorReducer(
       undefined,
@@ -360,5 +400,34 @@ describe("split table collections", () => {
     expect(state.textTurns[0].parentNodeId).toBe("orders");
     expect(state.draftNodes[0].parentNodeId).toBe("orders");
     expect(state.draftNodes[0].derive.trigger.tableId).toBe("orders");
+  });
+});
+
+describe("text artifact canvas ownership", () => {
+  it.each([
+    ["form", { form: { kind: "connector", title: "Connect", connector: { sourceType: "kusto", status: "pending" } } }],
+    ["data operation", { dataOperation: { id: "operation-1", plans: [] } }],
+  ])("keeps a parent %s open for a follow-up explanation", (_label, artifact) => {
+    const state = {
+      ...dataFormulatorReducer(undefined, { type: "test/init" }),
+      focusedId: { type: "text", textId: "explanation-1" },
+      textTurns: [
+        {
+          kind: "text", id: "artifact-1", displayId: "artifact-1",
+          textKind: "explain", content: "Artifact", parentNodeId: "root",
+          createdAt: 1, ...artifact,
+        },
+        {
+          kind: "text", id: "explanation-1", displayId: "explanation-1",
+          textKind: "explain", content: "Follow-up", parentNodeId: "artifact-1",
+          createdAt: 2,
+        },
+      ],
+    };
+
+    expect(dfSelectors.selectCanvasTarget(state as any)).toEqual({
+      type: "text",
+      textId: "artifact-1",
+    });
   });
 });

@@ -1040,6 +1040,54 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         };
 
         const processStreamingResult = async (result: any) => {
+            if (result.type === "interact" && result.form) {
+                if (result.form.kind !== 'connector') {
+                    throw new Error(`Unsupported form artifact kind: ${String(result.form.kind)}`);
+                }
+                const sourceType = String(result.form.connector?.source_type || '').trim();
+                if (!sourceType) {
+                    throw new Error('Connector form artifact requires source_type');
+                }
+                const turnId = `textTurn_${actionId}_${String(Date.now())}`;
+                const firstEntry = currentDraftInteraction[0];
+                dispatch(dfActions.addTextTurn({
+                    kind: 'text',
+                    id: turnId,
+                    displayId: turnId,
+                    textKind: 'explain',
+                    content: String(result.form.response || result.form.title || `Connect to ${sourceType}`),
+                    ...(!runIsContinuationRef.current && firstEntry?.role === 'prompt'
+                        ? { prompt: firstEntry.displayContent || firstEntry.content }
+                        : {}),
+                    form: {
+                        kind: 'connector',
+                        title: String(result.form.title || `Connect to ${sourceType}`),
+                        connector: {
+                            sourceType,
+                            prefilled: result.form.connector?.prefilled || {},
+                            status: 'pending',
+                        },
+                    },
+                    parentNodeId: runLastNodeRef.current || askedFromTable || focusedTableId || ROOTLESS_THREAD_ID,
+                    ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
+                    actionId,
+                    createdAt: Date.now(),
+                }));
+                runLastNodeRef.current = turnId;
+                dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
+                if (currentDraftId) {
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                    currentDraftId = null;
+                }
+                setIsChatFormulating(false);
+                agentAbortRef.current = null;
+                clearTimeout(timeoutId);
+                setChatPrompt("");
+                setAttachedImages([]);
+                setAttachedFiles([]);
+                isCompleted = true;
+                return;
+            }
             // ── interact: the unified agent's clarify/explain pause ──
             // Alias to the legacy clarify path (same questions[] shape + the
             // backend now stamps trajectory/completed_step_count for resume).
@@ -1949,17 +1997,26 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (focusedTextTurn) { setClarifyAnswers({}); textTurnSubmittedRef.current = null; }
     }, [focusedTextTurn?.id]);
 
-    // Close a focused text turn → hand focus to whatever the canvas is already
-    // showing for it (its nearest artifact), keeping the node in the thread.
-    // Deriving it here separately let the two drift: the canvas resolved to the
-    // chart while this landed on the table, or on nothing at all.
+    // Close a focused turn without deleting it: return to its source chart or
+    // nearest parent artifact. Root-level turns explicitly clear focus so the
+    // canvas returns to its empty state.
     const closeTextTurn = useCallback(() => {
-        if (canvasTarget && canvasTarget.type !== 'text') {
-            dispatch(dfActions.setFocused(canvasTarget));
+        if (!focusedTextTurn) return;
+        if (focusedTextTurn.sourceChartId && charts.some(chart => chart.id === focusedTextTurn.sourceChartId)) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedTextTurn.sourceChartId }));
             return;
         }
-        switchFocusToPreviousChart();
-    }, [canvasTarget, dispatch, switchFocusToPreviousChart]);
+        const parentTableId = resolveNodeTable(focusedTextTurn.parentNodeId, textTurns, tables);
+        if (parentTableId) {
+            const tableCharts = charts.filter(chart => chart.tableRef === parentTableId);
+            const nearestChart = tableCharts[tableCharts.length - 1];
+            dispatch(dfActions.setFocused(nearestChart
+                ? { type: 'chart', chartId: nearestChart.id }
+                : { type: 'table', tableId: parentTableId }));
+            return;
+        }
+        dispatch(dfActions.setFocused(undefined));
+    }, [charts, dispatch, focusedTextTurn, tables, textTurns]);
 
     // Answer a focused clarify turn. Resumes the run iff the turn carries the
     // backend's opaque resume token (§12); otherwise a fresh turn. The turn stays
@@ -2548,6 +2605,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // so the pending question isn't lost. Clicks on a thread card
                 // switch focus normally, so ignore those here.
                 if (!focusedTextTurn) return;
+                // A form turn owns the canvas. Interacting with any field or
+                // control there must keep both the form and its feedback open;
+                // only either surface's explicit close button dismisses it.
+                if (focusedTextTurn.form) return;
                 const isActiveClarify = focusedTextTurn.textKind === 'clarify'
                     && !focusedTextTurn.answered
                     && (focusedTextTurn.options?.length ?? 0) > 0;

@@ -95,7 +95,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls } from './utils';
 import { apiRequest } from './apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged } from './workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged, WorkspaceLoadSupersededError } from './workspaceService';
 import { getSerializableState } from './useAutoSave';
 import store, { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
@@ -500,6 +500,10 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
             }
         } catch (e) {
+            if (e instanceof WorkspaceLoadSupersededError) {
+                setLoading(false);
+                return;
+            }
             dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
         }
         setLoading(false);

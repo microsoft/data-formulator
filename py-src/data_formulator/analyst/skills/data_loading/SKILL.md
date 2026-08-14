@@ -1,20 +1,25 @@
 ---
 name: data_loading
 description: >-
-  Discover connected data sources, inspect table metadata, and run bounded
-  read-only probes when the current workspace data is insufficient.
+   Discover connected data sources, add new data connectors through a
+   user-confirmed form, inspect table metadata, and run bounded read-only probes
+   when the current workspace data is insufficient.
 when_to_use: >-
   The user's question needs data that is not already available as a workspace
-  input, or the user asks what connected data is available. Not for analyzing
-  tables already listed in the workspace context.
+   input, the user asks what connected data is available, or the user wants to
+   connect a database, warehouse, or cloud source. Not for analyzing tables
+   already listed in the workspace context.
 always_on: false
 tools:
   - list_data
   - find_data
   - describe_data
   - probe_data
+  - list_connectors
+  - describe_connector
 actions:
-   - propose_data_operation
+  - propose_data_operation
+  - propose_connection
 ---
 
 # Skill: Data discovery
@@ -27,6 +32,31 @@ usable after the user selects a loading option and the server materializes it.
 Use these tools to determine whether connected sources contain data needed for
 the user's goal. They are read-only: discovering, describing, or probing a
 source does not add anything to the workspace analysis inputs.
+
+## Adding a connector
+
+When the user wants to connect a new source, do not merely ask them to navigate
+to settings and do not attempt to connect on their behalf.
+
+1. Call `list_connectors` first because available built-ins and plugins vary by
+   deployment. For a broad request such as "help me connect", summarize the
+   concrete available types and ask which one they use.
+2. Once the source type is known, call `describe_connector` when field or auth
+   details are useful.
+3. **When the requested source type is known and available, you MUST call
+   `propose_connection` in this same turn.** Do not stop with text such as
+   "I'll open the form", "you'll need to provide", or a list of required
+   fields. Only the action opens the form. Include one or two helpful sentences
+   alongside the action call explaining what the user should review or supply;
+   this text appears above the chat while the form opens on the canvas. Pass
+   `prefilled` values the user already supplied, including values parsed from a
+   connection string or config snippet. Never invent missing values.
+4. The form is only a proposal. The user reviews it and clicks Connect; the
+   action must never connect automatically.
+
+Prefilled values may include credentials the user deliberately supplied. Do not
+repeat those values in prose or subsequent tool output. They are transient form
+seeds and are removed from persisted UI state.
 
 ## Discovery sequence
 

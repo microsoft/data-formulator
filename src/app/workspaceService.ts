@@ -11,7 +11,7 @@
 import { fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
-import { clearInputTablePreviewCache, INPUT_TABLE_PREVIEW_ROW_LIMIT, setInputTablePreview } from './inputTablePreviewCache';
+import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
 import { migrateState } from './stateMigrations';
 import { workspaceTableIdOf } from './tableResolution';
 import type { InputTable } from '../components/ComponentType';
@@ -80,22 +80,46 @@ function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
-async function hydrateInputTablePreviews(state: Record<string, any>): Promise<void> {
-    clearInputTablePreviewCache();
+type PreparedInputTablePreview = {
+    table: InputTable;
+    rows: Record<string, unknown>[];
+};
+
+let workspaceLoadGeneration = 0;
+
+export class WorkspaceLoadSupersededError extends Error {
+    readonly name = 'WorkspaceLoadSupersededError';
+}
+
+function assertCurrentWorkspaceLoad(generation: number): void {
+    if (generation !== workspaceLoadGeneration) {
+        throw new WorkspaceLoadSupersededError('A newer workspace load has started');
+    }
+}
+
+async function prepareInputTablePreviews(
+    state: Record<string, any>,
+    workspaceId: string,
+): Promise<PreparedInputTablePreview[]> {
     const inputTables = (state.inputTables || []) as InputTable[];
-    await Promise.all(inputTables.map(async table => {
+    const previews = await Promise.all(inputTables.map(async table => {
         const workspaceTableId = workspaceTableIdOf(table);
         try {
             const { data } = await apiRequest<{ rows: Record<string, unknown>[] }>(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Workspace-Id': workspaceId,
+                },
                 body: JSON.stringify({ table: workspaceTableId, size: INPUT_TABLE_PREVIEW_ROW_LIMIT }),
             });
-            setInputTablePreview(table, data.rows || []);
+            return { table, rows: data.rows || [] };
         } catch (error) {
             console.warn(`Failed to hydrate preview for ${table.id}:`, error);
+            return null;
         }
     }));
+    return previews.filter((preview): preview is PreparedInputTablePreview => preview !== null);
 }
 
 // ── Workspace CRUD ──────────────────────────────────────────────────────
@@ -123,7 +147,9 @@ export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
 
 /** Load a workspace's saved state. Returns null if not found. */
 export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean } | null> {
+    const generation = ++workspaceLoadGeneration;
     const ephemeral = await isEphemeralBackend();
+    assertCurrentWorkspaceLoad(generation);
     try {
         const { data } = await apiRequest(getUrls().SESSION_LOAD, {
             method: 'POST',
@@ -132,7 +158,9 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         });
         if (!data.state) return null;
         const state = migrateState(data.state);
-        await hydrateInputTablePreviews(state);
+        const previews = await prepareInputTablePreviews(state, id);
+        assertCurrentWorkspaceLoad(generation);
+        replaceInputTablePreviews(previews);
         const savedWs = state.activeWorkspace;
         const displayName = savedWs?.displayName || id;
         if (ephemeral) {
@@ -140,11 +168,15 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         }
         return { state, displayName, readOnly: false };
     } catch (error) {
+        if (error instanceof WorkspaceLoadSupersededError) throw error;
+        assertCurrentWorkspaceLoad(generation);
         const unavailable = error instanceof ApiRequestError
             && ['WORKSPACE_EXPIRED', 'TABLE_NOT_FOUND'].includes(error.apiError.code);
         if (!ephemeral || !unavailable) throw error;
         const recovery = await workspaceDB.load(id);
         if (!recovery) return null;
+        assertCurrentWorkspaceLoad(generation);
+        replaceInputTablePreviews([]);
         return {
             state: createRecoveryState(migrateState(recovery.state)),
             displayName: recovery.displayName,

@@ -37,6 +37,7 @@ vi.mock('../../../../src/i18n', () => ({
 // ---- Imports (after mocks) -----------------------------------------------
 
 import { fetchWithIdentity } from '../../../../src/app/utils';
+import { store } from '../../../../src/app/store';
 import { getAccessToken, getUserManager } from '../../../../src/app/oidcConfig';
 
 // ---- Helpers -------------------------------------------------------------
@@ -90,6 +91,22 @@ describe('fetchWithIdentity', () => {
             const callArgs = (globalThis.fetch as Mock).mock.calls[0];
             const headers = callArgs[1].headers as Headers;
             expect(headers.get('X-Identity-Id')).toBe('browser:test-browser-id');
+        });
+
+        it('preserves an explicit workspace instead of the active workspace', async () => {
+            (store.getState as Mock).mockReturnValue({
+                identity: { type: 'browser', id: 'test-browser-id' },
+                activeWorkspace: { id: 'workspace-a', displayName: 'Workspace A' },
+                serverConfig: { WORKSPACE_BACKEND: 'local' },
+            });
+
+            await fetchWithIdentity('/api/test', {
+                headers: { 'X-Workspace-Id': 'workspace-b' },
+            });
+
+            const callArgs = (globalThis.fetch as Mock).mock.calls[0];
+            const headers = callArgs[1].headers as Headers;
+            expect(headers.get('X-Workspace-Id')).toBe('workspace-b');
         });
 
         it('should not modify headers for non-API URLs', async () => {

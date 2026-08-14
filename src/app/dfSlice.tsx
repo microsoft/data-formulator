@@ -2105,7 +2105,23 @@ export const dataFormulatorSlice = createSlice({
             const turnId = action.payload;
             const turn = state.textTurns.find(a => a.id === turnId);
             const wasFocused = state.focusedId?.type === 'text' && state.focusedId.textId === turnId;
+            const parentTurn = turn
+                ? state.textTurns.find(candidate => candidate.id === turn.parentNodeId)
+                : undefined;
+            const hasSiblingTurns = !!turn && state.textTurns.some(candidate =>
+                candidate.id !== turnId && candidate.parentNodeId === turn.parentNodeId);
+            const hasProducedArtifacts = !!turn && (
+                state.derivedTables.some(table => table.parentNodeId === turnId)
+                || state.loadedTableNodes.some(node => node.parentNodeId === turnId)
+                || state.draftNodes.some(draft => draft.parentNodeId === turnId)
+                || state.generatedReports.some(report => report.parentNodeId === turnId)
+                || state.textTurns.some(child => child.parentNodeId === turnId)
+            );
             state.textTurns = state.textTurns.filter(a => a.id !== turnId);
+            if (parentTurn?.answered && parentTurn.answer && !hasSiblingTurns && !hasProducedArtifacts) {
+                parentTurn.answered = false;
+                delete parentTurn.answer;
+            }
             if (turn) {
                 state.textTurns = state.textTurns.map(child =>
                     child.parentNodeId === turnId
@@ -2646,20 +2662,24 @@ export const dfSelectors = {
             if (focusedId?.type !== 'text') return focusedId;
             const art = textTurns.find(a => a.id === focusedId.textId);
             if (!art) return undefined;
-            if (art.dataOperation) return focusedId;
+            if (art.dataOperation || art.form) return focusedId;
             if (art.sourceChartId
                 && [...userCharts, ...triggerCharts].some(c => c.id === art.sourceChartId)) {
                 return { type: 'chart', chartId: art.sourceChartId };
             }
-            // No source chart: resolve the turn's thread position to the nearest
-            // artifact above it (design-docs/42) — that table's chart when it has
-            // one, since the chart is what the turn is talking about.
+            // Resolve the turn's thread position to the nearest canvas-owning
+            // artifact above it. Follow-up explanations keep a form or data
+            // preview visible while their own text opens over the chat.
             let cur: TextTurn | undefined = art;
             const seen = new Set<string>();
             while (cur && !seen.has(cur.id)) {
                 seen.add(cur.id);
                 const p: string | undefined = cur.parentNodeId;
                 if (!p) break;
+                const parentTurn = textTurns.find(tt => tt.id === p);
+                if (parentTurn?.dataOperation || parentTurn?.form) {
+                    return { type: 'text', textId: parentTurn.id };
+                }
                 if (tables.some(t => t.id === p)) {
                     // Charts render in `getAllCharts` order, so the last one on
                     // the table is the chart sitting just above this turn.
@@ -2667,7 +2687,7 @@ export const dfSelectors = {
                     const nearest = tableCharts[tableCharts.length - 1];
                     return nearest ? { type: 'chart', chartId: nearest.id } : { type: 'table', tableId: p };
                 }
-                cur = textTurns.find(tt => tt.id === p);
+                cur = parentTurn;
             }
             return undefined;
         },

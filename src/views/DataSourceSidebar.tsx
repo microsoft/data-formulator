@@ -71,7 +71,7 @@ import { apiRequest } from '../app/apiClient';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, updateWorkspaceMeta, onWorkspaceListChanged } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, updateWorkspaceMeta, onWorkspaceListChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
 
@@ -692,14 +692,21 @@ const DataSourceSidebarPanel: React.FC<{
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('sidebar.openingWorkspace') }));
         try {
             const result = await loadWorkspace(sessionId);
-            if (result && Object.keys(result.state).length > 0) {
+            if (result) {
                 const displayName = metaDisplayName || result.displayName;
                 dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName, readOnly: result.readOnly } }));
             } else {
-                dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: metaDisplayName || 'Untitled Session' }));
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error', component: 'workspace',
+                    value: t('workspace.failedToOpenWorkspace'),
+                }));
             }
-        } catch {
-            dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: metaDisplayName || 'Untitled Session' }));
+        } catch (error) {
+            if (error instanceof WorkspaceLoadSupersededError) return;
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error', component: 'workspace',
+                value: t('workspace.failedToOpenWorkspace'),
+            }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
     }, [dispatch]);
@@ -2241,12 +2248,7 @@ const DataSourceSidebarPanel: React.FC<{
                 }}>
                     <Box
                         onClick={() => {
-                            const now = new Date();
-                            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-                            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                            const short = generateUUID().slice(0, 4);
-                            const wsId = `session_${date}_${time}_${short}`;
-                            dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
+                            dispatch(dfActions.resetState());
                         }}
                         sx={{
                             display: 'flex',

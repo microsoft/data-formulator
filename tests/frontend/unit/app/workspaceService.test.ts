@@ -22,7 +22,8 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaces, loadWorkspace, saveWorkspaceState } from '../../../../src/app/workspaceService';
+import { listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError } from '../../../../src/app/workspaceService';
+import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
 beforeEach(() => {
     vi.restoreAllMocks();
@@ -104,5 +105,57 @@ describe('local workspace parity', () => {
 
         expect(requestSpy).toHaveBeenCalledOnce();
         expect(recoverySaveSpy).not.toHaveBeenCalled();
+    });
+
+    it('hydrates previews against the workspace being loaded', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        mockState.activeWorkspace = { id: 'workspace-a', displayName: 'Workspace A' };
+        const inputTable = {
+            kind: 'input-table',
+            id: 'sales',
+            displayId: 'Sales',
+            source: { kind: 'workspace', tableId: 'sales_data' },
+            snapshot: { columns: [], rowCount: 1, capturedAt: 1 },
+            description: '',
+            addedAt: 1,
+        } as const;
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockImplementation(async (url: string, options?: RequestInit) => {
+                if (url === '/api/sessions/load') {
+                    return { data: { state: { inputTables: [inputTable] } } };
+                }
+                if (url === '/api/tables/sample-table') {
+                    return { data: { rows: [{ amount: 42 }] } };
+                }
+                throw new Error(`Unexpected URL: ${url}`);
+            });
+
+        await loadWorkspace('workspace-b');
+
+        const sampleCall = requestSpy.mock.calls.find(([url]) => url === '/api/tables/sample-table');
+        expect(new Headers(sampleCall?.[1]?.headers).get('X-Workspace-Id')).toBe('workspace-b');
+        expect(getInputTablePreview(inputTable as any)?.rows).toEqual([{ amount: 42 }]);
+    });
+
+    it('rejects a load superseded by a newer workspace switch', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        let resolveFirstLoad!: (value: { data: { state: Record<string, unknown> } }) => void;
+        const firstLoadResponse = new Promise<{ data: { state: Record<string, unknown> } }>(resolve => {
+            resolveFirstLoad = resolve;
+        });
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockImplementation(async (_url: string, options?: RequestInit) => {
+                const workspaceId = JSON.parse(String(options?.body)).id;
+                if (workspaceId === 'workspace-b') return firstLoadResponse;
+                return { data: { state: { inputTables: [] } } };
+            });
+
+        const firstLoad = loadWorkspace('workspace-b');
+        await vi.waitFor(() => expect(requestSpy).toHaveBeenCalledOnce());
+        const secondLoad = loadWorkspace('workspace-c');
+        await expect(secondLoad).resolves.toMatchObject({ readOnly: false });
+        resolveFirstLoad({ data: { state: { inputTables: [] } } });
+
+        await expect(firstLoad).rejects.toBeInstanceOf(WorkspaceLoadSupersededError);
     });
 });

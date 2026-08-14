@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -24,6 +25,8 @@ from data_formulator.datalake.catalog_cache import (
     delete_catalog,
     list_cached_sources,
     load_catalog,
+    load_catalog_snapshot,
+    record_catalog_refresh_failure,
     save_catalog,
     search_catalog_cache,
     _search_python,
@@ -105,6 +108,95 @@ class TestSaveLoadCatalog:
         loaded = load_catalog(tmp_path, "mysql:prod/db")
         assert loaded is not None
         assert len(loaded) == 2
+
+    def test_legacy_synced_at_populates_both_freshness_clocks(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "catalog_cache"
+        cache_dir.mkdir()
+        synced_at = "2026-01-01T00:00:00Z"
+        (cache_dir / "legacy.json").write_text(json.dumps({
+            "source_id": "legacy",
+            "synced_at": synced_at,
+            "tables": SAMPLE_TABLES,
+        }), encoding="utf-8")
+
+        snapshot = load_catalog_snapshot(
+            tmp_path,
+            "legacy",
+            listing_ttl_seconds=60,
+            metadata_ttl_seconds=60,
+            now=datetime(2026, 1, 1, 0, 0, 30, tzinfo=timezone.utc),
+        )
+
+        assert snapshot is not None
+        assert snapshot.listing_refreshed_at == synced_at
+        assert snapshot.metadata_refreshed_at == synced_at
+        assert snapshot.listing_freshness == "fresh"
+        assert snapshot.metadata_freshness == "fresh"
+
+    def test_listing_and_metadata_have_independent_freshness(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "src1", SAMPLE_TABLES)
+        path = tmp_path / "catalog_cache" / "src1.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        now = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        data["listing_refreshed_at"] = (now - timedelta(seconds=30)).isoformat()
+        data["metadata_refreshed_at"] = (now - timedelta(hours=2)).isoformat()
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        snapshot = load_catalog_snapshot(
+            tmp_path,
+            "src1",
+            listing_ttl_seconds=60,
+            metadata_ttl_seconds=60,
+            now=now,
+        )
+
+        assert snapshot is not None
+        assert snapshot.listing_freshness == "fresh"
+        assert snapshot.metadata_freshness == "stale"
+
+    def test_listing_refresh_preserves_enriched_metadata(self, tmp_path: Path) -> None:
+        rich = [{
+            "name": "public.orders",
+            "path": ["public", "orders"],
+            "table_key": "orders-key",
+            "metadata": {"description": "Orders", "columns": [{"name": "id"}]},
+        }]
+        save_catalog(tmp_path, "src1", rich)
+        save_catalog(tmp_path, "src1", [{
+            "name": "public.orders",
+            "path": ["public", "orders"],
+            "table_key": "orders-key",
+            "metadata": {"row_count": 10},
+        }], refresh_kind="listing")
+
+        loaded = load_catalog(tmp_path, "src1")
+        assert loaded is not None
+        assert loaded[0]["metadata"] == {
+            "description": "Orders",
+            "columns": [{"name": "id"}],
+            "row_count": 10,
+        }
+
+    def test_refresh_failure_preserves_last_good_tables(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "src1", SAMPLE_TABLES)
+        record_catalog_refresh_failure(tmp_path, "src1", "connection timed out")
+
+        assert load_catalog(tmp_path, "src1") == SAMPLE_TABLES
+        snapshot = load_catalog_snapshot(
+            tmp_path, "src1", listing_ttl_seconds=60, metadata_ttl_seconds=60,
+        )
+        assert snapshot is not None
+        assert snapshot.refresh_status == "failed"
+        assert snapshot.last_refresh_error == "connection timed out"
+
+    def test_atomic_replace_failure_preserves_existing_catalog(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "src1", [{"name": "old_table"}])
+
+        with patch("data_formulator.datalake.catalog_cache.os.replace", side_effect=OSError):
+            save_catalog(tmp_path, "src1", [{"name": "new_table"}])
+
+        assert load_catalog(tmp_path, "src1") == [{"name": "old_table"}]
+        assert list((tmp_path / "catalog_cache").glob("*.tmp")) == []
 
 
 # ==================================================================

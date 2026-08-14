@@ -44,6 +44,41 @@ STANDALONE_PROBE_GUIDANCE = ProbeGuidance(
 )
 
 
+def ensure_catalogs_current(user_home: Any) -> dict[str, Any]:
+    """Apply source policies and return current snapshots, including stale ones."""
+    if not user_home:
+        return {}
+    snapshots: dict[str, Any] = {}
+    try:
+        from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
+        from data_formulator.datalake.catalog_cache import list_cached_sources
+        from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
+
+        source_ids = set(list_cached_sources(user_home)) | set(_ADMIN_CONNECTOR_IDS)
+        for source_id in source_ids:
+            snapshot = ensure_catalog_freshness(Path(user_home), source_id)
+            if snapshot is not None:
+                snapshots[source_id] = snapshot
+    except Exception:
+        logger.debug("Catalog freshness setup failed", exc_info=True)
+    return snapshots
+
+
+def ensure_no_auth_catalogs_cached(user_home: Any) -> None:
+    """Backward-compatible alias for callers migrated from catalog bootstrap."""
+    ensure_catalogs_current(user_home)
+
+
+def _freshness_payload(snapshot: Any) -> dict[str, Any]:
+    return {
+        "listing": snapshot.listing_freshness,
+        "metadata": snapshot.metadata_freshness,
+        "listing_age_seconds": snapshot.listing_age_seconds,
+        "metadata_age_seconds": snapshot.metadata_age_seconds,
+        "last_refresh_error": snapshot.last_refresh_error,
+    }
+
+
 class DataDiscoveryService:
     """Read-only catalog discovery shared by data-loading entry points."""
 
@@ -59,6 +94,7 @@ class DataDiscoveryService:
         user_home = getattr(self.workspace, "user_home", None)
         if not user_home:
             return {"sources": []}
+        snapshots = ensure_catalogs_current(user_home)
 
         source_id = (args.get("source_id") or "").strip()
         if not source_id:
@@ -73,6 +109,12 @@ class DataDiscoveryService:
                 from data_formulator.data_connector import connector_is_available
                 for source in sources:
                     sid = source.get("source_id") or source.get("id")
+                    if sid in snapshots and (
+                        snapshots[sid].listing_freshness != "fresh"
+                        or snapshots[sid].metadata_freshness != "fresh"
+                        or snapshots[sid].last_refresh_error
+                    ):
+                        source["freshness"] = _freshness_payload(snapshots[sid])
                     if sid and connector_is_available(sid) is False:
                         source["connected"] = False
             except Exception:
@@ -84,12 +126,15 @@ class DataDiscoveryService:
             return {"error": "path must be an array of strings"}
 
         try:
-            return list_path_children(
+            result = list_path_children(
                 user_home,
                 source_id,
                 path=path,
                 filter=args.get("filter"),
             )
+            if source_id in snapshots:
+                result["freshness"] = _freshness_payload(snapshots[source_id])
+            return result
         except Exception as exc:
             logger.debug("list_data: list_path_children failed", exc_info=True)
             return {"error": f"list_data failed: {exc}"}
@@ -133,6 +178,7 @@ class DataDiscoveryService:
             source_ids = [scope_raw]
 
         user_home = getattr(self.workspace, "user_home", None)
+        snapshots = ensure_catalogs_current(user_home)
         results: list[dict[str, Any]] = []
 
         if search_workspace:
@@ -186,13 +232,25 @@ class DataDiscoveryService:
             return {
                 "results": [],
                 "valid_source_ids": known,
+                "catalog_freshness": {
+                    source_id: _freshness_payload(snapshot)
+                    for source_id, snapshot in snapshots.items()
+                },
                 "note": (
                     f"No tables matched query={query!r} scope={scope_raw!r}. "
                     "Try a broader pattern, alternation (a|b), or list_data to browse."
                 ),
             }
 
-        return {"results": results[:limit], "query": query, "scope": scope_raw}
+        return {
+            "results": results[:limit],
+            "query": query,
+            "scope": scope_raw,
+            "catalog_freshness": {
+                source_id: _freshness_payload(snapshot)
+                for source_id, snapshot in snapshots.items()
+            },
+        }
 
     def describe_data(self, args: dict[str, Any]) -> dict[str, Any]:
         from data_formulator.agents.context import handle_read_catalog_metadata

@@ -33,6 +33,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class CatalogCachePolicy:
+    listing_ttl_seconds: int | None = 21_600
+    metadata_ttl_seconds: int | None = 86_400
+    refresh_cost: str = "expensive"
+    automatic_refresh: str = "never"
+    automatic_refresh_kind: str = "listing"
+    minimum_retry_seconds: int = 300
+
+    def __post_init__(self) -> None:
+        if self.refresh_cost not in {"local", "free", "cheap", "moderate", "expensive"}:
+            raise ValueError(f"Unsupported catalog refresh cost: {self.refresh_cost}")
+        if self.automatic_refresh not in {"always", "while_connected", "never"}:
+            raise ValueError(f"Unsupported automatic catalog refresh mode: {self.automatic_refresh}")
+        if self.automatic_refresh_kind not in {"listing", "full"}:
+            raise ValueError(f"Unsupported automatic catalog refresh kind: {self.automatic_refresh_kind}")
+
+
 class ConnectorParamError(ValueError):
     """Raised when required connector parameters are missing or empty."""
 
@@ -384,6 +402,12 @@ class ExternalDataLoader(ABC):
     # so the frontend can show what's happening alongside the spinner.
     # Loaders that don't report progress simply never call the helper.
     progress_callback: Callable[[str], None] | None = None
+    CATALOG_CACHE_POLICY = CatalogCachePolicy()
+
+    @classmethod
+    def catalog_cache_policy(cls) -> CatalogCachePolicy:
+        """Describe catalog freshness and safe automatic refresh behavior."""
+        return cls.CATALOG_CACHE_POLICY
 
     def _report_progress(self, message: str) -> None:
         """Emit a high-level progress message if a sink is attached.

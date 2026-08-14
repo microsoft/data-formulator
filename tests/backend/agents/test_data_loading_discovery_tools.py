@@ -7,6 +7,7 @@ Covers the navigation surface introduced by design-docs/32:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -61,7 +62,47 @@ _SAMPLE_TABLES = [
 ]
 
 
+class _NoAuthLoader:
+    @classmethod
+    def list_params(cls):
+        return []
+
+    def __init__(self, _params):
+        pass
+
+    def test_connection(self):
+        return True
+
+    def sync_catalog_metadata(self):
+        return _SAMPLE_TABLES
+
+
+def _zero_auth_connector():
+    return SimpleNamespace(_loader_class=_NoAuthLoader, _default_params={})
+
+
 class TestListData:
+    def test_bootstraps_uncached_zero_auth_connector(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        with (
+            patch("data_formulator.data_connector._ADMIN_CONNECTOR_IDS", {"sample_datasets"}),
+            patch.dict(
+                "data_formulator.data_connector.DATA_CONNECTORS",
+                {"sample_datasets": _zero_auth_connector()},
+                clear=True,
+            ),
+        ):
+            result = agent._tool_list_data({})
+
+        assert result["sources"] == [
+            {
+                "source_id": "sample_datasets",
+                "table_count": 3,
+                "is_hierarchical": True,
+            }
+        ]
+
     def test_no_args_returns_sources_summary(self, tmp_path: Path) -> None:
         save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)
         save_catalog(tmp_path, "flat_src", [{"name": "t1", "table_key": "k1", "metadata": {}}])
@@ -127,6 +168,21 @@ class TestListData:
 # ------------------------------------------------------------------
 
 class TestFindData:
+    def test_bootstraps_uncached_zero_auth_connector(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        with (
+            patch("data_formulator.data_connector._ADMIN_CONNECTOR_IDS", {"sample_datasets"}),
+            patch.dict(
+                "data_formulator.data_connector.DATA_CONNECTORS",
+                {"sample_datasets": _zero_auth_connector()},
+                clear=True,
+            ),
+        ):
+            result = agent._tool_find_data({"query": "customers", "scope": "connected"})
+
+        assert [item["name"] for item in result["results"]] == ["customers"]
+
     def test_empty_query_returns_error(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace())
         result = agent._tool_find_data({"query": ""})

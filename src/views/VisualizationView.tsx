@@ -54,7 +54,8 @@ import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
-import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, computeInsightKey } from '../components/ComponentType';
+import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
+import { ConnectorFormCard } from '../components/ConnectorFormCard';
 
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
@@ -86,7 +87,7 @@ import { EncodingShelfCard } from './EncodingShelfCard';
 import { ChartQuickConfig } from './ChartQuickConfig';
 import { ChartVariantStrip } from './ChartVariantStrip';
 import { CustomReactTable } from './ReactTable';
-import { InsightIcon } from '../icons';
+import { getConnectorIcon, InsightIcon } from '../icons';
 import { FreeDataViewFC } from './DataView';
 import { formatCellValue } from './ViewUtils';
 
@@ -294,6 +295,50 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
             </Box>
         </Box>
     );
+};
+
+const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, form }) => {
+    const dispatch = useDispatch();
+
+    switch (form.kind) {
+        case 'connector':
+            return (
+                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
+                    <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+                            {getConnectorIcon(form.connector.sourceType, {
+                                sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 },
+                            })}
+                            <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, lineHeight: 1.35 }}>
+                                {form.title}
+                            </Typography>
+                        </Box>
+                        <ConnectorFormCard
+                            messageId={turn.id}
+                            prompt={form.connector}
+                            variant="bare"
+                            onResolved={(resolution) => {
+                                dispatch(dfActions.updateTextTurn({
+                                    id: turn.id,
+                                    answered: true,
+                                    answer: `Connected to ${resolution.connectionName}`,
+                                    form: {
+                                        kind: 'connector',
+                                        title: form.title,
+                                        connector: {
+                                            sourceType: form.connector.sourceType,
+                                            status: resolution.status,
+                                            connectorId: resolution.connectorId,
+                                            connectionName: resolution.connectionName,
+                                        },
+                                    },
+                                }));
+                            }}
+                        />
+                    </Box>
+                </Box>
+            );
+    }
 };
 
 // Re-export shared utilities from ChartUtils (canonical location)
@@ -1675,15 +1720,17 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const { t } = useTranslation();
     let allCharts = useSelector(dfSelectors.getAllCharts);
-    const rawFocusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
-    const focusedOperationTurn = rawFocusedId?.type === 'text'
-        ? textTurns.find(turn => turn.id === rawFocusedId.textId && turn.dataOperation)
-        : undefined;
     // Resolve the canvas target: a focused text turn (clarify/explain) is
     // non-canvas-owning — the canvas keeps showing its source chart, or the
     // source table when no chart exists (design-docs/41).
     let focusedId = useSelector(dfSelectors.selectCanvasTarget);
+    const focusedOperationTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.dataOperation)
+        : undefined;
+    const focusedFormTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
+        : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
@@ -1706,6 +1753,9 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     if (focusedOperationTurn?.dataOperation) {
         return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;
+    }
+    if (focusedFormTurn?.form) {
+        return <FormArtifactCanvas turn={focusedFormTurn} form={focusedFormTurn.form} />;
     }
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;

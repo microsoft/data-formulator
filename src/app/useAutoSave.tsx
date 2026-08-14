@@ -7,6 +7,7 @@ import { DataFormulatorState, dfSelectors } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
 import { handleApiError } from './errorHandler';
 import { DF_STATE_VERSION } from './stateMigrations';
+import { stripConnectorPrefillFromEntries } from './connectorFormPersistence';
 
 /**
  * Fields excluded from auto-save (secrets / ephemeral / fetched-on-startup).
@@ -39,7 +40,9 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(state)) {
         if (!EXCLUDED_FIELDS.has(key)) {
-            result[key] = value;
+            result[key] = key === 'dataLoadingChatMessages' || key === 'textTurns'
+                ? stripConnectorPrefillFromEntries(value)
+                : value;
         }
     }
     // Stamp the schema version so `migrateState` can upgrade this payload on a
