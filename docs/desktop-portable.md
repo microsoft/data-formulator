@@ -10,8 +10,10 @@ installing Python or Node.js.
 Build on each target operating system; PyInstaller does not cross-compile.
 
 ```bash
+yarn install --frozen-lockfile
+yarn build              # frontend -> py-src/data_formulator/dist
 uv sync --extra desktop
-./scripts/build-desktop.sh
+uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
 ```
 
 On Windows and Linux, the output is `dist/Data Formulator/`; distribute the
