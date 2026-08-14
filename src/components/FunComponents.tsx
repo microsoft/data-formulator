@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { Box, Typography, SxProps } from "@mui/material";
+import { textVar } from '../app/layout';
 
 /**
  * Pencil emoji with a writing animation — horizontal back-and-forth motion.
@@ -68,10 +69,10 @@ export const WritingIndicator: React.FC<{
 /** @deprecated Use WritingIndicator instead */
 export const ThinkingBufferEffect: React.FC<{ text: string; sx?: SxProps }> = ({ text, sx }) => (
     <Box sx={{
-        margin: 'auto 0', padding: 0.5, fontSize: 10, color: 'darkgray',
+        margin: 'auto 0', padding: 0.5, fontSize: textVar.xxs, color: 'darkgray',
         display: 'flex', alignItems: 'center', gap: 0.5, ...sx as any,
     }}>
-        <Typography sx={{ fontSize: 10, color: 'darkgray' }}>{text.replace(/[^\s]/g, '·')}</Typography>
+        <Typography sx={{ fontSize: textVar.xxs, color: 'darkgray' }}>{text.replace(/[^\s]/g, '·')}</Typography>
         <WritingPencil size={10} />
     </Box>
 );

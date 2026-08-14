@@ -68,13 +68,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
             },
         ]
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return (
-            "Point `root_dir` to a local directory containing data files.\n\n"
-            "**Supported formats:** CSV, TSV, Parquet, JSON, JSONL, Excel (.xlsx/.xls)\n\n"
-            "Click **Browse** to open a folder picker, or paste a directory path."
-        )
+    AUTH_GUIDE = "local_folder.md"
 
     @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:

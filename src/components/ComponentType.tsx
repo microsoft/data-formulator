@@ -4,6 +4,7 @@
 import { Type } from '../data/types';
 import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
+import type { DataOperation, LoadQuery } from '../dataOperations/models';
 
 export type FieldSource = "custom" | "original";
 
@@ -24,8 +25,12 @@ export const duplicateField = (field: FieldItem) => {
     } as FieldItem;
 }
 
+export const ROOTLESS_THREAD_ID = '__rootless_thread__';
+
 export interface Trigger {
-    tableId: string, // on which table this action is triggered
+    // On which table this action is triggered. A run started before any data
+    // exists has none, so it carries `ROOTLESS_THREAD_ID` instead.
+    tableId: string,
 
     chart?: Chart, // what's the intented chart from the user when running formulation
 
@@ -41,6 +46,8 @@ export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-age
 
 export interface ClarificationOption {
     label: string;
+    /** Opaque backend-owned identifier submitted separately from the label. */
+    value?: string;
 }
 
 export interface ClarificationQuestion {
@@ -55,15 +62,18 @@ export interface ClarificationResponse {
      *  use a negative value (e.g. -1) or set `source: 'freeform'`. */
     question_index: number;
     answer: string;
+    /** Opaque selected option value; never rendered as the user's answer. */
+    value?: string;
     source: 'option' | 'free_text' | 'freeform';
 }
 
+/** Legacy persisted value retained only for rendering historical sessions. */
 export type DelegateTarget = 'data_loading' | 'report_gen';
 
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
-    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain' | 'delegate';
+    role: 'prompt' | 'clarify' | 'instruction' | 'error' | 'explain' | 'delegate';
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
@@ -73,17 +83,22 @@ export interface InteractionEntry {
     attachments?: string[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
-    /** For 'delegate' entries: which peer agent the Data Agent wants to
-     *  hand off to. Rendered as one or two one-click button cards. */
+    /** Legacy persisted delegate metadata; new AnalystAgent runs do not emit it. */
     delegateTarget?: DelegateTarget;
-    /** For 'delegate' entries: 1–2 hand-off option prompts. Each string
-     *  is shown on its own button and used as the seed prompt sent to
-     *  the target agent on click. */
     delegateOptions?: string[];
     timestamp?: number;
 }
 
 export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'interrupted';
+
+/** A lightweight thread reference to a table that remains owned by the shelf. */
+export interface LoadedTableNode {
+    kind: 'loaded-table';
+    id: string;
+    tableId: string;
+    parentNodeId: string;
+    createdAt: number;
+}
 
 export interface PendingClarification {
     trajectory: any[];
@@ -95,7 +110,7 @@ export interface DraftNode {
     kind: 'draft';
     id: string;
     displayId: string;
-    anchored: boolean;
+    parentNodeId: string;
     derive: {
         source: string[];
         trigger: Trigger;
@@ -110,7 +125,7 @@ export interface DraftNode {
     actionId?: string;
 }
 
-export type ThreadNode = DraftNode | DictTable;
+export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
 
 /**
  * A first-class **text turn** (clarify / explain) in the thread — a sibling to
@@ -134,6 +149,8 @@ export interface TextTurn {
     prompt?: string;
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
+    /** Display-only immutable loading alternatives for a data-operation pause. */
+    dataOperation?: DataOperation;
     /** True once the user has responded to THIS clarify — it then locks
      *  (read-only). A later response is a *new* conversation, not a re-answer. */
     answered?: boolean;
@@ -157,7 +174,11 @@ export interface TextTurn {
      * §12 opaque resume token — set iff the backend stamped a trajectory on the
      * emitting event (continuation opt-in). Absent ⇒ followups are fresh turns.
      */
-    resume?: { trajectory: any[]; completedStepCount: number };
+    resume?: {
+        trajectory: any[];
+        completedStepCount: number;
+        operationId?: string;
+    };
     createdAt: number;
 }
 
@@ -225,17 +246,15 @@ export interface LoadPlanCandidate {
     displayName: string;
     sourceTable: string;
     sourceTableName?: string;
-    filters?: Array<{ column: string; operator: string; value?: any }>;
-    sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
-    selected?: boolean;
+    query?: LoadQuery;
     /** Backend-detected reason this candidate cannot be loaded (unknown source_id, missing table_key, etc.). */
     resolutionError?: string;
 }
 
 export interface LoadPlan {
-    candidates: LoadPlanCandidate[];
-    reasoning?: string;
+    response: string;
+    options: Array<{ label: string; tables: LoadPlanCandidate[] }>;
+    confirmed?: boolean;
 }
 
 /**
@@ -261,6 +280,7 @@ export interface ChatMessage {
     codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
     pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
     loadPlan?: LoadPlan;                // Agent-proposed data loading plan
+    dataOperation?: DataOperation;      // Immutable option-based loading proposal
     connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
     divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
     hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
@@ -305,6 +325,69 @@ export interface DataSourceConfig {
     originalTableName?: string;
 }
 
+export type InputTableSource =
+    | {
+        kind: 'connector';
+        connectorId: string;
+        sourceTable: { id: string; name: string };
+        path: string[];
+        workspaceTableId?: string;
+    }
+    | {
+        kind: 'workspace';
+        tableId: string;
+    };
+
+export interface InputTableColumn {
+    name: string;
+    type: Type;
+    sourceType?: string;
+    description?: string;
+    levels?: any[];
+    levelCounts?: number[];
+    distinctCount?: number;
+    nullCount?: number;
+}
+
+export interface FieldSemanticsInfo {
+    semanticType?: string;
+    intrinsicDomain?: [number, number];
+    unit?: string;
+    sortOrder?: any[];
+    displayName?: string;
+}
+
+export interface TableSemanticsInfo {
+    tableId: string;
+    displayName?: string;
+    fields: Record<string, FieldSemanticsInfo>;
+}
+
+export interface InputTableSnapshot {
+    columns: InputTableColumn[];
+    rowCount: number | null;
+    capturedAt: number;
+    contentHash?: string;
+}
+
+export interface InputTablePreview {
+    tableId: string;
+    rows: Record<string, unknown>[];
+    fetchedAt: number;
+    contentHash?: string;
+}
+
+export interface InputTable {
+    kind: 'input-table';
+    id: string;
+    displayId: string;
+    source: InputTableSource;
+    snapshot: InputTableSnapshot;
+    description: string;
+    sourceConfig?: DataSourceConfig;
+    addedAt: number;
+}
+
 export interface DictTable {
     kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
@@ -313,7 +396,6 @@ export interface DictTable {
     names: string[]; // column names
     metadata: {[key: string]: {
         type: Type,
-        semanticType: string, 
         levels: any[],
         // Parallel to `levels` (same order); only populated when `levels`
         // was filled by the backend column-stats pass (design-doc 31).
@@ -324,9 +406,6 @@ export interface DictTable {
         // (≤ 100 → checklist, > 100 → keyword search).
         distinctCount?: number,
         nullCount?: number,
-        intrinsicDomain?: [number, number],
-        unit?: string,
-        displayName?: string,
         description?: string,
     }}; // metadata of the table
 
@@ -351,18 +430,10 @@ export interface DictTable {
         tableId: string; // the canonical server-side table name (sanitized)
         rowCount: number; // total number of rows (rows.length may be a sample)
     };
-    anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
     description: string; // table-level description sourced from the loader (read-only). Empty string when none.
 
-    /**
-     * Authored THREAD edge (design-docs/42): the node this table FOLLOWS in the
-     * thread — set to a text-turn id when a conversation produced the table (the
-     * chain `table → clarifyTurn → askedFromTable`). It overrides
-     * `derive.trigger.tableId` for POSITION only; data provenance
-     * (`derive.source` / `derive.trigger`) is unchanged. Unset ⇒ the table's
-     * thread parent is its data parent (`derive.trigger.tableId`).
-     */
-    threadParentId?: string;
+    /** Authored thread edge. Data provenance remains in `derive`. */
+    parentNodeId?: string;
 
     source?: DataSourceConfig;
     
@@ -370,6 +441,8 @@ export interface DictTable {
     // Used to avoid unnecessary derived table recalculations when data hasn't changed
     contentHash?: string;
 }
+
+export type TableNode = InputTable | DictTable;
 
 export function createDictTable(
     id: string, rows: any[], 
@@ -383,7 +456,6 @@ export function createDictTable(
             trigger: Trigger
         } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },
-    anchored: boolean = false,
     description: string = '',
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
@@ -403,14 +475,12 @@ export function createDictTable(
                 ...acc,
                 [name]: {
                     type: refineTemporalType(colValues, inferred),
-                    semanticType: "",
                     levels: []
                 }
             };
         }, {}),
         derive,
         virtual,
-        anchored,
         description,
         source,
     }
@@ -481,20 +551,17 @@ export type Chart = {
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
     title?: string,  // AI-generated chart title (from the analyst's visualize action)
-    titleKey?: string,  // "chartType|sortedFieldIds" snapshot when title was set; used to detect staleness
+    subtitle?: string,  // factual scope, period, aggregation, and units for the title
+    titleKey?: string,  // analytical encoding fingerprint captured when title/subtitle were set
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
     scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)
     unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
 
-/** Compute a string key for title-staleness invalidation: chartType|sortedFieldIds */
+/** Compute a key for title/subtitle staleness using the chart's analytical encoding. */
 export function computeInsightKey(chart: Chart): string {
-    const fieldIds = Object.values(chart.encodingMap)
-        .map(enc => enc.fieldID)
-        .filter((id): id is string => !!id)
-        .sort();
-    return `${chart.chartType}|${fieldIds.join(',')}`;
+    return computeEncodingFingerprint(chart);
 }
 
 /**

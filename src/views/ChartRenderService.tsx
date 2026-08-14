@@ -22,7 +22,7 @@
 import { FC, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
-import { Chart, DictTable, FieldItem } from '../components/ComponentType';
+import { Chart, DictTable, FieldItem, FieldSemanticsInfo } from '../components/ComponentType';
 import { assembleVegaChart, prepVisTable } from '../app/utils';
 import { buildEmbeddedDataForChart } from '../app/restyle';
 import { getDataTable, checkChartAvailability } from './ChartUtils';
@@ -45,6 +45,7 @@ interface RenderJob {
     table: DictTable;
     conceptShelfItems: FieldItem[];
     cacheKey: string;
+    fieldSemantics?: Record<string, FieldSemanticsInfo>;
 }
 
 /**
@@ -137,8 +138,11 @@ export const ChartRenderService: FC = () => {
     const dispatch = useDispatch();
 
     const charts = useSelector(dfSelectors.getAllCharts);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    // The canvas types fields (and so picks color scales) from these, so the
+    // thumbnail must read them too or the two renders disagree.
+    const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const maxStretchFactor = useSelector((state: DataFormulatorState) => state.config.maxStretchFactor);
     // Re-run when the focused canvas caches a fresh display-row sample so
@@ -157,7 +161,7 @@ export const ChartRenderService: FC = () => {
     const prevChartIdsRef = useRef<Set<string>>(new Set());
 
     const processChart = useCallback(async (job: RenderJob) => {
-        const { chart, table, conceptShelfItems: items, cacheKey } = job;
+        const { chart, table, conceptShelfItems: items, cacheKey, fieldSemantics } = job;
 
         // Skip if already rendering this chart
         if (renderingRef.current.has(chart.id)) return;
@@ -213,6 +217,8 @@ export const ChartRenderService: FC = () => {
                     chart.config,
                     1,
                     maxStretchFactor,
+                    undefined,
+                    fieldSemantics,
                 );
             }
 
@@ -294,6 +300,7 @@ export const ChartRenderService: FC = () => {
             const displayFingerprint = displayEntry
                 ? `disp:${displayEntry.rows.length}/${displayEntry.totalCount}`
                 : `preview:${table.rows.length}`;
+            const fieldSemantics = tableSemantics.find(info => info.tableId === table.id)?.fields;
             const cacheKey = computeCacheKey(
                 chart.chartType,
                 chart.encodingMap,
@@ -304,6 +311,7 @@ export const ChartRenderService: FC = () => {
                 table.metadata,
                 activeVariant?.id,
                 activeVariant?.vlSpec,
+                fieldSemantics,
             );
 
             const cached = getCachedChart(chart.id);
@@ -321,7 +329,7 @@ export const ChartRenderService: FC = () => {
                 continue;
             }
 
-            jobs.push({ chart, table, conceptShelfItems, cacheKey });
+            jobs.push({ chart, table, conceptShelfItems, cacheKey, fieldSemantics });
         }
 
         // Process jobs sequentially to avoid overwhelming the browser
@@ -342,7 +350,7 @@ export const ChartRenderService: FC = () => {
 
             return () => { cancelled = true; };
         }
-    }, [charts, tables, conceptShelfItems, chartSynthesisInProgress, displayRowsTick, processChart, dispatch]);
+    }, [charts, tables, conceptShelfItems, tableSemantics, chartSynthesisInProgress, displayRowsTick, processChart, dispatch]);
 
     // This component renders nothing
     return null;

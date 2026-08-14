@@ -27,6 +27,7 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
+import { iconVar, textVar } from '../app/layout';
 
 const UVX_CMD = 'uvx --prerelease=allow data-formulator';
 const REPO_URL = 'https://github.com/microsoft/data-formulator';
@@ -71,7 +72,7 @@ const CommandRow: React.FC<{
                 flex: 1,
                 minWidth: 0,
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                fontSize: 12,
+                fontSize: textVar.sm,
                 color: 'text.primary',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
@@ -86,7 +87,7 @@ const CommandRow: React.FC<{
             aria-label={copied ? copiedLabel : copyLabel}
             title={copied ? copiedLabel : copyLabel}
             sx={{
-                fontSize: 12,
+                fontSize: textVar.sm,
                 textTransform: 'none',
                 minWidth: 'auto',
                 p: 0.5,
@@ -96,9 +97,9 @@ const CommandRow: React.FC<{
             }}
         >
             {copied ? (
-                <CheckIcon sx={{ fontSize: 16 }} />
+                <CheckIcon sx={{ fontSize: iconVar.md }} />
             ) : (
-                <ContentCopyIcon sx={{ fontSize: 16 }} />
+                <ContentCopyIcon sx={{ fontSize: iconVar.md }} />
             )}
         </Button>
     </Paper>
@@ -123,22 +124,22 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
 
     const features: FeatureRow[] = [
         {
-            icon: <StorageIcon sx={{ fontSize: 18 }} />,
+            icon: <StorageIcon sx={{ fontSize: iconVar.lg }} />,
             title: t('upload.upgrade.featureDb', { defaultValue: 'Connect to live databases' }),
             desc: t('upload.upgrade.featureDbDesc', {
                 defaultValue: 'MySQL, Postgres, Kusto, BigQuery, MongoDB, S3, and more.',
             }),
         },
         {
-            icon: <FolderOpenIcon sx={{ fontSize: 18 }} />,
+            icon: <FolderOpenIcon sx={{ fontSize: iconVar.lg }} />,
             title: t('upload.upgrade.featureLocalFolder', { defaultValue: 'Browse local folders & large files' }),
         },
         {
-            icon: <SaveOutlinedIcon sx={{ fontSize: 18 }} />,
+            icon: <SaveOutlinedIcon sx={{ fontSize: iconVar.lg }} />,
             title: t('upload.upgrade.featureWorkspaces', { defaultValue: 'Persistent workspaces & agent knowledge' }),
         },
         {
-            icon: <VpnKeyOutlinedIcon sx={{ fontSize: 18 }} />,
+            icon: <VpnKeyOutlinedIcon sx={{ fontSize: iconVar.lg }} />,
             title: t('upload.upgrade.featureCredentials', { defaultValue: 'Bring your own model keys' }),
         },
     ];
@@ -154,16 +155,16 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                 mx: compact ? 0 : 'auto',
                 minWidth: 0,
                 boxSizing: 'border-box',
-                fontSize: 13,
+                fontSize: textVar.md,
             }}
         >
             <Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>
+                <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, mb: 0.5 }}>
                     {t('upload.upgrade.title', {
                         defaultValue: 'Data connectors require a local install',
                     })}
                 </Typography>
-                <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.5 }}>
+                <Typography sx={{ fontSize: textVar.md, color: 'text.secondary', lineHeight: 1.5 }}>
                     {t('upload.upgrade.subtitle', {
                         defaultValue:
                             'Database connectors are disabled in browser-only mode. Install locally for the full experience.',
@@ -191,11 +192,11 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                             {f.icon}
                         </Box>
                         <Box sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
-                            <Typography sx={{ fontSize: 13, lineHeight: 1.4 }}>
+                            <Typography sx={{ fontSize: textVar.md, lineHeight: 1.4 }}>
                                 {f.title}
                             </Typography>
                             {f.desc && (
-                                <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.4 }}>
+                                <Typography sx={{ fontSize: textVar.md, color: 'text.secondary', lineHeight: 1.4 }}>
                                     {f.desc}
                                 </Typography>
                             )}
@@ -206,7 +207,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
 
             {/* Install + launch */}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+                <Typography sx={{ fontSize: textVar.md, fontWeight: 600 }}>
                     {t('upload.upgrade.installHeading', { defaultValue: 'Install & launch' })}
                 </Typography>
                 <CommandRow
@@ -216,7 +217,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                     copyLabel={t('upload.upgrade.copy', { defaultValue: 'Copy' })}
                     copiedLabel={t('upload.upgrade.copied', { defaultValue: 'Copied' })}
                 />
-                <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5 }}>
+                <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', lineHeight: 1.5 }}>
                     {t('upload.upgrade.requirements', {
                         defaultValue: 'Requires Python 3.11+ and ',
                     })}
@@ -261,8 +262,8 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                         '&:hover': { color: 'primary.main' },
                     }}
                 >
-                    <GitHubIcon sx={{ fontSize: 16 }} />
-                    <Typography component="span" sx={{ fontSize: 13, lineHeight: 1.4 }}>
+                    <GitHubIcon sx={{ fontSize: iconVar.md }} />
+                    <Typography component="span" sx={{ fontSize: textVar.md, lineHeight: 1.4 }}>
                         {t('upload.upgrade.viewOnGithub', { defaultValue: 'View on GitHub' })}
                     </Typography>
                 </Link>
@@ -285,7 +286,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                         alt=""
                         sx={{ width: 16, height: 16 }}
                     />
-                    <Typography component="span" sx={{ fontSize: 13, lineHeight: 1.4 }}>
+                    <Typography component="span" sx={{ fontSize: textVar.md, lineHeight: 1.4 }}>
                         {t('upload.upgrade.viewOnPypi', { defaultValue: 'PyPI package' })}
                     </Typography>
                 </Link>

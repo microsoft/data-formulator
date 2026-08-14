@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Knowledge store — manages user knowledge files (rules, workflows).
+"""Knowledge store — manages user knowledge files and data-source memory.
 
 Each user has a ``knowledge/`` directory under their home with two
 sub-directories: ``rules`` and ``workflows``.  Every knowledge entry is a
@@ -28,6 +28,17 @@ from data_formulator.security.path_safety import ConfinedDir
 logger = logging.getLogger(__name__)
 
 VALID_CATEGORIES = frozenset({"rules", "workflows"})
+
+DATA_MEMORY_FILE = "data-memory.md"
+DATA_MEMORY_HARD_MAX = 100_000
+DATA_MEMORY_TEMPLATE = """# Data source memory
+
+This file records durable, user-specific context about data sources, including
+known contents, useful tables, relationships, terminology, and corrections.
+
+> This memory may be stale. Verify important details against live source
+> metadata before using them.
+"""
 
 _MAX_DEPTH = {
     "rules": 1,
@@ -258,6 +269,62 @@ class KnowledgeStore:
             "workflows": ConfinedDir(self._root.root / "workflows", mkdir=True),
         }
         self._migrate_flat()
+
+    # -- data-source memory ------------------------------------------------
+
+    def read_data_memory(self) -> str:
+        """Read the user's shared data-source memory, creating it if absent."""
+        try:
+            return self._root.read_text(DATA_MEMORY_FILE)
+        except FileNotFoundError:
+            self._root.write_text(DATA_MEMORY_FILE, DATA_MEMORY_TEMPLATE)
+            return DATA_MEMORY_TEMPLATE
+
+    def rewrite_data_memory(self, content: str) -> Path:
+        """Replace the user's shared data-source memory with Markdown text."""
+        if not isinstance(content, str):
+            raise ValueError("Data memory content must be a string")
+        if len(content) > DATA_MEMORY_HARD_MAX:
+            raise ValueError(
+                f"Data memory exceeds {DATA_MEMORY_HARD_MAX} characters "
+                f"(got {len(content)})"
+            )
+        return self._root.write_text(DATA_MEMORY_FILE, content)
+
+    def append_data_memory(self, content: str) -> Path:
+        """Append a durable Markdown note to the user's data-source memory."""
+        note = content.strip()
+        if not note:
+            raise ValueError("Data memory note must not be empty")
+        current = self.read_data_memory().rstrip()
+        return self.rewrite_data_memory(f"{current}\n\n{note}\n")
+
+    def replace_data_memory(
+        self,
+        old_text: str,
+        new_text: str,
+        *,
+        replace_all: bool = False,
+    ) -> int:
+        """Replace exact text in data memory, returning replacement count.
+
+        An empty ``new_text`` deletes the matched text. By default only the
+        first occurrence is replaced; ``replace_all`` updates every match.
+        """
+        if not isinstance(old_text, str) or not old_text:
+            raise ValueError("old_text must be a non-empty string")
+        if not isinstance(new_text, str):
+            raise ValueError("new_text must be a string")
+
+        current = self.read_data_memory()
+        match_count = current.count(old_text)
+        if match_count == 0:
+            raise ValueError("old_text was not found in data memory")
+
+        count = match_count if replace_all else 1
+        updated = current.replace(old_text, new_text, -1 if replace_all else 1)
+        self.rewrite_data_memory(updated)
+        return count
 
     # -- migration ---------------------------------------------------------
 

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from importlib.resources import files
 from typing import Any, Callable, TYPE_CHECKING
 import pandas as pd
 import pyarrow as pa
@@ -9,13 +10,27 @@ from data_formulator.datalake.table_names import sanitize_external_loader_table_
 
 MAX_IMPORT_ROWS = 2_000_000
 
+
+def apply_import_projection(
+    table: pa.Table,
+    import_options: dict[str, Any] | None,
+) -> pa.Table:
+    """Apply and validate the shared load-query projection after source fetch."""
+    columns = (import_options or {}).get("columns")
+    if not columns:
+        return table
+    if not isinstance(columns, list) or not all(isinstance(column, str) for column in columns):
+        raise ValueError("columns must be a list of column names")
+    missing = [column for column in columns if column not in table.column_names]
+    if missing:
+        raise ValueError(f"Unknown projected columns: {', '.join(missing)}")
+    return table.select(columns)
+
 if TYPE_CHECKING:
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.datalake.workspace_metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
-
-MAX_IMPORT_ROWS = 2_000_000
 
 
 class ConnectorParamError(ValueError):
@@ -457,6 +472,7 @@ class ExternalDataLoader(ABC):
             source_table=source_table,
             import_options=import_options,
         )
+        arrow_table = apply_import_projection(arrow_table, import_options)
         return arrow_table.to_pandas()
     
     def ingest_to_workspace(
@@ -581,7 +597,7 @@ class ExternalDataLoader(ABC):
             name = pdef.get("name", "")
             if not pdef.get("required"):
                 continue
-            if skip_auth_tier and pdef.get("tier") == "auth":
+            if (skip_auth_tier or path is not None) and pdef.get("tier") == "auth":
                 continue
             val = effective.get(name)
             if val is None or (isinstance(val, str) and not val.strip()):
@@ -646,11 +662,15 @@ class ExternalDataLoader(ABC):
             f"{cls.__name__} does not support options for {param_name}"
         )
 
-    @staticmethod
-    @abstractmethod
-    def auth_instructions() -> str:
-        """Return human-readable authentication instructions."""
-        pass
+    AUTH_GUIDE: str | None = None
+
+    @classmethod
+    def auth_instructions(cls) -> str:
+        """Return the loader's packaged Markdown connection guide."""
+        if not cls.AUTH_GUIDE:
+            return ""
+        guide = files("data_formulator.data_loader.guides").joinpath(cls.AUTH_GUIDE)
+        return guide.read_text(encoding="utf-8").strip()
 
     #: Human-friendly UI label.  When ``None``, the ``/api/data-loaders``
     #: endpoint falls back to title-casing the registry key.  Override on

@@ -11,8 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
-from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
+from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent, TOOLS
 from data_formulator.datalake.catalog_cache import CatalogSearchError, save_catalog
+from data_formulator.knowledge.store import KnowledgeStore
 
 pytestmark = [pytest.mark.backend]
 
@@ -236,62 +237,41 @@ class TestDescribeData:
 
 
 # ------------------------------------------------------------------
-# propose_load_plan (unchanged behavior)
+# propose_load_plan
 # ------------------------------------------------------------------
 
 class TestProposeLoadPlan:
-    def test_returns_load_plan_action(self, tmp_path: Path) -> None:
+    def test_preserves_all_option_groups(self, tmp_path: Path) -> None:
         save_catalog(tmp_path, "pg_prod", [
             {"name": "orders", "table_key": "public.orders", "metadata": {}},
             {"name": "customers", "table_key": "public.customers", "metadata": {}},
         ])
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
         result = agent._tool_propose_load_plan({
-            "candidates": [
-                {
-                    "source_id": "pg_prod",
-                    "table_key": "public.orders",
-                    "display_name": "orders",
-                    "source_table": "public.orders",
-                    "selected": True,
-                },
-                {
-                    "source_id": "pg_prod",
-                    "table_key": "public.customers",
-                    "display_name": "customers",
-                    "source_table": "public.customers",
-                    "selected": False,
-                },
+            "response": "Choose the data to load.",
+            "options": [
+                {"label": "Orders", "tables": [{
+                    "source_id": "pg_prod", "table_key": "public.orders",
+                }]},
+                {"label": "Customers", "tables": [{
+                    "source_id": "pg_prod", "table_key": "public.customers",
+                }]},
             ],
-            "reasoning": "Orders + customer dimension",
         })
 
-        assert "actions" in result
         action = result["actions"][0]
-        assert action["type"] == "load_plan"
-        assert len(action["candidates"]) == 2
-        assert action["reasoning"] == "Orders + customer dimension"
-        assert [candidate["selected"] for candidate in action["candidates"]] == [True, False]
+        assert action["response"] == "Choose the data to load."
+        assert [option["label"] for option in action["options"]] == ["Orders", "Customers"]
+        assert action["options"][1]["tables"][0]["table_key"] == "public.customers"
+        assert "candidates" not in action
+        assert "reasoning" not in action
 
-    def test_empty_candidates_returns_empty_action(self) -> None:
+    def test_empty_options_returns_empty_action(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace())
-        result = agent._tool_propose_load_plan({"candidates": []})
+        result = agent._tool_propose_load_plan({"response": "Nothing found.", "options": []})
         assert result["actions"][0]["type"] == "load_plan"
-        assert result["actions"][0]["candidates"] == []
-
-    def test_selects_first_resolvable_when_agent_selects_none(self, tmp_path: Path) -> None:
-        save_catalog(tmp_path, "pg_prod", [
-            {"name": "orders", "table_key": "public.orders", "metadata": {}},
-            {"name": "returns", "table_key": "public.returns", "metadata": {}},
-        ])
-        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
-        result = agent._tool_propose_load_plan({"candidates": [
-            {"source_id": "pg_prod", "table_key": "public.orders", "display_name": "orders", "selected": False},
-            {"source_id": "pg_prod", "table_key": "public.returns", "display_name": "returns", "selected": False},
-        ]})
-
-        candidates = result["actions"][0]["candidates"]
-        assert [candidate["selected"] for candidate in candidates] == [True, False]
+        assert result["actions"][0]["options"] == []
 
     def test_resolves_superset_dataset_id_from_catalog(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace("/tmp/home"))
@@ -301,6 +281,7 @@ class TestProposeLoadPlan:
             "metadata": {
                 "dataset_id": 136,
                 "_source_name": "product_periodic_sales_trend",
+                "row_count": 36121,
             },
         }]
 
@@ -309,90 +290,91 @@ class TestProposeLoadPlan:
             return_value=catalog,
         ):
             result = agent._tool_propose_load_plan({
-                "candidates": [{
-                    "source_id": "superset",
-                    "table_key": "uuid-136",
-                    "display_name": "product_periodic_sales_trend",
-                    "source_table": "product_periodic_sales_trend",
-                    "filters": [{"column": "brand", "operator": "=", "value": "Pantum"}],
+                "response": "Load filtered sales.",
+                "options": [{
+                    "label": "Sales",
+                    "tables": [{
+                        "source_id": "superset",
+                        "table_key": "uuid-136",
+                        "query": {
+                            "filters": [{"column": "brand", "op": "EQ", "value": "Pantum"}],
+                        },
+                    }],
                 }],
             })
 
-        candidate = result["actions"][0]["candidates"][0]
+        candidate = result["actions"][0]["options"][0]["tables"][0]
         assert candidate["source_table"] == "136"
         assert candidate["source_table_name"] == "product_periodic_sales_trend"
-        assert candidate["filters"] == [
-            {"column": "brand", "operator": "EQ", "value": "Pantum"},
+        assert candidate["query"]["filters"] == [
+            {"column": "brand", "op": "EQ", "value": "Pantum"},
         ]
-        # Legacy callers that omit `selected` retain select-all behavior.
-        assert candidate["selected"] is True
-        assert "row_limit" not in candidate
 
 
 # ------------------------------------------------------------------
-# _normalize_load_plan_filters (unchanged behavior)
+# _normalize_load_query_filters
 # ------------------------------------------------------------------
 
-class TestNormalizeLoadPlanFilters:
+class TestNormalizeLoadQueryFilters:
     def test_strips_wildcards_and_upgrades_eq_to_ilike(self) -> None:
-        filters = [{"column": "brand", "operator": "EQ", "value": "%奔图%"}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result == [{"column": "brand", "operator": "ILIKE", "value": "奔图"}]
+        filters = [{"column": "brand", "op": "EQ", "value": "%奔图%"}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result == [{"column": "brand", "op": "ILIKE", "value": "奔图"}]
 
     def test_strips_wildcards_from_like(self) -> None:
-        filters = [{"column": "name", "operator": "LIKE", "value": "%printer%"}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result == [{"column": "name", "operator": "ILIKE", "value": "printer"}]
+        filters = [{"column": "name", "op": "LIKE", "value": "%printer%"}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result == [{"column": "name", "op": "ILIKE", "value": "printer"}]
 
     def test_like_without_wildcards_upgraded_to_ilike(self) -> None:
-        filters = [{"column": "name", "operator": "LIKE", "value": "printer"}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result == [{"column": "name", "operator": "ILIKE", "value": "printer"}]
+        filters = [{"column": "name", "op": "LIKE", "value": "printer"}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result == [{"column": "name", "op": "ILIKE", "value": "printer"}]
 
     def test_eq_without_wildcards_stays_eq(self) -> None:
-        filters = [{"column": "brand", "operator": "EQ", "value": "奔图"}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result == [{"column": "brand", "operator": "EQ", "value": "奔图"}]
+        filters = [{"column": "brand", "op": "EQ", "value": "奔图"}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result == [{"column": "brand", "op": "EQ", "value": "奔图"}]
 
     def test_symbol_operators_mapped(self) -> None:
         filters = [
-            {"column": "qty", "operator": ">=", "value": 10},
-            {"column": "status", "operator": "!=", "value": "closed"},
+            {"column": "qty", "op": ">=", "value": 10},
+            {"column": "status", "op": "!=", "value": "closed"},
         ]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result[0]["operator"] == "GTE"
-        assert result[1]["operator"] == "NEQ"
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result[0]["op"] == "GTE"
+        assert result[1]["op"] == "NEQ"
 
     def test_contains_mapped_to_ilike(self) -> None:
-        filters = [{"column": "name", "operator": "CONTAINS", "value": "printer"}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result == [{"column": "name", "operator": "ILIKE", "value": "printer"}]
+        filters = [{"column": "name", "op": "CONTAINS", "value": "printer"}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result == [{"column": "name", "op": "ILIKE", "value": "printer"}]
 
     def test_is_null_no_value(self) -> None:
-        filters = [{"column": "deleted_at", "operator": "IS_NULL", "value": None}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result == [{"column": "deleted_at", "operator": "IS_NULL"}]
+        filters = [{"column": "deleted_at", "op": "IS_NULL", "value": None}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result == [{"column": "deleted_at", "op": "IS_NULL"}]
 
     def test_empty_wildcard_only_value_skipped(self) -> None:
-        filters = [{"column": "brand", "operator": "LIKE", "value": "%%"}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
+        filters = [{"column": "brand", "op": "LIKE", "value": "%%"}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
         assert result == []
 
     def test_invalid_operator_falls_back_to_eq(self) -> None:
-        filters = [{"column": "x", "operator": "FUZZY", "value": "abc"}]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
-        assert result == [{"column": "x", "operator": "EQ", "value": "abc"}]
+        filters = [{"column": "x", "op": "FUZZY", "value": "abc"}]
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
+        assert result == [{"column": "x", "op": "EQ", "value": "abc"}]
 
     def test_non_list_returns_empty(self) -> None:
-        assert DataLoadingAgent._normalize_load_plan_filters(None) == []
-        assert DataLoadingAgent._normalize_load_plan_filters("bad") == []
+        assert DataLoadingAgent._normalize_load_query_filters(None) == []
+        assert DataLoadingAgent._normalize_load_query_filters("bad") == []
 
     def test_missing_column_skipped(self) -> None:
         filters = [
-            {"operator": "EQ", "value": "x"},
-            {"column": "", "operator": "EQ", "value": "y"},
+            {"op": "EQ", "value": "x"},
+            {"column": "", "op": "EQ", "value": "y"},
         ]
-        result = DataLoadingAgent._normalize_load_plan_filters(filters)
+        result = DataLoadingAgent._normalize_load_query_filters(filters)
         assert result == []
 
 
@@ -436,6 +418,115 @@ class TestBuildSystemPromptConnectorSummary:
         now = datetime.now()
         assert f"Current date and time: {now.strftime('%Y-%m-%d')}" in prompt
         assert f"({now.strftime('%A')})" in prompt
+
+
+# ------------------------------------------------------------------
+# User-scoped data-source memory
+# ------------------------------------------------------------------
+
+
+class TestDataMemoryTools:
+    def test_tools_are_exposed(self) -> None:
+        names = {tool["function"]["name"] for tool in TOOLS}
+        assert {
+            "read_data_memory",
+            "append_data_memory",
+            "replace_data_memory",
+        }.issubset(names)
+
+    def test_read_append_and_rewrite(self, tmp_path: Path) -> None:
+        store = KnowledgeStore(tmp_path)
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=store,
+        )
+
+        appended = agent._tool_append_data_memory({
+            "content": "## CRM\naccounts joins contacts on account_id.",
+        })
+        assert appended["updated"] is True
+        assert "account_id" in agent._tool_read_data_memory()["content"]
+
+        search = agent._execute_tool("read_data_memory", {"pattern": r"ACCOUNTS.*account_id"})
+        assert search["match_count"] == 1
+        match_line = search["matches"][0]["line"]
+        assert search["matches"][0]["text"] == "accounts joins contacts on account_id."
+
+        window = agent._execute_tool("read_data_memory", {
+            "offset": max(1, match_line - 1),
+            "max_lines": 3,
+        })
+        assert "accounts joins contacts on account_id." in window["content"]
+
+        replaced = agent._execute_tool("replace_data_memory", {
+            "old_text": "accounts joins contacts on account_id.",
+            "new_text": "accounts relates to contacts through account_id.",
+        })
+        assert replaced["updated"] is True
+        assert replaced["replacements"] == 1
+        assert "relates to contacts" in store.read_data_memory()
+
+        deleted = agent._execute_tool("replace_data_memory", {
+            "old_text": "## CRM\n",
+            "new_text": "",
+        })
+        assert deleted["updated"] is True
+        assert "## CRM" not in store.read_data_memory()
+
+    def test_read_defaults_to_one_hundred_lines_and_pages(self, tmp_path: Path) -> None:
+        store = KnowledgeStore(tmp_path)
+        store.rewrite_data_memory("\n".join(f"line {number}" for number in range(1, 151)))
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=store,
+        )
+
+        first_page = agent._execute_tool("read_data_memory", {})
+        assert first_page["returned_lines"] == 100
+        assert first_page["next_offset"] == 101
+        assert first_page["content"].splitlines()[-1] == "line 100"
+
+        second_page = agent._execute_tool("read_data_memory", {"offset": 101})
+        assert second_page["returned_lines"] == 50
+        assert second_page["content"].splitlines()[0] == "line 101"
+        assert "next_offset" not in second_page
+
+    def test_read_rejects_invalid_regex(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=KnowledgeStore(tmp_path),
+        )
+
+        result = agent._execute_tool("read_data_memory", {"pattern": "["})
+
+        assert result["error"].startswith("Invalid regex pattern:")
+
+    def test_unavailable_without_knowledge_store(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        assert "unavailable" in agent._tool_read_data_memory()["error"]
+        assert "unavailable" in agent._tool_append_data_memory({"content": "note"})["error"]
+        assert "unavailable" in agent._tool_replace_data_memory({
+            "old_text": "old",
+            "new_text": "new",
+        })["error"]
+
+    def test_prompt_labels_memory_as_stale_and_requires_verification(self, tmp_path: Path) -> None:
+        store = KnowledgeStore(tmp_path)
+        store.rewrite_data_memory("# Sources\n\nCRM contains accounts and contacts.")
+        agent = DataLoadingAgent(
+            client=None,
+            workspace=_FakeWorkspace(tmp_path),
+            knowledge_store=store,
+        )
+
+        prompt = agent._build_system_prompt("find accounts")
+
+        assert "USER DATA-SOURCE MEMORY — MAY BE STALE" in prompt
+        assert "CRM contains accounts and contacts" in prompt
+        assert "Verify important details against live source metadata" in prompt
 
 
 # ------------------------------------------------------------------

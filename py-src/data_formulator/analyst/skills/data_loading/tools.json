@@ -1,0 +1,189 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "list_data",
+      "description": "Browse cached connected-source catalogs. With no arguments, list source summaries. With source_id, list its top-level entries. Add path to browse direct children and filter for a case-insensitive substring match.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string", "description": "Connected source identifier. Omit for source summaries." },
+          "path": { "type": "array", "items": { "type": "string" }, "description": "Hierarchy path segments." },
+          "filter": { "type": "string", "description": "Substring filter on direct children." }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "find_data",
+      "description": "Regex search across cached connected-source catalogs and optionally existing workspace tables. Returns exact source_id and table_key values for follow-up inspection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Case-insensitive regex. Plain keywords work as literals." },
+          "scope": { "type": "string", "description": "all, workspace, connected, a source_id, or source_id:path/segments." },
+          "exclude": { "type": "string", "description": "Optional table-name exclusion regex." },
+          "fields": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["name", "description", "columns"] },
+            "description": "Fields to search. Omit for all."
+          },
+          "limit": { "type": "integer" }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "describe_data",
+      "description": "Read cached metadata, columns, types, description, and row count for one discovered table.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string" },
+          "table_key": { "type": "string" }
+        },
+        "required": ["source_id", "table_key"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "probe_data",
+      "description": "Run a bounded read-only structured query against one connected table. Use only after describe_data. Results are evidence for planning and do not become workspace inputs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string" },
+          "table_key": { "type": "string" },
+          "query": {
+            "type": "object",
+            "properties": {
+              "filters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": { "type": "string" },
+                    "op": { "type": "string", "enum": ["EQ", "NEQ", "GT", "GTE", "LT", "LTE", "IN", "ILIKE", "BETWEEN", "IS_NULL"] },
+                    "value": {}
+                  },
+                  "required": ["column", "op"]
+                }
+              },
+              "columns": { "type": "array", "items": { "type": "string" } },
+              "group_by": { "type": "array", "items": { "type": "string" } },
+              "aggregates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "op": { "type": "string", "enum": ["count", "count_distinct", "sum", "avg", "min", "max"] },
+                    "column": { "type": "string" },
+                    "as": { "type": "string" }
+                  },
+                  "required": ["op"]
+                }
+              },
+              "order_by": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": { "type": "string" },
+                    "dir": { "type": "string", "enum": ["asc", "desc"] }
+                  },
+                  "required": ["column"]
+                }
+              },
+              "limit": { "type": "integer" }
+            }
+          }
+        },
+        "required": ["source_id", "table_key"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_data_operation",
+      "description": "Offer one to three complete immutable connected-data loading alternatives and pause for the user's selection. Discovery must ground every source, table, filter, and sort field. This does not execute a load.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string",
+            "description": "Fallback only. Leave empty when you narrate in your message text, which is what the user reads."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Concise action label, ideally 2-6 words."
+                },
+                "tables": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source_id": { "type": "string" },
+                      "table_key": { "type": "string" },
+                      "query": {
+                        "type": "object",
+                        "description": "Optional raw-row subset. Omit to load the whole table subject to server limits.",
+                        "properties": {
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "column": { "type": "string" },
+                                "op": { "type": "string", "enum": ["EQ", "NEQ", "GT", "GTE", "LT", "LTE", "IN", "ILIKE", "BETWEEN", "IS_NULL"] },
+                                "value": {}
+                              },
+                              "required": ["column", "op"]
+                            }
+                          },
+                          "columns": { "type": "array", "items": { "type": "string" } },
+                          "order_by": {
+                            "type": "array",
+                            "maxItems": 1,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "column": { "type": "string" },
+                                "dir": { "type": "string", "enum": ["asc", "desc"] }
+                              },
+                              "required": ["column"]
+                            }
+                          },
+                          "limit": { "type": "integer", "minimum": 1 }
+                        }
+                      }
+                    },
+                    "required": ["source_id", "table_key"]
+                  }
+                }
+              },
+              "required": ["label", "tables"]
+            }
+          }
+        },
+        "required": ["options"]
+      }
+    }
+  }
+]

@@ -264,6 +264,66 @@ class TestMSSQLSyncCatalogMetadata:
         assert len(result) == 1
         assert result[0].get("table_key")
 
+    def test_list_tables_groups_tables_and_views(self, _patch_mssql_connect):
+        loader = self._make_loader(database="mydb")
+        objects = _arrow_from_dicts(
+            [
+                {"TABLE_SCHEMA": "dbo", "TABLE_NAME": "Orders", "TABLE_TYPE": "BASE TABLE"},
+                {"TABLE_SCHEMA": "dbo", "TABLE_NAME": "OrderSummary", "TABLE_TYPE": "VIEW"},
+            ],
+            ["TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE"],
+        )
+        columns = _arrow_from_dicts([], [
+            "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
+        ])
+
+        def fake_execute(query):
+            lowered = query.lower()
+            if "information_schema.tables" in lowered:
+                return objects
+            if "information_schema.columns" in lowered:
+                return columns
+            return pa.table({})
+
+        with patch.object(loader, "_execute_query", side_effect=fake_execute):
+            result = loader.list_tables()
+
+        assert [entry["name"] for entry in result] == ["dbo.Orders", "dbo.OrderSummary"]
+        assert [entry["path"] for entry in result] == [
+            ["dbo", "Tables", "Orders"],
+            ["dbo", "Views", "OrderSummary"],
+        ]
+        assert [entry["metadata"]["_source_name"] for entry in result] == [
+            "dbo.Orders", "dbo.OrderSummary",
+        ]
+
+    def test_ls_browses_tables_and_views_directories(self, _patch_mssql_connect):
+        loader = self._make_loader(database="mydb")
+        object_types = _arrow_from_dicts(
+            [{"TABLE_TYPE": "BASE TABLE"}, {"TABLE_TYPE": "VIEW"}],
+            ["TABLE_TYPE"],
+        )
+        view_names = _arrow_from_dicts(
+            [{"TABLE_NAME": "OrderSummary"}],
+            ["TABLE_NAME"],
+        )
+
+        def fake_execute(query):
+            if "SELECT DISTINCT TABLE_TYPE" in query:
+                return object_types
+            if "TABLE_TYPE = 'VIEW'" in query:
+                return view_names
+            return pa.table({})
+
+        with patch.object(loader, "_execute_query", side_effect=fake_execute):
+            directories = loader.ls(["dbo"])
+            views = loader.ls(["dbo", "Views"])
+
+        assert [node.name for node in directories] == ["Tables", "Views"]
+        assert [node.name for node in views] == ["OrderSummary"]
+        assert views[0].path == ["dbo", "Views", "OrderSummary"]
+        assert views[0].metadata == {"_source_name": "mydb.dbo.OrderSummary"}
+
     def test_multi_db_iterates_all_databases(self, _patch_mssql_connect):
         loader = self._make_loader(database="")
 
@@ -273,8 +333,8 @@ class TestMSSQLSyncCatalogMetadata:
         )
 
         sales_tables = _arrow_from_dicts(
-            [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "Orders"}],
-            ["TABLE_SCHEMA", "TABLE_NAME"],
+            [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "Orders", "TABLE_TYPE": "BASE TABLE"}],
+            ["TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE"],
         )
         sales_cols = _arrow_from_dicts(
             [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "Orders",
@@ -283,8 +343,8 @@ class TestMSSQLSyncCatalogMetadata:
         )
 
         hr_tables = _arrow_from_dicts(
-            [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "Employees"}],
-            ["TABLE_SCHEMA", "TABLE_NAME"],
+            [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "Employees", "TABLE_TYPE": "BASE TABLE"}],
+            ["TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE"],
         )
         hr_cols = _arrow_from_dicts(
             [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "Employees",
@@ -330,7 +390,7 @@ class TestMSSQLSyncCatalogMetadata:
         for t in result:
             assert t.get("table_key")
             assert t["metadata"]["_source_name"] == t["name"]
-            assert len(t["path"]) == 3
+            assert len(t["path"]) == 4
 
     def test_multi_db_skips_failing_database(self, _patch_mssql_connect):
         loader = self._make_loader(database="")
@@ -341,8 +401,8 @@ class TestMSSQLSyncCatalogMetadata:
         )
 
         good_tables = _arrow_from_dicts(
-            [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "T1"}],
-            ["TABLE_SCHEMA", "TABLE_NAME"],
+            [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "T1", "TABLE_TYPE": "BASE TABLE"}],
+            ["TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE"],
         )
         good_cols = _arrow_from_dicts(
             [{"TABLE_SCHEMA": "dbo", "TABLE_NAME": "T1",

@@ -11,8 +11,6 @@
  *  - `ClarificationPanel` — agent asks a question.
  *  - `ExplanationPanel`   — agent gives an answer with follow-ups.
  *    (rendered by `ClarificationPanel` with `variant="explain"`)
- *  - `DelegatePanel`      — agent recommends handing off to a peer
- *                           agent (Data Loading or Report Gen).
  *
  * Clarify and explain share a unified muted (neutral greyscale) chrome; the
  * only spot of color is the header icon's badge (`?` / `i`).
@@ -22,24 +20,22 @@
 
 import React, { FC, ReactNode, useEffect, useRef, useState } from 'react';
 import {
-    Box, IconButton, InputAdornment, TextField, Tooltip, Typography, useTheme,
+    Box, Button, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import SearchIcon from '@mui/icons-material/Search';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import { useTranslation } from 'react-i18next';
-import { useDispatch } from 'react-redux';
-import { dfActions } from '../app/dfSlice';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
     ClarificationQuestion,
     ClarificationResponse,
-    DelegateTarget,
 } from '../components/ComponentType';
 import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
+import { iconVar, textVar } from '../app/layout';
+import { DataOperationCard } from '../components/DataOperationCard';
+import type { DataOperation } from '../dataOperations/models';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -114,7 +110,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                     {icon}
                 </Box>
                 <Typography sx={{
-                    fontSize: 11, fontWeight: 600,
+                    fontSize: textVar.xs, fontWeight: 600,
                     color: theme.palette.text.primary,
                     textTransform: 'uppercase',
                     letterSpacing: '0.06em', flex: 1,
@@ -131,7 +127,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                             '&:hover': { color: primaryColor },
                         }}
                     >
-                        <CloseRoundedIcon sx={{ fontSize: 14 }} />
+                        <CloseRoundedIcon sx={{ fontSize: iconVar.sm }} />
                     </IconButton>
                 </Tooltip>
             </Box>
@@ -147,6 +143,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
 
 interface ClarificationPanelProps {
     questions: ClarificationQuestion[];
+    dataOperation?: DataOperation;
     /**
      * 'clarify' (default) — agent is asking the user a question.
      * 'explain'           — agent gave an answer; options are suggested chart
@@ -180,6 +177,7 @@ interface ClarificationPanelProps {
 
 export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     questions,
+    dataOperation,
     variant = 'clarify',
     selectedAnswers,
     onSelectAnswer,
@@ -197,7 +195,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // key -1 holds the explain variant's panel-level custom-followup override.
     const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
 
-    useEffect(() => { submittedRef.current = false; setFreeTexts({}); }, [questions]);
+    useEffect(() => {
+        submittedRef.current = false;
+        setFreeTexts({});
+    }, [questions]);
 
     const setFreeText = (key: number, value: string) =>
         setFreeTexts(prev => ({ ...prev, [key]: value }));
@@ -282,7 +283,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // Shared muted standard-input chrome for all freeform fields.
     const freeTextSx = {
         '& .MuiInput-root': {
-            fontSize: 11,
+            fontSize: textVar.xs,
             color: theme.palette.text.secondary,
             '&:before': { borderBottomColor: alpha(theme.palette.text.primary, 0.1) },
             '&:hover:not(.Mui-disabled):before': { borderBottomColor: alpha(theme.palette.text.primary, 0.25) },
@@ -291,7 +292,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         '& .MuiInput-input::placeholder': {
             color: theme.palette.text.disabled,
             opacity: 0.7,
-            fontSize: 11,
+            fontSize: textVar.xs,
         },
     } as const;
 
@@ -328,7 +329,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             input: {
                                 endAdornment: hasTypedAnswer ? (
                                     <InputAdornment position="end">
-                                        <CheckRoundedIcon sx={{ fontSize: 14, color: alpha(chromeAccent, 0.7) }} />
+                                        <CheckRoundedIcon sx={{ fontSize: iconVar.sm, color: alpha(chromeAccent, 0.7) }} />
                                     </InputAdornment>
                                 ) : undefined,
                             },
@@ -365,7 +366,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         },
                     }}
                 >
-                    <ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />
+                    <ArrowForwardRoundedIcon sx={{ fontSize: iconVar.md }} />
                 </IconButton>
             </span>
         </Tooltip>
@@ -412,13 +413,27 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     };
 
     const title = t(isExplain ? 'chartRec.explanationTitle' : 'chartRec.clarificationTitle');
-
-
+    const selectedOperationResponse = dataOperation ? selectedAnswers?.[0] : undefined;
+    const selectedPlanId = dataOperation?.plans.some(
+        plan => plan.id === selectedOperationResponse?.value,
+    ) ? selectedOperationResponse?.value : undefined;
+    const selectOperationPlan = (planId: string) => {
+        const option = questions[0]?.options?.find(item => item.value === planId);
+        const plan = dataOperation?.plans.find(item => item.id === planId);
+        if (!plan) return;
+        setFreeText(0, '');
+        onSelectAnswer?.(0, {
+            question_index: 0,
+            answer: option?.label || plan.label,
+            value: planId,
+            source: 'option',
+        }, false);
+    };
     return (
         <AgentPauseShell
             icon={<AgentToyIcon
                 variant={isExplain ? 'explain' : 'clarify'}
-                sx={{ fontSize: 16, color: badgeAccent }}
+                sx={{ fontSize: textVar.xl, color: badgeAccent }}
             />}
             accentColor={chromeAccent}
             title={title}
@@ -428,7 +443,45 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
             onDelete={onDelete}
         >
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: questions.length > 1 ? '14px' : '4px', pb: '8px' }}>
-                {questions.map((question, questionIndex) => {
+                {dataOperation && (
+                    <Box sx={{ pl: '20px', pr: '4px' }}>
+                        {/* The finding that motivates the options; bounded like a
+                            question so long prose can't push them off-screen. */}
+                        {(dataOperation.description || questions[0]?.text) && (
+                            <Box sx={{
+                                maxHeight: 'clamp(144px, 28vh, 288px)',
+                                overflowY: 'auto',
+                                pr: '4px',
+                                mb: '6px',
+                            }}>
+                                <Typography component="div" sx={{ fontSize: textVar.sm, color: theme.palette.text.primary, lineHeight: 1.5 }}>
+                                    {renderFieldHighlights(dataOperation.description || questions[0].text, accentColor)}
+                                </Typography>
+                            </Box>
+                        )}
+                        <DataOperationCard
+                            operation={dataOperation}
+                            selectedPlanId={selectedPlanId}
+                            onSelectPlan={selectOperationPlan}
+                            compact
+                        />
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.75 }}>
+                            <Button
+                                size="small"
+                                variant="contained"
+                                disabled={!selectedOperationResponse || !selectedPlanId}
+                                onClick={() => {
+                                    if (selectedOperationResponse) {
+                                        submitResponses([selectedOperationResponse]);
+                                    }
+                                }}
+                            >
+                                {t('chartRec.submitClarification')}
+                            </Button>
+                        </Box>
+                    </Box>
+                )}
+                {!dataOperation && questions.map((question, questionIndex) => {
                     // free_text → freeform field only. single_choice → chips
                     // PLUS a "type your own" freeform companion. explain keeps
                     // its lightweight clickable-followups display (no per-question
@@ -451,7 +504,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             overflowY: 'auto',
                             pr: '4px',
                         }}>
-                            <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5 }}>
+                            <Typography component="div" sx={{ fontSize: textVar.sm, color: theme.palette.text.primary, lineHeight: 1.5 }}>
                                 {!isExplain && questions.length > 1 && (
                                     <>
                                         {t('chartRec.clarificationQuestionLabel', { index: questionIndex + 1 })}{' '}
@@ -471,7 +524,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                     <>
                                         {isExplain && (
                                             <Typography sx={{
-                                                fontSize: 10,
+                                                fontSize: textVar.xxs,
                                                 color: theme.palette.text.disabled,
                                                 fontStyle: 'italic',
                                                 mt: '2px',
@@ -482,7 +535,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                             {(question.options || []).map((option, optionIndex) => {
                                                 const selected = selectedAnswers?.[questionIndex];
-                                                const isSelected = selected?.source === 'option' && selected.answer === option.label;
+                                                const isSelected = selected?.source === 'option'
+                                                    && (option.value
+                                                        ? selected.value === option.value
+                                                        : selected.answer === option.label);
                                                 return (
                                                     <Box key={optionIndex} sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
                                                         <Typography
@@ -491,6 +547,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                             onClick={() => handleAnswer({
                                                                 question_index: questionIndex,
                                                                 answer: option.label,
+                                                                ...(option.value ? { value: option.value } : {}),
                                                                 source: 'option',
                                                             })}
                                                             sx={{
@@ -500,7 +557,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                                 border: `1px solid ${isSelected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
                                                                 backgroundColor: isSelected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
                                                                 cursor: 'pointer',
-                                                                fontSize: 11,
+                                                                fontSize: textVar.xs,
                                                                 fontWeight: isSelected ? 600 : 400,
                                                                 display: 'inline-block',
                                                                 whiteSpace: 'normal',
@@ -555,159 +612,12 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                     '&.Mui-disabled': { color: theme.palette.common.white, backgroundColor: alpha(theme.palette.text.primary, 0.18) },
                                 }}
                             >
-                                <ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />
+                                <ArrowForwardRoundedIcon sx={{ fontSize: iconVar.md }} />
                             </IconButton>
                         </span>
                     </Tooltip>
                 </Box>
             )}
-        </AgentPauseShell>
-    );
-};
-
-// ---------------------------------------------------------------------------
-// DelegatePanel
-// ---------------------------------------------------------------------------
-
-interface DelegatePanelProps {
-    /** Which peer agent the Data Agent recommends handing off to. */
-    target: DelegateTarget;
-    /** Short user-facing message from the Data Agent. */
-    message: string;
-    /** One or two hand-off option prompts (cards). Each string is shown
-     *  on the button and used as the seed prompt for the target agent. */
-    options: string[];
-    /** Close: de-highlight the suggestion and switch focus to the previous chart. */
-    onClose: () => void;
-    /** Delete: remove this suggestion block. */
-    onDelete: () => void;
-}
-
-/**
- * Renders when the Data Agent emits a `delegate` action. The card shows
- * a short message plus 1–2 one-click hand-off buttons. Picking one
- * dispatches an `agentHandoffRequest` to Redux; the matching consumer
- * (Data Formulator for `data_loading`, SimpleChartRecBox for
- * `report_gen`) picks it up and starts the target agent with the
- * selected option as its seed prompt.
- */
-export const DelegatePanel: FC<DelegatePanelProps> = ({
-    target,
-    message,
-    options,
-    onClose,
-    onDelete,
-}) => {
-    const theme = useTheme();
-    const { t } = useTranslation();
-    const dispatch = useDispatch();
-
-    const handleHandoff = (prompt: string) => {
-        const cleanPrompt = prompt.trim();
-        if (!cleanPrompt) return;
-        dispatch(dfActions.requestAgentHandoff({ target, prompt: cleanPrompt }));
-        // Hand off — the user's attention moves to the target agent
-        // and the data-agent run is done, so the suggestion block is removed.
-        onDelete();
-    };
-
-    const isReport = target === 'report_gen';
-    const ctaCaption = isReport
-        ? t('chartRec.delegateToReportGen')
-        : t('chartRec.delegateToDataLoading');
-    const CtaIcon = isReport ? DescriptionOutlinedIcon : SearchIcon;
-
-    const validOptions = (options || [])
-        .map(o => (o || '').trim())
-        .filter(o => o.length > 0)
-        .slice(0, 2);
-
-    return (
-        <AgentPauseShell
-            icon={<AgentToyIcon
-                variant="explain"
-                sx={{ fontSize: 16, color: theme.palette.primary.main }}
-            />}
-            accentColor={theme.palette.primary.main}
-            title={t('chartRec.delegateTitle')}
-            closeTooltip={t('chartRec.pauseClose')}
-            deleteTooltip={t('chartRec.pauseDelete')}
-            onClose={onClose}
-            onDelete={onDelete}
-        >
-            <Box sx={{
-                display: 'flex', flexDirection: 'column',
-                gap: '8px', pb: '8px', pl: '20px', pr: '4px',
-            }}>
-                {message && (
-                    <Box sx={{
-                        maxHeight: 'clamp(96px, 20vh, 240px)',
-                        overflowY: 'auto',
-                    }}>
-                        <Typography component="div" sx={{
-                            fontSize: 12,
-                            color: theme.palette.text.primary,
-                            lineHeight: 1.5,
-                        }}>
-                            {message}
-                        </Typography>
-                    </Box>
-                )}
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <Typography sx={{
-                        fontSize: 10,
-                        color: theme.palette.text.disabled,
-                        fontStyle: 'italic',
-                    }}>
-                        {ctaCaption}
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {validOptions.map((prompt, idx) => (
-                            <Box
-                                key={`${idx}|${prompt}`}
-                                sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}
-                            >
-                                <Typography
-                                    component="button"
-                                    type="button"
-                                    onClick={() => handleHandoff(prompt)}
-                                    title={prompt}
-                                    sx={{
-                                        position: 'relative', zIndex: 1,
-                                        width: '100%',
-                                        px: '8px', py: '6px',
-                                        borderRadius: '6px',
-                                        border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
-                                        backgroundColor: theme.palette.background.paper,
-                                        cursor: 'pointer',
-                                        fontSize: 11,
-                                        fontWeight: 400,
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '6px',
-                                        whiteSpace: 'normal',
-                                        wordBreak: 'break-word',
-                                        lineHeight: 1.4,
-                                        color: theme.palette.text.primary,
-                                        textAlign: 'left',
-                                        fontFamily: theme.typography.fontFamily,
-                                        '&:hover': {
-                                            backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                                        },
-                                    }}
-                                >
-                                    <CtaIcon sx={{
-                                        fontSize: 14,
-                                        color: theme.palette.primary.main,
-                                        flexShrink: 0,
-                                    }} />
-                                    <span>{prompt}</span>
-                                </Typography>
-                            </Box>
-                        ))}
-                    </Box>
-                </Box>
-            </Box>
         </AgentPauseShell>
     );
 };
@@ -740,7 +650,7 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
         <AgentPauseShell
             icon={<AgentToyIcon
                 variant="explain"
-                sx={{ fontSize: 16, color: theme.palette.primary.main }}
+                sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }}
             />}
             accentColor={theme.palette.primary.main}
             title={t('chartRec.explanationTitle')}
@@ -753,7 +663,7 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
                 maxHeight: 'clamp(120px, 32vh, 360px)',
                 overflowY: 'auto',
                 pb: '8px', pl: '20px', pr: '8px',
-                fontSize: 12,
+                fontSize: textVar.sm,
             }}>
                 <CompactMarkdown content={content} color={theme.palette.text.primary} />
             </Box>

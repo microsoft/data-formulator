@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ClarificationPanel } from '../../../../src/views/AgentPausePanel';
+import { parseDataOperation } from '../../../../src/dataOperations/models';
 
 vi.mock('react-i18next', () => ({
   // The panel now lives in `AgentPausePanel.tsx` which transitively pulls
@@ -19,6 +20,10 @@ vi.mock('react-i18next', () => ({
         'chartRec.customAnswerPlaceholder': 'Or type your own answer...',
         'chartRec.confirmAnswer': 'Confirm answer',
         'chartRec.freeTextClarificationHint': 'Type your answer in the chat box below.',
+        'dataLoading.operation.title': 'Data loading options',
+        'dataLoading.operation.status.awaitingSelection': 'Awaiting selection',
+        'dataLoading.operation.load': 'Load',
+        'dataLoading.operation.discuss': 'Discuss options',
       };
       return labels[key] || key;
     },
@@ -26,6 +31,81 @@ vi.mock('react-i18next', () => ({
 }));
 
 describe('ClarificationPanel', () => {
+  const operation = parseDataOperation({
+    schema_version: 1,
+    id: 'operation-1',
+    status: 'awaiting_selection',
+    reason: 'Choose data to load',
+    plans: [{
+      id: 'plan-1',
+      hash: 'a'.repeat(64),
+      label: 'Recent orders',
+      summary: 'Last 90 days',
+      steps: [{ kind: 'connector_query', display_name: 'Orders' }],
+    }],
+  });
+
+  const operationQuestion = [{
+    text: 'Choose data to load',
+    responseType: 'single_choice' as const,
+    options: [
+      { label: 'Recent orders', value: 'plan-1' },
+      { label: 'Elaborate', value: 'elaborate' },
+    ],
+  }];
+
+  it('selects an operation plan without submitting until Continue is clicked', () => {
+    const onSubmit = vi.fn();
+    const onSelectAnswer = vi.fn();
+    const props = {
+      questions: operationQuestion,
+      dataOperation: operation,
+      onSelectAnswer,
+      onSubmit,
+      onClose: vi.fn(),
+      onDelete: vi.fn(),
+    };
+    const { rerender } = render(<ClarificationPanel {...props} />);
+
+    // The finding reads with the options, and only once.
+    expect(screen.getAllByText('Choose data to load')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Elaborate' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Discuss options' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'chartRec.submitClarification' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Recent orders/ }));
+
+    expect(onSelectAnswer).toHaveBeenCalledWith(0, {
+      question_index: 0,
+      answer: 'Recent orders',
+      value: 'plan-1',
+      source: 'option',
+    }, false);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    const selected = { question_index: 0, answer: 'Recent orders', value: 'plan-1', source: 'option' as const };
+    rerender(<ClarificationPanel {...props} selectedAnswers={{ 0: selected }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'chartRec.submitClarification' }));
+
+    expect(onSubmit).toHaveBeenCalledWith([selected]);
+  });
+
+  it('offers only the loading options, leaving other requests to the chat input', () => {
+    render(
+      <ClarificationPanel
+        questions={operationQuestion}
+        dataOperation={operation}
+        onSelectAnswer={vi.fn()}
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /Recent orders/ })).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
   it('submits a single-choice question immediately when an option is clicked', () => {
     const onSubmit = vi.fn();
 

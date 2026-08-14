@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -11,7 +11,6 @@ import {
     dfSelectors,
     fetchGlobalModelList,
     DEFAULT_ROW_LIMIT,
-    DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
 import { getBrowserId, generateUUID } from './identity';
 import type { AuthInfo } from './oidcConfig';
@@ -56,12 +55,13 @@ import {
 
 import MuiAppBar from '@mui/material/AppBar';
 import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
-
 import LogoutIcon from '@mui/icons-material/Logout';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
+import { LayoutProvider } from './LayoutProvider';
+import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
@@ -74,6 +74,8 @@ import {
     Outlet,
     RouterProvider,
     useLocation,
+    useNavigate,
+    useRouteError,
     useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
@@ -81,7 +83,7 @@ import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
-import dfLogo from '../assets/df-logo.png';
+import dfLogo from '../assets/df-logo.svg';
 import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import { LogViewerDialog } from '../views/LogViewerDialog';
@@ -106,8 +108,13 @@ import UploadIcon from '@mui/icons-material/Upload';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
+import TranslateIcon from '@mui/icons-material/Translate';
+import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
 import { syncVegaLocale } from '../i18n/vega-locale';
+import { iconVar, textVar } from './layout';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -140,7 +147,7 @@ const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to
         sx={{
             textDecoration: 'none',
             textTransform: 'none',
-            fontSize: '13px',
+            fontSize: textVar.md,
             fontWeight: 400,
             border: 'none',
             borderRadius: 0,
@@ -209,7 +216,7 @@ const LanguageSwitcher: React.FC = () => {
                 my: 'auto',
                 '& .MuiToggleButton-root': {
                     textTransform: 'none',
-                    fontSize: '12px',
+                    fontSize: textVar.sm,
                     py: 0,
                     minWidth: '40px',
                     color: 'text.secondary',
@@ -226,6 +233,196 @@ const LanguageSwitcher: React.FC = () => {
                 </ToggleButton>
             ))}
         </ToggleButtonGroup>
+    );
+};
+
+/**
+ * Below this toolbar width the app bar collapses to a phone-style layout:
+ * the page switcher becomes a dropdown and the trailing controls fold into
+ * a single overflow menu. Measured on the toolbar itself (not the viewport)
+ * because the app shell floors its content width and scrolls horizontally.
+ */
+const COMPACT_TOOLBAR_WIDTH = 900;
+
+const useIsNarrow = (ref: React.RefObject<HTMLElement | null>, threshold: number) => {
+    const [narrow, setNarrow] = useState(false);
+    useEffect(() => {
+        const element = ref.current;
+        if (!element || typeof ResizeObserver === 'undefined') return;
+        const update = () => setNarrow(element.getBoundingClientRect().width < threshold);
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(element);
+        return () => ro.disconnect();
+    }, [ref, threshold]);
+    return narrow;
+};
+
+const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
+
+/** Language options rendered as menu rows for the compact overflow menu. */
+const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
+    const { i18n } = useTranslation();
+    const availableLanguages = useSelector(
+        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
+    );
+
+    if (!availableLanguages || availableLanguages.length <= 1) return null;
+    const current = i18n.language.split('-')[0];
+
+    return (
+        <>
+            {availableLanguages.map(lang => (
+                <MenuItem
+                    key={lang}
+                    selected={lang === current}
+                    onClick={() => { i18n.changeLanguage(lang); onSelect(); }}
+                    sx={menuItemSx}
+                >
+                    <ListItemIcon>
+                        {lang === current
+                            ? <CheckIcon fontSize="small" />
+                            : <TranslateIcon fontSize="small" sx={{ opacity: 0.3 }} />}
+                    </ListItemIcon>
+                    <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>
+                        {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                    </ListItemText>
+                </MenuItem>
+            ))}
+        </>
+    );
+};
+
+/** Compact replacement for the About / App top-nav buttons. */
+const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
+    const { t } = useTranslation();
+    const navigate = useNavigate();
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const pages = [
+        { to: '/about', label: t('appBar.about'), selected: isAboutPage },
+        { to: '/app', label: t('appBar.app'), selected: !isAboutPage },
+    ];
+    const currentLabel = pages.find(page => page.selected)?.label ?? '';
+
+    return (
+        <>
+            <Button
+                color="inherit"
+                onClick={(event) => setAnchorEl(event.currentTarget)}
+                endIcon={<KeyboardArrowDownIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
+                aria-haspopup="menu"
+                sx={{
+                    textTransform: 'none',
+                    minWidth: 0,
+                    px: 0.75,
+                    gap: 0.25,
+                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                }}
+            >
+                <Typography noWrap component="h1" sx={{ fontSize: textVar.xl, fontWeight: 300, letterSpacing: '0.03em' }}>
+                    {toolName}
+                </Typography>
+                <Typography noWrap sx={{ fontSize: textVar.md, color: 'text.secondary' }}>
+                    {`: ${currentLabel}`}
+                </Typography>
+            </Button>
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={() => setAnchorEl(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            >
+                {pages.map(page => (
+                    <MenuItem
+                        key={page.to}
+                        selected={page.selected}
+                        sx={menuItemSx}
+                        onClick={() => {
+                            setAnchorEl(null);
+                            if (!page.selected) navigate(page.to);
+                        }}
+                    >
+                        <ListItemIcon>
+                            {page.selected ? <CheckIcon fontSize="small" /> : null}
+                        </ListItemIcon>
+                        <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>
+                            {`${toolName}: ${page.label}`}
+                        </ListItemText>
+                    </MenuItem>
+                ))}
+            </Menu>
+        </>
+    );
+};
+
+const EXTERNAL_LINKS = {
+    github: 'https://github.com/microsoft/data-formulator',
+    youtube: 'https://youtu.be/3ndlwt0Wi3c',
+    pip: 'https://pypi.org/project/data-formulator/',
+    discord: 'https://discord.gg/mYCZMQKYZb',
+};
+
+/**
+ * Phone-style overflow menu holding everything that does not fit in a narrow
+ * app bar (language, settings, logs, links, exit).
+ */
+const ToolbarOverflowMenu: React.FC<{
+    items: {
+        key: string;
+        label: string;
+        icon: React.ReactNode;
+        href?: string;
+        onClick?: () => void;
+    }[];
+    showLanguages?: boolean;
+}> = ({ items, showLanguages = true }) => {
+    const { t } = useTranslation();
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const close = () => setAnchorEl(null);
+
+    return (
+        <>
+            <Tooltip title={t('appBar.moreOptions', { defaultValue: 'More options' })}>
+                <IconButton
+                    size="small"
+                    onClick={(event) => setAnchorEl(event.currentTarget)}
+                    aria-haspopup="menu"
+                    aria-label={t('appBar.moreOptions', { defaultValue: 'More options' })}
+                    sx={{
+                        p: 0.5,
+                        color: 'text.secondary',
+                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                    }}
+                >
+                    <MoreVertIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={close}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{ paper: { sx: { minWidth: 200 } } }}
+            >
+                {showLanguages && <LanguageMenuItems onSelect={close} />}
+                {showLanguages && items.length > 0 && <Divider />}
+                {items.map(item => (
+                    <MenuItem
+                        key={item.key}
+                        sx={menuItemSx}
+                        {...(item.href
+                            ? { component: 'a' as const, href: item.href, target: '_blank', rel: 'noopener noreferrer' }
+                            : {})}
+                        onClick={() => { close(); item.onClick?.(); }}
+                    >
+                        <ListItemIcon>{item.icon}</ListItemIcon>
+                        <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>{item.label}</ListItemText>
+                    </MenuItem>
+                ))}
+            </Menu>
+        </>
     );
 };
 
@@ -297,7 +494,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
             const result = await loadWorkspace(wsId);
             if (result) {
                 const displayName = result.displayName || wsEntry?.display_name || wsId;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName } }));
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName, readOnly: result.readOnly } }));
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
             } else {
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
@@ -381,9 +578,9 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                             {activeWorkspace?.id !== s.id && (
                                 confirmDelete === s.id ? (
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
-                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
                                             onClick={() => handleDelete(s.id)}>{t('workspace.delete')}</Button>
-                                        <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        <Button size="small" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
                                             onClick={() => setConfirmDelete(null)}>{t('workspace.cancel')}</Button>
                                     </Box>
                                 ) : (
@@ -436,7 +633,7 @@ const WorkspaceMenu: React.FC = () => {
                     }}
                 >
                     <Typography noWrap sx={{ 
-                        fontSize: 14, 
+                        fontSize: textVar.lg, 
                         fontWeight: 500, 
                         color: 'text.primary',
                         maxWidth: 280,
@@ -444,7 +641,7 @@ const WorkspaceMenu: React.FC = () => {
                     }}>
                         {activeWorkspace?.displayName || activeWorkspace?.id}
                     </Typography>
-                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: 16, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
+                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: iconVar.md, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
                 </Box>
             </Tooltip>
             <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
@@ -453,16 +650,30 @@ const WorkspaceMenu: React.FC = () => {
 };
 
 // Exit the current session and return to the front-page (no workspace).
-// Saves work first so the session is recoverable from the workspace picker.
-const ExitSessionButton: React.FC = () => {
+// Saves work first so the session is recoverable from the workspace picker —
+// unless the session is empty, in which case it's discarded rather than left
+// behind as an untitled shell in the picker.
+const useExitSession = () => {
     const dispatch = useDispatch();
     const state = useSelector((s: DataFormulatorState) => s);
-    const { t } = useTranslation();
+    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
 
-    const handleExit = async () => {
-        try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
+    return useCallback(async () => {
+        const workspaceId = state.activeWorkspace?.id;
+        if (sessionEmpty) {
+            if (workspaceId) {
+                try { await deleteWorkspace(workspaceId); } catch { /* may never have been created */ }
+            }
+        } else {
+            try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
+        }
         dispatch(dfActions.resetState());
-    };
+    }, [state, sessionEmpty, dispatch]);
+};
+
+const ExitSessionButton: React.FC = () => {
+    const { t } = useTranslation();
+    const handleExit = useExitSession();
 
     return (
         <Tooltip title={t('workspace.exitSessionTooltip', { defaultValue: 'Exit session and return to the workspace picker' })} placement="bottom">
@@ -470,10 +681,10 @@ const ExitSessionButton: React.FC = () => {
                 size="small"
                 variant="text"
                 onClick={handleExit}
-                startIcon={<LogoutIcon sx={{ fontSize: 16 }} />}
+                startIcon={<LogoutIcon sx={{ fontSize: iconVar.md }} />}
                 sx={{
                     textTransform: 'none',
-                    fontSize: '13px',
+                    fontSize: textVar.md,
                     fontWeight: 400,
                     px: 1.5,
                     py: 0.5,
@@ -489,13 +700,25 @@ const ExitSessionButton: React.FC = () => {
     );
 };
 
-const ConfigDialog: React.FC = () => {
-    const [open, setOpen] = useState(false);
+/**
+ * Settings dialog. Renders its own icon-button trigger by default; the
+ * compact toolbar hides the trigger and drives `open` from its overflow menu.
+ */
+const ConfigDialog: React.FC<{
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    hideTrigger?: boolean;
+}> = ({ open: openProp, onOpenChange, hideTrigger = false }) => {
+    const [openState, setOpenState] = useState(false);
+    const open = openProp ?? openState;
+    const setOpen = useCallback((value: boolean) => {
+        setOpenState(value);
+        onOpenChange?.(value);
+    }, [onOpenChange]);
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const isEphemeral = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral');
-    const rowLimitDefault = isEphemeral ? DEFAULT_ROW_LIMIT_EPHEMERAL : DEFAULT_ROW_LIMIT;
+    const rowLimitDefault = DEFAULT_ROW_LIMIT;
     const rowLimitMax = DEFAULT_ROW_LIMIT;
 
 
@@ -517,6 +740,7 @@ const ConfigDialog: React.FC = () => {
 
     return (
         <>
+            {!hideTrigger && (
             <Tooltip title={t('app.settings')}>
                 <IconButton
                     size="small"
@@ -531,6 +755,7 @@ const ConfigDialog: React.FC = () => {
                     <SettingsOutlinedIcon fontSize="small" />
                 </IconButton>
             </Tooltip>
+            )}
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle>{t('app.settings')}</DialogTitle>
                 <DialogContent>
@@ -542,20 +767,20 @@ const ConfigDialog: React.FC = () => {
                     }}>
                         <Divider><Typography variant="caption">{t('config.frontend')}</Typography></Divider>
                         <FormControl fullWidth size="small">
-                            <InputLabel id="palette-select-label" sx={{ fontSize: 13 }}>{t('config.colorTheme')}</InputLabel>
+                            <InputLabel id="palette-select-label" sx={{ fontSize: textVar.md }}>{t('config.colorTheme')}</InputLabel>
                             <Select
                                 labelId="palette-select-label"
                                 value={paletteKey}
                                 label={t('config.colorTheme')}
                                 onChange={(e) => setPaletteKey(e.target.value)}
-                                sx={{ fontSize: 13 }}
+                                sx={{ fontSize: textVar.md }}
                                 renderValue={(key) => {
                                     const p = palettes[key];
                                     return (
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                             <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.primary.main, flexShrink: 0 }} />
                                             <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.custom.main, flexShrink: 0 }} />
-                                            <Typography sx={{ fontSize: 13 }}>{p.name}</Typography>
+                                            <Typography sx={{ fontSize: textVar.md }}>{p.name}</Typography>
                                         </Box>
                                     );
                                 }}
@@ -568,7 +793,7 @@ const ConfigDialog: React.FC = () => {
                                                 <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: '1px solid rgba(0,0,0,0.1)' }} />
                                                 <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: '1px solid rgba(0,0,0,0.1)' }} />
                                             </Box>
-                                            <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: 13 } } }} />
+                                            <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: textVar.md } } }} />
                                         </MenuItem>
                                     );
                                 })}
@@ -746,11 +971,73 @@ const ConfigDialog: React.FC = () => {
 
 const ErrorBoundaryFallback: React.FC = () => {
     const { t } = useTranslation();
+    const routeError = useRouteError() as any;
+    const [logsOpen, setLogsOpen] = useState(false);
+    const [detailsOpen, setDetailsOpen] = useState(false);
+    // Read the desktop flag off the URL rather than the store — the store may be
+    // exactly what failed, and this screen has to render regardless.
+    const isDesktopApp = new URLSearchParams(window.location.search).get('desktop') === '1';
+    const detail = routeError?.message || (typeof routeError === 'string' ? routeError : '');
+    const stack = typeof routeError?.stack === 'string' ? routeError.stack : '';
+    const mutedActionSx = {
+        minWidth: 0, px: 0.5,
+        color: 'text.disabled', fontSize: '0.7rem', fontWeight: 400,
+        textTransform: 'none',
+        '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' },
+    } as const;
     return (
         <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
-            <Typography color="gray" sx={{ margin: "150px auto" }}>
-                {t('workspace.errorOccurred')} <Link href="/app">{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
-            </Typography>
+            <Box sx={{
+                margin: "150px auto",
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                maxWidth: 640, px: 2,
+            }}>
+                <Typography color="gray">
+                    {t('workspace.errorOccurred')} <Link href="/app">{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {(detail || stack) && (
+                        <Button
+                            variant="text"
+                            size="small"
+                            startIcon={<KeyboardArrowDownIcon sx={{
+                                fontSize: 15,
+                                transform: detailsOpen ? 'rotate(180deg)' : 'none',
+                                transition: 'transform 0.15s',
+                            }} />}
+                            onClick={() => setDetailsOpen(open => !open)}
+                            sx={mutedActionSx}
+                        >
+                            View error details
+                        </Button>
+                    )}
+                    {isDesktopApp && (
+                        <Button
+                            variant="text"
+                            size="small"
+                            startIcon={<TerminalOutlinedIcon sx={{ fontSize: 15 }} />}
+                            onClick={() => setLogsOpen(true)}
+                            sx={mutedActionSx}
+                        >
+                            View backend log
+                        </Button>
+                    )}
+                </Box>
+                {detailsOpen && (detail || stack) && (
+                    <Typography
+                        component="pre"
+                        sx={{
+                            fontFamily: 'monospace', fontSize: '0.65rem', color: 'text.disabled',
+                            whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                            m: 0, maxHeight: 260, overflowY: 'auto', textAlign: 'left',
+                            width: '100%',
+                        }}
+                    >
+                        {[detail, stack].filter(Boolean).join('\n\n')}
+                    </Typography>
+                )}
+                {isDesktopApp && <LogViewerDialog open={logsOpen} onOpenChange={setLogsOpen} hideTrigger />}
+            </Box>
         </Box>
     );
 };
@@ -769,7 +1056,7 @@ const AppShell: FC = () => {
     const location = useLocation();
     const [searchParams, setSearchParams] = useSearchParams();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -795,14 +1082,21 @@ const AppShell: FC = () => {
     const isAboutPage = location.pathname === '/about';
     const isAppPage = !isAboutPage;
 
-    // The canvas (threads, encoding shelf, viz cards) genuinely needs room, so
-    // the app shell floors content at 1000px and scrolls horizontally below
-    // that. The landing page (app route with no tables yet) has none of that —
-    // its hero, chips, connected-sources row and demo grid all reflow — so we
-    // relax its floor to 640px, a comfortable width where everything still
-    // wraps cleanly before a horizontal scrollbar appears.
-    const isLandingView = isAppPage && tables.length === 0;
-    const shellMinWidth = isLandingView ? '640px' : '1000px';
+    // The desktop canvas (threads, encoding shelf, viz cards) genuinely needs
+    // room, so the app shell floors content at MIN_SUPPORTED. Landing and phone
+    // workspace views reflow instead; the media override below removes the
+    // desktop floor when Thread and Canvas become alternate full-width views.
+    const isLandingView = isAppPage && !activeWorkspace;
+    const shellMinWidth = isLandingView ? 0 : `${MIN_SUPPORTED.width}px`;
+
+    // Narrow toolbars fold their controls into menus instead of letting the
+    // nav buttons, session name and trailing actions overlap.
+    const toolbarRef = useRef<HTMLDivElement | null>(null);
+    const isCompactToolbar = useIsNarrow(toolbarRef, COMPACT_TOOLBAR_WIDTH);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [logsOpen, setLogsOpen] = useState(false);
+    const exitSession = useExitSession();
+    const inSession = isAppPage && !!activeWorkspace;
 
     return (
         <Box sx={{
@@ -815,7 +1109,10 @@ const AppShell: FC = () => {
             overflow: 'auto',
             '& > *': {
                 minWidth: shellMinWidth,
-                minHeight: '600px'
+                minHeight: `${MIN_SUPPORTED.height}px`,
+                '@media (max-width: 700px)': {
+                    minWidth: 0,
+                },
             },
         }}>
             <Box sx={{
@@ -826,10 +1123,14 @@ const AppShell: FC = () => {
                 overflow: 'hidden'
             }}>
                 <AppBar position="static">
-                    <Toolbar variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
+                    <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
                         <Box sx={{ width: 40, minWidth: 40, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                             <Box component="img" sx={{ height: 20 }} alt="" src={dfLogo} />
                         </Box>
+                        {isCompactToolbar ? (
+                            <PageNavMenu isAboutPage={isAboutPage} />
+                        ) : (
+                        <>
                         <Button sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
                             alignItems: 'stretch',
@@ -855,18 +1156,65 @@ const AppShell: FC = () => {
                             <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
                             <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
                         </Box>
-                        {tables.length === 0 && !activeWorkspace && (
+                        </>
+                        )}
+                        {!isCompactToolbar && !activeWorkspace && (
                             <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.secondary', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                                 {t('appBar.microsoftResearch')}
                             </Typography>
                         )}
-                        {/* Centered workspace name — acts as session indicator/switcher */}
+                        {/* Workspace name — session indicator/switcher. Centered
+                            absolutely when there is room, otherwise it flows
+                            between the nav menu and the trailing actions. */}
                         {activeWorkspace && isAppPage && (
-                            <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
-                                <WorkspaceMenu />
+                            isCompactToolbar ? (
+                                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', mx: 1 }}>
+                                    <WorkspaceMenu />
+                                </Box>
+                            ) : (
+                                <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
+                                    <WorkspaceMenu />
+                                </Box>
+                            )
+                        )}
+                        {isAppPage && isCompactToolbar && (
+                            <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.5 }}>
+                                <ModelSelectionButton />
+                                <ConfigDialog open={settingsOpen} onOpenChange={setSettingsOpen} hideTrigger />
+                                {serverConfig.IS_LOCAL_MODE && (
+                                    <LogViewerDialog open={logsOpen} onOpenChange={setLogsOpen} hideTrigger />
+                                )}
+                                <ToolbarOverflowMenu
+                                    items={[
+                                        {
+                                            key: 'settings',
+                                            label: t('app.settings'),
+                                            icon: <SettingsOutlinedIcon fontSize="small" />,
+                                            onClick: () => setSettingsOpen(true),
+                                        },
+                                        ...(serverConfig.IS_LOCAL_MODE ? [{
+                                            key: 'logs',
+                                            label: t('logs.viewLogs', { defaultValue: 'View backend log' }),
+                                            icon: <TerminalOutlinedIcon fontSize="small" />,
+                                            onClick: () => setLogsOpen(true),
+                                        }] : []),
+                                        {
+                                            key: 'github',
+                                            label: t('appBar.viewOnGitHub'),
+                                            icon: <GitHubIcon fontSize="small" />,
+                                            href: EXTERNAL_LINKS.github,
+                                        },
+                                        ...(inSession ? [{
+                                            key: 'exit',
+                                            label: t('workspace.exit', { defaultValue: 'Exit' }),
+                                            icon: <LogoutIcon fontSize="small" />,
+                                            onClick: () => { exitSession(); },
+                                        }] : []),
+                                    ]}
+                                />
                             </Box>
                         )}
-                        {isAppPage && (
+                        {isAppPage && !isCompactToolbar && (
                             <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.75 }}>
                                 <ModelSelectionButton />
                                 <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
@@ -892,7 +1240,7 @@ const AppShell: FC = () => {
                                         </IconButton>
                                     </Tooltip>
                                 </Box>
-                                {activeWorkspace && (
+                                {inSession && (
                                     <>
                                         <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
                                         <ExitSessionButton />
@@ -900,9 +1248,51 @@ const AppShell: FC = () => {
                                 )}
                             </Box>
                         )}
-                        {isAboutPage && (
+                        {isAboutPage && isCompactToolbar && (
+                            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
+                                {serverConfig.IS_LOCAL_MODE && (
+                                    <LogViewerDialog open={logsOpen} onOpenChange={setLogsOpen} hideTrigger />
+                                )}
+                                <ToolbarOverflowMenu
+                                    items={[
+                                        ...(serverConfig.IS_LOCAL_MODE ? [{
+                                            key: 'logs',
+                                            label: t('logs.viewLogs', { defaultValue: 'View backend log' }),
+                                            icon: <TerminalOutlinedIcon fontSize="small" />,
+                                            onClick: () => setLogsOpen(true),
+                                        }] : []),
+                                        {
+                                            key: 'video',
+                                            label: t('appBar.watchVideo'),
+                                            icon: <YouTubeIcon fontSize="small" />,
+                                            href: EXTERNAL_LINKS.youtube,
+                                        },
+                                        {
+                                            key: 'github',
+                                            label: t('appBar.viewOnGitHub'),
+                                            icon: <GitHubIcon fontSize="small" />,
+                                            href: EXTERNAL_LINKS.github,
+                                        },
+                                        {
+                                            key: 'pip',
+                                            label: t('appBar.pipInstall'),
+                                            icon: <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="" />,
+                                            href: EXTERNAL_LINKS.pip,
+                                        },
+                                        {
+                                            key: 'discord',
+                                            label: t('appBar.joinDiscord'),
+                                            icon: <DiscordIcon sx={{ fontSize: 20 }} />,
+                                            href: EXTERNAL_LINKS.discord,
+                                        },
+                                    ]}
+                                />
+                            </Box>
+                        )}
+                        {isAboutPage && !isCompactToolbar && (
                             <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
                                 <LanguageSwitcher />
+                                {serverConfig.IS_LOCAL_MODE && <LogViewerDialog />}
                                 <Tooltip title={t('appBar.watchVideo')}>
                                     <IconButton
                                         component="a"
@@ -994,6 +1384,11 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
     const [configLoaded, setConfigLoaded] = useState(false);
+    const [startupLogsOpen, setStartupLogsOpen] = useState(false);
+    const isDesktopApp = useMemo(
+        () => new URLSearchParams(window.location.search).get('desktop') === '1',
+        [],
+    );
 
     useEffect(() => {
         syncVegaLocale();
@@ -1012,7 +1407,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     // Validate persisted workspace still exists on the backend
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     
     // Debug: log persisted state on startup
     useEffect(() => {
@@ -1020,8 +1415,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             console.log('[DEBUG] activeWorkspace:', activeWorkspace);
             console.log('[DEBUG] tables:', tables.length, tables.map(t => ({ id: t.id, virtual: t.virtual, rowLen: t.rows?.length })));
             
-            // Recover orphaned state: tables exist but activeWorkspace was lost
-            if (!activeWorkspace && tables.length > 0) {
+            // Recover orphaned state: content exists but activeWorkspace was lost
+            if (!activeWorkspace && !dfSelectors.selectSessionEmpty(store.getState())) {
                 const recoveredId = `recovered_${Date.now()}`;
                 dispatch(dfActions.setActiveWorkspace({ id: recoveredId, displayName: t('workspace.recoveredSession') }));
             }
@@ -1166,7 +1561,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         })(),
         components: {
             MuiButton: {
+                defaultProps: {
+                    disableElevation: true,
+                },
                 styleOverrides: {
+                    root: {
+                        textTransform: 'none',
+                    },
                     text: ({ ownerState, theme: t }) => {
                         const c = ownerState.color;
                         if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
@@ -1255,17 +1656,49 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     return (
         <ThemeProvider theme={theme}>
-            {configLoaded && authChecked ? (
-                <RouterProvider router={router} />
-            ) : (
-                <AnvilLoader label="loading data formulator..." />
-            )}
-            {migrationBrowserId && (
-                <IdentityMigrationDialog
-                    oldBrowserId={migrationBrowserId}
-                    onDone={() => setMigrationBrowserId(null)}
-                />
-            )}
+            <LayoutProvider>
+                {configLoaded && authChecked ? (
+                    <RouterProvider router={router} />
+                ) : (
+                    <>
+                        <AnvilLoader
+                            label="loading data formulator..."
+                            action={isDesktopApp ? (
+                                <Button
+                                    variant="text"
+                                    size="small"
+                                    startIcon={<TerminalOutlinedIcon sx={{ fontSize: 15 }} />}
+                                    onClick={() => setStartupLogsOpen(true)}
+                                    sx={{
+                                        minWidth: 0,
+                                        px: 0.5,
+                                        color: 'text.disabled',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 400,
+                                        textTransform: 'none',
+                                        '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' },
+                                    }}
+                                >
+                                    View backend log
+                                </Button>
+                            ) : undefined}
+                        />
+                        {isDesktopApp && (
+                            <LogViewerDialog
+                                open={startupLogsOpen}
+                                onOpenChange={setStartupLogsOpen}
+                                hideTrigger
+                            />
+                        )}
+                    </>
+                )}
+                {migrationBrowserId && (
+                    <IdentityMigrationDialog
+                        oldBrowserId={migrationBrowserId}
+                        onDone={() => setMigrationBrowserId(null)}
+                    />
+                )}
+            </LayoutProvider>
         </ThemeProvider>
     );
 }

@@ -1,4 +1,5 @@
 include py-src/data_formulator/dist/*
 include py-src/data_formulator/dist/assets/*
+recursive-include py-src/data_formulator/data_loader/guides *.md
 global-exclude .DS_Store
 exclude py-src/examples

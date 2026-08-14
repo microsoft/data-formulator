@@ -1,0 +1,1 @@
+"""Analyst data-loading skill package."""

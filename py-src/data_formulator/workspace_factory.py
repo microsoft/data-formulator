@@ -23,6 +23,7 @@ from pathlib import Path
 
 from data_formulator.datalake.workspace import Workspace, get_data_formulator_home, get_user_home
 from data_formulator.datalake.workspace_manager import WorkspaceManager
+from data_formulator.errors import AppError, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +91,6 @@ def _get_backend() -> str:
 def get_workspace_manager(identity_id: str) -> WorkspaceManager:
     """
     Return a :class:`WorkspaceManager` (or Azure subclass) for the given user.
-
-    Not available for ephemeral mode — raises RuntimeError.
     """
     from flask import current_app
 
@@ -101,10 +100,8 @@ def get_workspace_manager(identity_id: str) -> WorkspaceManager:
     )
 
     if backend == "ephemeral":
-        raise RuntimeError(
-            "get_workspace_manager() is not available for ephemeral backend. "
-            "Session management is handled client-side."
-        )
+        from data_formulator.datalake.ephemeral_workspace import EphemeralWorkspaceManager
+        return EphemeralWorkspaceManager(identity_id)
 
     if backend == "azure_blob":
         from data_formulator.datalake.azure_blob_workspace_manager import (
@@ -130,34 +127,22 @@ def get_workspace(identity_id: str) -> Workspace:
     """
     Return the active :class:`Workspace` for *identity_id*.
 
-    For local/Azure: uses WorkspaceManager with lazy creation.
-    For ephemeral: creates a scratch workspace and materializes table data
-    from ``_workspace_tables`` in the request body.  The frontend (IndexedDB)
-    owns all data and sends it with every request; the backend writes it to
-    temp parquet files so agents/DuckDB can read normally.
+    All backends use their configured WorkspaceManager with lazy creation.
+    Ephemeral workspaces use the same local format with bounded retention.
     """
     ws_id = get_active_workspace_id()
     if not ws_id:
         raise ValueError("No active workspace. X-Workspace-Id header is required.")
 
-    backend = _get_backend()
-
-    if backend == "ephemeral":
-        from data_formulator.datalake.ephemeral_workspace import construct_scratch_workspace
-
-        # Extract workspace tables from the request body
-        workspace_tables = []
-        from flask import request
-        if request.is_json:
-            data = request.get_json(silent=True) or {}
-            workspace_tables = data.get("_workspace_tables") or []
-
-        return construct_scratch_workspace(identity_id, ws_id, workspace_tables)
-
     mgr = get_workspace_manager(identity_id)
 
     # Lazy creation: frontend generates the ID, backend creates on first use
     if not mgr.workspace_exists(ws_id):
+        if getattr(mgr, "workspace_was_evicted", lambda _workspace_id: False)(ws_id):
+            raise AppError(
+                "WORKSPACE_EXPIRED",
+                "This temporary workspace has expired.",
+            )
         mgr.create_workspace(ws_id)
 
     return mgr.open_workspace(ws_id, identity_id)

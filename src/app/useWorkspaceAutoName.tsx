@@ -14,8 +14,9 @@ export function isUntitledWorkspaceName(displayName: string | undefined): boolea
 }
 
 /**
- * Auto-names a workspace after the first table is loaded,
- * if the workspace still has its auto-generated timestamp name.
+ * Auto-names a workspace once it holds something worth naming — a loaded
+ * table or a first exchange with the agent — if it still has its placeholder
+ * name.
  *
  * Calls the LLM to generate a short display name based on
  * table names and the first user query (if any).
@@ -23,8 +24,9 @@ export function isUntitledWorkspaceName(displayName: string | undefined): boolea
 export function useWorkspaceAutoName() {
     const dispatch = useDispatch<AppDispatch>();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+    const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const calledRef = useRef(false);
@@ -40,9 +42,10 @@ export function useWorkspaceAutoName() {
         // Only auto-name once per workspace
         if (calledRef.current) return;
 
-        // Need: active workspace with timestamp name, at least one table, a model selected
+        // Need: an active workspace, a model, and enough substance to name.
+        // A session can be conversation-only, so a first exchange counts too.
         if (!activeWorkspace) return;
-        if (tables.length === 0) return;
+        if (tables.length === 0 && textTurns.length === 0) return;
         if (!selectedModelId) return;
 
         // Only auto-name if the display name is still the placeholder
@@ -55,11 +58,16 @@ export function useWorkspaceAutoName() {
 
         // Gather context
         const tableNames = tables.map(t => t.displayId || t.id);
-        // Find the first user query from draft nodes' interaction log
+        // The first user prompt, preferring turns: a draft is deleted when its
+        // run completes, so its interaction log may already be gone.
+        const firstTurnPrompt = [...textTurns]
+            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+            .map(turn => turn.prompt)
+            .find(prompt => !!prompt);
         const firstInteraction = draftNodes
             .flatMap(n => n.derive?.trigger?.interaction || [])
             .find(entry => entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction'));
-        const firstQuery = firstInteraction?.content || '';
+        const firstQuery = firstTurnPrompt || firstInteraction?.content || '';
 
         const wsId = activeWorkspace.id;
 
@@ -85,5 +93,5 @@ export function useWorkspaceAutoName() {
                 console.warn('[auto-name] failed:', e);
             }
         })();
-    }, [activeWorkspace, tables.length, selectedModelId, draftNodes.length]);
+    }, [activeWorkspace, tables.length, selectedModelId, draftNodes.length, textTurns.length]);
 }

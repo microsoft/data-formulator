@@ -31,26 +31,53 @@ class AzureBlobDataLoader(ExternalDataLoader):
             {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "tier": "connection", "advanced": True, "description": "Azure endpoint override"}
         ]
         return params_list
+
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "azure_identity",
+                "label": "Azure identity",
+                "description": "Use Azure CLI credentials locally or a managed identity in Azure.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+                "default": True,
+            },
+            {
+                "id": "sas_token",
+                "label": "SAS token",
+                "description": "Use a time-limited SAS token scoped to the container.",
+                "fields": ["sas_token"],
+                "required_fields": ["sas_token"],
+                "kind": "credentials",
+            },
+            {
+                "id": "connection_string",
+                "label": "Connection string",
+                "description": "Use a storage account connection string.",
+                "fields": ["connection_string"],
+                "required_fields": ["connection_string"],
+                "kind": "credentials",
+            },
+            {
+                "id": "account_key",
+                "label": "Account key",
+                "description": "Use the storage account key.",
+                "fields": ["account_key"],
+                "required_fields": ["account_key"],
+                "kind": "credentials",
+            },
+        ]
+
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        for field in ("sas_token", "connection_string", "account_key"):
+            if params.get(field):
+                return field
+        return "azure_identity"
     
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example (conn string):** connection_string: `DefaultEndpointsProtocol=https;AccountName=...` · container_name: `mydata`
-
-**Example (account key):** account_name: `mystorageacct` · container_name: `mydata` · account_key: `abc123...`
-
-**Option 1 — Connection String (simplest):**
-Get it from Azure Portal → Storage Account → Access keys. Enter in `connection_string`; `account_name` can be omitted.
-
-**Option 2 — Account Key:**
-From Azure Portal → Storage Account → Access keys. Use `account_name` + `account_key`.
-
-**Option 3 — SAS Token (recommended for limited access):**
-Generate from Azure Portal → Storage Account → Shared access signature. Use `account_name` + `sas_token`. Can be time-limited and permission-scoped.
-
-**Option 4 — Azure CLI / Managed Identity (most secure):**
-Just provide `account_name` + `container_name`. Requires `az login` or Managed Identity.
-
-**Supported formats:** CSV, Parquet, JSON, JSONL"""
+    AUTH_GUIDE = "azure_blob.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -69,6 +96,11 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
             self.azure_fs = pa_fs.AzureFileSystem(
                 account_name=self.account_name,
                 account_key=self.account_key
+            )
+        elif self.sas_token:
+            self.azure_fs = pa_fs.AzureFileSystem(
+                account_name=self.account_name,
+                sas_token=self.sas_token,
             )
         elif self.connection_string:
             self.azure_fs = pa_fs.AzureFileSystem.from_connection_string(self.connection_string)

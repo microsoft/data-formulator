@@ -4,7 +4,7 @@
 import _, {  } from "lodash";
 import { useEffect, useRef } from "react";
 import ts from "typescript";
-import { Channel, Chart, EncodingItem, EncodingMap, FieldItem, Trigger } from "../components/ComponentType";
+import { Channel, Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, Trigger } from "../components/ComponentType";
 import { DictTable } from "../components/ComponentType";
 import { Type } from "../data/types";
 import * as d3 from 'd3';
@@ -71,6 +71,7 @@ export function getUrls() {
         LOGS_INFO: `/api/logs/info`,
         LOGS_TAIL: `/api/logs/tail`,
         LOGS_DOWNLOAD: `/api/logs/download`,
+        MODEL_ENDPOINTS: `/api/model-endpoints`,
 
         // Session management
         SESSION_SAVE: `/api/sessions/save`,
@@ -167,8 +168,8 @@ async function getActiveWorkspaceId(): Promise<string | null> {
 }
 
 /**
- * Build a request with identity / auth / workspace headers and ephemeral-mode
- * body injection, then execute a single `fetch`.  This is the inner workhorse
+ * Build a request with identity / auth / workspace headers, then execute a
+ * single `fetch`. This is the inner workhorse
  * called by {@link fetchWithIdentity} (which wraps it with 401 retry).
  */
 async function _doFetch(
@@ -212,21 +213,6 @@ async function _doFetch(
             Object.fromEntries(headers.entries()),
         );
 
-        // Ephemeral mode: attach full table data from IndexedDB to JSON POST requests.
-        if (workspaceId && options.method?.toUpperCase() === 'POST') {
-            const isEphemeral = await _isEphemeralBackend();
-            if (isEphemeral && typeof options.body === 'string') {
-                try {
-                    const { tableDataDB } = await import('./workspaceDB');
-                    const workspaceTables = await tableDataDB.loadAll(workspaceId);
-                    const body = JSON.parse(options.body);
-                    body._workspace_tables = workspaceTables;
-                    options = { ...options, body: JSON.stringify(body) };
-                } catch (e) {
-                    console.warn('[fetchWithIdentity] Failed to attach workspace tables:', e);
-                }
-            }
-        }
     }
 
     return fetch(url, options);
@@ -266,15 +252,6 @@ export async function fetchWithIdentity(
     }
 
     return resp;
-}
-
-async function _isEphemeralBackend(): Promise<boolean> {
-    try {
-        const { store } = await import('./store');
-        return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
-    } catch {
-        return false;
-    }
 }
 
 import i18n from '../i18n';
@@ -557,7 +534,7 @@ export const assembleVegaChart = (
     encodingMap: { [key in Channel]: EncodingItem; }, 
     conceptShelfItems: FieldItem[], 
     workingTable: any[],
-    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[], intrinsicDomain?: [number, number], unit?: string, displayName?: string, description?: string}},
+    tableMetadata: {[key: string]: {type: Type, levels: any[], description?: string}},
     baseChartWidth: number = 100,
     baseChartHeight: number = 80,
     addTooltips: boolean = false,
@@ -565,7 +542,9 @@ export const assembleVegaChart = (
     scaleFactor: number = 1,
     maxStretchFactor?: number,
     assembleOptions?: AssembleOptions,
-    semanticAnnotationOverrides?: Record<string, any>,
+    fieldSemantics?: Record<string, FieldSemanticsInfo>,
+    title?: string,
+    subtitle?: string,
 ) => {
 
     // Convert app-level EncodingMap (fieldID-based) to library-level encodings (field-name-based)
@@ -582,27 +561,13 @@ export const assembleVegaChart = (
         };
     }
 
-    // Extract semantic types from table metadata
-    // Build SemanticAnnotation objects when enriched metadata (intrinsicDomain, unit) is available
     const semanticTypes: Record<string, string | any> = {};
-    for (const [fieldName, meta] of Object.entries(tableMetadata)) {
-        if (meta.semanticType) {
-            if (meta.intrinsicDomain || meta.unit) {
-                // Build enriched annotation object
-                const annotation: any = { semanticType: meta.semanticType };
-                if (meta.intrinsicDomain) annotation.intrinsicDomain = meta.intrinsicDomain;
-                if (meta.unit) annotation.unit = meta.unit;
-                if (meta.levels && meta.levels.length > 0) annotation.sortOrder = meta.levels;
-                semanticTypes[fieldName] = annotation;
-            } else {
-                semanticTypes[fieldName] = meta.semanticType;
-            }
-        }
-    }
-    // Merge enriched annotations (e.g., intrinsicDomain, unit) when provided
-    if (semanticAnnotationOverrides) {
-        for (const [fieldName, annotation] of Object.entries(semanticAnnotationOverrides)) {
-            semanticTypes[fieldName] = annotation;
+    for (const [fieldName, info] of Object.entries(fieldSemantics ?? {})) {
+        if (info.semanticType) {
+            const { displayName: _displayName, ...annotation } = info;
+            semanticTypes[fieldName] = Object.keys(annotation).length === 1
+                ? info.semanticType
+                : annotation;
         }
     }
 
@@ -617,16 +582,18 @@ export const assembleVegaChart = (
     const stretch = maxStretchFactor ?? 1.5;
 
     const fieldDisplayNames: Record<string, string> = {};
-    for (const [name, meta] of Object.entries(tableMetadata)) {
-        if (meta.displayName) fieldDisplayNames[name] = meta.displayName;
+    for (const [name, info] of Object.entries(fieldSemantics ?? {})) {
+        if (info.displayName) fieldDisplayNames[name] = info.displayName;
     }
 
-    return assembleVegaLite({
+    const spec = assembleVegaLite({
         data: { values: workingTable },
         semantic_types: semanticTypes,
         chart_spec: {
             chartType,
             encodings,
+            ...(title ? { title } : {}),
+            ...(subtitle ? { subtitle } : {}),
             // DF's default chart width/height is the *target* size → flint `baseSize`.
             // The hard ceiling is base × stretch (see `stretch` above), so charts render
             // at the configured size and only grow under pressure up to that ceiling.
@@ -644,24 +611,37 @@ export const assembleVegaChart = (
         },
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     });
+
+    // Published flint-chart 0.4.1 ignores chart-level title/subtitle fields;
+    // live Flint consumes them above and owns fitting. Keep this fallback until
+    // the package release catches up with the live authoring contract.
+    if (title && !spec.title) {
+        spec.title = {
+            text: title,
+            ...(subtitle ? { subtitle } : {}),
+            anchor: 'middle',
+            fontWeight: 500,
+            fontSize: 13,
+            subtitleFontSize: 11,
+            color: '#555',
+            offset: 12,
+        };
+    }
+
+    return spec;
 }
 
 // resolveRecommendedChart & resolveChartFields remain in app layer (need generateFreshChart, Chart)
 export { resolveRecommendedChart, resolveChartFields } from './chartRecommendation';
 
 export let getTriggers = (leafTable: DictTable, tables: DictTable[]): Trigger[] => {
-    // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)
+    // Recursively find the complete trigger chain from the source to leafTable.
     let triggers : Trigger[] = [];
     let t = leafTable;
     
     while(true) {
         // this is when we find an original table
         if (t.derive == undefined) {
-            break;
-        }
-
-        // this is when we find an anchored table (which is not the leaf table)
-        if (t !== leafTable && t.anchored) {
             break;
         }
 

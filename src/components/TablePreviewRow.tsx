@@ -6,9 +6,10 @@ import { Box, Button, CircularProgress, Collapse, Typography } from '@mui/materi
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { useTranslation } from 'react-i18next';
 import { DataFrameTable } from '../views/DataFrameTable';
+import { iconVar, textVar } from '../app/layout';
 
-// Shared header+collapsible-preview row used by LoadPlanCard and the
-// inline previews in DataLoadingChat. Pure visual; no fetching, no state.
+// Shared header and collapsible preview row used by connector and scratch
+// candidates in LoadPlanCard. Pure visual; no fetching, no state.
 
 export interface TablePreviewData {
     state: 'idle' | 'loading' | 'error' | 'ready';
@@ -30,13 +31,17 @@ export interface TablePreviewRowProps {
      *  Ready/error/empty states return to their natural content height. */
     loadingHeight?: number;
     onTogglePreview?: () => void;
+    /** Recovery action offered next to a failed preview. */
+    onRetryPreview?: () => void;
+    /** Label for that action — e.g. "Retry" or "Reconnect". */
+    retryLabel?: string;
     unresolved?: { message: string; detail?: string };
     dim?: boolean;
 }
 
 export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
     name, meta, leading, trailing, filterChips,
-    preview, expanded, loadingHeight, onTogglePreview, unresolved, dim = false,
+    preview, expanded, loadingHeight, onTogglePreview, onRetryPreview, retryLabel, unresolved, dim = false,
 }) => {
     const { t } = useTranslation();
     const showPreviewButton = !!onTogglePreview && !unresolved;
@@ -53,24 +58,24 @@ export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
         <Box sx={{ py: 0.5, opacity: dim ? 0.6 : 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {leading}
-                {unresolved && <ErrorOutlineIcon sx={{ fontSize: 14, color: 'warning.main' }} />}
-                <Typography title={name} sx={{ fontSize: 12, fontWeight: 500, minWidth: 0 }} noWrap>{name}</Typography>
-                {meta && <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>{meta}</Typography>}
+                {unresolved && <ErrorOutlineIcon sx={{ fontSize: iconVar.sm, color: 'warning.main' }} />}
+                <Typography title={name} sx={{ fontSize: textVar.sm, fontWeight: 500, minWidth: 0 }} noWrap>{name}</Typography>
+                {meta && <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled' }}>{meta}</Typography>}
                 <Box sx={{ flex: 1 }} />
                 {trailing}
                 {showPreviewButton && (
                     <Button size="small" variant="text" disabled={isLoading} onClick={onTogglePreview}
-                        sx={{ textTransform: 'none', fontSize: 10, py: 0, px: 0.75, minHeight: 0 }}>
+                        sx={{ textTransform: 'none', fontSize: textVar.xxs, py: 0, px: 0.75, minHeight: 0 }}>
                         {buttonLabel}
                     </Button>
                 )}
             </Box>
 
             {unresolved ? (
-                <Typography sx={{ pl: indent, mt: 0.25, fontSize: 10.5, color: 'warning.dark', fontStyle: 'italic' }}>
+                <Typography sx={{ pl: indent, mt: 0.25, fontSize: textVar.xs, color: 'warning.dark', fontStyle: 'italic' }}>
                     {unresolved.message}
                     {unresolved.detail && (
-                        <Box component="span" sx={{ display: 'block', color: 'text.disabled', fontSize: 10 }}>
+                        <Box component="span" sx={{ display: 'block', color: 'text.disabled', fontSize: textVar.xxs }}>
                             {unresolved.detail}
                         </Box>
                     )}
@@ -106,25 +111,34 @@ export const TablePreviewRow: React.FC<TablePreviewRowProps> = ({
                                     py: loadingHeight ? 0 : 1,
                                 }}>
                                     <CircularProgress size={14} />
-                                    <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
                                         {t('dataLoading.loadPlan.previewing')}
                                     </Typography>
                                 </Box>
                             ) : preview.state === 'error' ? (
-                                <Typography sx={{ fontSize: 11, color: 'error.main' }}>
-                                    {preview.error || t('dataLoading.loadPlan.previewFailed')}
-                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+                                    <Typography sx={{ fontSize: textVar.xs, color: 'error.main', minWidth: 0 }}>
+                                        {preview.error || t('dataLoading.loadPlan.previewFailed')}
+                                    </Typography>
+                                    {onRetryPreview && (
+                                        <Button size="small" variant="text" onClick={onRetryPreview}
+                                            sx={{ textTransform: 'none', fontSize: textVar.xxs, py: 0, px: 0.75, minHeight: 0, flexShrink: 0 }}>
+                                            {retryLabel || t('dataLoading.loadPlan.retryPreview', { defaultValue: 'Retry' })}
+                                        </Button>
+                                    )}
+                                </Box>
                             ) : preview.state === 'ready' && (preview.rows?.length ?? 0) > 0 ? (
                                 <DataFrameTable
                                     columns={preview.columns || []}
                                     rows={preview.rows || []}
                                     totalRows={preview.totalRows}
                                     maxRows={5} maxColumns={8} maxCellLength={18}
+                                    minColumnWidth={72}
                                     fontSize={10.5} headerFontSize={10}
                                     truncationIndicator="row"
                                 />
                             ) : preview.state === 'ready' ? (
-                                <Typography sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>
+                                <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontStyle: 'italic' }}>
                                     {t('connectorPreview.noMatchingRows')}
                                 </Typography>
                             ) : null}

@@ -14,6 +14,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import { TableIcon } from '../icons';
+import { iconVar, textVar } from '../app/layout';
 
 // ---------- Types ----------
 
@@ -113,7 +114,7 @@ export const StyledTreeItem = styled(TreeItem)(({ theme }) => ({
             display: 'none',
         },
         [`& .${treeItemClasses.label}`]: {
-            fontSize: 13,
+            fontSize: textVar.md,
         },
         '&:hover': { backgroundColor: theme.palette.action.hover },
     },
@@ -133,7 +134,7 @@ export const CountBadge: React.FC<{ count: number | string }> = ({ count }) => (
             height: 18,
             bgcolor: 'action.selected',
             color: 'text.disabled',
-            fontSize: 11,
+            fontSize: textVar.xs,
             fontVariantNumeric: 'tabular-nums',
             flexShrink: 0,
             '& .MuiChip-label': { px: 0.8 },
@@ -180,7 +181,7 @@ export function renderCatalogTreeItems(
         const labelContent = isLoadMore ? (
             <Typography
                 component="span"
-                sx={{ fontSize: 12, color: 'primary.main', cursor: 'pointer' }}
+                sx={{ fontSize: textVar.sm, color: 'primary.main', cursor: 'pointer' }}
                 onClick={(e) => {
                     e.stopPropagation();
                     onLoadMore?.(node, e);
@@ -197,17 +198,17 @@ export function renderCatalogTreeItems(
             >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
                 {isGroup
-                    ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
+                    ? <DashboardOutlinedIcon sx={{ fontSize: iconVar.md, color: groupLoaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
                     : isTable
-                        ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                        : <FolderOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
+                        ? <TableIcon sx={{ fontSize: iconVar.md, color: loaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
+                        : <FolderOutlinedIcon sx={{ fontSize: iconVar.md, color: 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
                 }
-                <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: 13 }}>
+                <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.md }}>
                     {node.name}
                 </Typography>
-                {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
+                {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: iconVar.sm, color: 'success.main', flexShrink: 0 }} />}
                 {isTable && node.metadata?.row_count != null && (
-                    <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                    <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                         {Number(node.metadata.row_count).toLocaleString()}
                     </Typography>
                 )}
@@ -235,7 +236,7 @@ export function renderCatalogTreeItems(
             <StyledTreeItem key={itemId} itemId={itemId} label={labelContent} {...dragProps}>
                 {node.children && renderCatalogTreeItems(node.children, opts)}
                 {isLazyNode && <StyledTreeItem itemId={`${itemId}/__loading`} label={
-                    <Typography sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>Loading…</Typography>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontStyle: 'italic' }}>Loading…</Typography>
                 } />}
             </StyledTreeItem>
         );

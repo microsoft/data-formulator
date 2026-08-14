@@ -51,6 +51,43 @@ def knowledge_limits():
     return json_ok({"limits": KNOWLEDGE_LIMITS})
 
 
+# ── user data-source memory ───────────────────────────────────────────────
+
+
+@knowledge_bp.route("/memory/read", methods=["POST"])
+def data_memory_read():
+    """Read the current user's shared data-source memory."""
+    return json_ok({"content": _get_store().read_data_memory()})
+
+
+@knowledge_bp.route("/memory/append", methods=["POST"])
+def data_memory_append():
+    """Append a durable note to the current user's data-source memory."""
+    data = request.get_json(silent=True) or {}
+    content = data.get("content", "")
+    if not isinstance(content, str):
+        raise AppError(ErrorCode.INVALID_REQUEST, "'content' must be a string")
+    try:
+        _get_store().append_data_memory(content)
+    except ValueError as exc:
+        raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
+    return json_ok(None)
+
+
+@knowledge_bp.route("/memory/rewrite", methods=["POST"])
+def data_memory_rewrite():
+    """Replace the current user's data-source memory."""
+    data = request.get_json(silent=True) or {}
+    content = data.get("content", "")
+    if not isinstance(content, str):
+        raise AppError(ErrorCode.INVALID_REQUEST, "'content' must be a string")
+    try:
+        _get_store().rewrite_data_memory(content)
+    except ValueError as exc:
+        raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
+    return json_ok(None)
+
+
 # ── list ──────────────────────────────────────────────────────────────────
 
 

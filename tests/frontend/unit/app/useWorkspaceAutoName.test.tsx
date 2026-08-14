@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
     updateWorkspaceMeta: vi.fn(),
     state: {
         activeWorkspace: { id: 'ws-1', displayName: 'Untitled Session' },
-        tables: [{ id: 'orders', displayId: '订单' }],
+        inputTables: [{ id: 'orders', displayId: '订单' }],
+        derivedTables: [],
+        textTurns: [] as any[],
         draftNodes: [
             {
                 derive: {
@@ -56,6 +58,7 @@ vi.mock('../../../../src/app/dfSlice', () => ({
     },
     dfSelectors: {
         getAllModels: (state: any) => [...(state.globalModels ?? []), ...(state.models ?? [])],
+        getAllTables: (state: any) => [...(state.inputTables ?? []), ...(state.derivedTables ?? [])],
     },
 }));
 

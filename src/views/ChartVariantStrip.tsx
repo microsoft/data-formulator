@@ -33,6 +33,7 @@ import {
 import { buildSpecForRestyle, buildDataContext, callRestyleAgent, makeVariant } from '../app/restyle';
 import { STYLE_PRESETS } from './EncodingShelfCard';
 import { getDataTable } from './ChartUtils';
+import { iconVar, textVar } from '../app/layout';
 
 export interface ChartVariantStripProps {
     chartId: string;
@@ -77,7 +78,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const allCharts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const activeModel = useSelector(dfSelectors.getActiveModel);
@@ -276,7 +277,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                     gap: '4px',
                     height: 22,
                     px: '7px',
-                    fontSize: 11,
+                    fontSize: textVar.xs,
                     fontWeight: opts.active ? 500 : 400,
                     lineHeight: 1.4,
                     color: accent,
@@ -318,7 +319,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                             },
                         }}
                     >
-                        <CloseIcon sx={{ fontSize: 11 }} />
+                        <CloseIcon sx={{ fontSize: textVar.xs }} />
                     </Box>
                 )}
             </Box>
@@ -336,7 +337,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
             minHeight: 34,
         }}>
             <Divider orientation="vertical" flexItem sx={{ my: 0.5, mr: 1, borderColor: alpha(theme.palette.text.primary, 0.12) }} />
-            <Typography sx={{ fontSize: 12, color: 'text.secondary', mr: 0.25 }}>
+            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mr: 0.25 }}>
                 style:
             </Typography>
             {renderVariantChip('default', {
@@ -376,7 +377,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                         height: 20,
                         px: '6px',
                         maxWidth: 160,
-                        fontSize: 11,
+                        fontSize: textVar.xs,
                         fontFamily: theme.typography.fontFamily,
                         color: 'text.secondary',
                         borderRadius: '6px',
@@ -411,7 +412,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                 transformOrigin={{ vertical: 'top', horizontal: 'left' }}
                 slotProps={{ paper: { sx: { width: 340, p: 2, borderRadius: 2 } } }}
             >
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1.25 }}>
+                <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1.25 }}>
                     Quick actions
                 </Typography>
                 {[
@@ -419,7 +420,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                     { label: 'annotate', actions: ANNOTATE_ACTIONS },
                 ].map(group => (
                     <Box key={group.label} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', rowGap: 0.5, columnGap: 0.5, mb: 1.5 }}>
-                        <Typography sx={{ fontSize: 11, color: 'text.disabled', height: 20, display: 'flex', alignItems: 'center', flexShrink: 0, width: 44 }}>
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', height: 20, display: 'flex', alignItems: 'center', flexShrink: 0, width: 44 }}>
                             {group.label}
                         </Typography>
                         {group.actions.map(action => (
@@ -432,7 +433,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                                         alignItems: 'center',
                                         height: 20,
                                         px: '8px',
-                                        fontSize: 11,
+                                        fontSize: textVar.xs,
                                         fontFamily: theme.typography.fontFamily,
                                         color: 'text.primary',
                                         borderRadius: '6px',
@@ -453,7 +454,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                     </Box>
                 ))}
                 <Divider sx={{ my: 1.5 }} />
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1 }}>
+                <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1 }}>
                     Design yourself
                 </Typography>
                 <Card
@@ -480,7 +481,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                         autoFocus
                         sx={{
                             flex: 1,
-                            "& .MuiInput-input": { fontSize: '12px', lineHeight: 1.5 },
+                            "& .MuiInput-input": { fontSize: textVar.sm, lineHeight: 1.5 },
                             "& .MuiInput-underline:before": { borderBottom: 'none' },
                             "& .MuiInput-underline:hover:not(.Mui-disabled):before": { borderBottom: 'none' },
                             "& .MuiInput-underline:after": { borderBottom: 'none' },
@@ -514,7 +515,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                                 >
                                     {isRestyling
                                         ? <CircularProgress size={18} sx={{ color: theme.palette.primary.main }} />
-                                        : <SendIcon sx={{ fontSize: 18 }} />}
+                                        : <SendIcon sx={{ fontSize: iconVar.lg }} />}
                                 </IconButton>
                             </span>
                         </Tooltip>

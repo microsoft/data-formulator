@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pytest
 
+import data_formulator.agents.client_utils as client_utils
 from data_formulator.agents.client_utils import Client
 
 pytestmark = [pytest.mark.backend]
@@ -81,6 +82,64 @@ class TestOllamaApiBaseNormalisation:
     def test_default_base_when_none(self):
         c = Client("ollama", "llama3")
         assert c.params["api_base"] == "http://localhost:11434"
+
+
+# ---------------------------------------------------------------------------
+# Azure credential selection
+# ---------------------------------------------------------------------------
+
+class TestAzureCredentialSelection:
+    def test_desktop_keyless_model_uses_azure_cli_credential(self, monkeypatch):
+        cli_credential = object()
+        monkeypatch.setenv("DATA_FORMULATOR_DESKTOP", "1")
+        monkeypatch.setattr(client_utils, "AzureCliCredential", lambda: cli_credential)
+        monkeypatch.setattr(
+            client_utils,
+            "DefaultAzureCredential",
+            lambda: pytest.fail("desktop mode must not select an ambient credential"),
+        )
+        monkeypatch.setattr(
+            client_utils,
+            "get_bearer_token_provider",
+            lambda credential, scope: (credential, scope),
+        )
+
+        client = Client(
+            "azure",
+            "deployment-name",
+            api_base="https://example.openai.azure.com",
+        )
+
+        assert client.params["azure_ad_token_provider"] == (
+            cli_credential,
+            "https://cognitiveservices.azure.com/.default",
+        )
+
+    def test_blank_api_version_is_not_defaulted(self):
+        client = Client(
+            "azure",
+            "deployment-name",
+            api_key="key",
+            api_base="https://example.openai.azure.com/",
+        )
+
+        assert client.params["api_base"] == "https://example.openai.azure.com"
+        assert "api_version" not in client.params
+
+    def test_explicit_api_version_is_preserved(self):
+        client = Client(
+            "azure",
+            "deployment-name",
+            api_key="key",
+            api_base="https://example.openai.azure.com",
+            api_version="2025-04-01-preview",
+        )
+
+        assert client.params["api_version"] == "2025-04-01-preview"
+
+    def test_api_base_is_required(self):
+        with pytest.raises(ValueError, match="Azure API base URL is required"):
+            Client("azure", "deployment-name", api_key="key")
 
 
 # ---------------------------------------------------------------------------

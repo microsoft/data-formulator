@@ -157,15 +157,7 @@ class KustoDataLoader(ExternalDataLoader):
             "params": ["kusto_cluster"],
         }
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Option 1 — Sign in with Microsoft (recommended):** Sign in as yourself and use your existing Kusto permissions. This option appears when the server has `KUSTO_OAUTH_CLIENT_ID` configured.
-
-    **Option 2 — Azure Default Identity:** Use the host's ambient Azure credentials — your Azure CLI login (`az login`) when running locally, or a Managed Identity when deployed to Azure.
-
-    **Option 3 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access.
-
-    Every identity must already have data-plane access to the selected Kusto database."""
+    AUTH_GUIDE = "kusto.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

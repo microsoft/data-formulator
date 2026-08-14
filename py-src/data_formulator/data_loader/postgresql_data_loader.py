@@ -40,17 +40,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         ]
         return params_list
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example:** user: `postgres` · host: `localhost` · port: `5432` · database: `mydb`
-
-**Local setup:** Ensure PostgreSQL is running — `brew services list` (macOS) or `systemctl status postgresql` (Linux). Leave password blank if none is set.
-
-**Remote setup:** Get host, port, username, and password from your database administrator. The user must have SELECT permissions on the tables you want to access.
-
-**Scope:** Leave *database* empty to browse all databases on the server, or fill it in to go straight to schemas/tables in that database.
-
-**Troubleshooting:** Test with `psql -U <user> -h <host> -p <port> -d <database>`"""
+    AUTH_GUIDE = "postgresql.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

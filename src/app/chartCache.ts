@@ -113,6 +113,7 @@ export function computeCacheKey(
     tableMetadata?: any,
     activeVariantId?: string,
     activeVariantSpec?: any,
+    fieldSemantics?: any,
 ): string {
     return JSON.stringify({
         chartType,
@@ -125,5 +126,8 @@ export function computeCacheKey(
         // are stable across versions that didn't track variants.
         activeVariantId: activeVariantId || null,
         activeVariantSpec: activeVariantSpec || null,
+        // Feeds field typing (and so the color scale) in the assembled spec,
+        // and arrives asynchronously — a change here must re-render.
+        fieldSemantics: fieldSemantics || null,
     });
 }

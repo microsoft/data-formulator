@@ -26,6 +26,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { Type } from '../data/types';
 import { formatCellValue } from './ViewUtils';
+import { iconVar, textVar } from '../app/layout';
 
 /** Wire shapes — must match the backend filter vocabulary. */
 export type RangeFilter = {
@@ -134,7 +135,7 @@ export const ColumnFilterPopover: React.FC<ColumnFilterPopoverProps> = ({
                 <Typography
                     variant="subtitle2"
                     sx={{
-                        fontSize: 13, fontWeight: 600, lineHeight: 1.3,
+                        fontSize: textVar.md, fontWeight: 600, lineHeight: 1.3,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}
                 >
@@ -154,7 +155,7 @@ export const ColumnFilterPopover: React.FC<ColumnFilterPopoverProps> = ({
                 <Typography
                     variant="overline"
                     color="text.disabled"
-                    sx={{ fontSize: 10, lineHeight: 1, fontWeight: 400, letterSpacing: '0.08em' }}
+                    sx={{ fontSize: textVar.xxs, lineHeight: 1, fontWeight: 400, letterSpacing: '0.08em' }}
                 >
                     {t('dataGrid.filter.sectionSort')}
                 </Typography>
@@ -162,13 +163,13 @@ export const ColumnFilterPopover: React.FC<ColumnFilterPopoverProps> = ({
             {/* Section 2 — sort actions. */}
             <Box sx={{ py: 0.5 }}>
                 <SortActionRow
-                    icon={<ArrowUpwardIcon sx={{ fontSize: 14 }} />}
+                    icon={<ArrowUpwardIcon sx={{ fontSize: iconVar.sm }} />}
                     label={t('dataGrid.columnMenu.sortAsc')}
                     selected={isSorted && sortOrder === 'asc'}
                     onClick={() => { onSortAsc(); close(); }}
                 />
                 <SortActionRow
-                    icon={<ArrowDownwardIcon sx={{ fontSize: 14 }} />}
+                    icon={<ArrowDownwardIcon sx={{ fontSize: iconVar.sm }} />}
                     label={t('dataGrid.columnMenu.sortDesc')}
                     selected={isSorted && sortOrder === 'desc'}
                     onClick={() => { onSortDesc(); close(); }}
@@ -183,7 +184,7 @@ export const ColumnFilterPopover: React.FC<ColumnFilterPopoverProps> = ({
                 <Typography
                     variant="overline"
                     color="text.disabled"
-                    sx={{ fontSize: 10, lineHeight: 1, fontWeight: 400, letterSpacing: '0.08em' }}
+                    sx={{ fontSize: textVar.xxs, lineHeight: 1, fontWeight: 400, letterSpacing: '0.08em' }}
                 >
                     {t('dataGrid.filter.sectionFilter')}
                 </Typography>
@@ -309,13 +310,13 @@ const RangeFilterForm: React.FC<RangeFormProps> = ({
                     slotProps={{
                         inputLabel: { shrink: true },
                         htmlInput: {
-                            style: { fontSize: 12 },
+                            style: { fontSize: textVar.sm },
                             autoComplete: 'off',
                             name: `df-filter-from-${columnId}`,
                             ...(inputMode ? { inputMode } : {}),
                         },
                     }}
-                    sx={{ '& .MuiInputBase-root': { fontSize: 12 }, '& .MuiInputLabel-root': { fontSize: 11 } }}
+                    sx={{ '& .MuiInputBase-root': { fontSize: textVar.sm }, '& .MuiInputLabel-root': { fontSize: textVar.xs } }}
                 />
                 <TextField
                     size="small"
@@ -329,13 +330,13 @@ const RangeFilterForm: React.FC<RangeFormProps> = ({
                     slotProps={{
                         inputLabel: { shrink: true },
                         htmlInput: {
-                            style: { fontSize: 12 },
+                            style: { fontSize: textVar.sm },
                             autoComplete: 'off',
                             name: `df-filter-to-${columnId}`,
                             ...(inputMode ? { inputMode } : {}),
                         },
                     }}
-                    sx={{ '& .MuiInputBase-root': { fontSize: 12 }, '& .MuiInputLabel-root': { fontSize: 11 } }}
+                    sx={{ '& .MuiInputBase-root': { fontSize: textVar.sm }, '& .MuiInputLabel-root': { fontSize: textVar.xs } }}
                 />
             </Stack>
             {(nullCount === undefined || nullCount > 0) && (
@@ -349,7 +350,7 @@ const RangeFilterForm: React.FC<RangeFormProps> = ({
                         />
                     }
                     label={
-                        <Typography sx={{ fontSize: 11 }}>
+                        <Typography sx={{ fontSize: textVar.xs }}>
                             {t('dataGrid.filter.showBlanksOnly')}
                             {nullCount !== undefined ? ` (${nullCount.toLocaleString()})` : ''}
                         </Typography>
@@ -494,11 +495,11 @@ const ChecklistRow: React.FC<{
             onClick={(e) => e.stopPropagation()}
             onChange={onToggle}
         />
-        <Typography sx={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <Typography sx={{ fontSize: textVar.sm, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {label}
         </Typography>
         {count !== undefined && (
-            <Typography sx={{ fontSize: 11, color: 'text.secondary', ml: 0.5, fontVariantNumeric: 'tabular-nums' }}>
+            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', ml: 0.5, fontVariantNumeric: 'tabular-nums' }}>
                 {count.toLocaleString()}
             </Typography>
         )}
@@ -539,8 +540,8 @@ const KeywordFilterForm: React.FC<KeywordFormProps> = ({
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') onApply(buildFilter()); }}
                 autoComplete="off"
-                slotProps={{ htmlInput: { style: { fontSize: 12 }, autoComplete: 'off', name: `df-filter-contains-${columnId}` } }}
-                sx={{ '& .MuiInputBase-root': { fontSize: 12 } }}
+                slotProps={{ htmlInput: { style: { fontSize: textVar.sm }, autoComplete: 'off', name: `df-filter-contains-${columnId}` } }}
+                sx={{ '& .MuiInputBase-root': { fontSize: textVar.sm } }}
             />
             <FilterActions
                 onApply={() => onApply(buildFilter())}
@@ -588,7 +589,7 @@ const SortActionRow: React.FC<{
         >
             {icon}
         </Box>
-        <Typography variant="body2" sx={{ fontSize: 12, lineHeight: 1.4 }}>
+        <Typography variant="body2" sx={{ fontSize: textVar.sm, lineHeight: 1.4 }}>
             {label}
         </Typography>
     </ListItemButton>
@@ -607,7 +608,7 @@ const FilterActions: React.FC<{
                 onClick={onClear}
                 disabled={clearDisabled}
                 sx={{
-                    fontSize: 11,
+                    fontSize: textVar.xs,
                     py: 0.25,
                     px: 1,
                     minWidth: 0,
@@ -621,7 +622,7 @@ const FilterActions: React.FC<{
                 size="small"
                 variant="contained"
                 onClick={onApply}
-                sx={{ fontSize: 11, py: 0.25, px: 1.25, minWidth: 0, textTransform: 'none' }}
+                sx={{ fontSize: textVar.xs, py: 0.25, px: 1.25, minWidth: 0, textTransform: 'none' }}
             >
                 {t('dataGrid.filter.apply')}
             </Button>

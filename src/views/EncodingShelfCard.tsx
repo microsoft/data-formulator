@@ -33,18 +33,12 @@ import {
     Slider,
     CircularProgress,
     LinearProgress,
-    Button,
     Collapse,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import React from 'react';
-import { useDragLayer } from 'react-dnd';
-import { ThinkingBufferEffect, WritingPencil } from '../components/FunComponents';
+import { WritingPencil } from '../components/FunComponents';
 import { Channel, Chart, FieldItem, Trigger, duplicateChart, ChartStyleVariant, computeEncodingFingerprint, isVariantStale } from "../components/ComponentType";
 
 import _ from 'lodash';
@@ -71,10 +65,10 @@ export const ConfigSlider: FC<{
                 sx={{
                     flex: 1, height: 3, mx: 0.5,
                     '& .MuiSlider-thumb': { width: 10, height: 10 },
-                    '& .MuiSlider-valueLabel': { fontSize: 10, padding: '2px 4px', lineHeight: 1.2 },
+                    '& .MuiSlider-valueLabel': { fontSize: textVar.xxs, padding: '2px 4px', lineHeight: 1.2 },
                 }}
             />
-            <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
+            <Typography variant="caption" sx={{ fontSize: textVar.xxs, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
                 {localValue}
             </Typography>
         </>
@@ -120,21 +114,13 @@ const chartCategoryToI18nKey: Record<string, string> = {
     "Tables & Maps": "tablesAndMaps",
     "Custom": "custom",
 };
-import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
-import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
-import AddIcon from '@mui/icons-material/Add';
-import CheckIcon from '@mui/icons-material/Check';
-import { ThinkingBanner } from './DataThread';
 
 import { AppDispatch } from '../app/store';
 import { borderColor, radius, transition } from '../app/tokens';
 
-import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 
-import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import { iconVar, textVar } from '../app/layout';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfCardProps { 
@@ -197,7 +183,7 @@ export const TriggerCard: FC<{
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
 
     const dispatch = useDispatch<AppDispatch>();
 
@@ -264,7 +250,7 @@ export const TriggerCard: FC<{
 
     if (mini) {
         return <Typography component="div" sx={{
-            fontSize: '10px', color: theme.palette.text.secondary,
+            fontSize: textVar.xxs, color: theme.palette.text.secondary,
             my: '2px', textWrap: 'balance',
             '&:hover': {
                 cursor: 'pointer',
@@ -280,7 +266,7 @@ export const TriggerCard: FC<{
     return  <Typography component="div" className={`${className}`}
         sx={{
             cursor: 'pointer', 
-            fontSize: '11px',
+            fontSize: textVar.xs,
             color: 'text.primary',
             textAlign: 'left',
             py: 0.5,
@@ -370,7 +356,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     };
 
     // reference to states
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
 
     let allCharts = useSelector(dfSelectors.getAllCharts);
@@ -452,32 +438,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             </Box>
             return component;
         });
-
-    // derive active fields from encoding map so that we can keep the order of which fields will be visualized
-    let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
-                                .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
-    let activeSimpleEncodings: { [key: string]: string } = {};
-    for (let channel of getChartChannels(chart.chartType)) {
-        if (chart.encodingMap[channel as Channel]?.fieldID) {
-            activeSimpleEncodings[channel] = activeFields.find(f => f.id == chart.encodingMap[channel as Channel].fieldID)?.name as string;
-        }
-    }
-    
-    let activeCustomFields = activeFields.filter(field => field.source == "custom");
-
-    // check if the current table contains all fields already exists a table that fullfills the user's specification
-    let existsWorkingTable = activeFields.length == 0 || activeFields.every(f => currentTable.names.includes(f.name));
-    
-    // All root/anchored tables, with current source tables ordered first for context priority
-    let rootTables = tables.filter(t => t.derive === undefined || t.anchored);
-    let priorityIds = (currentTable.derive && !currentTable.anchored)
-        ? currentTable.derive.source
-        : [currentTable.id];
-    let actionTableIds = [
-        ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
-        ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
-    ];
-
 
     // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
     // Chip strip for navigating user-authored "skins" of the current chart's
@@ -752,7 +712,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     gap: '4px',
                     height: 20,
                     px: '6px',
-                    fontSize: 11,
+                    fontSize: textVar.xs,
                     fontWeight: 400,
                     lineHeight: 1.4,
                     color: accent,
@@ -794,7 +754,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             },
                         }}
                     >
-                        <CloseIcon sx={{ fontSize: 11 }} />
+                        <CloseIcon sx={{ fontSize: textVar.xs }} />
                     </Box>
                 )}
             </Box>
@@ -806,7 +766,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5,
             px: 0.5, mb: 0.5,
         }}>
-            <Typography sx={{ fontSize: 10, color: 'text.secondary', mr: 0.25 }}>
+            <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', mr: 0.25 }}>
                 style:
             </Typography>
             {renderVariantChip('default', {
@@ -897,7 +857,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         {typeof tmpl?.icon == 'string' ? <img height="24px" width="24px" src={tmpl?.icon} alt="" role="presentation" /> : 
                                          <Box sx={{width: "24px", height: "24px"}}>{tmpl?.icon}</Box>}
                                         </ListItemIcon>
-                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{tmpl?.chart}</ListItemText>
+                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: textVar.sm}}}>{tmpl?.chart}</ListItemText>
                                 </div>
                                 </Tooltip>
                             )
@@ -908,7 +868,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 <ListSubheader sx={{ 
                                     color: "text.secondary", 
                                     lineHeight: 2, 
-                                    fontSize: 12,
+                                    fontSize: textVar.sm,
                                     gridColumn: '1 / -1'
                                 }} key={group}>
                                     <Tooltip title={getChartCategoryTip(group)} placement="left" arrow>
@@ -918,7 +878,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 ...templates.map((t, i) => (
                                     <MenuItem 
                                         sx={{ 
-                                            fontSize: 12, 
+                                            fontSize: textVar.sm, 
                                             paddingLeft: 2, 
                                             paddingRight: 2,
                                             minHeight: '32px',
@@ -940,7 +900,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                                 }
                                             </ListItemIcon>
                                             <ListItemText 
-                                                slotProps={{primary: {fontSize: 11}}} 
+                                                slotProps={{primary: {fontSize: textVar.xs}}} 
                                                 sx={{ margin: 0 }}
                                             >
                                                 {t.chart}
@@ -991,7 +951,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             overflow: 'hidden', padding: '0px 10px 0px 0px',
                                         }}>
                                             <Typography variant="caption" sx={{
-                                                padding: '0px 6px', color: 'text.secondary', fontSize: 10,
+                                                padding: '0px 6px', color: 'text.secondary', fontSize: textVar.xxs,
                                                 whiteSpace: 'nowrap', fontWeight: 500, minWidth: '40px', userSelect: 'none',
                                             }}>
                                                 {propDef.label}
@@ -1019,7 +979,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: !currentValue}));
                                         }}>
                                             <Typography variant="caption" sx={{
-                                                flex: 1, color: 'text.secondary', fontSize: 10,
+                                                flex: 1, color: 'text.secondary', fontSize: textVar.xxs,
                                                 whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none',
                                             }}>
                                                 {propDef.label}
@@ -1056,7 +1016,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         overflow: 'hidden',
                                     }}>
                                         <Typography variant="caption" sx={{
-                                            padding: '0px 8px', color: 'text.secondary', fontSize: 10,
+                                            padding: '0px 8px', color: 'text.secondary', fontSize: textVar.xxs,
                                             whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none',
                                         }}>
                                             {propDef.label}
@@ -1071,19 +1031,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             }}
                                             disableUnderline
                                             sx={{
-                                                flex: 1, fontSize: 11, height: '22px',
+                                                flex: 1, fontSize: textVar.xs, height: '22px',
                                                 backgroundColor: 'rgba(0,0,0,0.04)',
                                                 borderRadius: '6px',
                                                 '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
-                                                '& .MuiSelect-select': { padding: '1px 20px 1px 6px !important', fontSize: 11 },
-                                                '& .MuiSvgIcon-root': { fontSize: 14, right: 2 },
+                                                '& .MuiSelect-select': { padding: '1px 20px 1px 6px !important', fontSize: textVar.xs },
+                                                '& .MuiSvgIcon-root': { fontSize: iconVar.sm, right: 2 },
                                             }}
                                             renderValue={(idx: number) => {
-                                                return <span style={{fontSize: 11}}>{options[idx]?.label || "Default"}</span>;
+                                                return <span style={{fontSize: textVar.xs}}>{options[idx]?.label || "Default"}</span>;
                                             }}
                                         >
                                             {options.map((opt, i) => (
-                                                <MenuItem value={i} key={`config-${propDef.key}-${i}`} sx={{ fontSize: 11, minHeight: '28px' }}>
+                                                <MenuItem value={i} key={`config-${propDef.key}-${i}`} sx={{ fontSize: textVar.xs, minHeight: '28px' }}>
                                                     {opt.label}
                                                 </MenuItem>
                                             ))}
@@ -1132,7 +1092,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 }}>
                     <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
                         <WritingPencil size={12} />
-                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 11.5, lineHeight: 1.4 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: textVar.xs, lineHeight: 1.4 }}>
                             {agentStatusText}
                         </Typography>
                     </Box>

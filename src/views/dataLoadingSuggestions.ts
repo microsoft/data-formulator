@@ -13,6 +13,7 @@ import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
 import exampleImageTable from '../assets/example-image-table.png';
+import { textVar } from '../app/layout';
 
 export interface DataLoadingSuggestion {
     kind: string;
@@ -70,7 +71,7 @@ export function buildDataLoadingSuggestions(
         defaultValue: extractTextLabel,
     });
 
-    const iconSx = { fontSize: 14 };
+    const iconSx = { fontSize: textVar.lg };
 
     // Common: fill the input fields AND (if auto-run is enabled) submit
     // the payload. Centralising the dual behaviour keeps every

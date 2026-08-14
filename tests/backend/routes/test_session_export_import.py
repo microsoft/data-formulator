@@ -58,7 +58,6 @@ class TestExportSession:
         mgr.open_workspace.return_value = ws
 
         with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
             patch("data_formulator.routes.sessions.get_identity_id", return_value="user:alice"),
             patch("data_formulator.routes.sessions.get_workspace_manager", return_value=mgr),
             patch("data_formulator.datalake.workspace_manager._strip_sensitive", side_effect=lambda s: s),
@@ -74,7 +73,6 @@ class TestExportSession:
 
     def test_export_rejects_missing_workspace_id(self, client):
         with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
             patch("data_formulator.routes.sessions.get_identity_id", return_value="user:alice"),
         ):
             resp = client.post(
@@ -90,7 +88,6 @@ class TestExportSession:
 
     def test_export_rejects_missing_state(self, client):
         with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
             patch("data_formulator.routes.sessions.get_identity_id", return_value="user:alice"),
         ):
             resp = client.post(
@@ -108,7 +105,6 @@ class TestExportSession:
         mgr.workspace_exists.return_value = False
 
         with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
             patch("data_formulator.routes.sessions.get_identity_id", return_value="user:alice"),
             patch("data_formulator.routes.sessions.get_workspace_manager", return_value=mgr),
         ):
@@ -121,21 +117,6 @@ class TestExportSession:
         body = resp.get_json()
         assert body["status"] == "error"
         assert body["error"]["code"] == "TABLE_NOT_FOUND"
-
-    def test_export_rejected_in_ephemeral_mode(self, client):
-        with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=True),
-        ):
-            resp = client.post(
-                "/api/sessions/export",
-                json={"state": {"tables": []}, "workspace_id": "ws-1"},
-            )
-
-        assert resp.status_code == 200
-        body = resp.get_json()
-        assert body["status"] == "error"
-        assert body["error"]["code"] == "INVALID_REQUEST"
-
 
 # ── Import ────────────────────────────────────────────────────────────────
 
@@ -153,7 +134,6 @@ class TestImportSession:
         mgr.create_and_open_workspace.return_value = ws
 
         with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
             patch("data_formulator.routes.sessions.get_identity_id", return_value="user:bob"),
             patch("data_formulator.routes.sessions.get_workspace_manager", return_value=mgr),
         ):
@@ -178,7 +158,6 @@ class TestImportSession:
         mgr.open_workspace.return_value = ws
 
         with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
             patch("data_formulator.routes.sessions.get_identity_id", return_value="user:bob"),
             patch("data_formulator.routes.sessions.get_workspace_manager", return_value=mgr),
         ):
@@ -197,7 +176,6 @@ class TestImportSession:
         ws.import_session_zip.return_value = {"tables": []}
 
         with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
             patch("data_formulator.routes.sessions.get_identity_id", return_value="user:bob"),
             patch("data_formulator.routes.sessions.get_workspace", return_value=ws),
         ):
@@ -213,14 +191,11 @@ class TestImportSession:
         assert body["status"] == "success"
 
     def test_import_rejects_missing_file(self, client):
-        with (
-            patch("data_formulator.routes.sessions._is_ephemeral", return_value=False),
-        ):
-            resp = client.post(
-                "/api/sessions/import",
-                data={"workspace_id": "ws-1"},
-                content_type="multipart/form-data",
-            )
+        resp = client.post(
+            "/api/sessions/import",
+            data={"workspace_id": "ws-1"},
+            content_type="multipart/form-data",
+        )
 
         assert resp.status_code == 200
         body = resp.get_json()

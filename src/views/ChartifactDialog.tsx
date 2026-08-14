@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { Chart, DictTable, FieldItem } from '../components/ComponentType';
+import { Chart, DictTable, FieldItem, TableSemanticsInfo } from '../components/ComponentType';
 import { assembleVegaChart, prepVisTable } from '../app/utils';
 import { exportTableToDsv } from '../data/utils';
 import { ClientConfig } from '../app/dfSlice';
@@ -130,7 +130,7 @@ strong {
 };
 
 // Function to convert report markdown to Chartifact format
-export const convertToChartifact = (reportMarkdown: string, reportStyle: string, charts: Chart[], tables: DictTable[], conceptShelfItems: FieldItem[], config: ClientConfig) => {
+export const convertToChartifact = (reportMarkdown: string, reportStyle: string, charts: Chart[], tables: DictTable[], conceptShelfItems: FieldItem[], config: ClientConfig, tableSemantics: TableSemanticsInfo[] = []) => {
     try {
         // Extract chart IDs from the report markdown images
         // Images are in format: [IMAGE(chart-id)]
@@ -178,6 +178,8 @@ export const convertToChartifact = (reportMarkdown: string, reportStyle: string,
                     chart.config,
                     1,
                     config.maxStretchFactor,
+                    undefined,
+                    tableSemantics.find(info => info.tableId === chartTable.id)?.fields,
                 );
 
                 // Convert the spec to use named data source

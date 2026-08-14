@@ -16,15 +16,15 @@ import {
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
-import { Chart, DictTable, Trigger } from "../components/ComponentType";
+import { DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import { AnchorIcon } from '../icons';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
 import { TriggerCard } from './EncodingShelfCard';
 import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
+import { iconVar, textVar } from '../app/layout';
 
 
 // ─── Chart Card ──────────────────────────────────────────────────────────────
@@ -94,10 +94,78 @@ export let buildChartCard = (
                     }}
                     onClick={(event) => { event.stopPropagation(); chartElement.onDelete?.(); }}
                 >
-                    <DeleteIcon sx={{ fontSize: 16 }} />
+                    <DeleteIcon sx={{ fontSize: iconVar.md }} />
                 </IconButton>
             </Tooltip>
         )}
+    </Box>
+}
+
+/** Wrap chart elements as thumbnail rows under their table. */
+export let buildChartCards = (
+    relevantCharts: { tableId: string, chartId: string, element: any }[],
+    focusedChartId: string | undefined,
+    collapsed: boolean = false,
+) => {
+    let collapsedProps = collapsed ? { width: '50%', "& canvas": { width: 60, maxHeight: 50 } } : { width: '100%' };
+    return relevantCharts.map((ce) =>
+        <Box key={`relevant-chart-${ce.chartId}`}
+            data-chart-id={ce.chartId}
+            sx={{
+                display: 'flex', padding: 0, ...collapsedProps }}>
+            {buildChartCard(ce, focusedChartId)}
+        </Box>);
+}
+
+// ─── Table Reference Card ────────────────────────────────────────────────────
+
+/**
+ * A pointer to a table whose real card lives elsewhere — the shelf (a thread's
+ * source origin) or an earlier column (a continuation's carried-over parent).
+ * It is a reference, not a node: clickable, but it never carries charts, turns
+ * or drafts.
+ *
+ * Focus is shown as `selected-ref-card`, not the full `selected-card` ring: the
+ * ring means "this card is what the canvas is showing", and a focused table can
+ * appear in several places at once. Only its owning card wears the ring, so a
+ * single focused table never looks like several selections.
+ */
+export let buildTableRefChip = (props: {
+    tableId: string;
+    table: DictTable | undefined;
+    displayName?: string;
+    focused: boolean;
+    dispatch: any;
+}) => {
+    const { tableId, table, displayName, focused, dispatch } = props;
+    return <Box key={`regular-table-box-${tableId}`}
+        data-table-id={tableId}
+        className="data-thread-card-wrapper"
+        sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+        <Card className={`data-thread-card ${focused ? 'selected-ref-card' : ''}`} elevation={0}
+            sx={{ width: '100%',
+                ...ComponentBorderStyle,
+                borderRadius: '6px',
+            }}
+            onClick={() => {
+                dispatch(dfActions.setFocused({ type: 'table', tableId }));
+            }}>
+            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center' }}>
+                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: textVar.sm, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
+                    <Box sx={{ margin: '4px 8px 4px 2px', minWidth: 0, flex: 1 }}>
+                        <Typography fontSize="inherit" sx={{
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            wordBreak: 'break-all',
+                        }}>{displayName?.trim() || table?.displayId || tableId}</Typography>
+                    </Box>
+                </Stack>
+            </Box>
+        </Card>
     </Box>
 }
 
@@ -134,45 +202,36 @@ export let buildTriggerCard = (
 export interface BuildTableCardProps {
     tableId: string;
     tables: DictTable[];
-    charts: Chart[];
+    inferredDisplayName?: string;
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[];
     highlightedTableIds: string[];
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
-    focusedChart: Chart | undefined;
     parentTable: DictTable | undefined;
     tableIdList: string[];
     collapsed: boolean;
     dispatch: any;
-    handleOpenTableMenu: (table: DictTable, anchorEl: HTMLElement) => void;
+    /** Only the source-table shelf offers a table menu; thread cards omit it. */
+    handleOpenTableMenu?: (table: DictTable, anchorEl: HTMLElement) => void;
     primaryBgColor: string | undefined;
     /** i18n `t` from `useTranslation()` */
     t: (key: string, options?: Record<string, unknown>) => string;
-    /** Whether to show the original file name under the table name (default: true) */
+    /** Whether source cards show their original name alongside the workspace identifier. */
     showOriginalName?: boolean;
-    /**
-     * Render this card as a muted "ghost" — used on continuation segments
-     * to hint at the carry-over parent.  Still a real, clickable table card,
-     * just gray + reduced opacity so it reads as an orientation aid.
-     */
-    ghost?: boolean;
 }
 
 export let buildTableCard = (props: BuildTableCardProps) => {
     const {
-        tableId, tables, charts, chartElements, usedIntermediateTableIds,
-        highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
+        tableId, tables, inferredDisplayName, chartElements, usedIntermediateTableIds,
+        highlightedTableIds, focusedTableId, focusedChartId,
         parentTable, tableIdList, collapsed, dispatch,
         handleOpenTableMenu, primaryBgColor, t, showOriginalName = true,
-        ghost = false,
     } = props;
 
     const getOriginalName = (tbl: DictTable | undefined): string | null => {
         if (!tbl || tbl.derive) return null;
-        const name = tbl.source?.originalTableName;
-        if (!name || name === (tbl.displayId || tbl.id)) return null;
-        return name;
+        return tbl.source?.originalTableName || tbl.virtual?.tableId || tbl.id;
     };
 
     const getSourceTooltip = (tbl: DictTable | undefined): string | null => {
@@ -191,70 +250,22 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         }
     };
 
-    if (parentTable && tableId == parentTable.id && parentTable.anchored && tableIdList.length > 1) {
-        let table = tables.find(t => t.id == tableId);
-        const anchoredOriginalName = getOriginalName(table);
-        const anchoredTooltip = getSourceTooltip(table);
-        const anchoredContent = (
-            <Box 
-                sx={{ 
-                    margin: '0px', 
-                    width: 'fit-content',
-                    display: 'flex', 
-                    cursor: 'pointer',
-                    padding: '2px 4px',
-                    borderRadius: '4px',
-                    '&:hover': {
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                        boxShadow: shadow.sm
-                    }
-                }}
-                onClick={(event) => {
-                    event.stopPropagation();
-                    dispatch(dfActions.setFocused({ type: 'table', tableId }));
-                }}
-            >
-                <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                    <AnchorIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
-                    <Box>
-                        <Typography fontSize="inherit" sx={{
-                            textAlign: 'center',
-                            color: 'rgba(0,0,0,0.7)', 
-                            maxWidth: '100px',
-                            wordWrap: 'break-word',
-                            whiteSpace: 'normal'
-                        }}>
-                            {table?.displayId || tableId}
-                        </Typography>
-                        {anchoredOriginalName && (
-                            <Typography sx={{
-                                fontSize: 9,
-                                color: 'text.disabled',
-                                lineHeight: 1.2,
-                                mt: 0.5,
-                                wordBreak: 'break-all',
-                                maxWidth: '100px',
-                            }}>
-                                {anchoredOriginalName}
-                            </Typography>
-                        )}
-                    </Box>
-                </Stack>
-            </Box>
-        );
-        return <Typography sx={{ background: 'transparent' }}>
-            {anchoredTooltip
-                ? <Tooltip title={anchoredTooltip} placement="right" arrow><span>{anchoredContent}</span></Tooltip>
-                : anchoredContent}
-        </Typography>
-    }
-
     // filter charts relevant to this
     let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId));
 
     let table = tables.find(t => t.id == tableId);
     const originalName = getOriginalName(table);
     const sourceTooltip = getSourceTooltip(table);
+    const workspaceName = table?.displayId || tableId;
+    const normalizeTableName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
+    const friendlyName = inferredDisplayName?.trim()
+        ? inferredDisplayName.trim()
+        : workspaceName;
+    const rawName = showOriginalName
+        && originalName
+        && normalizeTableName(originalName) !== normalizeTableName(friendlyName)
+        ? originalName
+        : null;
 
     let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
 
@@ -271,27 +282,35 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     const isHighlighted = highlightedTableIds.includes(tableId);
 
     const tableNameBlock = (
-        <Box sx={{ margin: '4px 8px 4px 2px', minWidth: 0, flex: 1 }}>
+        <Box sx={{
+            margin: '4px 8px 4px 2px', minWidth: 0, flex: 1,
+            display: 'flex', alignItems: 'baseline', flexWrap: 'wrap',
+            columnGap: 0.75, rowGap: 0.25,
+        }}>
             <Typography fontSize="inherit" sx={{
-                color: 'text.primary', 
+                color: 'text.primary',
                 fontWeight: 500,
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
+                flex: '0 0 auto',
+                minWidth: 0,
+                maxWidth: '100%',
                 overflow: 'hidden',
-                wordBreak: 'break-all',
-            }}>{table?.displayId || tableId}</Typography>
-            {showOriginalName && originalName && (
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+            }}>{friendlyName}</Typography>
+            {rawName && (
                 <Typography sx={{
-                    fontSize: 10,
+                    fontSize: textVar.xxs,
                     color: 'text.disabled',
                     lineHeight: 1.3,
-                    mt: 0.5,
+                    flex: '0 0 auto',
+                    minWidth: 0,
+                    maxWidth: '100%',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    fontFamily: 'monospace',
                 }}>
-                    {originalName}
+                    {rawName}
                 </Typography>
             )}
         </Box>
@@ -303,21 +322,9 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
         <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
             sx={{ width: '100%', 
-                ...(ghost
-                    ? {
-                        // Ghost: still a real, clickable table card so users
-                        // can jump to the carry-over parent — just visually
-                        // muted (gray bg + reduced opacity) so it reads as an
-                        // orientation aid rather than a fresh node.
-                        backgroundColor: 'rgba(0,0,0,0.04)',
-                        opacity: 0.4,
-                        ...ComponentBorderStyle,
-                    }
-                    : {
-                        backgroundColor: primaryBgColor,
-                        ...ComponentBorderStyle,
-                        ...(isHighlighted ? { borderLeft: '2px solid', borderLeftColor: 'primary.main' } : {}),
-                    }),
+                backgroundColor: primaryBgColor,
+                ...ComponentBorderStyle,
+                ...(isHighlighted ? { borderLeft: '2px solid', borderLeftColor: 'primary.main' } : {}),
                 borderRadius: '6px',
                 }}
             onClick={() => {
@@ -327,12 +334,12 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 '& .delete-table-btn': { opacity: 0, transition: 'opacity 0.15s' },
                 '&:hover .delete-table-btn': { opacity: 1 },
             }}>
-                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
+                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: textVar.sm, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
                     {sourceTooltip
                         ? <Tooltip title={sourceTooltip} placement="top" arrow><span style={{ minWidth: 0, flex: 1 }}>{tableNameBlock}</span></Tooltip>
                         : tableNameBlock}
                 </Stack>
-                {!ghost && !table?.derive && (
+                {!table?.derive && handleOpenTableMenu && (
                     <ButtonGroup aria-label={t('dataThread.tableCardActionsAria')} variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
                         <Tooltip key="more-options-btn-tooltip" title={t('dataThread.moreOptions')}>
                             <IconButton className="more-options-btn" color="primary" aria-label={t('dataThread.moreOptions')} size="small" sx={{ padding: 0.25, '&:hover': {
@@ -344,12 +351,12 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                                     handleOpenTableMenu(table!, event.currentTarget);
                                 }}
                             >
-                                <MoreVertIcon fontSize="small" sx={{ fontSize: 16 }} />
+                                <MoreVertIcon fontSize="small" sx={{ fontSize: iconVar.md }} />
                             </IconButton>
                         </Tooltip>
                     </ButtonGroup>
                 )}
-                {!ghost && table?.derive && (
+                {table?.derive && (
                     <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         <Tooltip title={t('dataThread.deleteTable')}>
                             <IconButton className="delete-table-btn" aria-label={t('dataThread.deleteTable')} size="small" color="error" sx={{ 
@@ -361,7 +368,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                                     dispatch(dfActions.deleteTable(tableId));
                                 }}
                             >
-                                <DeleteIcon sx={{ fontSize: 16 }} />
+                                <DeleteIcon sx={{ fontSize: iconVar.md }} />
                             </IconButton>
                         </Tooltip>
                     </Box>

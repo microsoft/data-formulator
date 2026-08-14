@@ -58,13 +58,36 @@ class SupersetLoader(ExternalDataLoader):
              "description": "Superset password (optional if using SSO)"},
         ]
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example:** url: `https://bi.company.com` · username: `admin` · password: `***`
+    AUTH_GUIDE = "superset.md"
 
-**Setup:** Provide the base URL of your Superset instance and credentials for a user with at least **Gamma** role (read access to datasets).
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        paths = [{
+            "id": "credentials",
+            "label": "Username and password",
+            "description": "Sign in with a Superset username and password.",
+            "fields": ["username", "password"],
+            "required_fields": ["username", "password"],
+            "kind": "credentials",
+            "default": cls.delegated_login_config() is None,
+        }]
+        if cls.delegated_login_config() is not None:
+            paths.insert(0, {
+                "id": "sso",
+                "label": "Sign in with SSO",
+                "description": "Use the Superset deployment's configured SSO provider.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "delegated_login",
+                "default": True,
+            })
+        return paths
 
-**SSO:** If your Superset uses SSO, use the SSO bridge flow instead of password auth (configure via `PLG_SUPERSET_SSO_LOGIN_URL`)."""
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        if params.get("access_token") or params.get("sso_access_token"):
+            return "sso"
+        return "credentials"
 
     @staticmethod
     def auth_mode() -> str:

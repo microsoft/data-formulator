@@ -51,6 +51,7 @@ import AnimateHeight from 'react-animate-height';
 import { getIconFromDtype, getIconFromType } from './ViewUtils';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { textVar } from '../app/layout';
 import { Type } from '../data/types';
 
 
@@ -167,7 +168,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let theme = useTheme();
 
     // use tables for infer domains
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
+    const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
 
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let activeModel = useSelector(dfSelectors.getActiveModel);
@@ -261,7 +263,13 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     let fieldComponent = field === undefined ? "" : (
         <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} 
-            tableMetadata={activeTable?.metadata || {}}
+            tableMetadata={Object.fromEntries(Object.entries(activeTable?.metadata || {}).map(([name, metadata]) => [
+                name,
+                {
+                    ...metadata,
+                    semanticType: tableSemantics.find(info => info.tableId === tableId)?.fields[name]?.semanticType || '',
+                },
+            ]))}
             field={field} encoding={encoding} 
             handleUnbind={() => {
             handleResetEncoding();
@@ -646,7 +654,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         display: 'flex',
                         alignItems: 'center',
                         gap: '6px',
-                        fontSize: 11,
+                        fontSize: textVar.xs,
                         padding: '4px 8px !important',
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.05)' },
@@ -688,7 +696,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         maxHeight: '600px !important'
                     },
                     '& .MuiAutocomplete-noOptions': {
-                        fontSize: '11px',
+                        fontSize: textVar.xs,
                         padding: '6px 12px',
                     },
                 }

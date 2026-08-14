@@ -32,15 +32,35 @@ class MongoDBDataLoader(ExternalDataLoader):
         ]
         return params_list
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example:** host: `localhost` · port: `27017` · database: `mydb` · collection: `users`
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "none",
+                "label": "No authentication",
+                "description": "Connect to a server that does not require credentials.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+                "default": True,
+            },
+            {
+                "id": "credentials",
+                "label": "Username and password",
+                "description": "Sign in with a MongoDB user. Set the auth database only when it differs from the target database.",
+                "fields": ["username", "password", "authSource"],
+                "required_fields": ["username", "password"],
+                "kind": "credentials",
+            },
+        ]
 
-**Local setup:** Ensure MongoDB is running. Leave username and password blank if authentication is not enabled.
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        if params.get("username") or params.get("password"):
+            return "credentials"
+        return "none"
 
-**Remote setup:** Get host, port, username, and password from your database administrator.
-
-**Troubleshooting:** Test with `mongosh --host <host> --port <port>`"""
+    AUTH_GUIDE = "mongodb.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

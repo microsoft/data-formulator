@@ -667,6 +667,9 @@ def generate_data_summary(
         sections = []
 
         header = f"## {table_name_prefix} {idx + 1}: {table_name}"
+        display_name = str(table.get('display_name') or '').strip()
+        if display_name and display_name != table_name:
+            header += f' (shown to the user as "{display_name}")'
         if num_rows > 0:
             header += f" ({num_rows:,} rows × {num_cols} columns)"
         sections.append(header)

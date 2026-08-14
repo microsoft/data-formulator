@@ -11,7 +11,8 @@ const { dispatch, mockState } = vi.hoisted(() => ({
         serverConfig: { DISABLE_DATA_CONNECTORS: false },
         activeWorkspace: null,
         identity: { type: 'browser', id: 'test-browser' },
-        tables: [],
+        inputTables: [],
+        derivedTables: [],
     },
 }));
 
@@ -41,6 +42,9 @@ vi.mock('../../../../src/app/dfSlice', () => ({
         setSessionLoading: (payload: any) => ({ type: 'session/setLoading', payload }),
         loadState: (payload: any) => ({ type: 'state/load', payload }),
         setActiveWorkspace: (payload: any) => ({ type: 'workspace/setActive', payload }),
+    },
+    dfSelectors: {
+        getAllTables: (state: any) => [...(state.inputTables ?? []), ...(state.derivedTables ?? [])],
     },
     fetchFieldSemanticType: vi.fn(),
 }));

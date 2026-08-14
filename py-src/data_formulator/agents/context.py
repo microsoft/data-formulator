@@ -118,6 +118,24 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
         lines.append(f"\nStep {i}:")
         if step.get("user_question"):
             lines.append(f"  User: {step['user_question']}")
+        if step.get("agent_response"):
+            lines.append(f"  Analyst: {step['agent_response']}")
+        if step.get("user_answer"):
+            lines.append(f"  User reply: {step['user_answer']}")
+        operation = step.get("data_operation")
+        if operation:
+            options = ", ".join(operation.get("options") or [])
+            lines.append(
+                f"  Data discovery decision: {operation.get('reason', '')} "
+                f"(status: {operation.get('status', 'unknown')}; options: {options})"
+            )
+            if operation.get("selected_plan"):
+                lines.append(f"  Selected loading option: {operation['selected_plan']}")
+            if operation.get("result_tables"):
+                lines.append(
+                    "  Loaded workspace tables: "
+                    + ", ".join(operation["result_tables"])
+                )
         if step.get("agent_thinking"):
             lines.append(f"  Agent thinking: {step['agent_thinking']}")
         if step.get("display_instruction"):
@@ -163,6 +181,30 @@ def build_peripheral_thread_context(other_threads: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _table_label(table: dict[str, Any]) -> str:
+    """``Table: <workspace id>``, plus the name the user sees when it differs."""
+    table_name = table["name"]
+    display_name = str(table.get("display_name") or "").strip()
+    if display_name and display_name != table_name:
+        return f'Table: {table_name} (shown to the user as "{display_name}")'
+    return f"Table: {table_name}"
+
+
+def _client_schema_section(table: dict[str, Any], label: str) -> str:
+    """Fall back to the client-sent schema when the workspace file can't be read."""
+    columns = [c for c in (table.get("columns") or []) if isinstance(c, dict) and c.get("name")]
+    if not columns:
+        return f"{label} (error reading schema)"
+    col_info = ", ".join(f"{c['name']}({c.get('type', 'unknown')})" for c in columns)
+    row_count = table.get("row_count")
+    rows_text = f", {row_count:,} rows" if isinstance(row_count, int) else ""
+    return (
+        f"{label} (schema reported by the app{rows_text}; "
+        "the workspace file could not be read just now)\n"
+        f"  Columns: {col_info}"
+    )
+
+
 def build_lightweight_table_context(
     input_tables: list[dict[str, Any]],
     workspace: Any,
@@ -187,6 +229,7 @@ def build_lightweight_table_context(
 
     def _table_section(table: dict[str, Any]) -> str:
         table_name = table['name']
+        label = _table_label(table)
         try:
             df = workspace.read_data_as_df(table_name)
             data_file_path = workspace.get_relative_data_file_path(table_name)
@@ -208,7 +251,7 @@ def build_lightweight_table_context(
                 col_info.append(col_text)
 
             lines = [
-                f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)",
+                f"{label} (file: {data_file_path}, {num_rows:,} rows)",
                 f"  Columns: {', '.join(col_info)}",
             ]
 
@@ -271,10 +314,13 @@ def build_lightweight_table_context(
                 detail=str(e),
                 message_code="TABLE_SCHEMA_FAILED",
             )
-            return f"Table: {table_name} (error reading schema)"
+            return _client_schema_section(table, label)
 
     load_hint = (
-        "\nTo load a table in code: pd.read_parquet('file.parquet') or "
+        "\nThe tables above are the data already loaded into this workspace, and the "
+        "only data you can read directly. Anything not listed here has not been loaded "
+        "yet: find it in a connected source and propose loading it before relying on it.\n"
+        "To load a table in code: pd.read_parquet('file.parquet') or "
         "duckdb.sql(\"SELECT * FROM read_parquet('file.parquet')\")\n"
         "Use the exact filename shown above."
     )

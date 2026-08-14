@@ -304,6 +304,7 @@ def _ensure_meta(self, workspace_id: str) -> dict:
 
 - 文件存本地磁盘 `DATA_FORMULATOR_HOME/users/<id>/workspaces/<ws_id>/`
 - `WorkspaceManager` → `Workspace`
+- 持久化存储，不受 ephemeral TTL/LRU 清理影响
 - 适用于单机部署
 
 ### 5.2 azure_blob
@@ -316,13 +317,13 @@ def _ensure_meta(self, workspace_id: str) -> dict:
 
 ### 5.3 ephemeral
 
-- 前端 IndexedDB 为唯一数据源
-- 每次请求通过 `_workspace_tables` 发送全量表数据
-- 后端创建临时目录，写 parquet 供 Agent/DuckDB 使用
-- Session 路由全部返回 no-op
-- 进程退出时 `atexit` 清理临时目录
-- 适用于 `--disable-database` 模式（无服务端持久化）
-- 默认行数限制为 20,000（`DEFAULT_ROW_LIMIT_EPHEMERAL`），以兼顾浏览器性能
+- `EphemeralWorkspaceManager` 复用本地 `WorkspaceManager` 和 parquet 格式
+- 文件存入独立的 `DATA_FORMULATOR_HOME/ephemeral/` 根目录
+- Session、Table 和 Agent 路由与其他后端使用相同 API
+- 默认 24 小时未活动 TTL，并通过全局字节上限执行 LRU 淘汰
+- 浏览器只保存不含表行的恢复快照；服务端数据被淘汰后以只读模式打开
+- 仅当 `WORKSPACE_BACKEND=ephemeral` 时启用；`local` 模式不会执行该清理
+- 适用于 `--disable-database` 匿名演示模式
 
 > **行数限制**: 两种模式的数据导入行数由统一的 `frontendRowLimit`（前端）和 `MAX_IMPORT_ROWS`（后端硬上限 200 万）控制。详见 `docs/dev-guides/13-unified-row-limits.md`。
 

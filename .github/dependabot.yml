@@ -18,6 +18,13 @@ updates:
    target-branch: "dev"
    schedule:
      interval: weekly
+   groups:
+     frontend-minor-patch:
+       patterns:
+         - "*"
+       update-types:
+         - minor
+         - patch
 
  # Backend Python dependencies (pyproject.toml / uv.lock)
  - package-ecosystem: "uv"
@@ -25,6 +32,18 @@ updates:
    target-branch: "dev"
    schedule:
      interval: weekly
+   groups:
+     python-minor-patch:
+       patterns:
+         - "*"
+       update-types:
+         - minor
+         - patch
+   ignore:
+     # LiteLLM 1.92+ no longer provides portable Windows/macOS wheels.
+     - dependency-name: "litellm"
+       versions:
+         - ">=1.92"
 
  # GitHub Actions workflow dependencies
  - package-ecosystem: "github-actions"
@@ -32,3 +51,7 @@ updates:
    target-branch: "dev"
    schedule:
      interval: weekly
+   groups:
+     github-actions:
+       patterns:
+         - "*"

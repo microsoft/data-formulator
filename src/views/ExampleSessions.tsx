@@ -8,6 +8,7 @@ import {
     Card,
 } from '@mui/material';
 import { StreamIcon } from '../icons';
+import { textVar } from '../app/layout';
 
 // Example session data for pre-built sessions
 export interface ExampleSession {
@@ -141,9 +142,12 @@ export const ExampleSessionCard: React.FC<{
                 gap: 0,
                 p: 0,
                 overflow: 'hidden',
+                borderColor: 'rgba(0, 0, 0, 0.18)',
+                boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
                 '&:hover': disabled ? {} : {
                     transform: 'translateY(-2px)',
-                    backgroundColor: 'action.hover',
+                    borderColor: 'primary.light',
+                    boxShadow: '0 4px 12px rgba(32, 33, 36, 0.12)',
                 },
             }}
             onClick={disabled ? undefined : onClick}
@@ -170,11 +174,11 @@ export const ExampleSessionCard: React.FC<{
 
             <Box sx={{ flex: 1, minWidth: 0, p: 1.5 }}>
                 <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
-                    {session.live && <StreamIcon sx={{ fontSize: 10, color: 'success.main', mr: 0.5 }} />}
+                    {session.live && <StreamIcon sx={{ fontSize: textVar.xxs, color: 'success.main', mr: 0.5 }} />}
                     {session.title}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{
-                    fontSize: 11,
+                    fontSize: textVar.xs,
                     display: '-webkit-box',
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: 'vertical',

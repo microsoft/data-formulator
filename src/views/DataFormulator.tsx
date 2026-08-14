@@ -23,6 +23,7 @@ import {
     Button,
     Divider,
     useTheme,
+    useMediaQuery,
     alpha,
     CircularProgress,
     Backdrop,
@@ -30,8 +31,11 @@ import {
     Select,
     MenuItem,
     TextField,
+    Alert,
+    Tabs,
+    Tab,
 } from '@mui/material';
-import { borderColor, radius } from '../app/tokens';
+import { borderColor, radius, transition } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
@@ -40,9 +44,17 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
-import { threadPaneWidth } from './threadLayout';
+import { MAX_THREAD_COLUMNS } from './threadLayout';
+import {
+    defaultThreadColumns,
+    maxThreadColumnsForWidth,
+    maxThreadColumnsForWidthClass,
+    threadPaneWidthFor,
+} from '../app/layout';
+import { iconVar, textVar } from '../app/layout';
+import { useContainerSize, useLayout } from '../app/LayoutProvider';
 
-import dfLogo from '../assets/df-logo.png';
+import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
@@ -51,13 +63,12 @@ import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
-import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
-import { AppDispatch } from '../app/store';
+import { AppDispatch, store } from '../app/store';
 import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -67,10 +78,14 @@ import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CloseIcon from '@mui/icons-material/Close';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+
+/** Quick enough not to feel like waiting, slow enough to read as a movement. */
+const CANVAS_TRANSITION_MS = 140;
 
 /** Generate a session ID like session_20260408_193052_a1b2 */
 function generateSessionId(): string {
@@ -83,26 +98,26 @@ function generateSessionId(): string {
 
 export const DataFormulatorFC = ({ }) => {
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const derivedTables = useSelector(dfSelectors.getDerivedTables);
+    const hasInputTables = useSelector((state: DataFormulatorState) => state.inputTables.length > 0);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
+    const [canvasClosing, setCanvasClosing] = useState(false);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
+    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
 
-    // Auto-focus: when focusedId is undefined but tables exist, select the first table
-    useEffect(() => {
-        if (!focusedId && tables.length > 0) {
-            dispatch(dfActions.setFocused({ type: 'table', tableId: tables[0].id }));
-        }
-    }, [focusedId, tables, dispatch]);
+    // Auto-focus removed: focus is the only thing that opens the canvas, so
+    // re-focusing whenever it clears would make closing impossible. Table
+    // creation focuses its own table (see `addTable`).
 
     // ── Connector instances (for landing page menu) ─────────────
     const [pageConnectors, setPageConnectors] = useState<ConnectorInstance[]>([]);
@@ -162,10 +177,10 @@ export const DataFormulatorFC = ({ }) => {
     }, []);
 
     useEffect(() => {
-        if (!activeWorkspace || tables.length === 0) {
+        if (!activeWorkspace) {
             fetchWorkspaces();
         }
-    }, [activeWorkspace, tables.length, fetchWorkspaces]);
+    }, [activeWorkspace, fetchWorkspaces]);
 
     useEffect(() => {
         return onWorkspaceListChanged(fetchWorkspaces);
@@ -177,7 +192,7 @@ export const DataFormulatorFC = ({ }) => {
             const result = await loadWorkspace(name);
             if (result && Object.keys(result.state).length > 0) {
                 const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName } }));
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName, readOnly: result.readOnly } }));
             } else {
                 dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
             }
@@ -317,6 +332,7 @@ export const DataFormulatorFC = ({ }) => {
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
     const openUploadDialog = (tab: UploadTabType) => {
+        if (activeWorkspace?.readOnly) return;
         // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
@@ -333,6 +349,10 @@ export const DataFormulatorFC = ({ }) => {
         setUploadDialogInitialTab(resolvedTab);
         setUploadDialogOpen(true);
     };
+
+    // The dialog needs a workspace id to talk to the backend, but opening it is
+    // not entering a session: stay on the landing page until data lands.
+    const provisionalSession = uploadDialogOpen && sessionEmpty;
 
     // Seed the Data Loading chat through the single redux `pending` slot,
     // then navigate to the extract tab. This is the one channel that
@@ -351,20 +371,18 @@ export const DataFormulatorFC = ({ }) => {
         openUploadDialog('extract');
     };
 
-    // Honor cross-component requests to hand off to the Data Loading
-    // chat seeded with a prompt (e.g. Data Agent's `delegate` card with
-    // target='data_loading'). Hand-offs targeting other agents (e.g.
-    // `report_gen`) are consumed elsewhere — we only clear our own.
-    const agentHandoffRequest = useSelector((state: DataFormulatorState) => state.agentHandoffRequest);
-    useEffect(() => {
-        if (agentHandoffRequest && agentHandoffRequest.target === 'data_loading') {
-            startDataLoadingChat(agentHandoffRequest.prompt, agentHandoffRequest.images ?? [], []);
-            dispatch(dfActions.clearAgentHandoffRequest());
+    // The landing box starts the unified analyst conversation — loading data is
+    // its first skill, so there's no separate loading chat to hand off to.
+    const startAnalystChat = (text: string, images: string[] = [], attachments: string[] = []) => {
+        if (activeWorkspace?.readOnly) return;
+        if (text.trim().length === 0 && images.length === 0 && attachments.length === 0) return;
+        // Every agent call carries X-Workspace-Id; the landing page can be used
+        // before a workspace exists, so mint one the way openUploadDialog does.
+        if (!activeWorkspace) {
+            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
-        // openUploadDialog is stable enough for this purpose; we only react
-        // to changes in the handoff request itself.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agentHandoffRequest]);
+        dispatch(dfActions.queueAnalystTask({ text, images, attachments }));
+    };
 
     const handleLoadExampleSession = async (session: ExampleSession) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
@@ -414,7 +432,7 @@ export const DataFormulatorFC = ({ }) => {
         
         // Preload imported images (public images are preloaded in index.html)
         const imagesToPreload = [
-            { src: dfLogo, type: 'image/png' },
+            { src: dfLogo, type: 'image/svg+xml' },
             { src: exampleImageTable, type: 'image/png' },
         ];
         
@@ -467,125 +485,225 @@ export const DataFormulatorFC = ({ }) => {
     // DataThread so the pane snap points line up with the rendered columns.
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const paneSizesRef = useRef<number[]>([]);
 
-    const snapToColumns = useCallback((sizes: number[]) => {
-        if (!allotmentRef.current || sizes.length < 2) return;
-        const raw = sizes[0];
-        // Find nearest discrete column count (1-3)
-        let bestCols = 1;
+    const { widthClass, tokens } = useLayout();
+    const isPhone = useMediaQuery('(max-width:699px)');
+    const [phonePane, setPhonePane] = useState<'thread' | 'canvas'>('thread');
+    const { width: splitWidth } = useContainerSize(containerRef);
+
+    // The user's chosen column *count*, not a pixel width — so a window resize
+    // preserves their intent instead of carrying a stale pixel value around.
+    // Cleared when the width class changes, handing control back to the default.
+    const [userColumns, setUserColumns] = useState<number | null>(null);
+    // Read by the drag handler, which runs before `columnCap` is in scope.
+    const columnCapRef = useRef(MAX_THREAD_COLUMNS);
+    // Pane widths must come from the same tokens DataThread renders columns
+    // with, or the snap points stop lining up with the rendered columns.
+    const paneWidth = useCallback(
+        (n: number) => threadPaneWidthFor(n, tokens),
+        [tokens],
+    );
+
+    const nearestColumnCount = useCallback((width: number) => {
+        let best = 1;
         let bestDist = Infinity;
-        for (let n = 1; n <= 3; n++) {
-            const dist = Math.abs(raw - threadPaneWidth(n));
+        for (let n = 1; n <= columnCapRef.current; n++) {
+            const dist = Math.abs(width - paneWidth(n));
             if (dist < bestDist) {
                 bestDist = dist;
-                bestCols = n;
+                best = n;
             }
         }
-        const snapped = threadPaneWidth(bestCols);
-        if (Math.abs(raw - snapped) > 2) {
-            const totalWidth = sizes.reduce((a, b) => a + b, 0);
-            allotmentRef.current.resize([snapped, totalWidth - snapped]);
-        }
-    }, []);
+        return best;
+    }, [paneWidth]);
 
-    // Compute thread count to decide preferred pane width:
-    // A "thread" is a leaf table's derivation chain displayed as a column.
-    // Must match the chain-splitting logic in DataThread (MAX_CHAIN_TABLES).
-    const threadCount = useMemo(() => {
-        // A table is a "leaf" if no other non-anchored table derives from it
-        const hasNonAnchoredChild = new Set<string>();
-        tables.forEach(t => {
-            if (t.derive && !t.anchored) {
-                hasNonAnchoredChild.add(t.derive.trigger.tableId);
+    const snapToColumns = useCallback((sizes: number[]) => {
+        if (sizes.length < 2) return;
+        const columns = nearestColumnCount(sizes[0]);
+        const target = paneWidth(columns);
+        setUserColumns(columns);
+
+        // A same-column drag does not change React state, so the pinning effect
+        // below will not rerun. Snap the panes explicitly after Allotment has
+        // finished its own drag bookkeeping.
+        requestAnimationFrame(() => {
+            try {
+                allotmentRef.current?.resize([target, splitWidth - target]);
+            } catch {
+                // The pane structure may have changed while the drag ended.
             }
         });
-        const leafTables = tables.filter(t => !hasNonAnchoredChild.has(t.id));
-        // Threads = leaf tables with derivation chains + 1 group for hanging (source) tables
-        const threaded = leafTables.filter(t => t.derive);
-        const hanging = leafTables.filter(t => !t.derive);
-        let count = threaded.length + (hanging.length > 0 ? 1 : 0);
+    }, [nearestColumnCount, paneWidth, splitWidth]);
 
-        // Account for chain-splitting: long chains are broken into sub-threads
-        // (mirrors MAX_CHAIN_TABLES logic in DataThread)
-        const MAX_CHAIN_TABLES = 5;
-        const tableById = new Map(tables.map(t => [t.id, t]));
-        const getChainLength = (t: DictTable): number => {
-            let len = 1;
-            let cur = t;
-            while (cur.derive && !cur.anchored) {
-                len++;
-                const parent = tableById.get(cur.derive.trigger.tableId);
-                if (!parent) break;
-                cur = parent;
-            }
-            return len;
-        };
-        const claimedForCount = new Set<string>();
-        for (const lt of threaded) {
-            // Walk chain
-            const chainIds: string[] = [lt.id];
-            let cur = lt;
-            while (cur.derive && !cur.anchored) {
-                const pid = cur.derive.trigger.tableId;
-                chainIds.push(pid);
-                const parent = tableById.get(pid);
-                if (!parent) break;
-                cur = parent;
-            }
-            const ownedIds = chainIds.filter(id => !claimedForCount.has(id));
-            if (ownedIds.length > MAX_CHAIN_TABLES) {
-                // Each extra split adds one more thread entry
-                const extraSplits = Math.floor((ownedIds.length - 1) / MAX_CHAIN_TABLES);
-                count += extraSplits;
-            }
-            chainIds.forEach(id => claimedForCount.add(id));
-        }
+    // The thread pane only ever rests on a whole-column width. Dragging the
+    // window edge changes how many columns *fit*; it never leaves the pane at
+    // an arbitrary size, so the canvas absorbs the whole delta.
 
-        return count;
-    }, [tables]);
-    // Default the thread pane to 2 columns so the docked chat box (rendered
-    // at the bottom of DataThread) is wide enough to read comfortably.
-    const preferredColumns = 2;
+    // How many columns the thread could actually fill: one per leaf chain, plus
+    // a slot for the source shelf. Chain-splitting can add more, so treat this
+    // as a floor — it exists only to stop a wide screen reserving empty columns.
+    const threadColumnDemand = useMemo(() => {
+        const hasChild = new Set<string>();
+        derivedTables.forEach(t => { if (t.derive) hasChild.add(t.derive.trigger.tableId); });
+        const leaves = derivedTables.filter(t => !hasChild.has(t.id)).length;
+        return Math.max(1, leaves + (hasInputTables ? 1 : 0));
+    }, [derivedTables, hasInputTables]);
 
-    // Track previous thread count to auto-resize intelligently
-    const prevThreadCountRef = useRef(threadCount);
+    const columnCap = maxThreadColumnsForWidth(
+        splitWidth,
+        tokens,
+        maxThreadColumnsForWidthClass(widthClass),
+    );
+    columnCapRef.current = columnCap;
+    const preferredColumns = Math.min(
+        userColumns ?? defaultThreadColumns(widthClass, threadColumnDemand, splitWidth, tokens),
+        columnCap,
+    );
+
+    // A new width class re-asserts the default; within a class the drag sticks.
+    const prevWidthClassRef = useRef(widthClass);
     useEffect(() => {
-        const prev = prevThreadCountRef.current;
-        prevThreadCountRef.current = threadCount;
-        if (!allotmentRef.current || !containerRef.current) return;
-        // When there are no tables the first Allotment.Pane is unmounted,
-        // so the Allotment only has one child – calling resize with two
-        // sizes would crash (accessing .minimumSize on an undefined pane).
-        if (tables.length === 0) return;
-        const totalWidth = containerRef.current.clientWidth;
-        if (totalWidth <= 0) return;
+        if (prevWidthClassRef.current === widthClass) return;
+        prevWidthClassRef.current = widthClass;
+        setUserColumns(null);
+    }, [widthClass]);
 
-        let newSize: number | null = null;
-        if (prev <= 1 && threadCount > 1) {
-            // Case 1: was 1 thread, now 2+ → expand to 2 columns
-            newSize = threadPaneWidth(2);
-        } else if (prev > 1 && threadCount <= 1) {
-            // Case 2: was 2+ threads, now 1 → keep 2 columns so the docked
-            // chat box stays wide enough to read.
-            newSize = threadPaneWidth(2);
-        }
-        // Case 3: was 2+ threads and still 2+ → don't change (respect user's manual setting)
+    // Hold the thread pane at exactly `threadPaneWidth(preferredColumns)`.
+    //
+    // Runs on every split-container resize, not just on discrete events:
+    //   - `preferredSize` only applies when a pane first mounts, and this pane
+    //     unmounts whenever the session is empty;
+    //   - Allotment otherwise redistributes a container resize across both
+    //     panes, leaving the thread at an arbitrary width where the column
+    //     count flips at unpredictable points.
+    // Pinning it here means the canvas absorbs the entire delta and the thread
+    // only ever changes in whole columns.
+    // The canvas shows the focused item, and nothing else opens or closes it.
+    // Resolved, not raw: a text turn with no chart or table behind it (an
+    // explanation on a rootless thread) has nothing to draw, so stay closed.
+    const canvasOpen = !!canvasTarget && !canvasClosing;
 
-        if (newSize !== null) {
-            // Defer resize to the next animation frame so the Allotment has
-            // re-rendered its pane children before we call resize.
-            const finalSize = newSize;
-            const rafId = requestAnimationFrame(() => {
-                try {
-                    const w = containerRef.current?.clientWidth ?? totalWidth;
-                    allotmentRef.current?.resize([finalSize, w - finalSize]);
-                } catch {
-                    // Allotment pane structure may not yet match; ignore.
-                }
-            });
-            return () => cancelAnimationFrame(rafId);
-        }
-    }, [threadCount, tables.length]);
+    useEffect(() => {
+        if (!isPhone) return;
+        setPhonePane(canvasTarget ? 'canvas' : 'thread');
+    }, [isPhone, canvasTarget]);
+
+    // Closing collapses the pane first and drops the focus only once it has
+    // gone; clearing focus up front would swap the chart for the empty-canvas
+    // gallery and slide *that* away.
+    const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const closeCanvas = useCallback(() => {
+        setPhonePane('thread');
+        setCanvasClosing(true);
+        if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = setTimeout(() => {
+            closeTimerRef.current = null;
+            setCanvasClosing(false);
+            dispatch(dfActions.setFocused(undefined));
+        }, CANVAS_TRANSITION_MS);
+    }, [dispatch]);
+    useEffect(() => () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); }, []);
+    useEffect(() => {
+        // Something grabbed focus mid-close (a new table, say) — keep the canvas.
+        if (!canvasTarget || !closeTimerRef.current) return;
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+        setCanvasClosing(false);
+    }, [canvasTarget]);
+
+    // Always armed except while dragging: arming it from an effect would land
+    // after Allotment has already written the new widths, so nothing would ease.
+    const [sashDragging, setSashDragging] = useState(false);
+
+    useEffect(() => {
+        // With the canvas hidden the thread owns the whole split, so there is
+        // nothing to pin and resize([a, b]) would fight the visibility change.
+        if (!canvasOpen) return;
+        if (!allotmentRef.current || splitWidth <= 0) return;
+
+        const target = paneWidth(preferredColumns);
+        // Defer both the measurement and correction until Allotment has
+        // processed the new container size. Checking before this frame can
+        // see the old snapped width and skip just before Allotment moves it.
+        const rafId = requestAnimationFrame(() => {
+            try {
+                if (splitWidth - target < tokens.canvas.min) return;
+                if (Math.abs((paneSizesRef.current[0] ?? -1) - target) <= 1) return;
+                allotmentRef.current?.resize([target, splitWidth - target]);
+            } catch {
+                // Allotment pane structure may not yet match; ignore.
+            }
+        });
+        return () => cancelAnimationFrame(rafId);
+    }, [canvasOpen, preferredColumns, splitWidth, tokens.canvas.min]);
+
+    const threadPanel = (
+        <DataThread centered={!canvasOpen} denseColumns={isPhone} sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            alignContent: 'flex-start',
+            height: '100%',
+        }}/>
+    );
+
+    const canvasPanel = (
+        <Box sx={{
+            ...(isPhone ? {} : borderBoxStyle),
+            height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+            boxSizing: 'border-box', position: 'relative',
+        }}>
+            <Tooltip title={t('canvas.close', { defaultValue: 'Close canvas' })}>
+                <IconButton
+                    size="small"
+                    onClick={closeCanvas}
+                    sx={{
+                        position: 'absolute', top: 8, right: 8, zIndex: 20,
+                        color: 'text.secondary',
+                        '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
+                    }}
+                >
+                    <CloseIcon sx={{ fontSize: iconVar.md }} />
+                </IconButton>
+            </Tooltip>
+            {viewMode === 'editor' ? visPane : <ReportView />}
+        </Box>
+    );
+
+    const phoneWorkspace = (
+        <Box sx={{ display: 'flex', height: '100%', minWidth: 0 }}>
+            <DataSourceSidebar
+                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                connectorRefreshKey={connectorRefreshKey}
+                onConnectorsChanged={handleConnectorsChanged}
+                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                <Tabs
+                    value={phonePane}
+                    onChange={(_, value: 'thread' | 'canvas') => setPhonePane(value)}
+                    variant="fullWidth"
+                    sx={{
+                        minHeight: 36,
+                        bgcolor: 'background.paper',
+                        borderTop: `1px solid ${borderColor.view}`,
+                        borderBottom: `1px solid ${borderColor.view}`,
+                        '& .MuiTab-root': { minHeight: 36, py: 0.5, fontSize: textVar.sm, textTransform: 'none' },
+                    }}
+                >
+                    <Tab value="thread" label={t('mobile.thread', { defaultValue: 'Thread' })} />
+                    <Tab value="canvas" label={t('mobile.canvas', { defaultValue: 'Canvas' })} disabled={!canvasTarget} />
+                </Tabs>
+                <Box sx={{
+                    flex: 1, minHeight: 0, overflow: 'hidden',
+                    p: phonePane === 'thread' ? 0.5 : 0,
+                }}>
+                    {phonePane === 'canvas' && canvasTarget ? canvasPanel : threadPanel}
+                </Box>
+            </Box>
+        </Box>
+    );
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
@@ -599,29 +717,41 @@ export const DataFormulatorFC = ({ }) => {
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
                     display: 'flex', height: 'calc(100% - 12px)', flex: 1, minWidth: 0, flexDirection: 'column',
                     overflow: 'hidden',
-                    position: 'relative'}}>
-                <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
-                    {tables.length > 0 ? (
-                        <Allotment.Pane minSize={threadPaneWidth(1)} 
-                                preferredSize={threadPaneWidth(preferredColumns)} 
-                                maxSize={threadPaneWidth(3)} snap={false}>
-                            <DataThread sx={{
-                                display: 'flex', 
-                                flexDirection: 'column',
-                                overflow: 'hidden',
-                                alignContent: 'flex-start',
-                                height: '100%',
-                            }}/>
-                        </Allotment.Pane>
-                    ) : null}
-                    <Allotment.Pane minSize={300}>
-                        <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-                            {viewMode === 'editor' ? (
-                                visPane
-                            ) : (
-                                <ReportView />
-                            )}
-                        </Box>
+                    position: 'relative',
+                    // Allotment waits 300ms before adding its hover class.
+                    // Native hover responds immediately with the app's fast token.
+                    '& [class*="sash_"][class*="vertical"]::before': {
+                        transition: `${transition.fast} !important`,
+                    },
+                    '& [class*="sash_"][class*="vertical"]:hover::before': {
+                        background: 'var(--focus-border)',
+                    },
+                    // Allotment lays out with `left` + `width`, so both must ease
+                    // or the panes resize while their positions jump. Suspended
+                    // mid-drag, where easing would lag the cursor.
+                    ...(sashDragging ? {} : {
+                        '& .split-view-view, & [class*="sash_"]': {
+                            transition: `left ${CANVAS_TRANSITION_MS}ms ease, width ${CANVAS_TRANSITION_MS}ms ease`,
+                        },
+                    }),
+                }}>
+                <Allotment
+                    ref={allotmentRef}
+                    onChange={(sizes) => { paneSizesRef.current = sizes; }}
+                    onDragStart={() => setSashDragging(true)}
+                    onDragEnd={(sizes) => { setSashDragging(false); snapToColumns(sizes); }}
+                    proportionalLayout={false}
+                >
+                    <Allotment.Pane minSize={paneWidth(1)} 
+                            preferredSize={paneWidth(preferredColumns)} 
+                            // Uncapped with the canvas away, so the thread can take
+                            // the whole surface. Must be an explicit Infinity:
+                            // Allotment skips `undefined` and keeps the old cap.
+                            maxSize={canvasOpen ? paneWidth(columnCap) : Number.POSITIVE_INFINITY} snap={false}>
+                        {threadPanel}
+                    </Allotment.Pane>
+                    <Allotment.Pane minSize={tokens.canvas.min} visible={canvasOpen}>
+                        {canvasPanel}
                     </Allotment.Pane>
                 </Allotment>
             </Box>
@@ -645,14 +775,14 @@ export const DataFormulatorFC = ({ }) => {
             sx={{ textTransform: 'none'}} 
             target="_blank" rel="noopener noreferrer" 
             href="https://github.com/microsoft/data-formulator/issues">{t('footer.contactUs')}</Button>
-        <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
+        <Typography sx={{ display: 'inline', fontSize: textVar.sm, ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
             background: `
-                linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.01)} 1px, transparent 1px),
-                linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.01)} 1px, transparent 1px)
+                linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px),
+                linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px)
             `,
             backgroundSize: '16px 16px',
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
@@ -661,12 +791,25 @@ export const DataFormulatorFC = ({ }) => {
             {/* Hero — fills the viewport so title + input own the first screen;
                 Demos/Sessions live below the fold and just peek up. */}
             <Box sx={{ minHeight: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <Box sx={{display: 'flex', mx: 'auto'}}>
-                <Typography fontSize={76} sx={{letterSpacing: '0.04em'}}>{toolName}</Typography> 
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 1.25 }, mx: 'auto' }}>
+                <Box
+                    component="img"
+                    src={dfLogo}
+                    alt=""
+                    sx={{ width: { xs: 28, sm: 60 }, height: { xs: 26, sm: 55 }, flexShrink: 0 }}
+                />
+                <Typography sx={{
+                    fontSize: { xs: 28, sm: 60 },
+                    lineHeight: 1.05,
+                    letterSpacing: '0.03em',
+                }}>
+                    {toolName}
+                </Typography>
             </Box>
             <Typography sx={{ 
-                fontSize: 20, color: theme.palette.text.secondary, 
-                textAlign: 'center', mt: 1.5, mb: 0}}>
+                fontSize: { xs: 18, sm: 21 }, color: alpha(theme.palette.text.primary, 0.7),
+                display: { xs: 'none', sm: 'block' },
+                lineHeight: 1.4, textAlign: 'center', mt: 1.25, mb: 0}}>
                 {t('landing.tagline')}
             </Typography>
 
@@ -694,7 +837,7 @@ export const DataFormulatorFC = ({ }) => {
                         // a rectangle behind it.
                         '& .df-sparkle': {
                             display: 'inline-block',
-                            fontSize: 18,
+                            fontSize: textVar.xxl,
                             lineHeight: 1,
                             animation: 'df-sparkle-twinkle 3.6s ease-in-out infinite',
                             transformOrigin: 'center',
@@ -726,7 +869,7 @@ export const DataFormulatorFC = ({ }) => {
                     </Box>
                     <Typography
                         variant="caption"
-                        sx={{ color: 'text.secondary', fontSize: 12.5, lineHeight: 1.5, flex: 1 }}
+                        sx={{ color: 'text.secondary', fontSize: textVar.sm, lineHeight: 1.5, flex: 1 }}
                     >
                         {t('landing.demoBannerBody', {
                             defaultValue:
@@ -756,7 +899,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             )}
 
-            <Box sx={{mt: 5}}>
+            <Box sx={{ mt: 3.5 }}>
                 <DataLoadMenu 
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     onSelectConnector={(conn) => {
@@ -769,7 +912,7 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
-                    onStartChat={(prompt, images, attachments) => startDataLoadingChat(prompt, images, attachments)}
+                    onStartChat={(prompt, images, attachments) => startAnalystChat(prompt, images, attachments)}
                     hasPriorConversation={dataLoadingChatMessages.length > 0}
                     onResumeChat={() => openUploadDialog('extract')}
                     serverConfig={serverConfig}
@@ -782,7 +925,7 @@ export const DataFormulatorFC = ({ }) => {
                 demo, since first-time visitors won't have any sessions
                 yet and demos are the most engaging entry point. */}
             <Box sx={{mt: 3}}>
-                <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
+                <Typography sx={{ color: alpha(theme.palette.text.primary, 0.76), fontSize: textVar.md, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
                     {t('landing.demos')}
                 </Typography>
                 <Box sx={{
@@ -805,7 +948,7 @@ export const DataFormulatorFC = ({ }) => {
                 {/* Section header — left-aligned label with the sort control
                     on the right, aligned to the card grid. */}
                 <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography sx={{ color: 'text.secondary', fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    <Typography sx={{ color: 'text.secondary', fontSize: textVar.md, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                         {t('workspace.yourSessions')}
                     </Typography>
                     <Select
@@ -816,10 +959,10 @@ export const DataFormulatorFC = ({ }) => {
                         disableUnderline
                         inputProps={{ 'aria-label': t('workspace.sortSessions') }}
                         IconComponent={(props) => (
-                            <ExpandMoreIcon {...props} sx={{ fontSize: 16, color: 'text.disabled', right: 0 }} />
+                            <ExpandMoreIcon {...props} sx={{ fontSize: iconVar.md, color: 'text.disabled', right: 0 }} />
                         )}
                         sx={{
-                            fontSize: 12,
+                            fontSize: textVar.sm,
                             color: 'text.disabled',
                             cursor: 'pointer',
                             '& .MuiSelect-select': { py: 0.25, pl: 0, pr: '16px !important', minHeight: 0 },
@@ -836,10 +979,10 @@ export const DataFormulatorFC = ({ }) => {
                             return labels[v as typeof wsSort];
                         }}
                     >
-                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>{t('workspace.sortNewestFirst')}</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>{t('workspace.sortOldestFirst')}</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>{t('workspace.sortNameAsc')}</MenuItem>
+                        <MenuItem value="created_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNewestFirst')}</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortOldestFirst')}</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNameAsc')}</MenuItem>
                     </Select>
                 </Box>
                 <Box sx={{
@@ -875,7 +1018,7 @@ export const DataFormulatorFC = ({ }) => {
                                                 cancelRenameWorkspace();
                                             }
                                         }}
-                                        slotProps={{ input: { sx: { fontSize: 14, fontWeight: 500 } } }}
+                                        slotProps={{ input: { sx: { fontSize: textVar.lg, fontWeight: 500 } } }}
                                     />
                                 ) : (
                                     <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
@@ -883,7 +1026,7 @@ export const DataFormulatorFC = ({ }) => {
                                     </Typography>
                                 )}
                                 {w.saved_at && (
-                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
+                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: textVar.xs }}>
                                         {new Date(w.saved_at).toLocaleString()}
                                     </Typography>
                                 )}
@@ -956,8 +1099,13 @@ export const DataFormulatorFC = ({ }) => {
     
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
+            {activeWorkspace?.readOnly && (
+                <Alert severity="warning" sx={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 720 }}>
+                    {t('workspace.expiredReadOnly', 'This temporary session has expired on the server. You are viewing a read-only browser snapshot.')}
+                </Alert>
+            )}
             <DndProvider backend={HTML5Backend}>
-                {tables.length > 0 ? fixedSplitPane : (
+                {activeWorkspace && !provisionalSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
@@ -972,6 +1120,14 @@ export const DataFormulatorFC = ({ }) => {
                     open={uploadDialogOpen}
                     onClose={() => {
                         setUploadDialogOpen(false);
+                        // Nothing was added, so the workspace minted to open the
+                        // dialog is discarded rather than left as a stub session.
+                        // Read live state: a table loaded immediately before close
+                        // lands in the same batch, leaving the rendered flag stale
+                        // and orphaning the data under a discarded workspace.
+                        if (dfSelectors.selectSessionEmpty(store.getState())) {
+                            dispatch(dfActions.setActiveWorkspace(null));
+                        }
                         refreshPageConnectors();
                     }}
                     initialTab={uploadDialogInitialTab}
@@ -1021,10 +1177,10 @@ export const DataFormulatorFC = ({ }) => {
                             <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                                 {toolName}
                             </Typography>
-                            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
-                                {t('landing.firstSelectModelPrefix')} <ModelSelectionButton />
+                            <Typography variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
+                                {t('landing.firstSelectModelPrefix')} <ModelSelectionButton appearance="inline" />
                             </Typography>
-                            <Typography  color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 {t('landing.modelTip')}</Typography>
+                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 {t('landing.modelTip')}</Typography>
                         </Box>
                         {footer}
                     </Box>

@@ -32,14 +32,14 @@ export const TOOL_USES_CODE_FONT = new Set(['explore', 'build_loader', 'visualiz
 // ---------------------------------------------------------------------------
 
 /**
- * True leaf: derived table with no un-anchored children deriving from it.
+ * True leaf: derived table with no children deriving from it.
  * Layout-promoted "extra leaves" in DataThread still have children, so they
  * won't pass this check.
  */
 export function isLeafDerivedTable(table: DictTable, tables: DictTable[]): boolean {
     if (!table.derive) return false;
     return !tables.some(
-        t => t.derive?.trigger.tableId === table.id && !t.anchored,
+        t => t.derive?.trigger.tableId === table.id,
     );
 }
 

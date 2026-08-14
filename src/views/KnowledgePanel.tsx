@@ -35,15 +35,23 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import Editor from 'react-simple-code-editor';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 
 import { useKnowledgeStore } from '../app/useKnowledgeStore';
-import { deleteKnowledge, type KnowledgeCategory } from '../api/knowledgeApi';
+import { MarkdownEditor } from '../components/MarkdownEditor';
+import {
+    deleteKnowledge,
+    readDataMemory,
+    rewriteDataMemory,
+    type KnowledgeCategory,
+} from '../api/knowledgeApi';
 import type { KnowledgeItem } from '../api/knowledgeApi';
 import { borderColor, radius } from '../app/tokens';
-import { dfActions, type DataFormulatorState } from '../app/dfSlice';
+import { dfActions, dfSelectors, type DataFormulatorState } from '../app/dfSlice';
 import { isLeafDerivedTable, buildLeafEvents } from './workflowContext';
 import { SessionDistillDialog, findSessionWorkflow } from './SessionDistill';
+import { iconVar, textVar } from '../app/layout';
 
 // Default file name and seed body for a brand-new rule. Rules are plain
 // Markdown — the user just edits the body; no front matter is required.
@@ -52,6 +60,8 @@ const RULE_TEMPLATE = `# Agent rules
 
 Describe the constraints or conventions the agent should follow.
 `;
+
+type EditorKind = KnowledgeCategory | 'memory';
 
 // ── Persistent action row (always visible at the top of each section) ────
 
@@ -71,25 +81,25 @@ const ActionRow: React.FC<ActionRowProps> = ({ icon, label, onClick }) => (
             mx: 1.5, my: 0.5,
             px: 1, py: 0.5,
             cursor: 'pointer',
-            color: 'primary.main',
-            border: theme => `1px solid ${alpha(theme.palette.primary.main, 0.5)}`,
+            color: '#252525',
+            border: '1px solid #d4d4d0',
             borderRadius: 1,
-            bgcolor: 'transparent',
+            bgcolor: '#f1f1ef',
             transition: 'background-color 120ms ease, border-color 120ms ease',
             '&:hover': {
-                bgcolor: theme => alpha(theme.palette.primary.main, 0.04),
-                borderColor: 'primary.main',
+                bgcolor: '#e5e5e1',
+                borderColor: '#bdbdb8',
             },
             '&:focus-visible': {
-                outline: theme => `2px solid ${theme.palette.primary.main}`,
-                outlineOffset: 1,
+                outline: '2px solid #6b6b6b',
+                outlineOffset: 2,
             },
             userSelect: 'none',
         }}
     >
         <Box sx={{ color: 'inherit', display: 'flex' }}>{icon}</Box>
         <Typography sx={{
-            fontSize: 12, fontWeight: 500, color: 'inherit', wordBreak: 'break-word',
+            fontSize: textVar.sm, fontWeight: 500, color: 'inherit', wordBreak: 'break-word',
         }}>
             {label}
         </Typography>
@@ -104,7 +114,7 @@ export const KnowledgePanel: React.FC = () => {
     const dispatch = useDispatch();
 
     // For the "distill from this session" placeholder under WORKFLOWS.
-    const tables = useSelector((s: DataFormulatorState) => s.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     // Workflow replay needs data to run on — disable replay when the
     // workspace has no tables loaded.
     const hasTables = tables.length > 0;
@@ -118,12 +128,13 @@ export const KnowledgePanel: React.FC = () => {
     // Editor dialog state — used both for editing existing entries and
     // for creating new rules (in which case editorOriginalPath is empty).
     const [editorOpen, setEditorOpen] = useState(false);
-    const [editorCategory, setEditorCategory] = useState<KnowledgeCategory>('rules');
+    const [editorCategory, setEditorCategory] = useState<EditorKind>('rules');
     const [editorPath, setEditorPath] = useState('');
     const [editorContent, setEditorContent] = useState('');
     const [editorOriginalPath, setEditorOriginalPath] = useState('');
     const [editorSaving, setEditorSaving] = useState(false);
     const [editorLoading, setEditorLoading] = useState(false);
+    const [memoryUnlocked, setMemoryUnlocked] = useState(false);
 
     // Delete confirmation
     const [deleteTarget, setDeleteTarget] = useState<{ category: KnowledgeCategory; path: string; title: string } | null>(null);
@@ -176,9 +187,54 @@ export const KnowledgePanel: React.FC = () => {
         setEditorLoading(false);
     }, [store]);
 
+    const openMemoryDialog = useCallback(async () => {
+        setEditorCategory('memory');
+        setMemoryUnlocked(false);
+        setEditorPath('data-memory.md');
+        setEditorOriginalPath('data-memory.md');
+        setEditorContent('');
+        setEditorOpen(true);
+        setEditorLoading(true);
+        try {
+            setEditorContent(await readDataMemory());
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'knowledge',
+                value: t('knowledge.failedToLoad'),
+            }));
+        } finally {
+            setEditorLoading(false);
+        }
+    }, [dispatch, t]);
+
     const handleSave = useCallback(async () => {
-        if (!editorPath.trim() || !editorContent.trim()) return;
+        if (editorCategory !== 'memory' && (!editorPath.trim() || !editorContent.trim())) return;
         setEditorSaving(true);
+
+        if (editorCategory === 'memory') {
+            try {
+                await rewriteDataMemory(editorContent);
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'knowledge',
+                    value: t('knowledge.saved'),
+                }));
+                setEditorOpen(false);
+            } catch {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'knowledge',
+                    value: t('knowledge.failedToSave'),
+                }));
+            } finally {
+                setEditorSaving(false);
+            }
+            return;
+        }
 
         const fileName = editorPath.endsWith('.md') ? editorPath : `${editorPath}.md`;
         const path = fileName;
@@ -190,7 +246,7 @@ export const KnowledgePanel: React.FC = () => {
         if (success) {
             setEditorOpen(false);
         }
-    }, [editorPath, editorOriginalPath, editorContent, editorCategory, store]);
+    }, [editorPath, editorOriginalPath, editorContent, editorCategory, store, dispatch, t]);
 
     const handleDelete = useCallback(async () => {
         if (!deleteTarget) return;
@@ -272,23 +328,24 @@ export const KnowledgePanel: React.FC = () => {
                 onClick={() => openEditDialog(category, item)}
                 sx={{
                     display: 'flex', alignItems: 'flex-start', gap: 0.75,
-                    px: 1.5, py: 0.625,
+                    mx: 0.75, px: 0.75, py: 0.625,
+                    borderRadius: 0.75,
                     cursor: 'pointer',
                     color: 'text.primary',
-                    '&:hover': { bgcolor: 'action.hover' },
+                    '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.045)' },
                     '&:hover .item-actions': { display: 'inline-flex' },
                     userSelect: 'none',
                 }}
             >
-                <DescriptionOutlinedIcon sx={{ fontSize: 16, color: 'text.primary', mt: 0.25 }} />
+                <DescriptionOutlinedIcon sx={{ fontSize: iconVar.md, color: 'text.primary', mt: 0.25 }} />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.45, wordBreak: 'break-word', color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.45, wordBreak: 'break-word', color: 'text.primary' }}>
                         {primary}
                     </Typography>
                 </Box>
                 {item.source === 'agent_summarized' && (
                     <Tooltip title={t('knowledge.sourceAgent')}>
-                        <SmartToyOutlinedIcon sx={{ fontSize: 13, color: 'text.secondary', mt: 0.25 }} />
+                        <SmartToyOutlinedIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary', mt: 0.25 }} />
                     </Tooltip>
                 )}
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'stretch', flexShrink: 0 }}>
@@ -306,7 +363,7 @@ export const KnowledgePanel: React.FC = () => {
                                         '&:hover': { bgcolor: theme => alpha(theme.palette.primary.main, 0.08) },
                                     }}
                                 >
-                                    <PlayArrowIcon sx={{ fontSize: 18 }} />
+                                    <PlayArrowIcon sx={{ fontSize: iconVar.lg }} />
                                 </IconButton>
                             </span>
                         </Tooltip>
@@ -318,7 +375,7 @@ export const KnowledgePanel: React.FC = () => {
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget({ category, path: item.path, title: item.title }); }}
                         sx={{ p: 0.25, mt: 'auto', display: 'none', color: 'text.secondary', '&:hover': { color: 'error.main' } }}
                     >
-                        <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                        <DeleteOutlineIcon sx={{ fontSize: iconVar.md }} />
                     </IconButton>
                 </Box>
             </Box>
@@ -341,7 +398,7 @@ export const KnowledgePanel: React.FC = () => {
             if (category === 'rules') {
                 return (
                     <ActionRow
-                        icon={<AddIcon sx={{ fontSize: 18 }} />}
+                        icon={<AddIcon sx={{ fontSize: iconVar.lg }} />}
                         label={t('knowledge.addNewRule', { defaultValue: 'Add new rule' })}
                         onClick={() => openCreateDialog('rules')}
                     />
@@ -353,7 +410,7 @@ export const KnowledgePanel: React.FC = () => {
                 // yet — show a passive hint instead of a dead action.
                 if (state.items.length > 0) return null;
                 return (
-                    <Typography sx={{ fontSize: 11, color: 'text.disabled', px: 1.5, py: 0.75, fontStyle: 'italic' }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', px: 1.5, py: 0.75, fontStyle: 'italic' }}>
                         {t('knowledge.noItems')}
                     </Typography>
                 );
@@ -371,8 +428,8 @@ export const KnowledgePanel: React.FC = () => {
             return (
                 <ActionRow
                     icon={updateMode
-                        ? <RefreshIcon sx={{ fontSize: 18 }} />
-                        : <AddIcon sx={{ fontSize: 18 }} />}
+                        ? <RefreshIcon sx={{ fontSize: iconVar.lg }} />
+                        : <AddIcon sx={{ fontSize: iconVar.lg }} />}
                     label={updateMode
                         ? t('knowledge.updateFromSession', { defaultValue: 'Update from this session' })
                         : t('knowledge.distillFromSession', { defaultValue: 'Distill from this session' })}
@@ -382,29 +439,27 @@ export const KnowledgePanel: React.FC = () => {
         };
 
         return (
-            <Box key={category} sx={{ pb: 1 }}>
+            <Box key={category} sx={{ pb: 1, borderBottom: '1px solid rgba(0, 0, 0, 0.07)' }}>
                 <Box
                     sx={{
                         display: 'flex', alignItems: 'center',
-                        px: 1.5, pt: 2, pb: 0.75,
+                        px: 1.5, pt: 1.25, pb: 0.75,
+                        backgroundColor: 'rgba(255, 255, 255, 0.46)',
                     }}
                 >
-                    <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.secondary', letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 700, color: 'rgba(0, 0, 0, 0.72)', letterSpacing: 0.6, textTransform: 'uppercase' }}>
                         {label}
                     </Typography>
                 </Box>
 
-                {/* Always-visible guidance for the section, set off by a
-                    subtle left accent line below the title. */}
+                {/* Always-visible guidance for the section. */}
                 <Box
                     sx={{
                         mx: 1.5, mb: 0.75,
-                        pl: 1, py: 0.25,
-                        borderLeft: '2px solid',
-                        borderColor: theme => alpha(theme.palette.primary.main, 0.25),
+                        py: 0.25,
                     }}
                 >
-                    <Typography sx={{ fontSize: 11, color: 'text.disabled', lineHeight: 1.55 }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.55 }}>
                         {hint}
                     </Typography>
                 </Box>
@@ -430,6 +485,23 @@ export const KnowledgePanel: React.FC = () => {
                 <Box>
                     {renderCategorySection('rules', t('knowledge.rules'), t('knowledge.rulesHint'))}
                     {renderCategorySection('workflows', t('knowledge.workflows'), t('knowledge.workflowsHint'))}
+                    <Box sx={{ pb: 1, borderBottom: '1px solid rgba(0, 0, 0, 0.07)' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1.25, pb: 0.75, backgroundColor: 'rgba(255, 255, 255, 0.46)' }}>
+                            <Typography sx={{ fontSize: textVar.xs, fontWeight: 700, color: 'rgba(0, 0, 0, 0.72)', letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                                {t('knowledge.dataMemory', { defaultValue: 'Data Memory' })}
+                            </Typography>
+                        </Box>
+                        <Box sx={{ mx: 1.5, mb: 0.75, py: 0.25 }}>
+                            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.55 }}>
+                                {t('knowledge.dataMemoryHint', { defaultValue: 'User-wide notes about known data sources and relationships. This memory may be stale; agents verify live metadata before using it.' })}
+                            </Typography>
+                        </Box>
+                        <ActionRow
+                            icon={<DescriptionOutlinedIcon sx={{ fontSize: iconVar.lg }} />}
+                            label={t('knowledge.editDataMemory', { defaultValue: 'data-memory.md' })}
+                            onClick={openMemoryDialog}
+                        />
+                    </Box>
                 </Box>
             </Box>
 
@@ -445,70 +517,89 @@ export const KnowledgePanel: React.FC = () => {
             <Dialog
                 open={editorOpen}
                 onClose={() => { if (!editorSaving) setEditorOpen(false); }}
-                maxWidth="md"
+                maxWidth="lg"
                 fullWidth
-                sx={{ '& .MuiDialog-paper': { maxHeight: '90vh' } }}
+                sx={{ '& .MuiDialog-paper': { height: '90vh', maxHeight: 900 } }}
             >
-                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
-                    {t('knowledge.editTitle')}
+                <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: textVar.xl, pb: 0.5 }}>
+                    <Box sx={{ flex: 1 }}>
+                        {editorCategory === 'memory'
+                            ? t('knowledge.dataMemory', { defaultValue: 'Data Memory' })
+                            : t('knowledge.editTitle')}
+                    </Box>
+                    {editorCategory === 'memory' && (
+                        <Tooltip title={memoryUnlocked
+                            ? t('knowledge.lockDataMemory', { defaultValue: 'Lock editing' })
+                            : t('knowledge.unlockDataMemory', { defaultValue: 'Unlock editing' })}
+                        >
+                            <IconButton
+                                size="small"
+                                aria-label={memoryUnlocked
+                                    ? t('knowledge.lockDataMemory', { defaultValue: 'Lock editing' })
+                                    : t('knowledge.unlockDataMemory', { defaultValue: 'Unlock editing' })}
+                                onClick={() => setMemoryUnlocked(unlocked => !unlocked)}
+                                color={memoryUnlocked ? 'primary' : 'default'}
+                            >
+                                {memoryUnlocked
+                                    ? <LockOpenOutlinedIcon sx={{ fontSize: iconVar.lg }} />
+                                    : <LockOutlinedIcon sx={{ fontSize: iconVar.lg }} />}
+                            </IconButton>
+                        </Tooltip>
+                    )}
                 </DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: '8px !important' }}>
-                    <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0, pt: '8px !important' }}>
+                    {editorCategory === 'memory' ? (
+                        <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>
+                            data-memory.md
+                        </Typography>
+                    ) : <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
                         <TextField
                             size="small"
                             label={t('knowledge.fileName')}
                             placeholder={t('knowledge.fileNamePlaceholder')}
                             value={editorPath}
                             onChange={(e) => setEditorPath(e.target.value)}
-                            sx={{ flex: 1, minWidth: 150, '& .MuiInputBase-input': { fontSize: 12 } }}
-                            slotProps={{ inputLabel: { sx: { fontSize: 12 } } }}
+                            sx={{ flex: 1, minWidth: 150, '& .MuiInputBase-input': { fontSize: textVar.sm } }}
+                            slotProps={{ inputLabel: { sx: { fontSize: textVar.sm } } }}
                         />
-                    </Box>
+                    </Box>}
 
                     {editorLoading ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                             <CircularProgress size={24} />
                         </Box>
                     ) : (
-                        <>
-                            <Box sx={{
-                                border: `1px solid ${borderColor.component}`,
-                                borderRadius: radius.sm,
-                                overflow: 'auto',
-                                maxHeight: '60vh',
-                                minHeight: 200,
-                            }}>
-                                <Editor
-                                    value={editorContent}
-                                    onValueChange={setEditorContent}
-                                    highlight={(code) => code}
-                                    padding={16}
-                                    placeholder="# Title\n\nWrite your knowledge content in Markdown..."
-                                    style={{
-                                        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
-                                        fontSize: 12,
-                                        lineHeight: 1.5,
-                                        minHeight: 200,
-                                        whiteSpace: 'pre-wrap',
-                                        outline: 'none',
-                                    }}
-                                />
-                            </Box>
-                        </>
+                        <Box sx={{
+                            border: `1px solid ${borderColor.component}`,
+                            borderRadius: radius.sm,
+                            overflow: 'hidden',
+                            flex: 1,
+                            minHeight: 300,
+                        }}>
+                            <MarkdownEditor
+                                value={editorContent}
+                                onChange={setEditorContent}
+                                placeholder="# Title\n\nWrite your knowledge content in Markdown..."
+                                readOnly={editorCategory === 'memory' && !memoryUnlocked}
+                            />
+                        </Box>
                     )}
                 </DialogContent>
                 <DialogActions>
-                    <Button
-                        onClick={() => { setEditorOpen(false); setDeleteTarget({ category: editorCategory, path: editorOriginalPath, title: editorOriginalPath }); }}
-                        color="error"
-                        sx={{ textTransform: 'none', fontSize: 12, mr: 'auto' }}
-                    >
-                        {t('app.delete')}
-                    </Button>
+                    {editorCategory !== 'memory' && (
+                        <Button
+                            onClick={() => { setEditorOpen(false); setDeleteTarget({ category: editorCategory, path: editorOriginalPath, title: editorOriginalPath }); }}
+                            color="error"
+                            sx={{ textTransform: 'none', fontSize: textVar.sm, mr: 'auto' }}
+                        >
+                            {t('app.delete')}
+                        </Button>
+                    )}
+                    {editorCategory === 'memory' && <Box sx={{ mr: 'auto' }} />}
                     <Button
                         onClick={() => setEditorOpen(false)}
                         disabled={editorSaving}
-                        sx={{ textTransform: 'none', fontSize: 12 }}
+                        sx={{ textTransform: 'none', fontSize: textVar.sm }}
                     >
                         {t('app.cancel')}
                     </Button>
@@ -516,11 +607,12 @@ export const KnowledgePanel: React.FC = () => {
                         onClick={handleSave}
                         disabled={
                             editorSaving
-                            || !editorContent.trim()
-                            || !editorPath.trim()
+                            || (editorCategory === 'memory' && !memoryUnlocked)
+                            || (editorCategory !== 'memory' && !editorContent.trim())
+                            || (editorCategory !== 'memory' && !editorPath.trim())
                         }
                         variant="contained"
-                        sx={{ textTransform: 'none', fontSize: 12 }}
+                        sx={{ textTransform: 'none', fontSize: textVar.sm }}
                     >
                         {editorSaving ? t('knowledge.saving') : t('knowledge.save')}
                     </Button>
@@ -529,19 +621,19 @@ export const KnowledgePanel: React.FC = () => {
 
             {/* Delete confirmation */}
             <Dialog open={!!deleteTarget} onClose={() => { if (!deleting) setDeleteTarget(null); }}>
-                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+                <DialogTitle sx={{ fontSize: textVar.xl, pb: 0.5 }}>
                     {deleteTarget ? t('knowledge.deleteConfirm', { title: deleteTarget.title }) : ''}
                 </DialogTitle>
                 <DialogContent>
-                    <Typography sx={{ fontSize: 13 }}>
+                    <Typography sx={{ fontSize: textVar.md }}>
                         {t('knowledge.deleteConfirmBody')}
                     </Typography>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDeleteTarget(null)} disabled={deleting} sx={{ textTransform: 'none', fontSize: 12 }}>
+                    <Button onClick={() => setDeleteTarget(null)} disabled={deleting} sx={{ textTransform: 'none', fontSize: textVar.sm }}>
                         {t('app.cancel')}
                     </Button>
-                    <Button onClick={handleDelete} disabled={deleting} color="error" variant="contained" sx={{ textTransform: 'none', fontSize: 12 }}>
+                    <Button onClick={handleDelete} disabled={deleting} color="error" variant="contained" sx={{ textTransform: 'none', fontSize: textVar.sm }}>
                         {deleting ? <CircularProgress size={14} /> : t('app.delete')}
                     </Button>
                 </DialogActions>

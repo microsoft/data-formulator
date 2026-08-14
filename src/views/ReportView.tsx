@@ -28,6 +28,7 @@ import { AppDispatch } from '../app/store';
 import { TiptapReportEditor } from './TiptapReportEditor';
 import { getCachedChart } from '../app/chartCache';
 import { floatingPillSx } from '../app/tokens';
+import { iconVar, textVar } from '../app/layout';
 import { useTranslation } from 'react-i18next';
 
 export const ReportView: FC = () => {
@@ -35,7 +36,7 @@ export const ReportView: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector(dfSelectors.getAllTables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
@@ -621,10 +622,10 @@ ${styles}
         minHeight: 30,
         px: 1.25,
         py: 0.5,
-        fontSize: 12,
+        fontSize: textVar.sm,
         color: 'text.secondary',
         '& .MuiSvgIcon-root': {
-            fontSize: 15,
+            fontSize: textVar.xl,
             mr: 0.75,
             color: 'text.disabled',
         },
@@ -655,7 +656,7 @@ ${styles}
                                         '&:hover': { backgroundColor: 'primary.dark', color: 'primary.contrastText' },
                                     } : floatingPillSx}
                                 >
-                                    {isEditMode ? <CheckIcon sx={{ fontSize: 18 }} /> : <EditIcon sx={{ fontSize: 18 }} />}
+                                    {isEditMode ? <CheckIcon sx={{ fontSize: iconVar.lg }} /> : <EditIcon sx={{ fontSize: iconVar.lg }} />}
                                 </IconButton>
                             </Tooltip>
                         )}
@@ -669,7 +670,7 @@ ${styles}
                                         color: 'primary.main',
                                     } : floatingPillSx}
                                 >
-                                    <DownloadIcon sx={{ fontSize: 18 }} />
+                                    <DownloadIcon sx={{ fontSize: iconVar.lg }} />
                                 </IconButton>
                             </Tooltip>
                         )}
@@ -732,7 +733,7 @@ ${styles}
                                         '&:hover': { backgroundColor: 'error.50', color: 'error.main' },
                                     }}
                                 >
-                                    <DeleteIcon sx={{ fontSize: 18 }} />
+                                    <DeleteIcon sx={{ fontSize: iconVar.lg }} />
                                 </IconButton>
                             </Tooltip>
                         )}

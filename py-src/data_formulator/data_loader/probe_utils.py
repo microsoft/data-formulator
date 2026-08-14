@@ -100,6 +100,7 @@ ANSI = SqlDialect(name="ansi")
 DUCKDB = SqlDialect(name="duckdb")
 POSTGRES = SqlDialect(name="postgres")
 MYSQL = SqlDialect(name="mysql", open_quote="`", close_quote="`", ilike="lower_like")
+CLICKHOUSE = SqlDialect(name="clickhouse", open_quote="`", close_quote="`")
 MSSQL = SqlDialect(
     name="mssql", open_quote="[", close_quote="]",
     limit_style="top", ilike="lower_like",

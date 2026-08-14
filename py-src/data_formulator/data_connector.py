@@ -816,6 +816,40 @@ def resolve_live_loader(source_id: str) -> "ExternalDataLoader":
     return connector._require_loader()
 
 
+def connector_is_available(source_id: str) -> bool | None:
+    """Whether ``source_id`` could be loaded from right now, without touching it.
+
+    Deliberately avoids ``test_connection`` so discovery can screen every source
+    cheaply: a live loader, stored credentials, or usable SSO all count, since
+    each lets the load path reconnect on demand. Returns ``None`` when this
+    can't be determined (no request context, connectors disabled, unknown id) —
+    callers must not treat that as unavailable.
+    """
+    try:
+        _, connector = _resolve_connector_with_key({"connector_id": source_id})
+    except Exception:
+        return None
+    try:
+        if _loader_auth_mode(connector._loader_class) == "none":
+            return True
+        identity = connector._get_identity()
+        if connector._get_loader(identity) is not None:
+            return True
+        if connector.has_stored_credentials(identity):
+            return True
+        from data_formulator.auth.identity import get_sso_token
+        from data_formulator.auth.token_store import TokenStore
+        auth_mode = _loader_auth_mode(connector._loader_class)
+        return (
+            auth_mode in ("token", "sso_exchange", "delegated")
+            and not TokenStore().is_sso_reconnect_blocked(source_id)
+            and get_sso_token() is not None
+        )
+    except Exception:
+        logger.debug("availability check failed for %s", source_id, exc_info=True)
+        return None
+
+
 def _parse_source_table(raw: Any) -> tuple[str, str]:
     """Normalise the ``source_table`` value from a request body.
 
@@ -1083,14 +1117,16 @@ def _az_account_summary() -> dict[str, Any] | None:
     fails/times out.
     """
     import json as _json
-    import shutil
     import subprocess
 
-    if shutil.which("az") is None:
+    from data_formulator.auth.azure_cli import expose_azure_cli
+
+    azure_cli = expose_azure_cli()
+    if azure_cli is None:
         return None
     try:
         result = subprocess.run(
-            ["az", "account", "show", "--only-show-errors", "-o", "json"],
+            [azure_cli, "account", "show", "--only-show-errors", "-o", "json"],
             capture_output=True, text=True, timeout=15,
         )
     except (subprocess.TimeoutExpired, OSError):
@@ -1117,14 +1153,13 @@ def azure_cli_status():
     Microsoft Entra ID auth (e.g. SQL Server) to show the current sign-in
     state next to an in-app "Sign in with Azure CLI" button.
     """
-    import shutil
-
+    from data_formulator.auth.azure_cli import expose_azure_cli
     from data_formulator.auth.identity import is_local_mode
 
     if not is_local_mode():
         raise AppError(ErrorCode.ACCESS_DENIED, "Not available in server mode")
 
-    if shutil.which("az") is None:
+    if expose_azure_cli() is None:
         return json_ok({"installed": False, "signed_in": False, "account": None})
 
     account = _az_account_summary()
@@ -1143,15 +1178,16 @@ def azure_cli_login():
     own machine, so the browser opens for them). Blocks until the interactive
     sign-in completes or times out. On success returns the signed-in account.
     """
-    import shutil
     import subprocess
 
+    from data_formulator.auth.azure_cli import expose_azure_cli
     from data_formulator.auth.identity import is_local_mode
 
     if not is_local_mode():
         raise AppError(ErrorCode.ACCESS_DENIED, "Not available in server mode")
 
-    if shutil.which("az") is None:
+    azure_cli = expose_azure_cli()
+    if azure_cli is None:
         raise AppError(
             ErrorCode.CONNECTOR_ERROR,
             "Azure CLI ('az') is not installed. Install it (e.g. "
@@ -1165,7 +1201,7 @@ def azure_cli_login():
 
     try:
         result = subprocess.run(
-            ["az", "login", "--only-show-errors", "-o", "json"],
+            [azure_cli, "login", "--only-show-errors", "-o", "json"],
             capture_output=True, text=True, timeout=300,
         )
     except subprocess.TimeoutExpired:
@@ -2224,6 +2260,8 @@ def connector_preview_data():
             source_table=source_id,
             import_options=import_options,
         )
+        from data_formulator.data_loader.external_data_loader import apply_import_projection
+        arrow_table = apply_import_projection(arrow_table, import_options)
         df = arrow_table.to_pandas()
         rows = df_to_safe_records(df)
         columns = [{"name": col, "type": normalize_dtype_to_app_type(str(df[col].dtype))} for col in df.columns]

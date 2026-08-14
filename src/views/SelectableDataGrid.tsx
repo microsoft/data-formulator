@@ -36,8 +36,9 @@ import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, assertDownloadResponseOk } from '../app/apiClient';
 import { useDrag } from 'react-dnd';
 import { useSelector } from 'react-redux';
-import { DataFormulatorState } from '../app/dfSlice';
+import { DataFormulatorState, dfSelectors } from '../app/dfSlice';
 import { ColumnFilter, ColumnFilterPopover } from './ColumnFilterPopover';
+import { iconVar, textVar } from '../app/layout';
 
 export interface ColumnDef {
     id: string;
@@ -141,7 +142,8 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const semanticType = useSelector(
-        (state: DataFormulatorState) => state.tables.find(t => t.id === tableId)?.metadata?.[columnDef.id]?.semanticType,
+        (state: DataFormulatorState) =>
+            state.tableSemantics.find(info => info.tableId === tableId)?.fields[columnDef.id]?.semanticType,
     );
     
     // Find the corresponding FieldItem for this column
@@ -240,12 +242,12 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                     title={(semanticType || columnDef.description) ? (
                         <Box>
                             {semanticType && (
-                                <Typography sx={{ fontSize: 11 }}>
+                                <Typography sx={{ fontSize: textVar.xs }}>
                                     <b>{columnDef.label}</b>: <i>{semanticType}</i>
                                 </Typography>
                             )}
                             {columnDef.description && (
-                                <Typography sx={{ fontSize: 11, color: 'grey.300', mt: semanticType ? 0.25 : 0 }}>
+                                <Typography sx={{ fontSize: textVar.xs, color: 'grey.300', mt: semanticType ? 0.25 : 0 }}>
                                     {columnDef.description}
                                 </Typography>
                             )}
@@ -254,22 +256,22 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                     arrow
                     placement="top"
                 >
-                    <Typography sx={{fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                    <Typography sx={{fontSize: textVar.sm, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
                         {columnDef.label}
                     </Typography>
                 </Tooltip>
                 {isSorted && (
                     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', ml: 0.25, color: theme.palette.primary.main }}>
                         {order === 'asc'
-                            ? <ArrowUpwardIcon sx={{ fontSize: 13 }} />
-                            : <ArrowDownwardIcon sx={{ fontSize: 13 }} />}
+                            ? <ArrowUpwardIcon sx={{ fontSize: iconVar.sm }} />
+                            : <ArrowDownwardIcon sx={{ fontSize: iconVar.sm }} />}
                     </Box>
                 )}
             </TableSortLabel>
             {/* Inline filter status hint \u2014 only rendered when a filter is active on this column.
                 Clicking reopens the filter popover. */}
             {hasFilter && (
-                <Tooltip title={<Typography sx={{fontSize: 10}}>{t('dataGrid.columnMenu.filterActive')}</Typography>}>
+                <Tooltip title={<Typography sx={{fontSize: textVar.xxs}}>{t('dataGrid.columnMenu.filterActive')}</Typography>}>
                     <IconButton
                         ref={filterButtonRef}
                         size="small"
@@ -286,13 +288,13 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                             },
                         }}
                     >
-                        <FilterAltIcon sx={{ fontSize: 14 }} />
+                        <FilterAltIcon sx={{ fontSize: iconVar.sm }} />
                     </IconButton>
                 </Tooltip>
             )}
             {/* Column kebab — single entry point that opens the unified
                 sort + filter popover (design-doc 31 §4.2). */}
-            <Tooltip title={<Typography sx={{fontSize: 10}}>{t('dataGrid.columnMenu.openMenu')}</Typography>}>
+            <Tooltip title={<Typography sx={{fontSize: textVar.xxs}}>{t('dataGrid.columnMenu.openMenu')}</Typography>}>
                 <IconButton
                     ref={kebabButtonRef}
                     size="small"
@@ -311,7 +313,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                         },
                     }}
                 >
-                    <MoreVertIcon sx={{ fontSize: 15 }} />
+                    <MoreVertIcon sx={{ fontSize: iconVar.md }} />
                 </IconButton>
             </Tooltip>
         </Box>
@@ -352,7 +354,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
     // Lookup of per-column metadata (distinctCount/nullCount/levels/levelCounts/type)
     // to drive the filter popover's variant selection synchronously.
     const tableMetadata = useSelector(
-        (state: DataFormulatorState) => state.tables.find(t => t.id === tableId)?.metadata,
+        (state: DataFormulatorState) => dfSelectors.getAllTables(state).find(t => t.id === tableId)?.metadata,
     );
 
     // Ref-based bridge to fetchVirtualData (declared further below); lets stable
@@ -632,7 +634,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                 height: '100%',
                 position: 'relative',
                 "& .MuiTableCell-root": {
-                    fontSize: 12, maxWidth: "120px", py: '2px', cursor: "default",
+                    fontSize: textVar.sm, maxWidth: "120px", py: '2px', cursor: "default",
                     overflow: "clip", textOverflow: "ellipsis", whiteSpace: "nowrap"
                 }
             }}>
@@ -696,7 +698,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                                                 >
                                                     <Typography
                                                         sx={{
-                                                            fontSize: 12,
+                                                            fontSize: textVar.sm,
                                                             color: 'text.secondary',
                                                             whiteSpace: 'nowrap',
                                                         }}
@@ -761,7 +763,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             {!hideFooter && <Paper variant="outlined"
                 sx={{ display: 'flex', flexDirection: 'row', position: 'absolute', bottom: 4, right: 20, zIndex: 5 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
-                    <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
+                    <Typography sx={{display: 'flex', alignItems: 'center', fontSize: textVar.sm}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
                         {virtual && rowsToDisplay.length < serverRowCount
                             ? t('dataGrid.loadedOfTotal', { loaded: rowsToDisplay.length, total: serverRowCount })
@@ -780,7 +782,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                                 }}
                             >
                                 <CasinoIcon sx={{
-                                    fontSize: 18, 
+                                    fontSize: textVar.xxl, 
                                     '&:hover': {
                                         transform: 'rotate(180deg)'
                                     }
@@ -799,7 +801,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                             >
                                 {isDownloading 
                                     ? <CircularProgress size={16} sx={{ color: 'inherit' }} />
-                                    : <FileDownloadIcon sx={{ fontSize: 18 }} />
+                                    : <FileDownloadIcon sx={{ fontSize: iconVar.lg }} />
                                 }
                             </IconButton>
                         </span>
