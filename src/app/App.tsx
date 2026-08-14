@@ -1019,14 +1019,12 @@ const AppShell: FC = () => {
     const isAboutPage = location.pathname === '/about';
     const isAppPage = !isAboutPage;
 
-    // The canvas (threads, encoding shelf, viz cards) genuinely needs room, so
-    // the app shell floors content at MIN_SUPPORTED and scrolls horizontally
-    // below that. The landing page (app route with no tables yet) has none of
-    // that — its hero, chips, connected-sources row and demo grid all reflow —
-    // so we relax its floor to 640px, a comfortable width where everything
-    // still wraps cleanly before a horizontal scrollbar appears.
+    // The desktop canvas (threads, encoding shelf, viz cards) genuinely needs
+    // room, so the app shell floors content at MIN_SUPPORTED. Landing and phone
+    // workspace views reflow instead; the media override below removes the
+    // desktop floor when Thread and Canvas become alternate full-width views.
     const isLandingView = isAppPage && !activeWorkspace;
-    const shellMinWidth = isLandingView ? '640px' : `${MIN_SUPPORTED.width}px`;
+    const shellMinWidth = isLandingView ? 0 : `${MIN_SUPPORTED.width}px`;
 
     // Narrow toolbars fold their controls into menus instead of letting the
     // nav buttons, session name and trailing actions overlap.
@@ -1048,7 +1046,10 @@ const AppShell: FC = () => {
             overflow: 'auto',
             '& > *': {
                 minWidth: shellMinWidth,
-                minHeight: `${MIN_SUPPORTED.height}px`
+                minHeight: `${MIN_SUPPORTED.height}px`,
+                '@media (max-width: 700px)': {
+                    minWidth: 0,
+                },
             },
         }}>
             <Box sx={{

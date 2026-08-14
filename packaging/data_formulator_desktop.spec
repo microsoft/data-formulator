@@ -16,6 +16,7 @@ datas += collect_data_files(
     includes=[
         "analyst/skills/**/SKILL.md",
         "analyst/skills/**/tools.json",
+        "data_loader/guides/*.md",
     ],
 )
 binaries = []

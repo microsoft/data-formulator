@@ -1442,18 +1442,32 @@ let SingleThreadGroupView: FC<{
                 if (next.length !== 1) break;
                 chain.push(next[0]);
             }
-            // Only pure conversation folds — a turn that loaded tables must keep
-            // rendering them.
-            const foldable = chain.length > 2
+            const leadsToLoadedTable = chain.some(item =>
+                (loadedTablesByTurn.get(item.id) || []).length > 0);
+            const foldableConversation = chain.length > 2
                 && chain.every(item =>
                     (loadedTablesByTurn.get(item.id) || []).length === 0
                     && (reportsByParentNode.get(item.id) || []).length === 0);
+            const foldableLoadLeadUp = chain.length > 1 && leadsToLoadedTable
+                && chain.every(item => (reportsByParentNode.get(item.id) || []).length === 0);
+            const foldable = foldableConversation || foldableLoadLeadUp;
             const expanded = expandedTurnChains.has(chain[0].id);
-            if (foldable) pushTurnChainToggle(chain[0].id, chain.length - 1, expanded);
-            const visible = foldable && !expanded ? chain.slice(-1) : chain;
+            if (foldable) {
+                pushTurnChainToggle(
+                    chain[0].id,
+                    chain.length - 1,
+                    expanded,
+                );
+            }
+            const visible = foldable && !expanded
+                ? chain.slice(-1)
+                : chain;
             for (const item of visible) {
                 pushSingleTurn(item, nodeId, highlighted, triggerType);
                 pushLoadedTables(item.id, triggerType);
+            }
+            if (foldableLoadLeadUp && !expanded) {
+                for (const item of chain.slice(0, -1)) pushLoadedTables(item.id, triggerType);
             }
             // Branches hanging off the chain's tail.
             pushTextTurnSubtree(chain[chain.length - 1].id, highlighted, triggerType);
@@ -2510,7 +2524,7 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
     return columns;
 }
 
-export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx, centered = false }) {
+export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: boolean}> = function ({ sx, centered = false, denseColumns = false }) {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -2858,7 +2872,18 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
     // benefit, since the segments would just stack in the same single column.
     // Column geometry (CARD_WIDTH / CARD_GAP / PANEL_PADDING) is defined once
     // in ./threadLayout and shared with DataFormulator's pane snapping.
-    const fittableColumns = fittableThreadColumnsFor(containerWidth, threadTokens);
+    const denseColumnGap = 4;
+    const densePanelInset = 4;
+    const useDenseColumns = denseColumns;
+    const columnWidth = useDenseColumns
+        ? `calc((100% - ${densePanelInset + denseColumnGap + 8}px) / 2)`
+        : threadTokens.thread.cardWidth;
+    const cardWidth = useDenseColumns ? '100%' : threadTokens.thread.cardWidth;
+    const columnGap = useDenseColumns ? denseColumnGap : threadTokens.thread.cardGap;
+    const panelInset = useDenseColumns ? densePanelInset : threadTokens.thread.panelPadding / 2;
+    const fittableColumns = useDenseColumns
+        ? 2
+        : fittableThreadColumnsFor(containerWidth, threadTokens);
 
     // Adaptively split long derivation chains so the resulting segments fill
     // the available columns evenly.  See `computeSplitExtraLeaves` for the
@@ -3191,13 +3216,16 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
         const entrySx = {
             backgroundColor: 'white',
             borderRadius: radius.md,
-            padding: 1,
-            my: 0.5,
+            padding: useDenseColumns ? 0.5 : 1,
+            my: useDenseColumns ? 0.25 : 0.5,
             flex: 'none',
             display: 'flex',
             flexDirection: 'column',
             height: 'fit-content',
-            width: threadTokens.thread.cardWidth,
+            width: cardWidth,
+            minWidth: useDenseColumns ? 0 : undefined,
+            maxWidth: useDenseColumns ? '100%' : undefined,
+            boxSizing: 'border-box',
             transition: transition.fast,
         } as const;
 
@@ -3247,18 +3275,18 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
                 // Centered mode centers the BLOCK, not the columns inside it, and
                 // floors it at the composer's width so a single thread lines up
                 // with the chat box below instead of drifting to the middle.
-                ...(centered ? {
+                ...(centered && !useDenseColumns ? {
                     width: 'fit-content',
                     minWidth: `min(100%, ${conversationWidth}px)`,
                     maxWidth: '100%',
                     mx: 'auto',
                 } : {}),
-                gap: `${threadTokens.thread.cardGap}px`,
-                py: 1,
+                gap: `${columnGap}px`,
+                py: useDenseColumns ? 0.5 : 1,
                 // Bottom padding leaves room so the scroll handler can position
                 // the focused element above the chatbox even when it expands.
                 pb: '180px',
-                pl: centered ? 0 : `${threadTokens.thread.panelPadding / 2}px`,
+                pl: centered && !useDenseColumns ? 0 : `${panelInset}px`,
                 pr: 0,
             }}>
                 {/* First column: workspace panel + first batch of threads */}
@@ -3267,7 +3295,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: 0,
-                    width: threadTokens.thread.cardWidth,
+                    width: columnWidth,
                     flexShrink: 0,
                 }}>
                     {(columnLayout[0] || []).map((idx: number) => {
@@ -3282,7 +3310,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean}> = function ({ sx
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 0,
-                        width: threadTokens.thread.cardWidth,
+                        width: columnWidth,
                         flexShrink: 0,
                     }}>
                         {columnIndices.map((idx: number) => {

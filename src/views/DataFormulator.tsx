@@ -23,6 +23,7 @@ import {
     Button,
     Divider,
     useTheme,
+    useMediaQuery,
     alpha,
     CircularProgress,
     Backdrop,
@@ -31,6 +32,8 @@ import {
     MenuItem,
     TextField,
     Alert,
+    Tabs,
+    Tab,
 } from '@mui/material';
 import { borderColor, radius, transition } from '../app/tokens';
 
@@ -485,6 +488,8 @@ export const DataFormulatorFC = ({ }) => {
     const paneSizesRef = useRef<number[]>([]);
 
     const { widthClass, tokens } = useLayout();
+    const isPhone = useMediaQuery('(max-width:699px)');
+    const [phonePane, setPhonePane] = useState<'thread' | 'canvas'>('thread');
     const { width: splitWidth } = useContainerSize(containerRef);
 
     // The user's chosen column *count*, not a pixel width — so a window resize
@@ -579,11 +584,17 @@ export const DataFormulatorFC = ({ }) => {
     // explanation on a rootless thread) has nothing to draw, so stay closed.
     const canvasOpen = !!canvasTarget && !canvasClosing;
 
+    useEffect(() => {
+        if (!isPhone) return;
+        setPhonePane(canvasTarget ? 'canvas' : 'thread');
+    }, [isPhone, canvasTarget]);
+
     // Closing collapses the pane first and drops the focus only once it has
     // gone; clearing focus up front would swap the chart for the empty-canvas
     // gallery and slide *that* away.
     const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const closeCanvas = useCallback(() => {
+        setPhonePane('thread');
         setCanvasClosing(true);
         if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
         closeTimerRef.current = setTimeout(() => {
@@ -628,13 +639,70 @@ export const DataFormulatorFC = ({ }) => {
     }, [canvasOpen, preferredColumns, splitWidth, tokens.canvas.min]);
 
     const threadPanel = (
-        <DataThread centered={!canvasOpen} sx={{
+        <DataThread centered={!canvasOpen} denseColumns={isPhone} sx={{
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
             alignContent: 'flex-start',
             height: '100%',
         }}/>
+    );
+
+    const canvasPanel = (
+        <Box sx={{
+            ...(isPhone ? {} : borderBoxStyle),
+            height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+            boxSizing: 'border-box', position: 'relative',
+        }}>
+            <Tooltip title={t('canvas.close', { defaultValue: 'Close canvas' })}>
+                <IconButton
+                    size="small"
+                    onClick={closeCanvas}
+                    sx={{
+                        position: 'absolute', top: 8, right: 8, zIndex: 20,
+                        color: 'text.secondary',
+                        '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
+                    }}
+                >
+                    <CloseIcon sx={{ fontSize: iconVar.md }} />
+                </IconButton>
+            </Tooltip>
+            {viewMode === 'editor' ? visPane : <ReportView />}
+        </Box>
+    );
+
+    const phoneWorkspace = (
+        <Box sx={{ display: 'flex', height: '100%', minWidth: 0 }}>
+            <DataSourceSidebar
+                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                connectorRefreshKey={connectorRefreshKey}
+                onConnectorsChanged={handleConnectorsChanged}
+                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                <Tabs
+                    value={phonePane}
+                    onChange={(_, value: 'thread' | 'canvas') => setPhonePane(value)}
+                    variant="fullWidth"
+                    sx={{
+                        minHeight: 36,
+                        bgcolor: 'background.paper',
+                        borderTop: `1px solid ${borderColor.view}`,
+                        borderBottom: `1px solid ${borderColor.view}`,
+                        '& .MuiTab-root': { minHeight: 36, py: 0.5, fontSize: textVar.sm, textTransform: 'none' },
+                    }}
+                >
+                    <Tab value="thread" label={t('mobile.thread', { defaultValue: 'Thread' })} />
+                    <Tab value="canvas" label={t('mobile.canvas', { defaultValue: 'Canvas' })} disabled={!canvasTarget} />
+                </Tabs>
+                <Box sx={{
+                    flex: 1, minHeight: 0, overflow: 'hidden',
+                    p: phonePane === 'thread' ? 0.5 : 0,
+                }}>
+                    {phonePane === 'canvas' && canvasTarget ? canvasPanel : threadPanel}
+                </Box>
+            </Box>
+        </Box>
     );
 
     const fixedSplitPane = ( 
@@ -683,28 +751,7 @@ export const DataFormulatorFC = ({ }) => {
                         {threadPanel}
                     </Allotment.Pane>
                     <Allotment.Pane minSize={tokens.canvas.min} visible={canvasOpen}>
-                        <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', position: 'relative' }}>
-                            <Tooltip title={t('canvas.close', { defaultValue: 'Close canvas' })}>
-                                <IconButton
-                                    size="small"
-                                    onClick={closeCanvas}
-                                    sx={{
-                                        // Above the canvas's own floating toolbar, which
-                                        // paints an opaque bar across the top edge.
-                                        position: 'absolute', top: 8, right: 8, zIndex: 20,
-                                        color: 'text.secondary',
-                                        '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
-                                    }}
-                                >
-                                    <CloseIcon sx={{ fontSize: iconVar.md }} />
-                                </IconButton>
-                            </Tooltip>
-                            {viewMode === 'editor' ? (
-                                visPane
-                            ) : (
-                                <ReportView />
-                            )}
-                        </Box>
+                        {canvasPanel}
                     </Allotment.Pane>
                 </Allotment>
             </Box>
@@ -744,12 +791,25 @@ export const DataFormulatorFC = ({ }) => {
             {/* Hero — fills the viewport so title + input own the first screen;
                 Demos/Sessions live below the fold and just peek up. */}
             <Box sx={{ minHeight: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <Box sx={{display: 'flex', mx: 'auto'}}>
-                <Typography fontSize={76} sx={{letterSpacing: '0.04em'}}>{toolName}</Typography> 
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 1.25 }, mx: 'auto' }}>
+                <Box
+                    component="img"
+                    src={dfLogo}
+                    alt=""
+                    sx={{ width: { xs: 28, sm: 60 }, height: { xs: 26, sm: 55 }, flexShrink: 0 }}
+                />
+                <Typography sx={{
+                    fontSize: { xs: 28, sm: 60 },
+                    lineHeight: 1.05,
+                    letterSpacing: '0.03em',
+                }}>
+                    {toolName}
+                </Typography>
             </Box>
             <Typography sx={{ 
-                fontSize: 20, color: alpha(theme.palette.text.primary, 0.7),
-                textAlign: 'center', mt: 1.5, mb: 0}}>
+                fontSize: { xs: 18, sm: 21 }, color: alpha(theme.palette.text.primary, 0.7),
+                display: { xs: 'none', sm: 'block' },
+                lineHeight: 1.4, textAlign: 'center', mt: 1.25, mb: 0}}>
                 {t('landing.tagline')}
             </Typography>
 
@@ -839,7 +899,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             )}
 
-            <Box sx={{mt: 5}}>
+            <Box sx={{ mt: 3.5 }}>
                 <DataLoadMenu 
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     onSelectConnector={(conn) => {
@@ -1045,7 +1105,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {activeWorkspace && !provisionalSession ? fixedSplitPane : (
+                {activeWorkspace && !provisionalSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}

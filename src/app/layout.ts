@@ -9,8 +9,8 @@
 //   1. Layout constants live here, not inline in components.
 //   2. Components read tokens via `useLayout()` and are free to interpret
 //      them however suits them (see `px()` and `pickByWidth()`).
-//   3. Panels are never added, removed, or repositioned by screen size. Only
-//      the space split and the density change. See design-docs/45.
+//   3. Desktop panels keep stable positions; below the phone breakpoint the
+//      thread and canvas alternate as full-width views instead of being split.
 // ════════════════════════════════════════════════════════════════════════
 
 export type Density = 'compact' | 'reference' | 'comfortable' | 'spacious';

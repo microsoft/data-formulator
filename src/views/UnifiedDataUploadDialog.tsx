@@ -227,7 +227,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
 // rather than a mix of pills and links competing with the composer.
 // `accent` marks an entry with a faint primary icon at rest.
 /** Landing hero column: the composer and the source rows share this edge. */
-const HERO_WIDTH = 720;
+const HERO_WIDTH = 800;
 
 const SourceLink: React.FC<DataSourceCardProps> = ({
     icon,
@@ -762,7 +762,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         variant="outlined"
                         size="small"
                         sx={{
-                            fontSize: textVar.md, height: 28, borderRadius: 2,
+                            fontSize: textVar.md, height: 30, borderRadius: 2,
                             color: alpha(theme.palette.text.primary, 0.78),
                             borderColor: alpha(theme.palette.text.primary, 0.22),
                             backgroundColor: alpha(theme.palette.background.paper, 0.72),
@@ -841,7 +841,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            gap: 3.5,
+            gap: 4,
             mx: 0,
             textAlign: 'left',
         }}>
@@ -863,7 +863,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.75rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
                         {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
                     </Typography>
@@ -892,7 +892,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.75rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
                         {t('upload.addSourceLabel', { defaultValue: 'Or add data directly:' })}
                     </Typography>
