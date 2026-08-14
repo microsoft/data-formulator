@@ -14,6 +14,17 @@ _ACTIVATE_MESSAGE = b"DATA_FORMULATOR_ACTIVATE_V1\n"
 _ACTIVATE_ACK = b"DATA_FORMULATOR_ACTIVE_V1\n"
 
 
+def _configure_standard_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
 def _signal_existing_instance(timeout: float = 1.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -117,7 +128,7 @@ def _run_self_test() -> int:
         print("self-test sandbox parquet read: PASS")
         return 0
 
-    print(f"self-test sandbox parquet read: FAIL — {result.get('content')}")
+    print(f"self-test sandbox parquet read: FAIL - {result.get('content')}")
     return 1
 
 
@@ -125,6 +136,7 @@ def run_desktop() -> None:
     # PyInstaller replaces freeze_support() so spawned multiprocessing workers
     # enter their target function instead of relaunching the desktop app.
     freeze_support()
+    _configure_standard_streams()
 
     if os.environ.get("DF_DESKTOP_SELF_TEST") == "1":
         sys.exit(_run_self_test())

@@ -480,6 +480,7 @@
     "working": "working...",
     "waitingForClarification": "waiting for clarification...",
     "emptySession": "No data yet \u2014 ask the agent below to load some, and it will show up here.",
+    "startingRun": "Working on your request\u2026",
     "rename": "Rename",
     "refreshSettings": "Refresh settings",
     "replaceData": "Replace data",

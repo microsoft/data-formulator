@@ -838,10 +838,7 @@ let SingleThreadGroupView: FC<{
 
     // ── Shared helpers for building timeline items from interaction entries ──
 
-    /** Push visible interaction entries as timeline items.
-     *  Adaptively collapses: when a data-agent summary is immediately followed
-     *  by an instruction, the summary text is folded into the instruction's
-     *  `plan` (expandable) rather than shown as a separate entry. */
+    /** Push visible interaction entries as timeline items. */
     const pushInteractionEntries = (
         entries: InteractionEntry[],
         tableId: string,
@@ -861,18 +858,6 @@ let SingleThreadGroupView: FC<{
 
         for (let ei = 0; ei < entries.length; ei++) {
             const entry = entries[ei];
-            const nextEntry = ei + 1 < entries.length ? entries[ei + 1] : null;
-
-            // Collapse: summary from data-agent followed by instruction → fold into instruction's plan
-            if (entry.role === 'summary' && entry.from === 'data-agent'
-                && nextEntry?.role === 'instruction') {
-                // Merge: use the summary content as the plan on the next instruction
-                // (only if the instruction doesn't already have a plan)
-                if (!nextEntry.plan) {
-                    nextEntry.plan = entry.content;
-                }
-                continue; // skip rendering this summary entry
-            }
 
             // Enrich instruction entries with source table names
             const enrichedEntry = (entry.role === 'instruction' && !entry.inputTableNames && deriveSourceNames)
@@ -1512,9 +1497,10 @@ let SingleThreadGroupView: FC<{
     };
 
     // Render one table's full block in the thread body: its trigger interaction
-    // (split so the run's closing summary follows the outputs), the table card +
-    // charts, reports, the after-run summary, then any new conversation and the
-    // live agent draft. Shared by the new-table and leaf-table passes — they were
+    // (split so trailing entries follow the outputs), the table card + charts,
+    // reports, then any conversation on the table — including the run's closing
+    // answer, which is an ordinary `explain` turn — and the live agent draft.
+    // Shared by the new-table and leaf-table passes — they were
     // identical apart from the trigger source and the card/type labels. (The old
     // `afterTableMap`/`leafAfterTableMap` Maps were set and read in the same
     // iteration, so they collapse to a local here.)
@@ -1551,14 +1537,14 @@ let SingleThreadGroupView: FC<{
                 });
             }
         }
-        // Table card + charts, then reports (output cards, before the summary).
+        // Table card + charts, then reports (output cards, before the conversation).
         pushTableAndChartItems(tableId, tableCard, tableType, highlighted);
         pushReportItems(tableId, highlighted, triggerType);
-        // The run's closing summary follows the LAST artifact, before any new turn.
+        // Trailing trigger entries follow the LAST artifact.
         if (afterEntries.length > 0) {
             pushInteractionEntries(afterEntries, tableId, triggerType, highlighted, `${keyPrefix}-after`);
         }
-        // A new question/explanation on the table follows the summary.
+        // Conversation on the table: the run's closing answer, then anything new.
         pushTableTextTurns(tableId, highlighted, triggerType);
         // Running / clarifying agent state.
         pushAgentDraftItems(tableId, triggerType, highlighted);
@@ -2227,14 +2213,7 @@ function estimateThreadHeight(
  *  shouldn't be double-counted in height estimation. */
 function effectiveEntryCount(interaction: InteractionEntry[] | undefined): number {
     if (!interaction || interaction.length === 0) return 1;
-    let n = 0;
-    for (let i = 0; i < interaction.length; i++) {
-        const e = interaction[i];
-        const next = interaction[i + 1];
-        if (e.role === 'summary' && e.from === 'data-agent' && next?.role === 'instruction') continue;
-        n++;
-    }
-    return Math.max(1, n);
+    return Math.max(1, interaction.length);
 }
 
 /**
@@ -2643,6 +2622,14 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // Subscribe to draftNodes so the scroll-to-target effect re-runs when an
     // active clarify/explain entry appears or resolves.
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+
+    // Work committed from the entry surface (a queued run, or a table still
+    // importing) lands here before it produces content, so the panel can say
+    // "working" instead of telling the user there is nothing here.
+    const analystChatPending = useSelector((state: DataFormulatorState) => state.analystChatPending);
+    const dataLoadingChatPending = useSelector((state: DataFormulatorState) => state.dataLoadingChatPending);
+    const tableLoadsInFlight = useSelector((state: DataFormulatorState) => state.tableLoadsInFlight);
+    const workPending = tableLoadsInFlight > 0 || analystChatPending != null || dataLoadingChatPending != null;
 
     const containerRef = useRef<null | HTMLDivElement>(null)
     // The thread row the user last clicked. Identity is the row, not the table or
@@ -3325,9 +3312,18 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         // A session can open before any data exists (the agent loads it), so
         // say so rather than leaving the panel blank.
         <Box sx={{ direction: 'ltr', boxSizing: 'border-box', px: 2, py: 3, width: panelWidth }}>
-            <Typography variant="body2" sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>
-                {t('dataThread.emptySession')}
-            </Typography>
+            {workPending ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
+                    <Typography variant="body2" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                        {t('dataThread.startingRun')}
+                    </Typography>
+                </Box>
+            ) : (
+                <Typography variant="body2" sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>
+                    {t('dataThread.emptySession')}
+                </Typography>
+            )}
         </Box>
     );
 

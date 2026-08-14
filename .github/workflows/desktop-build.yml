@@ -54,6 +54,9 @@ jobs:
       - name: Install desktop dependencies
         run: uv sync --extra desktop --frozen
 
+      - name: Test desktop startup output
+        run: uv run pytest tests/backend/test_startup_spinner.py -q
+
       - name: Build desktop application
         run: uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
 

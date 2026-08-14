@@ -68,7 +68,7 @@ import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
-import { AppDispatch } from '../app/store';
+import { AppDispatch, store } from '../app/store';
 import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -1122,7 +1122,12 @@ export const DataFormulatorFC = ({ }) => {
                         setUploadDialogOpen(false);
                         // Nothing was added, so the workspace minted to open the
                         // dialog is discarded rather than left as a stub session.
-                        if (sessionEmpty) dispatch(dfActions.setActiveWorkspace(null));
+                        // Read live state: a table loaded immediately before close
+                        // lands in the same batch, leaving the rendered flag stale
+                        // and orphaning the data under a discarded workspace.
+                        if (dfSelectors.selectSessionEmpty(store.getState())) {
+                            dispatch(dfActions.setActiveWorkspace(null));
+                        }
                         refreshPageConnectors();
                     }}
                     initialTab={uploadDialogInitialTab}

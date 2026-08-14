@@ -480,6 +480,7 @@
     "working": "处理中...",
     "waitingForClarification": "等待澄清...",
     "emptySession": "还没有数据 \u2014 在下方让智能体加载数据，结果会显示在这里。",
+    "startingRun": "正在处理您的请求\u2026",
     "rename": "重命名",
     "refreshSettings": "刷新设置",
     "replaceData": "替换数据",

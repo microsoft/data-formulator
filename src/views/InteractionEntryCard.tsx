@@ -134,7 +134,7 @@ export const PlanStepsView: React.FC<{
     );
 };
 
-/** Compact Markdown for summary entries — inherits parent font-size (10px). */
+/** Compact Markdown for agent prose — inherits parent font-size (10px). */
 export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => {
     const theme = useTheme();
     return (
@@ -328,7 +328,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         );
     }
 
-    // ── Agent entries (instruction, clarify, summary, error, etc.) ──
+    // ── Agent entries (instruction, clarify, explain, error, etc.) ──
     // Unified collapsible rendering: collapsed shows short text, expand shows 💭 thinking + full text
     if (entry.from !== 'user') {
         const fieldBg = alpha(theme.palette.primary.main, 0.05);
@@ -369,12 +369,6 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 }
                 break;
             }
-            case 'summary':
-                // Chrome-less prose trailing the turn — recede into ambient
-                // text (matching `instruction`); the gutter icon carries the
-                // "finding" cue, not a heavier text color.
-                color = theme.palette.text.secondary;
-                break;
             case 'error':
                 color = theme.palette.error.main;
                 break;
@@ -424,31 +418,25 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         // instruction card itself stays free of chip-strip chrome.
 
         // Conversational agent entries (instruction / clarify / explain /
-        // summary) all read as "the agent talking" — wrap them in a bordered
+        // delegate) all read as "the agent talking" — wrap them in a bordered
         // bubble matching the user's instruction card so the timeline reads
         // as a sibling pair of cards. Active clarify/explain and error keep
         // their semantic color via a left-border accent rather than a
-        // tinted fill. `summary` entries are the agent's findings/conclusions,
-        // so they get a distinct soft info-tinted fill (boxed color only —
-        // same border/shape as other bubbles) to read as "insight" rather
-        // than "in-progress discussion".
+        // tinted fill.
         const isConversational = entry.role === 'instruction'
             || entry.role === 'clarify'
             || entry.role === 'explain'
-            || entry.role === 'delegate'
-            || entry.role === 'summary';
+            || entry.role === 'delegate';
         // Bubble chrome stays close to neutral, but the special states earn
         // a soft tinted fill in their per-variant semantic hue. The hues
         // here match `AgentPausePanel` so a paused entry and its panel
         // above the input read as the same color family:
         //   clarify              → warning   ("you're being asked")
         //   explain / suggest    → primary   ("here's an answer / handoff")
-        //   summary              → secondary ("agent's finding")
         //   error                → error
         const isActiveClarify = entry.role === 'clarify' && !resolved;
         const isActiveExplain = (entry.role === 'explain'
             || entry.role === 'delegate') && !resolved;
-        const isSummary = entry.role === 'summary';
         // Resolved clarify / explain / delegate entries collapse
         // into a "light timeline trace" — no card chrome, just a faded
         // one-line note. They still expand on click (the full text is
@@ -460,13 +448,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 || entry.role === 'delegate');
         const bubbleAccent = entry.role === 'error'
             ? theme.palette.error.main
-            : isSummary
-                ? theme.palette.primary.main
-                : isActiveClarify
-                    ? theme.palette.warning.main
-                    : isActiveExplain
-                        ? theme.palette.primary.main
-                        : null;
+            : isActiveClarify
+                ? theme.palette.warning.main
+                : isActiveExplain
+                    ? theme.palette.primary.main
+                    : null;
         const bubbleBg = bubbleAccent
             ? alpha(bubbleAccent, 0.05)
             : alpha(theme.palette.text.primary, 0.03);
@@ -474,10 +460,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             ? alpha(bubbleAccent, 0.09)
             : alpha(theme.palette.text.primary, 0.05);
         // Card chrome marks an entry the reader can act on (clarify / explain /
-        // delegate). The agent's own narration — instructions and summaries — and
-        // resolved pauses read as prose so the timeline foregrounds charts/data.
+        // delegate). The agent's own step narration and resolved pauses read as
+        // prose so the timeline foregrounds charts/data.
         const isInstruction = entry.role === 'instruction';
-        const bubbleSx = (isConversational && !isResolvedPause && !isSummary && !isInstruction) ? {
+        const bubbleSx = (isConversational && !isResolvedPause && !isInstruction) ? {
             py: 0.5, px: 1,
             borderRadius: radius.sm,
             backgroundColor: bubbleBg,
@@ -487,7 +473,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             // the gutter icon and adjacent bubbles. No bg, no border.
             py: '2px', px: '4px',
             opacity: 0.7,
-        } : (isSummary || isInstruction) ? {
+        } : isInstruction ? {
             py: '2px', px: '4px',
         } : {};
 
@@ -506,12 +492,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         mx: '-2px',
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
                     } : {}),
-                    ...(isCollapsible && isSummary ? {
-                        // Gentle hover that doesn't reintroduce a card fill.
-                        borderRadius: '4px',
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
-                    } : {}),
-                    ...(isCollapsible && isConversational && !isSummary ? {
+                    ...(isCollapsible && isConversational ? {
                         '&:hover': { backgroundColor: bubbleHover },
                     } : {}),
                 }}
@@ -550,10 +531,6 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                             {collapsedLabel}
                         </Typography>
                     )
-                ) : entry.role === 'summary' ? (
-                    <Box sx={{ fontSize: textVar.xs, py: '1px' }}>
-                        <CompactMarkdown content={displayText} color={color} />
-                    </Box>
                 ) : (
                     <Typography component="div" sx={{
                         fontSize: textVar.xs,
@@ -765,7 +742,6 @@ export function getEntryGutterIcon(entry: InteractionEntry, color: string): Reac
             case 'clarify': return 'clarify';
             case 'explain': return 'explain';
             case 'delegate': return 'explain';
-            case 'summary': return 'summary';
             case 'instruction': return 'thinking';
             default: return 'default';
         }

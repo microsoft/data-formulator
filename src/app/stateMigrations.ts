@@ -30,6 +30,49 @@ export const DF_STATE_VERSION = 4;
 
 type SavedState = Record<string, any>;
 
+/**
+ * Closing answers used to live inline on a table's trigger as a `summary`
+ * interaction entry; they are `explain` text turns now (design-docs/41), so the
+ * thread renders one card instead of unbounded prose. Hoists any legacy entries
+ * off `table` and returns the table with them stripped.
+ */
+function hoistSummaryToTextTurn(
+    table: any,
+    textTurns: any[],
+    knownTurnIds: Set<string>,
+): any {
+    const interaction = table?.derive?.trigger?.interaction;
+    if (!Array.isArray(interaction)) return table;
+    const summaries = interaction.filter(
+        (e: any) => e?.role === 'summary' && typeof e?.content === 'string' && e.content.trim(),
+    );
+    if (summaries.length === 0) return table;
+
+    const turnId = `textTurn-summary-${table.id}`;
+    if (!knownTurnIds.has(turnId)) {
+        textTurns.push({
+            kind: 'text',
+            id: turnId,
+            displayId: turnId,
+            textKind: 'explain',
+            content: summaries.map((e: any) => e.content.trim()).join('\n\n'),
+            parentNodeId: table.id,
+            createdAt: summaries[summaries.length - 1]?.timestamp ?? 0,
+        });
+        knownTurnIds.add(turnId);
+    }
+    return {
+        ...table,
+        derive: {
+            ...table.derive,
+            trigger: {
+                ...table.derive.trigger,
+                interaction: interaction.filter((e: any) => e?.role !== 'summary'),
+            },
+        },
+    };
+}
+
 interface Migration {
     /** The version this migration produces; applied when `saved < to`. */
     to: number;
@@ -251,7 +294,8 @@ const MIGRATIONS: Migration[] = [
                             ?? table.threadParentId
                             ?? table.derive?.trigger?.tableId;
                         const { threadParentId: _threadParentId, ...rest } = table;
-                        return parentNodeId ? { ...rest, parentNodeId } : rest;
+                        const next = parentNodeId ? { ...rest, parentNodeId } : rest;
+                        return hoistSummaryToTextTurn(next, textTurns, knownTurnIds);
                     })
                     : s.derivedTables,
                 draftNodes: Array.isArray(s.draftNodes)
@@ -294,7 +338,9 @@ export function migrateState(saved: SavedState | null | undefined): SavedState {
                 || (saved.generatedReports || []).some((report: any) =>
                     (report?.triggerTableId && !report?.parentNodeId)
                     || report?.summary !== undefined
-                    || report?.summaryThought !== undefined);
+                    || report?.summaryThought !== undefined)
+                || (saved.derivedTables || []).some((table: any) =>
+                    (table?.derive?.trigger?.interaction || []).some((e: any) => e?.role === 'summary'));
             if (needsV4 || savedVersion > DF_STATE_VERSION) from = 3;
         }
     }

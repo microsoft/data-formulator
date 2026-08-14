@@ -324,7 +324,7 @@ def _register_blueprints():
         from data_formulator.data_connector import register_data_connectors
         register_data_connectors(app)
     if app.config['CLI_ARGS'].get('disable_data_connectors'):
-        print("  External data connectors disabled (DISABLE_DATA_CONNECTORS=true) — sample datasets remain available", flush=True)
+        print("  External data connectors disabled (DISABLE_DATA_CONNECTORS=true) - sample datasets remain available", flush=True)
 
 
 def _safety_checks():

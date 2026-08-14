@@ -4,7 +4,7 @@
 import React from 'react';
 import { Box, SvgIcon, SvgIconProps } from '@mui/material';
 
-export type AgentToyVariant = 'thinking' | 'summary' | 'clarify' | 'explain' | 'default';
+export type AgentToyVariant = 'thinking' | 'clarify' | 'explain' | 'default';
 
 interface AgentToyIconProps extends SvgIconProps {
     variant?: AgentToyVariant;
@@ -16,7 +16,6 @@ interface AgentToyIconProps extends SvgIconProps {
  * badges, so the glyph stays legible at gutter size.
  *
  *   thinking  → neutral mouth
- *   summary   → smile
  *   clarify   → small open `o` (asking)
  *   explain   → wide open mouth (narrating)
  *   default   → neutral mouth
@@ -28,8 +27,6 @@ export const AgentToyIcon: React.FC<AgentToyIconProps> = ({ variant = 'default',
     const renderMouth = () => {
         const common = { fill: 'none', stroke: 'currentColor', strokeLinecap: 'round' as const };
         switch (variant) {
-            case 'summary':
-                return <path d="M9.5 16.5 Q12 18.5 14.5 16.5" strokeWidth={1.4} {...common} />;
             case 'explain':
                 // wide open mouth — reads as "narrating"
                 return <ellipse cx="12" cy="16.9" rx="2.1" ry="1.4" strokeWidth={1.2} {...common} />;

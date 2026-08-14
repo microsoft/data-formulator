@@ -87,7 +87,7 @@ const StarterChip: FC<{ label: string; onClick: () => void; sx: any }> = ({ labe
     );
 };
 
-const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
+const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning'; sx?: Record<string, any> }> = ({ message, elapsed, theme, onCancel, color = 'primary', sx }) => {
     const { t } = useTranslation();
     // `message` is the running plan: steps joined by the STEP_SEP control char
     // ('\x1E'), which renders invisibly and would otherwise collapse every step
@@ -105,8 +105,9 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
         <Box sx={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: alpha(theme.palette.background.paper, 0.88),
-            backdropFilter: 'blur(3px)',
+            // Opaque paper, not a tint: "paused" is carried by the muted text
+            // and progress bar, so darkening the fill only makes it look dirty.
+            backgroundColor: theme.palette.background.paper,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -116,6 +117,7 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             borderRadius: 'inherit',
             px: 2,
             overflow: 'hidden',
+            ...sx,
         }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
                 <WritingPencil size={12} />
@@ -160,8 +162,8 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             </Typography>
             <LinearProgress sx={{
                 position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px',
-                backgroundColor: alpha(progressColor, 0.15),
-                '& .MuiLinearProgress-bar': { backgroundColor: progressColor },
+                backgroundColor: alpha(progressColor, 0.08),
+                '& .MuiLinearProgress-bar': { backgroundColor: alpha(progressColor, 0.4) },
             }} />
         </Box>
     );
@@ -341,6 +343,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     useEffect(() => {
         if (focusedId?.type === 'chart') lastChartFocusRef.current = focusedId.chartId;
     }, [focusedId]);
+
+    // What the canvas resolves a focused text turn to — the nearest artifact
+    // above it. Reused by "Close" so the panel and the canvas never disagree.
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
 
     const currentTable = tables.find(t => t.id === focusedTableId);
 
@@ -571,6 +577,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (!targetNodeId) return { focusedThread: undefined, otherThreads: undefined };
         // Tier 2: Focused thread — detailed per-step info
         const focusedSteps: any[] = [];
+        // Closing turns reported as a step's `agent_summary`; the conversation
+        // walk below skips them so the same answer isn't sent twice.
+        const summarizedTurnIds = new Set<string>();
         const targetTableId = resolveNodeTable(targetNodeId, textTurns, tables) ?? targetNodeId;
         let walkTable = tables.find(t => t.id === targetTableId);
         const visited = new Set<string>();
@@ -583,7 +592,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             const interaction = trigger.interaction || [];
             const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
             const instruction = interaction.find(e => e.role === 'instruction');
-            const summary = interaction.find(e => e.role === 'summary');
 
             // Find the actual resolved chart (not the trigger's "Auto" stub)
             const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
@@ -601,6 +609,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                   )
                 : {};
 
+            // The run's closing answer is an `explain` turn on this table.
+            const closingTurn = textTurns.find(
+                tt => tt.parentNodeId === walkTable!.id && tt.textKind === 'explain',
+            );
+            if (closingTurn) summarizedTurnIds.add(closingTurn.id);
+
             const step: any = {
                 table_name: walkTable.virtual?.tableId || walkTable.id,
                 columns: walkTable.names,
@@ -610,7 +624,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 display_instruction: instruction?.displayContent || instruction?.content || '',
                 chart_type: chartType,
                 encodings,
-                agent_summary: summary?.content || '',
+                agent_summary: closingTurn?.content || '',
             };
 
             focusedSteps.unshift(step);
@@ -623,20 +637,22 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const visitedTurns = new Set<string>();
         while (walkTurn && !visitedTurns.has(walkTurn.id)) {
             visitedTurns.add(walkTurn.id);
-            conversationSteps.unshift({
-                user_question: walkTurn.prompt || '',
-                agent_response: walkTurn.content || '',
-                user_answer: walkTurn.answer || '',
-                data_operation: walkTurn.dataOperation ? {
-                    reason: walkTurn.dataOperation.reason,
-                    status: walkTurn.dataOperation.status,
-                    options: walkTurn.dataOperation.plans.map(plan => plan.label),
-                    selected_plan: walkTurn.dataOperation.plans.find(
-                        plan => plan.id === walkTurn!.dataOperation?.selectedPlanId,
-                    )?.label || '',
-                    result_tables: walkTurn.dataOperation.resultTableIds,
-                } : undefined,
-            });
+            if (!summarizedTurnIds.has(walkTurn.id)) {
+                conversationSteps.unshift({
+                    user_question: walkTurn.prompt || '',
+                    agent_response: walkTurn.content || '',
+                    user_answer: walkTurn.answer || '',
+                    data_operation: walkTurn.dataOperation ? {
+                        reason: walkTurn.dataOperation.reason,
+                        status: walkTurn.dataOperation.status,
+                        options: walkTurn.dataOperation.plans.map(plan => plan.label),
+                        selected_plan: walkTurn.dataOperation.plans.find(
+                            plan => plan.id === walkTurn!.dataOperation?.selectedPlanId,
+                        )?.label || '',
+                        result_tables: walkTurn.dataOperation.resultTableIds,
+                    } : undefined,
+                });
+            }
             walkTurn = textTurns.find(turn => turn.id === walkTurn!.parentNodeId);
         }
         focusedSteps.push(...conversationSteps);
@@ -677,10 +693,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         })
                         .join(', ')
                     : '';
-                // Per-step agent commentary: the `summary` entry that the
-                // visualize action emits after running this step.
-                let finding = trig.interaction?.find(
-                    (e: InteractionEntry) => e.role === 'summary',
+                // Per-step agent commentary: the closing `explain` turn for this step.
+                let finding = textTurns.find(
+                    tt => tt.parentNodeId === trig.resultTableId && tt.textKind === 'explain',
                 )?.content?.trim() || '';
                 if (finding.length > STEP_FINDING_CHAR_LIMIT) {
                     finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
@@ -1485,87 +1500,74 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // table when the run only summarized existing exploration (no
                 // new table) — never detached.
                 const reportAnchorTableId = reportId ? (lastCreatedTableId || focusedTableId) : null;
+
+                // One closing answer per run, whatever the run produced: an
+                // `explain` turn on the run's last node (design-docs/41-42).
+                const emitClosingTurn = (): string | null => {
+                    if (!summary) return null;
+                    const turnId = `textTurn_${actionId}_${String(Date.now())}`;
+                    const firstEntry = currentDraftInteraction[0];
+                    // The prompt already renders above any artifact this run
+                    // produced, so fold it into the card only when there is none.
+                    const foldPrompt = !lastCreatedTableId
+                        && !runIsContinuationRef.current
+                        && firstEntry?.role === 'prompt';
+                    const resumeTraj = result.trajectory || result.content?.trajectory;
+                    dispatch(dfActions.addTextTurn({
+                        kind: 'text',
+                        id: turnId,
+                        displayId: turnId,
+                        textKind: 'explain',
+                        content: summary,
+                        ...(foldPrompt ? { prompt: firstEntry.displayContent || firstEntry.content } : {}),
+                        parentNodeId: runLastNodeRef.current || askedFromTable || focusedTableId || ROOTLESS_THREAD_ID,
+                        // Canvas provenance only when the run produced nothing of
+                        // its own; otherwise the answer belongs to what it just
+                        // made, and the parent walk resolves to that.
+                        ...(!lastCreatedTableId && runSourceChartIdRef.current
+                            ? { sourceChartId: runSourceChartIdRef.current }
+                            : {}),
+                        actionId,
+                        ...(resumeTraj ? { resume: {
+                            trajectory: resumeTraj,
+                            completedStepCount: result.completed_step_count || result.content?.completed_step_count || 0,
+                        } } : {}),
+                        createdAt: Date.now(),
+                    }));
+                    runLastNodeRef.current = turnId;
+                    return turnId;
+                };
+
                 if (reportId) {
                     reportFlushNow();
                     const titleMatch = accumulatedReportMarkdown.match(/^#\s+(.+)$/m);
-                    let reportParentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId || ROOTLESS_THREAD_ID;
-                    if (summary) {
-                        const turnId = `textTurn_${actionId}_${String(Date.now())}`;
-                        dispatch(dfActions.addTextTurn({
-                            kind: 'text',
-                            id: turnId,
-                            displayId: turnId,
-                            textKind: 'explain',
-                            content: summary,
-                            ...(!lastCreatedTableId && !runIsContinuationRef.current && currentDraftInteraction[0]?.role === 'prompt'
-                                ? { prompt: currentDraftInteraction[0].displayContent || currentDraftInteraction[0].content }
-                                : {}),
-                            parentNodeId: reportParentNodeId,
-                            ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
-                            actionId,
-                            createdAt: Date.now(),
-                        }));
-                        reportParentNodeId = turnId;
-                        runLastNodeRef.current = turnId;
-                    }
+                    // The report hangs under the answer, so it reads after it.
+                    const closingTurnId = emitClosingTurn();
                     dispatch(dfActions.updateGeneratedReportContent({
                         id: reportId,
                         content: accumulatedReportMarkdown,
                         status: 'completed',
                         title: titleMatch ? titleMatch[1].trim() : undefined,
                         triggerTableId: reportAnchorTableId || undefined,
-                        parentNodeId: summary ? reportParentNodeId : undefined,
+                        parentNodeId: closingTurnId ?? undefined,
                     }));
-                }
-                // For a NON-report run, the closing answer renders once as the
-                // created table's after-summary entry — exactly like a chart's
-                // summary. (Report runs own their summary; see above.)
-                const summaryAnchorTableId = reportId ? null : lastCreatedTableId;
-                if (summaryAnchorTableId) {
-                    if (summary) {
-                        const entry: InteractionEntry = {
-                            from: 'data-agent', to: 'user', role: 'summary',
-                            plan: result.content?.thought || undefined,
-                            content: summary,
-                            timestamp: Date.now(),
-                        };
-                        dispatch(dfActions.appendTriggerInteraction({ tableId: summaryAnchorTableId, entries: [entry] }));
+                } else {
+                    const closingTurnId = emitClosingTurn();
+                    if (closingTurnId) {
+                        // Expand the answer once the run lands — the canvas still
+                        // resolves to the nearest chart, so this doesn't hide the
+                        // artifact the answer is about.
+                        dispatch(dfActions.setFocused({ type: 'text', textId: closingTurnId }));
                     }
-                } else if (!reportId && summary && currentDraftId) {
-                    // Pure Q&A run — the agent committed no action and answered in
-                    // plain text (e.g. the user just asked a question). There's no
-                    // table to anchor to. The closing answer becomes an `explain`
-                    // TextTurn (design-docs/41): a focusable/deletable thread node
-                    // whose overlay shows above the chat. Completion carries no
-                    // trajectory, so no resume token ⇒ a followup is a fresh turn.
-                    thinkingSteps = [];
-                    pendingThought = '';
-                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
-
-                    const turnId = `textTurn_${actionId}_${String(Date.now())}`;
-                    // design-docs/42: this closing explanation FOLLOWS the run's
-                    // last node (the produced table, or the asked-from node).
-                    const parentNodeId = runLastNodeRef.current || askedFromTable || focusedTableId || ROOTLESS_THREAD_ID;
-                    const resumeTraj = result.trajectory || result.content?.trajectory;
-                    if (parentNodeId) {
-                        dispatch(dfActions.addTextTurn({
-                            kind: 'text',
-                            id: turnId,
-                            displayId: turnId,
-                            textKind: 'explain',
-                            content: summary,
-                            ...(!runIsContinuationRef.current && currentDraftInteraction[0]?.role === 'prompt' ? { prompt: currentDraftInteraction[0].displayContent || currentDraftInteraction[0].content } : {}),
-                            parentNodeId,
-                            ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
-                            actionId,
-                            ...(resumeTraj ? { resume: { trajectory: resumeTraj, completedStepCount: result.completed_step_count || result.content?.completed_step_count || 0 } } : {}),
-                            createdAt: Date.now(),
-                        }));
-                        runLastNodeRef.current = turnId;
-                        dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
+                    // Pure Q&A run — the agent committed no action, so retire the
+                    // draft that was standing in for the run.
+                    if (closingTurnId && !lastCreatedTableId && currentDraftId) {
+                        thinkingSteps = [];
+                        pendingThought = '';
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+                        dispatch(dfActions.removeDraftNode(currentDraftId));
+                        currentDraftId = null;
                     }
-                    dispatch(dfActions.removeDraftNode(currentDraftId));
-                    currentDraftId = null;
                 }
             }
         };
@@ -1947,20 +1949,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (focusedTextTurn) { setClarifyAnswers({}); textTurnSubmittedRef.current = null; }
     }, [focusedTextTurn?.id]);
 
-    // Close a focused text turn → hand focus back to its source chart (else its
-    // thread-parent table), keeping the node in the thread.
-    const closeTextTurn = useCallback((turn: TextTurn) => {
-        if (turn.sourceChartId && charts.some(c => c.id === turn.sourceChartId)) {
-            dispatch(dfActions.setFocused({ type: 'chart', chartId: turn.sourceChartId }));
-        } else {
-            const tableId = resolveNodeTable(turn.id, textTurns, tables);
-            if (tableId) {
-                dispatch(dfActions.setFocused({ type: 'table', tableId }));
-            } else {
-                dispatch(dfActions.setFocused(undefined));
-            }
+    // Close a focused text turn → hand focus to whatever the canvas is already
+    // showing for it (its nearest artifact), keeping the node in the thread.
+    // Deriving it here separately let the two drift: the canvas resolved to the
+    // chart while this landed on the table, or on nothing at all.
+    const closeTextTurn = useCallback(() => {
+        if (canvasTarget && canvasTarget.type !== 'text') {
+            dispatch(dfActions.setFocused(canvasTarget));
+            return;
         }
-    }, [charts, tables, textTurns, dispatch]);
+        switchFocusToPreviousChart();
+    }, [canvasTarget, dispatch, switchFocusToPreviousChart]);
 
     // Answer a focused clarify turn. Resumes the run iff the turn carries the
     // backend's opaque resume token (§12); otherwise a fresh turn. The turn stays
@@ -2045,9 +2044,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             flexShrink: 0,
             transition: transition.fast,
             borderColor: chatInputFocused ? theme.palette.primary.main : borderColor.divider,
-            backgroundColor: isChatFormulating
-                ? alpha(theme.palette.action.disabledBackground, 0.06)
-                : theme.palette.background.paper,
+            backgroundColor: theme.palette.background.paper,
             // Neutral elevation shadow recipe shared with AgentChatInput;
             // hover lifts the card a touch without shifting any colors.
             boxShadow: chatInputFocused
@@ -2086,26 +2083,31 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 user focused by clicking its thread card. An OPEN clarify gets
                 the interactive panel; an ANSWERED clarify or any explanation is
                 read-only (question → answer). Gated to not overlap the legacy
-                live pause. */}
-            {focusedTextTurn && !pendingClarification && !isChatFormulating && (
+                live pause. Stays visible while a run is in flight so the user
+                can keep reading what they focused. */}
+            {focusedTextTurn && !pendingClarification && (
                 (focusedTextTurn.textKind === 'clarify' && !focusedTextTurn.answered && focusedTextTurn.options && focusedTextTurn.options.length > 0) ? (
-                    <ClarificationPanel
-                        questions={focusedTextTurn.options}
-                        dataOperation={focusedTextTurn.dataOperation}
-                        variant="clarify"
-                        selectedAnswers={clarifyAnswers}
-                        onSelectAnswer={handleSelectTextTurnAnswer}
-                        onClearAnswer={handleClearTextTurnAnswer}
-                        onSubmit={submitTextTurnAnswer}
-                        onClose={() => closeTextTurn(focusedTextTurn)}
-                        onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
-                    />
+                    // Desaturated rather than dimmed — opacity would blend it
+                    // toward the background and just read as dark.
+                    <Box sx={isChatFormulating ? { pointerEvents: 'none', filter: 'grayscale(1)' } : undefined}>
+                        <ClarificationPanel
+                            questions={focusedTextTurn.options}
+                            dataOperation={focusedTextTurn.dataOperation}
+                            variant="clarify"
+                            selectedAnswers={clarifyAnswers}
+                            onSelectAnswer={handleSelectTextTurnAnswer}
+                            onClearAnswer={handleClearTextTurnAnswer}
+                            onSubmit={submitTextTurnAnswer}
+                            onClose={() => closeTextTurn()}
+                            onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
+                        />
+                    </Box>
                 ) : (
                     <ExplanationPanel
                         content={focusedTextTurn.answered && focusedTextTurn.answer
                             ? `${focusedTextTurn.content}\n\n> ↳ ${focusedTextTurn.answer}`
                             : focusedTextTurn.content}
-                        onClose={() => closeTextTurn(focusedTextTurn)}
+                        onClose={() => closeTextTurn()}
                         onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
                     />
                 )
@@ -2113,7 +2115,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             {/* Re-opened explanation: the user clicked a resolved explanation
                 card in the data thread. Read-only popup above the chat box;
                 only shown when no live pause is active so it never overlaps. */}
-            {viewingExplanation && !pendingClarification && !focusedTextTurn && !isChatFormulating && (
+            {viewingExplanation && !pendingClarification && !focusedTextTurn && (
                 <ExplanationPanel
                     content={viewingExplanation.content}
                     onClose={() => { setViewingExplanation(null); switchFocusToPreviousChart(); }}
@@ -2424,8 +2426,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 )}
                 </Box>
             </Box>
-            </Box>
-            {/* Agent working overlay — covers entire card during chat formulation */}
+            {/* Scoped to the input area, not the whole card, so a focused
+                explanation / clarification panel above stays readable. Bleeds
+                past the card's padding so the veil and its progress bar still
+                meet the card edge — the card clips it to the rounded corner. */}
             {isChatFormulating && (
                 <AgentWorkingOverlay 
                     message={draftNodes.find(d => d.derive?.status === 'running' && draftBelongsToFocusedThread(d))
@@ -2433,8 +2437,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     theme={theme}
                     color={'primary'}
                     onCancel={cancelAgent}
+                    sx={{
+                        left: -10, right: -10, bottom: -4, borderRadius: 0,
+                        // With nothing above it, cover the card's top padding too
+                        // so the veil fills the card exactly as it used to.
+                        ...((focusedTextTurn || viewingExplanation || pendingClarification)
+                            ? {}
+                            : { top: -8 }),
+                    }}
                 />
             )}
+            </Box>
         </Card>
     );
 
@@ -2541,7 +2554,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (isActiveClarify) return;
                 const el = e.target as HTMLElement | null;
                 if (el?.closest?.('.data-thread-card')) return;
-                closeTextTurn(focusedTextTurn);
+                closeTextTurn();
             }}
         >
             {/* Shares its width with the thread block above (see tokens). */}

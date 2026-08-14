@@ -202,6 +202,9 @@ export interface DataFormulatorState {
 
     chartSynthesisInProgress: string[];
 
+    /** Table loads awaiting their first row; drives "loading" vs "empty" copy. */
+    tableLoadsInFlight: number;
+
     /**
      * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
      * (rather than on `chart.thumbnail`) so a thumbnail update doesn't
@@ -336,6 +339,7 @@ const initialState: DataFormulatorState = {
     viewMode: 'editor',
 
     chartSynthesisInProgress: [],
+    tableLoadsInFlight: 0,
     chartThumbnails: {},
     displayRowsTick: 0,
 
@@ -1047,6 +1051,7 @@ export const dataFormulatorSlice = createSlice({
                 displayedMessageIdx: -1,
                 viewMode: saved.viewMode || 'editor',
                 chartSynthesisInProgress: [],
+                tableLoadsInFlight: 0,
                 cleanInProgress: false,
                 dataLoadingChatInProgress: false,
                 dataLoadingChatResetCounter: 0,
@@ -2443,6 +2448,17 @@ export const dataFormulatorSlice = createSlice({
                 });
             }
         })
+        // Matched by action type rather than by importing the thunk, which
+        // would close an import cycle (tableThunks already imports this slice).
+        .addMatcher(
+            (action: any) => action.type === 'dataFormulator/loadTable/pending',
+            (state) => { state.tableLoadsInFlight += 1; },
+        )
+        .addMatcher(
+            (action: any) => action.type === 'dataFormulator/loadTable/fulfilled'
+                || action.type === 'dataFormulator/loadTable/rejected',
+            (state) => { state.tableLoadsInFlight = Math.max(0, state.tableLoadsInFlight - 1); },
+        )
     },
 })
 
@@ -2627,15 +2643,22 @@ export const dfSelectors = {
                 && [...userCharts, ...triggerCharts].some(c => c.id === art.sourceChartId)) {
                 return { type: 'chart', chartId: art.sourceChartId };
             }
-            // No source chart: resolve the turn's thread position to a table
-            // (walk parentNodeId) and keep it on the canvas (design-docs/42).
+            // No source chart: resolve the turn's thread position to the nearest
+            // artifact above it (design-docs/42) — that table's chart when it has
+            // one, since the chart is what the turn is talking about.
             let cur: TextTurn | undefined = art;
             const seen = new Set<string>();
             while (cur && !seen.has(cur.id)) {
                 seen.add(cur.id);
                 const p: string | undefined = cur.parentNodeId;
                 if (!p) break;
-                if (tables.some(t => t.id === p)) return { type: 'table', tableId: p };
+                if (tables.some(t => t.id === p)) {
+                    // Charts render in `getAllCharts` order, so the last one on
+                    // the table is the chart sitting just above this turn.
+                    const tableCharts = [...userCharts, ...triggerCharts].filter(c => c.tableRef === p);
+                    const nearest = tableCharts[tableCharts.length - 1];
+                    return nearest ? { type: 'chart', chartId: nearest.id } : { type: 'table', tableId: p };
+                }
                 cur = textTurns.find(tt => tt.id === p);
             }
             return undefined;

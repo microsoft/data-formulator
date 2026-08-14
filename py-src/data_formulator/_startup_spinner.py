@@ -19,7 +19,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_FRAMES = "|/-\\"
 _FRAME_INTERVAL = 0.08  # seconds
 _INDENT = "  "
 
@@ -56,7 +56,7 @@ def spinner(label: str):
         while not stop.is_set():
             frame = _FRAMES[i % len(_FRAMES)]
             elapsed = time.monotonic() - start
-            sys.stdout.write(f"\r\x1b[2K{_INDENT}{frame} {label}… ({elapsed:.1f}s)")
+            sys.stdout.write(f"\r\x1b[2K{_INDENT}{frame} {label}... ({elapsed:.1f}s)")
             sys.stdout.flush()
             i += 1
             stop.wait(_FRAME_INTERVAL)
@@ -73,6 +73,6 @@ def spinner(label: str):
         stop.set()
         thread.join()
         elapsed = time.monotonic() - start
-        glyph = _color("32", "✔") if ok else _color("31", "✖")
+        glyph = _color("32", "OK") if ok else _color("31", "ERROR")
         sys.stdout.write(f"\r\x1b[2K{_INDENT}{glyph} {label} ({elapsed:.1f}s)\n")
         sys.stdout.flush()

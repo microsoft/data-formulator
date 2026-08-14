@@ -73,7 +73,7 @@ export type DelegateTarget = 'data_loading' | 'report_gen';
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
-    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain' | 'delegate';
+    role: 'prompt' | 'clarify' | 'instruction' | 'error' | 'explain' | 'delegate';
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
