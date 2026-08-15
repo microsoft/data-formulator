@@ -73,7 +73,8 @@ jobs:
         if: runner.os == 'macOS'
         env:
           DF_DESKTOP_SELF_TEST: '1'
-        run: './dist/Data Formulator.app/Contents/MacOS/Data Formulator'
+        run: |
+          './dist/Data Formulator.app/Contents/MacOS/Data Formulator'
 
       - name: Archive Windows application
         if: runner.os == 'Windows'
