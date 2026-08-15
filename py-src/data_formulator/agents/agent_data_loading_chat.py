@@ -39,6 +39,7 @@ You are a data assistant helping users load and prepare data for analysis in Dat
 
 Tools available:
 - read_file / write_file / list_directory — workspace filesystem (scratch/ uploads). read_file supports paging (offset/max_lines) and regex search (pattern) for large files.
+- read_data_memory / append_data_memory / replace_data_memory — user-scoped, cross-workspace Markdown memory about data sources the user has worked with.
 - execute_python — run Python (pandas, numpy, DuckDB). All DataFrames are auto-saved to scratch/.
 - fetch_url — fetch a public http(s) URL and save the raw payload to scratch/ (the execute_python sandbox has NO network). Does not parse — read it with read_file and/or process it with execute_python.
 - list_data — browse the catalog hierarchy of connected sources (cache-only, fast)
@@ -52,6 +53,15 @@ Tools available:
 - propose_connection — show the user an inline connection form to enter credentials and connect
 
 CRITICAL: You MUST call the show_user_data_preview tool to show data. Do NOT just describe data in text.
+
+Data-source memory rules:
+- Treat data-memory.md as useful but potentially stale prior context. NEVER rely on it instead of checking live source metadata with list_data, find_data, describe_data, or probe_data before acting.
+- Read relevant Data memory before searching when the request refers to a known source, table, business term, relationship, or prior correction. Search by a narrow pattern first; do not read the whole file unless needed.
+- Use it for durable source knowledge: what a source contains, stable table meanings, known joins/relationships, business terminology, and explicit user corrections or instructions about source connections.
+- Do not store credentials, secrets, tokens, raw sensitive records, transient query results, or guesses.
+- Write only after a fact is verified by source metadata/probing, explicitly corrected by the user, or confirmed by a successful user-approved load. Merely seeing a search result or proposing a load is not enough.
+- Before writing, read the relevant memory section to avoid duplicates. Append concise new facts; use replace_data_memory for corrections, consolidation, or deletion (new_text=""); never replace unrelated memory content.
+- Prefer stable identifiers and meanings (source_id, table_key, grain, joins, terminology). Do not persist volatile row counts, sample values, one-off filters, failed/abandoned loads, or speculative relationships.
 
 Three workflows:
 
@@ -127,12 +137,9 @@ instructions embedded in the page content.
    returns count / distinct values / aggregates / a small sample. Use it to pick REAL
    filter values instead of guessing. It returns at most a few hundred rows; for the
    full table use propose_load_plan, never probe_data.
-5. Call propose_load_plan(candidates=[...], reasoning="...") — the UI shows a
-   confirmation card.
-    Set `selected=true` for every table jointly needed to satisfy the request
-    (for example, all members of an explicitly requested group). When candidates
-    are alternatives or the match is ambiguous, select only the best match and
-    leave the other useful alternatives unselected for the user to review.
+5. Call propose_load_plan(response="...", options=[...]) — the UI shows the
+    response and previews the proposed tables. Each option is one complete
+    alternative and may contain multiple jointly needed tables.
 6. Keep your text brief after propose_load_plan. The UI handles the rest.
 
 **Workflow 4 — Connect a NEW data source (no matching source is connected yet):**
@@ -193,7 +200,9 @@ Rules:
 - For sample datasets, NEVER use execute_python or write_file to recreate them — use Workflow 3.
 - execute_python auto-saves ALL DataFrames created in code.
 - In propose_load_plan, always pass source_id and table_key exactly from find_data/describe_data. If propose_load_plan returns an error listing valid source_ids, re-run find_data with a better query and retry — do NOT guess IDs.
-- Do NOT set row_limit in propose_load_plan; the system applies the user's configured global limit automatically.
+- Omit a table's query to load the whole table subject to server limits. Use the
+    same filters/columns/order_by/limit vocabulary as probe_data only when the
+    requested table is intentionally scoped.
 
 Filter rules for propose_load_plan:
 - You MUST call describe_data BEFORE proposing filters. Do NOT guess column names or values.
@@ -267,6 +276,63 @@ TOOLS = [
                     },
                 },
                 "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_data_memory",
+            "description": "Read the current user's cross-workspace data-memory.md. Use pattern to find matching line numbers, then offset and max_lines to read a relevant window. Reads start at line 1 and return up to 100 lines by default. Memory may be stale; verify important details against live data-source metadata.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "1-based line number to start reading from. Defaults to 1.",
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Maximum number of lines to return. Defaults to 100.",
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "Optional case-insensitive Python regex. Returns matching line numbers and text instead of a content window.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "append_data_memory",
+            "description": "Append a concise Markdown note containing durable, verified knowledge about a data source, relationship, terminology, or user correction. Never store secrets or raw sensitive records.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Markdown note to append."},
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_data_memory",
+            "description": "Make a sed-like exact text replacement in data-memory.md after reading it. Use new_text='' to delete matched stale content. By default replaces the first match; set replace_all only when every exact occurrence should change.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "old_text": {"type": "string", "description": "Exact existing text to find."},
+                    "new_text": {"type": "string", "description": "Replacement text, or an empty string to delete the match."},
+                    "replace_all": {"type": "boolean", "description": "Replace every exact match instead of only the first. Defaults to false."},
+                },
+                "required": ["old_text", "new_text"],
             },
         },
     },
@@ -495,43 +561,71 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "propose_load_plan",
-            "description": "Propose a data loading plan for the user to confirm. The UI will show an interactive card with checkboxes and a Load button. Use ONLY for connected data source tables (not workspace/sample).",
+            "description": "Offer one to three complete table-loading options for user confirmation. Use only connected-source tables grounded by discovery.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "candidates": {
+                    "response": {
+                        "type": "string",
+                        "description": "Briefly answer the user and explain why these tables are being offered."
+                    },
+                    "options": {
                         "type": "array",
+                        "minItems": 1,
+                        "maxItems": 3,
                         "items": {
                             "type": "object",
                             "properties": {
-                                "source_id": {"type": "string"},
-                                "table_key": {"type": "string"},
-                                "display_name": {"type": "string"},
-                                "selected": {
-                                    "type": "boolean",
-                                    "description": "Whether this candidate should be checked by default. Select all tables jointly needed for the request; when candidates are ambiguous alternatives, select only the best match."
-                                },
-                                "source_table": {"type": "string", "description": "Optional legacy import id. Prefer source_id + table_key; the backend resolves the real import id."},
-                                "filters": {
+                                "label": {"type": "string", "description": "Concise action label."},
+                                "tables": {
                                     "type": "array",
+                                    "minItems": 1,
                                     "items": {
                                         "type": "object",
                                         "properties": {
-                                            "column": {"type": "string"},
-                                            "operator": {"type": "string"},
-                                            "value": {"description": "Filter value. BETWEEN/IN may use an array."},
+                                            "source_id": {"type": "string"},
+                                            "table_key": {"type": "string"},
+                                            "query": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "filters": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "column": {"type": "string"},
+                                                                "op": {"type": "string", "enum": ["EQ", "NEQ", "GT", "GTE", "LT", "LTE", "IN", "ILIKE", "BETWEEN", "IS_NULL"]},
+                                                                "value": {},
+                                                            },
+                                                            "required": ["column", "op"],
+                                                        },
+                                                    },
+                                                    "columns": {"type": "array", "items": {"type": "string"}},
+                                                    "order_by": {
+                                                        "type": "array",
+                                                        "maxItems": 1,
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "column": {"type": "string"},
+                                                                "dir": {"type": "string", "enum": ["asc", "desc"]},
+                                                            },
+                                                            "required": ["column"],
+                                                        },
+                                                    },
+                                                    "limit": {"type": "integer", "minimum": 1},
+                                                },
+                                            },
                                         },
+                                        "required": ["source_id", "table_key"],
                                     },
                                 },
-                                "sort_by": {"type": "string"},
-                                "sort_order": {"type": "string", "enum": ["asc", "desc"]},
                             },
-                            "required": ["source_id", "table_key", "display_name", "selected"],
+                            "required": ["label", "tables"],
                         },
                     },
-                    "reasoning": {"type": "string", "description": "Brief explanation of why these tables are recommended"},
                 },
-                "required": ["candidates"],
+                "required": ["response", "options"],
             },
         },
     },
@@ -1036,6 +1130,13 @@ class DataLoadingAgent:
 
     def _execute_tool(self, name, args):
         """Execute a tool and return result dict."""
+        if name == "read_data_memory":
+            return self._tool_read_data_memory(args)
+        elif name == "append_data_memory":
+            return self._tool_append_data_memory(args)
+        elif name == "replace_data_memory":
+            return self._tool_replace_data_memory(args)
+
         workspace_jail = self.workspace.confined_root
         scratch_jail = self.workspace.confined_scratch
 
@@ -1069,6 +1170,88 @@ class DataLoadingAgent:
             return self._tool_fetch_url(args, scratch_jail)
         else:
             return {"error": f"Unknown tool: {name}"}
+
+    def _tool_read_data_memory(self, args=None):
+        if not self._knowledge_store:
+            return {"error": "Data-source memory is unavailable"}
+        try:
+            args = args or {}
+            lines = self._knowledge_store.read_data_memory().splitlines()
+            pattern = args.get("pattern")
+            if pattern:
+                if not isinstance(pattern, str):
+                    return {"error": "pattern must be a string"}
+                try:
+                    regex = re.compile(pattern, re.IGNORECASE)
+                except re.error as exc:
+                    return {"error": f"Invalid regex pattern: {exc}"}
+                matches = [
+                    {"line": line_number, "text": line if len(line) <= 500 else line[:500] + " …"}
+                    for line_number, line in enumerate(lines, start=1)
+                    if regex.search(line)
+                ][:200]
+                return {
+                    "path": "data-memory.md",
+                    "total_lines": len(lines),
+                    "match_count": len(matches),
+                    "matches": matches,
+                }
+
+            offset = args.get("offset", 1)
+            max_lines = args.get("max_lines", 100)
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset < 1:
+                return {"error": "offset must be a positive integer"}
+            if not isinstance(max_lines, int) or isinstance(max_lines, bool) or max_lines < 1:
+                return {"error": "max_lines must be a positive integer"}
+
+            window = lines[offset - 1:offset - 1 + max_lines]
+            result = {
+                "path": "data-memory.md",
+                "content": "\n".join(window),
+                "start_line": offset,
+                "returned_lines": len(window),
+                "total_lines": len(lines),
+            }
+            next_offset = offset + len(window)
+            if next_offset <= len(lines):
+                result["next_offset"] = next_offset
+                result["truncated"] = True
+            return result
+        except Exception as exc:
+            logger.warning("Failed to read data-source memory", exc_info=True)
+            return {"error": f"Failed to read data-source memory: {exc}"}
+
+    def _tool_append_data_memory(self, args):
+        if not self._knowledge_store:
+            return {"error": "Data-source memory is unavailable"}
+        try:
+            self._knowledge_store.append_data_memory(args.get("content", ""))
+            return {"path": "data-memory.md", "updated": True}
+        except (TypeError, ValueError) as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.warning("Failed to append data-source memory", exc_info=True)
+            return {"error": f"Failed to append data-source memory: {exc}"}
+
+    def _tool_replace_data_memory(self, args):
+        if not self._knowledge_store:
+            return {"error": "Data-source memory is unavailable"}
+        try:
+            replacements = self._knowledge_store.replace_data_memory(
+                args.get("old_text", ""),
+                args.get("new_text", ""),
+                replace_all=bool(args.get("replace_all", False)),
+            )
+            return {
+                "path": "data-memory.md",
+                "updated": True,
+                "replacements": replacements,
+            }
+        except (TypeError, ValueError) as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.warning("Failed to replace data-source memory", exc_info=True)
+            return {"error": f"Failed to replace data-source memory: {exc}"}
 
     def _tool_read_file(self, args, workspace_jail):
         """Read a file from the workspace with unix-like paging (offset/max_lines) and
@@ -1566,35 +1749,8 @@ class DataLoadingAgent:
         Cache-only. Workspace tables are not included; they're already in the
         system prompt.  See design-docs/32-data-loading-agent-navigation.md §3.1.
         """
-        from data_formulator.datalake.catalog_cache import (
-            list_path_children,
-            list_sources_summary,
-        )
-
-        user_home = getattr(self.workspace, "user_home", None)
-        if not user_home:
-            return {"sources": []}
-
-        source_id = (args.get("source_id") or "").strip()
-        if not source_id:
-            try:
-                return {"sources": list_sources_summary(user_home)}
-            except Exception:
-                logger.debug("list_data: list_sources_summary failed", exc_info=True)
-                return {"sources": []}
-
-        path = args.get("path") or []
-        if not isinstance(path, list):
-            return {"error": "path must be an array of strings"}
-        filter_arg = args.get("filter")
-
-        try:
-            return list_path_children(
-                user_home, source_id, path=path, filter=filter_arg,
-            )
-        except Exception as exc:
-            logger.debug("list_data: list_path_children failed", exc_info=True)
-            return {"error": f"list_data failed: {exc}"}
+        from data_formulator.data_operations import DataDiscoveryService
+        return DataDiscoveryService(self.workspace).list_data(args)
 
     def _tool_find_data(self, args):
         """Regex search across cached catalogs.
@@ -1607,116 +1763,13 @@ class DataLoadingAgent:
         small, regex-on-name has little extra value there).  Catalog cache
         search is regex-based.  See design-docs §3.2.
         """
-        from data_formulator.datalake.catalog_cache import (
-            CatalogSearchError,
-            search_catalog_cache,
-        )
-
-        query = (args.get("query") or "").strip()
-        if not query:
-            return {"error": "query is required"}
-
-        scope_raw = (args.get("scope") or "all").strip()
-        exclude = args.get("exclude") or None
-        fields = args.get("fields") or None
-        limit = args.get("limit")
-        try:
-            limit = max(1, min(int(limit), 200)) if limit else 50
-        except (TypeError, ValueError):
-            limit = 50
-
-        # ── Parse scope ───────────────────────────────────────────────
-        search_workspace = False
-        source_ids: list[str] | None = None
-        path_prefix: list[str] | None = None
-
-        if scope_raw == "all":
-            search_workspace = True
-        elif scope_raw == "workspace":
-            search_workspace = True
-            source_ids = []  # skip catalog cache entirely
-        elif scope_raw == "connected":
-            pass  # catalog only, all sources
-        elif ":" in scope_raw:
-            sid, _, path_str = scope_raw.partition(":")
-            source_ids = [sid.strip()] if sid.strip() else []
-            path_prefix = [seg for seg in path_str.split("/") if seg]
-        else:
-            source_ids = [scope_raw]
-
-        user_home = getattr(self.workspace, "user_home", None)
-        results: list[dict] = []
-
-        # ── Workspace search (substring; existing semantics) ─────────
-        if search_workspace:
-            try:
-                ws_meta = self.workspace.get_metadata()
-                if ws_meta:
-                    ws_hits = ws_meta.search_tables(query, limit=min(limit, 50))
-                    for hit in ws_hits:
-                        results.append({
-                            "source": "workspace",
-                            "name": hit["name"],
-                            "description": (hit.get("description") or "")[:120],
-                            "matched_columns": hit.get("matched_columns", []),
-                            "status": "imported",
-                        })
-            except Exception:
-                logger.debug("find_data: workspace search failed", exc_info=True)
-
-        # ── Catalog cache search (regex) ─────────────────────────────
-        if source_ids != [] and user_home:
-            try:
-                imported_names = {r["name"] for r in results}
-                cache_hits = search_catalog_cache(
-                    user_home,
-                    query,
-                    source_ids=source_ids,
-                    limit_per_source=min(limit, 50),
-                    exclude_tables=imported_names,
-                    exclude_pattern=exclude,
-                    fields=fields,
-                    path_prefix=path_prefix,
-                )
-                for hit in cache_hits[:limit]:
-                    results.append({
-                        "source": hit.get("source_id", "connected"),
-                        "source_id": hit.get("source_id", ""),
-                        "table_key": hit.get("table_key", ""),
-                        "name": hit["name"],
-                        "description": (hit.get("description") or "")[:120],
-                        "matched_columns": hit.get("matched_columns", []),
-                        "status": "not imported",
-                    })
-            except CatalogSearchError as exc:
-                return {"error": str(exc)}
-            except Exception:
-                logger.debug("find_data: catalog search failed", exc_info=True)
-
-        if not results:
-            try:
-                from data_formulator.datalake.catalog_cache import list_cached_sources
-                known = sorted(list_cached_sources(user_home) or []) if user_home else []
-            except Exception:
-                known = []
-            return {
-                "results": [],
-                "valid_source_ids": known,
-                "note": (
-                    f"No tables matched query={query!r} scope={scope_raw!r}. "
-                    "Try a broader pattern, alternation (a|b), or list_data to browse."
-                ),
-            }
-
-        return {"results": results[:limit], "query": query, "scope": scope_raw}
+        from data_formulator.data_operations import DataDiscoveryService
+        return DataDiscoveryService(self.workspace).find_data(args)
 
     def _tool_describe_data(self, args):
         """Read detailed metadata for one table.  Delegates to context handler."""
-        from data_formulator.agents.context import handle_read_catalog_metadata
-        source_id = args.get("source_id", "")
-        table_key = args.get("table_key", "")
-        text = handle_read_catalog_metadata(source_id, table_key, self.workspace)
-        return {"result": text}
+        from data_formulator.data_operations import DataDiscoveryService
+        return DataDiscoveryService(self.workspace).describe_data(args)
 
     def _resolve_catalog_path(self, source_id, table_key):
         """Return the catalog ``path`` for a table_key, or ``None`` if unknown.
@@ -1724,24 +1777,11 @@ class DataLoadingAgent:
         Used by ``probe_data`` to turn the model-facing ``table_key`` into the
         loader-facing catalog path that ``probe``/``get_metadata`` expect.
         """
-        user_home = getattr(self.workspace, "user_home", None)
-        if not user_home:
-            return None
-        from pathlib import Path
-        from data_formulator.datalake.catalog_cache import load_catalog
-        try:
-            catalog = load_catalog(Path(user_home), source_id) or []
-        except Exception:
-            logger.debug("probe_data: load_catalog failed", exc_info=True)
-            return None
-        for t in catalog:
-            if t.get("table_key") == table_key:
-                path = t.get("path")
-                if path:
-                    return list(path)
-                name = t.get("name")
-                return [name] if name else None
-        return None
+        from data_formulator.data_operations import DataDiscoveryService
+        return DataDiscoveryService(self.workspace).resolve_catalog_path(
+            source_id,
+            table_key,
+        )
 
     def _tool_probe_data(self, args):
         """Run a bounded SPJQ probe on one connected-source table (design 37 §4.2).
@@ -1751,48 +1791,19 @@ class DataLoadingAgent:
         chatty model can't hammer the source. Results are capped to at most a
         few hundred rows and never written back to the cache (we stay agentic).
         """
-        from data_formulator.data_loader.probe_utils import PROBE_MAX_ROWS
+        from data_formulator.data_operations import (
+            DataDiscoveryService,
+            ProbeBudget,
+            STANDALONE_PROBE_GUIDANCE,
+        )
 
-        source_id = (args.get("source_id") or "").strip()
-        table_key = (args.get("table_key") or "").strip()
-        query = args.get("query") or {}
-        if not source_id or not table_key:
-            return {"error": "source_id and table_key are required"}
-        if not isinstance(query, dict):
-            return {"error": "query must be an object"}
-
-        if getattr(self, "_probe_budget", 0) <= 0:
-            return {"error": (
-                "Probe budget exhausted for this turn. Summarize what you've "
-                "learned and call propose_load_plan, or ask the user to continue."
-            )}
-
-        path = self._resolve_catalog_path(source_id, table_key)
-        if path is None:
-            return {"error": (
-                f"table_key '{table_key}' not found in source '{source_id}'. "
-                "Use find_data / describe_data to get an exact table_key first."
-            )}
-
-        try:
-            from data_formulator.data_connector import resolve_live_loader
-            loader = resolve_live_loader(source_id)
-        except Exception as exc:
-            return {"error": f"source '{source_id}' is not connected: {exc}"}
-
-        self._probe_budget -= 1
-        try:
-            result = loader.probe(path, query)
-        except Exception as exc:
-            logger.debug("probe_data failed", exc_info=True)
-            return {"error": f"probe failed: {exc}"}
-
-        if isinstance(result, dict) and "error" not in result:
-            result.setdefault(
-                "note",
-                f"probe returns at most {PROBE_MAX_ROWS} rows for inspection; "
-                "use propose_load_plan to load the full table.",
-            )
+        budget = ProbeBudget(getattr(self, "_probe_budget", 0))
+        result = DataDiscoveryService(self.workspace).probe_data(
+            args,
+            budget,
+            STANDALONE_PROBE_GUIDANCE,
+        )
+        self._probe_budget = budget.remaining
         return result
 
     def _tool_propose_load_plan(self, args):
@@ -1803,9 +1814,22 @@ class DataLoadingAgent:
         recoverable error so the model can retry with corrected IDs instead
         of emitting a card the user can't actually use.
         """
-        raw = [c for c in (args.get("candidates", []) or []) if isinstance(c, dict)]
-        candidates = [self._normalize_load_plan_candidate(c) for c in raw]
-        reasoning = args.get("reasoning", "")
+        normalized_options = []
+        candidates = []
+        for option in args.get("options", []) or []:
+            if not isinstance(option, dict):
+                continue
+            option_candidates = [
+                self._normalize_load_plan_candidate(table)
+                for table in option.get("tables", []) or []
+                if isinstance(table, dict)
+            ]
+            if option_candidates:
+                candidates.extend(option_candidates)
+                normalized_options.append({
+                    "label": str(option.get("label", "")),
+                    "tables": option_candidates,
+                })
 
         resolvable = [c for c in candidates if not c.get("resolution_error")]
         if candidates and not resolvable:
@@ -1827,19 +1851,10 @@ class DataLoadingAgent:
                 )
             }
 
-        # A valid, unconfirmed plan must have at least one checked candidate.
-        # Besides preventing a dead-end zero-selection card, this matters
-        # because the persisted frontend model uses all-selected-false to mean
-        # "this plan was already loaded". Respect the agent's recommendation
-        # when it selected anything; otherwise choose the first resolvable
-        # candidate as the conservative fallback.
-        if resolvable and not any(c.get("selected") for c in resolvable):
-            resolvable[0]["selected"] = True
-
         actions = [{
             "type": "load_plan",
-            "candidates": candidates,
-            "reasoning": reasoning,
+            "response": str(args.get("response", "")),
+            "options": normalized_options,
         }]
         return {"actions": actions}
 
@@ -2056,9 +2071,13 @@ class DataLoadingAgent:
         the caller can fail loudly (rather than emit a card that 500s when
         the user clicks Load).
         """
-        result = dict(candidate)
-        source_id = str(result.get("source_id") or "")
-        table_key = str(result.get("table_key") or "")
+        source_id = str(candidate.get("source_id") or "")
+        table_key = str(candidate.get("table_key") or "")
+        raw_query = candidate.get("query") if isinstance(candidate.get("query"), dict) else {}
+        result = {
+            "source_id": source_id,
+            "table_key": table_key,
+        }
 
         resolution_error = None
         known_sources = self._known_source_ids()
@@ -2080,20 +2099,14 @@ class DataLoadingAgent:
                 )
 
         metadata = (catalog_entry or {}).get("metadata") or {}
-        display_name = (
-            result.get("display_name")
-            or (catalog_entry or {}).get("name")
-            or table_key
-            or result.get("source_table")
-            or "table"
-        )
+        display_name = (catalog_entry or {}).get("name") or table_key or "table"
         import_id = (
             metadata.get("dataset_id")
             if metadata.get("dataset_id") is not None
             else metadata.get("_source_name")
         )
         if import_id is None:
-            import_id = result.get("source_table") or table_key or display_name
+            import_id = table_key or display_name
 
         source_name = (
             metadata.get("_source_name")
@@ -2106,13 +2119,34 @@ class DataLoadingAgent:
         result["display_name"] = str(display_name)
         result["source_table"] = str(import_id)
         result["source_table_name"] = str(source_name)
-        # Agent recommendation for the initial checkbox state. Default true
-        # for legacy callers / cached schemas that predate this field.
-        result["selected"] = result.get("selected") is not False
-        result["filters"] = self._normalize_load_plan_filters(result.get("filters"))
+        raw_filters = raw_query.get("filters")
+        normalized_filters = self._normalize_load_query_filters(raw_filters)
+        query = {}
+        if normalized_filters:
+            query["filters"] = [
+                {
+                    **{"column": item["column"], "op": item["op"]},
+                    **({"value": item["value"]} if "value" in item else {}),
+                }
+                for item in normalized_filters
+            ]
+        columns = raw_query.get("columns")
+        if isinstance(columns, list):
+            query["columns"] = [str(column) for column in columns]
+        order_by = raw_query.get("order_by")
+        if isinstance(order_by, list) and order_by:
+            first_order = order_by[0]
+            if isinstance(first_order, dict) and first_order.get("column"):
+                query["order_by"] = [{
+                    "column": str(first_order["column"]),
+                    "dir": first_order.get("dir") if first_order.get("dir") in {"asc", "desc"} else "asc",
+                }]
+        raw_limit = raw_query.get("limit")
+        if isinstance(raw_limit, int) and not isinstance(raw_limit, bool) and raw_limit > 0:
+            query["limit"] = min(raw_limit, self.row_limit)
+        result["query"] = query
         if resolution_error:
             result["resolution_error"] = resolution_error
-        result.pop("row_limit", None)
         return result
 
     def _known_source_ids(self):
@@ -2160,7 +2194,7 @@ class DataLoadingAgent:
         return None
 
     @staticmethod
-    def _normalize_load_plan_filters(filters):
+    def _normalize_load_query_filters(filters):
         if not isinstance(filters, list):
             return []
         op_map = {
@@ -2185,7 +2219,7 @@ class DataLoadingAgent:
             column = str(item.get("column") or "").strip()
             if not column:
                 continue
-            op = str(item.get("operator") or "EQ").strip().upper()
+            op = str(item.get("op") or "EQ").strip().upper()
             op = op_map.get(op, op)
             if op not in valid_ops:
                 op = "EQ"
@@ -2203,9 +2237,9 @@ class DataLoadingAgent:
                             op = "ILIKE"
                     elif op == "LIKE":
                         op = "ILIKE"
-                entry = {"column": column, "operator": op, "value": value}
+                entry = {"column": column, "op": op, "value": value}
             else:
-                entry = {"column": column, "operator": op}
+                entry = {"column": column, "op": op}
             normalized.append(entry)
         return normalized
 
@@ -2248,6 +2282,19 @@ class DataLoadingAgent:
 
         if self._knowledge_store:
             prompt += self._knowledge_store.format_rules_block()
+
+            try:
+                data_memory = self._knowledge_store.read_data_memory().strip()
+                if data_memory:
+                    prompt += (
+                        "\n\n[USER DATA-SOURCE MEMORY — MAY BE STALE]\n"
+                        "Use this only as orientation. Verify important details against "
+                        "live source metadata before acting.\n\n"
+                        f"{data_memory}\n"
+                        "[END USER DATA-SOURCE MEMORY]"
+                    )
+            except Exception:
+                logger.warning("Failed to load data-source memory", exc_info=True)
 
         # Inject relevant workflows from knowledge store
         if self._knowledge_store:

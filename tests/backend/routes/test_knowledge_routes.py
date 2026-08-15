@@ -53,6 +53,42 @@ ROI = (revenue - cost) / cost
 """
 
 
+class TestDataMemory:
+    def test_read_creates_user_memory(self, client, tmp_path):
+        resp = client.post("/api/knowledge/memory/read", json={})
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "# Data source memory" in body["data"]["content"]
+        assert (tmp_path / "knowledge" / "data-memory.md").exists()
+
+    def test_append_then_rewrite(self, client):
+        append = client.post(
+            "/api/knowledge/memory/append",
+            json={"content": "## Warehouse A\nOrders and customers share customer_id."},
+        )
+        assert append.get_json()["status"] == "success"
+
+        read = client.post("/api/knowledge/memory/read", json={}).get_json()
+        assert "Warehouse A" in read["data"]["content"]
+
+        rewrite = client.post(
+            "/api/knowledge/memory/rewrite",
+            json={"content": "# Curated source memory"},
+        )
+        assert rewrite.get_json()["status"] == "success"
+        read = client.post("/api/knowledge/memory/read", json={}).get_json()
+        assert read["data"]["content"] == "# Curated source memory"
+
+    @pytest.mark.parametrize("endpoint", ["append", "rewrite"])
+    def test_rejects_non_string_content(self, client, endpoint):
+        resp = client.post(
+            f"/api/knowledge/memory/{endpoint}",
+            json={"content": ["not", "markdown"]},
+        )
+        assert resp.get_json()["status"] == "error"
+
+
 class TestKnowledgeList:
     def test_list_empty(self, client, tmp_path):
         (tmp_path / "knowledge" / "rules").mkdir(parents=True, exist_ok=True)

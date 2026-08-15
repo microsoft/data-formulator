@@ -27,8 +27,9 @@ pytestmark = [pytest.mark.backend, pytest.mark.plugin]
 
 _EXPECTED_HIERARCHIES = {
     "mysql": ["database", "table"],
+    "clickhouse": ["database", "table"],
     "postgresql": ["database", "schema", "table"],
-    "mssql": ["database", "schema", "table"],
+    "mssql": ["database", "schema", "object_type", "table"],
     "bigquery": ["project_id", "dataset_id", "table"],
     "kusto": ["kusto_database", "table"],
     "athena": ["database", "table"],
@@ -140,7 +141,7 @@ class TestAuthModes:
 
     def test_default_auth_mode_is_connection(self):
         """Most loaders use the default 'connection' auth mode."""
-        connection_loaders = {"mysql", "postgresql", "mssql", "bigquery", "kusto",
+        connection_loaders = {"mysql", "clickhouse", "postgresql", "mssql", "bigquery", "kusto",
                               "athena", "mongodb", "s3", "azure_blob"}
         for key, cls in _get_available_loaders().items():
             if key in connection_loaders:

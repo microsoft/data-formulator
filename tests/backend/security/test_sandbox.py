@@ -137,6 +137,33 @@ output_df = pd.read_csv("sample.csv")
         assert result["status"] == "ok"
         assert len(result["content"]) == 2
 
+    def test_read_parquet_from_workspace(self, sandbox, workspace):
+        pd.DataFrame({"value": [10, 20]}).to_parquet(
+            os.path.join(workspace._path, "sample.parquet")
+        )
+        code = """\
+import pandas as pd
+output_df = pd.read_parquet("sample.parquet")
+"""
+        result = sandbox.run_python_code(code, workspace, "output_df")
+        assert result["status"] == "ok"
+        assert list(result["content"]["value"]) == [10, 20]
+
+    def test_parquet_modules_preimported(self, sandbox, workspace):
+        """Lazy pyarrow imports during exec read from the PyInstaller archive,
+        which the audit hook blocks in packaged builds."""
+        code = """\
+import sys
+import pandas as pd
+output_df = pd.DataFrame({"loaded": [
+    "pyarrow.parquet" in sys.modules,
+    "pyarrow.dataset" in sys.modules,
+]})
+"""
+        result = sandbox.run_python_code(code, workspace, "output_df")
+        assert result["status"] == "ok"
+        assert list(result["content"]["loaded"]) == [True, True]
+
     def test_write_to_workdir_blocked(self, sandbox, workspace):
         """Subprocess audit hook blocks all file writes, even in workdir.
         (Detailed security tests in tests/backend/security/test_sandbox_security.py)

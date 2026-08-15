@@ -96,6 +96,11 @@ class ModelRegistry:
                 "model": m["model"],
                 "api_base": m["api_base"],
                 "api_version": m["api_version"],
+                "auth_mode": (
+                    "azure_identity"
+                    if m["endpoint"] == "azure" and not m["api_key"]
+                    else "key"
+                ),
                 "is_global": True,
             }
             for m in self._models.values()

@@ -53,6 +53,31 @@ export interface KnowledgeSearchResult {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
+export async function readDataMemory(): Promise<string> {
+    const { data } = await apiRequest<{ content?: string }>('/api/knowledge/memory/read', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: '{}',
+    });
+    return data.content ?? '';
+}
+
+export async function appendDataMemory(content: string): Promise<void> {
+    await apiRequest('/api/knowledge/memory/append', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ content }),
+    });
+}
+
+export async function rewriteDataMemory(content: string): Promise<void> {
+    await apiRequest('/api/knowledge/memory/rewrite', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ content }),
+    });
+}
+
 export async function fetchKnowledgeLimits(): Promise<KnowledgeLimits> {
     const { data } = await apiRequest<{ limits: KnowledgeLimits }>('/api/knowledge/limits', {
         method: 'POST',

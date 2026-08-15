@@ -29,39 +29,44 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 ## Why Data Formulator?
 
-Your data lives everywhere — databases, warehouses, BI tools, files. Coding agents can help, but only after someone wires them up, and answers come back as walls of code or text that are hard to follow, refine, or share.
+Working with data is hard for two simple reasons:
 
-Data Formulator makes it simple: **connect any data, ask anything, get charts you can edit, branch, and share** — all on one interactive, visual canvas.
+1. **Data lives everywhere.** Connecting agents to files, databases,
+   warehouses, and BI tools takes time. It is even harder when agents start
+   answering before the relationships between data sources are clear.
+2. **Questions evolve as you explore.** Each answer can lead to follow-up
+   questions, comparisons, and new directions. A long chat history makes it
+   hard to see where you are and how you got there.
 
-- **Data & platform teams**: wire up your databases, warehouses, and BI sources once, and give the whole org an AI-powered data exploration layer.
-- **Analysts & users**: ask, edit, branch, share. It's so easy to get insights from good-looking charts.
+Data Formulator provides one visual workspace for exploring and analyzing data:
+
+1. **Data connectors** give agents a common way to connect to different data
+   sources and maintains a data memory to remember the relationships between them.
+2. **Data Threads** let you branch into different questions, compare paths,
+   and use visualizations to discover deeper insights without losing context.
 
 https://github.com/user-attachments/assets/8e4f8a08-6423-4227-a1f7-559e0126ce31
 
 > [!TIP]
-> **Love the charts?** They're built on [**Flint**](https://github.com/microsoft/flint-chart) — our open-source visualization language that compiles compact, semantic chart specs into polished Vega-Lite, ECharts, and Chart.js. Explore the [project site](https://microsoft.github.io/flint-chart/) or drop it into your own app.
+> **Love the charts?** They're built on [**Flint**](https://microsoft.github.io/flint-chart/). It's an open-source visualization language that compiles compact chart specs into polished visualizations.
 
 ## News 🔥🔥🔥
 
-[07-23-2026] **Data Formulator 0.8 alpha** (a1–a4, latest: 0.8.0a4) includes:
+[08-15-2026] **Data Formulator 0.8 beta 1** (`0.8.0b1`) introduces:
 
-- **Conversational database loading.** Agents can discover relevant tables, propose filters, preview results, and revise a loading plan through conversation before importing data.
-- **Unified Data Thread.** Questions, clarifications, explanations, tables, and charts share one conversation history, with branching from earlier steps into new questions, calculated columns, or visualizations.
-- **Expanded chart gallery, powered by Flint.** New bullet, connected scatter, ECDF, Gantt, range area, slope, sparkline, and violin charts, along with improved chart recommendations. Try the open-source [Flint chart language](https://microsoft.github.io/flint-chart/) in your own applications.
-- **Persistent analyst attachments.** CSV, JSON, Excel, and other attached files remain available to the analyst throughout an exploration instead of being embedded once in a prompt.
-- **Databricks connector.** Browse Unity Catalog catalogs, schemas, and tables, then load Databricks data into the exploration workflow.
-- **Microsoft authentication for enterprise connectors.** SQL Server supports passwordless Microsoft Entra ID authentication through `az login`, including an in-app flow for local deployments. Kusto supports delegated Microsoft sign-in alongside Azure default identity and service principal authentication.
-- **Connector setup and diagnostics.** Connection forms separate connection, scope, and source-specific authentication options. Persistent server logs and an in-app log viewer help diagnose failures.
+- **One unified flow:** load data, ask questions, review results, and branch in the Data Thread.
+- **More data sources:** use files, local folders, databases, and platforms such as Databricks.
+- **Better charts:** explore more Flint-powered charts, recommendations, themes, and styling tools.
 
-> Preview with `pip install --pre data_formulator==0.8.0a4` or `uvx data_formulator@0.8.0a4`.
-
+> Preview with `pip install --pre data_formulator==0.8.0b1` or `uvx data_formulator@0.8.0b1`.
 > Install the latest stable release (0.7) with `pip install data_formulator` or run instantly with `uvx data_formulator`.
+
+See the [changelog](CHANGELOG.md) for release details.
 
 ## Previous Updates
 
 Here are milestones that lead to the current design:
 - **v0.7** (05-28-2026): Turn ANY data into insights in five steps — connect governed data sources, load via agents, explore with the unified `DataAgent` + Data Thread, refine 30+ chart types (semantic chart engine powered by [Flint](https://github.com/microsoft/flint-chart)) with a style-refinement agent, and share as reports. Plus persistent sessions & workspaces and a multilingual (English/Chinese) UI.
-- **v0.7 alpha 2** (05-11-2026): Early preview of data connectors, the unified `DataAgent` with thread memory, persistent workspaces, the semantic chart engine, and experimental knowledge distillation.
 - **v0.6** ([Demo](https://github.com/microsoft/data-formulator/releases/tag/0.6)): Real-time insights from live data — connect to URLs and databases with automatic refresh
 - **uv support**: Faster installation with [uv](https://docs.astral.sh/uv/) — `uvx data_formulator` or `uv pip install data_formulator`
 - **v0.5.1** ([Demo](https://github.com/microsoft/data-formulator/pull/200#issue-3635408217)): Community data loaders, US Map & Pie Chart, editable reports, snappier UI
@@ -84,6 +89,33 @@ Here are milestones that lead to the current design:
 ## Get Started
 
 Play with Data Formulator with one of the following options. 
+
+### Desktop downloads
+
+CI builds self-contained Windows and macOS applications for pull requests and
+every update to `main`. Download the latest archives from the **Artifacts**
+section of the most recent
+[desktop builds workflow](https://github.com/microsoft/data-formulator/actions/workflows/desktop-build.yml).
+Workflow artifacts are retained for 30 days. Tagged builds are also attached
+as permanent downloads to the corresponding
+[GitHub Release](https://github.com/microsoft/data-formulator/releases).
+
+Extract the archive, then launch Data Formulator using the instructions for
+your operating system:
+
+- **Windows:** Run `Data Formulator.exe`. If Microsoft Defender SmartScreen
+  appears, select **More info**, verify that you downloaded the archive from
+  this repository, and then select **Run anyway**.
+- **macOS:** Move `Data Formulator.app` to **Applications**. The first time you
+  open it, macOS may report that Apple could not verify the app. Open
+  **System Settings → Privacy & Security**, scroll to **Security**, and select
+  **Open Anyway** for Data Formulator. Confirm by selecting **Open** when
+  prompted.
+
+> [!WARNING]
+> These are automated preview builds and are not currently code-signed or
+> notarized. Only bypass the operating-system warning when the archive was
+> downloaded directly from this repository's workflow artifacts or releases.
 
 - **Option 1: Install via uv (recommended)**
   
@@ -114,21 +146,25 @@ Play with Data Formulator with one of the following options.
 
   Open [http://localhost:5567](http://localhost:5567) in your browser. To stop, press `Ctrl+C` or run `docker compose down`.
 
-- **Option 4: Codespaces**
-
-  You can run Data Formulator in Codespaces; we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
-  
-  [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
-
-
-- **Option 5: Working as developer**
+- **Option 4: Working as developer**
   
   You can build Data Formulator locally and develop your own version. Check out details in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 
 ## Using Data Formulator
 
-Besides uploading csv, tsv or xlsx files that contain structured data, you can ask Data Formulator to extract data from screenshots, text blocks or websites, or load data from databases use connectors. Then you are ready to explore. Ask visualizaiton questions, edit charts, or delegate some exploration tasks to agents. Then, create reports to share your insights.
+Start with the data you already have: upload CSV, TSV, Excel, JSON, screenshots,
+or text; connect to databases and data platforms; or ask the analyst to find and
+load the data you need. The analyst can discover sources, clarify your request,
+propose a loading plan, and let you review the data before adding it to the
+workspace.
+
+Continue the conversation in the **Data Thread**. Ask questions in
+natural language and follow the reasoning through explanations, tables, and
+editable charts in one history. Refine a result directly, branch from any
+earlier step to explore an alternative, or delegate the next investigation to
+the analyst. When the analysis is ready, compose the results into a report to
+share.
 
 https://github.com/user-attachments/assets/164aff58-9f93-4792-b8ed-9944578fbb72
 

@@ -34,6 +34,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import { DataFrameTable } from '../views/DataFrameTable';
 import { fetchWithIdentity, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { iconVar, textVar } from '../app/layout';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -306,7 +307,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     // ── Shared styles ────────────────────────────────────────────────────
 
     const inputSx = {
-        '& .MuiInputBase-root': { fontSize: 11, height: 26 },
+        '& .MuiInputBase-root': { fontSize: textVar.xs, height: 26 },
         '& .MuiInputBase-input': { py: 0.25, px: 0.75 },
     };
 
@@ -318,7 +319,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
 
         if (noValue) {
             return (
-                <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10, alignSelf: 'center' }}>
+                <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: textVar.xxs, alignSelf: 'center' }}>
                     {t('connectorPreview.noValueNeeded', { defaultValue: 'No value needed' })}
                 </Typography>
             );
@@ -331,9 +332,9 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     sx={{ width: 110, ...inputSx }}
                     slotProps={{ select: { displayEmpty: true } }}
                 >
-                    <MenuItem value="" sx={{ fontSize: 11, color: 'text.disabled' }}><em>—</em></MenuItem>
-                    <MenuItem value="true" sx={{ fontSize: 11 }}>True</MenuItem>
-                    <MenuItem value="false" sx={{ fontSize: 11 }}>False</MenuItem>
+                    <MenuItem value="" sx={{ fontSize: textVar.xs, color: 'text.disabled' }}><em>—</em></MenuItem>
+                    <MenuItem value="true" sx={{ fontSize: textVar.xs }}>True</MenuItem>
+                    <MenuItem value="false" sx={{ fontSize: textVar.xs }}>False</MenuItem>
                 </TextField>
             );
         }
@@ -373,10 +374,10 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                                         loadFilterOptions(f.column, f.value || '');
                                     }
                                 }}
-                                sx={{ ...inputSx, '& .MuiOutlinedInput-root': { fontSize: 11, height: 26, py: 0 } }}
+                                sx={{ ...inputSx, '& .MuiOutlinedInput-root': { fontSize: textVar.xs, height: 26, py: 0 } }}
                             />
                         )}
-                        slotProps={{ listbox: { sx: { fontSize: 11 } } }}
+                        slotProps={{ listbox: { sx: { fontSize: textVar.xs } } }}
                     />
                 </Box>
                 </Tooltip>
@@ -384,7 +385,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
         }
         if (inputType === 'time') {
             const dateSx = {
-                '& .MuiInputBase-root': { fontSize: 11, height: 28 },
+                '& .MuiInputBase-root': { fontSize: textVar.xs, height: 28 },
                 '& .MuiInputBase-input': { py: 0.25, px: 0.75 },
                 '& .MuiInputBase-input::-webkit-calendar-picker-indicator': { cursor: 'pointer', opacity: 0.6 },
             };
@@ -444,9 +445,9 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             {/* Header — name + row count */}
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5, flexShrink: 0 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: 600 }} noWrap>{displayName}</Typography>
+                    <Typography sx={{ fontSize: textVar.lg, fontWeight: 600 }} noWrap>{displayName}</Typography>
                     {pathBreadcrumb && (
-                        <Typography sx={{ fontSize: 11, color: 'text.disabled' }} noWrap>{pathBreadcrumb}</Typography>
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled' }} noWrap>{pathBreadcrumb}</Typography>
                     )}
                     {(() => {
                         // Row-count line — ALWAYS rendered as a single
@@ -500,7 +501,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             <Typography
                                 noWrap
                                 sx={{
-                                    fontSize: 11,
+                                    fontSize: textVar.xs,
                                     color: 'text.disabled',
                                     visibility: hidden ? 'hidden' : 'visible',
                                 }}
@@ -523,7 +524,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 }}>
                     <Typography
                         sx={{
-                            fontSize: 11,
+                            fontSize: textVar.xs,
                             color: 'text.primary',
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word',
@@ -579,11 +580,11 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                         }, {})}
                     />
                 ) : columns.length > 0 && filters.length > 0 ? (
-                    <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
+                    <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
                         {t('connectorPreview.noMatchingRows', { defaultValue: 'No rows match the current filters' })}
                     </Typography>
                 ) : (
-                    <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
+                    <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
                         {t('connectorPreview.noPreviewAvailable', { defaultValue: 'No preview available' })}
                     </Typography>
                 )}
@@ -624,13 +625,13 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                                         } : r));
                                     }}
                                     slotProps={{ select: { displayEmpty: true } }}
-                                    sx={{ minWidth: 130, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
+                                    sx={{ minWidth: 130, '& .MuiInputBase-root': { fontSize: textVar.xs, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
                                 >
-                                    <MenuItem value="" disabled sx={{ fontSize: 11, color: 'text.disabled' }}>
+                                    <MenuItem value="" disabled sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>
                                         <em>{t('connectorPreview.filterColumn', { defaultValue: 'Column' })}</em>
                                     </MenuItem>
                                     {columns.map(c => (
-                                        <MenuItem key={c.name} value={c.name} sx={{ fontSize: 11 }}>
+                                        <MenuItem key={c.name} value={c.name} sx={{ fontSize: textVar.xs }}>
                                             <Tooltip title={c.description || ''} placement="right" enterDelay={400} disableHoverListener={!c.description}>
                                                 <span>{c.name}</span>
                                             </Tooltip>
@@ -640,35 +641,35 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                                 <TextField
                                     select size="small" value={f.operator}
                                     onChange={(e) => setFilters(prev => prev.map((r, i) => i === idx ? { ...r, operator: e.target.value, value: '', valueTo: '' } : r))}
-                                    sx={{ minWidth: 100, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
+                                    sx={{ minWidth: 100, '& .MuiInputBase-root': { fontSize: textVar.xs, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
                                 >
                                     {operators.map(op => (
-                                        <MenuItem key={op.value} value={op.value} sx={{ fontSize: 11 }}>{op.label}</MenuItem>
+                                        <MenuItem key={op.value} value={op.value} sx={{ fontSize: textVar.xs }}>{op.label}</MenuItem>
                                     ))}
                                 </TextField>
                                 {renderValueControl(f, idx, inputType)}
                                 <IconButton size="small" onClick={() => setFilters(prev => prev.filter((_, i) => i !== idx))}
                                     sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'error.main' } }}>
-                                    <CloseIcon sx={{ fontSize: 14 }} />
+                                    <CloseIcon sx={{ fontSize: iconVar.sm }} />
                                 </IconButton>
                             </Box>
                         );
                     })}
                     <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
                         <Button
-                            size="small" startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                            size="small" startIcon={<AddIcon sx={{ fontSize: iconVar.sm }} />}
                             disabled={columns.length === 0}
                             onClick={() => setFilters(prev => [...prev, { column: '', operator: 'EQ', value: '' }])}
-                            sx={{ textTransform: 'none', fontSize: 11, px: 1, minHeight: 0, height: 24, color: 'text.secondary' }}
+                            sx={{ textTransform: 'none', fontSize: textVar.xs, px: 1, minHeight: 0, height: 24, color: 'text.secondary' }}
                         >
                             {t('connectorPreview.addFilter', { defaultValue: 'Add filter' })}
                         </Button>
                         <Button
                             variant="outlined" size="small"
-                            startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
+                            startIcon={<RefreshIcon sx={{ fontSize: iconVar.sm }} />}
                             disabled={isLoading || columns.length === 0}
                             onClick={handleRefreshPreview}
-                            sx={{ textTransform: 'none', fontSize: 11, px: 1, minHeight: 0, height: 24 }}
+                            sx={{ textTransform: 'none', fontSize: textVar.xs, px: 1, minHeight: 0, height: 24 }}
                         >
                             {t('connectorPreview.refreshPreview', { defaultValue: 'Preview' })}
                         </Button>
@@ -683,9 +684,9 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <Button
                             variant="outlined" size="small" disabled
-                            startIcon={<CheckIcon sx={{ fontSize: 14 }} />}
+                            startIcon={<CheckIcon sx={{ fontSize: iconVar.sm }} />}
                             sx={{
-                                textTransform: 'none', fontSize: 12, px: 2, height: 30,
+                                textTransform: 'none', fontSize: textVar.sm, px: 2, height: 30,
                                 color: 'success.main', borderColor: 'success.main',
                                 '&.Mui-disabled': { color: 'success.main', borderColor: 'success.main', opacity: 0.8 },
                             }}
@@ -696,7 +697,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             <Button
                                 variant="text" size="small" onClick={onUnload}
                                 sx={{
-                                    textTransform: 'none', fontSize: 11, px: 1, minWidth: 0, height: 28, color: 'text.secondary',
+                                    textTransform: 'none', fontSize: textVar.xs, px: 1, minWidth: 0, height: 28, color: 'text.secondary',
                                     '&:hover': { color: 'error.main', backgroundColor: 'rgba(211,47,47,0.04)' },
                                 }}
                             >
@@ -712,7 +713,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                                 variant="outlined" size="small"
                                 disabled={isLoading}
                                 onClick={handleLoadInNewSession}
-                                sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
+                                sx={{ textTransform: 'none', fontSize: textVar.sm, px: 2, height: 30, flexShrink: 0 }}
                             >
                                 {t('connectorPreview.loadInNewSession', { defaultValue: 'Load in new session' })}
                             </Button>
@@ -721,7 +722,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             variant="contained" size="small"
                             disabled={isLoading}
                             onClick={handleLoad}
-                            sx={{ textTransform: 'none', fontSize: 12, px: 3, height: 30, flexShrink: 0 }}
+                            sx={{ textTransform: 'none', fontSize: textVar.sm, px: 3, height: 30, flexShrink: 0 }}
                         >
                             {t('connectorPreview.loadTable', { defaultValue: 'Load Table' })}
                         </Button>

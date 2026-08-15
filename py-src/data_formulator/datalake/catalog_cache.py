@@ -23,9 +23,11 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from data_formulator.datalake.naming import safe_source_id
 from data_formulator.security.path_safety import ConfinedDir
@@ -33,6 +35,53 @@ from data_formulator.security.path_safety import ConfinedDir
 logger = logging.getLogger(__name__)
 
 CATALOG_CACHE_DIR = "catalog_cache"
+CATALOG_CACHE_SCHEMA_VERSION = 2
+
+
+@dataclass(frozen=True)
+class CatalogSnapshot:
+    source_id: str
+    tables: list[dict[str, Any]]
+    listing_refreshed_at: str | None
+    metadata_refreshed_at: str | None
+    listing_age_seconds: int | None
+    metadata_age_seconds: int | None
+    listing_freshness: str
+    metadata_freshness: str
+    refresh_kind: str
+    refresh_status: str
+    last_refresh_attempt_at: str | None
+    last_refresh_error: str | None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _age_and_freshness(
+    value: Any,
+    ttl_seconds: int | None,
+    now: datetime,
+) -> tuple[int | None, str]:
+    timestamp = _parse_timestamp(value)
+    if timestamp is None:
+        return None, "unknown"
+    age = max(0, int((now - timestamp).total_seconds()))
+    if ttl_seconds is None:
+        return age, "fresh"
+    return age, "fresh" if age <= max(0, ttl_seconds) else "stale"
 
 
 class CatalogSearchError(ValueError):
@@ -64,12 +113,65 @@ def _cache_file(
     return _cache_jail(workspace_root, mkdir=mkdir).resolve(_cache_filename(source_id))
 
 
+def _atomic_write_payload(
+    workspace_root: Path | str,
+    source_id: str,
+    payload: dict[str, Any],
+) -> None:
+    jail = _cache_jail(workspace_root, mkdir=True)
+    filename = _cache_filename(source_id)
+    target = jail.resolve(filename)
+    temporary = jail.resolve(f".{filename}.{os.getpid()}.{uuid4().hex}.tmp")
+    try:
+        with open(temporary, "w", encoding="utf-8") as file:
+            json.dump(payload, file, ensure_ascii=False, default=str)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _merge_catalog_listing(
+    previous_tables: list[dict[str, Any]],
+    listing_tables: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    def identity(table: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            table.get("table_key") or "",
+            tuple(table.get("path") or []),
+            table.get("name") or "",
+        )
+
+    previous_by_identity = {identity(table): table for table in previous_tables}
+    merged: list[dict[str, Any]] = []
+    for table in listing_tables:
+        prior = previous_by_identity.get(identity(table))
+        if not prior:
+            merged.append(table)
+            continue
+        combined = {**prior, **table}
+        prior_metadata = prior.get("metadata") or {}
+        listing_metadata = table.get("metadata") or {}
+        metadata = dict(prior_metadata)
+        for key, value in listing_metadata.items():
+            if value not in (None, "", [], {}):
+                metadata[key] = value
+        if metadata:
+            combined["metadata"] = metadata
+        merged.append(combined)
+    return merged
+
+
 def save_catalog(
     workspace_root: Path | str,
     source_id: str,
     tables: list[dict[str, Any]],
     *,
     mode: str = "replace",
+    refresh_kind: str = "full",
+    refresh_status: str = "complete",
 ) -> None:
     """Persist catalog data to disk. Best-effort — errors are logged, not raised.
 
@@ -85,16 +187,53 @@ def save_catalog(
         if mode not in ("replace", "seed_if_missing"):
             logger.debug("Unknown catalog cache save mode %s for %s", mode, source_id)
             mode = "replace"
+        previous = _load_catalog_raw(workspace_root, source_id) or {}
+        now = _utc_now().isoformat()
+        if refresh_kind not in ("listing", "full"):
+            refresh_kind = "full"
+        if refresh_kind == "listing":
+            tables = _merge_catalog_listing(previous.get("tables") or [], tables)
+        metadata_refreshed_at = (
+            now
+            if refresh_kind == "full"
+            else previous.get("metadata_refreshed_at") or previous.get("synced_at")
+        )
         payload = {
+            "schema_version": CATALOG_CACHE_SCHEMA_VERSION,
             "source_id": source_id,
-            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "synced_at": now,
+            "listing_refreshed_at": now,
+            "metadata_refreshed_at": metadata_refreshed_at,
+            "refresh_kind": refresh_kind,
+            "refresh_status": refresh_status,
+            "last_refresh_attempt_at": now,
+            "last_refresh_error": None,
             "tables": tables,
         }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, default=str)
+        _atomic_write_payload(workspace_root, source_id, payload)
         logger.debug("Catalog cache written: %s (%d tables)", path, len(tables))
     except Exception:
         logger.debug("Failed to write catalog cache for %s", source_id, exc_info=True)
+
+
+def record_catalog_refresh_failure(
+    workspace_root: Path | str,
+    source_id: str,
+    error: str,
+) -> None:
+    """Record a safe refresh failure without replacing the last good tables."""
+    try:
+        payload = _load_catalog_raw(workspace_root, source_id)
+        if not payload:
+            return
+        payload = dict(payload)
+        payload["schema_version"] = CATALOG_CACHE_SCHEMA_VERSION
+        payload["refresh_status"] = "failed"
+        payload["last_refresh_attempt_at"] = _utc_now().isoformat()
+        payload["last_refresh_error"] = error[:160]
+        _atomic_write_payload(workspace_root, source_id, payload)
+    except Exception:
+        logger.debug("Failed to record catalog refresh failure for %s", source_id, exc_info=True)
 
 
 def _load_catalog_raw(workspace_root: Path | str, source_id: str) -> dict[str, Any] | None:
@@ -135,6 +274,44 @@ def load_catalog(workspace_root: Path | str, source_id: str) -> list[dict[str, A
     if raw is None:
         return None
     return raw.get("tables", [])
+
+
+def load_catalog_snapshot(
+    workspace_root: Path | str,
+    source_id: str,
+    *,
+    listing_ttl_seconds: int | None,
+    metadata_ttl_seconds: int | None,
+    now: datetime | None = None,
+) -> CatalogSnapshot | None:
+    """Load cached tables with independent listing and metadata freshness."""
+    raw = _load_catalog_raw(workspace_root, source_id)
+    if raw is None:
+        return None
+    current = (now or _utc_now()).astimezone(timezone.utc)
+    legacy_synced_at = raw.get("synced_at")
+    listing_refreshed_at = raw.get("listing_refreshed_at") or legacy_synced_at
+    metadata_refreshed_at = raw.get("metadata_refreshed_at") or legacy_synced_at
+    listing_age, listing_freshness = _age_and_freshness(
+        listing_refreshed_at, listing_ttl_seconds, current,
+    )
+    metadata_age, metadata_freshness = _age_and_freshness(
+        metadata_refreshed_at, metadata_ttl_seconds, current,
+    )
+    return CatalogSnapshot(
+        source_id=str(raw.get("source_id") or source_id),
+        tables=raw.get("tables") or [],
+        listing_refreshed_at=listing_refreshed_at,
+        metadata_refreshed_at=metadata_refreshed_at,
+        listing_age_seconds=listing_age,
+        metadata_age_seconds=metadata_age,
+        listing_freshness=listing_freshness,
+        metadata_freshness=metadata_freshness,
+        refresh_kind=str(raw.get("refresh_kind") or "full"),
+        refresh_status=str(raw.get("refresh_status") or "complete"),
+        last_refresh_attempt_at=raw.get("last_refresh_attempt_at"),
+        last_refresh_error=raw.get("last_refresh_error"),
+    )
 
 
 def delete_catalog(workspace_root: Path | str, source_id: str) -> None:

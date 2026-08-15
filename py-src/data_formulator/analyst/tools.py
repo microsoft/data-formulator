@@ -63,7 +63,7 @@ INSPECT_SOURCE_DATA_TOOL: dict[str, Any] = {
                 "table_names": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of table names from [SOURCE TABLES] to inspect.",
+                    "description": "List of workspace table names, as listed in the available-tables context, to inspect.",
                 },
             },
             "required": ["table_names"],

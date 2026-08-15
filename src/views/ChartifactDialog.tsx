@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { Chart, DictTable, FieldItem } from '../components/ComponentType';
+import { Chart, DictTable, FieldItem, TableSemanticsInfo } from '../components/ComponentType';
 import { assembleVegaChart, prepVisTable } from '../app/utils';
 import { exportTableToDsv } from '../data/utils';
 import { ClientConfig } from '../app/dfSlice';
@@ -12,7 +12,7 @@ const generateStyleCSS = (style: string): string => {
     // Font families
     const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif';
     const FONT_FAMILY_SERIF = 'Georgia, Cambria, "Times New Roman", Times, serif';
-    const FONT_FAMILY_MONO = '"SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+    const FONT_FAMILY_MONO = 'var(--df-font-mono)';
 
     if (style === 'social post' || style === 'short note') {
         // Twitter/X style - compact, modern
@@ -130,7 +130,7 @@ strong {
 };
 
 // Function to convert report markdown to Chartifact format
-export const convertToChartifact = (reportMarkdown: string, reportStyle: string, charts: Chart[], tables: DictTable[], conceptShelfItems: FieldItem[], config: ClientConfig) => {
+export const convertToChartifact = (reportMarkdown: string, reportStyle: string, charts: Chart[], tables: DictTable[], conceptShelfItems: FieldItem[], config: ClientConfig, tableSemantics: TableSemanticsInfo[] = []) => {
     try {
         // Extract chart IDs from the report markdown images
         // Images are in format: [IMAGE(chart-id)]
@@ -178,6 +178,11 @@ export const convertToChartifact = (reportMarkdown: string, reportStyle: string,
                     chart.config,
                     1,
                     config.maxStretchFactor,
+                    undefined,
+                    tableSemantics.find(info => info.tableId === chartTable.id)?.fields,
+                    undefined,
+                    undefined,
+                    chart.themeId,
                 );
 
                 // Convert the spec to use named data source

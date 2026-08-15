@@ -34,7 +34,7 @@ export default defineConfig({
           'vendor-vega': ['vega', 'vega-lite', 'vega-embed', 'react-vega'],
           'vendor-d3': ['d3'],
           'vendor-utils': ['lodash', 'localforage', 'dompurify', 'validator'],
-          'vendor-editor': ['prismjs', 'prism-react-renderer', 'react-simple-code-editor', 'prettier'],
+          'vendor-editor': ['prismjs', 'prism-react-renderer', 'prettier'],
           'vendor-markdown': ['markdown-to-jsx', 'katex', 'react-katex'],
           'vendor-misc': ['exceljs', 'html2canvas', 'allotment', 'react-dnd', 'react-dnd-html5-backend', 'react-virtuoso'],
         }

@@ -251,15 +251,9 @@ execute — you'll be asked to load it first. Extension skills available this ru
 ## Working within your budget
 
 - You have a budget of **{max_iterations} actions** for this run — a **hard
-  ceiling, not a target**. Use as few as the goal requires.
-- **Stop as soon as the user's goal is met.** End the run by giving your final
-  answer in plain text rather than taking more actions just because you can.
-- For concrete/progressive questions, take a follow-up action only when it
-  addresses a gap the previous step actually raised. For open-ended
-  exploration, the opposite applies: deliberately spend your budget covering
-  distinct analytical angles (see the core skill's "Choosing what to do").
-- If the request is genuinely ambiguous, ask the user in plain text (no action)
-  rather than guessing.
+    ceiling, not a target**.
+- Match the response depth to the user's request. Create charts that materially
+    contribute to the answer, and stop when the answer is sufficient.
 
 {agent_exploration_rules}"""
 
@@ -372,6 +366,7 @@ class AnalystAgent:
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
+        conversation_id: str = "",
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -380,7 +375,6 @@ class AnalystAgent:
             ``"result"``        – a visualization result (data + chart)
             ``"tool_start"`` / ``"tool_result"`` – inspection tool activity
             ``"skill_loaded"``  – a skill's gate opened
-            ``"delegate"``      – hand-off to a peer agent
             ``"completion"``    – the run's final answer (ends the run)
             ``"error"``         – error information
 
@@ -408,6 +402,12 @@ class AnalystAgent:
             "focused_thread": focused_thread,
             "other_threads": other_threads,
             "primary_tables": primary_tables,
+            "conversation_id": conversation_id,
+            # Skill instances are registry singletons, so mutable per-run state
+            # belongs here. SkillContext receives shallow payload copies; this
+            # nested mapping intentionally remains shared across tool calls in
+            # one run and is replaced at the beginning of the next run.
+            "skill_state": {},
         }
 
         try:
@@ -478,6 +478,7 @@ class AnalystAgent:
                 action_reason = "ok"
                 action_error = ""
                 final_text = ""
+                action_narration = ""
                 action_tool_call_id = None
                 for event in self._get_next_action(trajectory, input_tables, outer_iteration=iteration):
                     if event.get("type") == "agent_action":
@@ -485,6 +486,7 @@ class AnalystAgent:
                         action_reason = event.get("reason", "ok")
                         action_error = event.get("error_message", "")
                         final_text = event.get("final_text", "")
+                        action_narration = event.get("narration", "")
                         action_tool_call_id = event.get("tool_call_id")
                         total_llm_calls += event.get("llm_calls", 0)
                     else:
@@ -570,6 +572,7 @@ class AnalystAgent:
                 try:
                     observation = yield from self._dispatch_skill_action(
                         owner, action_type, action, trajectory, iteration, completed_steps,
+                        narration=action_narration,
                     )
                 finally:
                     self._suppress_stream_channel = None
@@ -657,7 +660,7 @@ class AnalystAgent:
                 continue
             m = _SKILL_LOADED_RE.match(content)
             if m:
-                name = m.group(1).strip()
+                name = self.registry.canonical_name(m.group(1).strip())
                 if self.registry.has(name):
                     self._loaded_skills.add(name)
 
@@ -692,8 +695,10 @@ class AnalystAgent:
         the caller controls *when* it lands so message ordering stays
         provider-valid. Idempotent — loading twice yields ``body_msg=None``.
         """
+        requested_name = name
+        name = self.registry.canonical_name(name)
         if not self.registry.has(name):
-            return False, f"Unknown skill: {name!r}", None
+            return False, f"Unknown skill: {requested_name!r}", None
         if name in self._loaded_skills:
             return True, f"Skill '{name}' already loaded.", None
         try:
@@ -736,6 +741,7 @@ class AnalystAgent:
         trajectory: list[dict],
         iteration: int,
         completed_steps: list[dict[str, Any]],
+        narration: str = "",
     ) -> Generator[Event, None, str | None]:
         """Render a skill's action via ``handle_action`` and return its
         observation string (or ``None``).
@@ -776,7 +782,13 @@ class AnalystAgent:
             workspace=self.workspace,
             language_instruction=self.language_instruction,
             trajectory=trajectory,
-            payload={**self._run_payload, "completed_step_count": len(completed_steps)},
+            payload={
+                **self._run_payload,
+                "completed_step_count": len(completed_steps),
+                # The prose the model wrote alongside this action — its own
+                # words, not a field we asked it to fill in.
+                "action_narration": narration,
+            },
             runtime=self,
         )
         rlog.log("action_execution", action=action_type, status="ok",
@@ -844,9 +856,8 @@ class AnalystAgent:
                             "display_instruction": content.get("question", ""),
                             "code": result.get("code", ""),
                         })
-                    elif etype in ("delegate", "interact"):
-                        # Both pause the run; the frontend needs the trajectory +
-                        # step count to resume after the user answers / hands off.
+                    elif etype == "interact":
+                        # Pauses need trajectory and step count for resume.
                         ev.setdefault("trajectory", self._strip_images(trajectory))
                         ev.setdefault("completed_step_count", len(completed_steps))
                     yield ev
@@ -998,6 +1009,7 @@ class AnalystAgent:
         field_display_names: dict,
         display_instruction: str,
         title: str = "",
+        subtitle: str = "",
         messages: list[dict] | None = None,
     ) -> dict[str, Any]:
         """Run visualize code in sandbox and assemble chart."""
@@ -1092,6 +1104,7 @@ class AnalystAgent:
             refined_goal = {
                 "display_instruction": display_instruction,
                 "title": title,
+                "subtitle": subtitle,
                 "output_variable": output_variable,
                 "output_fields": list(query_output.columns),
                 "chart": chart_spec,
@@ -1296,12 +1309,11 @@ class AnalystAgent:
                 "The user attached file(s), saved in the workspace scratch/ "
                 "folder:\n"
                 f"{file_list}\n\n"
-                "You can use them two ways: read a file with execute_python_script "
+                "Read them with execute_python_script "
                 "(e.g. pd.read_excel('scratch/<name>') or "
-                "pd.read_csv('scratch/<name>')) to use as context for your "
-                "analysis, or \u2014 if it's data to bring into the workspace \u2014 "
-                "delegate to data_loading, which can read the same scratch/ "
-                "files.\n\n"
+                "pd.read_csv('scratch/<name>')) to use as temporary context for "
+                "your analysis. Only tables materialized by a supported data "
+                "operation become workspace inputs.\n\n"
             )
 
         user_content += f"[USER QUESTION]\n\n{user_question}"
@@ -1622,7 +1634,7 @@ class AnalystAgent:
                             "stdout": tool_content,
                         }
                     elif tool_name == "load_skill":
-                        skill_name = tool_args.get("name", "")
+                        skill_name = self.registry.canonical_name(tool_args.get("name", ""))
                         ok, message, body_msg = self._build_skill_body_message(skill_name)
                         tool_status = "ok" if ok else "error"
                         tool_content = message
@@ -1856,7 +1868,8 @@ class AnalystAgent:
                  input_summary="action_committed", output_summary="ok",
                  latency_ms=0, status="ok")
         yield {"type": "agent_action", "action_data": action_data, "reason": "ok",
-               "tool_call_id": chosen.id, "llm_calls": llm_calls_in_cycle}
+               "tool_call_id": chosen.id, "llm_calls": llm_calls_in_cycle,
+               "narration": (content or "").strip()}
         return True
 
     _MAX_LLM_RETRIES = 3

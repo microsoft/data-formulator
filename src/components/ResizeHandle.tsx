@@ -87,23 +87,26 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
                     ? { top: 0, bottom: 0, right: 0, width: thickness, cursor: 'col-resize' }
                     : { left: 0, right: 0, bottom: 0, height: thickness, cursor: 'row-resize' }),
                 zIndex: 2,
-                // Hit area is `thickness` px wide for an easy grab target,
-                // but the visible hover indicator sits flush against the
-                // outer edge so it visually aligns with the panel border
-                // (otherwise the centered indicator leaves a noticeable gap
-                // between the highlight and the panel edge).
+                // Keep the full hit target, but reveal only a short grip. A
+                // full-height active stripe competes visually with the panel
+                // edge and makes a lightweight resize affordance feel heavy.
                 '&::after': {
                     content: '""',
                     position: 'absolute',
                     ...(isHorizontal
-                        ? { top: 0, bottom: 0, right: 0, width: 2 }
-                        : { left: 0, right: 0, bottom: 0, height: 2 }),
+                        ? { top: '50%', right: 0, width: 2, height: 32, transform: 'translateY(-50%)' }
+                        : { left: '50%', bottom: 0, width: 32, height: 2, transform: 'translateX(-50%)' }),
+                    borderRadius: 2,
                     bgcolor: 'transparent',
-                    transition: 'background-color 0.15s',
+                    transition: 'background-color 0.15s, opacity 0.15s',
                 },
-                '&:hover::after, &:active::after': {
+                '&:hover::after': {
                     bgcolor: 'primary.main',
-                    opacity: 0.5,
+                    opacity: 0.45,
+                },
+                '&:active::after': {
+                    bgcolor: 'primary.main',
+                    opacity: 0.75,
                 },
             }}
         />

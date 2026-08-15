@@ -46,7 +46,11 @@ import os
 import sys
 from pathlib import Path
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
+from data_formulator.data_loader.external_data_loader import (
+    CatalogCachePolicy,
+    CatalogNode,
+    ExternalDataLoader,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -57,6 +61,7 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("mysql",      "data_formulator.data_loader.mysql_data_loader",      "MySQLDataLoader",      "pymysql"),
+    ("clickhouse", "data_formulator.data_loader.clickhouse_data_loader", "ClickHouseDataLoader", "clickhouse-connect"),
     ("mssql",      "data_formulator.data_loader.mssql_data_loader",      "MSSQLDataLoader",      "mssql-python"),
     ("postgresql", "data_formulator.data_loader.postgresql_data_loader",  "PostgreSQLDataLoader", "psycopg2-binary"),
     ("kusto",      "data_formulator.data_loader.kusto_data_loader",      "KustoDataLoader",      "azure-kusto-data"),
@@ -82,12 +87,68 @@ PLUGIN_LOADERS: dict[str, str] = {}    # key -> absolute source file path
 PLUGIN_ERRORS: list[dict] = []         # rejected plugin attempts (override / duplicate)
 _BUILTIN_KEYS: frozenset[str] = frozenset(spec[0] for spec in _LOADER_SPECS)
 
+_BUILTIN_CATALOG_POLICIES: dict[str, CatalogCachePolicy] = {
+    "sample_datasets": CatalogCachePolicy(
+        listing_ttl_seconds=86_400,
+        metadata_ttl_seconds=86_400,
+        refresh_cost="free",
+        automatic_refresh="always",
+        automatic_refresh_kind="full",
+    ),
+    "local_folder": CatalogCachePolicy(
+        listing_ttl_seconds=0,
+        metadata_ttl_seconds=0,
+        refresh_cost="local",
+        automatic_refresh="while_connected",
+        minimum_retry_seconds=5,
+    ),
+    **{
+        key: CatalogCachePolicy(
+            listing_ttl_seconds=3_600,
+            metadata_ttl_seconds=21_600,
+            refresh_cost="cheap",
+            automatic_refresh="while_connected",
+            automatic_refresh_kind="full",
+        )
+        for key in ("mysql", "postgresql", "mssql", "clickhouse")
+    },
+    **{
+        key: CatalogCachePolicy(
+            listing_ttl_seconds=900,
+            metadata_ttl_seconds=21_600,
+            refresh_cost="moderate",
+            automatic_refresh="while_connected",
+        )
+        for key in ("s3", "azure_blob")
+    },
+    **{
+        key: CatalogCachePolicy(
+            listing_ttl_seconds=7_200,
+            metadata_ttl_seconds=43_200,
+            refresh_cost="moderate",
+            automatic_refresh="while_connected",
+        )
+        for key in ("databricks", "bigquery", "athena")
+    },
+    **{
+        key: CatalogCachePolicy(
+            listing_ttl_seconds=21_600 if key == "kusto" else 7_200,
+            metadata_ttl_seconds=86_400 if key == "kusto" else 43_200,
+            refresh_cost="expensive",
+            automatic_refresh="never",
+        )
+        for key in ("kusto", "mongodb", "cosmosdb", "superset")
+    },
+}
+
 def _scan_package_loaders() -> None:
     """Import built-in loaders from ``_LOADER_SPECS``."""
     for key, module_path, cls_name, pip_pkg in _LOADER_SPECS:
         try:
             mod = importlib.import_module(module_path)
-            DATA_LOADERS[key] = getattr(mod, cls_name)
+            loader_class = getattr(mod, cls_name)
+            loader_class.CATALOG_CACHE_POLICY = _BUILTIN_CATALOG_POLICIES[key]
+            DATA_LOADERS[key] = loader_class
         except ImportError as exc:
             hint = f"pip install {pip_pkg}"
             DISABLED_LOADERS[key] = hint

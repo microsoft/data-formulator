@@ -22,6 +22,7 @@ import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import TitleIcon from '@mui/icons-material/Title';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { iconVar, textVar } from '../app/layout';
 
 /** Compact "1.2s" / "850ms" style duration for inspection steps. */
 function formatStepDuration(ms: number): string {
@@ -65,7 +66,7 @@ export interface InspectStep {
 const StatusIcon: FC<{ done?: boolean }> = ({ done }) => (
     <Box sx={{ flexShrink: 0, mt: '2px', display: 'flex', alignItems: 'center' }}>
         {done
-            ? <CheckCircleIcon sx={{ fontSize: 13, color: 'success.main' }} />
+            ? <CheckCircleIcon sx={{ fontSize: iconVar.sm, color: 'success.main' }} />
             : <CircularProgress size={11} thickness={5} sx={{ color: 'text.secondary' }} />}
     </Box>
 );
@@ -75,7 +76,7 @@ const ThinkingRow: FC<{ label: string }> = ({ label }) => (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 0.25 }}>
         <StatusIcon />
         <Typography component="span" sx={{
-            fontSize: 12, lineHeight: 1.4, color: 'text.secondary',
+            fontSize: textVar.sm, lineHeight: 1.4, color: 'text.secondary',
             animation: 'thinking-pulse 1.6s ease-in-out infinite',
             '@keyframes thinking-pulse': {
                 '0%, 100%': { opacity: 0.6 },
@@ -95,14 +96,14 @@ const InspectionStepRow: FC<{ step: InspectStep }> = ({ step }) => (
             {/* Label and elapsed time sit together on the first line. */}
             <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
                 <Typography component="span" sx={{
-                    fontSize: 12, lineHeight: 1.4, color: 'text.primary',
+                    fontSize: textVar.sm, lineHeight: 1.4, color: 'text.primary',
                     whiteSpace: 'normal', wordBreak: 'break-word',
                 }}>
                     {step.done && step.doneLabel ? step.doneLabel : step.label}
                 </Typography>
                 {step.done && step.durationMs != null && (
                     <Typography component="span" sx={{
-                        fontSize: 11, lineHeight: 1.4, color: 'text.disabled',
+                        fontSize: textVar.xs, lineHeight: 1.4, color: 'text.disabled',
                         fontVariantNumeric: 'tabular-nums',
                     }}>
                         {formatStepDuration(step.durationMs)}
@@ -115,12 +116,12 @@ const InspectionStepRow: FC<{ step: InspectStep }> = ({ step }) => (
                     <Box sx={{
                         width: 14, height: 14, flexShrink: 0, opacity: 0.85,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        '& svg': { fontSize: 14 },
+                        '& svg': { fontSize: textVar.lg },
                     }}>
                         {getChartTemplate(c.chartType)?.icon}
                     </Box>
                     <Typography component="span" sx={{
-                        fontSize: 12, lineHeight: 1.4, color: 'text.secondary',
+                        fontSize: textVar.sm, lineHeight: 1.4, color: 'text.secondary',
                         whiteSpace: 'normal', wordBreak: 'break-word',
                     }}>
                         {c.name}
@@ -142,7 +143,7 @@ const InspectingStatus: FC<{ steps?: InspectStep[] }> = ({ steps }) => {
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, px: '24px', pt: '40px', pb: '16px' }}>
             <Typography sx={{
-                fontSize: 11, fontWeight: 600, letterSpacing: '0.05em',
+                fontSize: textVar.xs, fontWeight: 600, letterSpacing: '0.05em',
                 textTransform: 'uppercase', color: 'text.secondary', mb: 0.5,
             }}>
                 {t('editor.workingTitle')}
@@ -569,7 +570,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
 
     if (!editor) return null;
 
-    const iconSx = { fontSize: 16 };
+    const iconSx = { fontSize: textVar.xl };
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%', position: 'relative' }}>
@@ -624,7 +625,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                         isActive={editor.isActive('heading', { level: 2 })}
                         title={t('editor.heading2')}
                     >
-                        <TitleIcon sx={{ ...iconSx, fontSize: 14 }} />
+                        <TitleIcon sx={{ ...iconSx, fontSize: iconVar.sm }} />
                     </ToolbarButton>
                     <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
                     <ToolbarButton
@@ -719,7 +720,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                         padding: '0.15em 0.4em',
                         borderRadius: '3px',
                         fontSize: '0.85em',
-                        fontFamily: '"SFMono-Regular", Menlo, Monaco, Consolas, monospace',
+                        fontFamily: 'var(--df-font-mono)',
                     },
                     '& pre': {
                         backgroundColor: 'rgba(247, 246, 243, 1)',

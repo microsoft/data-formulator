@@ -8,6 +8,7 @@ import { useDrag } from 'react-dnd'
 import '../scss/DraggableCard.scss';
 
 import { useTheme } from '@mui/material/styles';
+import { textVar } from '../app/layout';
 
 import {
     Card,
@@ -52,7 +53,7 @@ export const OperatorCard: FC<OperatorCardProp> = function OperatorCard({ operat
             <Box ref={drag} sx={{ cursor: cursorStyle, background: 'rgba(255, 255, 255, 0.93)'}}
                  className={`draggable-card-header draggable-card-inner`}>
                 <Typography className="draggable-card-title" 
-                    sx={{ marginLeft: '6px !important', fontSize: 12, height: 24, width: "100%", fontStyle: 'italic' }} component={'span'} gutterBottom>
+                    sx={{ marginLeft: '6px !important', fontSize: textVar.sm, height: 24, width: "100%", fontStyle: 'italic' }} component={'span'} gutterBottom>
                     {operator}
                 </Typography>
             </Box>

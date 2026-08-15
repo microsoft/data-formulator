@@ -4,6 +4,7 @@
 import * as React from 'react';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { borderColor, transition, radius } from '../app/tokens';
+import { dialogHeight, dialogWidth, iconVar, textVar } from '../app/layout';
 import {
     Alert,
     AlertTitle,
@@ -36,12 +37,13 @@ import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
+import { ScrollFadeContainer } from '../components/ScrollFade';
 import { AnimatedAgentToyIcon } from './AgentToyIcon';
 import { AgentChatInput } from './AgentChatInput';
 import { buildDataLoadingSuggestions, buildDataLoadingQuickActions } from './dataLoadingSuggestions';
@@ -60,7 +62,6 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
 import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
 
@@ -180,7 +181,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
                 borderRadius: 1,
                 backgroundColor: alpha(theme.palette.primary.main, 0.08),
                 flexShrink: 0,
-                '& .MuiSvgIcon-root': { fontSize: 18 }
+                '& .MuiSvgIcon-root': { fontSize: iconVar.lg }
             }}>
                 {icon}
             </Box>
@@ -225,6 +226,9 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
 // (an existing source, an "add connection" action, or a one-off upload)
 // rather than a mix of pills and links competing with the composer.
 // `accent` marks an entry with a faint primary icon at rest.
+/** Landing hero column: the composer and the source rows share this edge. */
+const HERO_WIDTH = 800;
+
 const SourceLink: React.FC<DataSourceCardProps> = ({
     icon,
     title,
@@ -234,6 +238,7 @@ const SourceLink: React.FC<DataSourceCardProps> = ({
     accent = false,
     tooltip,
 }) => {
+    const theme = useTheme();
     const link = (
         <Box
             component="button"
@@ -252,7 +257,7 @@ const SourceLink: React.FC<DataSourceCardProps> = ({
                 minWidth: 0,
                 cursor: disabled ? 'not-allowed' : 'pointer',
                 opacity: disabled ? 0.5 : 1,
-                color: accent ? 'primary.main' : 'text.secondary',
+                color: accent ? 'primary.main' : alpha(theme.palette.text.primary, 0.76),
                 transition: 'color 120ms ease',
                 '&:hover': disabled ? {} : {
                     color: 'primary.main',
@@ -265,7 +270,7 @@ const SourceLink: React.FC<DataSourceCardProps> = ({
                 alignItems: 'center',
                 color: 'inherit',
                 flexShrink: 0,
-                '& .MuiSvgIcon-root': { fontSize: 15 },
+                '& .MuiSvgIcon-root': { fontSize: iconVar.md },
             }}>
                 {icon}
             </Box>
@@ -312,7 +317,7 @@ interface LocalFolderPanelProps {
     onConnectorCreated: (conn: ConnectorInstance) => void;
 }
 
-const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated }) => {
+export const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated }) => {
     const { t } = useTranslation();
     const theme = useTheme();
     const [recursive, setRecursive] = React.useState(true);
@@ -602,17 +607,27 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             // for screenshots), with the home-collapsed full path on hover.
             const folderDisplay = displayPath(folderPath, 2);
             const folderTooltip = displayPath(folderPath);
+            const isConnected = !!conn.connected || !!conn.sso_auto_connect;
+            const statusLabel = isConnected
+                ? t('upload.connectorConnected')
+                : t('upload.connectorDisconnected');
+            const detail = isLocalFolder
+                ? (folderDisplay || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
+                : getConnectorTypeDescription(conn.source_type, conn.connected, t);
             return {
                 value: `connector:${conn.id}` as UploadTabType,
                 title: conn.display_name,
-                description: isLocalFolder
-                    ? (folderDisplay || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
-                    : getConnectorTypeDescription(conn.source_type, conn.connected, t),
-                icon: isLocalFolder
-                    ? <FolderOpenIcon />
-                    : getConnectorIcon(conn.icon || conn.source_type),
+                description: detail,
+                // The label already names the source, so the glyph carries the
+                // one thing it can't: whether we can reach it.
+                icon: (
+                    <Box sx={{
+                        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                        bgcolor: isConnected ? 'success.main' : 'error.main',
+                    }} />
+                ),
                 disabled: false,
-                tooltip: isLocalFolder && folderTooltip ? folderTooltip : undefined,
+                tooltip: `${statusLabel}${detail ? ` · ${detail}` : ''}${isLocalFolder && folderTooltip ? ` · ${folderTooltip}` : ''}`,
             };
         }),
     ];
@@ -717,7 +732,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                   setAgentAttachments([]);
               }
             : undefined,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }), [t, onStartChat]);
     const quickActions = useMemo(() => buildDataLoadingQuickActions({
         t,
@@ -732,10 +747,10 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                   setAgentAttachments([]);
               }
             : undefined,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }), [t, onStartChat]);
     const agentChatBox = (
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: HERO_WIDTH, alignSelf: 'center' }}>
             <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
                 {quickActions.map((qa) => (
                     <Chip
@@ -743,16 +758,18 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         icon={<BoltOutlinedIcon />}
                         label={qa.label}
                         onClick={qa.onClick}
+                        disabled={activeWorkspace?.readOnly === true}
                         variant="outlined"
                         size="small"
                         sx={{
-                            fontSize: 13, height: 28, borderRadius: 2,
-                            color: 'text.secondary',
-                            borderColor: alpha(theme.palette.text.primary, 0.12),
-                            '& .MuiChip-icon': { fontSize: 15, ml: 0.5, color: 'text.disabled' },
+                            fontSize: textVar.md, height: 30, borderRadius: 2,
+                            color: alpha(theme.palette.text.primary, 0.78),
+                            borderColor: alpha(theme.palette.text.primary, 0.22),
+                            backgroundColor: alpha(theme.palette.background.paper, 0.72),
+                            '& .MuiChip-icon': { fontSize: textVar.xl, ml: 0.5, color: alpha(theme.palette.text.primary, 0.55) },
                             '&:hover': {
-                                bgcolor: 'action.hover',
-                                borderColor: alpha(theme.palette.text.primary, 0.2),
+                                bgcolor: alpha(theme.palette.primary.main, 0.06),
+                                borderColor: alpha(theme.palette.primary.main, 0.4),
                             },
                         }}
                     />
@@ -764,14 +781,15 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 images={agentImages}
                 onImagesChange={setAgentImages}
                 onSend={submitAgentChat}
+                disabled={activeWorkspace?.readOnly === true}
                 layout="stacked"
                 sx={{
                     // Landing hero: a gentle lift + faint primary-tinted
                     // border so it reads as the focal point without visually
                     // crowding the chips above / source rows below. Focus-within
                     // still escalates to the component's default primary ring.
-                    borderColor: alpha(theme.palette.primary.main, 0.22),
-                    boxShadow: '0 4px 16px rgba(32, 33, 36, 0.08), 0 1px 4px rgba(32, 33, 36, 0.05)',
+                    borderColor: alpha(theme.palette.primary.main, 0.38),
+                    boxShadow: '0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)',
                     '&:hover': {
                         boxShadow: '0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)',
                     },
@@ -779,7 +797,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 leadingSlot={hasPriorConversation && onResumeChat ? (
                     <Tooltip title={t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation' })}>
                         <IconButton size="small" onClick={onResumeChat} sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
-                            <HistoryIcon sx={{ fontSize: 18 }} />
+                            <HistoryIcon sx={{ fontSize: iconVar.lg }} />
                         </IconButton>
                     </Tooltip>
                 ) : undefined}
@@ -804,7 +822,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}
                 attachments={agentAttachments}
                 onAttachmentsChange={setAgentAttachments}
-                minRows={4}
+                minRows={3}
                 tabSuggestion={t('upload.agentChatTabSuggestion', {
                     defaultValue: 'What dataset do we have here?',
                 })}
@@ -823,7 +841,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            gap: 3.5,
+            gap: 4,
             mx: 0,
             textAlign: 'left',
         }}>
@@ -831,7 +849,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             {agentChatBox}
 
             {/* Sources — same width as the chat box so they read as part of it */}
-            <Box sx={{ width: '100%', maxWidth: 900, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Box sx={{ width: '100%', maxWidth: HERO_WIDTH, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {/* Row 1 — connected data sources (as lightweight links):
                     the already-connected instances. The "add a connection"
                     actions live on their own row below so they read as
@@ -845,9 +863,9 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'text.secondary', mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
-                        {t('upload.dataSourcesLabel', { defaultValue: 'View connected data sources:' })}
+                        {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
                     </Typography>
                     {connectionSources.map((source) => (
                         <SourceLink
@@ -874,7 +892,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'text.secondary', mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
                         {t('upload.addSourceLabel', { defaultValue: 'Or add data directly:' })}
                     </Typography>
@@ -892,20 +910,21 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                                 gap: 0.5,
                                 px: 1,
                                 py: 0.375,
-                                border: 'none',
+                                border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
                                 borderRadius: 1,
                                 font: 'inherit',
                                 whiteSpace: 'nowrap',
                                 cursor: source.disabled ? 'not-allowed' : 'pointer',
                                 opacity: source.disabled ? 0.5 : 1,
-                                color: 'text.secondary',
-                                bgcolor: alpha(theme.palette.text.primary, 0.05),
+                                color: alpha(theme.palette.text.primary, 0.8),
+                                bgcolor: alpha(theme.palette.text.primary, 0.07),
                                 transition: 'background-color 120ms ease, color 120ms ease',
                                 '&:hover': source.disabled ? {} : {
-                                    bgcolor: alpha(theme.palette.text.primary, 0.09),
+                                    bgcolor: alpha(theme.palette.primary.main, 0.08),
+                                    borderColor: alpha(theme.palette.primary.main, 0.3),
                                     color: 'text.primary',
                                 },
-                                '& .MuiSvgIcon-root': { fontSize: 15 },
+                                '& .MuiSvgIcon-root': { fontSize: iconVar.md },
                             }}
                         >
                             {source.icon}
@@ -932,63 +951,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 // AddConnectionPanel — left sidebar lists loader types, right shows DataLoaderForm
 // ---------------------------------------------------------------------------
 
-// A scrollable area that softly fades its bottom edge and shows a subtle
-// down-chevron while more content sits below the fold, so long connector
-// forms don't feel abruptly cut off. The affordance fades out once the user
-// reaches the end.
-const ScrollFadeContainer: React.FC<{
-    children: React.ReactNode;
-    sx?: object;
-    /** Recompute when this changes (e.g. selected loader swaps content). */
-    resetKey?: unknown;
-}> = ({ children, sx, resetKey }) => {
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const [moreBelow, setMoreBelow] = useState(false);
-
-    const update = useCallback(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-        setMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
-    }, []);
-
-    useEffect(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-        update();
-        const ro = new ResizeObserver(update);
-        ro.observe(el);
-        for (const child of Array.from(el.children)) ro.observe(child);
-        return () => ro.disconnect();
-    }, [update, resetKey]);
-
-    return (
-        <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
-            <Box ref={scrollRef} onScroll={update} sx={{ flex: 1, minHeight: 0, overflow: 'auto', ...sx }}>
-                {children}
-            </Box>
-            <Box
-                sx={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 40,
-                    pointerEvents: 'none',
-                    display: 'flex',
-                    alignItems: 'flex-end',
-                    justifyContent: 'center',
-                    opacity: moreBelow ? 1 : 0,
-                    transition: 'opacity 0.2s ease',
-                    background: (theme) =>
-                        `linear-gradient(to bottom, ${alpha(theme.palette.background.paper, 0)}, ${theme.palette.background.paper})`,
-                }}
-            >
-                <KeyboardArrowDownIcon sx={{ fontSize: 16, color: 'text.secondary', mb: 0.25 }} />
-            </Box>
-        </Box>
-    );
-};
-
 interface LoaderType {
     type: string;
     name: string;
@@ -1013,7 +975,8 @@ interface PluginsInfo {
 const AddConnectionPanel: React.FC<{
     onCreated: (connector: ConnectorInstance) => void;
     initialType?: string;
-}> = ({ onCreated, initialType }) => {
+    onAskAgent?: (prompt: string) => void;
+}> = ({ onCreated, initialType, onAskAgent }) => {
     const { t } = useTranslation();
     const disableConnectors = useSelector(
         (state: DataFormulatorState) => state.serverConfig.DISABLE_DATA_CONNECTORS,
@@ -1099,21 +1062,20 @@ const AddConnectionPanel: React.FC<{
         }
     }, [onCreated, dispatch]);
 
-    // Left sidebar button style
+    // Left sidebar row style, mirroring the model manager's list rows.
     const sidebarButtonSx = (typeKey: string) => ({
-        fontSize: 12,
+        fontSize: '0.8125rem',
+        fontWeight: selectedType === typeKey ? 600 : 400,
         textTransform: 'none' as const,
         width: { xs: 'auto', sm: '100%' },
         minWidth: 'max-content',
         justifyContent: 'flex-start',
         textAlign: 'left' as const,
         borderRadius: 0,
-        py: 1,
-        px: 2,
-        color: selectedType === typeKey ? 'primary.main' : 'text.secondary',
-        borderRight: { xs: 0, sm: selectedType === typeKey ? 2 : 0 },
-        borderBottom: { xs: selectedType === typeKey ? 2 : 0, sm: 0 },
-        borderColor: 'primary.main',
+        py: 0.75,
+        px: 2.5,
+        color: selectedType === typeKey ? 'primary.main' : 'text.primary',
+        bgcolor: selectedType === typeKey ? 'action.selected' : 'transparent',
     });
 
     // Hosted/anonymous deployments disable connectors entirely. Replace the
@@ -1128,16 +1090,15 @@ const AddConnectionPanel: React.FC<{
             {/* Left sidebar: loader types */}
             <Box sx={{
                 display: 'flex', flexDirection: { xs: 'row', sm: 'column' },
-                width: { xs: '100%', sm: 180 }, minWidth: { xs: 0, sm: 180 }, maxWidth: { xs: 'none', sm: 180 },
+                width: { xs: '100%', sm: 184 }, minWidth: { xs: 0, sm: 184 }, maxWidth: { xs: 'none', sm: 184 },
                 borderRight: { xs: 0, sm: `1px solid ${borderColor.divider}` },
                 borderBottom: { xs: `1px solid ${borderColor.divider}`, sm: 0 },
                 overflowY: { xs: 'hidden', sm: 'auto' }, overflowX: { xs: 'auto', sm: 'hidden' },
                 pt: { xs: 0, sm: 1 },
                 flexShrink: 0,
             }}>
-                <Typography variant="caption" sx={{
-                    px: 2, pb: 0.5, color: 'text.disabled',
-                    fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+                <Typography variant="subtitle2" sx={{
+                    px: 2.5, py: 0.75, fontSize: '0.8125rem', fontWeight: 600,
                     display: { xs: 'none', sm: 'block' },
                 }}>
                     {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
@@ -1150,7 +1111,7 @@ const AddConnectionPanel: React.FC<{
                             variant="text" size="small" color="primary"
                             onClick={() => handleSelectLoader(loader)}
                             sx={sidebarButtonSx(loader.type)}
-                            startIcon={getConnectorIcon(loader.type, { sx: { fontSize: 16, opacity: 0.7 } })}
+                            startIcon={getConnectorIcon(loader.type, { sx: { fontSize: iconVar.lg } })}
                         >
                             <Box component="span" sx={{ flex: 1, textAlign: 'left' }}>{loader.name}</Box>
                             {isPlugin && (
@@ -1159,13 +1120,12 @@ const AddConnectionPanel: React.FC<{
                                     sx={{
                                         ml: 0.5,
                                         px: 0.5,
-                                        fontSize: 9,
-                                        fontWeight: 500,
+                                        fontSize: '0.75rem',
                                         color: 'text.secondary',
                                         border: '1px solid',
                                         borderColor: 'divider',
                                         borderRadius: 0.5,
-                                        lineHeight: '12px',
+                                        lineHeight: 1.4,
                                     }}
                                 >
                                     plugin
@@ -1189,13 +1149,13 @@ const AddConnectionPanel: React.FC<{
                             <Button
                                 variant="text" size="small" disabled
                                 sx={{
-                                    fontSize: 12, textTransform: 'none', width: { xs: 'auto', sm: '100%' },
+                                    fontSize: '0.8125rem', textTransform: 'none', width: { xs: 'auto', sm: '100%' },
                                     minWidth: 'max-content',
                                     justifyContent: 'flex-start', textAlign: 'left',
-                                    borderRadius: 0, py: 1, px: 2,
+                                    borderRadius: 0, py: 0.75, px: 2.5,
                                     color: 'text.disabled !important',
                                 }}
-                                startIcon={getConnectorIcon(name, { sx: { fontSize: 16, opacity: 0.4 } })}
+                                startIcon={getConnectorIcon(name, { sx: { fontSize: iconVar.lg, opacity: 0.4 } })}
                             >
                                 {name}
                             </Button>
@@ -1211,13 +1171,13 @@ const AddConnectionPanel: React.FC<{
                     by the "plugin" tag next to the loader name in the sidebar. */}
                 {pluginsInfo && pluginsInfo.errors.length > 0 && (
                     <Box sx={{ px: 2, pt: 1.5 }}>
-                        <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: 11, py: 0.5 }}>
-                            <AlertTitle sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>
+                        <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: textVar.xs, py: 0.5 }}>
+                            <AlertTitle sx={{ fontSize: textVar.sm, fontWeight: 600, mb: 0.5 }}>
                                 {pluginsInfo.errors.length} plugin{pluginsInfo.errors.length === 1 ? '' : 's'} rejected
                             </AlertTitle>
                             {pluginsInfo.errors.map((e, i) => (
-                                <Box key={i} sx={{ fontSize: 11, lineHeight: 1.4 }}>
-                                    <code style={{ fontSize: 10 }}>{e.file.split('/').pop()}</code>: {e.reason}
+                                <Box key={i} sx={{ fontSize: textVar.xs, lineHeight: 1.4 }}>
+                                    <code style={{ fontSize: textVar.xxs }}>{e.file.split('/').pop()}</code>: {e.reason}
                                 </Box>
                             ))}
                         </Alert>
@@ -1233,7 +1193,7 @@ const AddConnectionPanel: React.FC<{
                 ) : selectedLoader ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         {/* Connector setup timeline */}
-                        <ScrollFadeContainer sx={{ px: 2, pt: 1.5, pb: 2 }} resetKey={selectedType}>
+                        <ScrollFadeContainer sx={{ px: { xs: 2, md: 3 }, pt: 2, pb: 7 }} resetKey={selectedType}>
                             <DataLoaderForm
                                 dataLoaderType={selectedType}
                                 paramDefs={selectedLoader.params}
@@ -1255,12 +1215,13 @@ const AddConnectionPanel: React.FC<{
                                 }}
                                 onConnected={handleConnected}
                                 onBeforeConnect={handleBeforeConnect}
+                                onAskAgent={onAskAgent}
                             />
                         </ScrollFadeContainer>
                     </Box>
                 ) : (
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>
-                        <Typography variant="body2" sx={{ fontStyle: 'italic', fontSize: 12 }}>
+                        <Typography variant="body2" sx={{ fontStyle: 'italic', fontSize: textVar.sm }}>
                             {t('upload.selectDataSourceType', { defaultValue: 'Select a data source type' })}
                         </Typography>
                     </Box>
@@ -1286,7 +1247,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
-    const existingTables = useSelector((state: DataFormulatorState) => state.tables);
+    const existingTables = useSelector(dfSelectors.getAllTables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
@@ -1326,7 +1287,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
-    const storeOnServer = !isEphemeral; // used to decide file upload behavior
+    const storeOnServer = true;
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
@@ -1385,7 +1346,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }));
         // We deliberately seed only on tab entry — subsequent edits stay in
         // Redux as the user types.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [open, activeTab, connectorInstances]);
 
 
@@ -1434,6 +1395,13 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setExampleUrls([]);
         onClose();
     }, [onClose]);
+
+    // Connector setup escape hatch: queue the seeded question and switch to the
+    // data-loading chat, where the agent can inspect config and finish setup.
+    const handleAskAgent = useCallback((prompt: string) => {
+        dispatch(dfActions.queueDataLoadingTask({ text: prompt, images: [], attachments: [] }));
+        setActiveTab('extract');
+    }, [dispatch]);
 
     // Shared file processing logic (used by both file input and drag-and-drop)
     const processUploadedFiles = useCallback((selectedFiles: File[]): void => {
@@ -1489,7 +1457,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     const sheetTitle = result.sheets.length > 1
                                         ? `${uniqueName}-${sheet.sheet_name}`
                                         : uniqueName;
-                                    const table = createTableFromFromObjectArray(sheetTitle, sheet.data, true);
+                                    const table = createTableFromFromObjectArray(sheetTitle, sheet.data);
                                     previewTables.push(table);
                                 }
                             } else {
@@ -1523,7 +1491,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         };
 
         processFiles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }, [existingNames, t]);
 
     // File input change handler
@@ -1685,7 +1653,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
         try {
             let content = JSON.parse(pasteContent);
-            table = createTableFromFromObjectArray(uniqueName, content, true);
+            table = createTableFromFromObjectArray(uniqueName, content);
         } catch (error) {
             table = createTableFromText(uniqueName, pasteContent);
         }
@@ -1737,7 +1705,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     if (!Array.isArray(jsonContent)) {
                         throw new Error('JSON content must be an array of objects.');
                     }
-                    table = createTableFromFromObjectArray(tableName, jsonContent, true);
+                    table = createTableFromFromObjectArray(tableName, jsonContent);
                 } catch (jsonError) {
                     // If JSON parsing fails, try JSONL (JSON Lines) format
                     try {
@@ -1750,7 +1718,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             }
                         });
                         if (jsonlObjects.length > 0 && typeof jsonlObjects[0] === 'object' && jsonlObjects[0] !== null) {
-                            table = createTableFromFromObjectArray(tableName, jsonlObjects, true);
+                            table = createTableFromFromObjectArray(tableName, jsonlObjects);
                         } else {
                             throw new Error('JSONL must contain objects.');
                         }
@@ -1940,10 +1908,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             maxWidth={false}
             sx={{ 
                 '& .MuiDialog-paper': { 
-                    width: 1200,
-                    maxWidth: '95vw',
-                    height: 700, 
-                    maxHeight: '90vh',
+                    // Working surface, not a prompt: claim almost the whole
+                    // viewport on small screens (a percentage cap would waste
+                    // 5-10% there) and stop growing at a comfortable size on
+                    // large ones.
+                    m: 2,
+                    width: activeTab === 'add-connection'
+                        ? dialogWidth(1120)
+                        : dialogWidth(1280),
+                    maxWidth: 'none',
+                    height: activeTab === 'add-connection'
+                        ? dialogHeight(680)
+                        : dialogHeight(860),
+                    maxHeight: 'none',
                     display: 'flex',
                     flexDirection: 'column',
                     transition: 'width 0.2s ease',
@@ -1988,7 +1965,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 '& .MuiInput-underline:hover:not(.Mui-disabled):before': { borderBottomColor: 'divider' },
                             }}
                         />
-                        <Typography sx={{ flexShrink: 0, fontSize: 13, color: 'secondary.main', fontWeight: 600 }}>
+                        <Typography sx={{ flexShrink: 0, fontSize: textVar.md, color: 'secondary.main', fontWeight: 600 }}>
                             ({activeConnector.icon.replaceAll('_', ' ').toUpperCase()})
                         </Typography>
                     </Box>
@@ -2005,7 +1982,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             aria-label={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}
                             onClick={() => setConnectorPendingDelete(activeConnector)}
                         >
-                            <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+                            <DeleteOutlineIcon sx={{ fontSize: iconVar.lg }} />
                         </IconButton>
                     </Tooltip>
                 )}
@@ -2029,20 +2006,20 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {activeTab !== 'menu' && (
                     <Tooltip title={
                         isEphemeral
-                            ? t('upload.storedInBrowser', 'Data is stored in your browser (IndexedDB)')
+                            ? t('upload.storedTemporarily', 'Data is stored temporarily on this server')
                             : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
                                 ? t('upload.storedInAzure', 'Data is stored in Azure Blob Storage')
                                 : t('upload.storedOnDisk', `Data is stored on disk (${serverConfig.DATA_FORMULATOR_HOME || '~/.data_formulator'})`)
                     } placement="bottom">
                         <Box sx={{ ml: 'auto', mr: 0, display: 'flex', alignItems: 'center', gap: 0.5, px: 1 }}>
                             {isEphemeral
-                                ? <LanguageIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                ? <FolderOpenIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
                                 : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
-                                    ? <CloudIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                                    : <FolderOpenIcon sx={{ fontSize: 14, color: 'text.secondary' }} />}
+                                    ? <CloudIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
+                                    : <FolderOpenIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />}
                             <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary' }}>
                                 {isEphemeral
-                                    ? t('upload.browserLabel', 'Browser')
+                                    ? t('upload.temporaryServerLabel', 'Temporary server')
                                     : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
                                         ? t('upload.azureLabel', 'Azure')
                                         : t('upload.diskLabel', 'Disk')}
@@ -2395,7 +2372,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                         '&:hover': { color: 'warning.main' },
                                                     }}
                                                 >
-                                                    <RestartAltIcon sx={{ fontSize: 12 }} />
+                                                    <RestartAltIcon sx={{ fontSize: iconVar.xs }} />
                                                     {t('upload.resetLabel')}
                                                 </Typography>
                                             )}
@@ -2423,7 +2400,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, alignItems: 'center' }}>
                                 {urlAutoRefresh && (
                                     <Typography variant="caption" color="success.main" sx={{ mr: 1 }}>
-                                        <StreamIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.5 }} />
+                                        <StreamIcon sx={{ fontSize: iconVar.sm, verticalAlign: 'middle', mr: 0.5 }} />
                                         {t('upload.watchModeStatus')} {urlRefreshInterval < 60 ? `${urlRefreshInterval}s` : `${Math.floor(urlRefreshInterval / 60)}m`}
                                     </Typography>
                                 )}
@@ -2506,8 +2483,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         alignItems: 'flex-start',
                                     },
                                     '& .MuiInputBase-input': {
-                                        fontSize: 12,
-                                        fontFamily: 'monospace',
+                                        fontSize: textVar.sm,
+                                        fontFamily: 'var(--df-font-mono)',
                                         height: hasPasteContent ? '100% !important' : 'auto !important',
                                         overflow: 'auto !important',
                                     },
@@ -2550,7 +2527,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {/* Per-connector Tabs — one per registered instance */}
                 {connectorInstances.map((conn) => (
                     <TabPanel key={conn.id} value={activeTab} index={`connector:${conn.id}` as UploadTabType}>
-                        <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box' }}>
+                        <Box sx={{ height: '100%', minHeight: 0, display: 'flex' }}>
+                            <ScrollFadeContainer sx={{ p: 2, boxSizing: 'border-box' }} resetKey={conn.id}>
                             <DataLoaderForm
                                 dataLoaderType={conn.id}
                                 loaderType={conn.icon}
@@ -2570,6 +2548,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 authPaths={conn.auth_paths}
                                 hasStoredCredentials={conn.has_stored_credentials}
                                 onImport={() => {}}
+                                onAskAgent={handleAskAgent}
                                 onFinish={(status, message) => {
                                     dispatch(dfActions.addMessages({
                                         timestamp: Date.now(),
@@ -2589,6 +2568,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     dispatch(dfActions.focusConnector(conn.id));
                                 }}
                             />
+                            </ScrollFadeContainer>
                         </Box>
                     </TabPanel>
                 ))}
@@ -2597,6 +2577,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 <TabPanel value={activeTab} index="add-connection">
                     <AddConnectionPanel
                         initialType={addConnectionInitialType}
+                        onAskAgent={handleAskAgent}
                         onCreated={(newConnector) => {
                             // Update connector list — card will appear on menu
                             setConnectorInstances(prev => {
@@ -2630,7 +2611,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     {t('sidebar.deleteConnectorTitle', { defaultValue: 'Delete connector' })}
                 </DialogTitle>
                 <DialogContent>
-                    <Typography sx={{ fontSize: 13 }}>
+                    <Typography sx={{ fontSize: textVar.md }}>
                         {t('sidebar.deleteConnectorConfirm', {
                             name: connectorPendingDelete?.display_name || '',
                             defaultValue: 'Are you sure you want to delete "{{name}}"? Imported data will not be affected.',

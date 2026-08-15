@@ -56,7 +56,7 @@ def _warm_worker_loop(conn):
     # Build a set of directories that should always be readable
     # (Python stdlib, site-packages, etc.) so that library imports
     # (e.g. pyarrow.parquet) are not blocked during code execution.
-    import site as _site, sysconfig as _sysconfig
+    import site as _site, sys as _sys, sysconfig as _sysconfig
     _allowed_lib_prefixes = set()
     for _p in (
         *_site.getsitepackages(),
@@ -64,6 +64,7 @@ def _warm_worker_loop(conn):
         _sysconfig.get_path("stdlib"),
         _sysconfig.get_path("purelib"),
         _sysconfig.get_path("platlib"),
+        getattr(_sys, "_MEIPASS", None),
     ):
         if _p:
             _rp = os.path.realpath(_p)
@@ -71,6 +72,9 @@ def _warm_worker_loop(conn):
                 _rp += os.sep
             _allowed_lib_prefixes.add(_rp)
     _allowed_lib_prefixes = tuple(_allowed_lib_prefixes)  # tuple for fast startswith()
+
+    # PyInstaller serves bundled pure-Python modules from the app executable itself.
+    _allowed_runtime_files = frozenset({os.path.realpath(_sys.executable)})
 
     # Pre-import heavy libraries BEFORE audit hooks so that libraries
     # needing ctypes/dlopen (e.g., scipy/sklearn -> BLAS) can load freely.
@@ -82,6 +86,14 @@ def _warm_worker_loop(conn):
     except ImportError:
         pass
     try:
+        # pandas defers these until read_parquet() is actually called, which
+        # would otherwise import them while the audit hook is active.
+        import pyarrow  # noqa: F401
+        import pyarrow.parquet  # noqa: F401
+        import pyarrow.dataset  # noqa: F401
+    except ImportError:
+        pass
+    try:
         import scipy  # noqa: F401
         from sklearn import (  # noqa: F401
             linear_model, cluster, tree, ensemble,
@@ -89,8 +101,6 @@ def _warm_worker_loop(conn):
         )
     except ImportError:
         pass
-
-    import sys as _sys
 
     # Install audit hooks once -- they persist for the process lifetime.
     def block_mischief(event, arg):
@@ -104,7 +114,9 @@ def _warm_worker_loop(conn):
         if (event == "open" and type(arg[1]) == str and arg[1] in ("r", "rb")
                 and _allowed_workspace[0] is not None):
             resolved = os.path.realpath(arg[0])
-            if not resolved.startswith(_allowed_workspace[0]) and not resolved.startswith(_allowed_lib_prefixes):
+            if (not resolved.startswith(_allowed_workspace[0])
+                    and not resolved.startswith(_allowed_lib_prefixes)
+                    and resolved not in _allowed_runtime_files):
                 raise IOError(f"file read outside workspace forbidden: {arg[0]}")
         # Block dangerous filesystem / process operations
         _blocked_prefixes = ("subprocess", "shutil", "winreg", "webbrowser")
@@ -345,9 +357,16 @@ class SandboxSession:
                 "error_message": f"Code execution timed out after {self.EXECUTION_TIMEOUT}s",
             }
         except Exception as e:
+            exit_code = self._proc.exitcode
             _worker_pool.discard(self._proc, self._conn)
             self._closed = True
-            return {"status": "error", "error_message": f"Worker communication failed: {e}"}
+            return {
+                "status": "error",
+                "error_message": (
+                    f"Worker communication failed: {type(e).__name__}: {e} "
+                    f"(worker exit code: {exit_code})"
+                ),
+            }
 
     def close(self):
         """Clear the persistent namespace and return the worker to the pool."""
@@ -575,7 +594,14 @@ class LocalSandbox(Sandbox):
             _worker_pool.release(proc, conn)
             return result
         except Exception as e:
+            exit_code = proc.exitcode
             _worker_pool.discard(proc, conn)
-            return {"status": "error", "content": f"Error: worker communication failed - {e}"}
+            return {
+                "status": "error",
+                "content": (
+                    f"Worker communication failed: {type(e).__name__}: {e} "
+                    f"(worker exit code: {exit_code})"
+                ),
+            }
 
 

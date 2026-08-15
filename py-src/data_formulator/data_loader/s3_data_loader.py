@@ -31,15 +31,35 @@ class S3DataLoader(ExternalDataLoader):
         ]
         return params_list
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Example:** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1` · bucket: `my-data-bucket`
+    @classmethod
+    def auth_paths(cls) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "access_keys",
+                "label": "Access keys",
+                "description": "Enter an AWS access key and secret. Temporary credentials also need a session token.",
+                "fields": ["aws_access_key_id", "aws_secret_access_key", "aws_session_token"],
+                "required_fields": ["aws_access_key_id", "aws_secret_access_key"],
+                "kind": "credentials",
+                "default": True,
+            },
+            {
+                "id": "default_credentials",
+                "label": "AWS default credentials",
+                "description": "Use credentials from the environment or the host's IAM role.",
+                "fields": [],
+                "required_fields": [],
+                "kind": "ambient",
+            },
+        ]
 
-**Getting credentials:** AWS Console → IAM → Users → Security credentials → Create access key → choose "Application running outside AWS".
+    @classmethod
+    def infer_auth_path(cls, params: dict[str, Any]) -> str:
+        if params.get("aws_access_key_id") or params.get("aws_secret_access_key"):
+            return "access_keys"
+        return "default_credentials"
 
-**Required permissions:** `s3:GetObject` and `s3:ListBucket` on your bucket.
-
-**Supported formats:** CSV, Parquet, JSON, JSONL"""
+    AUTH_GUIDE = "s3.md"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -50,12 +70,14 @@ class S3DataLoader(ExternalDataLoader):
         self.region_name = params.get("region_name", "us-east-1")
         self.bucket = params.get("bucket", "")
 
-        self.s3_fs = pa_fs.S3FileSystem(
-            access_key=self.aws_access_key_id,
-            secret_key=self.aws_secret_access_key,
-            session_token=self.aws_session_token if self.aws_session_token else None,
-            region=self.region_name,
-        )
+        filesystem_args: dict[str, Any] = {"region": self.region_name}
+        if self.aws_access_key_id and self.aws_secret_access_key:
+            filesystem_args.update(
+                access_key=self.aws_access_key_id,
+                secret_key=self.aws_secret_access_key,
+                session_token=self.aws_session_token or None,
+            )
+        self.s3_fs = pa_fs.S3FileSystem(**filesystem_args)
         logger.info(f"Initialized PyArrow S3 filesystem for bucket: {self.bucket}")
 
     def fetch_data_as_arrow(

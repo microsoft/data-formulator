@@ -15,9 +15,11 @@ what ``load_skill(name)`` does is flip a *switch* that exposes the skill's
 tools, opens its action gate, and injects its ``SKILL.md`` body into context —
 i.e. it controls exposure to the model, not availability of the code.
 
-Convention for a skill code module: ``skills/<name>/skill.py`` exposing a
-``get_skill() -> Skill`` factory. A skill that ships only a ``SKILL.md`` (pure
-guidance, no code) is still discoverable — it simply has no tools or handlers.
+Convention for a skill code module: ``skills/<skill-name>/skill.py`` exposing a
+``get_skill() -> Skill`` factory. Modules are loaded through ``importlib``, so
+the package directory can retain its standards-compliant hyphenated slug. A
+skill that ships only a ``SKILL.md`` (pure guidance, no code) is still
+discoverable — it simply has no tools or handlers.
 """
 
 from __future__ import annotations
@@ -106,6 +108,13 @@ class SkillRegistry:
     tool_specs: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _doc_paths: dict[str, Path] = field(default_factory=dict)
 
+    def canonical_name(self, name: str) -> str:
+        """Resolve a public skill name, accepting legacy underscore aliases."""
+        if name in self.metas:
+            return name
+        candidate = name.replace("_", "-")
+        return candidate if candidate in self.metas else name
+
     def _specs_split(self, name: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Partition a skill's ``tool_specs`` into ``(inspection_tools, actions)``
         using its frontmatter ``tools:`` / ``actions:`` lists as the authority.
@@ -116,6 +125,7 @@ class SkillRegistry:
         flagged as drift (it lives in ``tools.json`` but is undeclared in
         ``SKILL.md``) and treated as an inspection tool.
         """
+        name = self.canonical_name(name)
         meta = self.metas.get(name)
         action_set = set(meta.action_names) if meta else set()
         tool_set = set(meta.tool_names) if meta else set()
@@ -143,7 +153,7 @@ class SkillRegistry:
         return [self.metas[n] for n in self.names()]
 
     def has(self, name: str) -> bool:
-        return name in self.metas
+        return self.canonical_name(name) in self.metas
 
     def gated_skill_names(self) -> list[str]:
         """Skills that load on demand (not ``always_on``)."""
@@ -174,6 +184,7 @@ class SkillRegistry:
 
     def load_body(self, name: str) -> str:
         """Return the ``SKILL.md`` body (frontmatter stripped) for ``name``."""
+        name = self.canonical_name(name)
         path = self._doc_paths.get(name)
         if not path or not path.exists():
             raise KeyError(f"Unknown skill: {name!r}")
@@ -183,7 +194,7 @@ class SkillRegistry:
     def get_skill(self, name: str) -> Skill | None:
         """Return the (eagerly-instantiated) skill code module, or ``None`` for
         an unknown or guidance-only skill."""
-        return self.skills.get(name)
+        return self.skills.get(self.canonical_name(name))
 
     def tools_for(self, names) -> list[dict[str, Any]]:
         """Merge the inspection tool specs contributed by the named (loaded) skills."""

@@ -70,13 +70,28 @@ describe('clarification helpers', () => {
     ]);
   });
 
+  it('preserves opaque option values separately from translated labels', () => {
+    const normalized = normalizeClarifyEvent({
+      type: 'clarify',
+      questions: [{
+        text: 'Pick one',
+        options: [{ label: 'Recent orders', value: 'plan-opaque-id' }],
+      }],
+    });
+
+    expect(normalized.questions[0].options).toEqual([{
+      label: 'Recent orders',
+      value: 'plan-opaque-id',
+    }]);
+  });
+
   it('rejects clarify events without questions', () => {
     expect(() => normalizeClarifyEvent({ type: 'clarify' })).toThrow(/questions/);
   });
 
   it('formats single response as just the answer', () => {
     const text = formatClarificationResponses([
-      { question_index: 0, answer: 'Revenue', source: 'option' },
+      { question_index: 0, answer: 'Revenue', value: 'opaque-id', source: 'option' },
     ]);
     expect(text).toBe('Revenue');
   });

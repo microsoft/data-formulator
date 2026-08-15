@@ -19,66 +19,12 @@ from data_formulator.agents.agent_utils import (
     _format_import_options,
 )
 from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
+from data_formulator.data_operations.discovery import ensure_no_auth_catalogs_cached
 
 logger = logging.getLogger(__name__)
 
 TABLE_SAMPLE_MAX_ROWS = 5
 TABLE_SAMPLE_CHAR_LIMIT = 1000
-
-
-def _ensure_no_auth_catalogs_cached(user_home: Any) -> None:
-    """Populate the disk catalog cache for any admin connector that has no
-    required auth parameters and isn't cached yet.
-
-    Used to surface zero-config admin connectors (notably the built-in
-    ``sample_datasets`` connector) to the agent's search/read tools on
-    first use, without requiring an explicit "Connect" step in the UI.
-    Silent on failure — auth-gated connectors will simply remain
-    un-synced until the user provides credentials through the normal
-    flow.
-    """
-    if not user_home:
-        return
-    try:
-        from pathlib import Path
-        from data_formulator.data_connector import (
-            DATA_CONNECTORS,
-            _ADMIN_CONNECTOR_IDS,
-        )
-        from data_formulator.datalake.catalog_cache import save_catalog
-
-        cache_dir = Path(user_home) / "catalog_cache"
-        for source_id in list(_ADMIN_CONNECTOR_IDS):
-            cache_path = cache_dir / f"{source_id}.json"
-            if cache_path.exists():
-                continue
-            connector = DATA_CONNECTORS.get(source_id)
-            if not connector:
-                continue
-            loader_class = connector._loader_class
-            try:
-                params = loader_class.list_params()
-            except Exception:
-                continue
-            # Only auto-sync if no params are required (true no-auth case)
-            if any(p.get("required") for p in params):
-                continue
-            try:
-                loader = loader_class(connector._default_params or {})
-                if not loader.test_connection():
-                    continue
-                tables = loader.sync_catalog_metadata()
-                save_catalog(Path(user_home), source_id, tables)
-                logger.info(
-                    "Auto-synced catalog for '%s' (%d tables)",
-                    source_id, len(tables),
-                )
-            except Exception:
-                logger.debug(
-                    "Auto-sync failed for '%s'", source_id, exc_info=True,
-                )
-    except Exception:
-        logger.debug("Catalog auto-sync setup failed", exc_info=True)
 
 
 def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, str]]:
@@ -118,6 +64,24 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
         lines.append(f"\nStep {i}:")
         if step.get("user_question"):
             lines.append(f"  User: {step['user_question']}")
+        if step.get("agent_response"):
+            lines.append(f"  Analyst: {step['agent_response']}")
+        if step.get("user_answer"):
+            lines.append(f"  User reply: {step['user_answer']}")
+        operation = step.get("data_operation")
+        if operation:
+            options = ", ".join(operation.get("options") or [])
+            lines.append(
+                f"  Data discovery decision: {operation.get('reason', '')} "
+                f"(status: {operation.get('status', 'unknown')}; options: {options})"
+            )
+            if operation.get("selected_plan"):
+                lines.append(f"  Selected loading option: {operation['selected_plan']}")
+            if operation.get("result_tables"):
+                lines.append(
+                    "  Loaded workspace tables: "
+                    + ", ".join(operation["result_tables"])
+                )
         if step.get("agent_thinking"):
             lines.append(f"  Agent thinking: {step['agent_thinking']}")
         if step.get("display_instruction"):
@@ -163,6 +127,30 @@ def build_peripheral_thread_context(other_threads: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _table_label(table: dict[str, Any]) -> str:
+    """``Table: <workspace id>``, plus the name the user sees when it differs."""
+    table_name = table["name"]
+    display_name = str(table.get("display_name") or "").strip()
+    if display_name and display_name != table_name:
+        return f'Table: {table_name} (shown to the user as "{display_name}")'
+    return f"Table: {table_name}"
+
+
+def _client_schema_section(table: dict[str, Any], label: str) -> str:
+    """Fall back to the client-sent schema when the workspace file can't be read."""
+    columns = [c for c in (table.get("columns") or []) if isinstance(c, dict) and c.get("name")]
+    if not columns:
+        return f"{label} (error reading schema)"
+    col_info = ", ".join(f"{c['name']}({c.get('type', 'unknown')})" for c in columns)
+    row_count = table.get("row_count")
+    rows_text = f", {row_count:,} rows" if isinstance(row_count, int) else ""
+    return (
+        f"{label} (schema reported by the app{rows_text}; "
+        "the workspace file could not be read just now)\n"
+        f"  Columns: {col_info}"
+    )
+
+
 def build_lightweight_table_context(
     input_tables: list[dict[str, Any]],
     workspace: Any,
@@ -187,6 +175,7 @@ def build_lightweight_table_context(
 
     def _table_section(table: dict[str, Any]) -> str:
         table_name = table['name']
+        label = _table_label(table)
         try:
             df = workspace.read_data_as_df(table_name)
             data_file_path = workspace.get_relative_data_file_path(table_name)
@@ -208,7 +197,7 @@ def build_lightweight_table_context(
                 col_info.append(col_text)
 
             lines = [
-                f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)",
+                f"{label} (file: {data_file_path}, {num_rows:,} rows)",
                 f"  Columns: {', '.join(col_info)}",
             ]
 
@@ -271,10 +260,13 @@ def build_lightweight_table_context(
                 detail=str(e),
                 message_code="TABLE_SCHEMA_FAILED",
             )
-            return f"Table: {table_name} (error reading schema)"
+            return _client_schema_section(table, label)
 
     load_hint = (
-        "\nTo load a table in code: pd.read_parquet('file.parquet') or "
+        "\nThe tables above are the data already loaded into this workspace, and the "
+        "only data you can read directly. Anything not listed here has not been loaded "
+        "yet: find it in a connected source and propose loading it before relying on it.\n"
+        "To load a table in code: pd.read_parquet('file.parquet') or "
         "duckdb.sql(\"SELECT * FROM read_parquet('file.parquet')\")\n"
         "Use the exact filename shown above."
     )
@@ -384,7 +376,7 @@ def handle_read_catalog_metadata(
         return "Cannot read catalog metadata: user home not available."
 
     # Surface zero-config admin connectors (e.g. sample_datasets) on first use.
-    _ensure_no_auth_catalogs_cached(user_home)
+    ensure_no_auth_catalogs_cached(user_home)
 
     from pathlib import Path
     from data_formulator.datalake.catalog_cache import load_catalog

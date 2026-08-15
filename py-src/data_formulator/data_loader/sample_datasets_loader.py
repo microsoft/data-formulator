@@ -55,12 +55,7 @@ class SampleDatasetsLoader(ExternalDataLoader):
     def list_params() -> list[dict[str, Any]]:
         return []
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return (
-            "Built-in sample datasets are always available. "
-            "No configuration or credentials required."
-        )
+    AUTH_GUIDE = "sample_datasets.md"
 
     @staticmethod
     def auth_mode() -> str:

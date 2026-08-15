@@ -11,8 +11,6 @@ import {
     ModelConfig,
     dfSelectors,
 } from '../app/dfSlice'
-import Chip from '@mui/material/Chip';
-
 import _ from 'lodash';
 
 import {
@@ -24,14 +22,7 @@ import {
     Dialog,
     DialogContent,
     DialogActions,
-    Radio,
     TextField,
-    TableContainer,
-    TableHead,
-    Table,
-    TableCell,
-    TableRow,
-    TableBody,
     Autocomplete,
     CircularProgress,
     FormControl,
@@ -45,30 +36,34 @@ import {
     Checkbox,
     Switch,
     FormControlLabel,
+    ToggleButton,
+    ToggleButtonGroup,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
 } from '@mui/material';
 
 
-import { alpha, styled, useTheme } from '@mui/material/styles';
+import { styled } from '@mui/material/styles';
 
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import ClearIcon from '@mui/icons-material/Clear';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 
 import { getUrls } from '../app/utils';
-import { apiRequest, ApiRequestError } from '../app/apiClient';
+import { apiRequest, ApiError, ApiRequestError } from '../app/apiClient';
 import { useTranslation } from 'react-i18next';
+import { LogViewerDialog } from './LogViewerDialog';
+import { iconVar } from '../app/layout';
 
-
-const decodeHtmlEntities = (text: string): string => {
-    const textarea = document.createElement('textarea');
-    textarea.innerHTML = text;
-    return textarea.value;
-};
 
 // Add this helper function at the top of the file, after the imports
 const simpleHash = (str: string): string => {
@@ -81,8 +76,21 @@ const simpleHash = (str: string): string => {
     return Math.abs(hash).toString(36);
 };
 
-export const ModelSelectionButton: React.FC<{}> = ({ }) => {
-    const theme = useTheme();
+const CONFIGURED_SECRET_MASK = '******';
+
+interface ModelSelectionButtonProps {
+    appearance?: 'toolbar' | 'inline';
+}
+
+interface RememberedModelEndpoint {
+    endpoint: string;
+    model: string;
+    api_base: string;
+    api_version: string;
+    auth_mode: string;
+}
+
+export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appearance = 'toolbar' }) => {
     const { t } = useTranslation();
 
     const dispatch = useDispatch();
@@ -93,6 +101,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const config = useSelector((state: DataFormulatorState) => state.config);
 
     const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(false);
+    const [detailModelId, setDetailModelId] = useState<string | undefined>(selectedModelId);
+    const [isEditingDetails, setIsEditingDetails] = useState(false);
     const [showKeys, setShowKeys] = useState<boolean>(false);
     const [providerModelOptions, setProviderModelOptions] = useState<{[key: string]: string[]}>({
         'openai': [],
@@ -117,6 +127,93 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [newApiKey, setNewApiKey] = useState<string>("");
     const [newApiBase, setNewApiBase] = useState<string>("");
     const [newApiVersion, setNewApiVersion] = useState<string>("");
+    const [azureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'api_key'>('azure_cli');
+    const [isAddingModel, setIsAddingModel] = useState(false);
+    const [newModelError, setNewModelError] = useState("");
+    const [newModelDiagnostic, setNewModelDiagnostic] = useState<ApiError | null>(null);
+    const [modelLogsOpen, setModelLogsOpen] = useState(false);
+    const [rememberedEndpoints, setRememberedEndpoints] = useState<RememberedModelEndpoint[]>([]);
+    const [azureCliStatus, setAzureCliStatus] = useState<{
+        installed: boolean;
+        signed_in: boolean;
+        account: { user?: string; tenant_id?: string } | null;
+    } | null>(null);
+    const [azureCliLoginPending, setAzureCliLoginPending] = useState(false);
+
+    const usesAzureCli = serverConfig.IS_LOCAL_MODE && (
+        (newEndpoint === 'azure' && azureAuthMethod === 'azure_cli')
+        || globalModels.some(model => model.auth_mode === 'azure_identity')
+        || models.some(model => model.endpoint === 'azure' && !model.api_key)
+    );
+
+    useEffect(() => {
+        if (!modelDialogOpen || !usesAzureCli) {
+            setAzureCliStatus(null);
+            return;
+        }
+        let cancelled = false;
+        apiRequest('/api/local/azure-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        }).then(({ data }) => {
+            if (!cancelled) setAzureCliStatus(data);
+        }).catch(() => {
+            if (!cancelled) setAzureCliStatus(null);
+        });
+        return () => { cancelled = true; };
+    }, [modelDialogOpen, usesAzureCli]);
+
+    useEffect(() => {
+        if (!modelDialogOpen) return;
+        apiRequest<RememberedModelEndpoint[]>(getUrls().MODEL_ENDPOINTS)
+            .then(({ data }) => setRememberedEndpoints(data))
+            .catch(() => setRememberedEndpoints([]));
+    }, [modelDialogOpen]);
+
+    const rememberModelEndpoint = (model: ModelConfig) => {
+        const entry = {
+            endpoint: model.endpoint,
+            model: model.model,
+            api_base: model.api_base || '',
+            api_version: model.api_version || '',
+            auth_mode: model.auth_mode || '',
+        };
+        apiRequest<RememberedModelEndpoint>(getUrls().MODEL_ENDPOINTS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry),
+        }).then(() => {
+            setRememberedEndpoints(current => [
+                entry,
+                ...current.filter(existing => JSON.stringify(existing) !== JSON.stringify(entry)),
+            ].slice(0, 20));
+        }).catch(() => undefined);
+    };
+
+    const handleAzureCliLogin = async () => {
+        setAzureCliLoginPending(true);
+        try {
+            const { data } = await apiRequest('/api/local/azure-login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            setAzureCliStatus({ installed: true, ...data });
+        } catch (error) {
+            const message = error instanceof ApiRequestError
+                ? error.apiError.message
+                : error instanceof Error ? error.message : String(error);
+            setNewModelDiagnostic(error instanceof ApiRequestError ? error.apiError : {
+                code: 'CLIENT_ERROR',
+                message,
+                retry: false,
+            });
+            setNewModelError(message);
+        } finally {
+            setAzureCliLoginPending(false);
+        }
+    };
 
     // Build provider→model dropdown options from globalModels (already in Redux).
     // This runs whenever globalModels updates (phase 1 instant list → phase 2 with statuses).
@@ -145,9 +242,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     }, [globalModels]);
 
 
-    let modelExists = models.some(m => 
+    const allModels = [...globalModels, ...models];
+    const detailModel = allModels.find(model => model.id === detailModelId);
+    const detailIsGlobal = globalModels.some(model => model.id === detailModelId);
+    const detailModelStatus = getStatus(detailModelId);
+    const detailHasConfiguredApiKey = detailModel
+        ? detailIsGlobal
+            ? detailModel.auth_mode === 'key'
+            : Boolean(detailModel.api_key)
+        : false;
+
+    let modelExists = allModels.some(m => m.id !== detailModelId &&
         m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase 
-        && m.api_key == newApiKey && m.api_version == newApiVersion);
+        && (m.api_key || '') == newApiKey && (m.api_version || '') == newApiVersion);
 
     let testModel = (model: ModelConfig) => {
         updateModelStatus(model, 'testing', "");
@@ -157,6 +264,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             body: JSON.stringify({ model }),
         })
             .then(({ data }) => {
+                rememberModelEndpoint(model);
                 updateModelStatus(model, 'ok', data.message || "");
                 if (!tempSelectedModelId) {
                     setTempSelectedModelId(model.id);
@@ -169,7 +277,101 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             });
     }
 
-    let readyToTest = newModel && (newApiKey || newApiBase);
+    let readyToTest = newModel && (newApiKey || newApiBase) && !isAddingModel;
+
+    const resetNewModelForm = () => {
+        setNewEndpoint("");
+        setNewModel("");
+        setNewApiKey("");
+        setNewApiBase("");
+        setNewApiVersion("");
+        setAzureAuthMethod('azure_cli');
+        setNewModelError("");
+        setNewModelDiagnostic(null);
+    };
+
+    const handleSaveModel = async () => {
+        const updatingUserModel = detailModelId && !detailIsGlobal;
+        const id = updatingUserModel
+            ? detailModelId
+            : simpleHash(`${newEndpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`);
+        const model: ModelConfig = {
+            endpoint: newEndpoint,
+            model: newModel,
+            api_key: newApiKey,
+            api_base: newApiBase,
+            api_version: newApiVersion,
+            auth_mode: newEndpoint === 'azure'
+                ? (azureAuthMethod === 'azure_cli' ? 'azure_identity' : 'key')
+                : undefined,
+            id,
+        };
+
+        setIsAddingModel(true);
+        setNewModelError("");
+        setNewModelDiagnostic(null);
+        updateModelStatus(model, 'testing', "");
+        try {
+            const { data } = await apiRequest(getUrls().TEST_MODEL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model }),
+            });
+            rememberModelEndpoint(model);
+            dispatch(updatingUserModel ? dfActions.updateModel(model) : dfActions.addModel(model));
+            updateModelStatus(model, 'ok', data.message || "");
+            setTempSelectedModelId(id);
+            setDetailModelId(id);
+            setIsEditingDetails(false);
+        } catch (error) {
+            const message = error instanceof ApiRequestError
+                ? error.apiError.message
+                : error instanceof Error ? error.message : String(error);
+            setNewModelDiagnostic(error instanceof ApiRequestError ? error.apiError : {
+                code: 'CLIENT_ERROR',
+                message,
+                retry: false,
+            });
+            updateModelStatus(model, 'error', message);
+            setNewModelError(message);
+        } finally {
+            setIsAddingModel(false);
+        }
+    };
+
+    const loadModelDetails = (model: ModelConfig) => {
+        setDetailModelId(model.id);
+        setTempSelectedModelId(model.id);
+        setNewEndpoint(model.endpoint);
+        setNewModel(model.model);
+        setNewApiBase(model.api_base || '');
+        setNewApiVersion(model.api_version || '');
+        setNewApiKey(model.is_global ? '' : model.api_key || '');
+        setAzureAuthMethod(
+            model.endpoint === 'azure' && model.auth_mode !== 'key' && !model.api_key
+                ? 'azure_cli'
+                : 'api_key'
+        );
+        setNewModelError('');
+        setNewModelDiagnostic(null);
+        setIsEditingDetails(false);
+    };
+
+    const startNewModel = () => {
+        setDetailModelId(undefined);
+        resetNewModelForm();
+        setIsEditingDetails(true);
+    };
+
+    const editModelDetails = () => {
+        setIsEditingDetails(true);
+    };
+
+    const copyModelDetails = () => {
+        setDetailModelId(undefined);
+        setNewModelError('');
+        setIsEditingDetails(true);
+    };
 
     const inputSx = {
         '& .MuiOutlinedInput-root': {
@@ -184,353 +386,335 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         '& .MuiOutlinedInput-input': { px: 1, py: 0 },
     };
 
-    let newModelEntry = <TableRow
-        key={`new-model-entry`}
-        sx={{ '&:last-child td, &:last-child th': { border: 0 }, '& td': { py: 1 } }}
-    >
-        <TableCell align="left">
-            <TextField
-                size="small"
-                fullWidth
-                variant="outlined"
-                value={newModel}
-                onChange={(event) => { setNewModel(event.target.value); }}
-                placeholder={t('model.modelPlaceholder')}
-                error={newEndpoint != "" && !newModel}
-                sx={inputSx}
-                slotProps={{ input: { 'aria-label': t('model.enterModelName') } }}
-                autoComplete='off'
-                inputProps={{ 'data-form-type': 'other' }}
-            />
-        </TableCell>
-        <TableCell align="left">
-            <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
-                variant="outlined"
-                sx={inputSx}
-                placeholder={t('model.optionalKeylessEndpoint')}
-                value={newApiKey}  
-                onChange={(event: any) => { setNewApiKey(event.target.value); }} 
-                autoComplete='off'
-                inputProps={{ autoComplete: 'off', 'data-form-type': 'other' }}
-            />
-        </TableCell>
-        <TableCell align="left">
-            <Autocomplete
-                freeSolo
-                value={newEndpoint}
-                onChange={(event: any, newValue: string | null) => {
-                    setNewEndpoint(newValue || "");
-                    if (newModel == "" && newValue == "openai" && providerModelOptions.openai.length > 0) {
-                        setNewModel(providerModelOptions.openai[0]);
-                    }
-                    if (!newApiVersion && newValue == "azure") {
-                        setNewApiVersion("2024-02-15");
-                    }
-                }}
-                options={['openai', 'azure', 'ollama', 'anthropic', 'gemini']}
-                renderOption={(props, option) => (
-                    <Typography {...props} onClick={() => setNewEndpoint(option)} sx={{ fontSize: "0.75rem" }}>
-                        {option}
-                    </Typography>
-                )}
-                renderInput={(params) => (
-                    <TextField
-                        {...params}
-                        placeholder={t('model.providerPlaceholder')}
-                        size="small"
-                        autoComplete="off"
-                        sx={inputSx}
-                        onChange={(event: any) => setNewEndpoint(event.target.value)}
-                    />
-                )}
-                slotProps={{ listbox: { style: { padding: 0 } } }}
-            />
-        </TableCell>
-        <TableCell align="left">
-            <TextField size="small" type="text" fullWidth
-                variant="outlined"
-                placeholder={t('model.optional')}
-                sx={inputSx}
-                value={newApiBase}  
-                onChange={(event: any) => { setNewApiBase(event.target.value); }} 
-                autoComplete='off'
-            />
-        </TableCell>
-        <TableCell align="left">
-            <TextField size="small" type="text" fullWidth
-                variant="outlined"
-                sx={inputSx}
-                value={newApiVersion}  onChange={(event: any) => { setNewApiVersion(event.target.value); }} 
-                autoComplete='off'
-                placeholder={t('model.optional')}
-            />
-        </TableCell>
-        <TableCell align="left">
-            <Tooltip title={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}>
-                <span>  
-                    <IconButton color={modelExists ? 'error' : 'primary'}
-                        aria-label={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}
-                        disabled={!readyToTest}
-                        size="small"
-                        sx={{ cursor: modelExists ? 'help' : 'pointer', p: 0.25 }}
-                        onClick={(event) => {
-                            event.stopPropagation()
-
-                            let endpoint = newEndpoint;
-
-                            const idString = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
-                            let id = simpleHash(idString);
-
-                            let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
-
-                            dispatch(dfActions.addModel(model));
-
-                            const testAndAssignModel = (model: ModelConfig) => {
-                                updateModelStatus(model, 'testing', "");
-                                apiRequest(getUrls().TEST_MODEL, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ model }),
-                                })
-                                    .then(({ data }) => {
-                                        updateModelStatus(model, 'ok', data.message || "");
-                                        setTempSelectedModelId(id);
-                                    }).catch((error) => {
-                                        const msg = error instanceof ApiRequestError
-                                            ? error.apiError.message
-                                            : error.message;
-                                        updateModelStatus(model, 'error', msg);
-                                    });
-                            };
-
-                            testAndAssignModel(model); 
-                            
-                            setNewEndpoint("");
-                            setNewModel("");
-                            setNewApiKey("");
-                            setNewApiBase("");
-                            setNewApiVersion("");
-                        }}>
-                        <AddCircleIcon sx={{ fontSize: 18 }} />
-                    </IconButton>
-                </span>
-            </Tooltip>
-        </TableCell>
-        <TableCell align="right">
-            <Tooltip title={t('model.clear')}>
-                <IconButton size="small" sx={{ p: 0.25 }}
-                    onClick={(event) => {
-                        event.stopPropagation()
-                        setNewEndpoint("");
-                        setNewModel("");
-                        setNewApiKey("");
-                        setNewApiBase("");
-                        setNewApiVersion("");
-                    }}>
-                    <ClearIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-            </Tooltip>
-        </TableCell>
-
-    </TableRow>
-
-    /** Render a single model row. isGlobal controls delete button and key display. */
-    const renderModelRow = (model: ModelConfig, isGlobal: boolean) => {
-        const status = getStatus(model.id);
-        // Server-configured models in 'unknown' are trusted by default and
-        // displayed as "server configured" instead of an untested "Test" row.
-        const serverConfigured = isGlobal && status === 'unknown';
-
-        const statusIcon =
-            serverConfigured     ? <CheckCircleOutlineIcon color="info" sx={{ fontSize: 16 }} /> :
-            status === 'unknown' ? <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.disabled' }} /> :
-            status === 'testing' ? <CircularProgress size={14} /> :
-            status === 'ok'      ? <CheckCircleOutlineIcon color="success" sx={{ fontSize: 16 }} /> :
-                                   <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />;
-
-        let message = t('model.modelReadyMessage');
-        if (serverConfigured) {
-            message = t('model.configuredMessage', 'Server configured, click to verify connectivity');
-        } else if (status === 'unknown') {
-            message = t('model.clickToTestModel');
-        } else if (status === 'error') {
-            const rawMessage = testedModels.find(tm => tm.id === model.id)?.message || t('model.unknownError');
-            message = t('model.errorMessage', { message: decodeHtmlEntities(rawMessage) });
-        }
-
-        // Selectable when verified ('ok'), or when it's a server-configured
-        // model in 'unknown' state (trusted by default, no test required).
-        const selectable = status === 'ok' || serverConfigured;
-        const isSelected = tempSelectedModelId === model.id;
-
-        return (
-            <React.Fragment key={model.id}>
-                <TableRow
-                    sx={{
-                        cursor: selectable ? 'pointer' : 'default',
-                        // Don't dim error rows so the Retest button and error message remain clearly clickable.
-                        opacity: selectable || status === 'error' || status === 'testing' ? 1 : 0.5,
-                        backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
-                        outline: isSelected ? `2px solid ${theme.palette.primary.main}` : 'none',
-                        outlineOffset: -2,
-                        '&:hover': selectable ? { backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.06) : 'rgba(0,0,0,0.02)' } : {},
-                    }}
-                    onClick={() => selectable && setTempSelectedModelId(
-                        isSelected ? undefined : model.id
-                    )}
-                >
-                    <TableCell align="left">
-                        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
-                            <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {model.model}
+    const addModelForm = (
+        <Box sx={{ display: 'grid', gap: 2 }}>
+            {isEditingDetails && rememberedEndpoints.length > 0 && (
+                <Autocomplete
+                    size="small"
+                    options={rememberedEndpoints}
+                    value={null}
+                    getOptionLabel={(option) => `${option.endpoint} / ${option.model}`}
+                    renderOption={(props, option) => (
+                        <li {...props} key={`${option.endpoint}-${option.model}-${option.api_base}-${option.api_version}`}>
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2">{option.endpoint} / {option.model}</Typography>
+                                {option.api_base && (
+                                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                                        {option.api_base}
+                                    </Typography>
+                                )}
                             </Box>
-                            {isGlobal && (
-                                <Tooltip title={t('model.serverManagedTooltip', 'Managed by administrator')}>
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            fontSize: '0.6rem',
-                                            lineHeight: 1,
-                                            px: 0.5,
-                                            py: '2px',
-                                            borderRadius: 0.5,
-                                            color: 'text.secondary',
-                                            border: '1px solid',
-                                            borderColor: 'divider',
-                                            textTransform: 'lowercase',
-                                            letterSpacing: '0.02em',
-                                            whiteSpace: 'nowrap',
-                                        }}
-                                    >
-                                        {t('model.serverChip', 'server configured')}
-                                    </Box>
-                                </Tooltip>
-                            )}
-                        </Box>
-                    </TableCell>
-                    <TableCell>
-                        {isGlobal
-                            ? null
-                            : model.api_key
-                                ? (showKeys
-                                    ? <Box component="span" sx={{ fontSize: '0.5rem', fontFamily: 'monospace', wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3 }}>{model.api_key}</Box>
-                                    : <Box component="span" sx={{ color: 'text.disabled' }}>••••••••••</Box>)
-                                : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.none')}</Box>
-                        }
-                    </TableCell>
-                    <TableCell align="left">
-                        {model.endpoint}
-                    </TableCell>
-                    <TableCell align="left">
-                        {isGlobal
-                            ? null
-                            : model.api_base
-                                ? <Box component="span" sx={{ wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3 }}>{model.api_base}</Box>
-                                : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
-                        }
-                    </TableCell>
-                    <TableCell align="left">
-                        {isGlobal
-                            ? null
-                            : model.api_version
-                                ? model.api_version
-                                : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
-                        }
-                    </TableCell>
-                    <TableCell align="left" colSpan={isGlobal ? 2 : 1}>
-                        <Tooltip title={message}>
+                        </li>
+                    )}
+                    onChange={(_event, option) => {
+                        if (!option) return;
+                        setNewEndpoint(option.endpoint);
+                        setNewModel(option.model);
+                        setNewApiBase(option.api_base);
+                        setNewApiVersion(option.api_version);
+                        setNewApiKey('');
+                        setAzureAuthMethod(option.auth_mode === 'azure_identity' ? 'azure_cli' : 'api_key');
+                        setNewModelError('');
+                        setNewModelDiagnostic(null);
+                    }}
+                    renderInput={(params) => (
+                        <TextField {...params} label={t('model.recentConfigurations')} />
+                    )}
+                />
+            )}
+            <TextField
+                select
+                fullWidth
+                size="small"
+                disabled={!isEditingDetails}
+                label={t('model.provider')}
+                value={newEndpoint}
+                onChange={(event) => {
+                    const provider = event.target.value;
+                    setNewEndpoint(provider);
+                    setNewModelError("");
+                    setNewModelDiagnostic(null);
+                }}
+            >
+                {['openai', 'azure', 'ollama', 'anthropic', 'gemini'].map(provider => (
+                    <MenuItem key={provider} value={provider}>{provider}</MenuItem>
+                ))}
+            </TextField>
+
+            <TextField
+                fullWidth
+                size="small"
+                disabled={!isEditingDetails}
+                label={newEndpoint === 'azure' ? t('model.deploymentName') : t('model.model')}
+                value={newModel}
+                onChange={(event) => setNewModel(event.target.value)}
+                placeholder={t('model.modelPlaceholder')}
+                autoComplete="off"
+            />
+
+            {newEndpoint === 'azure' && (
+                <ToggleButtonGroup
+                    exclusive
+                    fullWidth
+                    size="small"
+                    disabled={!isEditingDetails}
+                    value={azureAuthMethod}
+                    onChange={(_event, value) => {
+                        if (!value) return;
+                        setAzureAuthMethod(value);
+                        if (value === 'azure_cli') setNewApiKey('');
+                    }}
+                    aria-label={t('model.authentication')}
+                >
+                    <ToggleButton value="azure_cli">Azure CLI</ToggleButton>
+                    <ToggleButton value="api_key">{t('model.apiKey')}</ToggleButton>
+                </ToggleButtonGroup>
+            )}
+
+            {newEndpoint === 'azure' && azureAuthMethod === 'azure_cli' && (
+                <Box sx={{ px: 1.5, py: 1.25, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                        {t('model.authentication')}
+                    </Typography>
+                    {azureCliStatus?.signed_in ? (
+                        <Typography variant="body2" color="success.main">
+                            {t('model.azureCliAccess', {
+                                user: azureCliStatus.account?.user || t('db.cliLoginCurrentAccount'),
+                            })}
+                        </Typography>
+                    ) : (
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            disabled={!isEditingDetails || azureCliLoginPending || azureCliStatus?.installed === false}
+                            onClick={handleAzureCliLogin}
+                            startIcon={azureCliLoginPending ? <CircularProgress size={iconVar.sm} /> : undefined}
+                        >
+                            {azureCliStatus?.installed === false
+                                ? t('db.cliNotInstalled')
+                                : t('db.cliLogin')}
+                        </Button>
+                    )}
+                </Box>
+            )}
+
+            {newEndpoint && (newEndpoint !== 'azure' || azureAuthMethod === 'api_key')
+                && (isEditingDetails || detailHasConfiguredApiKey) && (
+                <TextField
+                    fullWidth
+                    size="small"
+                    disabled={!isEditingDetails}
+                    type={isEditingDetails && !showKeys ? 'password' : 'text'}
+                    label={t('model.apiKey')}
+                    value={isEditingDetails ? newApiKey : CONFIGURED_SECRET_MASK}
+                    onChange={(event) => setNewApiKey(event.target.value)}
+                    autoComplete="off"
+                />
+            )}
+
+            {newEndpoint && (isEditingDetails || Boolean(newApiBase)) && (
+                <TextField
+                    fullWidth
+                    size="small"
+                    disabled={!isEditingDetails}
+                    label={newEndpoint === 'azure' ? t('model.endpoint') : t('model.apiBase')}
+                    value={newApiBase}
+                    onChange={(event) => setNewApiBase(event.target.value)}
+                    placeholder={newEndpoint === 'ollama' ? 'http://localhost:11434' : undefined}
+                    autoComplete="off"
+                />
+            )}
+
+            {newEndpoint === 'azure' && (isEditingDetails || Boolean(newApiVersion)) && (
+                <Accordion disableGutters elevation={0} sx={{ border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Typography variant="body2">{t('model.advancedSettings')}</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            disabled={!isEditingDetails}
+                            label={t('model.apiVersion')}
+                            value={newApiVersion}
+                            onChange={(event) => setNewApiVersion(event.target.value)}
+                            autoComplete="off"
+                        />
+                    </AccordionDetails>
+                </Accordion>
+            )}
+
+            {isEditingDetails && modelExists && <Typography variant="caption" color="error">{t('model.providerModelExists')}</Typography>}
+            {newModelDiagnostic && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" color="error" sx={{ flex: 1 }}>
+                        {newModelError}
+                    </Typography>
+                    <Tooltip title={t('model.copyDiagnostic')}>
+                        <IconButton
+                            size="small"
+                            aria-label={t('model.copyDiagnostic')}
+                            onClick={() => navigator.clipboard.writeText([
+                                newModelDiagnostic.message,
+                                newModelDiagnostic.request_id || '',
+                            ].filter(Boolean).join('\n'))}
+                        >
+                            <ContentCopyOutlinedIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    {serverConfig.IS_LOCAL_MODE && (
+                        <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<TerminalOutlinedIcon />}
+                            onClick={() => setModelLogsOpen(true)}
+                            sx={{ whiteSpace: 'nowrap' }}
+                        >
+                            {t('model.viewRecentLog')}
+                        </Button>
+                    )}
+                </Box>
+            )}
+            <LogViewerDialog
+                open={modelLogsOpen}
+                onOpenChange={setModelLogsOpen}
+                hideTrigger
+                tailLines={100}
+                title={t('model.recentLog')}
+            />
+        </Box>
+    );
+
+    const modelManagerView = (
+        <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'minmax(220px, 0.75fr) minmax(380px, 1.4fr)' },
+            gap: 3,
+            py: 1,
+        }}>
+            <Box sx={{ pr: { md: 2.5 }, borderRight: { md: '1px solid' }, borderColor: { md: 'divider' } }}>
+                <Box sx={{ display: 'grid' }}>
+                    {allModels.map(model => (
+                            <Box
+                                key={model.id}
+                                onClick={() => loadModelDetails(model)}
+                                sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                    alignItems: 'center',
+                                    gap: 1,
+                                    px: 1,
+                                    py: 1.25,
+                                    borderBottom: '1px solid',
+                                    borderColor: 'divider',
+                                    bgcolor: detailModelId === model.id ? 'action.selected' : 'transparent',
+                                    cursor: 'pointer',
+                                    '&:hover': { bgcolor: 'action.hover' },
+                                }}
+                            >
+                                <Box sx={{ minWidth: 0 }}>
+                                    <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>{model.model}</Typography>
+                                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                                        {model.endpoint}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    {selectedModelId === model.id && (
+                                        <Typography variant="caption" color="text.secondary">
+                                            {t('model.current')}
+                                        </Typography>
+                                    )}
+                                    {!globalModels.some(globalModel => globalModel.id === model.id) && (
+                                        <Tooltip title={t('model.removeModel')}>
+                                            <IconButton
+                                                size="small"
+                                                aria-label={t('model.removeModel')}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    dispatch(dfActions.removeModel(model.id));
+                                                    if (detailModelId === model.id) {
+                                                        const fallback = allModels.find(candidate => candidate.id !== model.id);
+                                                        if (fallback) loadModelDetails(fallback);
+                                                        else startNewModel();
+                                                    }
+                                                }}
+                                            >
+                                                <ClearIcon fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                </Box>
+                            </Box>
+                    ))}
+                    <Button
+                        size="small"
+                        startIcon={<AddCircleIcon />}
+                        onClick={startNewModel}
+                        variant={detailModelId === undefined && isEditingDetails ? 'soft' : 'text'}
+                        sx={{
+                            justifyContent: 'flex-start',
+                            mt: 1,
+                        }}
+                    >
+                        {t('model.addModel')}
+                    </Button>
+                </Box>
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                    <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                            {detailModel ? detailModel.model : t('model.newModel')}
+                        </Typography>
+                        {detailIsGlobal && (
+                            <Typography variant="caption" color="text.secondary">{t('model.serverManaged')}</Typography>
+                        )}
+                    </Box>
+                    {!isEditingDetails && detailModel && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Button
                                 size="small"
-                                color={serverConfigured ? 'info' : status === 'ok' ? 'success' : status === 'error' ? 'error' : status === 'testing' ? 'inherit' : 'warning'}
-                                onClick={(e) => { e.stopPropagation(); testModel(model); }}
-                                sx={{ p: 0.5, minWidth: 0, textTransform: 'none', fontSize: 'inherit' }}
-                                startIcon={statusIcon}
+                                variant="outlined"
+                                color={detailModelStatus === 'ok' ? 'success' : detailModelStatus === 'error' ? 'error' : 'primary'}
+                                disabled={detailModelStatus === 'testing'}
+                                startIcon={detailModelStatus === 'testing'
+                                    ? <CircularProgress size={iconVar.sm} color="inherit" />
+                                    : detailModelStatus === 'ok'
+                                        ? <CheckCircleOutlineIcon />
+                                        : detailModelStatus === 'error'
+                                            ? <ErrorOutlineIcon />
+                                            : <PlayCircleOutlineIcon />}
+                                onClick={() => testModel(detailModel)}
                             >
-                                {serverConfigured ? t('model.serverConfigured', 'server configured') :
-                                 status === 'ok' ? t('model.ready') :
-                                 status === 'error' ? t('model.retest') :
-                                 status === 'testing' ? t('model.testing', 'Testing…') :
-                                 t('model.test')}
+                                {detailModelStatus === 'testing'
+                                    ? t('model.testing')
+                                    : detailModelStatus === 'ok'
+                                        ? t('model.testPassed')
+                                        : detailModelStatus === 'error'
+                                            ? t('model.testFailedRetry')
+                                            : t('model.testModel')}
                             </Button>
-                        </Tooltip>
-                    </TableCell>
-                    {!isGlobal && (
-                        <TableCell align="right">
-                            <Tooltip title={t('model.removeModel')}>
-                                <IconButton
+                            {detailIsGlobal ? (
+                                <Button
                                     size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        dispatch(dfActions.removeModel(model.id));
-                                        if (tempSelectedModelId === model.id) setTempSelectedModelId(undefined);
-                                    }}
-                                    sx={{ p: 0.25 }}
+                                    variant="text"
+                                    startIcon={<ContentCopyOutlinedIcon />}
+                                    onClick={copyModelDetails}
                                 >
-                                    <ClearIcon sx={{ fontSize: 14 }} />
-                                </IconButton>
-                            </Tooltip>
-                        </TableCell>
+                                    {t('model.copyDetails')}
+                                </Button>
+                            ) : (
+                                <Button size="small" variant="text" onClick={editModelDetails}>
+                                    {t('model.edit')}
+                                </Button>
+                            )}
+                        </Box>
                     )}
-                </TableRow>
-                {status === 'error' && (
-                    <TableRow>
-                        <TableCell colSpan={1} />
-                        <TableCell colSpan={6} sx={{ borderBottom: 'none' }}>
-                            <Box component="span" sx={{ color: 'error.main' }}>
-                                {message}
-                            </Box>
-                        </TableCell>
-                    </TableRow>
-                )}
-            </React.Fragment>
-        );
-    };
-
-    let modelTable = <TableContainer>
-        <Table sx={{
-            minWidth: 600,
-            tableLayout: 'fixed',
-            borderCollapse: 'collapse',
-            fontSize: '0.75rem',
-            '& th, & td': {
-                px: 1, py: 0.75,
-                textAlign: 'left',
-                borderBottom: 'none',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontSize: 'inherit',
-            },
-            '& th': {
-                fontWeight: 600,
-                color: 'text.secondary',
-                fontSize: '0.7rem',
-                bgcolor: 'background.paper',
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-            },
-        }} size="small">
-            <TableHead>
-                <TableRow>
-                    <TableCell sx={{ width: '15%' }}>{t('model.model')}</TableCell>
-                    <TableCell sx={{ width: '18%' }}>{t('model.apiKey')}</TableCell>
-                    <TableCell sx={{ width: '10%' }}>{t('model.provider')}</TableCell>
-                    <TableCell sx={{ width: '25%' }}>{t('model.apiBase')}</TableCell>
-                    <TableCell sx={{ width: '10%' }}>{t('model.apiVersion')}</TableCell>
-                    <TableCell sx={{ width: '12%' }}>{t('model.status')}</TableCell>
-                    <TableCell sx={{ width: '5%' }} />
-                </TableRow>
-            </TableHead>
-            <TableBody>
-                {/* Server-configured models first, then user-added models. */}
-                {globalModels.map(model => renderModelRow(model, true))}
-                {models.map(model => renderModelRow(model, false))}
-                {newModelEntry}
-            </TableBody>
-        </Table>
-    </TableContainer>
-
-    const allModels = [...globalModels, ...models];
+                </Box>
+                {addModelForm}
+            </Box>
+        </Box>
+    );
 
     // A model is "ready" to use when it's been verified ('ok') or when it's a
     // server-configured model in 'unknown' state (trusted by default).
@@ -549,12 +733,13 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     let selectedModelName = allModels.find(m => m.id == selectedModelId)?.model || t('model.unselected');
 
     const selectedReady = isModelReady(selectedModelId);
+    const isInlineAction = appearance === 'inline';
 
     return <>
         <Tooltip title={t('model.selectModel')}>
             <Button
                 sx={{
-                    fontSize: '13px',
+                    fontSize: isInlineAction ? 'inherit' : '13px',
                     fontWeight: 400,
                     textTransform: 'none',
                     px: 1.5,
@@ -562,111 +747,73 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     minWidth: 'auto',
                     lineHeight: 1.5,
                     color: selectedReady ? 'text.secondary' : undefined,
-                    '&:hover': { color: selectedReady ? 'text.primary' : undefined, backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                    '&:hover': {
+                        color: selectedReady ? 'text.primary' : undefined,
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                    },
                 }}
                 variant="text"
                 color={selectedReady ? 'inherit' : 'warning'}
-                onClick={()=>{setModelDialogOpen(true)}}
+                onClick={() => {
+                    const initialModel = allModels.find(model => model.id === selectedModelId) || allModels[0];
+                    if (initialModel) loadModelDetails(initialModel);
+                    else startNewModel();
+                    setModelDialogOpen(true);
+                }}
             >
                 {selectedReady ? selectedModelName : t('model.selectModels')}
-                {selectedReady && (config.miniMode ?? false) && (
-                    <Tooltip title={t('model.miniModeHint')}>
-                        <Box
-                            component="span"
-                            sx={{ ml: 0.5, fontSize: '0.8em', fontWeight: 400, color: 'text.disabled', textTransform: 'none' }}
-                        >
-                            ({t('model.miniModeBadge')})
-                        </Box>
-                    </Tooltip>
-                )}
             </Button>
         </Tooltip>
         <Dialog 
             maxWidth="lg" 
             open={modelDialogOpen}
-            onClose={(event, reason) => {
-                if (reason !== 'backdropClick') {
-                    setModelDialogOpen(false);
-                }
+            onClose={() => {
+                if (!isAddingModel) setModelDialogOpen(false);
             }}
         >
-            <DialogTitle sx={{display: "flex",  alignItems: "center"}}>{t('model.selectModel')}</DialogTitle>
-            <DialogContent >
-            <Box sx={{
-                    display: 'flex', 
-                    color: 'text.secondary',
-                    alignItems: 'flex-start', 
-                    mb: 2,
-                    p: 1.5,
-                    backgroundColor: alpha(theme.palette.info.main, 0.08),
-                }}>
-                    <Box>
-                        <Typography variant="caption" component="div" sx={{ lineHeight: 1.6 }}>
-                            • {t('model.recommendedModelTip')}
-                        </Typography>
-                        <Typography variant="caption" component="div" sx={{ lineHeight: 1.6, mt: 0.5 }}>
-                            • {t('model.litellmNote').split('.')[0]}. <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">{t('model.seeDocs')}</a>.
-                            {t('model.openaiProviderTip')}
-                        </Typography>
-                        
-                    </Box>
-                </Box>
-                {modelTable}
-
-                <Box sx={{
-                    mt: 2,
-                    pt: 2,
-                    borderTop: '1px solid',
-                    borderColor: 'divider',
-                }}>
-                    <FormControlLabel
-                        sx={{ ml: 0 }}
-                        control={
-                            <Switch
-                                size="small"
-                                checked={config.miniMode ?? false}
-                                onChange={(e) => dispatch(dfActions.setConfig({ ...config, miniMode: e.target.checked }))}
-                            />
-                        }
-                        label={
-                            <Typography variant="body2" sx={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                                {t('model.miniMode')}
-                            </Typography>
-                        }
-                    />
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                        {t('model.miniModeHint')}
-                    </Typography>
-                </Box>
-
-            </DialogContent>
+            <DialogTitle>{t('model.models')}</DialogTitle>
+            <DialogContent sx={{ minWidth: { sm: 720 } }}>{modelManagerView}</DialogContent>
             <DialogActions>
-                {!serverConfig.DISABLE_DISPLAY_KEYS && (
-                    <FormControlLabel
-                        sx={{ marginRight: 'auto', ml: 1 }}
-                        control={
-                            <Switch
-                                size="small"
-                                checked={showKeys}
-                                onChange={() => setShowKeys(!showKeys)}
+                {isEditingDetails ? (
+                    <>
+                        {!serverConfig.DISABLE_DISPLAY_KEYS && newEndpoint
+                            && (newEndpoint !== 'azure' || azureAuthMethod === 'api_key') && (
+                            <FormControlLabel
+                                control={<Switch size="small" checked={showKeys} onChange={() => setShowKeys(!showKeys)} />}
+                                label={<Typography variant="body2">{t('model.showKeys')}</Typography>}
                             />
-                        }
-                        label={
-                            <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                {showKeys ? t('model.hideKeys') : t('model.showKeys')}
-                            </Typography>
-                        }
-                    />
+                        )}
+                        <Button variant="text" disabled={isAddingModel} onClick={() => {
+                            if (detailModel) loadModelDetails(detailModel);
+                            else {
+                                const initialModel = allModels.find(model => model.id === selectedModelId) || allModels[0];
+                                if (initialModel) loadModelDetails(initialModel);
+                            }
+                        }}>{t('model.cancel')}</Button>
+                        <Button
+                            variant="contained"
+                            disabled={!readyToTest || modelExists}
+                            onClick={handleSaveModel}
+                            startIcon={isAddingModel ? <CircularProgress size={iconVar.md} color="inherit" /> : undefined}
+                        >
+                            {isAddingModel ? t('model.testing') : t('model.testAndSave')}
+                        </Button>
+                    </>
+                ) : (
+                    <>
+                        <Button variant="text" onClick={() => setModelDialogOpen(false)}>{t('model.cancel')}</Button>
+                        <Button
+                            variant="contained"
+                            disabled={modelNotReady}
+                            onClick={() => {
+                                dispatch(dfActions.selectModel(tempSelectedModelId));
+                                setModelDialogOpen(false);
+                            }}
+                        >
+                            {t('model.useModel', { modelName: tempModelName })}
+                        </Button>
+                    </>
                 )}
-                <Button disabled={modelNotReady} sx={{textTransform: 'none'}}
-                    variant={modelNotReady ? 'text' : 'contained'}
-                    onClick={()=>{
-                        dispatch(dfActions.selectModel(tempSelectedModelId));
-                        setModelDialogOpen(false);}}>{t('model.useModel', { modelName: tempModelName })}</Button>
-                <Button onClick={()=>{
-                    setTempSelectedModelId(selectedModelId);
-                    setModelDialogOpen(false);
-                }}>{t('model.cancel')}</Button>
             </DialogActions>
         </Dialog>
     </>;

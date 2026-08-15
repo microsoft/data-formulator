@@ -3,20 +3,23 @@
 
 import { useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
-import { DataFormulatorState } from './dfSlice';
+import { DataFormulatorState, dfSelectors } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
 import { handleApiError } from './errorHandler';
 import { DF_STATE_VERSION } from './stateMigrations';
+import { stripConnectorPrefillFromEntries } from './connectorFormPersistence';
 
 /**
  * Fields excluded from auto-save (secrets / ephemeral / fetched-on-startup).
  * Must match the backend's _SENSITIVE_FIELDS in workspace_manager.py.
  */
 const EXCLUDED_FIELDS = new Set([
+    'tables',
     'models', 'selectedModelId', 'testedModels',
     'dataLoaderConnectParams', 'identity', 'serverConfig',
     // Transient fields that shouldn't trigger or be included in saves
     'chartSynthesisInProgress',
+    'tableLoadsInFlight',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
     // Starter-questions status is transient (loading/error); the questions
     // themselves are persisted, but the fetch status should reset on reload.
@@ -37,7 +40,9 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(state)) {
         if (!EXCLUDED_FIELDS.has(key)) {
-            result[key] = value;
+            result[key] = key === 'dataLoadingChatMessages' || key === 'textTurns'
+                ? stripConnectorPrefillFromEntries(value)
+                : value;
         }
     }
     // Stamp the schema version so `migrateState` can upgrade this payload on a
@@ -62,8 +67,10 @@ export function useAutoSave() {
     const lastErrorNotifyRef = useRef(0);
 
     useEffect(() => {
-        // Don't auto-save while a session is loading, no workspace active, or no tables loaded
-        if (state.sessionLoading || !state.activeWorkspace || state.tables.length === 0) {
+        // Nothing to save while a session is loading, read-only, workspace-less,
+        // or still empty. A conversation with no tables yet IS worth saving.
+        if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly
+            || dfSelectors.selectSessionEmpty(state)) {
             return;
         }
 

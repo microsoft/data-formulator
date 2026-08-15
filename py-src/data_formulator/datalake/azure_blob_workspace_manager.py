@@ -18,6 +18,7 @@ Layout (blob prefixes):
 
 import json
 import logging
+import shutil
 from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
 
@@ -275,6 +276,15 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         ws_prefix = self._ws_prefix(workspace_id)
         count = self._delete_blobs_with_prefix(ws_prefix)
         if count > 0:
+            from data_formulator.datalake.azure_blob_workspace import (
+                get_azure_workspace_scratch_path,
+            )
+
+            scratch_path = get_azure_workspace_scratch_path(
+                ws_prefix,
+                self._safe_id(workspace_id),
+            )
+            shutil.rmtree(scratch_path, ignore_errors=True)
             logger.info(f"Deleted Azure workspace '{workspace_id}' ({count} blobs)")
             return True
         return False

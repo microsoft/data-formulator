@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from importlib.resources import files
 from typing import Any, Callable, TYPE_CHECKING
 import pandas as pd
 import pyarrow as pa
@@ -9,13 +10,45 @@ from data_formulator.datalake.table_names import sanitize_external_loader_table_
 
 MAX_IMPORT_ROWS = 2_000_000
 
+
+def apply_import_projection(
+    table: pa.Table,
+    import_options: dict[str, Any] | None,
+) -> pa.Table:
+    """Apply and validate the shared load-query projection after source fetch."""
+    columns = (import_options or {}).get("columns")
+    if not columns:
+        return table
+    if not isinstance(columns, list) or not all(isinstance(column, str) for column in columns):
+        raise ValueError("columns must be a list of column names")
+    missing = [column for column in columns if column not in table.column_names]
+    if missing:
+        raise ValueError(f"Unknown projected columns: {', '.join(missing)}")
+    return table.select(columns)
+
 if TYPE_CHECKING:
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.datalake.workspace_metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
 
-MAX_IMPORT_ROWS = 2_000_000
+
+@dataclass(frozen=True)
+class CatalogCachePolicy:
+    listing_ttl_seconds: int | None = 21_600
+    metadata_ttl_seconds: int | None = 86_400
+    refresh_cost: str = "expensive"
+    automatic_refresh: str = "never"
+    automatic_refresh_kind: str = "listing"
+    minimum_retry_seconds: int = 300
+
+    def __post_init__(self) -> None:
+        if self.refresh_cost not in {"local", "free", "cheap", "moderate", "expensive"}:
+            raise ValueError(f"Unsupported catalog refresh cost: {self.refresh_cost}")
+        if self.automatic_refresh not in {"always", "while_connected", "never"}:
+            raise ValueError(f"Unsupported automatic catalog refresh mode: {self.automatic_refresh}")
+        if self.automatic_refresh_kind not in {"listing", "full"}:
+            raise ValueError(f"Unsupported automatic catalog refresh kind: {self.automatic_refresh_kind}")
 
 
 class ConnectorParamError(ValueError):
@@ -369,6 +402,12 @@ class ExternalDataLoader(ABC):
     # so the frontend can show what's happening alongside the spinner.
     # Loaders that don't report progress simply never call the helper.
     progress_callback: Callable[[str], None] | None = None
+    CATALOG_CACHE_POLICY = CatalogCachePolicy()
+
+    @classmethod
+    def catalog_cache_policy(cls) -> CatalogCachePolicy:
+        """Describe catalog freshness and safe automatic refresh behavior."""
+        return cls.CATALOG_CACHE_POLICY
 
     def _report_progress(self, message: str) -> None:
         """Emit a high-level progress message if a sink is attached.
@@ -457,6 +496,7 @@ class ExternalDataLoader(ABC):
             source_table=source_table,
             import_options=import_options,
         )
+        arrow_table = apply_import_projection(arrow_table, import_options)
         return arrow_table.to_pandas()
     
     def ingest_to_workspace(
@@ -563,7 +603,7 @@ class ExternalDataLoader(ABC):
         for name, value in effective.items():
             params.setdefault(name, value)
 
-        paths = cls.auth_paths()
+        paths = [] if skip_auth_tier else cls.auth_paths()
         selected_path = str(effective.get("_auth_path") or "").strip()
         if paths:
             if not selected_path:
@@ -581,7 +621,7 @@ class ExternalDataLoader(ABC):
             name = pdef.get("name", "")
             if not pdef.get("required"):
                 continue
-            if skip_auth_tier and pdef.get("tier") == "auth":
+            if (skip_auth_tier or path is not None) and pdef.get("tier") == "auth":
                 continue
             val = effective.get(name)
             if val is None or (isinstance(val, str) and not val.strip()):
@@ -646,11 +686,15 @@ class ExternalDataLoader(ABC):
             f"{cls.__name__} does not support options for {param_name}"
         )
 
-    @staticmethod
-    @abstractmethod
-    def auth_instructions() -> str:
-        """Return human-readable authentication instructions."""
-        pass
+    AUTH_GUIDE: str | None = None
+
+    @classmethod
+    def auth_instructions(cls) -> str:
+        """Return the loader's packaged Markdown connection guide."""
+        if not cls.AUTH_GUIDE:
+            return ""
+        guide = files("data_formulator.data_loader.guides").joinpath(cls.AUTH_GUIDE)
+        return guide.read_text(encoding="utf-8").strip()
 
     #: Human-friendly UI label.  When ``None``, the ``/api/data-loaders``
     #: endpoint falls back to title-casing the registry key.  Override on

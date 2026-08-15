@@ -28,6 +28,7 @@ azure-identity
 azure-kusto-data
 azure-keyvault-secrets
 pymysql
+clickhouse-connect
 mssql-python>=1.11.0
 psycopg2-binary
 boto3

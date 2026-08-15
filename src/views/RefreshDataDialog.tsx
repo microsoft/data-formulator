@@ -3,6 +3,7 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import { borderColor, transition, radius } from '../app/tokens';
+import { dialogHeight, textVar } from '../app/layout';
 import {
     Dialog,
     DialogTitle,
@@ -342,7 +343,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             onClose={handleClose}
             maxWidth="md"
             fullWidth
-            sx={{ '& .MuiDialog-paper': { minHeight: 500 } }}
+            sx={{ '& .MuiDialog-paper': { minHeight: dialogHeight(500) } }}
         >
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', pb: 1 }}>
                 <Typography variant="h6" component="span">
@@ -445,8 +446,8 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                     alignItems: 'flex-start',
                                 },
                                 '& .MuiInputBase-input': {
-                                    fontSize: 12,
-                                    fontFamily: 'monospace',
+                                    fontSize: textVar.sm,
+                                    fontFamily: 'var(--df-font-mono)',
                                     lineHeight: 1.5,
                                 }
                             }}

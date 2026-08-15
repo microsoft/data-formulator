@@ -15,8 +15,9 @@
 import React from 'react';
 import { Box, Tooltip, Typography, useTheme } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+import { textVar } from '../app/layout';
 
-const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
+const CODE_FONT = 'var(--df-font-mono)';
 
 export interface DataFrameTableProps {
     /** Column names */
@@ -51,6 +52,15 @@ export interface DataFrameTableProps {
      * empty space when the container has a minimum width of its own.
      */
     autoWidth?: boolean;
+    /**
+     * Narrowest a column may get before the table drops columns instead of
+     * squeezing them. With `tableLayout: fixed` every column shares the width
+     * equally, so a tight container otherwise ellipsises *every* cell; fitting
+     * the column count keeps the ones that remain readable.
+     */
+    minColumnWidth?: number;
+    /** Use flatter, quieter styling for dense draft previews. */
+    simple?: boolean;
 }
 
 export const DataFrameTable: React.FC<DataFrameTableProps> = ({
@@ -66,9 +76,25 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     columnDescriptions,
     truncationIndicator = 'row',
     autoWidth = false,
+    minColumnWidth,
+    simple = false,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const [availableWidth, setAvailableWidth] = React.useState(0);
+
+    React.useEffect(() => {
+        const el = containerRef.current;
+        if (!minColumnWidth || !el) return;
+        setAvailableWidth(el.clientWidth);
+        const observer = new ResizeObserver(entries => {
+            setAvailableWidth(entries[0].contentRect.width);
+        });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [minColumnWidth]);
+
     const visibleRows = maxRows != null ? rows.slice(0, maxRows) : rows;
     // The preview displays at most `maxRows` data rows, followed by one `…`
     // row only when we know additional rows exist. Unknown total alone is not
@@ -78,12 +104,17 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     const hasMore = (totalRows != null && totalRows > visibleRows.length)
         || (maxRows != null && rows.length > maxRows);
 
-    // Abbreviate columns: first half + … + last half
-    const half = Math.floor(maxColumns / 2);
-    const needsColEllipsis = columns.length > maxColumns;
+    // Abbreviate columns: leading columns + a narrow trailing … marker
+    const fittedMaxColumns = minColumnWidth && availableWidth > 0
+        ? Math.max(2, Math.min(maxColumns, Math.floor(availableWidth / minColumnWidth)))
+        : maxColumns;
+    const needsColEllipsis = columns.length > fittedMaxColumns;
     const displayCols = needsColEllipsis
-        ? [...columns.slice(0, half), '\u2026', ...columns.slice(-half)]
+        ? [...columns.slice(0, fittedMaxColumns), '\u2026']
         : columns;
+    // The marker only needs room for one glyph, so it doesn't take a full
+    // column's share of the fixed layout.
+    const ellipsisColSx = { width: 20, minWidth: 20, color: 'text.disabled' } as const;
 
     const getCell = (row: Record<string, any>, col: string): { display: string; full: string; truncated: boolean } => {
         if (col === '\u2026') return { display: '\u2026', full: '\u2026', truncated: false };
@@ -96,7 +127,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     };
 
     return (
-        <Box>
+        <Box ref={containerRef}>
             {/* Column list removed — the abbreviated table header is sufficient */}
             <Box component="table" sx={{
                 borderCollapse: 'separate',
@@ -107,7 +138,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                 minWidth: autoWidth ? '100%' : undefined,
                 tableLayout: autoWidth ? 'auto' : 'fixed',
                 '& th, & td': {
-                    px: 0.75, py: 0.3, textAlign: 'left',
+                    px: simple ? 0.6 : 0.75, py: 0.3, textAlign: 'left',
                     borderBottom: '1px solid', borderColor: 'divider',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 },
@@ -117,13 +148,21 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     fontSize: headerFontSize,
                     position: 'sticky',
                     top: 0,
-                    bgcolor: 'background.paper',
-                    zIndex: 1,
+                    // Matches .table-header-container / .data-view-header-cell
+                    // so a scrolled row passes cleanly beneath the header.
+                    bgcolor: simple
+                        ? 'background.paper'
+                        : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : '#fafafa',
+                    borderBottom: simple ? '1px solid' : '2px solid',
+                    borderColor: 'divider',
+                    zIndex: 2,
                 },
                 '& td': { color: 'text.primary' },
                 '& tr:last-child td': { borderBottom: 'none' },
                 '& tbody tr:nth-of-type(even)': {
-                    bgcolor: theme.palette.mode === 'dark'
+                    bgcolor: simple
+                        ? 'transparent'
+                        : theme.palette.mode === 'dark'
                         ? 'rgba(255,255,255,0.02)'
                         : 'rgba(0,0,0,0.02)',
                 },
@@ -132,7 +171,11 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     <tr>
                         {showIndex && (
                             <Typography component="th" variant="caption"
-                                sx={{ fontWeight: 600, fontSize: headerFontSize, color: 'text.disabled', minWidth: 28, textAlign: 'right' }}>
+                                sx={{
+                                    fontWeight: 600, fontSize: headerFontSize, color: 'text.disabled', textAlign: 'right',
+                                    width: simple ? 24 : undefined, minWidth: simple ? 24 : 28, maxWidth: simple ? 24 : undefined,
+                                    px: simple ? 0.5 : undefined,
+                                }}>
                             </Typography>
                         )}
                         {displayCols.map((col, i) => {
@@ -152,7 +195,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                             return (
                                 <Typography component="th" key={i} variant="caption"
                                     title={col}
-                                    sx={{ fontWeight: 600, fontSize: headerFontSize }}>
+                                    sx={{ fontWeight: 600, fontSize: headerFontSize, ...(col === '\u2026' ? ellipsisColSx : {}) }}>
                                     {col}
                                 </Typography>
                             );
@@ -164,7 +207,11 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                         <tr key={ri}>
                             {showIndex && (
                                 <Typography component="td" variant="caption"
-                                    sx={{ fontSize, color: 'text.disabled', textAlign: 'right', pr: 1 }}>
+                                    sx={{
+                                        fontSize, color: 'text.disabled', textAlign: 'right', pr: simple ? 0.5 : 1,
+                                        pl: simple ? 0.25 : undefined, width: simple ? 24 : undefined,
+                                        minWidth: simple ? 24 : undefined, maxWidth: simple ? 24 : undefined,
+                                    }}>
                                     {ri}
                                 </Typography>
                             )}
@@ -174,7 +221,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                                 return (
                                     <Typography component="td" key={ci} variant="caption"
                                         title={col !== '\u2026' ? cell.full : undefined}
-                                        sx={{ fontSize, ...(isNull ? { color: 'text.disabled', fontStyle: 'italic' } : {}), cursor: cell.truncated ? 'help' : undefined }}>
+                                        sx={{ fontSize, ...(isNull ? { color: 'text.disabled', fontStyle: 'italic' } : {}), ...(col === '\u2026' ? ellipsisColSx : {}), cursor: cell.truncated ? 'help' : undefined }}>
                                         {cell.display}
                                     </Typography>
                                 );
@@ -189,9 +236,9 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                                     ⋯
                                 </Typography>
                             )}
-                            {displayCols.map((_, ci) => (
+                            {displayCols.map((col, ci) => (
                                 <Typography component="td" key={ci} variant="caption"
-                                    sx={{ fontSize, color: 'text.disabled' }}>
+                                    sx={{ fontSize, color: 'text.disabled', ...(col === '\u2026' ? ellipsisColSx : {}) }}>
                                     ⋯
                                 </Typography>
                             ))}
@@ -203,7 +250,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                 <Typography sx={{
                     mt: 0.4,
                     px: 0.25,
-                    fontSize: 10,
+                    fontSize: textVar.xxs,
                     lineHeight: 1.4,
                     color: 'text.disabled',
                     textAlign: 'right',

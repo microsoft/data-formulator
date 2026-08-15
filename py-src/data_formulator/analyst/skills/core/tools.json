@@ -31,7 +31,7 @@
           "table_names": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "List of table names from [SOURCE TABLES] to inspect."
+            "description": "List of workspace table names, as listed in the available-tables context, to inspect."
           }
         },
         "required": ["table_names"]
@@ -48,7 +48,11 @@
         "properties": {
           "title": {
             "type": "string",
-            "description": "A short, descriptive title for the chart (5-10 words, title case). Summarize what the chart shows — the subject, the dimensions compared, and the scope. Do NOT include the chart type. Shown as the chart's heading."
+            "description": "A concise, neutral analytical heading that names the subject, measure, and analytical lens, such as 'Year-over-year price change peaks'. Prefer a stable description of the view over a takeaway claim or narrated trend. Do not mention the chart type, imply causality, or editorialize. Shown as the chart heading."
+          },
+          "subtitle": {
+            "type": "string",
+            "description": "Concise supporting context not already clear from the title or axes. Use one phrase of at most 16 words to provide contextual details. Do not restate the measure or analytical lens named in the title."
           },
           "display_instruction": {
             "type": "string",
@@ -57,7 +61,7 @@
           "input_tables": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Table names from [SOURCE TABLES] that the code reads."
+            "description": "Workspace table names, as listed in the available-tables context, that the code reads."
           },
           "code": {
             "type": "string",
@@ -80,7 +84,7 @@
             "description": "Map of field name -> human-readable display name for chart axes and table headers."
           }
         },
-        "required": ["code", "output_variable", "chart"]
+        "required": ["title", "code", "output_variable", "chart"]
       }
     }
   },
@@ -126,36 +130,6 @@
           }
         },
         "required": ["questions"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "delegate",
-      "description": "Hand off to a peer agent (e.g. data loading) when the question needs work outside this agent's scope, then end the run.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "thought": {
-            "type": "string",
-            "description": "Brief rationale (not shown to the user)."
-          },
-          "target": {
-            "type": "string",
-            "enum": ["data_loading"],
-            "description": "The peer agent to hand off to."
-          },
-          "message": {
-            "type": "string",
-            "description": "Short note to the user that you're handing off, e.g. 'I'll hand this to the data loading agent to find the data you need.'"
-          },
-          "delegate_prompt": {
-            "type": "string",
-            "description": "A single, complete instruction for the target agent describing exactly what data to find/load (sources, tables, columns, filters, time ranges as relevant). Write a full sentence or two — be specific, not a short search phrase."
-          }
-        },
-        "required": ["target", "delegate_prompt"]
       }
     }
   }

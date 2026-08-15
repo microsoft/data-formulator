@@ -23,6 +23,7 @@ import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
 import { borderColor } from '../app/tokens';
+import { iconVar, textVar } from '../app/layout';
 
 export interface FreeDataViewProps {
     // When true, render a maximize/restore toggle that pops the table into a
@@ -64,18 +65,20 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    // Follow the same target the canvas renders, so a focused text turn shows
+    // the table behind its chart instead of emptying the grid.
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const allCharts = useSelector(dfSelectors.getAllCharts);
 
     // Derive the table to display based on focusedId
     const focusedTableId = useMemo(() => {
         if (tableId) return tableId;
-        if (!focusedId) return undefined;
-        if (focusedId.type === 'table') return focusedId.tableId;
-        if (focusedId.type !== 'chart') return undefined;
-        const chartId = focusedId.chartId;
-        const chart = allCharts.find(c => c.id === chartId);
+        if (!canvasTarget) return undefined;
+        if (canvasTarget.type === 'table') return canvasTarget.tableId;
+        if (canvasTarget.type !== 'chart') return undefined;
+        const chart = allCharts.find(c => c.id === canvasTarget.chartId);
         return chart?.tableRef;
-    }, [focusedId, allCharts, tableId]);
+    }, [canvasTarget, allCharts, tableId]);
 
     // The search term is temporary/per-table: clear it when switching tables.
     React.useEffect(() => {
@@ -86,10 +89,22 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     // Only subscribe to the focused table and table count — NOT the full tables array.
     // This prevents re-rendering the entire data grid when the agent adds unrelated tables.
     const targetTable = useSelector(
-        (state: DataFormulatorState) => state.tables.find(t => t.id === focusedTableId),
+        (state: DataFormulatorState) => dfSelectors.getAllTables(state).find(t => t.id === focusedTableId),
     );
-    const tableCount = useSelector((state: DataFormulatorState) => state.tables.length);
-    const firstTableId = useSelector((state: DataFormulatorState) => state.tables[0]?.id);
+    const tableCount = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state).length);
+    const firstTableId = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state)[0]?.id);
+    const tableSemantics = useSelector((state: DataFormulatorState) =>
+        state.tableSemantics.find(info => info.tableId === focusedTableId),
+    );
+    const displayName = tableSemantics?.displayName?.trim()
+        || targetTable?.displayId
+        || targetTable?.id
+        || 'table';
+    const realName = targetTable?.derive
+        ? targetTable.virtual?.tableId
+        : targetTable?.source?.originalTableName || targetTable?.virtual?.tableId;
+    const showRealName = !!realName
+        && realName.toLowerCase().replace(/[\s_-]+/g, '') !== displayName.toLowerCase().replace(/[\s_-]+/g, '');
 
     useEffect(() => {
         if (focusedId == undefined && tableCount > 0 && firstTableId) {
@@ -129,10 +144,10 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         const cols = targetTable.names.map((name) => {
             const { minWidth, width } = calculateColumnWidth(name);
             const dataType = targetTable.metadata[name].type as Type;
-            const semanticType = targetTable.metadata[name].semanticType;
+            const semanticType = tableSemantics?.fields[name]?.semanticType;
             return {
                 id: name,
-                label: targetTable.metadata[name]?.displayName || name,
+                label: tableSemantics?.fields[name]?.displayName || name,
                 description: targetTable.metadata[name]?.description,
                 minWidth,
                 width,
@@ -160,7 +175,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                 <Box sx={{height: '100%'}}>
                     <SelectableDataGrid
                         tableId={targetTable?.id || ""}
-                        tableName={targetTable?.displayId || targetTable?.id || "table"}
+                        tableName={displayName}
                         rows={rowData}
                         columnDefs={colDefs}
                         rowCount={targetTable?.virtual?.rowCount || targetTable?.rows.length || 0}
@@ -185,31 +200,38 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                        {targetTable?.displayId || targetTable?.id || 'table'}
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                        {displayName}
                     </Typography>
                     {searchQuery ? (
                         <Chip
                             size="small"
-                            icon={<SearchIcon sx={{ fontSize: 14 }} />}
+                            icon={<SearchIcon sx={{ fontSize: iconVar.sm }} />}
                             label={`"${searchQuery}"`}
                             onDelete={clearSearch}
-                            deleteIcon={<ClearIcon sx={{ fontSize: 14 }} />}
+                            deleteIcon={<ClearIcon sx={{ fontSize: iconVar.sm }} />}
                             sx={{
                                 height: 22, maxWidth: 220, flexShrink: 0,
                                 borderRadius: '6px',
                                 backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
                                 color: 'primary.main',
-                                '& .MuiChip-label': { fontSize: 11.5, px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis' },
+                                '& .MuiChip-label': { fontSize: textVar.xs, px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis' },
                                 '& .MuiChip-icon': { color: 'primary.main', ml: 0.5 },
                                 '& .MuiChip-deleteIcon': { color: 'primary.main', '&:hover': { color: 'primary.dark' } },
                             }}
                         />
                     ) : null}
                 </Box>
-                <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.25 }}>
-                    {t('dataGrid.rowCount', { count: headerRowCount })} · {headerColCount} {headerColCount === 1 ? 'column' : 'columns'}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5, mt: 0.25 }}>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                        {t('dataGrid.rowCount', { count: headerRowCount })} · {t('dataGrid.columnCount', { count: headerColCount })}
+                    </Typography>
+                    {showRealName && (
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontFamily: 'var(--df-font-mono)' }}>
+                            · {t('dataGrid.filename', { name: realName })}
+                        </Typography>
+                    )}
+                </Box>
             </Box>
             <Box sx={{ flex: 1 }} />
             <TextField
@@ -228,7 +250,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                         <InputAdornment position="start">
                             <Tooltip title={t('dataGrid.search', { defaultValue: 'Search' })}>
                                 <IconButton size="small" onClick={submitSearch} sx={{ p: 0.25 }}>
-                                    <SearchIcon sx={{ fontSize: 16, color: searchDraft ? 'primary.main' : 'text.disabled' }} />
+                                    <SearchIcon sx={{ fontSize: iconVar.md, color: searchDraft ? 'primary.main' : 'text.disabled' }} />
                                 </IconButton>
                             </Tooltip>
                         </InputAdornment>
@@ -236,14 +258,14 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                     endAdornment: (searchDraft || searchQuery) ? (
                         <InputAdornment position="end">
                             <IconButton size="small" onClick={clearSearch} sx={{ p: 0.25 }}>
-                                <ClearIcon sx={{ fontSize: 14 }} />
+                                <ClearIcon sx={{ fontSize: iconVar.sm }} />
                             </IconButton>
                         </InputAdornment>
                     ) : undefined,
                 }}
                 sx={{
                     width: 220,
-                    '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: 12, backgroundColor: 'background.paper' },
+                    '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: textVar.sm, backgroundColor: 'background.paper' },
                     '& .MuiOutlinedInput-input': { py: '6px' },
                 }}
             />
@@ -286,7 +308,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                     '&:hover': { color: 'primary.main', backgroundColor: 'transparent' },
                 }}
             >
-                {maximized ? <CloseFullscreenIcon sx={{ fontSize: 16 }} /> : <OpenInFullIcon sx={{ fontSize: 16 }} />}
+                {maximized ? <CloseFullscreenIcon sx={{ fontSize: iconVar.md }} /> : <OpenInFullIcon sx={{ fontSize: iconVar.md }} />}
             </IconButton>
         </Tooltip>
     );

@@ -3,24 +3,30 @@
 
 import React, { useState } from 'react';
 import {
-    Box, Button, Checkbox, Chip, CircularProgress, Tooltip, Typography,
-    alpha, useTheme,
+    Box, Button, Checkbox, Chip, CircularProgress, FormControlLabel, Radio,
+    RadioGroup, Tooltip, Typography,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { useTranslation } from 'react-i18next';
-import { apiRequest } from '../app/apiClient';
+import { apiRequest, ApiRequestError } from '../app/apiClient';
+import { getErrorMessage } from '../app/errorCodes';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { getConnectorIcon } from '../icons';
-import { transition } from '../app/tokens';
+import { iconVar, textVar } from '../app/layout';
 import { TablePreviewRow, TablePreviewData } from './TablePreviewRow';
 import { formatFilterChipLabel } from './filterFormat';
 import type { LoadPlan, LoadPlanCandidate, PendingTableLoad } from './ComponentType';
 
+export type PresentedLoadCandidate =
+    | { kind: 'connector'; key: string; candidate: LoadPlanCandidate; loaded: boolean }
+    | { kind: 'scratch'; key: string; candidate: PendingTableLoad; loaded: boolean };
+
 interface LoadPlanCardProps {
-    plan: LoadPlan;
-    onConfirm: (selected: LoadPlanCandidate[], opts?: { newWorkspace?: boolean }) => void;
-    confirmed?: boolean;
+    plan?: LoadPlan;
+    pendingLoads?: PendingTableLoad[];
+    onConfirm: (selected: PresentedLoadCandidate[], opts?: { newWorkspace?: boolean }) => void;
+    connectorConfirmed?: boolean;
     /** When true, a workspace with existing data is already open, so the
      *  destination of the load is ambiguous. We then offer two explicit
      *  actions: add to the current workspace, or load into a fresh one.
@@ -34,6 +40,10 @@ interface LoadPlanCardProps {
 // caption provide enough validation without making multi-candidate plans tall.
 const LOAD_PLAN_LOADING_HEIGHT = 158;
 
+// Failures worth re-establishing the connection for. Anything else (a missing
+// table, a bad query) will fail again no matter how often we reconnect.
+const RECONNECTABLE_CODES = ['CONNECTOR_AUTH_FAILED', 'AUTH_EXPIRED', 'DB_CONNECTION_FAILED', 'CONNECTOR_ERROR'];
+
 interface PreviewState {
     loading: boolean;
     expanded: boolean;
@@ -41,24 +51,71 @@ interface PreviewState {
     columns: string[];
     totalRows?: number;
     error?: string;
+    /** True when the failure looks like a dropped/expired connection rather
+     *  than a bad table, so recovery should re-establish the session first. */
+    needsReconnect?: boolean;
 }
 
-const buildImportOptions = (candidate: LoadPlanCandidate, size: number) => ({
-    size,
-    ...(candidate.filters?.length ? { source_filters: candidate.filters } : {}),
-    ...(candidate.sortBy ? {
-        sort_columns: [candidate.sortBy],
-        sort_order: candidate.sortOrder,
-    } : {}),
-});
+export const buildLoadQueryImportOptions = (candidate: LoadPlanCandidate, previewSize?: number) => {
+    const query = candidate.query;
+    const filters = query?.filters?.map(filter => ({
+        column: filter.column,
+        operator: filter.op,
+        ...('value' in filter ? { value: filter.value } : {}),
+    })) ?? [];
+    const order = query?.orderBy?.[0];
+    const requestedLimit = query?.limit;
+    const size = previewSize === undefined
+        ? requestedLimit
+        : requestedLimit === undefined ? previewSize : Math.min(previewSize, requestedLimit);
+    return {
+        ...(size !== undefined ? { size } : {}),
+        ...(filters.length ? { source_filters: filters } : {}),
+        ...(query?.columns?.length ? { columns: query.columns } : {}),
+        ...(order ? {
+            sort_columns: [order.column],
+            sort_order: order.direction,
+        } : {}),
+    };
+};
 
-export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, confirmed, canLoadInNewWorkspace }) => {
-    const theme = useTheme();
+const getResolutionError = (item: PresentedLoadCandidate): string | undefined =>
+    item.kind === 'connector'
+        ? item.candidate.resolutionError
+        : (!item.candidate.csvScratchPath ? 'No loadable scratch file was produced.' : undefined);
+
+export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({
+    plan,
+    pendingLoads,
+    onConfirm,
+    connectorConfirmed = false,
+    canLoadInNewWorkspace,
+}) => {
     const { t } = useTranslation();
+    const optionGroups = plan?.options.length ? plan.options : undefined;
+    const planCandidates = optionGroups
+        ? optionGroups.flatMap(option => option.tables)
+        : [];
+    const candidates: PresentedLoadCandidate[] = [
+        ...planCandidates.map((candidate, index): PresentedLoadCandidate => ({
+            kind: 'connector',
+            key: `connector:${candidate.sourceId}:${candidate.tableKey}:${index}`,
+            candidate,
+            loaded: connectorConfirmed,
+        })),
+        ...(pendingLoads || []).map((candidate, index): PresentedLoadCandidate => ({
+            kind: 'scratch',
+            key: `scratch:${candidate.csvScratchPath}:${candidate.name}:${index}`,
+            candidate,
+            loaded: candidate.confirmed,
+        })),
+    ];
+    const [selectedOption, setSelectedOption] = useState<number>(0);
     const [selection, setSelection] = useState<Record<number, boolean>>(
-        () => Object.fromEntries(plan.candidates.map((c, i) => [
+        () => Object.fromEntries(candidates.map((item, i) => [
             i,
-            !c.resolutionError && c.selected !== false,
+            !item.loaded && !getResolutionError(item)
+                && !item.loaded,
         ]))
     );
     const [loading, setLoading] = useState(false);
@@ -67,8 +124,16 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
     // asynchronous preview requests begin.
     const [previews, setPreviews] = useState<Record<number, PreviewState>>(() => {
         const seed: Record<number, PreviewState> = {};
-        plan.candidates.forEach((c, i) => {
-            if (!c.resolutionError) {
+        candidates.forEach((item, i) => {
+            if (item.kind === 'scratch') {
+                seed[i] = {
+                    loading: false,
+                    expanded: true,
+                    rows: item.candidate.preview.sampleRows,
+                    columns: item.candidate.preview.columns,
+                    totalRows: item.candidate.preview.totalRows,
+                };
+            } else if (!item.candidate.resolutionError) {
                 seed[i] = { loading: true, expanded: true, rows: [], columns: [] };
             }
         });
@@ -79,7 +144,37 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         setSelection(prev => ({ ...prev, [idx]: !prev[idx] }));
     };
 
-    const selectedCount = Object.values(selection).filter(Boolean).length;
+    const selectOption = (optionIndex: number) => {
+        let offset = 0;
+        const next = { ...selection };
+        optionGroups?.forEach((option, index) => {
+            option.tables.forEach((_candidate, candidateIndex) => {
+                const item = candidates[offset + candidateIndex];
+                next[offset + candidateIndex] = index === optionIndex
+                    && !item.loaded && !getResolutionError(item);
+            });
+            offset += option.tables.length;
+        });
+        setSelection(next);
+        setSelectedOption(optionIndex);
+    };
+
+    const visibleOptionIndexes = new Set<number>();
+    if (optionGroups && typeof selectedOption === 'number') {
+        let offset = 0;
+        optionGroups.forEach((option, index) => {
+            if (index === selectedOption) {
+                option.tables.forEach((_candidate, candidateIndex) => {
+                    visibleOptionIndexes.add(offset + candidateIndex);
+                });
+            }
+            offset += option.tables.length;
+        });
+    }
+
+    const selectedCount = candidates.filter((item, index) =>
+        selection[index] && !item.loaded && !getResolutionError(item)
+    ).length;
 
     const fetchPreview = React.useCallback(async (candidate: LoadPlanCandidate, idx: number) => {
         setPreviews(prev => ({
@@ -93,7 +188,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                 body: JSON.stringify({
                     connector_id: candidate.sourceId,
                     source_table: { id: candidate.sourceTable, name: candidate.displayName },
-                    import_options: buildImportOptions(candidate, 10),
+                    import_options: buildLoadQueryImportOptions(candidate, 10),
                 }),
             });
             const columnNames = (data.columns || []).map((col: any) => typeof col === 'string' ? col : col.name).filter(Boolean);
@@ -108,6 +203,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                 },
             }));
         } catch (err: any) {
+            const code = err?.apiError?.code;
             setPreviews(prev => ({
                 ...prev,
                 [idx]: {
@@ -115,26 +211,64 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                     expanded: true,
                     rows: [],
                     columns: [],
-                    error: err?.message || t('dataLoading.loadPlan.previewFailed'),
+                    error: err instanceof ApiRequestError
+                        ? getErrorMessage(err.apiError)
+                        : (err?.message || t('dataLoading.loadPlan.previewFailed')),
+                    needsReconnect: err instanceof ApiRequestError
+                        && (err.isAuthError || RECONNECTABLE_CODES.includes(code)),
                 },
             }));
         }
     }, [t]);
 
+    // Recovery for a failed preview. The backend already retries stored
+    // credentials / SSO on every request, so a plain retry is enough for
+    // transient faults; a dropped session additionally needs an explicit
+    // connect, which only succeeds when the source can re-auth unattended.
+    const retryPreview = React.useCallback(async (candidate: LoadPlanCandidate, idx: number) => {
+        if (previews[idx]?.needsReconnect) {
+            setPreviews(prev => ({
+                ...prev,
+                [idx]: { ...(prev[idx] || { rows: [], columns: [] }), loading: true, expanded: true },
+            }));
+            try {
+                const { data: status } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_STATUS, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connector_id: candidate.sourceId }),
+                });
+                if (!status.connected && (status.has_stored_credentials || status.sso_available)) {
+                    await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connector_id: candidate.sourceId,
+                            params: {},
+                            persist: !status.sso_available,
+                        }),
+                    });
+                }
+            } catch {
+                // Fall through: the preview below reports why it still fails.
+            }
+        }
+        await fetchPreview(candidate, idx);
+    }, [previews, fetchPreview]);
+
     // Fetch every preview once on mount. We don't await — each row already
     // displays its fixed-height spinner and resolves independently.
     React.useEffect(() => {
-        plan.candidates.forEach((c, i) => {
-            if (!c.resolutionError) {
-                fetchPreview(c, i);
+        candidates.forEach((item, i) => {
+            if (item.kind === 'connector' && !item.candidate.resolutionError) {
+                fetchPreview(item.candidate, i);
             }
         });
-        // Intentionally run once; the plan doesn't mutate after mount.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleConfirm = async (newWorkspace = false) => {
-        const selected = plan.candidates.filter((c, i) => selection[i] && !c.resolutionError);
+        const selected = candidates.filter((item, i) =>
+            selection[i] && !item.loaded && !getResolutionError(item)
+        );
         if (selected.length === 0) return;
         setLoading(true);
         try {
@@ -144,38 +278,57 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
         }
     };
 
-    const isDark = theme.palette.mode === 'dark';
-    const borderColorBase = confirmed
-        ? alpha(theme.palette.success.main, 0.3)
-        : alpha(theme.palette.primary.main, isDark ? 0.25 : 0.15);
-    const borderColorHover = confirmed
-        ? alpha(theme.palette.success.main, 0.45)
-        : alpha(theme.palette.primary.main, isDark ? 0.4 : 0.3);
-    const shadowBase = isDark
-        ? '0 1px 2px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.2)'
-        : '0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03)';
-    const shadowHover = isDark
-        ? '0 2px 4px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3)'
-        : '0 2px 4px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04)';
+    const loadableCandidates = candidates.filter(item => !getResolutionError(item));
+    const allLoaded = loadableCandidates.length > 0 && loadableCandidates.every(item => item.loaded);
 
     return (
         <Box sx={{
-            my: 0.75,
-            p: 1,
-            border: `1px solid ${borderColorBase}`,
-            borderRadius: 1.5,
-            boxShadow: shadowBase,
-            transition: transition.fast,
-            '&:hover': {
-                borderColor: borderColorHover,
-                boxShadow: shadowHover,
-            },
+            display: 'flex', flexDirection: 'column',
+            width: '100%', height: '100%', minWidth: 0, minHeight: 0,
         }}>
+            {optionGroups && (
+                <Box sx={{ flexShrink: 0, pb: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <RadioGroup
+                        value={selectedOption}
+                        onChange={(_event, value) => selectOption(Number(value))}
+                    >
+                        {optionGroups.map((option, index) => (
+                            <FormControlLabel
+                                key={`${option.label}:${index}`}
+                                value={index}
+                                control={<Radio size="small" />}
+                                label={option.label}
+                                sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: textVar.sm } }}
+                            />
+                        ))}
+                    </RadioGroup>
+                </Box>
+            )}
             {/* Candidate list */}
-            {plan.candidates.map((c, i) => {
+            <Box sx={{
+                flex: 1, minWidth: 0, minHeight: 0,
+                overflowY: 'auto', overflowX: 'hidden', pr: 1,
+            }}>
+            {candidates.map((item, i) => {
+                if (optionGroups && i < planCandidates.length && !visibleOptionIndexes.has(i)) return null;
                 const preview = previews[i];
-                const unresolved = !!c.resolutionError;
-                const hasFilters = !unresolved && (!!c.filters?.length || !!c.sortBy);
+                const connector = item.kind === 'connector' ? item.candidate : undefined;
+                const scratch = item.kind === 'scratch' ? item.candidate : undefined;
+                const resolutionError = getResolutionError(item);
+                const unresolved = !!resolutionError;
+                const queryFilters = connector?.query?.filters?.map(filter => ({
+                    column: filter.column,
+                    operator: filter.op,
+                    value: filter.value,
+                })) ?? [];
+                const queryOrder = connector?.query?.orderBy?.[0];
+                const hasFilters = !unresolved && (queryFilters.length > 0 || !!queryOrder);
+                const rowLabel = scratch && scratch.preview.totalRows > scratch.preview.sampleRows.length
+                    ? `${scratch.preview.totalRows.toLocaleString()} ${t('dataLoading.rows')}`
+                    : '';
+                const meta = scratch
+                    ? [rowLabel, `${scratch.preview.columns.length} ${t('dataLoading.cols')}`].filter(Boolean).join(' · ')
+                    : undefined;
 
                 const previewData: TablePreviewData =
                     unresolved ? { state: 'idle' }
@@ -185,7 +338,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                     : { state: 'idle' };
 
                 return (
-                    <Box key={i} sx={{
+                    <Box key={item.key} sx={{
                         ...(i > 0 ? {
                             mt: 0.75,
                             pt: 0.75,
@@ -194,23 +347,26 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                         } : {}),
                     }}>
                       <TablePreviewRow
-                        name={c.displayName}
-                        leading={confirmed
-                            ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} />
-                            : <Checkbox size="small" checked={!!selection[i]} disabled={unresolved}
-                                onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
-                        trailing={!unresolved ? (
-                            <Tooltip title={`${t('dataLoading.loadPlan.fromSource', { defaultValue: 'from' })} ${c.sourceId}`}>
+                        name={connector?.displayName || scratch?.name || ''}
+                        meta={meta}
+                        leading={item.loaded
+                            ? <CheckIcon sx={{ fontSize: iconVar.md, color: 'success.main', mx: 0.25 }} />
+                            : optionGroups && i < planCandidates.length
+                                ? <CheckIcon sx={{ fontSize: iconVar.md, color: 'primary.main', mx: 0.25 }} />
+                                : <Checkbox size="small" checked={!!selection[i]} disabled={unresolved}
+                                    onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
+                        trailing={!unresolved && connector ? (
+                            <Tooltip title={`${t('dataLoading.loadPlan.fromSource', { defaultValue: 'from' })} ${connector.sourceId}`}>
                                 <Box sx={{
                                     display: 'flex', alignItems: 'center', gap: 0.4,
                                     maxWidth: 180, minWidth: 0, flexShrink: 0,
                                     color: 'text.secondary',
                                 }}>
-                                    {getConnectorIcon(c.sourceId.split(':', 1)[0], {
-                                        sx: { fontSize: 13, flexShrink: 0, color: 'text.secondary' },
+                                    {getConnectorIcon(connector.sourceId.split(':', 1)[0], {
+                                        sx: { fontSize: iconVar.sm, flexShrink: 0, color: 'text.secondary' },
                                     })}
-                                    <Typography noWrap sx={{ fontSize: 10.5, color: 'text.secondary' }}>
-                                        {c.sourceId}
+                                    <Typography noWrap sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                                        {connector.sourceId}
                                     </Typography>
                                 </Box>
                             </Tooltip>
@@ -218,47 +374,67 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                         filterChips={hasFilters ? (
                             <>
                                 <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, mr: 0.25, color: 'text.secondary' }}>
-                                    <FilterAltOutlinedIcon sx={{ fontSize: 12 }} />
-                                    <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'text.secondary' }}>
+                                    <FilterAltOutlinedIcon sx={{ fontSize: iconVar.xs }} />
+                                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary' }}>
                                         {t('dataLoading.loadPlan.filtersLabel', { defaultValue: 'Filters:' })}
                                     </Typography>
                                 </Box>
-                                {c.filters?.map((f, fi) => (
+                                {queryFilters.map((f, fi) => (
                                     <Chip key={fi}
                                         label={formatFilterChipLabel(f.column, f.operator, f.value)}
                                         size="small" variant="outlined"
-                                        sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
+                                        sx={{ height: 18, fontSize: textVar.xxs, '& .MuiChip-label': { px: 0.75 } }} />
                                 ))}
-                                {c.sortBy && (
-                                    <Chip label={`${c.sortBy} ${c.sortOrder === 'desc' ? '↓' : '↑'}`}
+                                {queryOrder && (
+                                    <Chip label={`${queryOrder.column} ${queryOrder.direction === 'desc' ? '↓' : '↑'}`}
                                         size="small" variant="outlined"
-                                        sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }} />
+                                        sx={{ height: 18, fontSize: textVar.xxs, '& .MuiChip-label': { px: 0.75 } }} />
                                 )}
                             </>
                         ) : undefined}
                         preview={previewData}
-                        expanded={!unresolved}
-                        loadingHeight={LOAD_PLAN_LOADING_HEIGHT}
+                        expanded={!!preview?.expanded && !unresolved}
+                        loadingHeight={connector ? LOAD_PLAN_LOADING_HEIGHT : undefined}
+                        onTogglePreview={!unresolved && preview && !preview.loading
+                            ? () => setPreviews(prev => ({
+                                ...prev,
+                                [i]: { ...prev[i], expanded: !prev[i].expanded },
+                            }))
+                            : undefined}
+                        onRetryPreview={connector && preview?.error
+                            ? () => void retryPreview(connector, i)
+                            : undefined}
+                        retryLabel={preview?.needsReconnect
+                            ? t('dataLoading.loadPlan.reconnectAndRetry', { defaultValue: 'Reconnect' })
+                            : t('dataLoading.loadPlan.retryPreview', { defaultValue: 'Retry' })}
                         dim={unresolved}
                         unresolved={unresolved ? {
-                            message: t('dataLoading.loadPlan.unresolved', {
-                                defaultValue: "Couldn't resolve this table — the agent should rerun search and try again.",
-                            }),
-                            detail: c.resolutionError,
+                            message: item.kind === 'scratch'
+                                ? t('dataLoading.loadPlan.scratchUnavailable', {
+                                    defaultValue: "Couldn't prepare this table for loading.",
+                                })
+                                : t('dataLoading.loadPlan.unresolved', {
+                                    defaultValue: "Couldn't resolve this table — the agent should rerun search and try again.",
+                                }),
+                            detail: resolutionError,
                         } : undefined}
                       />
                     </Box>
                 );
             })}
+            </Box>
 
             {/* Footer: keep actions available after loading and show the
                 prior-load status immediately to their left. */}
-            <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{
+                mt: 0.75, display: 'flex', alignItems: 'center', gap: 1,
+                flexShrink: 0, pt: 1, borderTop: '1px solid', borderColor: 'divider',
+            }}>
                 <Box sx={{ flex: 1 }} />
-                {confirmed && (
-                    <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
+                {allLoaded && (
+                    <Typography sx={{ fontSize: textVar.xs, color: 'success.main', fontWeight: 500 }}>
                         {t('dataLoading.loadPlan.loadedCount', {
-                            count: plan.candidates.filter(c => !c.resolutionError).length,
+                            count: loadableCandidates.length,
                             defaultValue: '✓ Loaded',
                         })}
                     </Typography>
@@ -274,7 +450,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             onClick={() => handleConfirm(true)}
                             startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{
-                                textTransform: 'none', fontSize: 12,
+                                textTransform: 'none', fontSize: textVar.sm,
                                 py: 0.5, px: 1.5, minHeight: 0,
                                 borderRadius: 1.5,
                             }}
@@ -288,7 +464,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                             onClick={() => handleConfirm(false)}
                             startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{
-                                textTransform: 'none', fontSize: 12,
+                                textTransform: 'none', fontSize: textVar.sm,
                                 py: 0.5, px: 2, minHeight: 0,
                                 borderRadius: 1.5, boxShadow: 'none',
                             }}
@@ -304,146 +480,7 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                         onClick={() => handleConfirm(false)}
                         startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
                         sx={{
-                            textTransform: 'none', fontSize: 12,
-                            py: 0.5, px: 2, minHeight: 0,
-                            borderRadius: 1.5, boxShadow: 'none',
-                        }}
-                    >
-                        {`${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
-                    </Button>
-                )}
-            </Box>
-        </Box>
-    );
-};
-
-// ---------------------------------------------------------------------------
-// PendingLoadsCard
-// ---------------------------------------------------------------------------
-// Renders one or more agent-proposed scratch-CSV table loads using the
-// same visual shell as `LoadPlanCard` above, so users see a consistent
-// multi-table import UI regardless of whether candidates come from a
-// connector plan or a notebook-style extract step.
-
-interface PendingLoadsCardProps {
-    pendingLoads: PendingTableLoad[];
-    onLoad: (pending: PendingTableLoad) => Promise<void> | void;
-}
-
-export const PendingLoadsCard: React.FC<PendingLoadsCardProps> = ({ pendingLoads, onLoad }) => {
-    const theme = useTheme();
-    const { t } = useTranslation();
-
-    // Confirmed = already loaded earlier; unconfirmed = selectable.
-    const [selection, setSelection] = useState<Record<number, boolean>>(
-        () => Object.fromEntries(pendingLoads.map((p, i) => [i, !p.confirmed]))
-    );
-    // Auto-expand previews — scratch CSV samples are already inlined
-    // client-side, so there's no fetch cost to showing them by default.
-    const [expanded, setExpanded] = useState<Record<number, boolean>>(
-        () => Object.fromEntries(pendingLoads.map((_, i) => [i, true]))
-    );
-    const [loading, setLoading] = useState(false);
-
-    const allConfirmed = pendingLoads.every(p => p.confirmed);
-    const selectedCount = Object.entries(selection)
-        .filter(([i, on]) => on && !pendingLoads[Number(i)].confirmed).length;
-
-    const toggleItem = (idx: number) =>
-        setSelection(prev => ({ ...prev, [idx]: !prev[idx] }));
-    const togglePreview = (idx: number) =>
-        setExpanded(prev => ({ ...prev, [idx]: !prev[idx] }));
-
-    const handleConfirm = async () => {
-        if (selectedCount === 0) return;
-        setLoading(true);
-        try {
-            for (let i = 0; i < pendingLoads.length; i++) {
-                if (selection[i] && !pendingLoads[i].confirmed) {
-                    await onLoad(pendingLoads[i]);
-                }
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const isDark = theme.palette.mode === 'dark';
-    const borderColorBase = allConfirmed
-        ? alpha(theme.palette.success.main, 0.3)
-        : alpha(theme.palette.primary.main, isDark ? 0.25 : 0.15);
-    const borderColorHover = allConfirmed
-        ? alpha(theme.palette.success.main, 0.45)
-        : alpha(theme.palette.primary.main, isDark ? 0.4 : 0.3);
-    const shadowBase = isDark
-        ? '0 1px 2px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.2)'
-        : '0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03)';
-    const shadowHover = isDark
-        ? '0 2px 4px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3)'
-        : '0 2px 4px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04)';
-
-    return (
-        <Box sx={{
-            my: 0.75,
-            p: 1,
-            border: `1px solid ${borderColorBase}`,
-            borderRadius: 1.5,
-            boxShadow: shadowBase,
-            transition: transition.fast,
-            '&:hover': {
-                borderColor: borderColorHover,
-                boxShadow: shadowHover,
-            },
-        }}>
-            {pendingLoads.map((p, i) => {
-                const preview = p.preview;
-                const rowLabel = preview.totalRows > preview.sampleRows.length
-                    ? `${preview.totalRows.toLocaleString()} ${t('dataLoading.rows')}`
-                    : '';
-                const meta = [rowLabel, `${preview.columns.length} ${t('dataLoading.cols')}`]
-                    .filter(Boolean).join(' · ');
-
-                const previewData: TablePreviewData = {
-                    state: 'ready',
-                    columns: preview.columns,
-                    rows: preview.sampleRows,
-                    totalRows: preview.totalRows,
-                };
-
-                return (
-                    <TablePreviewRow
-                        key={i}
-                        name={p.name}
-                        meta={meta}
-                        leading={p.confirmed
-                            ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} />
-                            : <Checkbox size="small" checked={!!selection[i]}
-                                onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
-                        preview={previewData}
-                        expanded={!!expanded[i]}
-                        onTogglePreview={preview.sampleRows.length > 0 ? () => togglePreview(i) : undefined}
-                    />
-                );
-            })}
-
-            <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center' }}>
-                <Box sx={{ flex: 1 }} />
-                {allConfirmed ? (
-                    <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
-                        {t('dataLoading.loadPlan.loadedCount', {
-                            count: pendingLoads.length,
-                            defaultValue: '✓ Loaded',
-                        })}
-                    </Typography>
-                ) : (
-                    <Button
-                        size="small"
-                        variant="contained"
-                        disabled={selectedCount === 0 || loading}
-                        onClick={handleConfirm}
-                        startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
-                        sx={{
-                            textTransform: 'none', fontSize: 12,
+                            textTransform: 'none', fontSize: textVar.sm,
                             py: 0.5, px: 2, minHeight: 0,
                             borderRadius: 1.5, boxShadow: 'none',
                         }}

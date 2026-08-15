@@ -6,6 +6,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../src/app/apiClient', () => ({
     apiRequest: mocks.apiRequest,
+    ApiRequestError: class ApiRequestError extends Error {
+        constructor(public apiError: any, public httpStatus: number) {
+            super(apiError.message);
+        }
+        get isRetryable() { return this.apiError.retry === true; }
+    },
 }));
 
 vi.mock('../../../../src/app/utils', () => ({
@@ -51,6 +57,7 @@ import {
     fetchFieldSemanticType,
     fetchGlobalModelList,
 } from '../../../../src/app/dfSlice';
+import { ApiRequestError } from '../../../../src/app/apiClient';
 
 describe('agent metadata thunks', () => {
     const model = { id: 'model-1', endpoint: 'http://example.test', model: 'gpt-test' };
@@ -67,7 +74,15 @@ describe('agent metadata thunks', () => {
         ...dataFormulatorSlice.getInitialState(),
         selectedModelId: model.id,
         globalModels: [model],
-        tables: [sourceTable],
+        inputTables: [{
+            kind: 'input-table',
+            id: sourceTable.id,
+            displayId: sourceTable.displayId,
+            source: { kind: 'workspace', tableId: sourceTable.id },
+            snapshot: { columns: [{ name: 'value', type: 'integer', levels: [] }], rowCount: 1, capturedAt: 1 },
+            description: '',
+            addedAt: 1,
+        }],
     });
 
     let setTimeoutSpy: ReturnType<typeof vi.spyOn>;
@@ -88,6 +103,34 @@ describe('agent metadata thunks', () => {
         const [, options] = mocks.apiRequest.mock.calls[0];
         expect(options.signal).toBeUndefined();
         expect(setTimeoutSpy).not.toHaveBeenCalled();
+    });
+
+    it('retries semantic type inference once for transient model errors', async () => {
+        mocks.apiRequest
+            .mockRejectedValueOnce(new ApiRequestError({
+                code: 'LLM_SERVICE_ERROR',
+                message: 'Temporary model service failure',
+                retry: true,
+            }, 200))
+            .mockResolvedValueOnce({ data: { result: [{ fields: {} }] } });
+
+        const action = await fetchFieldSemanticType(sourceTable)(vi.fn(), makeState, undefined);
+
+        expect(mocks.apiRequest).toHaveBeenCalledTimes(2);
+        expect(action.type).toBe(fetchFieldSemanticType.fulfilled.type);
+    });
+
+    it('does not retry non-retryable semantic type errors', async () => {
+        mocks.apiRequest.mockRejectedValueOnce(new ApiRequestError({
+            code: 'LLM_AUTH_FAILED',
+            message: 'Authentication failed',
+            retry: false,
+        }, 200));
+
+        const action = await fetchFieldSemanticType(sourceTable)(vi.fn(), makeState, undefined);
+
+        expect(mocks.apiRequest).toHaveBeenCalledTimes(1);
+        expect(action.type).toBe(fetchFieldSemanticType.rejected.type);
     });
 
     it('does not add a frontend timeout to code explanation requests', async () => {

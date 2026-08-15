@@ -14,6 +14,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useTranslation } from 'react-i18next';
+import { iconVar, textVar } from '../app/layout';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -73,7 +74,7 @@ const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnost
                 {expanded && (
                     <Tooltip title={copied ? 'Copied!' : 'Copy JSON'} placement="top">
                         <IconButton size="small" onClick={handleCopy} sx={{ p: 0, ml: 0.5 }}>
-                            <ContentCopyIcon sx={{ fontSize: 12, color: copied ? '#2e7d32' : '#888' }} />
+                            <ContentCopyIcon sx={{ fontSize: iconVar.xs, color: copied ? '#2e7d32' : '#888' }} />
                         </IconButton>
                     </Tooltip>
                 )}
@@ -82,7 +83,7 @@ const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnost
                 <pre style={{
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
-                    fontSize: 9,
+                    fontSize: textVar.xxs,
                     margin: '2px 0',
                     padding: '6px 8px',
                     backgroundColor: '#f5f0ff',
@@ -224,7 +225,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                 }}>
                     {/* Header */}
                     <Box sx={{display: 'flex', alignItems: 'center', px: 1.5}}>
-                        <Typography variant="subtitle1" sx={{fontSize: 12, flexGrow: 1, color: 'text.secondary'}}>
+                        <Typography variant="subtitle1" sx={{fontSize: textVar.sm, flexGrow: 1, color: 'text.secondary'}}>
                             {t('messages.systemMessagesWithCount', { count: messages.length })}{messages.length > MAX_DISPLAY_MESSAGES ? ` — showing latest ${MAX_DISPLAY_MESSAGES}` : ''}
                         </Typography>
                         <Tooltip title={t('messages.clearAllMessages')}>
@@ -304,7 +305,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                                                     <pre style={{ 
                                                         whiteSpace: 'pre-wrap', 
                                                         wordBreak: 'break-word',
-                                                        fontSize: 10,
+                                                        fontSize: textVar.xxs,
                                                         margin: '2px 0',
                                                         padding: '4px 8px',
                                                         backgroundColor: '#f8f8f8',
@@ -338,10 +339,10 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                         <b>[{formatTimestamp(latestMessage.timestamp)}] ({latestMessage.component})</b> {latestMessage?.value}
                     </Typography> 
                     {latestMessage?.detail && <>
-                        <div style={{ borderTop: '1px solid #ddd', margin: '4px 0', fontSize: 12 }}>{latestMessage.detail}</div>
+                        <div style={{ borderTop: '1px solid #ddd', margin: '4px 0', fontSize: textVar.sm }}>{latestMessage.detail}</div>
                     </>}
                     {latestMessage?.code && 
-                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 10, opacity: 0.7, margin: '4px 0' }}>
+                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: textVar.xxs, opacity: 0.7, margin: '4px 0' }}>
                             {latestMessage.code.split('\n').filter(line => line.trim() !== '').join('\n')}
                         </pre>
                     }

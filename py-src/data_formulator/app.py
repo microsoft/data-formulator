@@ -273,6 +273,7 @@ def _register_blueprints():
 
     # Import server-log inspection routes (local-mode gated)
     from data_formulator.routes.logs import logs_bp
+    from data_formulator.routes.model_endpoints import model_endpoints_bp
 
     # Register blueprints
     app.register_blueprint(tables_bp)
@@ -280,6 +281,7 @@ def _register_blueprints():
     app.register_blueprint(session_bp)
     app.register_blueprint(demo_stream_bp)
     app.register_blueprint(logs_bp)
+    app.register_blueprint(model_endpoints_bp)
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
@@ -322,7 +324,7 @@ def _register_blueprints():
         from data_formulator.data_connector import register_data_connectors
         register_data_connectors(app)
     if app.config['CLI_ARGS'].get('disable_data_connectors'):
-        print("  External data connectors disabled (DISABLE_DATA_CONNECTORS=true) — sample datasets remain available", flush=True)
+        print("  External data connectors disabled (DISABLE_DATA_CONNECTORS=true) - sample datasets remain available", flush=True)
 
 
 def _safety_checks():
@@ -482,8 +484,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace-backend", type=str,
         default=os.environ.get('WORKSPACE_BACKEND', 'local'),
         choices=['local', 'azure_blob', 'ephemeral'],
-        help="Workspace storage backend: 'local' (default, filesystem), "
-             "'azure_blob' (Azure Blob Storage), or 'ephemeral' (temp dirs, data does not survive restart)")
+           help="Workspace storage backend: 'local' (default, durable filesystem without TTL cleanup), "
+               "'azure_blob' (Azure Blob Storage), or 'ephemeral' "
+               "(temporary server-local storage with TTL/LRU cleanup)")
     parser.add_argument("--azure-blob-connection-string", type=str,
         default=os.environ.get('AZURE_BLOB_CONNECTION_STRING'),
         help="Azure Blob Storage connection string (mutually exclusive with --azure-blob-account-url)")
@@ -513,7 +516,7 @@ def run_app():
         args.disable_custom_models = True
         args.disable_display_keys = True
         print("  Multi-user anonymous mode (--disable-database): "
-              "ephemeral workspace, no connectors, no custom models, keys hidden", flush=True)
+              "TTL-managed ephemeral workspace, no connectors, no custom models, keys hidden", flush=True)
 
     # Override config from CLI args
     app.config['CLI_ARGS'] = {
@@ -546,7 +549,7 @@ def run_app():
     url = "http://localhost:{0}".format(args.port)
     print(f"Ready! Open {url} in your browser.", flush=True)
     
-    if not args.dev:
+    if not args.dev and os.environ.get('DATA_FORMULATOR_DESKTOP') != '1':
         threading.Timer(1.5, lambda: webbrowser.open(url, new=2)).start()
 
     debug_mode = args.dev

@@ -3,6 +3,7 @@
 
 import { Box, Typography, Button, useTheme, alpha, Divider } from "@mui/material";
 import { borderColor, radius } from '../app/tokens';
+import { textVar } from '../app/layout';
 import React, { FC } from "react";
 import GridViewIcon from '@mui/icons-material/GridView';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -158,7 +159,7 @@ export const About: FC<{}> = function About({ }) {
                                 <Typography 
                                     component="p"
                                     sx={{ 
-                                        fontSize: 17,
+                                        fontSize: textVar.xxl,
                                         color: 'text.secondary', 
                                         lineHeight: 1.7,
                                     }}
@@ -246,7 +247,7 @@ export const About: FC<{}> = function About({ }) {
                         rel="noopener noreferrer" 
                         aria-label={t('footer.contactUsAria')}
                         href="https://github.com/microsoft/data-formulator/issues">{t('footer.contactUs')}</Button>
-                <Typography component="span" sx={{ fontSize: '12px', ml: 1 }}>© {new Date().getFullYear()}</Typography>
+                <Typography component="span" sx={{ fontSize: textVar.sm, ml: 1 }}>© {new Date().getFullYear()}</Typography>
             </Box>
         </Box>)
 }

@@ -96,7 +96,7 @@ class MSSQLDataLoader(ExternalDataLoader):
         return [
             {
                 "id": "entra_id",
-                "label": "Microsoft Entra ID (az login)",
+                "label": "Microsoft Entra ID",
                 "description": (
                     "Run `az login` in your terminal, then connect with no "
                     "password. Also works with Managed Identity, VS Code, and "
@@ -143,23 +143,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             return "sql_auth"
         return "entra_id"
 
-    @staticmethod
-    def auth_instructions() -> str:
-        return """**Microsoft Entra ID (recommended):** Run `az login` once in your terminal, then start Data Formulator. Choose *Microsoft Entra ID*, fill in only `server` and (optionally) `database`, and leave username/password empty — your Azure CLI credentials are used automatically. Managed Identity, VS Code, and environment credentials also work via `DefaultAzureCredential`.
-
-> Your Entra identity must be granted access to the database, e.g. an admin runs `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` and grants the needed roles.
-
-**Example (Entra ID):** server: `myserver.database.windows.net` · database: `mydb` (username/password empty)
-
-**SQL Server authentication:** Choose *SQL Server authentication* and provide username and password.
-
-**Example (SQL auth):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`
-
-**Windows authentication (Windows only):** Choose *Windows authentication* and leave username/password empty.
-
-**Microsoft Entra prerequisite:** Install the Azure CLI and run `az login`. The SQL Server driver is included with Data Formulator; no separate ODBC driver installation is needed.
-
-**Troubleshooting:** Confirm you are signed in with `az account show`. Ensure the SQL Server service is running and TCP/IP is enabled. Test SQL auth with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
+    AUTH_GUIDE = "mssql.md"
 
     def __init__(self, params: dict[str, Any]):
         from data_formulator.security.log_sanitizer import sanitize_params
@@ -294,7 +278,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             table = source_table
         
         col_list = self._safe_select_list(schema.strip('[]'), table.strip('[]'))
-        base_query = f"SELECT {col_list} FROM [{schema}].[{table}]"
+        base_query = f"SELECT TOP {int(size)} {col_list} FROM [{schema}].[{table}]"
         
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
@@ -303,8 +287,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             sanitized_cols = [f'[{col}] {order_direction}' for col in sort_columns]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
-        # SQL Server uses TOP instead of LIMIT
-        query = f"SELECT TOP {size} * FROM ({base_query}{order_by_clause}) AS limited"
+        query = f"{base_query}{order_by_clause}"
         
         log.info(f"Executing SQL Server query: {query[:200]}...")
         
@@ -335,17 +318,17 @@ class MSSQLDataLoader(ExternalDataLoader):
         )
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List all tables from SQL Server database.
+        """List all tables and views from a SQL Server database.
 
         Only queries INFORMATION_SCHEMA in batch; does NOT run per-table
         SELECT TOP or COUNT(*) to keep catalog browsing fast.
         """
         try:
             tables_query = """
-                SELECT TABLE_SCHEMA, TABLE_NAME
+                SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
                 FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_TYPE = 'BASE TABLE' 
-                AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+                WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+                  AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             """
             tables_df = self._execute_query(tables_query).to_pandas()
@@ -411,6 +394,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             for _, row in tables_df.iterrows():
                 schema = row["TABLE_SCHEMA"]
                 table_name = row["TABLE_NAME"]
+                object_directory = "Views" if row["TABLE_TYPE"] == "VIEW" else "Tables"
                 full_table_name = f"{schema}.{table_name}"
 
                 if table_filter and table_filter.lower() not in full_table_name.lower():
@@ -422,13 +406,16 @@ class MSSQLDataLoader(ExternalDataLoader):
                     if cd_key in col_desc_map:
                         col_entry["description"] = col_desc_map[cd_key]
 
-                metadata: dict[str, Any] = {"columns": columns}
+                metadata: dict[str, Any] = {
+                    "_source_name": full_table_name,
+                    "columns": columns,
+                }
                 if full_table_name in table_desc_map:
                     metadata["description"] = table_desc_map[full_table_name]
 
                 results.append({
                     "name": full_table_name,
-                    "path": [schema, table_name],
+                    "path": [schema, object_directory, table_name],
                     "metadata": metadata,
                 })
 
@@ -443,15 +430,15 @@ class MSSQLDataLoader(ExternalDataLoader):
     def _list_tables_for_db(
         self, db: str, table_filter: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List tables in a specific database using three-part naming.
+        """List tables and views in a database using three-part naming.
 
         Like ``list_tables`` but queries *[db].INFORMATION_SCHEMA* and
         returns three-part ``database.schema.table`` identifiers.
         """
         tables_query = f"""
-            SELECT TABLE_SCHEMA, TABLE_NAME
+                        SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
             FROM [{db}].INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_TYPE = 'BASE TABLE'
+                        WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW')
               AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
             ORDER BY TABLE_SCHEMA, TABLE_NAME
         """
@@ -519,6 +506,7 @@ class MSSQLDataLoader(ExternalDataLoader):
         for _, row in tables_df.iterrows():
             schema = row["TABLE_SCHEMA"]
             table_name = row["TABLE_NAME"]
+            object_directory = "Views" if row["TABLE_TYPE"] == "VIEW" else "Tables"
             schema_table = f"{schema}.{table_name}"
             full_source = f"{db}.{schema}.{table_name}"
 
@@ -540,7 +528,7 @@ class MSSQLDataLoader(ExternalDataLoader):
 
             results.append({
                 "name": full_source,
-                "path": [db, schema, table_name],
+                "path": [db, schema, object_directory, table_name],
                 "metadata": metadata,
             })
 
@@ -589,6 +577,7 @@ class MSSQLDataLoader(ExternalDataLoader):
         return [
             {"key": "database", "label": "Database"},
             {"key": "schema", "label": "Schema"},
+            {"key": "object_type", "label": "Object type"},
             {"key": "table", "label": "Table"},
         ]
 
@@ -623,7 +612,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             query = f"""
                 SELECT DISTINCT TABLE_SCHEMA
                 FROM [{db}].INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_TYPE = 'BASE TABLE'
+                WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW')
                   AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
                 ORDER BY TABLE_SCHEMA
             """
@@ -635,6 +624,36 @@ class MSSQLDataLoader(ExternalDataLoader):
                     continue
                 nodes.append(CatalogNode(name=name, node_type="namespace", path=path + [name]))
             return nodes
+
+        if level_key == "object_type":
+            pinned = self.pinned_scope()
+            remaining = list(path)
+            db = pinned.get("database")
+            if not db:
+                if not remaining:
+                    return []
+                db = remaining.pop(0)
+            schema = pinned.get("schema")
+            if not schema:
+                if not remaining:
+                    return []
+                schema = remaining.pop(0)
+            query = f"""
+                SELECT DISTINCT TABLE_TYPE
+                FROM [{db}].INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+                  AND TABLE_SCHEMA = '{schema}'
+            """
+            rows = self._execute_query(query).to_pandas()
+            directories = {
+                "Views" if r["TABLE_TYPE"] == "VIEW" else "Tables"
+                for _, r in rows.iterrows()
+            }
+            return [
+                CatalogNode(name=name, node_type="namespace", path=path + [name])
+                for name in ("Tables", "Views")
+                if name in directories and (not filter or filter.lower() in name.lower())
+            ]
 
         if level_key == "table":
             pinned = self.pinned_scope()
@@ -649,10 +668,14 @@ class MSSQLDataLoader(ExternalDataLoader):
                 if not remaining:
                     return []
                 schema = remaining.pop(0)
+            if not remaining:
+                return []
+            object_directory = remaining.pop(0)
+            table_type = "VIEW" if object_directory == "Views" else "BASE TABLE"
             query = f"""
                 SELECT TABLE_NAME
                 FROM [{db}].INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = '{schema}'
+                WHERE TABLE_TYPE = '{table_type}' AND TABLE_SCHEMA = '{schema}'
                 ORDER BY TABLE_NAME
             """
             rows = self._execute_query(query).to_pandas()
@@ -687,7 +710,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             schema = remaining.pop(0)
         if not remaining:
             return {}
-        table_name = remaining[0]
+        table_name = remaining[-1]
         try:
             cols_df = self._execute_query(f"""
                 SELECT COLUMN_NAME, DATA_TYPE

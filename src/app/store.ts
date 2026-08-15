@@ -6,6 +6,8 @@ import { dataFormulatorReducer } from './dfSlice';
 
 import { persistReducer, persistStore, createTransform } from 'redux-persist'
 import localforage from 'localforage';
+import { migrateState } from './stateMigrations';
+import { stripConnectorPrefillFromEntries } from './connectorFormPersistence';
 
 export type AppDispatch = typeof store.dispatch
 
@@ -16,18 +18,9 @@ export type AppDispatch = typeof store.dispatch
 // `prefilled` so the form can seed once on render; this transform drops it on the
 // way to localForage, so nothing is stored until the user clicks Connect.
 const stripConnectorPrefill = createTransform(
-    (inboundState: any) => {
-        if (!Array.isArray(inboundState)) return inboundState;
-        return inboundState.map((message: any) => {
-            if (message?.connectorForm?.prefilled) {
-                const { prefilled, ...connectorForm } = message.connectorForm;
-                return { ...message, connectorForm };
-            }
-            return message;
-        });
-    },
+    stripConnectorPrefillFromEntries,
     (outboundState: any) => outboundState,
-    { whitelist: ['dataLoadingChatMessages'] },
+    { whitelist: ['dataLoadingChatMessages', 'textTurns'] },
 );
 
 const persistConfig = {
@@ -39,6 +32,7 @@ const persistConfig = {
     // In-progress flags are transient and should not survive page refreshes.
     blacklist: ['serverConfig', 'globalModels', 'chartSynthesisInProgress', 'starterQuestionsStatus'],
     transforms: [stripConnectorPrefill],
+    migrate: async (state: any): Promise<any> => migrateState(state),
 }
 
 const persistedReducer = persistReducer(persistConfig, dataFormulatorReducer)

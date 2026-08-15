@@ -33,11 +33,14 @@ import {
     Fade,
     Grow,
     CircularProgress,
+    alpha,
 } from '@mui/material';
 
 import _ from 'lodash';
 
 import { floatingPillSx } from '../app/tokens';
+import { CHART_SIZE_STOPS, chartSizeStopIndex, chartStretchCeiling, defaultChartSizeStop, gridSizeCaps, iconVar, textVar } from '../app/layout';
+import { useContainerSize, useLayout, useSettledValue } from '../app/LayoutProvider';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
@@ -45,13 +48,14 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
-import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
+import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
+import { ConnectorFormCard } from '../components/ConnectorFormCard';
 
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
@@ -83,14 +87,16 @@ import { EncodingShelfCard } from './EncodingShelfCard';
 import { ChartQuickConfig } from './ChartQuickConfig';
 import { ChartVariantStrip } from './ChartVariantStrip';
 import { CustomReactTable } from './ReactTable';
-import { InsightIcon } from '../icons';
+import { getConnectorIcon, InsightIcon } from '../icons';
 import { FreeDataViewFC } from './DataView';
 import { formatCellValue } from './ViewUtils';
 
 
-import { dfSelectors } from '../app/dfSlice';
 import { CodeExplanationCard, ConceptExplCards, extractConceptExplanations } from './ExplComponents';
 import CodeIcon from '@mui/icons-material/Code';
+import type { DataOperation } from '../dataOperations/models';
+import { DataFrameTable } from './DataFrameTable';
+import { LocalFolderPanel } from './UnifiedDataUploadDialog';
 
 export interface VisPanelProps { }
 
@@ -99,6 +105,270 @@ export interface VisPanelState {
     focusUpdated: boolean;
     viewMode: "gallery" | "carousel";
 }
+
+interface OperationPreviewTable {
+    display_name: string;
+    source_id?: string;
+    table_description?: string;
+    error?: string;
+    columns: string[];
+    rows: Record<string, unknown>[];
+}
+
+// Wide tables scroll horizontally; past this the row count makes the DOM the
+// bottleneck, so the remainder collapses into the trailing marker column.
+const PREVIEW_MAX_COLUMNS = 40;
+
+const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) => {
+    const { t } = useTranslation();
+    const dispatch = useDispatch();
+    const connectors = useSelector((state: DataFormulatorState) => state.serverConfig.CONNECTORS ?? []);
+    const [previews, setPreviews] = useState<Record<string, OperationPreviewTable[]>>({});
+    const [failedPlans, setFailedPlans] = useState<Set<string>>(new Set());
+    const previewGroups = useMemo(() => {
+        const seen = new Set<string>();
+        return operation.plans.map(plan => ({
+            plan,
+            tables: plan.steps
+                .map((step, stepIndex) => ({ step, stepIndex }))
+                .filter(({ step }) => {
+                    const key = step.displayName.trim().toLocaleLowerCase();
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }),
+        })).filter(group => group.tables.length > 0);
+    }, [operation.plans]);
+
+    // Several proposals have to stay comparable on one screen, so each table
+    // keeps a shorter scroll window as the count grows.
+    const previewTableCount = previewGroups.reduce((count, group) => count + group.tables.length, 0);
+    const previewMaxHeight = previewTableCount > 2 ? 240 : 340;
+    const selectedTableKeys = useMemo(() => new Set(
+        operation.plans
+            .find(plan => plan.id === operation.selectedPlanId)
+            ?.steps.map(step => step.displayName.trim().toLocaleLowerCase()) ?? [],
+    ), [operation.plans, operation.selectedPlanId]);
+    const connectorNames = useMemo(() => new Map(
+        connectors.map(connector => [connector.source_id, connector.name]),
+    ), [connectors]);
+
+    useEffect(() => {
+        let active = true;
+        setPreviews({});
+        setFailedPlans(new Set());
+        const previewPlanIds = new Set(previewGroups.map(({ plan }) => plan.id));
+        operation.plans.filter(plan => previewPlanIds.has(plan.id)).forEach(plan => {
+            apiRequest<{ previews: OperationPreviewTable[] }>('/api/agent/data-operation-preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ operation_id: operation.id, plan_id: plan.id }),
+            }).then(({ data }) => {
+                if (active) setPreviews(current => ({ ...current, [plan.id]: data.previews }));
+            }).catch(() => {
+                if (active) setFailedPlans(current => new Set(current).add(plan.id));
+            });
+        });
+        return () => { active = false; };
+    }, [operation.id, operation.plans, previewGroups]);
+
+    return (
+        <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflowY: 'auto', bgcolor: 'background.default' }}>
+            <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', boxSizing: 'border-box', px: { xs: 1.5, sm: 2.5, md: 3 }, py: { xs: 1.5, md: 2.25 } }}>
+                <Box sx={{ mb: 1.75 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
+                        {operation.canvasTitle || t('dataLoading.operation.previewHeading', { defaultValue: 'Tables to load' })}
+                    </Typography>
+                    <Typography sx={{ mt: 0.25, fontSize: textVar.xs, color: 'text.secondary' }}>
+                        {operation.canvasSummary
+                            || t('dataLoading.operation.previewGuide', { defaultValue: 'A preview of each table before it is added to your workspace.' })}
+                    </Typography>
+                </Box>
+                {previewGroups.map(({ plan, tables }) => (
+                    <Box key={plan.id}>
+                        {tables.map(({ step, stepIndex }) => {
+                            const preview = previews[plan.id]?.[stepIndex];
+                            const failed = failedPlans.has(plan.id);
+                            const selected = selectedTableKeys.has(step.displayName.trim().toLocaleLowerCase());
+                            const connectorName = preview?.source_id
+                                ? connectorNames.get(preview.source_id) || preview.source_id
+                                : undefined;
+                            return (
+                                <Box key={`${plan.id}-${stepIndex}`} sx={{
+                                    mb: 2.5,
+                                    '&:not(:first-of-type)': {
+                                        pt: 2.5,
+                                        borderTop: '1px solid',
+                                        borderColor: 'divider',
+                                    },
+                                }}>
+                                    <Box sx={{
+                                        display: 'flex', alignItems: 'flex-start', gap: 0.75,
+                                        px: 0.25, mb: 0.5,
+                                    }}>
+                                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                                <Typography title={preview?.display_name || step.displayName}
+                                                    sx={{
+                                                        fontSize: textVar.sm, fontWeight: 600,
+                                                        color: selected ? 'primary.main' : 'text.primary', minWidth: 0,
+                                                    }} noWrap>
+                                                    {preview?.display_name || step.displayName}
+                                                </Typography>
+                                                <Typography sx={{
+                                                    fontSize: textVar.xxs, fontWeight: 500, color: 'text.secondary',
+                                                    border: '1px solid', borderColor: 'divider', borderRadius: 0.75,
+                                                    px: 0.5, lineHeight: 1.6, flexShrink: 0,
+                                                }}>
+                                                    {t('preview.preview', { defaultValue: 'Preview' })}
+                                                </Typography>
+                                            </Box>
+                                            {(connectorName || preview?.table_description) && (
+                                                <Typography
+                                                    title={preview?.table_description || preview?.source_id}
+                                                    sx={{ mt: 0.25, fontSize: textVar.xxs, color: 'text.secondary' }}
+                                                    noWrap
+                                                >
+                                                    {connectorName && <>
+                                                        {t('dataLoading.loadPlan.fromSource', { defaultValue: 'From' })}{' '}
+                                                        <Box component="span" sx={{ fontWeight: 600 }}>{connectorName}</Box>
+                                                    </>}
+                                                    {connectorName && preview?.table_description && ' · '}
+                                                    {preview?.table_description}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                        {preview && (
+                                            <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0 }}>
+                                                {t('dataLoading.operation.previewColumns', {
+                                                    count: preview.columns.length,
+                                                    defaultValue: `${preview.columns.length} columns`,
+                                                })}
+                                                {preview.rows.length > 0 && ` · ${t('dataLoading.operation.previewShowingRows', {
+                                                    count: preview.rows.length,
+                                                    defaultValue: `showing ${preview.rows.length} rows`,
+                                                })}`}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                    <Box sx={{
+                                        border: '1px solid',
+                                        borderColor: selected ? 'primary.main' : 'divider',
+                                        borderRadius: 1,
+                                        bgcolor: 'background.paper',
+                                        overflow: 'hidden',
+                                        boxShadow: theme => selected
+                                            ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
+                                            : 'none',
+                                    }}>
+                                        {failed ? (
+                                            <Typography sx={{ px: 1.5, py: 1.25, fontSize: textVar.xs, color: 'error.main' }}>
+                                                {t('dataLoading.operation.previewUnavailable', { defaultValue: 'Preview unavailable' })}
+                                            </Typography>
+                                        ) : preview ? (
+                                            // Natural column widths: the pane scrolls both ways rather
+                                            // than squeezing a wide table until every cell is elided.
+                                            <Box sx={{ maxHeight: previewMaxHeight, overflow: 'auto' }}>
+                                            <DataFrameTable
+                                                columns={preview.columns}
+                                                rows={preview.rows}
+                                                maxColumns={PREVIEW_MAX_COLUMNS}
+                                                maxCellLength={32}
+                                                truncationIndicator="none"
+                                                autoWidth
+                                                showIndex
+                                            />
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, height: 96 }}>
+                                                <CircularProgress size={14} />
+                                                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                                                    {t('dataLoading.loadPlan.previewing')}
+                                                </Typography>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </Box>
+                            );
+                        })}
+                    </Box>
+                ))}
+            </Box>
+        </Box>
+    );
+};
+
+const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, form }) => {
+    const dispatch = useDispatch();
+
+    switch (form.kind) {
+        case 'connector':
+            if (form.connector.sourceType === 'local_folder') {
+                return (
+                    <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
+                        <Box sx={{ width: '100%', maxWidth: 624, height: '100%', mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, boxSizing: 'border-box' }}>
+                            <LocalFolderPanel
+                                onConnectorCreated={(connector) => {
+                                    dispatch(dfActions.updateTextTurn({
+                                        id: turn.id,
+                                        answered: true,
+                                        answer: `Connected to ${connector.display_name}`,
+                                        form: {
+                                            kind: 'connector',
+                                            title: form.title,
+                                            connector: {
+                                                sourceType: 'local_folder',
+                                                status: 'connected',
+                                                connectorId: connector.id,
+                                                connectionName: connector.display_name,
+                                            },
+                                        },
+                                    }));
+                                    dispatch(dfActions.requestConnectorRefresh());
+                                }}
+                            />
+                        </Box>
+                    </Box>
+                );
+            }
+            return (
+                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
+                    <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+                            {getConnectorIcon(form.connector.sourceType, {
+                                sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 },
+                            })}
+                            <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, lineHeight: 1.35 }}>
+                                {form.title}
+                            </Typography>
+                        </Box>
+                        <ConnectorFormCard
+                            messageId={turn.id}
+                            prompt={form.connector}
+                            variant="bare"
+                            onResolved={(resolution) => {
+                                dispatch(dfActions.updateTextTurn({
+                                    id: turn.id,
+                                    answered: true,
+                                    answer: `Connected to ${resolution.connectionName}`,
+                                    form: {
+                                        kind: 'connector',
+                                        title: form.title,
+                                        connector: {
+                                            sourceType: form.connector.sourceType,
+                                            status: resolution.status,
+                                            connectorId: resolution.connectorId,
+                                            connectionName: resolution.connectionName,
+                                        },
+                                    },
+                                }));
+                            }}
+                        />
+                    </Box>
+                </Box>
+            );
+    }
+};
 
 // Re-export shared utilities from ChartUtils (canonical location)
 import { generateChartSkeleton, getDataTable, checkChartAvailability } from './ChartUtils';
@@ -193,7 +463,7 @@ export let SampleSizeEditor: FC<{
     return <Box component="span" sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
         <Button 
             onClick={handleClick}
-            sx={{ textTransform: 'none', fontSize: '12px' }}
+            sx={{ textTransform: 'none', fontSize: textVar.sm }}
         >
             {localSampleSize} / {totalSize}
         </Button>
@@ -227,7 +497,7 @@ export let SampleSizeEditor: FC<{
                         aria-label={t('chart.sampleSizeAria')}
                     />
                     <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{maxSliderSize}</Typography>
-                    <Button sx={{ textTransform: 'none', ml: 2, fontSize: '12px' }} onClick={() => {
+                    <Button sx={{ textTransform: 'none', ml: 2, fontSize: textVar.sm }} onClick={() => {
                         onSampleSizeChange(localSampleSize);
                         setAnchorEl(null);
                     }}>
@@ -279,6 +549,46 @@ const scaleSpecSize = (node: any, factor: number): void => {
     }
 };
 
+/**
+ * Scale every font in a compiled spec by the same factor as its geometry.
+ *
+ * Without this a scaled chart has relatively *smaller* text: flint's
+ * `computeLabelSizing` is shrink-to-fit (it caps label size at 10px however
+ * much canvas there is), and titles/legends never appear in the compiled spec
+ * at all — they fall through to Vega's defaults. So seed the defaults, then
+ * scale everything, making the result a true uniform magnification.
+ */
+const VEGA_FONT_DEFAULTS = {
+    axis: { labelFontSize: 10, titleFontSize: 11 },
+    legend: { labelFontSize: 10, titleFontSize: 11 },
+    title: { fontSize: 13, subtitleFontSize: 11 },
+} as const;
+
+const scaleSpecFonts = (spec: any, factor: number): void => {
+    if (!spec || typeof spec !== 'object' || factor === 1) return;
+
+    const config = (spec.config ??= {});
+    for (const [section, defaults] of Object.entries(VEGA_FONT_DEFAULTS)) {
+        const target = (config[section] ??= {});
+        for (const [key, fallback] of Object.entries(defaults)) {
+            if (typeof target[key] !== 'number') target[key] = fallback;
+        }
+    }
+
+    const walk = (node: any): void => {
+        if (Array.isArray(node)) { node.forEach(walk); return; }
+        if (!node || typeof node !== 'object') return;
+        for (const [key, value] of Object.entries(node)) {
+            if (/fontSize$/i.test(key) && typeof value === 'number') {
+                node[key] = Math.round(value * factor);
+            } else {
+                walk(value);
+            }
+        }
+    };
+    walk(spec);
+};
+
 /** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
@@ -288,14 +598,29 @@ const VegaChartRenderer: FC<{
     chartWidth: number;
     chartHeight: number;
     scaleFactor: number;
+    /**
+     * Shrink applied to the *rendered* canvas rather than the spec. Scaling the
+     * spec down would re-run Vega's layout, which is free to rotate or drop
+     * labels — not a zoom. Sizing the drawn canvas down is a true uniform
+     * shrink, costs no recompile, and only ever downsamples so it stays crisp.
+     */
+    displayScale?: number;
     maxStretchFactor?: number;
     chartUnavailable: boolean;
     insightTitle?: string;
+    insightSubtitle?: string;
+    themePreview?: { active: true; themeId: string | undefined };
+    fieldSemantics?: Record<string, FieldSemanticsInfo>;
     onSpecReady?: (spec: any | null) => void;
-}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, onSpecReady }) => {
+}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, displayScale = 1, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview, fieldSemantics, onSpecReady }) => {
 
     const dispatch = useDispatch();
     const elementId = `focused-chart-element-${chart.id}`;
+    // Bumped when a render lands, so the display-scale effect can re-apply.
+    const [renderTick, setRenderTick] = useState(0);
+    // Vega's own CSS width for the current render — the baseline the shrink is
+    // measured against. Captured in the embed callback, never re-derived.
+    const naturalWidthRef = useRef<number | null>(null);
 
     useEffect(() => {
 
@@ -314,7 +639,7 @@ const VegaChartRenderer: FC<{
         // design-docs/28-chart-style-refinement-agent.md). The variant spec was
         // stored with the data block stripped — we re-attach live rows + override
         // width/height here so the same variant works at any panel size.
-        const activeVariant = chart.activeVariantId
+        const activeVariant = !themePreview?.active && chart.activeVariantId
             ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
             : undefined;
 
@@ -338,15 +663,6 @@ const VegaChartRenderer: FC<{
             // still scaled by the resizer. See applyVariantConfigUI.
             spec = applyVariantConfigUI(spec, activeVariant.configUI, activeVariant.configValues);
 
-            // Variants bypass assembleVegaChart, so the zoom resizer's
-            // scaleFactor (which normally flows through the compiler's canvas
-            // sizing) wouldn't affect them. Apply it directly by scaling every
-            // width/height in the stored spec — numeric sizes and {step: N}
-            // band sizes alike — so the resizer works on restyled charts too.
-            if (scaleFactor !== 1) {
-                scaleSpecSize(spec, scaleFactor);
-            }
-
         } else {
             spec = assembleVegaChart(
                 chart.chartType,
@@ -358,8 +674,17 @@ const VegaChartRenderer: FC<{
                 chartHeight,
                 true,
                 chart.config,
-                scaleFactor,
+                // Deliberately 1: pre-scaling the compiler's *input* re-runs
+                // flint's layout (band size scales with canvas, stretch caps
+                // are derived from it) and the factors compound. Scale the
+                // compiled output instead — see the uniform scale below.
+                1,
                 maxStretchFactor,
+                undefined,
+                fieldSemantics,
+                insightTitle,
+                insightSubtitle,
+                themePreview?.active ? themePreview.themeId : chart.themeId,
             );
         }
 
@@ -368,20 +693,27 @@ const VegaChartRenderer: FC<{
             return;
         }
 
-        spec['background'] = 'white';
+        // Uniform magnification of the finished spec: geometry and type by the
+        // same factor, so the chart grows without its text shrinking relative
+        // to it. Vega then draws at the larger size, so the canvas is genuinely
+        // higher-resolution rather than an upscaled image.
+        if (scaleFactor !== 1) {
+            scaleSpecSize(spec, scaleFactor);
+            scaleSpecFonts(spec, scaleFactor);
+        }
 
         // Inject the insight title into the Vega-Lite spec instead of rendering
         // it as outside HTML. Vega-Lite anchors the title against the plot group
         // (frame: 'group'), so it stays centered over the actual chart area even
         // when a legend pushes the embed wrapper off-center. We don't override a
         // title already supplied by a style variant.
-        if (insightTitle && !spec.title) {
-            const faceted = !!(chart.encodingMap.column?.fieldID || chart.encodingMap.row?.fieldID);
+        if (activeVariant && insightTitle && !spec.title) {
             spec.title = {
                 text: insightTitle,
+            ...(insightSubtitle ? { subtitle: insightSubtitle } : {}),
                 anchor: 'middle',
                 fontWeight: 500,
-                fontSize: 13,
+                fontSize: textVar.md,
                 color: '#555',
                 offset: 12,
             };
@@ -403,6 +735,14 @@ const VegaChartRenderer: FC<{
                     return;
                 }
                 embedResult.current = result;
+                // Record Vega's own CSS width before anything rescales it. It
+                // must be read here: Vega writes the width *inline*, so clearing
+                // that style later doesn't reveal a natural size, it removes the
+                // sizing and leaves the backing-store width (devicePixelRatio
+                // times too large on HiDPI).
+                const drawn = el.querySelector('canvas, svg') as HTMLElement | null;
+                naturalWidthRef.current = drawn ? drawn.getBoundingClientRect().width : null;
+                setRenderTick(t => t + 1);
             })
             .catch((err) => {
                 if (!cancelled) {
@@ -417,7 +757,18 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
+
+    // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
+    // width (with `height: auto` from the wrapper) scales the chart uniformly
+    // and only ever downsamples, so it stays crisp.
+    useEffect(() => {
+        const el = document.getElementById(elementId);
+        const drawn = el?.querySelector('canvas, svg') as HTMLElement | null;
+        const natural = naturalWidthRef.current;
+        if (!drawn || !natural) return;
+        drawn.style.width = `${Math.round(natural * displayScale)}px`;
+    }, [displayScale, renderTick, elementId]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -480,7 +831,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Add ref for the container box that holds all exploration components
 
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
     
     let charts = useSelector(dfSelectors.getAllCharts);
     // Resolve via the canvas target so a focused text turn keeps the chart
@@ -521,12 +872,54 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let focusedChart = charts.find(c => c.id == focusedChartId) as Chart;
     let trigger = focusedChart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == focusedChartId)?.derive?.trigger : undefined;
 
+    // On a short viewport `min(75vh, 800px)` reserves more than the canvas has,
+    // pushing the data table off-screen entirely. Fall back to the minimum
+    // legible chart height there. design-docs/45 §7.2.
+    const { widthClass, heightClass, height: viewportHeight, tokens } = useLayout();
+    const chartMinHeight = heightClass === 'short'
+        ? `${tokens.canvas.minChartHeight}px`
+        : 'min(75vh, 800px)';
+
+    // The canvas pane grows with the screen; its contents were capped at fixed
+    // sizes, so a 2560px canvas showed the same ~950px of content as 1366px.
+    // Measured on the pane itself (width imposed by the split, `overflow:
+    // hidden`) rather than on a content box: sizing the content from something
+    // the content can widen is a feedback loop, and it shows up as size flicker
+    // while resizing.
+    const { width: canvasContentWidth } = useContainerSize(componentRef);
+    const gridCaps = gridSizeCaps(canvasContentWidth, viewportHeight);
+
+    // Charts get two independent things: permission to stretch when the *data*
+    // wants it (the ceiling), and a uniform magnification for legibility (the
+    // scale, below). Neither forces a simple chart to grow.
+    //
+    // Settled, not live: this feeds the compile, so a drag would otherwise
+    // recompile the chart every frame — and a width resting near a step
+    // boundary would flip between two ceilings. The chart resizes once, when
+    // the drag stops.
+    const settledCanvasWidth = useSettledValue(canvasContentWidth);
+    const chartStretch = chartStretchCeiling(settledCanvasWidth, config.defaultChartWidth);
+
     const dispatch = useDispatch();
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
 
     const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
+    const [themePreview, setThemePreview] = useState<{ active: true; themeId: string | undefined } | undefined>();
+    const handleThemePreview = useCallback((themeId: string | undefined) => {
+        setThemePreview({ active: true, themeId });
+    }, []);
+    const handleThemePreviewEnd = useCallback(() => {
+        setThemePreview(undefined);
+    }, []);
+    // Chart size is the user's choice, not a consequence of screen size — the
+    // screen already has its say through the stretch ceiling. Magnifying needs
+    // a real re-render; shrinking is a pure canvas resize, so every sub-1 stop
+    // reuses the same render.
+    const chartRenderScale = Math.max(1, localScaleFactor);
+    const chartDisplayScale = Math.min(1, localScaleFactor);
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     // Floating encoding-shelf popover. The button lives in the stable outer
     // panel (not inside the chart's <Fade>), so it never remounts or shifts
@@ -546,10 +939,19 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         // Restore the persisted zoom for the newly focused chart (stored on
         // the Chart object so it survives switching charts and session
         // save/load). Falls back to 1 for charts that have never been zoomed.
-        setLocalScaleFactor(focusedChart?.scaleFactor ?? 1);
+        setLocalScaleFactor(focusedChart?.scaleFactor ?? defaultChartSizeStop(widthClass));
+        setThemePreview(undefined);
         setChatDialogOpen(false);
         setEncodingOpen(false);
     }, [focusedChartId]);
+
+    // Until the chart carries a size of its own, it follows the screen. A user
+    // choice is persisted onto the chart, so this stops applying the moment
+    // they touch the resizer.
+    useEffect(() => {
+        if (focusedChart?.scaleFactor !== undefined) return;
+        setLocalScaleFactor(defaultChartSizeStop(widthClass));
+    }, [widthClass, focusedChart?.scaleFactor]);
 
 
 
@@ -732,9 +1134,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let triggerTable = tables.find(t => t.derive?.trigger?.chart?.id == focusedChart?.id);
 
     // Chart title: surfaced as the rendered chart heading. The title is kept
-    // only while its key matches the chart's current encoded fields (chartType
-    // + field ids), so it stays through property edits (e.g. sort order) but is
-    // dropped once the encoded fields change.
+    // only while its key matches the chart's analytical encoding (chart type,
+    // channels, fields, and aggregations), so it stays through cosmetic edits
+    // but is dropped once the chart's meaning changes.
     const titleFresh = !!focusedChart.title && focusedChart.titleKey === computeInsightKey(focusedChart);
     
     const actionBtnSx = {
@@ -768,7 +1170,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     aria-label={t('chart.openInVegaEditor')}
                     disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
                     onClick={handleOpenInVegaEditor}>
-                    <OpenInNewIcon sx={{ fontSize: 18 }} />
+                    <OpenInNewIcon sx={{ fontSize: iconVar.lg }} />
                 </IconButton>
             </span>
         </Tooltip>
@@ -809,7 +1211,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         <IconButton size="small" color="primary" onClick={() => {
                             fetchDisplayRows(activeVisTableRows.length);
                         }}>
-                            <CasinoIcon sx={{ fontSize: '14px', 
+                            <CasinoIcon sx={{ fontSize: iconVar.sm, 
                                 transition: 'transform 0.5s ease-in-out', '&:hover': { transform: 'rotate(180deg)' } }}/>
                         </IconButton>
                     </Tooltip>
@@ -850,10 +1252,14 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         tableMetadata={table.metadata}
                                         chartWidth={config.defaultChartWidth}
                                         chartHeight={config.defaultChartHeight}
-                                        scaleFactor={localScaleFactor}
-                                        maxStretchFactor={config.maxStretchFactor}
+                                        scaleFactor={chartRenderScale}
+                                        displayScale={chartDisplayScale}
+                                        maxStretchFactor={chartStretch}
                                         chartUnavailable={chartUnavailable}
                                         insightTitle={titleFresh ? focusedChart.title : undefined}
+                                        insightSubtitle={titleFresh ? focusedChart.subtitle : undefined}
+                                        themePreview={themePreview}
+                                        fieldSemantics={tableSemantics.find(info => info.tableId === table.id)?.fields}
                                         onSpecReady={handleSpecReady}
                                     />
                                 </Box>
@@ -877,7 +1283,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </Fade>;
 
     focusedComponent = [
-        <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: 'min(75vh, 800px)', width: "100%", display: "flex", flexDirection: "column", flexShrink: 0}}>
+        <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: chartMinHeight, width: "100%", display: "flex", flexDirection: "column", flexShrink: 0}}>
             {/* Style-variant switcher now lives in the floating top toolbar
                 (see vis-view-canvas return) so it stays pinned alongside the
                 zoom resizer instead of scrolling with the chart content. */}
@@ -892,9 +1298,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         const ROW_HEIGHT = 25;
                         const HEADER_HEIGHT = 32;
                         const MIN_TABLE_HEIGHT = 60;
-                        const MAX_TABLE_HEIGHT = 400;
+                        const MAX_TABLE_HEIGHT = gridCaps.maxHeight;
                         const MIN_TABLE_WIDTH = 300;
-                        const MAX_TABLE_WIDTH = 900;
+                        const MAX_TABLE_WIDTH = gridCaps.maxWidth;
                         const rowCount = table.virtual?.rowCount || table.rows?.length || 0;
                         // Footer is hidden in chart mode (hideFooter), so don't reserve its height.
                         const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 12;
@@ -958,17 +1364,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 maxWidth="md" fullWidth>
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.25 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <TerminalIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{t('chart.code')}</Typography>
+                        <TerminalIcon sx={{ fontSize: iconVar.lg, color: 'text.secondary' }} />
+                        <Typography sx={{ fontSize: textVar.lg, fontWeight: 600 }}>{t('chart.code')}</Typography>
                     </Box>
                     <IconButton size="small" aria-label={t('app.close')} onClick={() => setCodeDialogOpen(false)}>
-                        <CloseIcon sx={{ fontSize: 18 }} />
+                        <CloseIcon sx={{ fontSize: iconVar.lg }} />
                     </IconButton>
                 </DialogTitle>
                 <DialogContent sx={{ overflowY: 'auto', overflowX: 'hidden' }} dividers>
                     {hasConcepts && (
                         <Box sx={{ pb: 1.5, mb: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                            <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 }}>
+                            <Typography sx={{ fontSize: textVar.xxs, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 }}>
                                 {t('chart.derivedConcepts')}
                             </Typography>
                             <ConceptExplCards
@@ -1022,7 +1428,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', px: 1.5, pb: 1 }}>
                         <Button
                             size="small"
-                            startIcon={<OpenInNewIcon sx={{ fontSize: 13 }} />}
+                            startIcon={<OpenInNewIcon sx={{ fontSize: iconVar.sm }} />}
                             disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
                             onClick={handleOpenInVegaEditor}
                             sx={{ textTransform: 'none', fontSize: '0.65rem', color: 'text.disabled', minWidth: 'auto', py: 0, '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' } }}
@@ -1035,11 +1441,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Popper>
     ]
 
-    let [scaleMin, scaleMax] = [0.2, 2.4]
+    const sizeStopIndex = chartSizeStopIndex(localScaleFactor);
 
-    // Persist the zoom onto the chart so it survives switching charts.
-    // Called on commit (button click / slider release) rather than on every
-    // drag tick, to avoid churning the charts array ref mid-drag.
+    // Persist the size onto the chart so it survives switching charts.
     const persistScaleFactor = React.useCallback((value: number) => {
         if (!focusedChartId) return;
         dispatch(dfActions.updateChartScaleFactor({
@@ -1048,41 +1452,55 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         }));
     }, [dispatch, focusedChartId]);
 
+    const setSizeStop = React.useCallback((index: number, persist: boolean) => {
+        const next = CHART_SIZE_STOPS[Math.min(CHART_SIZE_STOPS.length - 1, Math.max(0, index))];
+        setLocalScaleFactor(next);
+        if (persist) persistScaleFactor(next);
+    }, [persistScaleFactor]);
+
     // Memoize chart resizer to avoid re-creating Material-UI components on every render
-    let chartResizer = useMemo(() => <Stack spacing={1} direction="row" sx={{ 
-        width: 160, flexShrink: 0,
+    let chartResizer = useMemo(() => <Stack spacing={0.25} direction="row" sx={{
+        width: 140, flexShrink: 0,
     }} alignItems="center">
         <Tooltip key="zoom-out-tooltip" title={t('chart.zoomOut')}>
             <span>
-                <IconButton color="primary" size='small' aria-label={t('chart.zoomOut')} disabled={localScaleFactor <= scaleMin} onClick={() => {
-                    const next = Math.max(scaleMin, Math.round((localScaleFactor - 0.1) * 10) / 10);
-                    setLocalScaleFactor(next);
-                    persistScaleFactor(next);
-                }}>
+                <IconButton size='small' aria-label={t('chart.zoomOut')} disabled={sizeStopIndex <= 0} onClick={() => setSizeStop(sizeStopIndex - 1, true)}
+                        sx={{ p: 0.25, color: 'text.secondary' }}>
                     <ZoomOutIcon fontSize="small" />
                 </IconButton>
             </span>
         </Tooltip>
-        <Slider aria-label={t('chart.resizeSliderAria')} size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
-                value={localScaleFactor}
-                onChange={(event: Event, newValue: number | number[]) => {
-                    setLocalScaleFactor(newValue as number);
-                }}
-                onChangeCommitted={(event, newValue) => {
-                    persistScaleFactor(newValue as number);
+        {/* Discrete stops, not a continuous factor: a chart lands on a
+            predictable size and stays there across sessions. The marks drive
+            snapping but stay hidden — five dots read as clutter at this size. */}
+        <Slider aria-label={t('chart.resizeSliderAria')} size='small'
+                step={null}
+                marks={CHART_SIZE_STOPS.map((_, i) => ({ value: i }))}
+                min={0} max={CHART_SIZE_STOPS.length - 1}
+                value={sizeStopIndex}
+                onChange={(event: Event, newValue: number | number[]) => setSizeStop(newValue as number, false)}
+                onChangeCommitted={(event, newValue) => setSizeStop(newValue as number, true)}
+                sx={{
+                    mx: 0.75,
+                    color: 'text.secondary',
+                    '& .MuiSlider-mark': { display: 'none' },
+                    '& .MuiSlider-rail': { opacity: 0.3 },
+                    '& .MuiSlider-track': { border: 'none' },
+                    '& .MuiSlider-thumb': {
+                        width: 10, height: 10,
+                        '&::before': { boxShadow: 'none' },
+                        '&:hover, &.Mui-focusVisible': { boxShadow: '0 0 0 5px rgba(0,0,0,0.08)' },
+                    },
                 }} />
         <Tooltip key="zoom-in-tooltip" title={t('chart.zoomIn')}>
             <span>
-                <IconButton color="primary" size='small' aria-label={t('chart.zoomIn')} disabled={localScaleFactor >= scaleMax} onClick={() => {
-                    const next = Math.min(scaleMax, Math.round((localScaleFactor + 0.1) * 10) / 10);
-                    setLocalScaleFactor(next);
-                    persistScaleFactor(next);
-                }}>
+                <IconButton size='small' aria-label={t('chart.zoomIn')} disabled={sizeStopIndex >= CHART_SIZE_STOPS.length - 1} onClick={() => setSizeStop(sizeStopIndex + 1, true)}
+                        sx={{ p: 0.25, color: 'text.secondary' }}>
                     <ZoomInIcon fontSize="small" />
                 </IconButton>
             </span>
         </Tooltip>
-    </Stack>, [localScaleFactor, t, persistScaleFactor]);
+    </Stack>, [sizeStopIndex, setSizeStop, t]);
 
     return <Box ref={componentRef} id="vis-view-canvas" sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
         {/* No full-screen block while the agent works: the previous chart
@@ -1101,20 +1519,26 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         }}>
             {chartResizer}
             {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
-                <ChartVariantStrip chartId={focusedChart.id} />
+                <ChartVariantStrip
+                    chartId={focusedChart.id}
+                    onThemePreview={handleThemePreview}
+                    onThemePreviewEnd={handleThemePreviewEnd}
+                />
             )}
             {/* Right-aligned floating cluster near the top-right: "inspect /
                 edit this chart" controls grouped together (agent log + code +
                 encoding shelf). Chart deletion lives in the chart property-config
                 bar below the chart. */}
-            <Box sx={{ ml: 'auto', mr: '8px', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {/* `mr` leaves room for the pane's close-canvas button, which floats
+                above this bar at the same corner. */}
+            <Box sx={{ ml: 'auto', mr: '40px', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {hasDerived && (
                     <Tooltip title={t('chart.log')} placement="bottom">
                         <IconButton
                             size="small"
                             onClick={() => setChatDialogOpen(true)}
                             sx={floatingPillSx}>
-                            <QuestionAnswerIcon sx={{ fontSize: 18 }} />
+                            <QuestionAnswerIcon sx={{ fontSize: iconVar.lg }} />
                         </IconButton>
                     </Tooltip>
                 )}
@@ -1126,7 +1550,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                             size="small"
                             onClick={() => setCodeDialogOpen(true)}
                             sx={floatingPillSx}>
-                            <TerminalIcon sx={{ fontSize: 18 }} />
+                            <TerminalIcon sx={{ fontSize: iconVar.lg }} />
                         </IconButton>
                     </Tooltip>
                 )}
@@ -1147,7 +1571,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                     '&:hover': { backgroundColor: 'primary.dark', color: 'primary.contrastText' },
                                 } : {}),
                             }}>
-                            <TuneIcon sx={{ fontSize: 18 }} />
+                            <TuneIcon sx={{ fontSize: iconVar.lg }} />
                         </IconButton>
                     </Tooltip>
                 )}
@@ -1168,8 +1592,8 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, width: '100%', py: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, maxWidth: 820, textAlign: 'center' }}>
-                <AnimatedAgentToyIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.6 }}>
+                <AnimatedAgentToyIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
+                <Typography sx={{ fontSize: textVar.md, color: 'text.secondary', lineHeight: 1.6 }}>
                     {t('chart.emptyStateSubtitle')}
                 </Typography>
             </Box>
@@ -1177,7 +1601,7 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
                 fresh-start landing so a user who'd rather start manually
                 isn't gated behind an extra click. */}
             <Divider sx={{ mt: 3, mb: 2, width: '100%', maxWidth: 960 }} textAlign='left'>
-                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
                     {t('chart.orCreateYourself')}
                 </Typography>
             </Divider>
@@ -1281,12 +1705,12 @@ const TableActionDock: FC<{
                     startIcon={isDownloading ? <CircularProgress size={14} /> : <SaveAltIcon />}
                     onClick={handleDownload}
                     disabled={isDownloading}
-                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: 12 } : {}) }}
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: textVar.sm } : {}) }}
                 >
                     {t('dataGrid.downloadCsv', { defaultValue: 'Download CSV' })}
                 </Button>
                 <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
-                <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', px: 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
                     {gridReport?.virtual
                         ? (gridReport.loadedCount < gridReport.rowCount
                             ? t('dataGrid.loadedOfTotal', { loaded: gridReport.loadedCount, total: gridReport.rowCount })
@@ -1303,7 +1727,7 @@ const TableActionDock: FC<{
                             onClick={gridReport.isRandom ? onResetOrder : onRandomize}
                         >
                             <CasinoIcon sx={{
-                                fontSize: 18,
+                                fontSize: textVar.xxl,
                                 color: gridReport.isRandom ? 'primary.main' : 'text.secondary',
                                 transform: gridReport.isRandom ? 'rotate(15deg)' : 'none',
                                 transition: 'transform 0.2s, color 0.2s',
@@ -1338,10 +1762,17 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const { t } = useTranslation();
     let allCharts = useSelector(dfSelectors.getAllCharts);
+    const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     // Resolve the canvas target: a focused text turn (clarify/explain) is
     // non-canvas-owning — the canvas keeps showing its source chart, or the
     // source table when no chart exists (design-docs/41).
     let focusedId = useSelector(dfSelectors.selectCanvasTarget);
+    const focusedOperationTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.dataOperation)
+        : undefined;
+    const focusedFormTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
+        : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
@@ -1354,13 +1785,20 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const dispatch = useDispatch();
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let tables = useSelector(dfSelectors.getAllTables);
 
     // Virtual-pagination state reported up from the focused-table grid, so the
     // bottom toolbar can show the loaded/total count and drive the random dice.
     const [tableGridReport, setTableGridReport] = React.useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null>(null);
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
+
+    if (focusedOperationTurn?.dataOperation) {
+        return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;
+    }
+    if (focusedFormTurn?.form) {
+        return <FormArtifactCanvas turn={focusedFormTurn} form={focusedFormTurn.form} />;
+    }
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
@@ -1373,7 +1811,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                 .map(([category, templates]) => (
                     <Box key={category} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', px: 0.5, py: 0.5, gap: 0.25 }}>
                         <Typography sx={{
-                            fontSize: 11,
+                            fontSize: textVar.xs,
                             color: 'text.secondary',
                             fontWeight: 400,
                             mb: 1.5,
@@ -1405,7 +1843,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                             ? <img height="30px" width="30px" src={t?.icon} alt="" role="presentation" />
                                             : <Box sx={{ '& svg': { width: 30, height: 30 } }}>{t.icon}</Box>}
                                     </Box>
-                                    <Typography sx={{ ml: '6px', whiteSpace: "nowrap", fontSize: '11px', lineHeight: 1.2 }}>{t?.chart}</Typography>
+                                    <Typography sx={{ ml: '6px', whiteSpace: "nowrap", fontSize: textVar.xs, lineHeight: 1.2 }}>{t?.chart}</Typography>
                                 </Button>
                             ))
                         }

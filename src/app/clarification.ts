@@ -26,7 +26,10 @@ function normalizeOption(raw: any): ClarificationOption | null {
         String(raw.label || ''),
         typeof raw.label_code === 'string' ? raw.label_code : undefined,
     ).trim();
-    return label ? { label } : null;
+    const value = typeof raw.value === 'string' && raw.value.trim()
+        ? raw.value.trim()
+        : undefined;
+    return label ? { label, ...(value ? { value } : {}) } : null;
 }
 
 /** Resolve a question's translated text + its options. The `*_code` /
