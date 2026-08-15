@@ -2,11 +2,14 @@
 @import '@fontsource/roboto/400.css';
 @import '@fontsource/roboto/500.css';
 @import '@fontsource/roboto/700.css';
+@import '@fontsource/roboto-mono/400.css';
+@import '@fontsource/roboto-mono/500.css';
 
 /* Reference-density type scale. LayoutProvider overrides these per density;
    they are seeded here so the scale is defined before React mounts. */
 :root {
     --df-scale: 1;
+    --df-font-mono: "Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     --df-text-xxs: 10px;
     --df-text-xs: 11px;
     --df-text-sm: 12px;
@@ -19,6 +22,11 @@
     --df-icon-md: 16px;
     --df-icon-lg: 18px;
     --df-icon-xl: 20px;
+    --df-button-height-sm: 28px;
+    --df-button-height-md: 32px;
+    --df-button-padding-sm: 10px;
+    --df-button-padding-md: 12px;
+    --df-button-icon-gap: 6px;
 }
 
 html,

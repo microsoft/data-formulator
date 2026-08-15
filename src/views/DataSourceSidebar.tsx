@@ -31,7 +31,6 @@ import {
     InputAdornment,
     Menu,
     MenuItem,
-    Select,
     ListItemIcon,
     ListItemText,
     ClickAwayListener,
@@ -61,6 +60,8 @@ import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import PushPinIcon from '@mui/icons-material/PushPin';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
+import SortIcon from '@mui/icons-material/Sort';
+import CheckIcon from '@mui/icons-material/Check';
 
 import { KnowledgePanel } from './KnowledgePanel';
 
@@ -73,7 +74,7 @@ import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons
 import { loadTable } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, updateWorkspaceMeta, onWorkspaceListChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
-import { borderColor } from '../app/tokens';
+import { borderColor, sidebarEdge } from '../app/tokens';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import { ConnectorTablePreview } from '../components/ConnectorTablePreview';
@@ -284,7 +285,8 @@ export const DataSourceSidebar: React.FC<{
                 flexShrink: 0,
                 display: 'flex',
                 flexDirection: 'row',
-                borderRight: `1px solid ${borderColor.view}`,
+                borderRight: `1px solid ${sidebarEdge.border}`,
+                boxShadow: isOpen && isPinned ? sidebarEdge.dockedShadow : 'none',
                 backgroundColor: 'background.paper',
                 overflow: 'visible',
                 position: 'relative',
@@ -373,8 +375,8 @@ export const DataSourceSidebar: React.FC<{
                     flexShrink: 0,
                     display: 'flex',
                     backgroundColor: 'background.paper',
-                    borderRight: isPinned ? 'none' : `1px solid ${borderColor.view}`,
-                    boxShadow: isPinned ? 'none' : '2px 0 8px rgba(0, 0, 0, 0.10)',
+                    borderRight: isPinned ? 'none' : `1px solid ${sidebarEdge.border}`,
+                    boxShadow: isPinned ? 'none' : sidebarEdge.overlayShadow,
                 }}>
                     <DataSourceSidebarPanel
                         panelWidth={panelWidth}
@@ -540,10 +542,11 @@ const DataSourceSidebarPanel: React.FC<{
 
     const [sessions, setSessions] = useState<WorkspaceSummary[]>([]);
 
-    // Sort key for the sessions list. Default to creation time so the
-    // chronological order doesn't shuffle every time a workspace is touched.
+    // Session lists prioritize recent work. Creation-order views remain
+    // available when users need the original chronology.
     type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
-    const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
+    const [sessionSort, setSessionSort] = useState<SessionSortKey>('updated_desc');
+    const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
 
     const sortedSessions = useMemo(() => {
         const cmpDate = (a: string | null | undefined, b: string | null | undefined): number => {
@@ -559,7 +562,10 @@ const DataSourceSidebarPanel: React.FC<{
             case 'created_asc':
                 return copy.sort((a, b) => cmpDate(a.created_at, b.created_at));
             case 'updated_desc':
-                return copy.sort((a, b) => cmpDate(b.saved_at, a.saved_at));
+                return copy.sort((a, b) =>
+                    cmpDate(b.saved_at || b.created_at, a.saved_at || a.created_at)
+                    || cmpDate(b.created_at, a.created_at),
+                );
             case 'name_asc':
                 return copy.sort((a, b) =>
                     (a.display_name || '').localeCompare(b.display_name || ''),
@@ -1139,7 +1145,7 @@ const DataSourceSidebarPanel: React.FC<{
         }
 
         dispatch(dfActions.clearFocusedConnector());
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [focusedConnectorId, sortedConnectors]);
 
     // ── Preview a table on click ──────────────────────────────────────────
@@ -1742,8 +1748,6 @@ const DataSourceSidebarPanel: React.FC<{
                         </IconButton>
                     </Tooltip>
                 </Box>
-            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }} ref={setConnectorScrollEl}>
-
                 {/* Search box: typing filters local cache, Enter/button searches backend. */}
                 <Box sx={{ px: 1.5, pt: 1, pb: 0.75, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }}>
                     <TextField
@@ -1792,6 +1796,7 @@ const DataSourceSidebarPanel: React.FC<{
                         }}
                     />
                 </Box>
+            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }} ref={setConnectorScrollEl}>
 
                 {loadingConnectors && connectors.length === 0 && (
                     <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
@@ -2180,57 +2185,79 @@ const DataSourceSidebarPanel: React.FC<{
             {activeTab === 'sessions' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
-                    sx={panelHeaderSx}
+                    sx={{ ...panelHeaderSx, borderBottomColor: sidebarEdge.border }}
                 >
                     <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
-                    {/* Sort selector — sits next to the title so it reads
-                        as a modifier of the section, not an aside. The
-                        chevron is sized to match the 11px label rather
-                        than the default 24px MUI icon. */}
-                    <Select
-                        size="small"
-                        variant="standard"
-                        value={sessionSort}
-                        onChange={(e) => setSessionSort(e.target.value as SessionSortKey)}
-                        disableUnderline
-                        inputProps={{ 'aria-label': t('sidebar.sortSessions') }}
-                        IconComponent={(props) => (
-                            <ExpandMoreIcon {...props} sx={{ fontSize: iconVar.sm, color: 'text.disabled', right: 0 }} />
-                        )}
-                        sx={{
-                            fontSize: textVar.xs,
-                            color: 'text.secondary',
-                            cursor: 'pointer',
-                            height: 24,
-                            display: 'flex',
-                            alignItems: 'center',
-                            '& .MuiSelect-select': {
-                                py: 0,
-                                pl: 0,
-                                pr: '14px !important',
-                                minHeight: 0,
-                            },
-                            '&:hover': { color: 'text.secondary' },
-                            '&:hover .MuiSelect-icon': { color: 'text.secondary' },
-                        }}
-                        renderValue={(v) => {
-                            const labels: Record<SessionSortKey, string> = {
-                                created_desc: t('sidebar.sortNewest'),
-                                created_asc: t('sidebar.sortOldest'),
-                                updated_desc: t('sidebar.sortRecentlyModified'),
-                                name_asc: t('sidebar.sortName'),
-                            };
-                            return labels[v as SessionSortKey];
-                        }}
-                    >
-                        <MenuItem value="created_desc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortNewestFirst')}</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortOldestFirst')}</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortRecentlyModifiedFirst')}</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('sidebar.sortNameAsc')}</MenuItem>
-                    </Select>
                     <Box sx={{ flex: 1 }} />
+                    <Tooltip title={t('sidebar.newSession', { defaultValue: 'New session' })} placement="bottom">
+                        <IconButton
+                            size="small"
+                            aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
+                            onClick={() => dispatch(dfActions.resetState())}
+                            sx={panelHeaderActionSx}
+                        >
+                            <AddIcon sx={{ fontSize: iconVar.md }} />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title={t('workspace.importZip')} placement="bottom">
+                        <IconButton
+                            size="small"
+                            aria-label={t('workspace.importZip')}
+                            onClick={() => importRef.current?.click()}
+                            sx={panelHeaderActionSx}
+                        >
+                            <UploadFileIcon sx={{ fontSize: iconVar.md }} />
+                        </IconButton>
+                    </Tooltip>
+                    <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                    <Tooltip title={`${t('sidebar.sortSessions')}: ${({
+                        created_desc: t('sidebar.sortNewest'),
+                        created_asc: t('sidebar.sortOldest'),
+                        updated_desc: t('sidebar.sortRecentlyModified'),
+                        name_asc: t('sidebar.sortName'),
+                    } as Record<SessionSortKey, string>)[sessionSort]}`} placement="bottom">
+                        <IconButton
+                            size="small"
+                            aria-label={t('sidebar.sortSessions')}
+                            aria-haspopup="menu"
+                            aria-expanded={sessionSortAnchor ? 'true' : undefined}
+                            onClick={(event) => setSessionSortAnchor(event.currentTarget)}
+                            sx={panelHeaderActionSx}
+                        >
+                            <SortIcon sx={{ fontSize: iconVar.md }} />
+                        </IconButton>
+                    </Tooltip>
+                    <Menu
+                        anchorEl={sessionSortAnchor}
+                        open={Boolean(sessionSortAnchor)}
+                        onClose={() => setSessionSortAnchor(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    >
+                        {([
+                            ['updated_desc', t('sidebar.sortRecentlyModifiedFirst')],
+                            ['created_desc', t('sidebar.sortNewestFirst')],
+                            ['created_asc', t('sidebar.sortOldestFirst')],
+                            ['name_asc', t('sidebar.sortNameAsc')],
+                        ] as [SessionSortKey, string][]).map(([key, label]) => (
+                            <MenuItem
+                                key={key}
+                                selected={sessionSort === key}
+                                onClick={() => {
+                                    setSessionSort(key);
+                                    setSessionSortAnchor(null);
+                                }}
+                                sx={{ fontSize: textVar.sm, py: 0.75 }}
+                            >
+                                <ListItemIcon sx={{ minWidth: 28 }}>
+                                    {sessionSort === key && <CheckIcon sx={{ fontSize: iconVar.sm }} />}
+                                </ListItemIcon>
+                                <ListItemText primary={label} slotProps={{ primary: { sx: { fontSize: textVar.sm } } }} />
+                            </MenuItem>
+                        ))}
+                    </Menu>
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
@@ -2239,39 +2266,6 @@ const DataSourceSidebarPanel: React.FC<{
                     </Tooltip>
                 </Box>
             <ScrollFadeContainer sx={{ overflowX: 'hidden', overscrollBehavior: 'contain' }} resetKey={sessions.length}>
-                {/* New session + import actions */}
-                <Box sx={{
-                    display: 'flex', alignItems: 'center', px: 1.5, py: 0.75,
-                    userSelect: 'none',
-                    backgroundColor: 'rgba(255, 255, 255, 0.62)',
-                    borderBottom: '1px solid rgba(0, 0, 0, 0.07)',
-                }}>
-                    <Box
-                        onClick={() => {
-                            dispatch(dfActions.resetState());
-                        }}
-                        sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.75,
-                            flex: 1,
-                            cursor: 'pointer',
-                            borderRadius: 0.5,
-                            '&:hover': { bgcolor: 'action.hover' },
-                        }}
-                    >
-                        <AddIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
-                        <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 500, color: 'rgba(0, 0, 0, 0.72)' }}>
-                            {t('sidebar.newSession', { defaultValue: 'New session' })}
-                        </Typography>
-                    </Box>
-                    <Tooltip title={t('workspace.importZip')} placement="bottom">
-                        <IconButton size="small" onClick={() => importRef.current?.click()} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
-                            <UploadFileIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>
-                    <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
-                </Box>
                 {sessions.length === 0 ? (
                     <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
                         <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic' }}>
@@ -2352,7 +2346,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 // visual order is self-explanatory: created time when
                                 // sorted by creation, last-saved otherwise.
                                 const useCreated = sessionSort === 'created_desc' || sessionSort === 'created_asc';
-                                const stamp = formatCompactTime(useCreated ? s.created_at : s.saved_at);
+                                const stamp = formatCompactTime(useCreated ? s.created_at : (s.saved_at || s.created_at));
                                 if (!stamp) return null;
                                 return (
                                     <Typography

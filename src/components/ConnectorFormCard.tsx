@@ -106,7 +106,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
             })
             .finally(() => { if (!cancelled) setLoadingMeta(false); });
         return () => { cancelled = true; };
-    }, [sourceType]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [sourceType]);  
 
     // Seed prefilled values once. Non-sensitive fields (host, port, database, …)
     // go into redux like any typed value. Sensitive fields are handled

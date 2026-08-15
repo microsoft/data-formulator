@@ -334,6 +334,14 @@ export const iconVar = {
     xl: 'var(--df-icon-xl)',
 } as const;
 
+export const buttonVar = {
+    heightSmall: 'var(--df-button-height-sm)',
+    heightMedium: 'var(--df-button-height-md)',
+    paddingSmall: 'var(--df-button-padding-sm)',
+    paddingMedium: 'var(--df-button-padding-md)',
+    iconGap: 'var(--df-button-icon-gap)',
+} as const;
+
 // ── Canvas content sizing ──────────────────────────────────────────────
 //
 // The canvas pane grows with the screen but its contents were capped at fixed

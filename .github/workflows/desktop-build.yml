@@ -69,6 +69,12 @@ jobs:
           & 'dist/Data Formulator/Data Formulator.exe' | Tee-Object -Variable output
           if ($LASTEXITCODE -ne 0) { throw "self-test failed with exit code $LASTEXITCODE" }
 
+      - name: Self-test packaged application (macOS)
+        if: runner.os == 'macOS'
+        env:
+          DF_DESKTOP_SELF_TEST: '1'
+        run: './dist/Data Formulator.app/Contents/MacOS/Data Formulator'
+
       - name: Archive Windows application
         if: runner.os == 'Windows'
         shell: pwsh

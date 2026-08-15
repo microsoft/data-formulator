@@ -114,7 +114,7 @@ import TranslateIcon from '@mui/icons-material/Translate';
 import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
 import { syncVegaLocale } from '../i18n/vega-locale';
-import { iconVar, textVar } from './layout';
+import { buttonVar, iconVar, textVar } from './layout';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -1031,7 +1031,7 @@ const ErrorBoundaryFallback: React.FC = () => {
                     <Typography
                         component="pre"
                         sx={{
-                            fontFamily: 'monospace', fontSize: '0.65rem', color: 'text.disabled',
+                            fontFamily: 'var(--df-font-mono)', fontSize: '0.65rem', color: 'text.disabled',
                             whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                             m: 0, maxHeight: 260, overflowY: 'auto', textAlign: 'left',
                             width: '100%',
@@ -1571,6 +1571,35 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 styleOverrides: {
                     root: {
                         textTransform: 'none',
+                        borderRadius: 4,
+                        fontWeight: 500,
+                        lineHeight: 1.4,
+                        minWidth: 0,
+                        whiteSpace: 'nowrap',
+                        '& .MuiButton-startIcon': {
+                            marginLeft: 0,
+                            marginRight: buttonVar.iconGap,
+                        },
+                        '& .MuiButton-endIcon': {
+                            marginLeft: buttonVar.iconGap,
+                            marginRight: 0,
+                        },
+                    },
+                    sizeSmall: {
+                        minHeight: buttonVar.heightSmall,
+                        padding: `0 ${buttonVar.paddingSmall}`,
+                        fontSize: textVar.sm,
+                        '& .MuiButton-icon > :nth-of-type(1)': {
+                            fontSize: iconVar.sm,
+                        },
+                    },
+                    sizeMedium: {
+                        minHeight: buttonVar.heightMedium,
+                        padding: `0 ${buttonVar.paddingMedium}`,
+                        fontSize: textVar.md,
+                        '& .MuiButton-icon > :nth-of-type(1)': {
+                            fontSize: iconVar.md,
+                        },
                     },
                     text: ({ ownerState, theme: t }) => {
                         const c = ownerState.color;
@@ -1589,6 +1618,29 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         return {};
                     },
                 },
+                variants: [
+                    {
+                        props: { variant: 'soft' },
+                        style: ({ theme: t }) => ({
+                            color: (t.palette.primary as any).textColor ?? t.palette.primary.main,
+                            backgroundColor: (t.palette.primary as any).bgcolor ?? alpha(t.palette.primary.main, 0.1),
+                            '&:hover': {
+                                backgroundColor: alpha(t.palette.primary.main, 0.16),
+                            },
+                        }),
+                    },
+                    {
+                        props: { variant: 'toolbar' },
+                        style: ({ theme: t }) => ({
+                            color: t.palette.text.secondary,
+                            backgroundColor: 'transparent',
+                            '&:hover': {
+                                color: t.palette.text.primary,
+                                backgroundColor: t.palette.action.hover,
+                            },
+                        }),
+                    },
+                ],
             },
             MuiIconButton: {
                 styleOverrides: {

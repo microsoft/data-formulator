@@ -29,6 +29,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { TableIcon } from '../icons';
 import { iconVar, textVar } from '../app/layout';
+import { useLayout } from '../app/LayoutProvider';
 import type { CatalogTreeNode } from './CatalogTree';
 import { CountBadge } from './CatalogTree';
 
@@ -421,10 +422,12 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
     onToggleSelectTable,
     onToggleSelectNamespace,
     maxHeight: maxHeightProp = 600,
-    rowHeight = ROW_HEIGHT,
+    rowHeight: rowHeightProp,
     scrollParent,
     sx,
 }) => {
+    const { px } = useLayout();
+    const rowHeight = rowHeightProp ?? px(ROW_HEIGHT);
     const unconstrained = maxHeightProp === 'none';
     const maxHeightNum = unconstrained ? Infinity : maxHeightProp;
 

@@ -732,7 +732,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                   setAgentAttachments([]);
               }
             : undefined,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }), [t, onStartChat]);
     const quickActions = useMemo(() => buildDataLoadingQuickActions({
         t,
@@ -747,7 +747,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                   setAgentAttachments([]);
               }
             : undefined,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }), [t, onStartChat]);
     const agentChatBox = (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: HERO_WIDTH, alignSelf: 'center' }}>
@@ -1346,7 +1346,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }));
         // We deliberately seed only on tab entry — subsequent edits stay in
         // Redux as the user types.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [open, activeTab, connectorInstances]);
 
 
@@ -1491,7 +1491,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         };
 
         processFiles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }, [existingNames, t]);
 
     // File input change handler
@@ -2484,7 +2484,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     },
                                     '& .MuiInputBase-input': {
                                         fontSize: textVar.sm,
-                                        fontFamily: 'monospace',
+                                        fontFamily: 'var(--df-font-mono)',
                                         height: hasPasteContent ? '100% !important' : 'auto !important',
                                         overflow: 'auto !important',
                                     },

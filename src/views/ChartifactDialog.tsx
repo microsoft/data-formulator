@@ -12,7 +12,7 @@ const generateStyleCSS = (style: string): string => {
     // Font families
     const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif';
     const FONT_FAMILY_SERIF = 'Georgia, Cambria, "Times New Roman", Times, serif';
-    const FONT_FAMILY_MONO = '"SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+    const FONT_FAMILY_MONO = 'var(--df-font-mono)';
 
     if (style === 'social post' || style === 'short note') {
         // Twitter/X style - compact, modern

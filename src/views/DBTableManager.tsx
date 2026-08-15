@@ -644,7 +644,7 @@ export const DataLoaderForm: React.FC<{
             '& p, & li': { overflowWrap: 'anywhere' },
             '& p': { margin: '0 0 10px 0', '&:last-child': { marginBottom: 0 } },
             '& code': {
-                fontFamily: 'monospace',
+                fontFamily: 'var(--df-font-mono)',
                 backgroundColor: 'action.hover',
                 padding: '1px 4px',
                 borderRadius: 0.5,
@@ -654,7 +654,7 @@ export const DataLoaderForm: React.FC<{
             },
             '& pre': {
                 maxWidth: '100%',
-                fontFamily: 'monospace',
+                fontFamily: 'var(--df-font-mono)',
                 backgroundColor: 'action.hover',
                 padding: 1,
                 overflowX: 'auto',

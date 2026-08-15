@@ -227,7 +227,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                         {t('dataGrid.rowCount', { count: headerRowCount })} · {t('dataGrid.columnCount', { count: headerColCount })}
                     </Typography>
                     {showRealName && (
-                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontFamily: 'monospace' }}>
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontFamily: 'var(--df-font-mono)' }}>
                             · {t('dataGrid.filename', { name: realName })}
                         </Typography>
                     )}

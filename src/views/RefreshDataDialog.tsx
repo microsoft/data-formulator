@@ -447,7 +447,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                 },
                                 '& .MuiInputBase-input': {
                                     fontSize: textVar.sm,
-                                    fontFamily: 'monospace',
+                                    fontFamily: 'var(--df-font-mono)',
                                     lineHeight: 1.5,
                                 }
                             }}

@@ -71,7 +71,7 @@ const CommandRow: React.FC<{
             sx={{
                 flex: 1,
                 minWidth: 0,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontFamily: 'var(--df-font-mono)',
                 fontSize: textVar.sm,
                 color: 'text.primary',
                 whiteSpace: 'pre-wrap',

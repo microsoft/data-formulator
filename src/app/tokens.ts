@@ -26,6 +26,15 @@ export const borderColor = {
     view: 'rgba(0, 0, 0, 0.12)',
 } as const;
 
+/** Right edge of the collapsible sidebar: quiet when docked, clearer when it
+ *  floats over the workspace. Kept separate from generic view borders because
+ *  this edge is also a resize affordance. */
+export const sidebarEdge = {
+    border: 'rgba(0, 0, 0, 0.08)',
+    dockedShadow: '3px 0 10px -8px rgba(0, 0, 0, 0.32)',
+    overlayShadow: '5px 0 16px -8px rgba(0, 0, 0, 0.32)',
+} as const;
+
 // ── Composite border styles (spread into sx) ───────────────────────────
 
 /** Section divider border — tabs, sidebars, table wrappers */

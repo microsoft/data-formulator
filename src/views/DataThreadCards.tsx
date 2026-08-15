@@ -308,7 +308,6 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    fontFamily: 'monospace',
                 }}>
                     {rawName}
                 </Typography>

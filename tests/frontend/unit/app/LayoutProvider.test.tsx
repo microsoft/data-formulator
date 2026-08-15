@@ -48,6 +48,16 @@ describe('LayoutProvider', () => {
         renderAt(1440, 900);
         expect(document.documentElement.style.getPropertyValue('--df-text-sm'))
             .toBe(`${REFERENCE.text.sm}px`);
+        expect(document.documentElement.style.getPropertyValue('--df-button-height-sm')).toBe('28px');
+        expect(document.documentElement.style.getPropertyValue('--df-button-padding-sm')).toBe('10px');
+    });
+
+    it('scales button geometry with spacious layouts', () => {
+        renderAt(3840, 2160);
+        expect(probe().density).toBe('spacious');
+        expect(document.documentElement.style.getPropertyValue('--df-button-height-sm')).toBe('36px');
+        expect(document.documentElement.style.getPropertyValue('--df-button-height-md')).toBe('42px');
+        expect(document.documentElement.style.getPropertyValue('--df-button-icon-gap')).toBe('8px');
     });
 });
 

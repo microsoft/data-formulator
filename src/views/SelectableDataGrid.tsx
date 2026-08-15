@@ -590,7 +590,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         }
         setIsRandom(false);
         fetchVirtualData(orderBy ? [orderBy] : [], order, 0, false);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [columnFilters]);
 
     // Refetch from offset 0 whenever the committed search term changes
@@ -605,7 +605,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         searchRef.current = (searchText || '').trim();
         setIsRandom(false);
         fetchVirtualData(orderBy ? [orderBy] : [], order, 0, false);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [searchText]);
 
     const handleEndReached = React.useCallback(() => {

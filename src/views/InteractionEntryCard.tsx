@@ -143,7 +143,7 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
         // Tables (and some UA styles) don't reliably inherit the app font and
         // fall back to serif — pin the theme font at the container so all
         // rendered markdown (incl. table cells) stays sans-serif. The `code`
-        // component overrides this with its own monospace stack.
+        // component overrides this with the shared monospace token.
         fontFamily: theme.typography.fontFamily,
         '& > :first-child': { mt: 0 },
         '& > :last-child': { mb: 0 },
@@ -176,7 +176,7 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                 code: ({ children }) => (
                     <Box component="code" sx={{
                         fontSize: '0.9em',
-                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                        fontFamily: 'var(--df-font-mono)',
                         bgcolor: 'rgba(0,0,0,0.04)', px: 0.4, py: 0.1, borderRadius: '3px',
                     }}>
                         {children}

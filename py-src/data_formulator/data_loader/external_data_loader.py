@@ -603,7 +603,7 @@ class ExternalDataLoader(ABC):
         for name, value in effective.items():
             params.setdefault(name, value)
 
-        paths = cls.auth_paths()
+        paths = [] if skip_auth_tier else cls.auth_paths()
         selected_path = str(effective.get("_auth_path") or "").strip()
         if paths:
             if not selected_path:

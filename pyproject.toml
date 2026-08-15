@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.8.0a4"
+version = "0.8.0b1"
 
 requires-python = ">=3.11"
 authors = [
@@ -13,7 +13,7 @@ authors = [
 ]
 readme = "README.md"
 license = "MIT"
-description = "Data Formulator is research protoype data visualization tool powered by AI."
+description = "Data Formulator is a research prototype for data visualization powered by AI."
 keywords = ["data visualization", "LLM", "AI"]
 classifiers = [
   "Development Status :: 4 - Beta",

@@ -62,6 +62,7 @@ import { getUrls } from '../app/utils';
 import { apiRequest, ApiError, ApiRequestError } from '../app/apiClient';
 import { useTranslation } from 'react-i18next';
 import { LogViewerDialog } from './LogViewerDialog';
+import { iconVar } from '../app/layout';
 
 
 // Add this helper function at the top of the file, after the imports
@@ -485,10 +486,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                         <Button
                             variant="outlined"
                             size="small"
-                            disabled={azureCliLoginPending || azureCliStatus?.installed === false}
+                            disabled={!isEditingDetails || azureCliLoginPending || azureCliStatus?.installed === false}
                             onClick={handleAzureCliLogin}
-                            startIcon={azureCliLoginPending ? <CircularProgress size={14} /> : undefined}
-                            sx={{ textTransform: 'none' }}
+                            startIcon={azureCliLoginPending ? <CircularProgress size={iconVar.sm} /> : undefined}
                         >
                             {azureCliStatus?.installed === false
                                 ? t('db.cliNotInstalled')
@@ -565,9 +565,10 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     {serverConfig.IS_LOCAL_MODE && (
                         <Button
                             size="small"
+                            variant="text"
                             startIcon={<TerminalOutlinedIcon />}
                             onClick={() => setModelLogsOpen(true)}
-                            sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                            sx={{ whiteSpace: 'nowrap' }}
                         >
                             {t('model.viewRecentLog')}
                         </Button>
@@ -646,16 +647,13 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                             </Box>
                     ))}
                     <Button
+                        size="small"
                         startIcon={<AddCircleIcon />}
                         onClick={startNewModel}
-                        variant={detailModelId === undefined && isEditingDetails ? 'contained' : 'text'}
-                        disableElevation
+                        variant={detailModelId === undefined && isEditingDetails ? 'soft' : 'text'}
                         sx={{
                             justifyContent: 'flex-start',
                             mt: 1,
-                            px: 1,
-                            py: 1,
-                            textTransform: 'none',
                         }}
                     >
                         {t('model.addModel')}
@@ -680,14 +678,13 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                 color={detailModelStatus === 'ok' ? 'success' : detailModelStatus === 'error' ? 'error' : 'primary'}
                                 disabled={detailModelStatus === 'testing'}
                                 startIcon={detailModelStatus === 'testing'
-                                    ? <CircularProgress size={14} color="inherit" />
+                                    ? <CircularProgress size={iconVar.sm} color="inherit" />
                                     : detailModelStatus === 'ok'
                                         ? <CheckCircleOutlineIcon />
                                         : detailModelStatus === 'error'
                                             ? <ErrorOutlineIcon />
                                             : <PlayCircleOutlineIcon />}
                                 onClick={() => testModel(detailModel)}
-                                sx={{ textTransform: 'none' }}
                             >
                                 {detailModelStatus === 'testing'
                                     ? t('model.testing')
@@ -700,14 +697,14 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                             {detailIsGlobal ? (
                                 <Button
                                     size="small"
+                                    variant="text"
                                     startIcon={<ContentCopyOutlinedIcon />}
                                     onClick={copyModelDetails}
-                                    sx={{ textTransform: 'none' }}
                                 >
                                     {t('model.copyDetails')}
                                 </Button>
                             ) : (
-                                <Button size="small" onClick={editModelDetails} sx={{ textTransform: 'none' }}>
+                                <Button size="small" variant="text" onClick={editModelDetails}>
                                     {t('model.edit')}
                                 </Button>
                             )}
@@ -776,7 +773,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         >
             <DialogTitle>{t('model.models')}</DialogTitle>
             <DialogContent sx={{ minWidth: { sm: 720 } }}>{modelManagerView}</DialogContent>
-            <DialogActions sx={{ '& .MuiButton-root': { textTransform: 'none' } }}>
+            <DialogActions>
                 {isEditingDetails ? (
                     <>
                         {!serverConfig.DISABLE_DISPLAY_KEYS && newEndpoint
@@ -786,7 +783,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                 label={<Typography variant="body2">{t('model.showKeys')}</Typography>}
                             />
                         )}
-                        <Button disabled={isAddingModel} onClick={() => {
+                        <Button variant="text" disabled={isAddingModel} onClick={() => {
                             if (detailModel) loadModelDetails(detailModel);
                             else {
                                 const initialModel = allModels.find(model => model.id === selectedModelId) || allModels[0];
@@ -797,14 +794,14 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                             variant="contained"
                             disabled={!readyToTest || modelExists}
                             onClick={handleSaveModel}
-                            startIcon={isAddingModel ? <CircularProgress size={14} color="inherit" /> : undefined}
+                            startIcon={isAddingModel ? <CircularProgress size={iconVar.md} color="inherit" /> : undefined}
                         >
                             {isAddingModel ? t('model.testing') : t('model.testAndSave')}
                         </Button>
                     </>
                 ) : (
                     <>
-                        <Button onClick={() => setModelDialogOpen(false)}>{t('model.cancel')}</Button>
+                        <Button variant="text" onClick={() => setModelDialogOpen(false)}>{t('model.cancel')}</Button>
                         <Button
                             variant="contained"
                             disabled={modelNotReady}

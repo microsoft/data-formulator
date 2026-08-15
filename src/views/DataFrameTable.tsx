@@ -17,7 +17,7 @@ import { Box, Tooltip, Typography, useTheme } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { textVar } from '../app/layout';
 
-const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
+const CODE_FONT = 'var(--df-font-mono)';
 
 export interface DataFrameTableProps {
     /** Column names */

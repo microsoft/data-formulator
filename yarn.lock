@@ -737,6 +737,11 @@
   resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@floating-ui/utils/-/utils-0.2.12.tgz"
   integrity sha1-r+/nhZSfFqxM3R5pWTWjIVct1Wo=
 
+"@fontsource/roboto-mono@^5.3.0":
+  version "5.3.0"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@fontsource/roboto-mono/-/roboto-mono-5.3.0.tgz#de1c58d490a42853389caeca05376ecdb295e7e3"
+  integrity sha1-3hxY1JCkKFM4nK7KBTduzbKV5+M=
+
 "@fontsource/roboto@^4.5.5":
   version "4.5.8"
   resolved "https://registry.npmjs.org/@fontsource/roboto/-/roboto-4.5.8.tgz"
@@ -3821,7 +3826,7 @@ flatted@^3.2.9:
   resolved "https://registry.npmjs.org/flatted/-/flatted-3.4.2.tgz"
   integrity sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==
 
-flint-chart@^0.5.0:
+flint-chart@>=0.5.0:
   version "0.5.0"
   resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/flint-chart/-/flint-chart-0.5.0.tgz#925aaf8695c3122cabb55e561e1080749f2997ad"
   integrity sha1-klqvhpXDEiyrtV5WHhCAdJ8pl60=

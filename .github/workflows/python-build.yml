@@ -31,11 +31,13 @@ jobs:
       with:
         python-version: 3.12
     - name: Install node dependencies
-      run: yarn install
+      run: yarn install --frozen-lockfile
     - name: Build frontend
       run: yarn build
     - name: Build python artifact
       run: uv build
+    - name: Validate python artifact
+      run: uv run --with twine twine check dist/*
     - name: Archive production artifacts
       uses: actions/upload-artifact@v7
       with:

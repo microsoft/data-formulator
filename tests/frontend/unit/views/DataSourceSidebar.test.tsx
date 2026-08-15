@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { DataSourceSidebar } from '../../../../src/views/DataSourceSidebar';
 import { apiRequest } from '../../../../src/app/apiClient';
+import { listWorkspaces } from '../../../../src/app/workspaceService';
 
 const { dispatch, mockState } = vi.hoisted(() => ({
     dispatch: vi.fn(),
@@ -109,6 +110,8 @@ describe('DataSourceSidebar', () => {
         });
         vi.mocked(apiRequest).mockReset();
         vi.mocked(apiRequest).mockResolvedValue({ data: { connectors: [] } });
+        vi.mocked(listWorkspaces).mockReset();
+        vi.mocked(listWorkspaces).mockResolvedValue([]);
     });
 
     it('leaves loading state when catalog fetch fails', async () => {
@@ -152,7 +155,7 @@ describe('DataSourceSidebar', () => {
         mockState.dataSourceSidebarTab = 'sessions';
         render(<DataSourceSidebar />);
 
-        fireEvent.click(await screen.findByText('New session'));
+        fireEvent.click(await screen.findByRole('button', { name: 'New session' }));
 
         expect(dispatch).toHaveBeenCalledWith({ type: 'state/reset' });
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({
@@ -161,5 +164,34 @@ describe('DataSourceSidebar', () => {
                 activeWorkspace: expect.objectContaining({ displayName: 'Untitled Session' }),
             }),
         }));
+    });
+
+    it('shows recently modified sessions first and can switch to creation order', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            {
+                id: 'newer-creation',
+                display_name: 'Newer creation',
+                created_at: '2026-08-15T10:00:00Z',
+                saved_at: '2026-08-15T10:00:00Z',
+            },
+            {
+                id: 'recently-edited',
+                display_name: 'Recently edited',
+                created_at: '2026-08-01T10:00:00Z',
+                saved_at: '2026-08-15T11:00:00Z',
+            },
+        ]);
+
+        render(<DataSourceSidebar />);
+
+        const recentlyEdited = await screen.findByText('Recently edited');
+        const newerCreation = screen.getByText('Newer creation');
+        expect(recentlyEdited.compareDocumentPosition(newerCreation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'sidebar.sortSessions' }));
+        fireEvent.click(await screen.findByText('sidebar.sortNewestFirst'));
+
+        expect(newerCreation.compareDocumentPosition(recentlyEdited) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 });

@@ -720,7 +720,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                         padding: '0.15em 0.4em',
                         borderRadius: '3px',
                         fontSize: '0.85em',
-                        fontFamily: '"SFMono-Regular", Menlo, Monaco, Consolas, monospace',
+                        fontFamily: 'var(--df-font-mono)',
                     },
                     '& pre': {
                         backgroundColor: 'rgba(247, 246, 243, 1)',

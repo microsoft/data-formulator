@@ -146,7 +146,7 @@ const renderWithMath = (text: string) => {
                     component="code"
                     key={index}
                     sx={{
-                        fontFamily: 'monospace',
+                        fontFamily: 'var(--df-font-mono)',
                         fontSize: '0.92em',
                         px: 0.5,
                         py: 0.1,
@@ -189,7 +189,7 @@ const ConceptName = styled(Typography, {
     display: 'flex',
     alignItems: 'center',
     gap: '4px',
-    fontFamily: 'monospace',
+    fontFamily: 'var(--df-font-mono)',
     letterSpacing: '0.01em',
 }));
 

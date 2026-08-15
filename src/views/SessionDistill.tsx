@@ -636,7 +636,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
                         <Typography sx={{
                             fontSize: useMono ? 9 : 11,
                             color: 'text.secondary',
-                            fontFamily: useMono ? 'monospace' : undefined,
+                            fontFamily: useMono ? 'var(--df-font-mono)' : undefined,
                             lineHeight: useMono ? 1.4 : 1.5,
                             whiteSpace: 'pre-wrap',
                             overflowWrap: 'anywhere',
@@ -658,7 +658,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
         body = (
             <Box>
                 <Typography sx={{ fontSize: textVar.xs, color: 'text.primary' }}>
-                    <Box component="span" sx={{ fontFamily: 'monospace' }}>{ev.table_id ?? '?'}</Box>
+                    <Box component="span" sx={{ fontFamily: 'var(--df-font-mono)' }}>{ev.table_id ?? '?'}</Box>
                     <Box component="span" sx={{ color: 'text.disabled', ml: 0.75 }}>
                         {ev.row_count != null ? `${ev.row_count} rows` : ''}
                         {cols.length ? ` · ${cols.length} cols` : ''}
@@ -666,7 +666,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
                 </Typography>
                 {cols.length > 0 && (
                     <Typography sx={{
-                        fontSize: textVar.xxs, color: 'text.disabled', fontFamily: 'monospace',
+                        fontSize: textVar.xxs, color: 'text.disabled', fontFamily: 'var(--df-font-mono)',
                         display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
                         overflow: 'hidden', overflowWrap: 'anywhere',
                     }}>
@@ -681,7 +681,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
         body = (
             <Typography sx={{ fontSize: textVar.xs, color: 'text.primary' }}>
                 <Box component="span">{ev.mark_or_type ?? '?'}</Box>
-                <Box component="span" sx={{ color: 'text.disabled', ml: 0.75, fontFamily: 'monospace' }}>
+                <Box component="span" sx={{ color: 'text.disabled', ml: 0.75, fontFamily: 'var(--df-font-mono)' }}>
                     on {ev.related_table_id ?? '?'}
                 </Box>
                 {ev.encoding_summary && (

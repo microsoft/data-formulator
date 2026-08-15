@@ -25,7 +25,7 @@ const editorTheme = EditorView.theme({
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
         overflow: 'auto',
-        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, monospace',
+        fontFamily: 'var(--df-font-mono)',
         lineHeight: '1.65',
     },
     '.cm-content': {

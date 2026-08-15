@@ -131,6 +131,11 @@ export const LayoutProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         root.setProperty('--df-icon-md', `${tokens.icon.md}px`);
         root.setProperty('--df-icon-lg', `${tokens.icon.lg}px`);
         root.setProperty('--df-icon-xl', `${tokens.icon.xl}px`);
+        root.setProperty('--df-button-height-sm', `${Math.round(28 * scale)}px`);
+        root.setProperty('--df-button-height-md', `${Math.round(32 * scale)}px`);
+        root.setProperty('--df-button-padding-sm', `${Math.round(10 * scale)}px`);
+        root.setProperty('--df-button-padding-md', `${Math.round(12 * scale)}px`);
+        root.setProperty('--df-button-icon-gap', `${Math.round(6 * scale)}px`);
         root.setProperty('--df-rail', `${tokens.rail}px`);
         root.setProperty('--df-card-width', `${tokens.thread.cardWidth}px`);
         root.setProperty('--df-row-height', `${tokens.grid.rowHeight}px`);

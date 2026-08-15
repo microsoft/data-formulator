@@ -81,7 +81,7 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
 // ---------------------------------------------------------------------------
 
 // Modern monospace font stack for code blocks
-const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
+const CODE_FONT = 'var(--df-font-mono)';
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -718,7 +718,7 @@ const ChatBubble = React.memo<{
                 </Box>
                 {showDebug && (
                     <Paper variant="outlined" sx={{ mt: 0.5, p: 1, borderRadius: 1, bgcolor: 'rgba(0,0,0,0.02)', maxHeight: 200, overflow: 'auto' }}>
-                        <Typography component="pre" sx={{ fontFamily: 'monospace', fontSize: textVar.xxs, m: 0, whiteSpace: 'pre-wrap', color: 'text.secondary' }}>
+                        <Typography component="pre" sx={{ fontFamily: CODE_FONT, fontSize: textVar.xxs, m: 0, whiteSpace: 'pre-wrap', color: 'text.secondary' }}>
                             {JSON.stringify(message, null, 2)}
                         </Typography>
                     </Paper>
@@ -882,7 +882,7 @@ const StreamingIndicator = React.memo<{ content: string; toolSteps: ToolStep[] }
                                     <Box component="span" sx={{
                                         ml: 0.75,
                                         color: 'text.disabled',
-                                        fontFamily: 'monospace',
+                                        fontFamily: CODE_FONT,
                                         fontSize: textVar.xs,
                                     }}>
                                         {step.detail}

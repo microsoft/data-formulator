@@ -163,7 +163,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
 
     React.useEffect(() => {
         if (autoFocus) actualInputRef.current?.focus();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, []);
 
     const canSend = (value.trim().length > 0 || images.length > 0) && !inProgress && !disabled;
