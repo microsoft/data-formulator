@@ -69,4 +69,65 @@ describe("chart insight contract", () => {
     expect(spec.title?.text).toBe("Revenue Concentrated in Product A");
     expect([spec.title?.subtitle].flat().join(" ")).toBe("US revenue by product, USD");
   });
+
+  it("applies a Flint theme preset to the assembled base chart", () => {
+    const args = [
+      "Bar Chart",
+      chart.encodingMap,
+      [
+        { id: "category", name: "category", source: "original", tableRef: "table-1" },
+        { id: "value", name: "value", source: "original", tableRef: "table-1" },
+      ],
+      [{ category: "A", value: 10 }],
+      {
+        category: { type: "string", levels: [] },
+        value: { type: "number", levels: [] },
+      },
+      400,
+      300,
+      false,
+      undefined,
+      1,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ] as const;
+
+    const defaultSpec = assembleVegaChart(...args as any) as any;
+    const nytSpec = assembleVegaChart(...args as any, "nyt") as any;
+
+    expect(nytSpec).not.toEqual(defaultSpec);
+    expect(JSON.stringify(nytSpec)).toContain("#2f6b9a");
+  });
+
+  it("preserves the dark canvas supplied by the Power BI theme", () => {
+    const spec = assembleVegaChart(
+      "Bar Chart",
+      chart.encodingMap,
+      [
+        { id: "category", name: "category", source: "original", tableRef: "table-1" },
+        { id: "value", name: "value", source: "original", tableRef: "table-1" },
+      ] as any,
+      [{ category: "A", value: 10 }],
+      {
+        category: { type: "string", levels: [] },
+        value: { type: "number", levels: [] },
+      } as any,
+      400,
+      300,
+      false,
+      undefined,
+      1,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "powerbi",
+    ) as any;
+
+    expect(spec.background).toBe("#1b1a19");
+  });
 });

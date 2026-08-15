@@ -37,7 +37,7 @@ class TestScratchFileInjection:
         assert "[ATTACHED FILES]" in user
         assert "scratch/sales_a1b2c3d4.xlsx" in user
         assert "execute_python_script" in user
-        assert "data_loading" in user
+        assert "supported data operation" in user
         # The note precedes the question, and the question is still present.
         assert "[USER QUESTION]" in user
         assert user.index("[ATTACHED FILES]") < user.index("[USER QUESTION]")

@@ -961,7 +961,7 @@ const ConfigDialog: React.FC<{
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey, miniMode: config.miniMode ?? false}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >
@@ -1668,23 +1668,21 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         <AnvilLoader
                             label="loading data formulator..."
                             action={isDesktopApp ? (
-                                <Button
-                                    variant="text"
-                                    size="small"
-                                    startIcon={<TerminalOutlinedIcon sx={{ fontSize: 15 }} />}
+                                <Link
+                                    component="button"
+                                    type="button"
+                                    underline="always"
                                     onClick={() => setStartupLogsOpen(true)}
                                     sx={{
-                                        minWidth: 0,
-                                        px: 0.5,
                                         color: 'text.disabled',
                                         fontSize: '0.7rem',
                                         fontWeight: 400,
-                                        textTransform: 'none',
-                                        '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' },
+                                        fontFamily: 'inherit',
+                                        '&:hover': { color: 'text.secondary' },
                                     }}
                                 >
                                     View backend log
-                                </Button>
+                                </Link>
                             ) : undefined}
                         />
                         {isDesktopApp && (

@@ -564,6 +564,7 @@ export type Chart = {
     title?: string,  // AI-generated chart title (from the analyst's visualize action)
     subtitle?: string,  // factual scope, period, aggregation, and units for the title
     titleKey?: string,  // analytical encoding fingerprint captured when title/subtitle were set
+    themeId?: string,  // Flint theme preset id; undefined = Flint default
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
     scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)

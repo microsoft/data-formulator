@@ -317,7 +317,7 @@ interface LocalFolderPanelProps {
     onConnectorCreated: (conn: ConnectorInstance) => void;
 }
 
-const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated }) => {
+export const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated }) => {
     const { t } = useTranslation();
     const theme = useTheme();
     const [recursive, setRecursive] = React.useState(true);

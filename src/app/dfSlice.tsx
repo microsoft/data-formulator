@@ -132,7 +132,6 @@ export interface ClientConfig {
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 1.5)
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
     paletteKey: string; // active color palette key from tokens.ts
-    miniMode: boolean; // when true, run the single-turn MiniAnalystAgent (for small/local models)
 }
 
 export interface GeneratedReport {
@@ -360,7 +359,6 @@ const initialState: DataFormulatorState = {
         maxStretchFactor: 1.5,
         frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
-        miniMode: false,
     },
 
     dataLoaderConnectParams: {},
@@ -971,6 +969,7 @@ export const dataFormulatorSlice = createSlice({
             // field backfills below handle "new optional field" cases that need
             // no version.
             const saved = migrateState(action.payload);
+            const { miniMode: _legacyMiniMode, ...savedConfig } = saved.config || {};
 
             // Return a brand-new state object so Immer skips
             // recursive proxy / freeze on potentially huge table rows.
@@ -1038,7 +1037,7 @@ export const dataFormulatorSlice = createSlice({
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
                 focusedId: saved.focusedId || undefined,
-                config: { ...initialState.config, ...(saved.config || {}) },
+                config: { ...initialState.config, ...savedConfig },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
                 dataLoadingChatPending: null,
@@ -1481,6 +1480,12 @@ export const dataFormulatorSlice = createSlice({
             if (chart) {
                 chart.scaleFactor = action.payload.scaleFactor === 1 ? undefined : action.payload.scaleFactor;
             }
+        },
+        setChartTheme: (state, action: PayloadAction<{chartId: string, themeId: string | undefined}>) => {
+            const chart = collectAllCharts(state).find(c => c.id === action.payload.chartId);
+            if (!chart) return;
+            chart.themeId = action.payload.themeId;
+            chart.activeVariantId = undefined;
         },
         // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
         // Variants are user-authored "skins" of a chart's Vega-Lite spec. They live

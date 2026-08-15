@@ -71,26 +71,30 @@ def _save_orders_catalog(user_home: Path) -> None:
 def test_registry_exposes_discovery_tools_only_after_skill_load() -> None:
     registry = build_registry()
 
-    assert registry.has("data_loading")
+    assert registry.has("data-loading")
+    assert registry.has("data_loading")  # legacy persisted trajectories
     assert "delegate" not in registry.metas["core"].action_names
-    meta = registry.metas["data_loading"]
+    meta = registry.metas["data-loading"]
     assert meta.always_on is False
-    assert meta.action_names == ("propose_data_operation",)
-    assert meta.tool_names == ("list_data", "find_data", "describe_data", "probe_data")
-    assert registry.tools_for(["core"]) != registry.tools_for(["core", "data_loading"])
+    assert meta.action_names == ("propose_data_operation", "propose_connection")
+    assert meta.tool_names == (
+        "list_data", "find_data", "describe_data", "probe_data",
+        "list_connectors", "describe_connector",
+    )
+    assert registry.tools_for(["core"]) != registry.tools_for(["core", "data-loading"])
     assert {
         spec["function"]["name"]
-        for spec in registry.tools_for(["data_loading"])
+        for spec in registry.tools_for(["data-loading"])
     } == set(meta.tool_names)
     assert {
         spec["function"]["name"]
-        for spec in registry.action_tools_for(["data_loading"])
+        for spec in registry.action_tools_for(["data-loading"])
     } == set(meta.action_names)
 
 
 def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -140,7 +144,7 @@ def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path
 
 def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -159,7 +163,7 @@ def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:
 
 
 def test_invalid_proposal_returns_recoverable_observation(tmp_path: Path) -> None:
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
     generator = skill.handle_action(
         "propose_data_operation",
@@ -175,7 +179,7 @@ def test_invalid_proposal_returns_recoverable_observation(tmp_path: Path) -> Non
 
 def test_proposal_does_not_require_plan_descriptions(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -206,7 +210,7 @@ def test_minimal_proposal_resolves_table_fields_from_catalog(tmp_path: Path) -> 
             "row_count": 1200,
         },
     }])
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -241,7 +245,7 @@ def test_minimal_proposal_resolves_table_fields_from_catalog(tmp_path: Path) -> 
 
 def test_canonical_proposal_does_not_add_canvas_prose(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -283,7 +287,7 @@ def test_proposal_rejects_exact_query_already_loaded_in_workspace(tmp_path: Path
             },
         },
     )
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -329,7 +333,7 @@ def test_discovery_parameter_contract_matches_standalone_agent() -> None:
     registry = build_registry()
     skill_specs = {
         spec["function"]["name"]: executable_schema(spec["function"]["parameters"])
-        for spec in registry.tools_for(["data_loading"])
+        for spec in registry.tools_for(["data-loading"])
     }
     standalone_specs = {
         spec["function"]["name"]: executable_schema(spec["function"]["parameters"])
@@ -347,7 +351,7 @@ def test_skill_uses_shared_catalog_discovery(tmp_path: Path) -> None:
         "path": ["public", "orders"],
         "metadata": {"description": "Customer orders"},
     }])
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
 
     result = skill.handle_tool(
@@ -368,7 +372,7 @@ def test_probe_budget_is_shared_within_run_and_isolated_between_runs(tmp_path: P
         "path": ["public", "orders"],
         "metadata": {},
     }])
-    skill = build_registry().get_skill("data_loading")
+    skill = build_registry().get_skill("data-loading")
     assert skill is not None
     loader = _Loader()
     shared_state: dict = {}

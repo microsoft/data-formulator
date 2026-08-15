@@ -102,18 +102,40 @@ _LOADING_HTML = """\
 <style>
   html, body { height: 100%; margin: 0; }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center;
-         background: #fafafa; color: #444; font-family: "Segoe UI", system-ui, sans-serif; }
-  .spinner { width: 36px; height: 36px; border: 4px solid #e0e0e0; border-top-color: #1976d2;
-             border-radius: 50%; animation: spin 0.9s linear infinite; margin-bottom: 18px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .title { font-size: 15px; font-weight: 500; }
-  .hint { font-size: 12px; color: #999; margin-top: 6px; }
+                 background: #fafafa; color: #666; font-family: "Courier New", monospace; user-select: none; }
+    .binary-grid { display: flex; flex-direction: column; gap: 2px; margin-bottom: 24px; }
+    .binary-row { display: flex; justify-content: center; gap: 3px; }
+    .binary-cell { display: flex; width: 14px; height: 20px; align-items: center; justify-content: center;
+                                 color: #bdbdbd; font-size: 12px; font-weight: 500; opacity: 0.25;
+                                 transition: opacity 0.2s ease, color 0.2s ease; }
+    .binary-cell.on { color: #1976d2; opacity: 0.9; }
+    .title { font-size: 12px; font-weight: 400; letter-spacing: 3px; text-transform: uppercase;
+                     animation: pulse 2.5s ease-in-out infinite; }
+    .hint { margin-top: 8px; color: #999; font-size: 11px; }
+    @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .title { animation: none; } }
 </style>
 </head>
 <body>
-  <div class="spinner"></div>
-  <div class="title">Data Formulator is starting&hellip;</div>
-  <div class="hint">First launch may take a little longer</div>
+    <div class="binary-grid" aria-hidden="true">
+        <div class="binary-row"><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span></div>
+        <div class="binary-row"><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span></div>
+        <div class="binary-row"><span class="binary-cell on">1</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell on">1</span><span class="binary-cell on">1</span><span class="binary-cell">0</span><span class="binary-cell">0</span></div>
+    </div>
+    <div class="title">Loading Data Formulator...</div>
+        <script>
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                const cells = document.querySelectorAll('.binary-cell');
+                window.setInterval(() => {
+                    cells.forEach((cell) => {
+                        if (Math.random() < 0.3) {
+                            const isOn = cell.classList.toggle('on');
+                            cell.textContent = isOn ? '1' : '0';
+                        }
+                    });
+                }, 120);
+            }
+        </script>
 </body>
 </html>
 """

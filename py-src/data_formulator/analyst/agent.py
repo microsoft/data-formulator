@@ -660,7 +660,7 @@ class AnalystAgent:
                 continue
             m = _SKILL_LOADED_RE.match(content)
             if m:
-                name = m.group(1).strip()
+                name = self.registry.canonical_name(m.group(1).strip())
                 if self.registry.has(name):
                     self._loaded_skills.add(name)
 
@@ -695,8 +695,10 @@ class AnalystAgent:
         the caller controls *when* it lands so message ordering stays
         provider-valid. Idempotent — loading twice yields ``body_msg=None``.
         """
+        requested_name = name
+        name = self.registry.canonical_name(name)
         if not self.registry.has(name):
-            return False, f"Unknown skill: {name!r}", None
+            return False, f"Unknown skill: {requested_name!r}", None
         if name in self._loaded_skills:
             return True, f"Skill '{name}' already loaded.", None
         try:
@@ -1632,7 +1634,7 @@ class AnalystAgent:
                             "stdout": tool_content,
                         }
                     elif tool_name == "load_skill":
-                        skill_name = tool_args.get("name", "")
+                        skill_name = self.registry.canonical_name(tool_args.get("name", ""))
                         ok, message, body_msg = self._build_skill_body_message(skill_name)
                         tool_status = "ok" if ok else "error"
                         tool_content = message

@@ -36,11 +36,9 @@ from data_formulator.analyst.skills import (
     build_registry,
 )
 from data_formulator.analyst.agent import AnalystAgent
-from data_formulator.analyst.mini_agent import MiniAnalystAgent
 
 __all__ = [
     "AnalystAgent",
-    "MiniAnalystAgent",
     "Event",
     "Skill",
     "SkillContext",

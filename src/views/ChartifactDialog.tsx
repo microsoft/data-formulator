@@ -180,6 +180,9 @@ export const convertToChartifact = (reportMarkdown: string, reportStyle: string,
                     config.maxStretchFactor,
                     undefined,
                     tableSemantics.find(info => info.tableId === chartTable.id)?.fields,
+                    undefined,
+                    undefined,
+                    chart.themeId,
                 );
 
                 // Convert the spec to use named data source

@@ -219,12 +219,13 @@ export const ChartRenderService: FC = () => {
                     maxStretchFactor,
                     undefined,
                     fieldSemantics,
+                    undefined,
+                    undefined,
+                    chart.themeId,
                 );
             }
 
             if (!fullSpec || fullSpec === "Table") return;
-            fullSpec['background'] = 'white';
-
             // --- Render headlessly (single full-size render) ---
             const fullResult = await renderHeadless(fullSpec);
 
@@ -312,6 +313,7 @@ export const ChartRenderService: FC = () => {
                 activeVariant?.id,
                 activeVariant?.vlSpec,
                 fieldSemantics,
+                chart.themeId,
             );
 
             const cached = getCachedChart(chart.id);

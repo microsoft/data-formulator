@@ -36,6 +36,28 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it("stores a Flint theme and returns an active custom variant to the base chart", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addChart({
+        id: "chart-1",
+        chartType: "Bar Chart",
+        tableRef: "orders",
+        source: "user",
+        encodingMap: {},
+        activeVariantId: "variant-1",
+      } as any)
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.setChartTheme({ chartId: "chart-1", themeId: "nyt" })
+    );
+
+    expect(state.charts[0].themeId).toBe("nyt");
+    expect(state.charts[0].activeVariantId).toBeUndefined();
+  });
+
   it("stores inferred field semantics separately from physical metadata", () => {
     let state = dataFormulatorReducer(
       undefined,
@@ -122,6 +144,21 @@ describe("split table collections", () => {
       }),
     ]);
     expect(state).not.toHaveProperty("tables");
+  });
+
+  it("drops the retired mini agent setting from loaded state", () => {
+    const state = dataFormulatorReducer(
+      undefined,
+      dfActions.loadState({
+        config: {
+          miniMode: true,
+          defaultChartWidth: 512,
+        },
+      })
+    );
+
+    expect(state.config.defaultChartWidth).toBe(512);
+    expect(state.config).not.toHaveProperty("miniMode");
   });
 
   it("stores input metadata without rows and tracks derived tables separately", () => {

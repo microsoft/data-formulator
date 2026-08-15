@@ -48,6 +48,7 @@ export function buildEmbeddedDataForChart(
         rows,
         tableMetadata,
         300, 300, false, chart.config, 1, undefined, undefined, fieldSemantics,
+        undefined, undefined, chart.themeId,
     );
     if (!fullSpec || fullSpec === 'Table') return rows;
     const values = (fullSpec as any)?.data?.values;
@@ -87,6 +88,7 @@ export function buildSpecForRestyle(
         table.rows,
         table.metadata,
         300, 300, true, chart.config, 1, undefined, undefined, fieldSemantics,
+        undefined, undefined, chart.themeId,
     );
     if (!fullSpec || fullSpec === 'Table') return null;
     const embeddedValues = (fullSpec as any)?.data?.values;

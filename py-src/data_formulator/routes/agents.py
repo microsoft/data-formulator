@@ -35,7 +35,6 @@ from data_formulator.data_operations import DataOperationExecutor, DataOperation
 from data_formulator.datalake.parquet_utils import make_json_safe
 
 from data_formulator.analyst.agent import AnalystAgent
-from data_formulator.analyst.mini_agent import MiniAnalystAgent
 from data_formulator.agents.agent_language import build_language_instruction
 from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 from data_formulator.error_handler import json_ok, stream_preflight_error, classify_and_wrap_llm_error
@@ -465,9 +464,6 @@ def analyst_streaming():
     user_question = content.get("user_question", "")
     max_iterations = content.get("max_iterations", 5)
     max_repair_attempts = content.get("max_repair_attempts", 1)
-    # "mini" swaps in the single-decision MiniAnalystAgent (one visualize/explain
-    # per run) for small/local models; anything else uses the standard agent.
-    agent_mode = content.get("agent_mode", "standard")
     agent_exploration_rules = content.get("agent_exploration_rules", "")
     agent_coding_rules = content.get("agent_coding_rules", "")
     focused_thread = content.get("focused_thread", None)
@@ -524,7 +520,7 @@ def analyst_streaming():
             ))
 
     logger.setLevel(logging.INFO)
-    logger.info(f"# analyst-streaming request (agent_mode={agent_mode})")
+    logger.info("# analyst-streaming request")
     logger.debug("== input tables ===>")
     for table in input_tables:
         logger.debug(f"===> Table: {table['name']}")
@@ -584,29 +580,16 @@ def analyst_streaming():
                 return
 
             client = get_client(content['model'])
-            if agent_mode == "mini":
-                # Single-decision agent; it forces max_iterations=1 internally and
-                # may run one optional data inspection before answering.
-                agent = MiniAnalystAgent(
-                    client=client,
-                    workspace=workspace,
-                    agent_exploration_rules=agent_exploration_rules,
-                    agent_coding_rules=agent_coding_rules,
-                    language_instruction=language_instruction,
-                    max_repair_attempts=max_repair_attempts,
-                    identity_id=identity_id,
-                )
-            else:
-                agent = AnalystAgent(
-                    client=client,
-                    workspace=workspace,
-                    agent_exploration_rules=agent_exploration_rules,
-                    agent_coding_rules=agent_coding_rules,
-                    language_instruction=language_instruction,
-                    max_iterations=max_iterations,
-                    max_repair_attempts=max_repair_attempts,
-                    identity_id=identity_id,
-                )
+            agent = AnalystAgent(
+                client=client,
+                workspace=workspace,
+                agent_exploration_rules=agent_exploration_rules,
+                agent_coding_rules=agent_coding_rules,
+                language_instruction=language_instruction,
+                max_iterations=max_iterations,
+                max_repair_attempts=max_repair_attempts,
+                identity_id=identity_id,
+            )
 
             trajectory = None
             if resume_trajectory:

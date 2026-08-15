@@ -40,7 +40,7 @@ to the user; call as many as you need, then take an action or give your final
 answer.
 
 You analyse data that is **already in the workspace**. If the user's question
-requires connected data that isn't present, call `load_skill("data_loading")`
+requires connected data that isn't present, call `load_skill("data-loading")`
 and follow that skill's discovery and immutable proposal workflow in this same
 conversation. Do not hand off to the standalone Data Loading agent.
 
@@ -153,7 +153,7 @@ contribute to the answer, and stop when the answer is sufficient.
   multiple views when doing so adds meaningful insight.
 - If essential intent is unclear, use `ask_user` rather than guessing.
 - *Missing data* (needs tables not in the workspace):
-  `load_skill("data_loading")`, discover the source, and propose immutable
+  `load_skill("data-loading")`, discover the source, and propose immutable
   loading options inline.
 - *Report / write-up request* (e.g. "write a report on X", "summarize the findings
   as a narrative"): this needs the **report** skill — `load_skill("report")` and

@@ -75,6 +75,8 @@ const simpleHash = (str: string): string => {
     return Math.abs(hash).toString(36);
 };
 
+const CONFIGURED_SECRET_MASK = '******';
+
 interface ModelSelectionButtonProps {
     appearance?: 'toolbar' | 'inline';
 }
@@ -243,6 +245,11 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const detailModel = allModels.find(model => model.id === detailModelId);
     const detailIsGlobal = globalModels.some(model => model.id === detailModelId);
     const detailModelStatus = getStatus(detailModelId);
+    const detailHasConfiguredApiKey = detailModel
+        ? detailIsGlobal
+            ? detailModel.auth_mode === 'key'
+            : Boolean(detailModel.api_key)
+        : false;
 
     let modelExists = allModels.some(m => m.id !== detailModelId &&
         m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase 
@@ -491,20 +498,21 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 </Box>
             )}
 
-            {newEndpoint && (newEndpoint !== 'azure' || azureAuthMethod === 'api_key') && (
+            {newEndpoint && (newEndpoint !== 'azure' || azureAuthMethod === 'api_key')
+                && (isEditingDetails || detailHasConfiguredApiKey) && (
                 <TextField
                     fullWidth
                     size="small"
                     disabled={!isEditingDetails}
-                    type={showKeys ? 'text' : 'password'}
+                    type={isEditingDetails && !showKeys ? 'password' : 'text'}
                     label={t('model.apiKey')}
-                    value={newApiKey}
+                    value={isEditingDetails ? newApiKey : CONFIGURED_SECRET_MASK}
                     onChange={(event) => setNewApiKey(event.target.value)}
                     autoComplete="off"
                 />
             )}
 
-            {newEndpoint && (
+            {newEndpoint && (isEditingDetails || Boolean(newApiBase)) && (
                 <TextField
                     fullWidth
                     size="small"
@@ -517,7 +525,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 />
             )}
 
-            {newEndpoint === 'azure' && (
+            {newEndpoint === 'azure' && (isEditingDetails || Boolean(newApiVersion)) && (
                 <Accordion disableGutters elevation={0} sx={{ border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Typography variant="body2">{t('model.advancedSettings')}</Typography>
@@ -757,16 +765,6 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 }}
             >
                 {selectedReady ? selectedModelName : t('model.selectModels')}
-                {selectedReady && (config.miniMode ?? false) && (
-                    <Tooltip title={t('model.miniModeHint')}>
-                        <Box
-                            component="span"
-                            sx={{ ml: 0.5, fontSize: '0.8em', fontWeight: 400, color: 'text.disabled', textTransform: 'none' }}
-                        >
-                            ({t('model.miniModeBadge')})
-                        </Box>
-                    </Tooltip>
-                )}
             </Button>
         </Tooltip>
         <Dialog 
@@ -779,17 +777,6 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             <DialogTitle>{t('model.models')}</DialogTitle>
             <DialogContent sx={{ minWidth: { sm: 720 } }}>{modelManagerView}</DialogContent>
             <DialogActions sx={{ '& .MuiButton-root': { textTransform: 'none' } }}>
-                <FormControlLabel
-                    sx={{ mr: 'auto', ml: 1 }}
-                    control={
-                        <Switch
-                            size="small"
-                            checked={config.miniMode ?? false}
-                            onChange={(e) => dispatch(dfActions.setConfig({ ...config, miniMode: e.target.checked }))}
-                        />
-                    }
-                    label={<Typography variant="body2">{t('model.miniMode')}</Typography>}
-                />
                 {isEditingDetails ? (
                     <>
                         {!serverConfig.DISABLE_DISPLAY_KEYS && newEndpoint

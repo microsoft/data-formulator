@@ -96,6 +96,7 @@ import { CodeExplanationCard, ConceptExplCards, extractConceptExplanations } fro
 import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
+import { LocalFolderPanel } from './UnifiedDataUploadDialog';
 
 export interface VisPanelProps { }
 
@@ -302,6 +303,34 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
 
     switch (form.kind) {
         case 'connector':
+            if (form.connector.sourceType === 'local_folder') {
+                return (
+                    <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
+                        <Box sx={{ width: '100%', maxWidth: 624, height: '100%', mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, boxSizing: 'border-box' }}>
+                            <LocalFolderPanel
+                                onConnectorCreated={(connector) => {
+                                    dispatch(dfActions.updateTextTurn({
+                                        id: turn.id,
+                                        answered: true,
+                                        answer: `Connected to ${connector.display_name}`,
+                                        form: {
+                                            kind: 'connector',
+                                            title: form.title,
+                                            connector: {
+                                                sourceType: 'local_folder',
+                                                status: 'connected',
+                                                connectorId: connector.id,
+                                                connectionName: connector.display_name,
+                                            },
+                                        },
+                                    }));
+                                    dispatch(dfActions.requestConnectorRefresh());
+                                }}
+                            />
+                        </Box>
+                    </Box>
+                );
+            }
             return (
                 <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
                     <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
@@ -580,9 +609,10 @@ const VegaChartRenderer: FC<{
     chartUnavailable: boolean;
     insightTitle?: string;
     insightSubtitle?: string;
+    themePreview?: { active: true; themeId: string | undefined };
     fieldSemantics?: Record<string, FieldSemanticsInfo>;
     onSpecReady?: (spec: any | null) => void;
-}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, displayScale = 1, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, fieldSemantics, onSpecReady }) => {
+}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, displayScale = 1, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview, fieldSemantics, onSpecReady }) => {
 
     const dispatch = useDispatch();
     const elementId = `focused-chart-element-${chart.id}`;
@@ -609,7 +639,7 @@ const VegaChartRenderer: FC<{
         // design-docs/28-chart-style-refinement-agent.md). The variant spec was
         // stored with the data block stripped — we re-attach live rows + override
         // width/height here so the same variant works at any panel size.
-        const activeVariant = chart.activeVariantId
+        const activeVariant = !themePreview?.active && chart.activeVariantId
             ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
             : undefined;
 
@@ -654,6 +684,7 @@ const VegaChartRenderer: FC<{
                 fieldSemantics,
                 insightTitle,
                 insightSubtitle,
+                themePreview?.active ? themePreview.themeId : chart.themeId,
             );
         }
 
@@ -670,8 +701,6 @@ const VegaChartRenderer: FC<{
             scaleSpecSize(spec, scaleFactor);
             scaleSpecFonts(spec, scaleFactor);
         }
-
-        spec['background'] = 'white';
 
         // Inject the insight title into the Vega-Lite spec instead of rendering
         // it as outside HTML. Vega-Lite anchors the title against the plot group
@@ -728,7 +757,7 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, fieldSemantics, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
 
     // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
     // width (with `height: auto` from the wrapper) scales the chart uniformly
@@ -878,6 +907,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
+    const [themePreview, setThemePreview] = useState<{ active: true; themeId: string | undefined } | undefined>();
+    const handleThemePreview = useCallback((themeId: string | undefined) => {
+        setThemePreview({ active: true, themeId });
+    }, []);
+    const handleThemePreviewEnd = useCallback(() => {
+        setThemePreview(undefined);
+    }, []);
     // Chart size is the user's choice, not a consequence of screen size — the
     // screen already has its say through the stretch ceiling. Magnifying needs
     // a real re-render; shrinking is a pure canvas resize, so every sub-1 stop
@@ -904,6 +940,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         // the Chart object so it survives switching charts and session
         // save/load). Falls back to 1 for charts that have never been zoomed.
         setLocalScaleFactor(focusedChart?.scaleFactor ?? defaultChartSizeStop(widthClass));
+        setThemePreview(undefined);
         setChatDialogOpen(false);
         setEncodingOpen(false);
     }, [focusedChartId]);
@@ -1221,6 +1258,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         chartUnavailable={chartUnavailable}
                                         insightTitle={titleFresh ? focusedChart.title : undefined}
                                         insightSubtitle={titleFresh ? focusedChart.subtitle : undefined}
+                                        themePreview={themePreview}
                                         fieldSemantics={tableSemantics.find(info => info.tableId === table.id)?.fields}
                                         onSpecReady={handleSpecReady}
                                     />
@@ -1481,7 +1519,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         }}>
             {chartResizer}
             {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
-                <ChartVariantStrip chartId={focusedChart.id} />
+                <ChartVariantStrip
+                    chartId={focusedChart.id}
+                    onThemePreview={handleThemePreview}
+                    onThemePreviewEnd={handleThemePreviewEnd}
+                />
             )}
             {/* Right-aligned floating cluster near the top-right: "inspect /
                 edit this chart" controls grouped together (agent log + code +

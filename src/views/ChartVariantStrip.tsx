@@ -1,25 +1,24 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-// Horizontal strip of chart style variants (created by the restyle agent).
-// Surfaced at the top of the chart canvas so that when multiple versions of a
-// chart exist, the user can switch between them right above the chart. The
-// "default" chip renders the chart from its current encoding (no style
-// refinement); each variant chip activates / refreshes its saved spec.
+// Horizontal strip of Flint themes and chart style variants created by the
+// restyle agent. Themes apply to the encoded base chart; custom variants are
+// saved chart-specific specs that override that base while active.
 //
 // This is a self-contained extraction of the variant logic that used to live
 // inside EncodingShelfCard, so it can be rendered independently of the
 // encoding popover. See dfActions.setActiveVariant / updateStyleVariant /
 // deleteStyleVariant and src/app/restyle.ts.
 
-import { FC, useState } from 'react';
+import { FC, useEffect, useRef, useState } from 'react';
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 
-import { Box, Typography, CircularProgress, alpha, useTheme, IconButton, Tooltip, Popover, TextField, Card, Divider, Button } from '@mui/material';
+import { Box, Typography, CircularProgress, alpha, useTheme, IconButton, Tooltip, Popover, TextField, Card, Divider, Button, Menu, MenuItem } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SendIcon from '@mui/icons-material/Send';
+import { DEFAULT_THEME_ICON, THEME_PRESETS } from 'flint-chart';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -31,27 +30,33 @@ import {
     isVariantStale,
 } from '../components/ComponentType';
 import { buildSpecForRestyle, buildDataContext, callRestyleAgent, makeVariant } from '../app/restyle';
-import { STYLE_PRESETS } from './EncodingShelfCard';
 import { getDataTable } from './ChartUtils';
 import { iconVar, textVar } from '../app/layout';
 
 export interface ChartVariantStripProps {
     chartId: string;
+    onThemePreview?: (themeId: string | undefined) => void;
+    onThemePreviewEnd?: () => void;
 }
 
-// Quick actions surfaced in the design popover. Each chip sends a
-// self-contained instruction straight to the agent. Grouped into two
-// subsections (restyle / annotate) under a single "Quick actions" heading.
 interface QuickAction { key: string; label: string; description: string; instruction: string }
 
-const RESTYLE_ACTIONS: QuickAction[] = STYLE_PRESETS
-    .filter(p => ['nyt', 'economist', 'comic'].includes(p.key))
-    .map(p => ({
-        key: p.key,
-        label: p.label,
-        description: p.description,
-        instruction: p.instruction,
-    }));
+const THEME_CHOICES = [
+    {
+        id: undefined,
+        label: 'Flint default',
+        icon: DEFAULT_THEME_ICON,
+        description: "Flint's own defaults - no house applied.",
+    },
+    ...Object.values(THEME_PRESETS).map(preset => ({
+        id: preset.id,
+        label: preset.label,
+        icon: preset.icon,
+        description: preset.description,
+    })),
+];
+
+const themeIconUrl = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
 const ANNOTATE_ACTIONS: QuickAction[] = [
     {
@@ -74,7 +79,7 @@ const ANNOTATE_ACTIONS: QuickAction[] = [
     },
 ];
 
-export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId }) {
+export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId, onThemePreview, onThemePreviewEnd }) {
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -84,10 +89,37 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
     const activeModel = useSelector(dfSelectors.getActiveModel);
 
     const [refreshingVariantId, setRefreshingVariantId] = useState<string | null>(null);
+    const [themeAnchor, setThemeAnchor] = useState<HTMLElement | null>(null);
     const [restyleAnchor, setRestyleAnchor] = useState<HTMLElement | null>(null);
     const [restylePrompt, setRestylePrompt] = useState('');
     const [isRestyling, setIsRestyling] = useState(false);
     const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+    const themePreviewTimerRef = useRef<number | null>(null);
+
+    const endThemePreview = () => {
+        if (themePreviewTimerRef.current != null) {
+            window.clearTimeout(themePreviewTimerRef.current);
+            themePreviewTimerRef.current = null;
+        }
+        onThemePreviewEnd?.();
+    };
+
+    const scheduleThemePreview = (themeId: string | undefined) => {
+        if (themePreviewTimerRef.current != null) {
+            window.clearTimeout(themePreviewTimerRef.current);
+        }
+        themePreviewTimerRef.current = window.setTimeout(() => {
+            themePreviewTimerRef.current = null;
+            onThemePreview?.(themeId);
+        }, 120);
+    };
+
+    useEffect(() => () => {
+        if (themePreviewTimerRef.current != null) {
+            window.clearTimeout(themePreviewTimerRef.current);
+        }
+        onThemePreviewEnd?.();
+    }, [onThemePreviewEnd]);
 
     const chart = allCharts.find((c: Chart) => c.id == chartId) as Chart | undefined;
 
@@ -98,6 +130,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
 
     const variants: ChartStyleVariant[] = chart.styleVariants ?? [];
     const activeVariantId = chart.activeVariantId;
+    const selectedTheme = THEME_CHOICES.find(choice => choice.id === chart.themeId) ?? THEME_CHOICES[0];
 
     const currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
 
@@ -337,14 +370,97 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
             minHeight: 34,
         }}>
             <Divider orientation="vertical" flexItem sx={{ my: 0.5, mr: 1, borderColor: alpha(theme.palette.text.primary, 0.12) }} />
-            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mr: 0.25 }}>
-                style:
-            </Typography>
-            {renderVariantChip('default', {
-                active: !activeVariantId,
-                tooltip: 'Render the chart from its current encoding (no style refinement applied).',
-                onClick: () => dispatch(dfActions.setActiveVariant({ chartId, variantId: undefined })),
-            })}
+            <Tooltip title={`Theme: ${selectedTheme?.label ?? 'Default'}`}>
+                <Box
+                    component="button"
+                    type="button"
+                    aria-label={`Chart theme: ${selectedTheme?.label ?? 'Default'}`}
+                    aria-controls={themeAnchor ? 'chart-theme-menu' : undefined}
+                    aria-haspopup="menu"
+                    aria-expanded={themeAnchor ? 'true' : undefined}
+                    onClick={(event) => setThemeAnchor(event.currentTarget)}
+                    sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        height: 26,
+                        px: '8px',
+                        border: 0,
+                        borderRadius: '7px',
+                        color: 'text.secondary',
+                        backgroundColor: alpha(theme.palette.text.primary, themeAnchor ? 0.07 : 0.05),
+                        cursor: 'pointer',
+                        transition: transition.fast,
+                        '&:hover': {
+                            color: 'text.primary',
+                            backgroundColor: alpha(theme.palette.text.primary, 0.07),
+                        },
+                        '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: '-2px' },
+                    }}
+                >
+                    <Box component="img" src={themeIconUrl(selectedTheme.icon)} alt="" sx={{ width: 14, height: 14, display: 'block' }} />
+                    <Box component="svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" sx={{ width: 11, height: 11, display: 'block', flex: '0 0 auto' }}>
+                        <path d="M3 4.5 L6 7.5 L9 4.5" />
+                    </Box>
+                </Box>
+            </Tooltip>
+            <Menu
+                id="chart-theme-menu"
+                anchorEl={themeAnchor}
+                open={Boolean(themeAnchor)}
+                onClose={() => {
+                    endThemePreview();
+                    setThemeAnchor(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            minWidth: 180,
+                            maxHeight: 'min(240px, 42vh)',
+                            mt: 0.5,
+                            p: '4px',
+                            border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
+                            borderRadius: '10px',
+                        },
+                    },
+                    list: { sx: { p: 0 }, onMouseLeave: endThemePreview },
+                }}
+            >
+                {THEME_CHOICES.map(choice => (
+                    <MenuItem
+                        key={choice.id ?? 'default'}
+                        selected={chart.themeId === choice.id}
+                        title={choice.description}
+                        onMouseEnter={() => scheduleThemePreview(choice.id)}
+                        onClick={() => {
+                            endThemePreview();
+                            dispatch(dfActions.setChartTheme({ chartId, themeId: choice.id }));
+                            setThemeAnchor(null);
+                        }}
+                        sx={{
+                            gap: '8px',
+                            minHeight: 0,
+                            px: '8px',
+                            py: '6px',
+                            borderRadius: '7px',
+                            fontSize: textVar.xs,
+                            color: 'text.primary',
+                        }}
+                    >
+                        <Box component="img" src={themeIconUrl(choice.icon)} alt="" sx={{ width: 15, height: 15, display: 'block', flex: '0 0 auto' }} />
+                        <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {choice.label}
+                        </Box>
+                    </MenuItem>
+                ))}
+            </Menu>
+            {variants.length > 0 && (
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', ml: 0.5 }}>
+                    custom:
+                </Typography>
+            )}
             {variants.map(v => {
                 const stale = isVariantStale(chart, v);
                 const refreshing = refreshingVariantId === v.id;
@@ -413,17 +529,10 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                 slotProps={{ paper: { sx: { width: 340, p: 2, borderRadius: 2 } } }}
             >
                 <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1.25 }}>
-                    Quick actions
+                    Annotate
                 </Typography>
-                {[
-                    { label: 'restyle', actions: RESTYLE_ACTIONS },
-                    { label: 'annotate', actions: ANNOTATE_ACTIONS },
-                ].map(group => (
-                    <Box key={group.label} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', rowGap: 0.5, columnGap: 0.5, mb: 1.5 }}>
-                        <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', height: 20, display: 'flex', alignItems: 'center', flexShrink: 0, width: 44 }}>
-                            {group.label}
-                        </Typography>
-                        {group.actions.map(action => (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', rowGap: 0.5, columnGap: 0.5, mb: 1.5 }}>
+                        {ANNOTATE_ACTIONS.map(action => (
                             <Tooltip key={action.key} title={action.description}>
                                 <Box
                                     component="span"
@@ -451,8 +560,7 @@ export const ChartVariantStrip: FC<ChartVariantStripProps> = function ({ chartId
                                 </Box>
                             </Tooltip>
                         ))}
-                    </Box>
-                ))}
+                </Box>
                 <Divider sx={{ my: 1.5 }} />
                 <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 1 }}>
                     Design yourself

@@ -843,7 +843,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...(attachedFiles.length > 0 ? { scratch_files: attachedFiles.map(f => f.scratchPath) } : {}),
             model: activeModel,
             max_iterations: 10,
-            agent_mode: config.miniMode ? 'mini' : 'standard',
         };
 
         // ── Route through the unified AnalystAgent (design-35/36) ──

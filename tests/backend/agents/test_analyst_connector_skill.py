@@ -7,9 +7,15 @@ from unittest.mock import patch
 import pytest
 
 from data_formulator.analyst.skills.base import SkillContext
-from data_formulator.analyst.skills.data_loading.skill import DataLoadingSkill
+from data_formulator.analyst.skills import build_registry
 
 pytestmark = pytest.mark.backend
+
+
+def _skill():
+    skill = build_registry().get_skill("data-loading")
+    assert skill is not None
+    return skill
 
 
 class _Loader:
@@ -36,12 +42,17 @@ class _Loader:
         ]
 
 
+class _LocalFolderLoader(_Loader):
+    DISPLAY_NAME = "Local Folder"
+    DESCRIPTION = "Browse files in a local directory."
+
+
 def _context() -> SkillContext:
     return SkillContext(client=None, workspace=SimpleNamespace(), payload={})
 
 
 def test_list_and_describe_connectors() -> None:
-    skill = DataLoadingSkill()
+    skill = _skill()
     ctx = _context()
     with (
         patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True),
@@ -59,7 +70,7 @@ def test_list_and_describe_connectors() -> None:
 
 
 def test_propose_connection_requires_listing_first() -> None:
-    skill = DataLoadingSkill()
+    skill = _skill()
     ctx = _context()
     with patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True):
         events = list(skill.handle_action(
@@ -71,7 +82,7 @@ def test_propose_connection_requires_listing_first() -> None:
 
 
 def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
-    skill = DataLoadingSkill()
+    skill = _skill()
     ctx = _context()
     with (
         patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True),
@@ -97,3 +108,19 @@ def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
         },
     }]
     assert "secret" not in json.dumps({key: value for key, value in events[0].items() if key != "form"})
+
+
+def test_local_folder_is_available_when_registered() -> None:
+    skill = _skill()
+    ctx = _context()
+    with (
+        patch.dict("data_formulator.data_loader.DATA_LOADERS", {"local_folder": _LocalFolderLoader}, clear=True),
+        patch.dict("data_formulator.data_loader.DISABLED_LOADERS", {}, clear=True),
+    ):
+        listed = json.loads(skill.handle_tool("list_connectors", {}, ctx).text)
+        events = list(skill.handle_action("propose_connection", {
+            "source_type": "local_folder",
+        }, ctx))
+
+    assert [connector["type"] for connector in listed["connectors"]] == ["local_folder"]
+    assert events[0]["form"]["connector"]["source_type"] == "local_folder"

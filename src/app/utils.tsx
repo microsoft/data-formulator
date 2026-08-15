@@ -545,6 +545,7 @@ export const assembleVegaChart = (
     fieldSemantics?: Record<string, FieldSemanticsInfo>,
     title?: string,
     subtitle?: string,
+    themeId?: string,
 ) => {
 
     // Convert app-level EncodingMap (fieldID-based) to library-level encodings (field-name-based)
@@ -609,6 +610,7 @@ export const assembleVegaChart = (
             ...(maxStretchFactor != null ? { maxStretch: maxStretchFactor } : {}),
             ...assembleOptions,
         },
+        ...(themeId ? { theme_spec: themeId } : {}),
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     });
 
