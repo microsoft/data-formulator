@@ -102,6 +102,36 @@ describe("chart insight contract", () => {
     expect(JSON.stringify(nytSpec)).toContain("#2f6b9a");
   });
 
+  it("does not let Flint mutate frozen chart properties while applying theme defaults", () => {
+    const chartProperties = Object.freeze({});
+
+    expect(() => assembleVegaChart(
+      "Line Chart",
+      chart.encodingMap,
+      [
+        { id: "category", name: "category", source: "original", tableRef: "table-1" },
+        { id: "value", name: "value", source: "original", tableRef: "table-1" },
+      ] as any,
+      [{ category: "A", value: 10 }],
+      {
+        category: { type: "string", levels: [] },
+        value: { type: "number", levels: [] },
+      } as any,
+      400,
+      300,
+      false,
+      chartProperties,
+      1,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "nyt",
+    )).not.toThrow();
+    expect(chartProperties).toEqual({});
+  });
+
   it("preserves the dark canvas supplied by the Power BI theme", () => {
     const spec = assembleVegaChart(
       "Bar Chart",

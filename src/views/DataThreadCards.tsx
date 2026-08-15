@@ -42,6 +42,7 @@ export let buildChartCard = (
             display: 'flex',
             alignItems: 'flex-start',
             width: 'fit-content',
+            mx: 1,
             '& .data-thread-chart-delete-btn-external': { opacity: 0, transition: 'opacity 0.15s' },
             '&:hover .data-thread-chart-delete-btn-external': { opacity: 1 },
             '@keyframes unreadPulse': {
@@ -56,10 +57,9 @@ export let buildChartCard = (
                 position: 'relative',
                 border: 'none',
                 borderRadius: '6px',
-                backgroundColor: 'white',
-                px: 1,
+                backgroundColor: 'transparent',
                 zIndex: 1,
-                overflow: 'visible',
+                overflow: 'hidden',
             }}>
             {chartElement.element}
             {isUnread && (

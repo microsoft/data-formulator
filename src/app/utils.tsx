@@ -603,7 +603,7 @@ export const assembleVegaChart = (
                 width: Math.round(effectiveW * stretch),
                 height: Math.round(effectiveH * stretch),
             },
-            chartProperties,
+            chartProperties: chartProperties ? structuredClone(chartProperties) : undefined,
         },
         options: {
             addTooltips,

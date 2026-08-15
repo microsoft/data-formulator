@@ -2157,7 +2157,7 @@ const ChartThumbnail: FC<{
                     <Box className={"vega-thumbnail"}
                         sx={{
                             display: "flex",
-                            backgroundColor: "white",
+                            backgroundColor: "transparent",
                             justifyContent: 'center',
                             alignItems: 'center',
                             minHeight: 48,
@@ -2167,7 +2167,7 @@ const ChartThumbnail: FC<{
                         <img 
                             src={thumbnail} 
                             alt={t('dataThread.chartAlt', { type: chart.chartType })}
-                            style={{ maxWidth: 120, maxHeight: 100, objectFit: 'contain' }} 
+                            style={{ display: 'block', maxWidth: 120, maxHeight: 100, objectFit: 'contain' }}
                         />
                     </Box>
                 </Box>
