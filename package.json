@@ -40,7 +40,7 @@
         "@types/validator": "^13.12.2",
         "@uiw/react-codemirror": "^4.25.11",
         "allotment": "^1.20.4",
-        "canvas": "^3.2.1",
+        "canvas": "^3.2.3",
         "chart.js": "^4.5.1",
         "d3": "^7.3.0",
         "dompurify": "^3.4.0",
