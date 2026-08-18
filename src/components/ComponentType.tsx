@@ -677,6 +677,8 @@ export interface ConnectorInstance {
     deletable?: boolean;
     params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;
+    /** Which instance this connector points at (cluster, host, bucket…), resolved by the loader. */
+    connection_identity?: string;
     hierarchy: Array<{key: string; label: string}>;
     effective_hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;

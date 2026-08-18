@@ -166,7 +166,7 @@ describe('DataSourceSidebar', () => {
         }));
     });
 
-    it('shows recently modified sessions first and can switch to creation order', async () => {
+    it('shows newest-created sessions first and can switch to recently modified order', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         vi.mocked(listWorkspaces).mockResolvedValue([
             {
@@ -187,11 +187,52 @@ describe('DataSourceSidebar', () => {
 
         const recentlyEdited = await screen.findByText('Recently edited');
         const newerCreation = screen.getByText('Newer creation');
-        expect(recentlyEdited.compareDocumentPosition(newerCreation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
-        fireEvent.click(screen.getByRole('button', { name: 'sidebar.sortSessions' }));
-        fireEvent.click(await screen.findByText('sidebar.sortNewestFirst'));
-
         expect(newerCreation.compareDocumentPosition(recentlyEdited) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Group and sort sessions' }));
+        fireEvent.click(await screen.findByText('sidebar.sortRecentlyModifiedFirst'));
+
+        expect(recentlyEdited.compareDocumentPosition(newerCreation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('groups sessions by their summarized data sources by default', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        vi.mocked(apiRequest).mockResolvedValue({
+            data: {
+                connectors: [
+                    { id: 'kusto-prod', display_name: 'Kusto' },
+                    { id: 'mysql-main', display_name: 'MyMysqlDB' },
+                    { id: 'local-datasets', display_name: '~/datasets' },
+                ],
+            },
+        });
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            {
+                id: 'mixed',
+                display_name: 'Mixed sources',
+                created_at: '2026-08-15T10:00:00Z',
+                saved_at: '2026-08-15T10:00:00Z',
+                source_ids: ['kusto-prod', 'mysql-main'],
+            },
+            {
+                id: 'local',
+                display_name: 'Local data',
+                created_at: '2026-08-14T10:00:00Z',
+                saved_at: '2026-08-14T10:00:00Z',
+                source_ids: ['local-datasets'],
+            },
+        ]);
+
+        render(<DataSourceSidebar />);
+
+        expect(await screen.findByText('Kusto / MyMysqlDB')).toBeInTheDocument();
+        expect(screen.getByText('~/datasets')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Group and sort sessions' }));
+        fireEvent.click(await screen.findByText('No grouping'));
+
+        expect(screen.queryByText('Kusto / MyMysqlDB')).not.toBeInTheDocument();
+        expect(screen.getByText('Mixed sources')).toBeInTheDocument();
+        expect(screen.getByText('Local data')).toBeInTheDocument();
     });
 });

@@ -140,6 +140,10 @@ class TestSessionState:
         manager.create_workspace("ws")
         manager.save_session_state("ws", {
             "tables": [],
+            "inputTables": [{
+                "id": "sales",
+                "source": {"kind": "connector", "connectorId": "warehouse"},
+            }],
             "activeWorkspace": {"id": "ws", "displayName": "Old Name"},
         })
 
@@ -150,6 +154,7 @@ class TestSessionState:
             .read_text(encoding="utf-8")
         )
         assert meta["displayName"] == "New Name"
+        assert meta["sourceIds"] == ["warehouse"]
 
         state = manager.load_session_state("ws")
         assert state["activeWorkspace"]["displayName"] == "New Name"
@@ -179,6 +184,47 @@ class TestSessionState:
 
         loaded = manager.load_session_state("test")
         assert loaded["version"] == 2
+
+    def test_session_list_summarizes_data_sources(self, manager):
+        manager.create_workspace("sources")
+        manager.save_session_state("sources", {
+            "inputTables": [
+                {
+                    "id": "sales",
+                    "source": {
+                        "kind": "connector",
+                        "connectorId": "warehouse",
+                    },
+                },
+                {
+                    "id": "customers",
+                    "sourceConfig": {
+                        "type": "database",
+                        "connectorId": "warehouse",
+                    },
+                },
+                {
+                    "id": "forecast",
+                    "sourceConfig": {"type": "file"},
+                },
+                {
+                    "id": "legacy-kusto",
+                    "sourceConfig": {
+                        "type": "database",
+                        "connector_id": "kusto-prod",
+                    },
+                },
+                {
+                    "id": "unidentified-database",
+                    "sourceConfig": {"type": "database"},
+                },
+            ],
+        })
+
+        summary = manager.list_workspaces()[0]
+
+        assert summary["table_count"] == 5
+        assert summary["source_ids"] == ["kusto-prod", "upload", "warehouse"]
 
 
 class TestOpenWorkspace:

@@ -43,10 +43,10 @@
     "agentChatSuggestionsLabel": "试试这样问",
     "agentChatSendTooltip": "开始与助手对话",
     "dataSourcesLabel": "已连接：",
-    "addSourceLabel": "或直接添加数据：",
+    "addSourceLabel": "添加数据：",
     "agentChatQuickAction": {
       "connect": "帮我连接数据源",
-      "askConnected": "已连接的数据源里有哪些数据？"
+      "askConnected": "我的数据源中有哪些可用数据？"
     },
     "agentChatSuggestion": {
       "askConnected": "已连接的数据源里有哪些数据集？",
@@ -69,6 +69,7 @@
     "addConnectionDesc": "连接到实时数据库",
     "connectorConnected": "已连接",
     "connectorDisconnected": "点击连接",
+    "connectorNotConnected": "未连接",
     "pickDataSourceType": "选择数据源类型以创建新连接。",
     "nameYourConnection": "为您的 {{type}} 连接命名。",
     "connectionName": "连接名称",

@@ -610,10 +610,16 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             const isConnected = !!conn.connected || !!conn.sso_auto_connect;
             const statusLabel = isConnected
                 ? t('upload.connectorConnected')
-                : t('upload.connectorDisconnected');
-            const detail = isLocalFolder
-                ? (folderDisplay || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
-                : getConnectorTypeDescription(conn.source_type, conn.connected, t);
+                : t('upload.connectorNotConnected', { defaultValue: 'Not connected' });
+            // A connector is its type plus which instance it points at; fall back to
+            // the generic type blurb for loaders that have no identifying params.
+            const identity = conn.connection_identity || (isLocalFolder ? folderDisplay : '');
+            const detail = identity
+                || getConnectorTypeDescription(conn.source_type, conn.connected, t);
+            const tooltipIdentity = isLocalFolder ? folderTooltip : identity;
+            const tooltipLines = Array.from(new Set(
+                [conn.type_name, tooltipIdentity || (isConnected ? detail : '')].filter(Boolean)
+            ));
             return {
                 value: `connector:${conn.id}` as UploadTabType,
                 title: conn.display_name,
@@ -627,7 +633,26 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     }} />
                 ),
                 disabled: false,
-                tooltip: `${statusLabel}${detail ? ` · ${detail}` : ''}${isLocalFolder && folderTooltip ? ` · ${folderTooltip}` : ''}`,
+                // A disconnected connector's description is its status, and a short
+                // folder path is already shown in full — so drop repeated segments.
+                tooltip: (
+                    <Box>
+                        <Box component="span" sx={{ display: 'block' }}>{statusLabel}</Box>
+                        {tooltipLines.length > 0 && (
+                            <Box component="ul" sx={{ mt: 0.25, mb: 0, pl: 2 }}>
+                                {tooltipLines.map((line) => (
+                                    <Box
+                                        component="li"
+                                        key={line}
+                                        sx={{ overflowWrap: 'anywhere', '& + &': { mt: 0.25 } }}
+                                    >
+                                        {line}
+                                    </Box>
+                                ))}
+                            </Box>
+                        )}
+                    </Box>
+                ),
             };
         }),
     ];
@@ -763,13 +788,12 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         size="small"
                         sx={{
                             fontSize: textVar.md, height: 30, borderRadius: 2,
-                            color: alpha(theme.palette.text.primary, 0.78),
-                            borderColor: alpha(theme.palette.text.primary, 0.22),
-                            backgroundColor: alpha(theme.palette.background.paper, 0.72),
-                            '& .MuiChip-icon': { fontSize: textVar.xl, ml: 0.5, color: alpha(theme.palette.text.primary, 0.55) },
+                            color: 'text.secondary',
+                            borderColor: alpha(theme.palette.text.primary, 0.12),
+                            '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
                             '&:hover': {
-                                bgcolor: alpha(theme.palette.primary.main, 0.06),
-                                borderColor: alpha(theme.palette.primary.main, 0.4),
+                                bgcolor: 'action.hover',
+                                borderColor: alpha(theme.palette.text.primary, 0.2),
                             },
                         }}
                     />
@@ -822,7 +846,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}
                 attachments={agentAttachments}
                 onAttachmentsChange={setAgentAttachments}
-                minRows={3}
+                minRows={4}
                 tabSuggestion={t('upload.agentChatTabSuggestion', {
                     defaultValue: 'What dataset do we have here?',
                 })}
@@ -880,66 +904,30 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     ))}
                 </Box>
 
-                {/* Row 2 — add-a-source actions: same muted link family as the
-                    connected sources, differentiated only by a subtle shaded
-                    background chip (no primary color). */}
+                {/* Row 2 — add-a-source actions use the same lightweight link
+                    style as connected sources; the row label provides hierarchy. */}
                 <Box sx={{
                     display: 'flex',
                     flexWrap: 'wrap',
                     alignItems: 'center',
-                    columnGap: 1,
+                    columnGap: 1.5,
                     rowGap: 0.75,
                 }}>
                     <Typography
                         variant="body2"
                         sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
-                        {t('upload.addSourceLabel', { defaultValue: 'Or add data directly:' })}
+                        {t('upload.addSourceLabel', { defaultValue: 'Add data:' })}
                     </Typography>
                     {connectorActionSources.map((source) => (
-                        <Box
+                        <SourceLink
                             key={source.value}
-                            component="button"
-                            type="button"
-                            onClick={source.disabled ? undefined : () => handleConnectionClick(source.value)}
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
-                            title={source.description}
-                            sx={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 0.5,
-                                px: 1,
-                                py: 0.375,
-                                border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
-                                borderRadius: 1,
-                                font: 'inherit',
-                                whiteSpace: 'nowrap',
-                                cursor: source.disabled ? 'not-allowed' : 'pointer',
-                                opacity: source.disabled ? 0.5 : 1,
-                                color: alpha(theme.palette.text.primary, 0.8),
-                                bgcolor: alpha(theme.palette.text.primary, 0.07),
-                                transition: 'background-color 120ms ease, color 120ms ease',
-                                '&:hover': source.disabled ? {} : {
-                                    bgcolor: alpha(theme.palette.primary.main, 0.08),
-                                    borderColor: alpha(theme.palette.primary.main, 0.3),
-                                    color: 'text.primary',
-                                },
-                                '& .MuiSvgIcon-root': { fontSize: iconVar.md },
-                            }}
-                        >
-                            {source.icon}
-                            <Typography
-                                component="span"
-                                sx={{
-                                    fontWeight: 400,
-                                    fontSize: '0.8125rem',
-                                    lineHeight: 1.4,
-                                    color: 'inherit',
-                                }}
-                            >
-                                {source.title}
-                            </Typography>
-                        </Box>
+                        />
                     ))}
                 </Box>
             </Box>

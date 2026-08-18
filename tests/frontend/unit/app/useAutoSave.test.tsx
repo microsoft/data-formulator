@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
         activeWorkspace: { id: 'ws-1', displayName: 'Workspace 1' },
         inputTables: [{ id: 'table-1' }],
         derivedTables: [],
-    },
+    } as any,
     saveWorkspaceState: vi.fn(),
     handleApiError: vi.fn(),
 }));
@@ -35,6 +35,12 @@ function AutoSaveHarness() {
 describe('useAutoSave', () => {
     beforeEach(() => {
         vi.useFakeTimers();
+        mocks.state = {
+            sessionLoading: false,
+            activeWorkspace: { id: 'ws-1', displayName: 'Workspace 1' },
+            inputTables: [{ id: 'table-1' }],
+            derivedTables: [],
+        };
         mocks.saveWorkspaceState.mockReset();
         mocks.handleApiError.mockReset();
     });
@@ -55,6 +61,47 @@ describe('useAutoSave', () => {
         });
 
         expect(mocks.handleApiError).toHaveBeenCalledWith(err, 'Auto-save');
+    });
+
+    it('saves the latest state when a change arrives during an in-flight save', async () => {
+        let finishFirstSave!: () => void;
+        mocks.saveWorkspaceState.mockImplementationOnce(() => new Promise<void>(resolve => {
+            finishFirstSave = resolve;
+        }));
+
+        const { rerender } = render(<AutoSaveHarness />);
+
+        act(() => {
+            vi.advanceTimersByTime(3000);
+        });
+        expect(mocks.saveWorkspaceState).toHaveBeenCalledTimes(1);
+
+        mocks.state = {
+            ...mocks.state,
+            inputTables: [{
+                id: 'table-1',
+                source: { kind: 'connector', connectorId: 'kusto-prod' },
+            }],
+        };
+        rerender(<AutoSaveHarness />);
+
+        act(() => {
+            vi.advanceTimersByTime(3000);
+        });
+        expect(mocks.saveWorkspaceState).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            finishFirstSave();
+            await Promise.resolve();
+        });
+
+        expect(mocks.saveWorkspaceState).toHaveBeenCalledTimes(2);
+        expect(mocks.saveWorkspaceState.mock.calls[1][0]).toMatchObject({
+            inputTables: [{
+                id: 'table-1',
+                source: { kind: 'connector', connectorId: 'kusto-prod' },
+            }],
+        });
     });
 
     it('strips connector form prefills from workspace snapshots', () => {

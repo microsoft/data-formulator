@@ -466,6 +466,7 @@ class DataConnector:
             "icon": self._icon,
             "params_form": form_fields,
             "pinned_params": pinned_params,
+            "connection_identity": self._loader_class.connection_identity(self._default_params),
             "hierarchy": _hierarchy_dicts(full_hierarchy),
             "effective_hierarchy": _hierarchy_dicts(effective),
             "auth_instructions": self._loader_class.auth_instructions(),
@@ -1314,6 +1315,7 @@ def list_connectors():
             "sso_auto_connect": sso_auto,
             "params_form": cfg["params_form"],
             "pinned_params": cfg["pinned_params"],
+            "connection_identity": cfg["connection_identity"],
             "hierarchy": cfg["hierarchy"],
             "effective_hierarchy": cfg["effective_hierarchy"],
             "auth_mode": cfg["auth_mode"],
@@ -1351,10 +1353,17 @@ def create_connector():
     if not loader_class:
         raise AppError(ErrorCode.INVALID_REQUEST, f"Unknown loader type: {loader_type}")
 
-    display_name = data.get("display_name", loader_type.replace("_", " ").title())
+    display_name = data.get("display_name")
     icon = data.get("icon", loader_type)
     raw_params = data.get("params", {})
     default_params = _connector_config_params(loader_class, raw_params)
+
+    if not display_name:
+        # A connector is its type plus which instance it points at, so name it
+        # that way unless the user said otherwise.
+        type_name = loader_class.DISPLAY_NAME or loader_type.replace("_", " ").title()
+        identity = loader_class.connection_identity(default_params)
+        display_name = f"{type_name} · {identity}" if identity else type_name
 
     try:
         identity = DataConnector._get_identity()

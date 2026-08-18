@@ -43,10 +43,10 @@
     "agentChatSuggestionsLabel": "Try asking",
     "agentChatSendTooltip": "Start chatting with the agent",
     "dataSourcesLabel": "Connected to:",
-    "addSourceLabel": "Or add data directly:",
+    "addSourceLabel": "Add data:",
     "agentChatQuickAction": {
-      "connect": "Help me connect to my data source",
-      "askConnected": "What data do we have from connected sources?"
+      "connect": "Help me connect my data source",
+      "askConnected": "What data are available from my sources?"
     },
     "agentChatSuggestion": {
       "askConnected": "What datasets do we have from connected sources?",
@@ -69,6 +69,7 @@
     "addConnectionDesc": "Connect to a live database",
     "connectorConnected": "Connected",
     "connectorDisconnected": "Click to connect",
+    "connectorNotConnected": "Not connected",
     "pickDataSourceType": "Choose a data source type to create a new connection.",
     "nameYourConnection": "Name your {{type}} connection.",
     "connectionName": "Connection name",

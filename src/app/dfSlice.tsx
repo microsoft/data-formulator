@@ -10,13 +10,13 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { migrateState } from './stateMigrations';
 import { getDataTable } from '../views/ChartUtils';
-import { getTriggers, getUrls, computeContentHash } from './utils';
+import { getUrls, computeContentHash } from './utils';
 import { apiRequest, ApiRequestError } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
 import i18n from '../i18n';
 import { Type } from '../data/types';
-import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporalType } from '../data/utils';
-import { Identity, IdentityType, getBrowserId } from './identity';
+import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
+import { Identity, getBrowserId } from './identity';
 import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
@@ -89,6 +89,7 @@ export interface ServerConfig {
         icon: string;
         params_form: Array<{name: string; type: string; required: boolean; default?: string; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
         pinned_params: Record<string, string>;
+        connection_identity?: string;
         hierarchy: Array<{key: string; label: string}>;
         effective_hierarchy: Array<{key: string; label: string}>;
         auth_instructions: string;
@@ -2681,7 +2682,7 @@ export const dfSelectors = {
                 seen.add(cur.id);
                 const p: string | undefined = cur.parentNodeId;
                 if (!p) break;
-                const parentTurn = textTurns.find(tt => tt.id === p);
+                const parentTurn: TextTurn | undefined = textTurns.find(tt => tt.id === p);
                 if (parentTurn?.dataOperation || parentTurn?.form) {
                     return { type: 'text', textId: parentTurn.id };
                 }

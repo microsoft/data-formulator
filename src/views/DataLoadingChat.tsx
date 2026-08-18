@@ -34,8 +34,9 @@ import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
 import { buildDataLoadingSuggestions, buildDataLoadingQuickActions } from './dataLoadingSuggestions';
-import { getUrls, fetchWithIdentity } from '../app/utils';
+import { getUrls, fetchWithIdentity, translateBackend } from '../app/utils';
 import { apiRequest, streamRequest } from '../app/apiClient';
+import { getErrorMessage } from '../app/errorCodes';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate, ConnectorFormPrompt } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
@@ -839,6 +840,13 @@ interface ToolStep {
     detail?: string;
 }
 
+interface StreamWarning {
+    message: string;
+    detail?: string;
+    message_code?: string;
+    message_params?: Record<string, unknown>;
+}
+
 // Memoized so an unrelated parent re-render (e.g. typing) doesn't
 // reflow the shimmer animation. Props are state values that only change
 // during an active stream.
@@ -1590,9 +1598,42 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                     case 'continue_prompt':
                         continueOffered = true;
                         break;
-                    case 'error':
-                        fullText += `\n\n**${t('dataLoading.error')}:** ${event.error?.message || t('dataLoading.error')}`;
+                    case 'warning': {
+                        const warning = (event as typeof event & { warning?: StreamWarning }).warning;
+                        const warningMessage = translateBackend(
+                            warning?.message || event.message || t('dataLoading.error'),
+                            warning?.message_code || event.message_code,
+                            warning?.message_params || event.message_params,
+                        );
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(),
+                            type: 'warning',
+                            component: 'data-loading-agent',
+                            value: warningMessage,
+                            detail: warning?.detail,
+                            diagnostics: warning,
+                        }));
                         break;
+                    }
+                    case 'error': {
+                        const errorMessage = event.error
+                            ? getErrorMessage(event.error)
+                            : translateBackend(
+                                event.message || t('dataLoading.error'),
+                                event.message_code,
+                                event.message_params,
+                            );
+                        fullText += `\n\n**${t('dataLoading.error')}:** ${errorMessage}`;
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(),
+                            type: 'error',
+                            component: 'data-loading-agent',
+                            value: errorMessage,
+                            detail: event.error?.detail,
+                            diagnostics: event.error || event,
+                        }));
+                        break;
+                    }
                 }
             }
 
@@ -1631,6 +1672,12 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({ onTableLoaded 
                         }));
                     }
                 } else {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        type: 'error',
+                        component: 'data-loading-agent',
+                        value: error.message || String(error),
+                    }));
                     dispatch(dfActions.addChatMessage({
                         id: `msg-${Date.now()}-assistant`, role: 'assistant',
                         content: partialContent

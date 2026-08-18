@@ -47,6 +47,8 @@ _SAMPLE_CACHE_MAX = 64
 class SampleDatasetsLoader(ExternalDataLoader):
     """Browse and import the built-in sample datasets."""
 
+    DISPLAY_NAME = "Sample Datasets"
+
     # ------------------------------------------------------------------
     # Metadata
     # ------------------------------------------------------------------

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState, dfSelectors } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
@@ -65,6 +65,35 @@ export function useAutoSave() {
     const isSavingRef = useRef(false);
     const pendingRef = useRef(false);
     const lastErrorNotifyRef = useRef(0);
+    const latestStateRef = useRef(state);
+    latestStateRef.current = state;
+
+    const saveLatestState = useCallback(async () => {
+        if (isSavingRef.current) {
+            pendingRef.current = true;
+            return;
+        }
+
+        isSavingRef.current = true;
+        try {
+            do {
+                pendingRef.current = false;
+                try {
+                    await saveWorkspaceState(getSerializableState(latestStateRef.current));
+                } catch (err) {
+                    const now = Date.now();
+                    if (now - lastErrorNotifyRef.current >= AUTO_SAVE_ERROR_NOTIFY_MS) {
+                        lastErrorNotifyRef.current = now;
+                        handleApiError(err, 'Auto-save');
+                    } else {
+                        console.warn('[auto-save] failed:', err);
+                    }
+                }
+            } while (pendingRef.current);
+        } finally {
+            isSavingRef.current = false;
+        }
+    }, []);
 
     useEffect(() => {
         // Nothing to save while a session is loading, read-only, workspace-less,
@@ -79,36 +108,8 @@ export function useAutoSave() {
             clearTimeout(timerRef.current);
         }
 
-        timerRef.current = setTimeout(async () => {
-            // Skip if a save is already in flight
-            if (isSavingRef.current) {
-                pendingRef.current = true;
-                return;
-            }
-
-            isSavingRef.current = true;
-            try {
-                const serializable = getSerializableState(state);
-                await saveWorkspaceState(serializable);
-            } catch (err) {
-                const now = Date.now();
-                if (now - lastErrorNotifyRef.current >= AUTO_SAVE_ERROR_NOTIFY_MS) {
-                    lastErrorNotifyRef.current = now;
-                    handleApiError(err, 'Auto-save');
-                } else {
-                    console.warn('[auto-save] failed:', err);
-                }
-            } finally {
-                isSavingRef.current = false;
-                // If state changed while we were saving, trigger another save
-                if (pendingRef.current) {
-                    pendingRef.current = false;
-                    // Re-trigger by scheduling another timeout
-                    timerRef.current = setTimeout(() => {
-                        // This will be picked up by the next effect cycle
-                    }, AUTO_SAVE_DEBOUNCE_MS);
-                }
-            }
+        timerRef.current = setTimeout(() => {
+            void saveLatestState();
         }, AUTO_SAVE_DEBOUNCE_MS);
 
         return () => {
@@ -116,5 +117,5 @@ export function useAutoSave() {
                 clearTimeout(timerRef.current);
             }
         };
-    }, [state]);
+    }, [saveLatestState, state]);
 }

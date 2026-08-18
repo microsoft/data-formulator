@@ -23,6 +23,7 @@ export interface WorkspaceSummary {
     saved_at: string | null;
     table_count?: number | null;
     chart_count?: number | null;
+    source_ids?: string[];
     read_only?: boolean;
 }
 
