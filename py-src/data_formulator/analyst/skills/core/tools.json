@@ -24,14 +24,14 @@
     "type": "function",
     "function": {
       "name": "inspect_source_data",
-      "description": "Get a detailed summary of one or more source tables — schema, field-level statistics, and sample rows.  Cheaper than execute_python_script for basic data inspection.",
+      "description": "Get a detailed summary of one or more analysis input tables — schema, field-level statistics, and sample rows. Cheaper than execute_python_script for basic data inspection.",
       "parameters": {
         "type": "object",
         "properties": {
           "table_names": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "List of workspace table names, as listed in the available-tables context, to inspect."
+            "description": "Names listed in the analysis-input-tables context to inspect."
           }
         },
         "required": ["table_names"]
@@ -61,7 +61,7 @@
           "input_tables": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Workspace table names, as listed in the available-tables context, that the code reads."
+            "description": "Names listed in the analysis-input-tables context that the code reads."
           },
           "code": {
             "type": "string",

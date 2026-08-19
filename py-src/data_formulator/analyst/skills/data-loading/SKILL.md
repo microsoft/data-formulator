@@ -24,14 +24,33 @@ actions:
 
 # Skill: Data discovery
 
-The workspace tables listed in your context are the data already loaded into the
-system, and the only data that can be read directly. Everything these tools
-return is *not* loaded yet — it lives in a connected source and only becomes
-usable after the user selects a loading option and the server materializes it.
+The analysis input tables listed in your context are already materialized and
+are the only data that can be read directly. Everything these tools return is
+*not* loaded yet — it lives in a connected source and only becomes usable after
+the user selects a loading option and the server materializes it.
 
 Use these tools to determine whether connected sources contain data needed for
 the user's goal. They are read-only: discovering, describing, or probing a
 source does not add anything to the workspace analysis inputs.
+
+## When nothing is loaded yet
+
+Discovery is cheap: call `list_data({})` and browse before you say anything
+about what is or isn't available. The inventory lists each source's top-level
+contents, and opening a source returns its whole subtree — so a couple of calls
+show you the shape. Then tell the user what you actually found — which sources
+are connected, what they hold, and which tables look relevant. Name real tables.
+
+Pick the path that fits:
+
+- The user named a subject → `find_data`, then propose the tables that match.
+- The user asked what data exists, or asked nothing specific → summarize the
+  inventory and propose the most useful starting tables.
+- Nothing is connected → `list_connectors`, then `propose_connection`, or say
+  they can upload a file.
+
+Use `ask_user` only for a choice you genuinely cannot make yourself, and never
+before you have looked. Asking which source to inspect first is not an answer.
 
 ## Adding a connector
 
@@ -66,9 +85,9 @@ seeds and are removed from persisted UI state.
    values. Pass the exact `source_id` and `table_key` returned by discovery.
 3. Use `probe_data` only when metadata is insufficient to choose a useful
    bounded result. Probes are limited, read-only, and may be approximate.
-4. First reconcile discoveries with every table in `[PRIMARY TABLE(S)]`,
-   `[OTHER AVAILABLE TABLES]`, or `[AVAILABLE TABLES]`. If the needed data is
-   already loaded, use or explain that workspace table instead of proposing it.
+4. First reconcile discoveries with every table in `[PRIMARY ANALYSIS INPUTS]`,
+   `[OTHER ANALYSIS INPUTS]`, or `[ANALYSIS INPUT TABLES]`. If the needed data is
+   already loaded, use or explain that analysis input instead of proposing it.
 5. When there are genuinely missing useful alternatives, call
    `propose_data_operation` with one
    to three complete immutable plans. This pauses for the user's choice; it
@@ -90,6 +109,8 @@ yourself. Write it as you'd say it to a colleague, not as a schema summary.
    and one or more tables. The labels are buttons, not sentences — the
    reasoning belongs in your message text. The application displays table
    previews separately, so don't list columns as a substitute for explaining.
+- An option is one coherent choice: one or a group of tables that serve the same
+   analysis, and leave out the ones that don't.
 - Use only source IDs, table keys, columns, and values grounded by discovery.
 - For a whole table, omit `query`. Use the optional raw-row query only when the
    request needs filters, projection, ordering, or an intentional limit. It uses

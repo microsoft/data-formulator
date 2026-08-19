@@ -81,6 +81,40 @@ _CORE_SKILL = "core"
 # emitted match — never the same text pasted by a user or echoed by the model.
 _SKILL_LOADED_BANNER = "[SKILL LOADED: {name}]"
 _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
+_SKILL_PRELOADED_RE = re.compile(
+    r"\[SKILL: ([^\]]+)\] Preloaded for this run"
+)
+
+_TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
+    "list_data": ("source_id", "path", "filter"),
+    "find_data": ("query", "scope"),
+    "describe_data": ("source_id", "table_key"),
+    "probe_data": ("source_id", "table_key", "query"),
+    "describe_connector": ("source_type",),
+    "inspect_chart": ("chart_id",),
+    "search_data_tables": ("query",),
+    "search_knowledge": ("query",),
+}
+
+
+def _tool_progress_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Return model arguments safe and useful for user-facing progress."""
+    progress_args = {
+        key: args[key]
+        for key in _TOOL_PROGRESS_ARG_KEYS.get(tool_name, ())
+        if key in args
+    }
+    if tool_name == "probe_data" and isinstance(progress_args.get("query"), dict):
+        query = progress_args["query"]
+        progress_args["query"] = {
+            key: query[key]
+            for key in ("aggregates", "group_by", "limit")
+            if key in query
+        }
+        filters = query.get("filters")
+        if isinstance(filters, list) and filters:
+            progress_args["query"]["filter_count"] = len(filters)
+    return progress_args
 
 # ── Action-argument coercion ──────────────────────────────────────────────
 # Weaker models sometimes JSON-encode a nested action argument as a string
@@ -350,6 +384,14 @@ class AnalystAgent:
                 legal.update(meta.action_names)
         return frozenset(legal)
 
+    @staticmethod
+    def _initial_loaded_skills(input_tables: list[dict[str, Any]]) -> set[str]:
+        """Return the skill gates that must be open before the first LLM call."""
+        loaded = {_CORE_SKILL}
+        if not input_tables:
+            loaded.add("data-loading")
+        return loaded
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -388,14 +430,15 @@ class AnalystAgent:
         iteration = completed_step_count
         final_status = "max_iterations"
 
-        # Reset per-run skill + payload state. ``core`` is auto-loaded: its
-        # baseline tools + actions are always available and its SKILL.md body is
-        # appended to the system frame (see _build_system_prompt). Gated skills
-        # are added to this set as the model loads them. The payload carries
+        # Reset per-run skill + payload state. ``core`` is always loaded. With
+        # no analysis input tables, data loading is the immediate workflow, so expose
+        # its tools, actions, and guidance before the first model call instead
+        # of spending a round on load_skill. Other gated skills are added as the
+        # model loads them. The payload carries
         # everything a dispatched skill handler needs to build its own context
         # (e.g. the report skill rebuilds [AVAILABLE CHARTS] + thread
         # context).
-        self._loaded_skills = {_CORE_SKILL}
+        self._loaded_skills = self._initial_loaded_skills(input_tables)
         self._run_payload = {
             "input_tables": input_tables,
             "charts": charts or [],
@@ -661,6 +704,10 @@ class AnalystAgent:
             m = _SKILL_LOADED_RE.match(content)
             if m:
                 name = self.registry.canonical_name(m.group(1).strip())
+                if self.registry.has(name):
+                    self._loaded_skills.add(name)
+            for preloaded in _SKILL_PRELOADED_RE.finditer(content):
+                name = self.registry.canonical_name(preloaded.group(1).strip())
                 if self.registry.has(name):
                     self._loaded_skills.add(name)
 
@@ -1165,15 +1212,18 @@ class AnalystAgent:
         context_lines = []
         if has_primary_tables:
             context_lines.append(
-                "- **[PRIMARY TABLE(S)]**: The table(s) the user is focused on. "
-                "Prioritize these, but freely use other available tables if needed."
+                "- **[PRIMARY ANALYSIS INPUTS]**: The analysis input table(s) the "
+                "user is focused on. Prioritize these, but freely use other "
+                "analysis inputs if needed."
             )
             context_lines.append(
-                "- **[OTHER AVAILABLE TABLES]**: Additional tables in the workspace."
+                "- **[OTHER ANALYSIS INPUTS]**: Additional materialized input "
+                "tables the analyst can read directly."
             )
         else:
             context_lines.append(
-                "- **[AVAILABLE TABLES]**: All tables in the workspace."
+                "- **[ANALYSIS INPUT TABLES]**: All materialized root data inputs "
+                "the analyst can read directly."
             )
         context_lines.append(
             "  Use `inspect_source_data` to get detailed stats and sample rows. "
@@ -1234,6 +1284,12 @@ class AnalystAgent:
             f"\n\n[SKILL: {_CORE_SKILL}] Always-on baseline — these tools and "
             f"actions are active for the whole run.\n\n{core_body}"
         )
+        for name in sorted(self._loaded_skills - {_CORE_SKILL}):
+            body = self.registry.load_body(name)
+            prompt += (
+                f"\n\n[SKILL: {name}] Preloaded for this run — its tools and "
+                f"actions are active now.\n\n{body}"
+            )
 
         if self._knowledge_store:
             knowledge_rules = self._knowledge_store.load_always_apply_rules()
@@ -1277,7 +1333,7 @@ class AnalystAgent:
         if primary_tables:
             user_content = f"{table_summaries}\n\n"
         else:
-            user_content = f"[AVAILABLE TABLES]\n\n{table_summaries}\n\n"
+            user_content = f"[ANALYSIS INPUT TABLES]\n\n{table_summaries}\n\n"
         if focused_block:
             user_content += f"{focused_block}\n\n"
         if peripheral_block:
@@ -1597,10 +1653,12 @@ class AnalystAgent:
                     yield {
                         "type": "tool_start",
                         "tool": tool_name,
+                        "args": _tool_progress_args(tool_name, tool_args),
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
                         "skill": tool_args.get("name") if tool_name == "load_skill" else None,
+                        "query": tool_args.get("query") if tool_name in ("search_data_tables", "search_knowledge") else None,
                     }
 
                     tool_t0 = time.time()

@@ -789,11 +789,11 @@ def _build_connector_summary_block(
     *,
     max_total_chars: int = 1200,
 ) -> str:
-    """Render a compact directory of cached connector catalogs.
+    """Render a compact directory of currently loadable connectors.
 
-    Only shows source IDs with table counts (and folder counts when the
-    catalog is hierarchical). The agent is expected to call ``list_data``
-    for full inventory.
+    Shows connected sources even before their catalog has been cached. Retained
+    catalogs for disconnected sources stay on disk but are not agent-visible.
+    The agent is expected to call ``list_data`` for full inventory.
     Strictly hard-capped at ``max_total_chars``.
     """
     if not user_home:
@@ -807,9 +807,19 @@ def _build_connector_summary_block(
         return "  none"
 
     try:
-        source_ids = list_cached_sources(user_home)
+        from data_formulator.data_connector import (
+            connector_is_available,
+            list_available_connector_ids,
+        )
+        cached_source_ids = set(list_cached_sources(user_home))
+        available_source_ids = set(list_available_connector_ids())
+        source_ids = sorted(
+            source_id
+            for source_id in cached_source_ids | available_source_ids
+            if connector_is_available(source_id) is not False
+        )
     except Exception:
-        logger.debug("connector summary: list_cached_sources failed", exc_info=True)
+        logger.debug("connector summary: source inventory failed", exc_info=True)
         return "  none"
 
     if not source_ids:
@@ -817,7 +827,7 @@ def _build_connector_summary_block(
 
     user_home_path = Path(user_home)
     lines: list[str] = []
-    for sid in sorted(source_ids):
+    for sid in source_ids:
         try:
             tables = load_catalog(user_home_path, sid) or []
         except Exception:
@@ -825,14 +835,17 @@ def _build_connector_summary_block(
             tables = []
         n, k = _summarize_catalog_shape(tables)
         if n == 0:
-            lines.append(f"- {sid}: 0 tables cached")
+            status = "connected, catalog not cached" if sid in available_source_ids else "0 tables cached"
+            lines.append(f"- {sid}: {status}")
         elif k > 0:
+            availability = "connected" if sid in available_source_ids else "catalog available"
             lines.append(
-                f"- {sid}: {n} table{'s' if n != 1 else ''} "
+                f"- {sid}: {availability}; {n} table{'s' if n != 1 else ''} "
                 f"across {k} folder{'s' if k != 1 else ''}"
             )
         else:
-            lines.append(f"- {sid}: {n} table{'s' if n != 1 else ''}")
+            availability = "connected" if sid in available_source_ids else "catalog available"
+            lines.append(f"- {sid}: {availability}; {n} table{'s' if n != 1 else ''}")
 
     lines.append(
         "  (call list_data() for sources, list_data(source_id, ...) to drill, "

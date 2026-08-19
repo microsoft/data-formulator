@@ -135,6 +135,8 @@ def preview_data_operation():
                 "source_id": step.source_id,
                 **({"table_description": str(table_description).strip()} if table_description else {}),
                 "error": str(exc),
+                "columns": [],
+                "rows": [],
             })
             continue
         previews.append({

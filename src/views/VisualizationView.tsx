@@ -106,14 +106,25 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-interface OperationPreviewTable {
+interface OperationPreviewResponse {
     display_name: string;
     source_id?: string;
     table_description?: string;
     error?: string;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+}
+
+interface OperationPreviewTable extends OperationPreviewResponse {
     columns: string[];
     rows: Record<string, unknown>[];
 }
+
+export const normalizeOperationPreview = (preview: OperationPreviewResponse): OperationPreviewTable => ({
+    ...preview,
+    columns: Array.isArray(preview.columns) ? preview.columns : [],
+    rows: Array.isArray(preview.rows) ? preview.rows : [],
+});
 
 // Wide tables scroll horizontally; past this the row count makes the DOM the
 // bottleneck, so the remainder collapses into the trailing marker column.
@@ -159,12 +170,15 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
         setFailedPlans(new Set());
         const previewPlanIds = new Set(previewGroups.map(({ plan }) => plan.id));
         operation.plans.filter(plan => previewPlanIds.has(plan.id)).forEach(plan => {
-            apiRequest<{ previews: OperationPreviewTable[] }>('/api/agent/data-operation-preview', {
+            apiRequest<{ previews?: OperationPreviewResponse[] }>('/api/agent/data-operation-preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ operation_id: operation.id, plan_id: plan.id }),
             }).then(({ data }) => {
-                if (active) setPreviews(current => ({ ...current, [plan.id]: data.previews }));
+                if (active) setPreviews(current => ({
+                    ...current,
+                    [plan.id]: (data.previews ?? []).map(normalizeOperationPreview),
+                }));
             }).catch(() => {
                 if (active) setFailedPlans(current => new Set(current).add(plan.id));
             });
@@ -238,7 +252,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                                 </Typography>
                                             )}
                                         </Box>
-                                        {preview && (
+                                        {preview && !preview.error && (
                                             <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0 }}>
                                                 {t('dataLoading.operation.previewColumns', {
                                                     count: preview.columns.length,
@@ -261,7 +275,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                             ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
                                             : 'none',
                                     }}>
-                                        {failed ? (
+                                        {failed || preview?.error ? (
                                             <Typography sx={{ px: 1.5, py: 1.25, fontSize: textVar.xs, color: 'error.main' }}>
                                                 {t('dataLoading.operation.previewUnavailable', { defaultValue: 'Preview unavailable' })}
                                             </Typography>

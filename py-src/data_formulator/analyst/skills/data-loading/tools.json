@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "list_data",
-      "description": "Browse cached connected-source catalogs. With no arguments, list source summaries. With source_id, list its top-level entries. Add path to browse direct children and filter for a case-insensitive substring match.",
+      "description": "Browse cached connected-source catalogs. With no arguments, list each source with its top-level contents — usually enough to say what is available. With source_id, list that level plus `tree`, a nested view of everything below it (objects are folders, null marks a table), so you rarely need to walk level by level. Add path to move down and filter for a case-insensitive substring match.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -179,6 +179,7 @@
                 },
                 "tables": {
                   "type": "array",
+                  "description": "The tables that serve the same analysis.",
                   "minItems": 1,
                   "items": {
                     "type": "object",

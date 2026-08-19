@@ -378,6 +378,12 @@ def list_cached_sources(workspace_root: Path | str) -> list[str]:
             sources = [s for s in sources if s in allowed]
         except Exception:
             logger.debug("Failed to filter cached sources by admin set", exc_info=True)
+    try:
+        from data_formulator.datalake.connector_preferences import disabled_connector_ids
+        disabled_sources = disabled_connector_ids(workspace_root)
+        sources = [source for source in sources if source not in disabled_sources]
+    except Exception:
+        logger.debug("Failed to filter disabled cached sources", exc_info=True)
     return sources
 
 
@@ -518,7 +524,13 @@ def search_catalog_cache(
         return []
 
     exclude = exclude_tables or set()
-    all_ids = source_ids or list_cached_sources(workspace_root)
+    all_ids = source_ids if source_ids is not None else list_cached_sources(workspace_root)
+    try:
+        from data_formulator.datalake.connector_preferences import disabled_connector_ids
+        disabled_sources = disabled_connector_ids(workspace_root)
+        all_ids = [source_id for source_id in all_ids if source_id not in disabled_sources]
+    except Exception:
+        logger.debug("Failed to filter disabled catalog search sources", exc_info=True)
 
     # Compile exclude pattern up-front so a bad pattern surfaces clearly.
     excl_re = None
@@ -551,15 +563,62 @@ def search_catalog_cache(
 # agent toward find_data or a tighter filter rather than pagination.
 LIST_DATA_LIMIT = 200
 
+# Enough top-level names to answer "what's in there?" without a drill-down call.
+SOURCE_TOP_LEVEL_PREVIEW = 12
+
+# Descendant nodes returned alongside one level of children, so a source's shape
+# is visible without walking it folder by folder.
+SUBTREE_NODE_BUDGET = 150
+
+
+def _build_subtree(
+    tables_raw: list[dict[str, Any]],
+    path: list[str],
+    budget: int = SUBTREE_NODE_BUDGET,
+) -> tuple[dict[str, Any], bool]:
+    """Nested names below ``path``, one level down and deeper.
+
+    Folders map to objects, tables to ``None``. Only descendants deeper than the
+    requested level appear — tables *at* the level are already returned in full
+    (with keys and descriptions) by :func:`list_path_children`.
+    """
+    K = len(path)
+    tree: dict[str, Any] = {}
+    nodes = 0
+    for t in tables_raw:
+        tpath = t.get("path")
+        tpath = [str(s) for s in tpath] if isinstance(tpath, list) else []
+        if len(tpath) < K + 2 or tpath[:K] != path:
+            continue
+        rest = [seg for seg in tpath[K:] if seg]
+        if len(rest) < 2:
+            continue
+        if nodes >= budget:
+            return tree, True
+        node = tree
+        for seg in rest[:-1]:
+            child = node.get(seg)
+            if not isinstance(child, dict):
+                child = {}
+                node[seg] = child
+                nodes += 1
+            node = child
+        if rest[-1] not in node:
+            node[rest[-1]] = None
+            nodes += 1
+    return tree, False
+
 
 def list_sources_summary(
     workspace_root: Path | str,
 ) -> list[dict[str, Any]]:
     """Return a per-source summary suitable for ``list_data()`` with no args.
 
-    Each entry: ``{source_id, table_count, is_hierarchical}``.  Sources whose
-    cache file is missing or unreadable are skipped silently — the agent
-    treats the cache as ground truth (see design-docs §8).
+    Each entry: ``{source_id, table_count, is_hierarchical, top_level}``, where
+    ``top_level`` previews the source's depth-0 children (folders first, then
+    loose tables) so the inventory alone usually answers what a source holds.
+    Sources whose cache file is missing or unreadable are skipped silently — the
+    agent treats the cache as ground truth (see design-docs §8).
     """
     out: list[dict[str, Any]] = []
     for sid in list_cached_sources(workspace_root):
@@ -568,15 +627,26 @@ def list_sources_summary(
             continue
         tables = raw.get("tables", []) or []
         is_hier = False
+        folders: list[str] = []
+        seen_folders: set[str] = set()
+        leaves: list[str] = []
         for t in tables:
             p = t.get("path")
-            if isinstance(p, list) and len(p) >= 2:
+            p = [str(s) for s in p] if isinstance(p, list) else []
+            if len(p) >= 2:
                 is_hier = True
-                break
+                if p[0] not in seen_folders:
+                    seen_folders.add(p[0])
+                    folders.append(p[0])
+            else:
+                leaf = p[0] if p else str(t.get("name", ""))
+                if leaf:
+                    leaves.append(leaf)
         out.append({
             "source_id": raw.get("source_id", sid),
             "table_count": len(tables),
             "is_hierarchical": is_hier,
+            "top_level": (folders + leaves)[:SOURCE_TOP_LEVEL_PREVIEW],
         })
     out.sort(key=lambda r: r["source_id"])
     return out
@@ -704,6 +774,11 @@ def list_path_children(
         "total_tables": total_tables,
         "truncated": truncated,
     }
+    subtree, subtree_truncated = _build_subtree(tables_raw, path)
+    if subtree:
+        result["tree"] = subtree
+        if subtree_truncated:
+            result["tree_truncated"] = True
     if truncated:
         remaining = total - len(folders) - len(leaf_tables)
         result["hint"] = (

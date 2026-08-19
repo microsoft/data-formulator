@@ -50,7 +50,11 @@ const PlanStepItem: React.FC<{
     const isFailed = step.startsWith('✗');
     const isWarning = step.startsWith('⚠');
     const isInfo = step.startsWith('📋');
-    const displayLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
+    const rawLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
+    // Trailing ellipsis marks the step still in flight; some labels ship their own.
+    const displayLine = showShimmer && !/(\.\.\.|…)$/.test(rawLine.trim())
+        ? `${rawLine}…`
+        : rawLine;
     const IconComp = getStepIconComponent(step);
 
     // Text stays in the normal muted color even for failed/warning steps — the

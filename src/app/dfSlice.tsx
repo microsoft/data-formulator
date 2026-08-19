@@ -2346,8 +2346,17 @@ export const dataFormulatorSlice = createSlice({
                     };
                 }
 
-                const displayName = data["result"][0]["suggested_table_name"] as string | undefined;
-                const info = { tableId, ...(displayName ? { displayName } : {}), fields };
+                const suggestedName = data["result"][0]["suggested_table_name"] as string | undefined;
+                const normalizeName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
+                if (suggestedName && normalizeName(table.displayId || table.id) === normalizeName(table.id)) {
+                    state.inputTables = state.inputTables.map(item =>
+                        item.id === tableId ? { ...item, displayId: suggestedName } : item
+                    );
+                    state.derivedTables = state.derivedTables.map(item =>
+                        item.id === tableId ? { ...item, displayId: suggestedName } : item
+                    );
+                }
+                const info = { tableId, fields };
                 const existingIndex = state.tableSemantics.findIndex(item => item.tableId === tableId);
                 if (existingIndex >= 0) state.tableSemantics[existingIndex] = info;
                 else state.tableSemantics.push(info);

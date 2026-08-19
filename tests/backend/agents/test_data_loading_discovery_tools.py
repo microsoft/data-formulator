@@ -12,8 +12,17 @@ from unittest.mock import patch
 
 import pytest
 
-from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent, TOOLS
-from data_formulator.datalake.catalog_cache import CatalogSearchError, save_catalog
+from data_formulator.agents.agent_data_loading_chat import (
+    DataLoadingAgent,
+    TOOLS,
+    _build_connector_summary_block,
+)
+from data_formulator.datalake.catalog_cache import (
+    CatalogSearchError,
+    load_catalog_snapshot,
+    save_catalog,
+)
+from data_formulator.datalake.connector_preferences import set_connector_enabled
 from data_formulator.knowledge.store import KnowledgeStore
 
 pytestmark = [pytest.mark.backend]
@@ -82,6 +91,65 @@ def _zero_auth_connector():
 
 
 class TestListData:
+    def test_summary_includes_connected_source_without_cache(self, tmp_path: Path) -> None:
+        with patch(
+            "data_formulator.data_connector.list_available_connector_ids",
+            return_value=["mysql-main"],
+        ):
+            summary = _build_connector_summary_block(tmp_path)
+
+        assert "mysql-main: connected, catalog not cached" in summary
+
+    def test_source_inventory_includes_connected_source_without_cache(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        with patch(
+            "data_formulator.data_connector.list_available_connector_ids",
+            return_value=["mysql-main"],
+        ):
+            result = agent._tool_list_data({})
+
+        assert result == {"sources": [{
+            "source_id": "mysql-main",
+            "table_count": 0,
+            "is_hierarchical": False,
+            "connected": True,
+            "catalog_status": "not_cached",
+        }]}
+
+    def test_connector_summary_hides_disconnected_cached_source(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "databricks--databricks", _SAMPLE_TABLES)
+
+        with patch(
+            "data_formulator.data_connector.connector_is_available",
+            return_value=False,
+        ):
+            summary = _build_connector_summary_block(tmp_path)
+
+        assert summary == "  none"
+
+    def test_browsing_connected_source_bootstraps_missing_catalog(self, tmp_path: Path) -> None:
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        with (
+            patch(
+                "data_formulator.data_connector.list_available_connector_ids",
+                return_value=["mysql-main"],
+            ),
+            patch("data_formulator.data_connector.resolve_live_loader", return_value=object()),
+            patch(
+                "data_formulator.datalake.catalog_refresh.ensure_catalog_freshness",
+                side_effect=lambda root, source_id: (
+                    save_catalog(root, source_id, _SAMPLE_TABLES),
+                    load_catalog_snapshot(root, source_id),
+                )[1],
+            ),
+        ):
+            result = agent._tool_list_data({"source_id": "mysql-main"})
+
+        assert result["source_id"] == "mysql-main"
+        assert {table["name"] for table in result["tables"]} == {"customers"}
+
     def test_bootstraps_uncached_zero_auth_connector(self, tmp_path: Path) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
 
@@ -100,6 +168,7 @@ class TestListData:
                 "source_id": "sample_datasets",
                 "table_count": 3,
                 "is_hierarchical": True,
+                "top_level": ["Sales", "customers"],
             }
         ]
 
@@ -115,6 +184,41 @@ class TestListData:
         assert by_id["pg_prod"]["table_count"] == 3
         assert by_id["pg_prod"]["is_hierarchical"] is True
         assert by_id["flat_src"]["is_hierarchical"] is False
+
+    def test_disabled_source_is_hidden_without_deleting_cache(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "sample_datasets", _SAMPLE_TABLES)
+        set_connector_enabled(tmp_path, "sample_datasets", False)
+
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+        result = agent._tool_list_data({})
+
+        assert result == {"sources": []}
+        assert (tmp_path / "catalog_cache" / "sample_datasets.json").exists()
+
+    def test_disconnected_source_is_hidden_without_deleting_cache(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "databricks--databricks", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        with patch(
+            "data_formulator.data_connector.connector_is_available",
+            return_value=False,
+        ):
+            result = agent._tool_list_data({})
+
+        assert result == {"sources": []}
+        assert (tmp_path / "catalog_cache" / "databricks--databricks.json").exists()
+
+    def test_disconnected_cached_source_cannot_be_browsed(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "databricks--databricks", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        with patch(
+            "data_formulator.data_connector.connector_is_available",
+            return_value=False,
+        ):
+            result = agent._tool_list_data({"source_id": "databricks--databricks"})
+
+        assert result == {"error": "Source 'databricks--databricks' is disconnected."}
 
     def test_no_user_home_returns_empty_sources(self) -> None:
         agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(None))
@@ -202,6 +306,36 @@ class TestFindData:
         for r in result["results"]:
             assert r["source_id"] == "pg_prod"
             assert r["status"] == "not imported"
+
+    def test_disabled_source_is_excluded_from_explicit_search(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "sample_datasets", _SAMPLE_TABLES)
+        set_connector_enabled(tmp_path, "sample_datasets", False)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        result = agent._tool_find_data({
+            "query": "customers",
+            "scope": "sample_datasets",
+        })
+
+        assert result["results"] == []
+        assert "sample_datasets" not in result["valid_source_ids"]
+
+    def test_disconnected_source_is_excluded_from_search(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "databricks--databricks", _SAMPLE_TABLES)
+        agent = DataLoadingAgent(client=None, workspace=_FakeWorkspace(tmp_path))
+
+        with patch(
+            "data_formulator.data_connector.connector_is_available",
+            return_value=False,
+        ):
+            result = agent._tool_find_data({
+                "query": "customers",
+                "scope": "connected",
+            })
+
+        assert result["results"] == []
+        assert "databricks--databricks" not in result["valid_source_ids"]
+        assert "databricks--databricks" not in result["catalog_freshness"]
 
     def test_scope_with_source_id(self, tmp_path: Path) -> None:
         save_catalog(tmp_path, "pg_prod", _SAMPLE_TABLES)

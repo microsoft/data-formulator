@@ -455,6 +455,10 @@ class TestListSourcesSummary:
         assert by_id["pg_prod"]["is_hierarchical"] is True
         assert by_id["flat_src"]["table_count"] == 2
         assert by_id["flat_src"]["is_hierarchical"] is False
+        # The inventory previews depth-0 children so one call can answer
+        # "what is available" without a drill-down per source.
+        assert by_id["pg_prod"]["top_level"] == ["Sales", "customers"]
+        assert by_id["flat_src"]["top_level"] == ["t1", "t2"]
 
     def test_empty_when_no_cache(self, tmp_path: Path) -> None:
         from data_formulator.datalake.catalog_cache import list_sources_summary
@@ -490,6 +494,26 @@ class TestListPathChildren:
         table_names = {t["name"] for t in result["tables"]}
         assert folder_names == {"Archive"}
         assert table_names == {"monthly_orders", "monthly_returns"}
+
+    def test_response_carries_the_subtree_below_the_level(self) -> None:
+        from data_formulator.datalake.catalog_cache import list_path_children
+
+        root = list_path_children(self.user_home, "pg_prod")
+        # The whole shape below the level resolves in one call; tables *at* the
+        # level are already listed in full, so they stay out of the tree.
+        assert root["tree"] == {
+            "Sales": {
+                "Archive": {"fy24": None},
+                "monthly_orders": None,
+                "monthly_returns": None,
+            },
+        }
+        assert "customers" not in root["tree"]
+
+        # A level with no deeper descendants omits the key entirely.
+        assert "tree" not in list_path_children(
+            self.user_home, "pg_prod", path=["Sales", "Archive"],
+        )
 
     def test_filter_narrows_results(self) -> None:
         from data_formulator.datalake.catalog_cache import list_path_children

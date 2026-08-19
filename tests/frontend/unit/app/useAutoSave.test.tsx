@@ -136,4 +136,19 @@ describe('useAutoSave', () => {
         }]);
         expect(state.textTurns[0].form.connector.prefilled.password).toBe('secret');
     });
+
+    it('persists field semantics in workspace snapshots', () => {
+        const snapshot = getSerializableState({
+            ...mocks.state,
+            tableSemantics: [{
+                tableId: 'table-1',
+                fields: { amount: { semanticType: 'Currency', unit: 'USD' } },
+            }],
+        } as any);
+
+        expect(snapshot.tableSemantics).toEqual([{
+            tableId: 'table-1',
+            fields: { amount: { semanticType: 'Currency', unit: 'USD' } },
+        }]);
+    });
 });

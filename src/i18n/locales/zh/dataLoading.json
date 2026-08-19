@@ -92,10 +92,10 @@
       "listingFiles": "列出文件",
       "runningPython": "运行 Python",
       "preparingPreview": "准备预览",
-      "browsingCatalog": "浏览目录",
-      "searchingData": "搜索数据",
-      "describingData": "读取表元数据",
-      "probingData": "探查数据",
+      "browsingCatalog": "浏览",
+      "searchingData": "搜索",
+      "describingData": "读取表",
+      "probingData": "探查",
       "proposingLoadPlan": "生成加载方案"
     },
     "examples": {

@@ -96,7 +96,6 @@ describe("split table collections", () => {
     expect(state.tableSemantics).toEqual([
       {
         tableId: "orders",
-        displayName: "Orders by customer",
         fields: {
           order_id: {
             semanticType: "identifier",
@@ -107,12 +106,35 @@ describe("split table collections", () => {
         },
       },
     ]);
+    expect(state.inputTables[0].displayId).toBe("Orders by customer");
 
     state = dataFormulatorReducer(
       state,
       dfActions.removeTableLocally("orders")
     );
     expect(state.tableSemantics).toEqual([]);
+  });
+
+  it("does not replace a manually renamed table with a late inferred name", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateTableDisplayId({ tableId: "orders", displayId: "My orders" })
+    );
+    state = dataFormulatorReducer(
+      state,
+      fetchFieldSemanticType.fulfilled(
+        { result: [{ fields: {}, suggested_table_name: "Suggested orders" }] },
+        "request-id",
+        sourceTable as any
+      )
+    );
+
+    expect(state.inputTables[0].displayId).toBe("My orders");
+    expect(state.tableSemantics).toEqual([{ tableId: "orders", fields: {} }]);
   });
 
   it("automatically migrates legacy tables when state is loaded", () => {

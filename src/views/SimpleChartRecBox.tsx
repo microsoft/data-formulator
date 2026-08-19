@@ -51,6 +51,7 @@ import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ClarificationPanel, ExplanationPanel } from './AgentPausePanel';
 import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
+import { formatAnalystToolProgress } from './analystToolProgress';
 
 // Approx footprint of the leading lightning-bolt IconButton (size small,
 // p:0.5 + 16px icon). Used to cap a starter chip so a single chip fits
@@ -734,8 +735,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, displayPrompt?: string) => {
         // A session can start with no data at all — the agent's first job is then
         // to load some, so don't require a table to ask.
-        const emptyWorkspace = tables.length === 0;
-        if ((!focusedTableId && !emptyWorkspace) || (!clarificationContext && prompt.trim() === "")) return;
+        const hasNoAnalysisInputs = inputTables.length === 0;
+        if ((!focusedTableId && !hasNoAnalysisInputs) || (!clarificationContext && prompt.trim() === "")) return;
 
         // Non-image attachments live in the workspace scratch/ folder; we pass
         // their paths to the agent (see requestBody.scratch_files) rather than
@@ -758,7 +759,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...priorityIds.filter(id => inputTableIds.includes(id)),
             ...inputTableIds.filter(id => !priorityIds.includes(id))
         ];
-        if (selectedTableIds.length === 0 && !emptyWorkspace) return;
+        if (selectedTableIds.length === 0 && !hasNoAnalysisInputs) return;
 
         // A real resume replays a trajectory; answering a clarify WITHOUT a
         // trajectory token is a fresh turn that still threads the conversation.
@@ -1240,6 +1241,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     thinkingSteps.push(t('dataThread.searching') + (query ? ` "${query}"` : ''));
                 } else if (["visualize", "clarify", "present", "action"].includes(result.tool)) {
                     thinkingSteps.push(t('dataThread.producingAction', { action: result.tool }));
+                } else {
+                    thinkingSteps.push(formatAnalystToolProgress(
+                        result.tool || 'tool',
+                        result.args,
+                        t,
+                    ));
                 }
                 if (currentDraftId) {
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
@@ -1878,9 +1885,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const canSend = React.useMemo(() => {
         if (workspaceReadOnly) return false;
         // No tables yet: the first ask is how data gets here.
-        if (!focusedTableId && tables.length > 0) return false;
+        if (!focusedTableId && inputTables.length > 0) return false;
         return chatPrompt.trim().length > 0;
-    }, [chatPrompt, focusedTableId, tables.length, workspaceReadOnly]);
+    }, [chatPrompt, focusedTableId, inputTables.length, workspaceReadOnly]);
 
     // A prompt seeded from the landing box: send it once the chat is idle.
     // The ref makes this one-shot even if the effect is double-invoked before
@@ -2347,7 +2354,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
                     if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
                         event.preventDefault();
-                        setChatPrompt(t('chartRec.threadExplorePrompt'));
+                        setChatPrompt(t(inputTables.length === 0
+                            ? 'chartRec.emptyAnalysisInputsPrompt'
+                            : 'chartRec.threadExplorePrompt'));
                     }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -2379,7 +2388,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 placeholder={
                     pendingClarification
                         ? t('chartRec.replyPlaceholder')
-                        : t(inputTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
+                        : inputTables.length === 0
+                            ? t('chartRec.emptyAnalysisInputsPlaceholder')
+                            : t(inputTables.length === 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
                 }
                 fullWidth
                 multiline

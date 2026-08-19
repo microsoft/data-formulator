@@ -92,6 +92,74 @@ def test_registry_exposes_discovery_tools_only_after_skill_load() -> None:
     } == set(meta.action_names)
 
 
+def test_data_loading_uses_one_canonical_skill_directory() -> None:
+    registry = build_registry()
+
+    assert registry.canonical_name("data_loading") == "data-loading"
+    assert registry._doc_paths["data-loading"].parent.name == "data-loading"
+
+
+def test_empty_workspace_preloads_data_loading_guidance(tmp_path: Path) -> None:
+    from data_formulator.analyst.agent import AnalystAgent
+
+    agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
+    agent._loaded_skills = agent._initial_loaded_skills([])
+
+    prompt = agent._build_system_prompt()
+
+    assert agent._loaded_skills == {"core", "data-loading"}
+    assert agent._initial_loaded_skills([{"name": "orders"}]) == {"core"}
+    assert "[SKILL: data-loading] Preloaded for this run" in prompt
+    assert "When nothing is loaded yet" in prompt
+    assert "call `list_data({})` and browse before you say anything" in prompt
+
+
+def test_tool_progress_args_are_useful_and_credential_safe() -> None:
+    from data_formulator.analyst.agent import _tool_progress_args
+
+    assert _tool_progress_args("find_data", {
+        "query": "orders",
+        "scope": "warehouse",
+        "password": "secret",
+    }) == {
+        "query": "orders",
+        "scope": "warehouse",
+    }
+    assert _tool_progress_args("describe_connector", {
+        "source_type": "databricks",
+        "prefilled": {"token": "secret"},
+    }) == {"source_type": "databricks"}
+    probe_progress = _tool_progress_args("probe_data", {
+        "source_id": "warehouse",
+        "table_key": "orders",
+        "query": {
+            "aggregates": [{"op": "sum", "column": "revenue"}],
+            "filters": [{"column": "customer", "op": "EQ", "value": "Secret Corp"}],
+            "limit": 20,
+        },
+    })
+    assert probe_progress["query"] == {
+        "aggregates": [{"op": "sum", "column": "revenue"}],
+        "limit": 20,
+        "filter_count": 1,
+    }
+    assert "Secret Corp" not in json.dumps(probe_progress)
+    assert _tool_progress_args("unknown_tool", {"token": "secret"}) == {}
+
+
+def test_resume_rehydrates_preloaded_data_loading_skill(tmp_path: Path) -> None:
+    from data_formulator.analyst.agent import AnalystAgent
+
+    agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
+    agent._loaded_skills = agent._initial_loaded_skills([])
+    system_prompt = agent._build_system_prompt()
+    agent._loaded_skills = {"core"}
+
+    agent._rehydrate_loaded_skills([{"role": "system", "content": system_prompt}])
+
+    assert agent._loaded_skills == {"core", "data-loading"}
+
+
 def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
     skill = build_registry().get_skill("data-loading")

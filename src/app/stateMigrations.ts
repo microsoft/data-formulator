@@ -26,7 +26,7 @@
  */
 
 /** Current persisted-state schema version. Bump when adding a migration. */
-export const DF_STATE_VERSION = 4;
+export const DF_STATE_VERSION = 6;
 
 type SavedState = Record<string, any>;
 
@@ -309,6 +309,43 @@ const MIGRATIONS: Migration[] = [
                 generatedReports,
                 textTurns,
                 __stateVersion: 4,
+            };
+        },
+    },
+    {
+        // Table labels have one owner: `displayId`. Older states also stored an
+        // inferred table label on `tableSemantics`; preserve that suggestion
+        // only when the table still has its default label, then remove it from
+        // the field-semantics collection.
+        to: 6,
+        migrate: (s) => {
+            const semantics = Array.isArray(s.tableSemantics) ? s.tableSemantics : [];
+            const suggestedNames = new Map<string, string>();
+            const tableSemantics = semantics.map(({ displayName, ...info }: any) => {
+                if (info?.tableId && typeof displayName === 'string' && displayName.trim()) {
+                    suggestedNames.set(info.tableId, displayName.trim());
+                }
+                return info;
+            });
+            const normalizeName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
+            const migrateTableName = (table: any) => {
+                if (!table?.id) return table;
+                const suggestion = suggestedNames.get(table.id);
+                const currentName = table.displayId || table.id;
+                return suggestion && normalizeName(currentName) === normalizeName(table.id)
+                    ? { ...table, displayId: suggestion }
+                    : table;
+            };
+            return {
+                ...s,
+                inputTables: Array.isArray(s.inputTables)
+                    ? s.inputTables.map(migrateTableName)
+                    : s.inputTables,
+                derivedTables: Array.isArray(s.derivedTables)
+                    ? s.derivedTables.map(migrateTableName)
+                    : s.derivedTables,
+                tableSemantics,
+                __stateVersion: 6,
             };
         },
     },

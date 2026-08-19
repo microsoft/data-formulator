@@ -24,8 +24,8 @@ describe('state migrations', () => {
             draftNodes: [{ id: 'draft', anchored: true }],
         });
 
-        expect(DF_STATE_VERSION).toBe(4);
-        expect(migrated.__stateVersion).toBe(4);
+        expect(DF_STATE_VERSION).toBe(6);
+        expect(migrated.__stateVersion).toBe(6);
         expect(migrated).not.toHaveProperty('tables');
         expect(migrated.inputTables).toEqual([
             expect.objectContaining({ id: 'source', source: { kind: 'workspace', tableId: 'source_workspace' } }),
@@ -65,10 +65,10 @@ describe('state migrations', () => {
         expect(migrated.derivedTables).toEqual([derived]);
         expect(migrated.tableSemantics).toEqual([semantics]);
         expect(migrated).not.toHaveProperty('tables');
-        expect(migrated.__stateVersion).toBe(4);
+        expect(migrated.__stateVersion).toBe(6);
     });
 
-    it('upgrades an already split pre-release state to v4', () => {
+    it('upgrades an already split pre-release state to v6', () => {
         const migrated = migrateState({
             __stateVersion: 5,
             inputTables: [{ kind: 'input-table', id: 'source' }],
@@ -76,7 +76,7 @@ describe('state migrations', () => {
             tableSemantics: [],
         });
 
-        expect(migrated.__stateVersion).toBe(4);
+        expect(migrated.__stateVersion).toBe(6);
         expect(migrated.inputTables).toEqual([{ kind: 'input-table', id: 'source' }]);
         expect(migrated.loadedTableNodes).toEqual([]);
     });
@@ -129,6 +129,29 @@ describe('state migrations', () => {
         expect(migrated.derivedTables[0]).not.toHaveProperty('threadParentId');
         expect(migrated.draftNodes[0].parentNodeId).toBe('source');
         expect(migrated.generatedReports[0].parentNodeId).toBe('result');
-        expect(migrated.__stateVersion).toBe(4);
+        expect(migrated.__stateVersion).toBe(6);
+    });
+
+    it('moves legacy inferred table names into default display IDs', () => {
+        const migrated = migrateState({
+            __stateVersion: 4,
+            inputTables: [
+                { kind: 'input-table', id: 'movies', displayId: 'movies' },
+                { kind: 'input-table', id: 'renamed', displayId: 'My movies' },
+            ],
+            derivedTables: [],
+            tableSemantics: [
+                { tableId: 'movies', displayName: 'Movies', fields: { year: { semanticType: 'Year' } } },
+                { tableId: 'renamed', displayName: 'Suggested movies', fields: {} },
+            ],
+        });
+
+        expect(migrated.inputTables[0].displayId).toBe('Movies');
+        expect(migrated.inputTables[1].displayId).toBe('My movies');
+        expect(migrated.tableSemantics).toEqual([
+            { tableId: 'movies', fields: { year: { semanticType: 'Year' } } },
+            { tableId: 'renamed', fields: {} },
+        ]);
+        expect(migrated.__stateVersion).toBe(6);
     });
 });

@@ -137,17 +137,21 @@ const LiveStatus: React.FC<{ startTime?: number; resetKey?: string }> = ({ start
 };
 
 /** Render a multi-step thinking banner as a single block with sectioned steps.
+ *  Steps read as progress, not a transcript, so only the active one shows.
  *  When `startTime` is provided, the live timer is appended *inline* next to
- *  the active (last) step's text — same alignment grammar as the single-line
+ *  the active step's text — same alignment grammar as the single-line
  *  ThinkingBanner — rather than right-flushed in a separate column.
  *  The timer resets whenever the active step changes so it shows the time
  *  spent on the **current** action, not the cumulative wait. */
 export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number, active: boolean = true) => {
-    const activeStep = steps.length > 0 ? steps[steps.length - 1] : '';
+    const lastStep = steps.length > 0 ? steps[steps.length - 1] : '';
+    // While the run is live the latest step stays in progress even after its own
+    // tool returned — the agent is already working on whatever comes next.
+    const activeStep = active && lastStep.startsWith('✓') ? lastStep.slice(2) : lastStep;
     return (
         <Box sx={{ ...sx }}>
             <PlanStepsView
-                steps={steps}
+                steps={activeStep ? [activeStep] : []}
                 activeLastStep={active}
                 trailing={startTime != null ? <LiveStatus startTime={startTime} resetKey={activeStep} /> : undefined}
             />
@@ -537,7 +541,6 @@ let SingleThreadGroupView: FC<{
 
     let tables = useSelector(dfSelectors.getAllTables);
     const derivedTables = useSelector(dfSelectors.getDerivedTables);
-    const inferredTableNames = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const { t } = useTranslation();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
@@ -704,6 +707,23 @@ let SingleThreadGroupView: FC<{
         return map;
     }, [loadedTableNodes]);
 
+    const highlightedTextTurnIds = useMemo(() => {
+        const ids = new Set<string>();
+        for (const node of loadedTableNodes) {
+            if (!globalHighlightedTableIds.includes(node.tableId)) continue;
+            let current: string | undefined = node.parentNodeId;
+            const seen = new Set<string>();
+            while (current && !seen.has(current)) {
+                seen.add(current);
+                const turn = turnById.get(current);
+                if (!turn) break;
+                ids.add(turn.id);
+                current = turn.parentNodeId;
+            }
+        }
+        return ids;
+    }, [globalHighlightedTableIds, loadedTableNodes, turnById]);
+
     const tableAnchorOfNode = (nodeId: string | undefined): string => {
         let current = nodeId;
         const seen = new Set<string>();
@@ -779,15 +799,13 @@ let SingleThreadGroupView: FC<{
     };
 
     let _buildTableCard = (tableId: string) => {
-        const inferredDisplayName = inferredTableNames.find(info => info.tableId === tableId)?.displayName;
-        return buildTableCard({ tableId, inferredDisplayName, ...tableCardProps });
+        return buildTableCard({ tableId, ...tableCardProps });
     }
 
     /** Pointer to a table whose real card lives in the shelf or a prior column. */
     let _buildRefChip = (tableId: string) => {
-        const displayName = inferredTableNames.find(info => info.tableId === tableId)?.displayName;
         return buildTableRefChip({
-            tableId, table: tableById.get(tableId), displayName,
+            tableId, table: tableById.get(tableId),
             focused: tableId === focusedTableId, dispatch,
         });
     }
@@ -1362,15 +1380,16 @@ let SingleThreadGroupView: FC<{
     // Render a single text turn: its triggering prompt bubble (if any) then the
     // turn card. `keyNode` seeds prompt-entry keys.
     const pushSingleTurn = (turn: TextTurn, keyNode: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger') => {
+        const turnHighlighted = highlighted || highlightedTextTurnIds.has(turn.id);
         if (turn.prompt) {
             pushInteractionEntries(
                 [{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.prompt, timestamp: turn.createdAt }],
-                keyNode, triggerType, highlighted, `textturn-prompt-${turn.id}`,
+                keyNode, triggerType, turnHighlighted, `textturn-prompt-${turn.id}`,
             );
         }
-        timelineItems.push(buildTextTurnTimelineItem(turn, highlighted, false));
+        timelineItems.push(buildTextTurnTimelineItem(turn, turnHighlighted, false));
         for (const report of reportsByParentNode.get(turn.id) || []) {
-            timelineItems.push(buildReportTimelineItem(report, highlighted));
+            timelineItems.push(buildReportTimelineItem(report, turnHighlighted));
         }
         // A turn that loaded tables skips the reply — the tables below already
         // say which option was taken.
@@ -1378,7 +1397,7 @@ let SingleThreadGroupView: FC<{
         if (turn.answered && turn.answer && loadedTables.length === 0) {
             pushInteractionEntries(
                 [{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.answer }],
-                keyNode, triggerType, highlighted, `textturn-answer-${turn.id}`,
+                keyNode, triggerType, turnHighlighted, `textturn-answer-${turn.id}`,
             );
         }
     };

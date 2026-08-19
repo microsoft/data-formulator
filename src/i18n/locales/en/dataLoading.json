@@ -92,10 +92,10 @@
       "listingFiles": "Listing files",
       "runningPython": "Running Python",
       "preparingPreview": "Preparing preview",
-      "browsingCatalog": "Browsing catalog",
-      "searchingData": "Searching data",
-      "describingData": "Reading table metadata",
-      "probingData": "Probing data",
+      "browsingCatalog": "Browsing",
+      "searchingData": "Searching",
+      "describingData": "Reading table",
+      "probingData": "Probing",
       "proposingLoadPlan": "Proposing load plan"
     },
     "examples": {

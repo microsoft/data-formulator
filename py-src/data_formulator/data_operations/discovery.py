@@ -50,11 +50,25 @@ def ensure_catalogs_current(user_home: Any) -> dict[str, Any]:
         return {}
     snapshots: dict[str, Any] = {}
     try:
-        from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
+        from data_formulator.data_connector import (
+            _ADMIN_CONNECTOR_IDS,
+            connector_is_available,
+            list_available_connector_ids,
+        )
         from data_formulator.datalake.catalog_cache import list_cached_sources
+        from data_formulator.datalake.connector_preferences import connector_is_enabled
         from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
 
-        source_ids = set(list_cached_sources(user_home)) | set(_ADMIN_CONNECTOR_IDS)
+        source_ids = (
+            set(list_cached_sources(user_home))
+            | set(_ADMIN_CONNECTOR_IDS)
+            | set(list_available_connector_ids())
+        )
+        source_ids = {
+            source_id for source_id in source_ids
+            if connector_is_enabled(user_home, source_id)
+            and connector_is_available(source_id) is not False
+        }
         for source_id in source_ids:
             snapshot = ensure_catalog_freshness(Path(user_home), source_id)
             if snapshot is not None:
@@ -77,6 +91,16 @@ def _freshness_payload(snapshot: Any) -> dict[str, Any]:
         "metadata_age_seconds": snapshot.metadata_age_seconds,
         "last_refresh_error": snapshot.last_refresh_error,
     }
+
+
+def _source_is_discoverable(source_id: str) -> bool:
+    """Hide sources known to be disconnected; keep unknown status compatible."""
+    try:
+        from data_formulator.data_connector import connector_is_available
+        return connector_is_available(source_id) is not False
+    except Exception:
+        logger.debug("Connector availability unavailable for %s", source_id, exc_info=True)
+        return True
 
 
 class DataDiscoveryService:
@@ -103,10 +127,29 @@ class DataDiscoveryService:
             except Exception:
                 logger.debug("list_data: list_sources_summary failed", exc_info=True)
                 return {"sources": []}
-            # Mark unreachable sources so the agent steers around them instead
-            # of proposing a load that can only fail.
             try:
-                from data_formulator.data_connector import connector_is_available
+                from data_formulator.data_connector import list_available_connector_ids
+                summarized_ids = {
+                    source.get("source_id") or source.get("id")
+                    for source in sources
+                }
+                sources.extend({
+                    "source_id": source_id,
+                    "table_count": 0,
+                    "is_hierarchical": False,
+                    "connected": True,
+                    "catalog_status": "not_cached",
+                } for source_id in list_available_connector_ids() if source_id not in summarized_ids)
+            except Exception:
+                logger.debug("list_data: available connector inventory failed", exc_info=True)
+            # A retained catalog is storage, not connection state. Do not offer
+            # sources that are definitively unavailable to the current identity.
+            sources = [
+                source for source in sources
+                if not (source.get("source_id") or source.get("id"))
+                or _source_is_discoverable(source.get("source_id") or source.get("id"))
+            ]
+            try:
                 for source in sources:
                     sid = source.get("source_id") or source.get("id")
                     if sid in snapshots and (
@@ -115,11 +158,26 @@ class DataDiscoveryService:
                         or snapshots[sid].last_refresh_error
                     ):
                         source["freshness"] = _freshness_payload(snapshots[sid])
-                    if sid and connector_is_available(sid) is False:
-                        source["connected"] = False
             except Exception:
-                logger.debug("list_data: availability check failed", exc_info=True)
+                logger.debug("list_data: freshness annotation failed", exc_info=True)
             return {"sources": sources}
+
+        from data_formulator.datalake.connector_preferences import connector_is_enabled
+        if not connector_is_enabled(user_home, source_id) or not _source_is_discoverable(source_id):
+            return {"error": f"Source '{source_id}' is disconnected."}
+
+        from data_formulator.datalake.catalog_cache import list_cached_sources
+        if source_id not in set(list_cached_sources(user_home)):
+            try:
+                from data_formulator.data_connector import resolve_live_loader
+                from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
+                resolve_live_loader(source_id)
+                snapshot = ensure_catalog_freshness(user_home, source_id)
+                if snapshot is not None:
+                    snapshots[source_id] = snapshot
+            except Exception as exc:
+                logger.debug("list_data: catalog bootstrap failed", exc_info=True)
+                return {"error": f"Source '{source_id}' is connected but its catalog could not be loaded: {exc}"}
 
         path = args.get("path") or []
         if not isinstance(path, list):
@@ -198,6 +256,16 @@ class DataDiscoveryService:
 
         if source_ids != [] and user_home:
             try:
+                if source_ids is None:
+                    source_ids = [
+                        source_id for source_id in list_cached_sources(user_home)
+                        if _source_is_discoverable(source_id)
+                    ]
+                else:
+                    source_ids = [
+                        source_id for source_id in source_ids
+                        if _source_is_discoverable(source_id)
+                    ]
                 imported_names = {result["name"] for result in results}
                 cache_hits = search_catalog_cache(
                     user_home,
@@ -226,7 +294,11 @@ class DataDiscoveryService:
 
         if not results:
             try:
-                known = sorted(list_cached_sources(user_home) or []) if user_home else []
+                known = sorted(
+                    source_id
+                    for source_id in (list_cached_sources(user_home) or [])
+                    if _source_is_discoverable(source_id)
+                ) if user_home else []
             except Exception:
                 known = []
             return {
@@ -257,6 +329,11 @@ class DataDiscoveryService:
 
         source_id = args.get("source_id", "")
         table_key = args.get("table_key", "")
+        user_home = getattr(self.workspace, "user_home", None)
+        if user_home:
+            from data_formulator.datalake.connector_preferences import connector_is_enabled
+            if not connector_is_enabled(user_home, source_id) or not _source_is_discoverable(source_id):
+                return {"error": f"Source '{source_id}' is disconnected."}
         return {
             "result": handle_read_catalog_metadata(
                 source_id,

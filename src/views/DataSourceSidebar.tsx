@@ -54,10 +54,10 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import PushPinIcon from '@mui/icons-material/PushPin';
@@ -1636,10 +1636,8 @@ const DataSourceSidebarPanel: React.FC<{
     }, [clearConnectorUiState, deleteTarget, dispatch, onConnectorsChanged, t]);
 
     // ── Disconnect connector ──────────────────────────────────────────────
-    // For admin (non-deletable) connectors the user can't remove the
-    // definition itself, but they *can* clear stored credentials and the
-    // active loader so they (or the next user on this identity) can
-    // re-authenticate via "Edit connection".
+    // Clear stored credentials and the active loader without removing the
+    // connector definition, so the user can reconnect through its form.
 
     const handleDisconnectConnector = useCallback(async (connector: ConnectorInstance) => {
         try {
@@ -1670,6 +1668,36 @@ const DataSourceSidebarPanel: React.FC<{
             }));
         }
     }, [clearConnectorUiState, dispatch, t]);
+
+    const handleConnectConnector = useCallback(async (connector: ConnectorInstance) => {
+        if (connector.auth_mode !== 'none') {
+            onOpenUploadDialog?.(`connector:${connector.id}`);
+            return;
+        }
+        try {
+            await apiRequest(CONNECTOR_ACTION_URLS.CONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id }),
+            });
+            setConnectors(prev => prev.map(c => c.id === connector.id
+                ? { ...c, connected: true }
+                : c));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorConnected', { name: connector.display_name }),
+            }));
+        } catch (e: any) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: e?.apiError?.message || t('sidebar.failedConnectConnector'),
+            }));
+        }
+    }, [dispatch, onOpenUploadDialog, t]);
 
     // ── Render ───────────────────────────────────────────────────────────────
 
@@ -1904,16 +1932,10 @@ const DataSourceSidebarPanel: React.FC<{
                                 of the connector header's chevron. */}
                             <Box
                                 onClick={() => {
-                                    // No-auth connectors (auth_mode = 'none')
-                                    // are always available — clicking the
-                                    // header just toggles expansion, never
-                                    // opens a credentials dialog.
-                                    const isAlwaysOn = connector.auth_mode === 'none';
-                                    if (connector.connected || isAlwaysOn) {
+                                    if (connector.connected) {
                                         toggleSource(connector.id);
                                     } else {
-                                        // Not connected — open config dialog for this connector
-                                        onOpenUploadDialog?.(`connector:${connector.id}`);
+                                        void handleConnectConnector(connector);
                                     }
                                 }}
                                 sx={{
@@ -1942,31 +1964,30 @@ const DataSourceSidebarPanel: React.FC<{
                                         pointerEvents: 'none',
                                     }}
                                 >
-                                    {(connector.connected || connector.auth_mode === 'none') && isExpanded
+                                    {connector.connected && isExpanded
                                         ? <ExpandMoreIcon sx={{ fontSize: iconVar.sm }} />
                                         : <ChevronRightIcon sx={{ fontSize: iconVar.sm }} />}
                                 </Box>
                                 {getConnectorIcon(connector.icon || connector.source_type, { sx: { fontSize: iconVar.md, opacity: 0.7 } })}
-                                {/* Status dot — green for live connections
-                                    and for always-on built-ins (which are
-                                    ready by definition), warning for
-                                    disconnected. */}
+                                {/* Status dot — green when this source is available
+                                    to the user and agent, warning when disconnected. */}
                                 <Box sx={{
                                     width: 6,
                                     height: 6,
                                     borderRadius: '50%',
                                     flexShrink: 0,
-                                    bgcolor: (connector.connected || connector.auth_mode === 'none')
+                                    bgcolor: connector.connected
                                         ? 'success.main'
                                         : 'warning.main',
                                 }} />
-                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, fontWeight: 500, color: (connector.connected || connector.auth_mode === 'none') ? 'text.primary' : 'text.secondary' }}>
+                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, fontWeight: 500, color: connector.connected ? 'text.primary' : 'text.secondary' }}>
                                     {connector.display_name}
                                 </Typography>
-                                {(connector.connected || connector.auth_mode === 'none') && (
+                                {connector.connected && (
                                     <Tooltip title={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}>
                                         <IconButton
                                             size="small"
+                                            aria-label={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}
                                             className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1989,50 +2010,11 @@ const DataSourceSidebarPanel: React.FC<{
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {/* Edit connection — available for both user and admin
-                                    connectors. Admin connectors can't be deleted, but
-                                    the user still needs a way to (re)enter credentials
-                                    or trigger a fresh login after disconnecting.
-                                    No-auth connectors have no credentials to configure,
-                                    so we skip this entirely. */}
-                                {connector.auth_mode !== 'none' && (
-                                <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
-                                    <IconButton
-                                        size="small"
-                                        className="connector-row-action"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onOpenUploadDialog?.(`connector:${connector.id}`);
-                                        }}
-                                        sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
-                                    >
-                                        <SettingsOutlinedIcon sx={{ fontSize: iconVar.sm }} />
-                                    </IconButton>
-                                </Tooltip>
-                                )}
-                                {connector.deletable ? (
-                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                {connector.connected ? (
+                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}>
                                         <IconButton
                                             size="small"
-                                            className="connector-row-action"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setDeleteTarget(connector);
-                                            }}
-                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
-                                        >
-                                            <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                ) : connector.connected && connector.auth_mode !== 'none' && (
-                                    /* Admin connector: surface Disconnect in place of Delete.
-                                       Only meaningful when there's an active session/credentials
-                                       to clear; if already disconnected, "Edit connection" is
-                                       the path to re-authenticate.
-                                       No-auth connectors have nothing to disconnect. */
-                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
-                                        <IconButton
-                                            size="small"
+                                            aria-label={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}
                                             className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -2041,6 +2023,37 @@ const DataSourceSidebarPanel: React.FC<{
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'warning.main' } }}
                                         >
                                             <LinkOffOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                ) : (
+                                    <Tooltip title={t('sidebar.connectConnector', { defaultValue: 'Connect' })}>
+                                        <IconButton
+                                            size="small"
+                                            aria-label={t('sidebar.connectConnector', { defaultValue: 'Connect' })}
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleConnectConnector(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
+                                        >
+                                            <LinkOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                {connector.deletable && (
+                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            aria-label={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDeleteTarget(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
+                                        >
+                                            <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                 )}

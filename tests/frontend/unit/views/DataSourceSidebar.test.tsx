@@ -58,6 +58,7 @@ vi.mock('../../../../src/app/utils', () => ({
         DELETE: (id: string) => `/api/connectors/${id}`,
     },
     CONNECTOR_ACTION_URLS: {
+        CONNECT: '/api/connectors/connect',
         GET_CATALOG: '/api/connectors/get-catalog',
         GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
         GET_CACHED_CATALOG_TREE: '/api/connectors/get-cached-catalog-tree',
@@ -149,6 +150,108 @@ describe('DataSourceSidebar', () => {
                 }),
             }));
         });
+    });
+
+    it('opens the populated connector form from Connect when disconnected', async () => {
+        const onOpenUploadDialog = vi.fn();
+        vi.mocked(apiRequest).mockResolvedValue({
+            data: {
+                connectors: [{
+                    id: 'mysql-main',
+                    display_name: 'MySQL',
+                    source_type: 'MySQLDataLoader',
+                    auth_mode: 'password',
+                    connected: false,
+                    deletable: true,
+                    pinned_params: { host: 'db.example.com', database: 'sales' },
+                }],
+            },
+        });
+
+        render(<DataSourceSidebar onOpenUploadDialog={onOpenUploadDialog} />);
+
+        const connectButton = (await screen.findByTestId('LinkOutlinedIcon')).closest('button');
+        expect(connectButton).toHaveAttribute('aria-label', 'Connect');
+        fireEvent.click(connectButton!);
+
+        expect(onOpenUploadDialog).toHaveBeenCalledWith('connector:mysql-main');
+        expect(screen.queryByTestId('SettingsOutlinedIcon')).not.toBeInTheDocument();
+        expect(screen.getByTestId('DeleteOutlineIcon').closest('button')).toHaveAttribute('aria-label', 'Delete connector');
+    });
+
+    it('disconnects connected user connectors without deleting their definition', async () => {
+        vi.mocked(apiRequest).mockImplementation((url: string) => {
+            if (url === '/api/connectors') {
+                return Promise.resolve({
+                    data: {
+                        connectors: [{
+                            id: 'mysql-main',
+                            display_name: 'MySQL',
+                            source_type: 'MySQLDataLoader',
+                            auth_mode: 'password',
+                            connected: true,
+                            has_stored_credentials: true,
+                            deletable: true,
+                        }],
+                    },
+                });
+            }
+            return Promise.resolve({ data: {} });
+        });
+
+        render(<DataSourceSidebar />);
+
+    const disconnectButton = (await screen.findByTestId('LinkOffOutlinedIcon')).closest('button');
+    expect(disconnectButton).toHaveAttribute('aria-label', 'Disconnect');
+    fireEvent.click(disconnectButton!);
+
+        await waitFor(() => {
+            expect(apiRequest).toHaveBeenCalledWith('/api/connectors/disconnect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: 'mysql-main' }),
+            });
+        });
+        expect((await screen.findByTestId('LinkOutlinedIcon')).closest('button')).toHaveAttribute('aria-label', 'Connect');
+        expect(screen.getByTestId('DeleteOutlineIcon').closest('button')).toHaveAttribute('aria-label', 'Delete connector');
+    });
+
+    it('disconnects and reconnects Example Datasets without a form', async () => {
+        vi.mocked(apiRequest).mockImplementation((url: string) => {
+            if (url === '/api/connectors') {
+                return Promise.resolve({
+                    data: {
+                        connectors: [{
+                            id: 'sample_datasets',
+                            display_name: 'Example Datasets',
+                            source_type: 'SampleDatasetsLoader',
+                            auth_mode: 'none',
+                            connected: true,
+                            deletable: false,
+                        }],
+                    },
+                });
+            }
+            return Promise.resolve({ data: {} });
+        });
+
+        render(<DataSourceSidebar />);
+
+        fireEvent.click((await screen.findByTestId('LinkOffOutlinedIcon')).closest('button')!);
+        await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/connectors/disconnect', expect.anything()));
+
+        const connectButton = (await screen.findByTestId('LinkOutlinedIcon')).closest('button');
+        expect(connectButton).toHaveAttribute('aria-label', 'Connect');
+        fireEvent.click(connectButton!);
+
+        await waitFor(() => {
+            expect(apiRequest).toHaveBeenCalledWith('/api/connectors/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: 'sample_datasets' }),
+            });
+        });
+        expect(await screen.findByTestId('LinkOffOutlinedIcon')).toBeInTheDocument();
     });
 
     it('returns to the landing state without creating an empty workspace', async () => {

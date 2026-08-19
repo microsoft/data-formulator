@@ -96,8 +96,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     const tableSemantics = useSelector((state: DataFormulatorState) =>
         state.tableSemantics.find(info => info.tableId === focusedTableId),
     );
-    const displayName = tableSemantics?.displayName?.trim()
-        || targetTable?.displayId
+    const displayName = targetTable?.displayId
         || targetTable?.id
         || 'table';
     const realName = targetTable?.derive

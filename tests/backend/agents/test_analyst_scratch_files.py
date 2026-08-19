@@ -46,6 +46,8 @@ class TestScratchFileInjection:
         agent = _agent()
         msgs = agent._build_initial_messages([{"name": "t"}], "q")
         assert "[ATTACHED FILES]" not in msgs[1]["content"]
+        assert msgs[1]["content"].startswith("[ANALYSIS INPUT TABLES]")
+        assert "[AVAILABLE TABLES]" not in msgs[1]["content"]
 
     def test_file_bytes_not_inlined(self):
         """Only the path is passed — the note must not contain file contents."""

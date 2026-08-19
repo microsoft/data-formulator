@@ -305,7 +305,8 @@ class DataLoadingSkill:
                 names = ", ".join(dict.fromkeys(loaded_tables))
                 raise ValueError(
                     f"This proposal duplicates data already loaded in the workspace: {names}. "
-                    "Use those workspace tables directly, explain their relevance, or propose only missing data."
+                    "Use those analysis input tables directly, explain their relevance, "
+                    "or propose only missing data."
                 )
             DataOperationRepository.for_workspace(ctx.workspace).create(
                 operation,

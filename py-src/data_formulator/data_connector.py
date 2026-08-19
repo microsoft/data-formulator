@@ -762,15 +762,16 @@ class DataConnector:
 
     def _require_loader(self) -> ExternalDataLoader:
         identity = self._get_identity()
+        from data_formulator.datalake.connector_preferences import connector_is_enabled
+        from data_formulator.datalake.workspace import get_user_home
+        if not connector_is_enabled(get_user_home(identity), self._source_id):
+            raise ValueError("Connector is disconnected. Please connect first.")
         loader = self._loaders.get(identity)
         if loader is not None:
             return loader
-        # No-auth connectors (e.g. built-in example datasets) are always
-        # available — there's nothing to connect, so lazily instantiate and
-        # cache the loader on first use. This mirrors the ``auth_mode == "none"``
-        # special-casing in the connect/get-status/preview/import endpoints and
-        # keeps no-auth sources working for catalog/preview/import even when
-        # external data connectors are disabled (e.g. ephemeral/demo mode).
+        # Enabled no-auth connectors need no setup, so lazily instantiate and
+        # cache the loader on first use. The preference check above keeps a
+        # user-disconnected built-in unavailable to both UI and agent paths.
         if _loader_auth_mode(self._loader_class) == "none":
             loader = self._loader_class()
             self._loaders[identity] = loader
@@ -845,6 +846,45 @@ def resolve_catalog_refresh_target(
     return loader_class, loader
 
 
+def _connector_connection_status(
+    connector: DataConnector,
+    identity: str | None,
+    *,
+    sso_token: Any = None,
+    token_store: Any = None,
+) -> tuple[bool, bool, bool]:
+    """Return ``(connected, has_stored_credentials, sso_auto_connect)``."""
+    enabled = True
+    if identity:
+        from data_formulator.datalake.connector_preferences import connector_is_enabled
+        from data_formulator.datalake.workspace import get_user_home
+        enabled = connector_is_enabled(get_user_home(identity), connector._source_id)
+    if not enabled:
+        return False, False, False
+
+    auth_mode = _loader_auth_mode(connector._loader_class)
+    if auth_mode == "none":
+        return True, False, False
+    if not identity:
+        return False, False, False
+
+    has_stored = connector.has_stored_credentials(identity)
+    connected = connector._get_loader(identity) is not None or has_stored
+    if connected:
+        return True, has_stored, False
+
+    sso_auto = False
+    if sso_token is not None and auth_mode in ("token", "sso_exchange", "delegated"):
+        if token_store is None:
+            from data_formulator.auth.token_store import TokenStore
+            token_store = TokenStore()
+        sso_auto = (
+            not token_store.is_sso_reconnect_blocked(connector._source_id)
+            and bool(connector._default_params.get("url"))
+        )
+    return False, has_stored, sso_auto
+
+
 def connector_is_available(source_id: str) -> bool | None:
     """Whether ``source_id`` could be loaded from right now, without touching it.
 
@@ -859,24 +899,53 @@ def connector_is_available(source_id: str) -> bool | None:
     except Exception:
         return None
     try:
-        if _loader_auth_mode(connector._loader_class) == "none":
-            return True
         identity = connector._get_identity()
-        if connector._get_loader(identity) is not None:
-            return True
-        if connector.has_stored_credentials(identity):
-            return True
         from data_formulator.auth.identity import get_sso_token
-        from data_formulator.auth.token_store import TokenStore
-        auth_mode = _loader_auth_mode(connector._loader_class)
-        return (
-            auth_mode in ("token", "sso_exchange", "delegated")
-            and not TokenStore().is_sso_reconnect_blocked(source_id)
-            and get_sso_token() is not None
+        connected, _has_stored, sso_auto = _connector_connection_status(
+            connector,
+            identity,
+            sso_token=get_sso_token(),
         )
+        return connected or sso_auto
     except Exception:
         logger.debug("availability check failed for %s", source_id, exc_info=True)
         return None
+
+
+def list_available_connector_ids() -> list[str]:
+    """Return connector IDs the current identity can load from."""
+    try:
+        identity = DataConnector._get_identity()
+    except Exception:
+        return []
+
+    sso_token = None
+    token_store = None
+    try:
+        from data_formulator.auth.identity import get_sso_token
+        sso_token = get_sso_token()
+        if sso_token is not None:
+            from data_formulator.auth.token_store import TokenStore
+            token_store = TokenStore()
+    except Exception:
+        logger.debug("SSO status unavailable for connector inventory", exc_info=True)
+
+    available: list[str] = []
+    for registry_key, connector, _is_admin in _visible_connector_items(identity):
+        public_id = _public_connector_id(registry_key, connector)
+        try:
+            connected, _has_stored, sso_auto = _connector_connection_status(
+                connector,
+                identity,
+                sso_token=sso_token,
+                token_store=token_store,
+            )
+        except Exception:
+            logger.debug("availability check failed for %s", public_id, exc_info=True)
+            continue
+        if connected or sso_auto:
+            available.append(public_id)
+    return available
 
 
 def _parse_source_table(raw: Any) -> tuple[str, str]:
@@ -1274,31 +1343,11 @@ def list_connectors():
 
     result = []
     for registry_key, connector, is_admin in _visible_connector_items(identity):
-        has_stored = False
-        connected = False
-        auth_mode = _loader_auth_mode(connector._loader_class)
-        if auth_mode == "none":
-            # No-auth connectors (e.g. built-in example datasets) are always
-            # available — there's no credential to store and no connection
-            # to establish.
-            connected = True
-        elif identity:
-            has_stored = connector.has_stored_credentials(identity)
-            connected = (
-                connector._get_loader(identity) is not None
-                or has_stored
-            )
-        sso_blocked = (
-            token_store.is_sso_reconnect_blocked(connector._source_id)
-            if token_store else False
-        )
-        # SSO auto-connect: auth-capable loader + user has SSO token + URL is pinned
-        sso_auto = (
-            not connected
-            and sso_token is not None
-            and auth_mode in ("token", "sso_exchange", "delegated")
-            and not sso_blocked
-            and bool(connector._default_params.get("url"))
+        connected, has_stored, sso_auto = _connector_connection_status(
+            connector,
+            identity,
+            sso_token=sso_token,
+            token_store=token_store,
         )
         cfg = connector.get_frontend_config(include_pinned_in_form=not is_admin)
         public_id = _public_connector_id(registry_key, connector)
@@ -1635,12 +1684,16 @@ def connector_connect():
     data = request.get_json() or {}
     source = _resolve_connector(data)
 
-    # No-auth connectors (e.g. built-in example datasets) have nothing to
-    # connect — they're always available. Return a synthetic success
-    # response so any (legacy) frontend code that still calls connect is
-    # a no-op rather than an error.
+    identity = source._get_identity()
+    from data_formulator.datalake.connector_preferences import set_connector_enabled
+    from data_formulator.datalake.workspace import get_user_home
+
+    # No-auth connectors have no form to submit. Connecting simply re-enables
+    # access to the existing loader and preserved catalog.
     if _loader_auth_mode(source._loader_class) == "none":
+        set_connector_enabled(get_user_home(identity), source._source_id, True)
         loader = source._loader_class()
+        source._loaders[identity] = loader
         return json_ok({
             "status": "connected",
             "persisted": False,
@@ -1674,6 +1727,8 @@ def connector_connect():
             identity = source._get_identity()
             source._loaders.pop(identity, None)
             raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection test failed")
+
+        set_connector_enabled(get_user_home(identity), source._source_id, True)
 
         persisted = False
         if persist:
@@ -1757,19 +1812,14 @@ def connector_disconnect():
     data = request.get_json() or {}
     source = _resolve_connector(data)
 
-    # No-auth connectors (e.g. built-in example datasets) cannot be
-    # disconnected — they have no credentials to clear and are intentionally
-    # always available.
-    if _loader_auth_mode(source._loader_class) == "none":
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            "This connector is always available and cannot be disconnected.",
-        )
-
     try:
         identity = source._get_identity()
+        from data_formulator.datalake.connector_preferences import set_connector_enabled
+        from data_formulator.datalake.workspace import get_user_home
+        set_connector_enabled(get_user_home(identity), source._source_id, False)
         source._loaders.pop(identity, None)
-        source._vault_delete(identity)
+        if _loader_auth_mode(source._loader_class) != "none":
+            source._vault_delete(identity)
         try:
             from data_formulator.auth.token_store import TokenStore
             TokenStore().clear_service_token(source._source_id)
@@ -1792,8 +1842,14 @@ def connector_get_status():
     data = request.get_json() or {}
     source = _resolve_connector(data)
 
-    # No-auth connectors are always connected.
+    identity = source._get_identity()
+    from data_formulator.datalake.connector_preferences import connector_is_enabled
+    from data_formulator.datalake.workspace import get_user_home
+
     if _loader_auth_mode(source._loader_class) == "none":
+        enabled = connector_is_enabled(get_user_home(identity), source._source_id)
+        if not enabled:
+            return json_ok({"connected": False, "persisted": False})
         loader = source._loader_class()
         return json_ok({
             "connected": True,

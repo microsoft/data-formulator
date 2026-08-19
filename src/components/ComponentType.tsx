@@ -370,7 +370,6 @@ export interface FieldSemanticsInfo {
 
 export interface TableSemanticsInfo {
     tableId: string;
-    displayName?: string;
     fields: Record<string, FieldSemanticsInfo>;
 }
 

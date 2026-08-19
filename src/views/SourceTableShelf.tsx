@@ -393,7 +393,6 @@ export const SourceTableShelf: FC<{
     const { manualRefresh } = useDataRefresh();
 
     const tables = useSelector(dfSelectors.getAllTables);
-    const inferredTableNames = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
 
     const [sectionExpanded, setSectionExpanded] = useState(true);
@@ -649,7 +648,6 @@ export const SourceTableShelf: FC<{
                 {buildTableCard({
                     tableId: tbl.id,
                     tables,
-                    inferredDisplayName: inferredTableNames.find(info => info.tableId === tbl.id)?.displayName,
                     // The shelf never shows artifacts — charts live in the thread
                     // started from the table.
                     chartElements: [],
@@ -668,7 +666,7 @@ export const SourceTableShelf: FC<{
                 })}
             </Box>
         </Box>;
-    }), [visibleTables, tables, inferredTableNames, highlightedTableIds, focusedTableId, theme, t]);
+    }), [visibleTables, tables, highlightedTableIds, focusedTableId, theme, t]);
 
     return <Box sx={{
         ...sx,
