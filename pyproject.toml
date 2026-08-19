@@ -62,6 +62,7 @@ dependencies = [
     "databricks-sql-connector", # databricks
     # SSO / Auth deps
     "PyJWT[crypto]>=2.8.0", # OIDC JWT verification (includes cryptography)
+    "cryptography>=50.0.0", # Security floor for auth and local vault encryption
     "requests", # GitHub OAuth code exchange, Superset API calls
     "flask-session>=0.8.0", # Server-side session (SQLite) for TokenStore
 ]
