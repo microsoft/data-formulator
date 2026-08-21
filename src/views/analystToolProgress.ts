@@ -35,6 +35,7 @@ const summarizeProbeQuery = (query: unknown): string => {
 };
 
 const toolLabelKeys: Record<string, string> = {
+    summarize_data_sources: 'dataLoading.toolLabels.summarizingSources',
     list_data: 'dataLoading.toolLabels.browsingCatalog',
     find_data: 'dataLoading.toolLabels.searchingData',
     describe_data: 'dataLoading.toolLabels.describingData',
@@ -54,14 +55,14 @@ export const formatAnalystToolProgress = (
         case 'list_data': {
             const path = Array.isArray(values.path) ? values.path.join('/') : values.path;
             detail = [shortSourceId(values.source_id), path].filter(Boolean).join('/');
-            if (values.filter) detail = `${detail} “${values.filter}”`.trim();
+            if (values.filter_by) detail = `${detail} (${values.filter_by})`.trim();
             break;
         }
         case 'find_data': {
-            const scope = values.scope && values.scope !== 'all'
-                ? ` in ${shortSourceId(values.scope)}`
-                : '';
-            detail = values.query ? `“${values.query}”${scope}` : '';
+            const path = Array.isArray(values.path) ? values.path.join('/') : values.path;
+            const scope = [shortSourceId(values.source_id), path].filter(Boolean).join('/');
+            detail = [values.query ? `“${values.query}”` : '', scope, values.filter_by ? `(${values.filter_by})` : '']
+                .filter(Boolean).join(' ');
             break;
         }
         case 'describe_data':

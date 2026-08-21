@@ -2,14 +2,33 @@
   {
     "type": "function",
     "function": {
+      "name": "summarize_data_sources",
+      "description": "Return a bounded overview of every connected data source: hierarchy stats, top-level items, branch-diverse sample tables, and explicit omitted counts. Use this first for broad questions about what data is available.",
+      "parameters": { "type": "object", "properties": {}, "required": [] }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "list_data",
-      "description": "Browse cached connected-source catalogs. With no arguments, list each source with its top-level contents — usually enough to say what is available. With source_id, list that level plus `tree`, a nested view of everything below it (objects are folders, null marks a table), so you rarely need to walk level by level. Add path to move down and filter for a case-insensitive substring match.",
+      "description": "List connected-source catalogs like ls. With no arguments, return immediate source nodes at the catalog root. With source_id and optional exact path, return immediate typed children only. Use filter_by for folders or tables and start_after when truncated. Use summarize_data_sources instead for a broad overview.",
       "parameters": {
         "type": "object",
         "properties": {
-          "source_id": { "type": "string", "description": "Connected source identifier. Omit for source summaries." },
-          "path": { "type": "array", "items": { "type": "string" }, "description": "Hierarchy path segments." },
-          "filter": { "type": "string", "description": "Substring filter on direct children." }
+          "source_id": { "type": "string", "description": "Connected source identifier. Omit for catalog-root source nodes." },
+          "path": { "type": "array", "items": { "type": "string" }, "description": "Exact hierarchy path segments." },
+          "filter_by": { "type": "string", "enum": ["folder", "table"], "description": "Optional immediate-child node type." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 500, "description": "Maximum items. Default 100." },
+          "start_after": {
+            "type": "object",
+            "description": "Exclusive continuation reference returned as next_start_after.",
+            "properties": {
+              "type": { "type": "string", "enum": ["folder", "table"] },
+              "path": { "type": "array", "items": { "type": "string" } },
+              "table_key": { "type": "string" }
+            },
+            "required": ["type", "path"]
+          }
         },
         "required": []
       }
@@ -19,21 +38,22 @@
     "type": "function",
     "function": {
       "name": "find_data",
-      "description": "Regex search across cached connected-source catalogs and optionally existing workspace tables. Returns exact source_id and table_key values for follow-up inspection.",
+      "description": "Recursively find data below an optional exact source path. Query is an optional case-insensitive regex; omit it to enumerate descendants. Results are flat typed nodes with exact paths. Use summarize_data_sources instead for a broad overview.",
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "Case-insensitive regex. Plain keywords work as literals." },
-          "scope": { "type": "string", "description": "all, workspace, connected, a source_id, or source_id:path/segments." },
-          "exclude": { "type": "string", "description": "Optional table-name exclusion regex." },
+          "query": { "type": "string", "description": "Optional case-insensitive regex. Omit to enumerate." },
+          "source_id": { "type": "string", "description": "Optional connected source identifier." },
+          "path": { "type": "array", "items": { "type": "string" }, "description": "Exact recursive search root. Requires source_id." },
+          "filter_by": { "type": "string", "enum": ["folder", "table"], "description": "Optional result node type." },
           "fields": {
             "type": "array",
             "items": { "type": "string", "enum": ["name", "description", "columns"] },
             "description": "Fields to search. Omit for all."
           },
-          "limit": { "type": "integer" }
+          "limit": { "type": "integer", "minimum": 1, "maximum": 500 }
         },
-        "required": ["query"]
+        "required": []
       }
     }
   },

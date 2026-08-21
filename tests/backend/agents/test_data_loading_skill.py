@@ -78,7 +78,7 @@ def test_registry_exposes_discovery_tools_only_after_skill_load() -> None:
     assert meta.always_on is False
     assert meta.action_names == ("propose_data_operation", "propose_connection")
     assert meta.tool_names == (
-        "list_data", "find_data", "describe_data", "probe_data",
+        "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
         "list_connectors", "describe_connector",
     )
     assert registry.tools_for(["core"]) != registry.tools_for(["core", "data-loading"])
@@ -111,7 +111,9 @@ def test_empty_workspace_preloads_data_loading_guidance(tmp_path: Path) -> None:
     assert agent._initial_loaded_skills([{"name": "orders"}]) == {"core"}
     assert "[SKILL: data-loading] Preloaded for this run" in prompt
     assert "When nothing is loaded yet" in prompt
-    assert "call `list_data({})` and browse before you say anything" in prompt
+    assert "Call `summarize_data_sources({})`" in prompt
+    assert "Never use `ask_user` to ask which connected source" in prompt
+    assert "Summarize them all with one bounded call" in prompt
 
 
 def test_tool_progress_args_are_useful_and_credential_safe() -> None:
@@ -119,11 +121,13 @@ def test_tool_progress_args_are_useful_and_credential_safe() -> None:
 
     assert _tool_progress_args("find_data", {
         "query": "orders",
-        "scope": "warehouse",
+        "source_id": "warehouse",
+        "path": ["public"],
         "password": "secret",
     }) == {
         "query": "orders",
-        "scope": "warehouse",
+        "source_id": "warehouse",
+        "path": ["public"],
     }
     assert _tool_progress_args("describe_connector", {
         "source_type": "databricks",
@@ -424,7 +428,7 @@ def test_skill_uses_shared_catalog_discovery(tmp_path: Path) -> None:
 
     result = skill.handle_tool(
         "find_data",
-        {"query": "orders", "scope": "connected"},
+        {"query": "orders", "source_id": "warehouse"},
         _context(_Workspace(tmp_path)),
     )
 

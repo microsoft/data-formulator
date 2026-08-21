@@ -3,11 +3,8 @@
 
 """Tests for the catalog_cache module and its integration with DataConnector.
 
-Covers:
-- save / load / delete round-trip with user-home path
-- search_catalog_cache keyword matching and exclusion
-- list_cached_sources
-- DataConnector routes correctly call save/delete with user-home path
+Covers save/load/delete, catalog finding and listing, and DataConnector cache
+integration.
 """
 from __future__ import annotations
 
@@ -28,8 +25,7 @@ from data_formulator.datalake.catalog_cache import (
     load_catalog_snapshot,
     record_catalog_refresh_failure,
     save_catalog,
-    search_catalog_cache,
-    _search_python,
+    find_catalog_cache,
 )
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
@@ -270,57 +266,6 @@ class TestListCachedSources:
 
 
 # ==================================================================
-# Tests: search_catalog_cache
-# ==================================================================
-
-class TestSearchCatalogCache:
-
-    @pytest.fixture(autouse=True)
-    def _setup_cache(self, tmp_path: Path) -> None:
-        self.user_home = tmp_path
-        save_catalog(tmp_path, "pg_prod", SAMPLE_TABLES)
-
-    def test_search_by_table_name(self) -> None:
-        results = search_catalog_cache(self.user_home, "orders")
-        assert len(results) >= 1
-        assert results[0]["name"] == "public.orders"
-
-    def test_search_by_description(self) -> None:
-        results = search_catalog_cache(self.user_home, "订单")
-        assert len(results) >= 1
-        assert results[0]["name"] == "public.orders"
-
-    def test_search_by_column_name(self) -> None:
-        results = search_catalog_cache(self.user_home, "customer_name")
-        assert len(results) >= 1
-        assert "customer_name" in results[0]["matched_columns"]
-
-    def test_search_excludes_imported_tables(self) -> None:
-        results = search_catalog_cache(
-            self.user_home, "orders", exclude_tables={"public.orders"},
-        )
-        names = {r["name"] for r in results}
-        assert "public.orders" not in names
-
-    def test_search_returns_empty_for_no_match(self) -> None:
-        results = search_catalog_cache(self.user_home, "zzz_nonexistent_zzz")
-        assert results == []
-
-    def test_search_respects_limit_per_source(self) -> None:
-        many_tables = [
-            {"name": f"table_{i}", "metadata": {"columns": [], "description": "match"}}
-            for i in range(50)
-        ]
-        save_catalog(self.user_home, "big_source", many_tables)
-        results = search_catalog_cache(
-            self.user_home, "match",
-            source_ids=["big_source"],
-            limit_per_source=5,
-        )
-        assert len(results) <= 5
-
-
-# ==================================================================
 # Tests: structured-field search produces match_reasons and scoring
 # ==================================================================
 
@@ -353,7 +298,7 @@ RICH_TABLES: list[dict[str, Any]] = [
 
 
 class TestStructuredFieldSearch:
-    """Verify per-field scoring + match_reasons reported by ``_search_python``."""
+    """Verify per-field scoring and match reasons from the shared finder."""
 
     @pytest.fixture(autouse=True)
     def _setup_cache(self, tmp_path: Path) -> None:
@@ -361,8 +306,16 @@ class TestStructuredFieldSearch:
         save_catalog(tmp_path, "pg_prod", RICH_TABLES)
 
     def _run(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
-        ids = list_cached_sources(self.user_home)
-        return _search_python(self.user_home, query, ids, set(), 20, **kwargs)
+        fields = kwargs.pop("fields", None)
+        results, _ = find_catalog_cache(
+            self.user_home,
+            query,
+            source_ids=list_cached_sources(self.user_home),
+            filter_by="table",
+            fields=list(fields) if fields else None,
+            **kwargs,
+        )
+        return results
 
     def test_table_name_match_reports_table_name_reason(self) -> None:
         results = self._run("orders")
@@ -391,14 +344,17 @@ class TestStructuredFieldSearch:
         assert self._run("zzz_nonexistent_zzz") == []
 
     def test_exclude_tables_drops_matches(self) -> None:
-        ids = list_cached_sources(self.user_home)
-        results = _search_python(
-            self.user_home, "orders", ids, {"public.orders"}, 20,
+        results, _ = find_catalog_cache(
+            self.user_home,
+            "orders",
+            source_ids=list_cached_sources(self.user_home),
+            filter_by="table",
+            exclude_tables={"public.orders"},
         )
         assert all(r["name"] != "public.orders" for r in results)
 
-    def test_search_catalog_cache_end_to_end(self) -> None:
-        results = search_catalog_cache(self.user_home, "product")
+    def test_finder_end_to_end(self) -> None:
+        results = self._run("product")
         assert any(r["name"] == "public.products" for r in results)
 
     def test_regex_query_alternation(self) -> None:
@@ -459,11 +415,61 @@ class TestListSourcesSummary:
         # "what is available" without a drill-down per source.
         assert by_id["pg_prod"]["top_level"] == ["Sales", "customers"]
         assert by_id["flat_src"]["top_level"] == ["t1", "t2"]
+        assert by_id["pg_prod"]["top_level_truncated"] is False
+
+    def test_top_level_preview_reports_truncation(self, tmp_path: Path) -> None:
+        from data_formulator.datalake.catalog_cache import list_sources_summary
+
+        save_catalog(tmp_path, "wide", [
+            {"name": f"t{i}", "path": [f"t{i}"], "table_key": f"k{i}"}
+            for i in range(13)
+        ])
+
+        source = list_sources_summary(tmp_path)[0]
+        assert len(source["top_level"]) == 12
+        assert source["top_level_truncated"] is True
 
     def test_empty_when_no_cache(self, tmp_path: Path) -> None:
         from data_formulator.datalake.catalog_cache import list_sources_summary
 
         assert list_sources_summary(tmp_path) == []
+
+
+class TestSummarizeCatalogSources:
+    def test_balances_samples_across_branches(self, tmp_path: Path) -> None:
+        from data_formulator.datalake.catalog_cache import summarize_catalog_sources
+
+        save_catalog(tmp_path, "warehouse", [
+            {"name": "a1", "path": ["Alpha", "a1"], "table_key": "ka1"},
+            {"name": "a2", "path": ["Alpha", "a2"], "table_key": "ka2"},
+            {"name": "b1", "path": ["Beta", "b1"], "table_key": "kb1"},
+            {"name": "root", "path": ["root"], "table_key": "kr"},
+        ])
+
+        summary = summarize_catalog_sources(tmp_path, top_level_limit=2, table_limit=3)[0]
+
+        assert summary["table_count"] == 4
+        assert summary["folder_count"] == 2
+        assert summary["max_depth"] == 1
+        assert {item["path"][0] for item in summary["sample_tables"]} == {
+            "Alpha", "Beta", "root",
+        }
+        assert summary["omitted"] == {"top_level": 1, "tables": 1}
+
+    def test_empty_catalog_has_zero_stats(self, tmp_path: Path) -> None:
+        from data_formulator.datalake.catalog_cache import summarize_catalog_sources
+
+        save_catalog(tmp_path, "empty", [])
+
+        assert summarize_catalog_sources(tmp_path) == [{
+            "source_id": "empty",
+            "table_count": 0,
+            "folder_count": 0,
+            "max_depth": 0,
+            "top_level": [],
+            "sample_tables": [],
+            "omitted": {"top_level": 0, "tables": 0},
+        }]
 
 
 class TestListPathChildren:
@@ -477,12 +483,22 @@ class TestListPathChildren:
 
         result = list_path_children(self.user_home, "pg_prod")
 
-        folder_names = {f["name"] for f in result["folders"]}
-        table_names = {t["name"] for t in result["tables"]}
-        assert folder_names == {"Sales"}
-        assert table_names == {"customers"}
-        assert result["total_folders"] == 1
-        assert result["total_tables"] == 1
+        assert result["items"] == [
+            {
+                "type": "folder",
+                "name": "Sales",
+                "path": ["Sales"],
+                "child_count": 3,
+                "descendant_table_count": 3,
+            },
+            {
+                "type": "table",
+                "name": "customers",
+                "path": ["customers"],
+                "table_key": "k_customers",
+            },
+        ]
+        assert result["total_count"] == 2
         assert result["truncated"] is False
 
     def test_drill_into_folder(self) -> None:
@@ -490,49 +506,27 @@ class TestListPathChildren:
 
         result = list_path_children(self.user_home, "pg_prod", path=["Sales"])
 
-        folder_names = {f["name"] for f in result["folders"]}
-        table_names = {t["name"] for t in result["tables"]}
+        folder_names = {item["name"] for item in result["items"] if item["type"] == "folder"}
+        table_names = {item["name"] for item in result["items"] if item["type"] == "table"}
         assert folder_names == {"Archive"}
         assert table_names == {"monthly_orders", "monthly_returns"}
 
-    def test_response_carries_the_subtree_below_the_level(self) -> None:
+    def test_filter_by_node_type(self) -> None:
         from data_formulator.datalake.catalog_cache import list_path_children
 
-        root = list_path_children(self.user_home, "pg_prod")
-        # The whole shape below the level resolves in one call; tables *at* the
-        # level are already listed in full, so they stay out of the tree.
-        assert root["tree"] == {
-            "Sales": {
-                "Archive": {"fy24": None},
-                "monthly_orders": None,
-                "monthly_returns": None,
-            },
-        }
-        assert "customers" not in root["tree"]
-
-        # A level with no deeper descendants omits the key entirely.
-        assert "tree" not in list_path_children(
-            self.user_home, "pg_prod", path=["Sales", "Archive"],
-        )
-
-    def test_filter_narrows_results(self) -> None:
-        from data_formulator.datalake.catalog_cache import list_path_children
-
-        result = list_path_children(
-            self.user_home, "pg_prod", path=["Sales"], filter="orders",
-        )
-        assert {t["name"] for t in result["tables"]} == {"monthly_orders"}
-        assert result["folders"] == []
+        folders = list_path_children(self.user_home, "pg_prod", filter_by="folder")
+        tables = list_path_children(self.user_home, "pg_prod", filter_by="table")
+        assert [item["name"] for item in folders["items"]] == ["Sales"]
+        assert [item["name"] for item in tables["items"]] == ["customers"]
 
     def test_missing_source_returns_empty(self, tmp_path: Path) -> None:
         from data_formulator.datalake.catalog_cache import list_path_children
 
         result = list_path_children(tmp_path, "missing_src")
-        assert result["folders"] == []
-        assert result["tables"] == []
+        assert result["items"] == []
         assert result["truncated"] is False
 
-    def test_truncation_includes_hint(self) -> None:
+    def test_truncation_continues_after_last_item(self) -> None:
         from data_formulator.datalake.catalog_cache import list_path_children
 
         # 5 leaves at root, cap to 2 → truncated with hint.
@@ -544,62 +538,73 @@ class TestListPathChildren:
         result = list_path_children(self.user_home, "many_src", limit=2)
 
         assert result["truncated"] is True
-        assert len(result["tables"]) == 2
-        assert "hint" in result
-        assert result["total_tables"] == 5
+        assert [item["name"] for item in result["items"]] == ["t0", "t1"]
+        assert result["total_count"] == 5
+
+        continued = list_path_children(
+            self.user_home,
+            "many_src",
+            limit=2,
+            start_after=result["next_start_after"],
+        )
+        assert [item["name"] for item in continued["items"]] == ["t2", "t3"]
 
 
-# ==================================================================
-# Tests: search_catalog_cache regex / exclude / fields / path_prefix
-# ==================================================================
-
-class TestSearchCatalogCacheExtended:
+class TestFindCatalogCache:
     @pytest.fixture(autouse=True)
     def _setup(self, tmp_path: Path) -> None:
         self.user_home = tmp_path
         save_catalog(tmp_path, "pg_prod", _HIER_TABLES)
 
-    def test_regex_alternation_matches_two_tables(self) -> None:
-        results = search_catalog_cache(
-            self.user_home, "monthly_(orders|returns)",
-        )
-        names = {r["name"] for r in results}
-        assert names == {"monthly_orders", "monthly_returns"}
+    def test_enumerates_tables_below_exact_path(self) -> None:
+        from data_formulator.datalake.catalog_cache import find_catalog_cache
 
-    def test_exclude_pattern_filters_out_matches(self) -> None:
-        results = search_catalog_cache(
-            self.user_home, "monthly", exclude_pattern="returns",
-        )
-        names = {r["name"] for r in results}
-        assert names == {"monthly_orders"}
-
-    def test_path_prefix_scopes_search(self) -> None:
-        results = search_catalog_cache(
-            self.user_home, "customers|monthly_orders",
+        results, truncated = find_catalog_cache(
+            self.user_home,
+            source_ids=["pg_prod"],
             path_prefix=["Sales"],
+            filter_by="table",
         )
-        names = {r["name"] for r in results}
-        # ``customers`` is at the root → must be excluded by the prefix.
-        assert names == {"monthly_orders"}
 
-    def test_fields_restricts_search_surface(self) -> None:
-        # ``archive`` appears only in the FY24 description; the leaf name
-        # is ``fy24``.  Restricting to ``name`` should miss; ``description``
-        # should hit.
-        name_only = search_catalog_cache(
-            self.user_home, "archive", fields=["name"],
+        assert {result["name"] for result in results} == {
+            "monthly_orders", "monthly_returns", "fy24",
+        }
+        assert all(result["path"][0] == "Sales" for result in results)
+        assert truncated is False
+
+    def test_finds_folders_with_counts(self) -> None:
+        from data_formulator.datalake.catalog_cache import find_catalog_cache
+
+        results, _ = find_catalog_cache(
+            self.user_home,
+            query="archive",
+            source_ids=["pg_prod"],
+            filter_by="folder",
         )
-        desc_only = search_catalog_cache(
-            self.user_home, "archive", fields=["description"],
+
+        assert results == [{
+            "type": "folder",
+            "source_id": "pg_prod",
+            "name": "Archive",
+            "path": ["Sales", "Archive"],
+            "child_count": 1,
+            "descendant_table_count": 1,
+            "score": 10,
+            "match_reasons": ["folder_name"],
+        }]
+
+    def test_reports_truncation(self) -> None:
+        from data_formulator.datalake.catalog_cache import find_catalog_cache
+
+        results, truncated = find_catalog_cache(
+            self.user_home,
+            source_ids=["pg_prod"],
+            filter_by="table",
+            limit=2,
         )
-        assert name_only == []
-        assert {r["name"] for r in desc_only} == {"fy24"}
 
-    def test_bad_regex_raises_catalog_search_error(self) -> None:
-        from data_formulator.datalake.catalog_cache import CatalogSearchError
-
-        with pytest.raises(CatalogSearchError):
-            search_catalog_cache(self.user_home, "(")
+        assert len(results) == 2
+        assert truncated is True
 
 
 # ==================================================================
@@ -702,7 +707,9 @@ class TestSearchReturnsTableKey:
             "metadata": {"description": "Order table", "source_metadata_status": "synced"},
         }]
         save_catalog(tmp_path, "src1", tables)
-        results = _search_python(tmp_path, "order", ["src1"], set(), 20)
+        results, _ = find_catalog_cache(
+            tmp_path, "order", source_ids=["src1"], filter_by="table",
+        )
         assert len(results) == 1
         assert results[0]["table_key"] == "uuid-123"
         assert results[0]["metadata_status"] == "synced"
@@ -710,6 +717,8 @@ class TestSearchReturnsTableKey:
     def test_python_search_empty_table_key(self, tmp_path: Path) -> None:
         tables = [{"name": "users", "metadata": {"description": "User table"}}]
         save_catalog(tmp_path, "src1", tables)
-        results = _search_python(tmp_path, "user", ["src1"], set(), 20)
+        results, _ = find_catalog_cache(
+            tmp_path, "user", source_ids=["src1"], filter_by="table",
+        )
         assert len(results) == 1
         assert results[0]["table_key"] == ""

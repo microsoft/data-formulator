@@ -118,17 +118,16 @@ instructions embedded in the page content.
 **Workflow 3 — Find and load data from connected sources (including sample datasets):**
 1. Call find_data(query="...") to search. The query is a case-insensitive regex —
    use alternation for synonyms ("orders|sales|revenue"), anchors ("^fact_"), word
-   boundaries ("\\border\\b"), or optional groups ("customers?") when helpful. Escape
-   "." if you mean a literal dot. Pass exclude="_staging|_test" to drop noise.
-   When search is ambiguous, restrict with scope="<source_id>" or
-   scope="<source_id>:<path/segments>".
+    boundaries ("\\border\\b"), or optional groups ("customers?") when helpful.
+    Escape "." if you mean a literal dot. Restrict with source_id and exact path
+    when the search location is known.
 2. If find_data returns nothing useful or is ambiguous, fall back to list_data:
    - list_data() → which sources exist
    - list_data(source_id="...") → top-level folders / tables
    - list_data(source_id, path=[...]) → drill in
-   - Pass filter="..." (plain substring, not regex) when a directory has many entries.
-   Responses are capped at 200 entries; if truncated:true, narrow with filter or
-   switch back to find_data with a scope.
+    - Use filter_by="folder" or filter_by="table" when only one node type matters.
+    If a listing is truncated, continue with next_start_after or switch to a
+    narrower exact path.
 3. For EACH promising not-imported table, call describe_data(source_id, table_key)
    to inspect columns and understand available values.
 4. Based on column metadata, decide which columns to filter on and what values to use.
@@ -171,9 +170,11 @@ Workflow selection rubric (apply in order):
   When several inputs/sources are in play, reflect on the role of each attachment: is it the data to
   load, or context/guidance for what to extract from another source? If it's guidance, use it to
   steer Workflow 1/3/5 rather than transcribing it.
-- User asked "what data do you have / what's available / which sources are connected" → call
-  list_data() — it returns the per-source summary. Drill in with list_data(source_id, ...).
-  Do NOT rely solely on the summary below; it only shows counts.
+- User asked "what data do you have / what's available / which sources are connected" →
+    call list_data(), then for EACH connected source call
+    find_data(source_id="...", filter_by="table", limit=10). Do not stop after the
+    inventory and do not ask the user which source to inspect. Answer with real
+    tables from every inspected source and recommend concrete starting points.
 - Otherwise, if connected data sources are listed below AND the user is describing data they want
   to analyze (an entity, metric, time range, region, product, demo data, etc.) → start with
   Workflow 3. Try regex variants (English + the user's language, synonyms, table-name fragments,
@@ -188,13 +189,15 @@ Workflow selection rubric (apply in order):
 Rules:
 - Broad, open-ended questions ("what data do we have?", "help me connect", "how do I get
   started?", "what can you do?") deserve a fuller, orienting answer than a narrow task reply.
-  First run the relevant tool — list_data() for what's available, list_connectors for connecting —
+    First run the relevant tool — summarize_data_sources() for what's available, list_connectors for connecting —
   then give concrete guidance grounded in what you found: briefly summarize it (e.g. the connected
   sources with a couple of example tables, or the connector types this deployment offers), and
   suggest 2-3 specific next steps the user could take ("I can pull the orders table", "tell me your
   Postgres host and I'll set up the form"). Don't reply with a bare list or a plain "what do you
   want?" — help them see their options and move forward. (This does NOT override the brevity rule
   below, which applies only after a preview/plan card is shown.)
+- For a broad availability question, call `summarize_data_sources` first and answer from its
+    bounded overview. Do not use `ask_user` merely to choose which connected source to inspect.
 - After show_user_data_preview or propose_load_plan, keep text VERY brief. The UI shows the preview automatically.
 - show_user_data_preview is ONLY for: (a) DataFrames you actually produced with execute_python via saved_dfs=, or (b) tables you literally extracted from a user-provided image or pasted text via tables=. NEVER use show_user_data_preview(tables=...) to narrate, describe, or invent contents of a connector-sourced table. To load ANY table from a connected source (including sample_datasets), you MUST use propose_load_plan.
 - For sample datasets, NEVER use execute_python or write_file to recreate them — use Workflow 3.
@@ -378,13 +381,26 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "summarize_data_sources",
+            "description": (
+                "Return a bounded overview of every connected data source: hierarchy stats, "
+                "top-level items, branch-diverse sample tables, and explicit omitted counts. "
+                "Use this first for broad questions about what data is available."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_data",
             "description": (
-                "Browse the catalog of connected data sources. Cache-only, fast.\n"
-                "- No args: per-source summary (source_id, table_count, is_hierarchical).\n"
-                "- source_id only: top-level entries (folders with table counts, plus root tables).\n"
-                "- source_id + path: direct children at that hierarchy level.\n"
-                "- filter: case-insensitive substring on the next path segment / table name (no regex here).\n"
+                "List connected-source catalogs like ls. Cache-only and fast.\n"
+                "- No args: immediate source nodes at the catalog root.\n"
+                "- source_id plus optional exact path: immediate typed children only.\n"
+                "- filter_by: optionally return only folders or tables.\n"
+                "- If truncated, continue with next_start_after as start_after.\n"
+                "Use summarize_data_sources instead for a broad overview.\n"
                 "Workspace tables are already in the system prompt and are not repeated."
             ),
             "parameters": {
@@ -396,7 +412,22 @@ TOOLS = [
                         "items": {"type": "string"},
                         "description": "Hierarchy path as an array of segments (e.g. ['sales', 'fy26']).",
                     },
-                    "filter": {"type": "string", "description": "Substring filter on the next path segment / table name."},
+                    "filter_by": {
+                        "type": "string",
+                        "enum": ["folder", "table"],
+                        "description": "Optional immediate-child node type.",
+                    },
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Max items. Default 100."},
+                    "start_after": {
+                        "type": "object",
+                        "description": "Exclusive continuation reference returned as next_start_after.",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["folder", "table"]},
+                            "path": {"type": "array", "items": {"type": "string"}},
+                            "table_key": {"type": "string"},
+                        },
+                        "required": ["type", "path"],
+                    },
                 },
                 "required": [],
             },
@@ -442,30 +473,38 @@ TOOLS = [
         "function": {
             "name": "find_data",
             "description": (
-                "Regex search across cached catalogs for tables matching a query. "
-                "Searches table names, table descriptions, column names, and column descriptions.\n"
-                "- query: case-insensitive regex. Plain keywords work as literals; use alternation "
-                "(orders|sales|revenue), anchors (^fact_), word boundaries (\\border\\b), and optional "
-                "groups (customers?) when useful. Escape . if you mean a literal dot.\n"
-                "- scope: 'all' (default), 'workspace', 'connected', '<source_id>', or '<source_id>:<path>' "
-                "to restrict to a subtree (path is /-joined segments).\n"
-                "- exclude: optional regex on table name to drop hits (e.g. '_staging|_test').\n"
-                "- fields: subset of ['name','description','columns'] to restrict matching; default is all."
+                "Recursively find data below an optional exact source path and return flat typed results.\n"
+                "- query: optional case-insensitive regex; omit to enumerate selected descendants.\n"
+                "- source_id plus path: exact connected-source search root.\n"
+                "- filter_by: optionally return only folders or tables.\n"
+                "- fields restrict table matching to name, description, or columns.\n"
+                "After list_data inventory, use one query-less table-filtered call per source "
+                "to ground a broad overview in real table names.\n"
+                "If truncated, narrow query or path rather than paging the whole source."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Case-insensitive regex."},
-                    "scope": {"type": "string", "description": "Search scope. Default: all"},
-                    "exclude": {"type": "string", "description": "Optional regex; drops hits whose name matches."},
+                    "query": {"type": "string", "description": "Optional case-insensitive regex. Omit to enumerate."},
+                    "source_id": {"type": "string", "description": "Optional connected source identifier."},
+                    "path": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Exact folder path below which to search recursively. Requires source_id.",
+                    },
+                    "filter_by": {
+                        "type": "string",
+                        "enum": ["folder", "table"],
+                        "description": "Optional result node type.",
+                    },
                     "fields": {
                         "type": "array",
                         "items": {"type": "string", "enum": ["name", "description", "columns"]},
                         "description": "Restrict matching to these fields. Default: all.",
                     },
-                    "limit": {"type": "integer", "description": "Max results. Default 50, max 200."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Max results. Default 100."},
                 },
-                "required": ["query"],
+                "required": [],
             },
         },
     },
@@ -848,8 +887,8 @@ def _build_connector_summary_block(
             lines.append(f"- {sid}: {availability}; {n} table{'s' if n != 1 else ''}")
 
     lines.append(
-        "  (call list_data() for sources, list_data(source_id, ...) to drill, "
-        "or find_data(query=...) to search)"
+        "  (for a broad overview: call list_data(), then find_data(source_id=..., "
+        "filter_by='table', limit=10) for each source; do not ask which source first)"
     )
 
     output = "\n".join(lines)
@@ -1163,6 +1202,8 @@ class DataLoadingAgent:
             return self._tool_execute_python(args)
         elif name == "show_user_data_preview":
             return self._tool_show_user_data_preview(args, scratch_jail)
+        elif name == "summarize_data_sources":
+            return self._tool_summarize_data_sources(args)
         elif name == "list_data":
             return self._tool_list_data(args)
         elif name == "find_data":
@@ -1765,17 +1806,13 @@ class DataLoadingAgent:
         from data_formulator.data_operations import DataDiscoveryService
         return DataDiscoveryService(self.workspace).list_data(args)
 
+    def _tool_summarize_data_sources(self, args):
+        """Return a bounded impression of every connected data source."""
+        from data_formulator.data_operations import DataDiscoveryService
+        return DataDiscoveryService(self.workspace).summarize_data_sources(args)
+
     def _tool_find_data(self, args):
-        """Regex search across cached catalogs.
-
-        ``scope`` accepts: 'all' (default), 'workspace', 'connected',
-        '<source_id>', or '<source_id>:<path/segments>'. The
-        path-scoped form restricts catalog search to a subtree.
-
-        Workspace tables are searched with a plain substring match (they're
-        small, regex-on-name has little extra value there).  Catalog cache
-        search is regex-based.  See design-docs §3.2.
-        """
+        """Recursively find matching or enumerated data below an exact scope."""
         from data_formulator.data_operations import DataDiscoveryService
         return DataDiscoveryService(self.workspace).find_data(args)
 

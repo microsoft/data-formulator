@@ -92,6 +92,7 @@
       "listingFiles": "Listing files",
       "runningPython": "Running Python",
       "preparingPreview": "Preparing preview",
+      "summarizingSources": "Summarizing connected data",
       "browsingCatalog": "Browsing",
       "searchingData": "Searching",
       "describingData": "Reading table",

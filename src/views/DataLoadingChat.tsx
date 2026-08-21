@@ -739,6 +739,7 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
     list_directory: 'dataLoading.toolLabels.listingFiles',
     execute_python: 'dataLoading.toolLabels.runningPython',
     show_user_data_preview: 'dataLoading.toolLabels.preparingPreview',
+    summarize_data_sources: 'dataLoading.toolLabels.summarizingSources',
     list_data: 'dataLoading.toolLabels.browsingCatalog',
     find_data: 'dataLoading.toolLabels.searchingData',
     describe_data: 'dataLoading.toolLabels.describingData',
@@ -784,13 +785,14 @@ const summarizeToolArgs = (tool: string, args: any): string => {
             break;
         case 'list_data': {
             const pathStr = Array.isArray(args.path) ? args.path.join('/') : args.path;
-            detail = [args.source_id, pathStr, args.filter && `“${args.filter}”`]
+            detail = [args.source_id, pathStr, args.filter_by && `(${args.filter_by})`]
                 .filter(Boolean).join(' / ');
             break;
         }
         case 'find_data': {
-            const scope = args.scope && args.scope !== 'all' ? ` in ${args.scope}` : '';
-            detail = args.query ? `“${args.query}”${scope}` : '';
+            const pathStr = Array.isArray(args.path) ? args.path.join('/') : args.path;
+            detail = [args.query ? `“${args.query}”` : '', args.source_id, pathStr, args.filter_by && `(${args.filter_by})`]
+                .filter(Boolean).join(' / ');
             break;
         }
         case 'describe_data':

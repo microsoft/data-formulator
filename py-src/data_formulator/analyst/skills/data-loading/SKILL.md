@@ -11,12 +11,13 @@ when_to_use: >-
    already listed in the workspace context.
 always_on: false
 tools:
-  - list_data
-  - find_data
-  - describe_data
-  - probe_data
-  - list_connectors
-  - describe_connector
+   - summarize_data_sources
+   - list_data
+   - find_data
+   - describe_data
+   - probe_data
+   - list_connectors
+   - describe_connector
 actions:
   - propose_data_operation
   - propose_connection
@@ -35,22 +36,29 @@ source does not add anything to the workspace analysis inputs.
 
 ## When nothing is loaded yet
 
-Discovery is cheap: call `list_data({})` and browse before you say anything
-about what is or isn't available. The inventory lists each source's top-level
-contents, and opening a source returns its whole subtree — so a couple of calls
-show you the shape. Then tell the user what you actually found — which sources
-are connected, what they hold, and which tables look relevant. Name real tables.
+Discovery is cheap. For a broad question such as “what data can I load?”, follow
+this sequence before answering:
+
+1. Call `summarize_data_sources({})` for a bounded overview of every connected source.
+2. Summarize its hierarchy stats, top-level items, and sample tables directly.
+3. Recommend concrete starting points. Use `list_data` or `find_data` only when
+   deeper navigation or search is needed.
+
+Use `list_data({source_id, path})` when the user wants to navigate a hierarchy,
+and a queried `find_data` when they name a subject. Summary samples and top-level
+items are bounded; respect their `omitted` counts.
 
 Pick the path that fits:
 
 - The user named a subject → `find_data`, then propose the tables that match.
-- The user asked what data exists, or asked nothing specific → summarize the
-  inventory and propose the most useful starting tables.
+- The user asked what data exists, or asked nothing specific → summarize every
+   connected source using `summarize_data_sources`, then propose useful starting points.
 - Nothing is connected → `list_connectors`, then `propose_connection`, or say
   they can upload a file.
 
-Use `ask_user` only for a choice you genuinely cannot make yourself, and never
-before you have looked. Asking which source to inspect first is not an answer.
+Never use `ask_user` to ask which connected source to inspect for a broad
+availability question. Summarize them all with one bounded call and answer directly.
+Use `ask_user` only for a choice that remains necessary after discovery.
 
 ## Adding a connector
 
@@ -81,6 +89,8 @@ seeds and are removed from persisted UI state.
 
 1. Use `find_data` when the user names a business concept or table. Use
    `list_data` when you need to browse available sources or hierarchy.
+   `list_data` returns one level; `find_data` searches recursively and may omit
+   `query` to enumerate folders or tables below an exact source path.
 2. Use `describe_data` before relying on columns, types, row counts, or filter
    values. Pass the exact `source_id` and `table_key` returned by discovery.
 3. Use `probe_data` only when metadata is insufficient to choose a useful

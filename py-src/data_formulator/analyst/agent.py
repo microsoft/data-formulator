@@ -86,8 +86,9 @@ _SKILL_PRELOADED_RE = re.compile(
 )
 
 _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
-    "list_data": ("source_id", "path", "filter"),
-    "find_data": ("query", "scope"),
+    "summarize_data_sources": (),
+    "list_data": ("source_id", "path", "filter_by"),
+    "find_data": ("query", "source_id", "path", "filter_by"),
     "describe_data": ("source_id", "table_key"),
     "probe_data": ("source_id", "table_key", "query"),
     "describe_connector": ("source_type",),
