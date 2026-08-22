@@ -191,6 +191,7 @@ export const toolName = "Data Formulator"
 const LANGUAGE_LABELS: Record<string, string> = {
     en: 'EN',
     zh: '中文',
+    hi: 'हिन्दी',
     ja: '日本語',
     ko: '한국어',
     fr: 'FR',
