@@ -112,7 +112,7 @@
     "createConnectionTo": "{{name}} से कनेक्शन बनाएं",
     "connectionNameLabel": "कनेक्शन नाम",
     "dataSourceTypes": "डेटा स्रोत",
-    "folderPathPlaceholder": "/आपके/डेटा/फ़ोल्डर/का/पथ",
+    "folderPathPlaceholder": "/path/to/your/data/folder",
     "includeSubfolders": "उप-फ़ोल्डर शामिल करें",
     "localFolder": "स्थानीय फ़ोल्डर लिंक करें",
     "localFolderConnected": "स्थानीय फ़ोल्डर",
