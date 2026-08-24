@@ -7,14 +7,14 @@ openai
 python-dotenv
 # litellm 1.92+ is Rust/maturin (manylinux-only wheels) — hangs on Windows/macOS
 # without a Rust toolchain. Pin below it; >=1.84.0 keeps the CVE fix.
-litellm>=1.84.0,<1.92
+litellm>=1.91.5,<1.92
 duckdb
 numpy
 vl-convert-python
 beautifulsoup4
 scikit-learn
 pyyaml
-pyarrow>=13.0.0
+pyarrow>=25.0.1
 xlrd
 openpyxl>=3.1.0
 lxml
@@ -29,7 +29,7 @@ azure-kusto-data
 azure-keyvault-secrets
 pymysql
 clickhouse-connect
-mssql-python>=1.11.0
+mssql-python>=1.13.0
 psycopg2-binary
 boto3
 google-cloud-bigquery

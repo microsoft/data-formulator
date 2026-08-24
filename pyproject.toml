@@ -31,7 +31,7 @@ dependencies = [
     # wheels (no win_amd64 / macosx / py3-none-any), so installs hang on
     # Windows/macOS without a Rust toolchain. Pin to the last universal-wheel
     # line; >=1.84.0 keeps the litellm CVE fix and allows aiohttp>=3.14.
-    "litellm>=1.84.0,<1.92",
+    "litellm>=1.91.5,<1.92",
     "aiohttp>=3.14.3",
     "duckdb",
     "numpy",
@@ -39,7 +39,7 @@ dependencies = [
     "beautifulsoup4",
     "scikit-learn",
     "pyyaml",
-    "pyarrow>=13.0.0",
+    "pyarrow>=25.0.1",
     "xlrd",
     "openpyxl>=3.1.0",
     "lxml", # pandas.read_html web table extraction
@@ -53,7 +53,7 @@ dependencies = [
     "azure-keyvault-secrets", # kusto
     "pymysql", # mysql
     "clickhouse-connect", # clickhouse
-    "mssql-python>=1.11.0", # mssql
+    "mssql-python>=1.13.0", # mssql
     "psycopg2-binary", # postgresql
     "boto3", # s3, athena
     "google-cloud-bigquery", # bigquery
@@ -72,7 +72,7 @@ dependencies = [
 # Needed for JavaScript single-page apps and pages behind a browser-verification
 # challenge that a plain HTTP fetch cannot pass. After installing, also run:
 #   python -m playwright install chromium
-browser = ["playwright>=1.40"]
+browser = ["playwright>=1.62.0"]
 desktop = [
   "pyinstaller>=6.0",
   "pywebview>=5.0",
