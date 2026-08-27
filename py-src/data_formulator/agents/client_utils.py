@@ -219,7 +219,7 @@ def _salvage_tool_calls_from_content(response, tools):
 class Client(object):
     """
     Returns a LiteLLM client configured for the specified endpoint and model.
-    Supports OpenAI, Azure, Ollama, and other providers via LiteLLM.
+    Supports OpenAI, Azure, Ollama, OrcaRouter, and other providers via LiteLLM.
     """
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None):
         
@@ -274,6 +274,16 @@ class Client(object):
                 self.model = model
             else:
                 self.model = f"ollama/{model}"
+        elif self.endpoint == "orcarouter":
+            # OrcaRouter exposes an OpenAI-compatible API, so route the model
+            # through LiteLLM's openai provider against the OrcaRouter base URL.
+            # The ``orcarouter/`` prefix is preserved by LiteLLM (unlike
+            # ``openai/``, which it strips), which is how OrcaRouter's gateway
+            # addresses its model routers.
+            self.params["api_base"] = (api_base or "https://api.orcarouter.ai/v1").rstrip("/")
+            self.params["custom_llm_provider"] = "openai"
+            if not model.startswith("orcarouter/"):
+                self.model = f"orcarouter/{model}"
 
     def _strip_image_blocks(self, content):
         """Remove image_url blocks from multimodal content arrays."""

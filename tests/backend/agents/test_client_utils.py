@@ -57,6 +57,35 @@ class TestModelNamePrefixing:
 
 
 # ---------------------------------------------------------------------------
+# OrcaRouter endpoint
+# ---------------------------------------------------------------------------
+
+class TestOrcaRouter:
+    def test_default_base_url(self):
+        c = Client("orcarouter", "auto", api_key="k")
+        assert c.params["api_base"] == "https://api.orcarouter.ai/v1"
+
+    def test_custom_base_url_strips_trailing_slash(self):
+        c = Client("orcarouter", "auto", api_key="k",
+                   api_base="https://api.orcarouter.ai/v1/")
+        assert c.params["api_base"] == "https://api.orcarouter.ai/v1"
+
+    def test_uses_openai_compatible_provider(self):
+        c = Client("orcarouter", "auto", api_key="k")
+        assert c.params["custom_llm_provider"] == "openai"
+
+    def test_model_prefixed_with_orcarouter_namespace(self):
+        """The ``orcarouter/`` prefix is preserved by LiteLLM (unlike
+        ``openai/``, which it strips) so OrcaRouter's gateway can route it."""
+        c = Client("orcarouter", "auto", api_key="k")
+        assert c.model == "orcarouter/auto"
+
+    def test_model_prefix_not_doubled(self):
+        c = Client("orcarouter", "orcarouter/auto", api_key="k")
+        assert c.model == "orcarouter/auto"
+
+
+# ---------------------------------------------------------------------------
 # Ollama api_base normalisation
 # ---------------------------------------------------------------------------
 

@@ -50,6 +50,12 @@ SAMPLE_ENV = _make_env({
         "api_base": "https://api.deepseek.com/v1",
         "models": "deepseek-chat",
     },
+    "orcarouter": {
+        "enabled": "true",
+        "api_key": "sk-orca-secret-key",
+        "api_base": "https://api.orcarouter.ai/v1",
+        "models": "auto",
+    },
 })
 
 
@@ -68,11 +74,12 @@ class TestModelDiscovery:
         assert "global-openai-gpt-5" in ids
         assert "global-ollama-qwen3:32b" in ids
         assert "global-deepseek-deepseek-chat" in ids
+        assert "global-orcarouter-auto" in ids
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_total_model_count(self):
         registry = ModelRegistry()
-        assert len(registry.list_public()) == 4  # 2 openai + 1 ollama + 1 deepseek
+        assert len(registry.list_public()) == 5  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter
 
     @patch.dict(os.environ, {}, clear=True)
     def test_empty_env_yields_no_models(self):
@@ -140,6 +147,15 @@ class TestCustomProvider:
         config = registry.get_config("global-openai-gpt-4o")
         assert config is not None
         assert config["endpoint"] == "openai"
+
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_orcarouter_builtin_uses_own_name_as_endpoint(self):
+        """orcarouter is in BUILTIN_PROVIDERS, so it uses itself as endpoint."""
+        registry = ModelRegistry()
+        config = registry.get_config("global-orcarouter-auto")
+        assert config is not None
+        assert config["endpoint"] == "orcarouter"
+        assert config["api_base"] == "https://api.orcarouter.ai/v1"
 
     @patch.dict(os.environ, {
         "MYVENDOR_ENABLED": "true",
