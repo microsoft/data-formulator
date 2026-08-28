@@ -282,7 +282,7 @@ class Client(object):
             # addresses its model routers.
             self.params["api_base"] = (api_base or "https://api.orcarouter.ai/v1").rstrip("/")
             self.params["custom_llm_provider"] = "openai"
-            if not model.startswith("orcarouter/"):
+            if "/" not in model:
                 self.model = f"orcarouter/{model}"
 
     def _strip_image_blocks(self, content):
