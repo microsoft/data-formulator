@@ -2646,9 +2646,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-
-    // Subscribe to draftNodes so the scroll-to-target effect re-runs when an
-    // active clarify/explain entry appears or resolves.
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
     // Work committed from the entry surface (a queued run, or a table still
@@ -2660,10 +2657,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const workPending = tableLoadsInFlight > 0 || analystChatPending != null || dataLoadingChatPending != null;
 
     const containerRef = useRef<null | HTMLDivElement>(null)
-    // The thread row the user last clicked. Identity is the row, not the table or
-    // chart it shows: the same table renders in several rows, and only this one
-    // needs to stay in context when the viewport shrinks.
-    const selectedItemKeyRef = useRef<string | null>(null);
     const threadScrollRef = useRef<null | HTMLDivElement>(null)
     // Outer wrapper containing both the thread area and the chatbox.
     const outerRef = useRef<null | HTMLDivElement>(null)
@@ -2672,10 +2665,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const { tokens: threadTokens } = useLayout();
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
-    // The chat box and clarify panels are flex siblings, so their growth shrinks
-    // the thread viewport — that's the signal to pull the selection back in view.
-    const [containerHeight, setContainerHeight] = useState(0);
-    const [chatboxFocusTick, setChatboxFocusTick] = useState(0);
     const [isDragOver, setIsDragOver] = useState(false);
 
     // ── Drop handler for catalog table items from DataSourceSidebar ──────
@@ -2741,7 +2730,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         const ro = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 setContainerWidth(entry.contentRect.width);
-                setContainerHeight(entry.contentRect.height);
             }
         });
         ro.observe(el);
@@ -2749,88 +2737,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     }, []);
 
     const theme = useTheme();
-
-    // Keep the selected thread row centred-ish and in view: on click, and when
-    // the viewport changes (chat box growing, a clarify panel opening, a pane
-    // resize). Addressed by ROW, so the copy the user clicked is the one that
-    // moves — the same table also renders in the shelf and in other threads.
-    useEffect(() => {
-        if (!containerRef.current) return;
-        const t = setTimeout(() => {
-            const container = containerRef.current;
-            if (!container) return;
-            const scroller = container.firstElementChild as HTMLElement | null;
-            if (!scroller) return;
-
-            // The clicked row only counts while it still shows what's focused;
-            // focus moved from the canvas should retarget, not chase a stale row.
-            const rowMatchesFocus = (row: HTMLElement) => {
-                if (!focusedId) return false;
-                if (focusedId.type === 'table') return !!row.querySelector(`[data-table-id="${focusedId.tableId}"]`);
-                if (focusedId.type === 'chart') return !!row.querySelector(`[data-chart-id="${focusedId.chartId}"]`);
-                return true;
-            };
-
-            let target: HTMLElement | null = null;
-
-            // An agent pause outranks the selection — it needs an answer.
-            const clarifyEls = container.querySelectorAll<HTMLElement>('[data-clarifying="true"]');
-            if (clarifyEls.length > 0) {
-                target = clarifyEls[clarifyEls.length - 1];
-            }
-
-            const selectedKey = selectedItemKeyRef.current;
-            if (!target && selectedKey) {
-                const row = container.querySelector<HTMLElement>(`[data-thread-item="${CSS.escape(selectedKey)}"]`);
-                if (row && rowMatchesFocus(row)) target = row;
-            }
-
-            // Focus arrived from elsewhere (canvas, agent run): aim at the
-            // artifact itself.
-            if (!target && focusedId?.type === 'chart') {
-                target = container.querySelector<HTMLElement>(`[data-chart-id="${focusedId.chartId}"]`);
-            }
-            if (!target && focusedId?.type === 'table') {
-                target = container.querySelector<HTMLElement>(`[data-table-id="${focusedId.tableId}"]`);
-            }
-            if (!target) return;
-
-            const containerRect = container.getBoundingClientRect();
-            const scrollerRect = scroller.getBoundingClientRect();
-            const targetRect = target.getBoundingClientRect();
-            const TOP_MARGIN = 16;
-            const BOTTOM_MARGIN = 16;
-            const visibleTop = containerRect.top + TOP_MARGIN;
-            const visibleBottom = containerRect.bottom - BOTTOM_MARGIN;
-            const visibleHeight = visibleBottom - visibleTop;
-
-            // Leave it alone only when it sits comfortably inside the viewport.
-            // Bare visibility isn't enough: a row jammed against the chat box is
-            // technically visible but reads as cut off.
-            const EDGE_COMFORT = Math.min(80, visibleHeight * 0.15);
-            const comfortTop = visibleTop + EDGE_COMFORT;
-            const comfortBottom = visibleBottom - EDGE_COMFORT;
-            const fitsComfortZone = targetRect.height <= comfortBottom - comfortTop;
-            if (fitsComfortZone
-                ? (targetRect.top >= comfortTop && targetRect.bottom <= comfortBottom)
-                : (targetRect.top >= visibleTop && targetRect.bottom <= visibleBottom)) return;
-
-            // Leave breathing room above so prior thread items stay as context;
-            // a row taller than the viewport aligns to the top instead.
-            const targetTopInScroller = targetRect.top - scrollerRect.top + scroller.scrollTop;
-            const targetHeight = targetRect.height;
-            const tooTall = targetHeight > visibleHeight;
-            const desiredOffsetFromTop = tooTall
-                ? TOP_MARGIN
-                : Math.max(TOP_MARGIN, Math.min(visibleHeight * 0.6, visibleHeight - targetHeight - BOTTOM_MARGIN));
-            const newScrollTop = targetTopInScroller - desiredOffsetFromTop;
-
-            if (Math.abs(newScrollTop - scroller.scrollTop) > 4) {
-                scroller.scrollTo({ top: Math.max(0, newScrollTop), behavior: 'smooth' });
-            }
-        }, 100);
-        return () => clearTimeout(t);
-    }, [containerHeight, focusedId, draftNodes, chatboxFocusTick]);
 
     // O(1) table lookup by ID
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
@@ -3400,10 +3306,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             }}
         >
             <Box ref={containerRef}
-                onClickCapture={(event) => {
-                    const row = (event.target as HTMLElement).closest<HTMLElement>('[data-thread-item]');
-                    if (row) selectedItemKeyRef.current = row.getAttribute('data-thread-item');
-                }}
                 sx={{
                     overflow: 'hidden', 
                     position: 'relative',
@@ -3416,7 +3318,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 <ScrollFadeEdge visible={moreThreadContentAbove} edge="top" />
                 <ScrollFadeEdge visible={moreThreadContentBelow} />
             </Box>
-            <SimpleChartRecBox onInputFocus={() => setChatboxFocusTick(t => t + 1)} />
+            <SimpleChartRecBox />
         </Box>
     );
 }
