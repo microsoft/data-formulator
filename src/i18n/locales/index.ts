@@ -3,5 +3,6 @@
 
 import en from './en';
 import zh from './zh';
+import hi from './hi';
 
-export { en, zh };
+export { en, zh, hi };
