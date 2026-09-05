@@ -130,7 +130,7 @@
         "eslint-plugin-react": "^7.37.2",
         "eslint-plugin-react-hooks": "^7.1.1",
         "globals": "^15.12.0",
-        "jsdom": "^29.0.1",
+        "jsdom": "^30.0.1",
         "sass": "^1.102.0",
         "typescript-eslint": "^8.65.0",
         "vite": "^7.3.5",
