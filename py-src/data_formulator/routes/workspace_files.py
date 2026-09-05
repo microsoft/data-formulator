@@ -5,7 +5,10 @@ import io
 from flask import Blueprint, request, send_file
 
 from data_formulator.auth.identity import get_identity_id
-from data_formulator.datalake.workspace_file_content import read_workspace_file_text
+from data_formulator.datalake.workspace_file_content import (
+    extract_workspace_file_text,
+    read_workspace_file_text,
+)
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.workspace_factory import get_workspace
@@ -67,6 +70,24 @@ def download_workspace_file(name: str):
 @workspace_files_bp.route("/<path:name>/preview", methods=["GET"])
 def preview_workspace_file(name: str):
     preview = read_workspace_file_text(_workspace(), name)
+    return json_ok({
+        "name": preview.name,
+        "kind": "text",
+        "content": preview.content,
+        "truncated": preview.truncated,
+    })
+
+
+@workspace_files_bp.route("/preview", methods=["POST"])
+def preview_uploaded_workspace_file():
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        raise AppError(ErrorCode.INVALID_REQUEST, "No file in request")
+    preview = extract_workspace_file_text(
+        upload.filename,
+        upload.read(),
+        upload.mimetype,
+    )
     return json_ok({
         "name": preview.name,
         "kind": "text",

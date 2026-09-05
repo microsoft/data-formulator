@@ -48,7 +48,7 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
@@ -99,7 +99,6 @@ import { DataFrameTable } from './DataFrameTable';
 import { LocalFolderPanel } from './UnifiedDataUploadDialog';
 import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
 import { ExplanationCanvas } from './ExplanationCanvas';
-import { explanationContent } from '../app/explanationPreview';
 
 export interface VisPanelProps { }
 

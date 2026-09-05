@@ -846,6 +846,7 @@
   "sidebar": {
     "openDataSources": "Data Sources",
     "openUpload": "Upload data",
+    "openDataLoadingChat": "Add data with agent",
     "openDataConnectors": "Data connectors",
     "uploadData": "Upload Data",
     "dataConnectorsTitle": "Data Connectors",

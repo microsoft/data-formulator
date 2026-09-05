@@ -90,3 +90,22 @@ def test_preview_docx_as_plain_text(client):
     preview = client.get("/api/workspace/files/paper.docx/preview").get_json()["data"]
 
     assert preview["content"] == "First paragraph\nSecond paragraph"
+
+
+def test_preview_uploaded_docx_without_persisting(client, tmp_workspace):
+    document_xml = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t>Staged document</w:t></w:r></w:p></w:body>
+</w:document>"""
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+
+    response = client.post(
+        "/api/workspace/files/preview",
+        data={"file": (io.BytesIO(content.getvalue()), "draft.docx")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.get_json()["data"]["content"] == "Staged document"
+    assert tmp_workspace.list_workspace_files() == []

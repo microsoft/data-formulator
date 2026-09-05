@@ -350,6 +350,16 @@ export async function previewWorkspaceFile(name: string): Promise<WorkspaceFileP
     return data;
 }
 
+export async function previewUploadedWorkspaceFile(file: File): Promise<WorkspaceFilePreview> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiRequest<WorkspaceFilePreview>('/api/workspace/files/preview', {
+        method: 'POST',
+        body: formData,
+    });
+    return data;
+}
+
 export async function downloadWorkspaceFile(name: string): Promise<Blob> {
     const response = await fetchWithIdentity(`/api/workspace/files/${encodeURIComponent(name)}`);
     await assertDownloadResponseOk(response, 'File download failed');

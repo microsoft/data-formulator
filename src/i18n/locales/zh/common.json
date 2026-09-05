@@ -846,6 +846,7 @@
   "sidebar": {
     "openDataSources": "数据源",
     "openUpload": "上传数据",
+    "openDataLoadingChat": "使用智能助手添加数据",
     "openDataConnectors": "数据连接器",
     "uploadData": "上传数据",
     "dataConnectorsTitle": "数据连接器",

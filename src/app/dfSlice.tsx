@@ -20,7 +20,6 @@ import { Identity, getBrowserId } from './identity';
 import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
-import { explanationContent, shouldPreviewExplanationInCanvas } from './explanationPreview';
 
 enableMapSet();
 
@@ -127,6 +126,12 @@ export type FocusedId =
     | { type: 'text'; textId: string }
     | { type: 'draft'; draftId: string }
     | undefined;
+
+export const explanationContent = (content: string, answer?: string) =>
+    answer ? `${content}\n\n> ↳ ${answer}` : content;
+
+export const shouldPreviewExplanationInCanvas = (content: string) =>
+    content.length > 1000 || content.split('\n').length > 14;
 
 export const DEFAULT_ROW_LIMIT = 2_000_000;
 

@@ -26,6 +26,12 @@ import {
 
 import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import GridOnIcon from '@mui/icons-material/GridOn';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
+import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
+import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
 import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -41,7 +47,7 @@ import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
-import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
+import { createTableFromFromObjectArray, createTableFromText, loadBinaryDataWrapper, loadTextDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { ScrollFadeContainer } from '../components/ScrollFade';
 import { AnimatedAgentToyIcon } from './AgentToyIcon';
@@ -53,6 +59,7 @@ import { deriveConnectorDisplayName } from '../app/connectorNames';
 import { generateUUID } from '../app/identity';
 import { DataLoaderForm } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
+import { formatBytes } from './ViewUtils';
 import { 
     Checkbox,
     FormControlLabel,
@@ -64,7 +71,33 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
-import { uploadWorkspaceFile } from '../app/workspaceService';
+import {
+    previewUploadedWorkspaceFile,
+    uploadWorkspaceFile,
+    type WorkspaceFilePreview,
+} from '../app/workspaceService';
+
+const FILE_PREVIEW_BYTE_LIMIT = 256 * 1024;
+const FILE_PREVIEW_ROW_LIMIT = 20;
+const BROWSER_IMAGE_PREVIEW_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+const SERVER_TEXT_PREVIEW_PATTERN = /\.(docx|pdf|csv|json|log|md|py|sql|tsv|txt|xml|ya?ml)$/i;
+
+interface CachedWorkspaceFilePreview {
+    text?: WorkspaceFilePreview;
+    tables?: DictTable[];
+    unavailable?: boolean;
+}
+
+type FileCategory = 'table' | 'pdf' | 'image' | 'archive' | 'document' | 'generic';
+
+const getFileCategory = (fileName: string, hasTablePreview: boolean): FileCategory => {
+    if (hasTablePreview || /\.(xlsx?|xls)$/i.test(fileName)) return 'table';
+    if (/\.pdf$/i.test(fileName)) return 'pdf';
+    if (BROWSER_IMAGE_PREVIEW_PATTERN.test(fileName)) return 'image';
+    if (/\.(zip|7z|rar|tar|gz)$/i.test(fileName)) return 'archive';
+    if (/\.(docx?|txt|md)$/i.test(fileName)) return 'document';
+    return 'generic';
+};
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
@@ -1291,7 +1324,27 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [filePreviewTableFiles, setFilePreviewTableFiles] = useState<File[]>([]);
     const [filePreviewWorkspaceFiles, setFilePreviewWorkspaceFiles] = useState<File[]>([]);
     const [filePreviewActiveIndex, setFilePreviewActiveIndex] = useState<number>(0);
+    const [showSelectedFileTablePreview, setShowSelectedFileTablePreview] = useState(false);
+    const [selectedWorkspacePreviewFile, setSelectedWorkspacePreviewFile] = useState<File | null>(null);
+    const [workspaceFilePreview, setWorkspaceFilePreview] = useState<WorkspaceFilePreview | null>(null);
+    const [workspaceFileTablePreview, setWorkspaceFileTablePreview] = useState<DictTable[] | null>(null);
+    const [workspaceFileImagePreviewUrl, setWorkspaceFileImagePreviewUrl] = useState<string | null>(null);
+    const [workspaceFilePreviewLoading, setWorkspaceFilePreviewLoading] = useState(false);
+    const [workspaceFilePreviewError, setWorkspaceFilePreviewError] = useState<string | null>(null);
+    const workspacePreviewRequestRef = useRef(0);
+    const workspaceImagePreviewUrlRef = useRef<string | null>(null);
+    const workspaceFilePreviewCacheRef = useRef(new WeakMap<File, CachedWorkspaceFilePreview>());
     const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+    const clearWorkspaceImagePreview = useCallback(() => {
+        if (workspaceImagePreviewUrlRef.current) {
+            URL.revokeObjectURL(workspaceImagePreviewUrlRef.current);
+            workspaceImagePreviewUrlRef.current = null;
+        }
+        setWorkspaceFileImagePreviewUrl(null);
+    }, []);
+
+    useEffect(() => clearWorkspaceImagePreview, [clearWorkspaceImagePreview]);
 
     // URL tab state (separate from file upload)
     const [tableURL, setTableURL] = useState<string>("");
@@ -1377,6 +1430,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setFilePreviewFiles([]);
         setFilePreviewTableFiles([]);
         setFilePreviewWorkspaceFiles([]);
+        setShowSelectedFileTablePreview(false);
+        setSelectedWorkspacePreviewFile(null);
+        setWorkspaceFilePreview(null);
+        setWorkspaceFileTablePreview(null);
+        clearWorkspaceImagePreview();
+        setWorkspaceFilePreviewLoading(false);
+        setWorkspaceFilePreviewError(null);
+        workspacePreviewRequestRef.current += 1;
         // Reset URL tab state
         setTableURL("");
         setUrlAutoRefresh(false);
@@ -1387,7 +1448,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setUrlPreviewActiveIndex(0);
         setExampleUrls([]);
         onClose();
-    }, [onClose]);
+    }, [clearWorkspaceImagePreview, onClose]);
 
     // Connector setup escape hatch: queue the seeded question and switch to the
     // data-loading chat, where the agent can inspect config and finish setup.
@@ -1396,22 +1457,109 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setActiveTab('extract');
     }, [dispatch]);
 
+    const handlePreviewWorkspaceFile = useCallback(async (file: File): Promise<void> => {
+        const requestId = workspacePreviewRequestRef.current + 1;
+        workspacePreviewRequestRef.current = requestId;
+        setShowSelectedFileTablePreview(false);
+        setSelectedWorkspacePreviewFile(file);
+        setWorkspaceFilePreview(null);
+        setWorkspaceFileTablePreview(null);
+        clearWorkspaceImagePreview();
+        setWorkspaceFilePreviewError(null);
+
+        const isImage = BROWSER_IMAGE_PREVIEW_PATTERN.test(file.name);
+        const isWorkbook = /\.xlsx$/i.test(file.name);
+        const hasServerTextPreview = SERVER_TEXT_PREVIEW_PATTERN.test(file.name) || file.type.startsWith('text/');
+        const cachedPreview = isImage ? undefined : workspaceFilePreviewCacheRef.current.get(file);
+        if (cachedPreview) {
+            setWorkspaceFilePreview(cachedPreview.text ?? null);
+            setWorkspaceFileTablePreview(cachedPreview.tables ?? null);
+            setWorkspaceFilePreviewError(cachedPreview.unavailable ? t('upload.previewUnavailable') : null);
+            setWorkspaceFilePreviewLoading(false);
+            return;
+        }
+
+        if (!isImage && !isWorkbook && !hasServerTextPreview) {
+            workspaceFilePreviewCacheRef.current.set(file, { unavailable: true });
+            setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
+            setWorkspaceFilePreviewLoading(false);
+            return;
+        }
+
+        setWorkspaceFilePreviewLoading(true);
+        try {
+            if (isImage) {
+                const imageUrl = URL.createObjectURL(file);
+                workspaceImagePreviewUrlRef.current = imageUrl;
+                setWorkspaceFileImagePreviewUrl(imageUrl);
+            } else if (isWorkbook) {
+                const tables = await loadBinaryDataWrapper(file.name, await file.arrayBuffer(), FILE_PREVIEW_ROW_LIMIT);
+                workspaceFilePreviewCacheRef.current.set(file, tables.length > 0
+                    ? { tables }
+                    : { unavailable: true });
+                if (workspacePreviewRequestRef.current === requestId) {
+                    if (tables.length > 0) {
+                        setWorkspaceFileTablePreview(tables);
+                    } else {
+                        setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
+                    }
+                }
+            } else {
+                const preview = await previewUploadedWorkspaceFile(file);
+                workspaceFilePreviewCacheRef.current.set(file, { text: preview });
+                if (workspacePreviewRequestRef.current === requestId) {
+                    setWorkspaceFilePreview(preview);
+                }
+            }
+        } catch {
+            if (workspacePreviewRequestRef.current === requestId) {
+                setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
+            }
+        } finally {
+            if (workspacePreviewRequestRef.current === requestId) {
+                setWorkspaceFilePreviewLoading(false);
+            }
+        }
+    }, [clearWorkspaceImagePreview, t]);
+
+    const handlePreviewTableFile = useCallback((tableIndex: number): void => {
+        workspacePreviewRequestRef.current += 1;
+        setSelectedWorkspacePreviewFile(null);
+        setWorkspaceFilePreview(null);
+        setWorkspaceFileTablePreview(null);
+        clearWorkspaceImagePreview();
+        setWorkspaceFilePreviewLoading(false);
+        setWorkspaceFilePreviewError(null);
+        setFilePreviewActiveIndex(tableIndex);
+        setShowSelectedFileTablePreview(true);
+    }, [clearWorkspaceImagePreview]);
+
     // Shared file processing logic (used by both file input and drag-and-drop)
     const processUploadedFiles = useCallback((selectedFiles: File[]): void => {
-        setFilePreviewFiles(selectedFiles);
+        const filesToProcess = [...filePreviewFiles, ...selectedFiles].filter((file, index, files) =>
+            files.findIndex(candidate =>
+                candidate.name === file.name
+                && candidate.size === file.size
+                && candidate.lastModified === file.lastModified,
+            ) === index,
+        );
+        setFilePreviewFiles(filesToProcess);
         setFilePreviewError(null);
         setFilePreviewTables(null);
         setFilePreviewTableFiles([]);
         setFilePreviewWorkspaceFiles([]);
+        setShowSelectedFileTablePreview(false);
+        setSelectedWorkspacePreviewFile(null);
+        setWorkspaceFilePreview(null);
+        setWorkspaceFileTablePreview(null);
+        clearWorkspaceImagePreview();
+        setWorkspaceFilePreviewLoading(false);
+        setWorkspaceFilePreviewError(null);
+        workspacePreviewRequestRef.current += 1;
         setFilePreviewLoading(true);
 
-        const previewTables: DictTable[] = [];
-        const tableFiles: File[] = [];
-        const workspaceFiles: File[] = [];
-        const errors: string[] = [];
-
         const processFiles = async () => {
-            for (const file of selectedFiles) {
+            const results = await Promise.all(filesToProcess.map(async file => {
                 const uniqueName = getUniqueTableName(file.name, existingNames);
                 const lowerName = file.name.toLowerCase();
                 const isTextFile = file.type === 'text/csv' || 
@@ -1420,82 +1568,65 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     file.name.endsWith('.csv') || 
                     file.name.endsWith('.tsv') || 
                     lowerName.endsWith('.json');
-                const isExcelFile = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-                    file.type === 'application/vnd.ms-excel' ||
-                    lowerName.endsWith('.xlsx') ||
-                    lowerName.endsWith('.xls');
+                const isExcelFile = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    || file.type === 'application/vnd.ms-excel'
+                    || lowerName.endsWith('.xlsx')
+                    || lowerName.endsWith('.xls');
 
                 if (isTextFile) {
                     try {
-                        const text = await readFileText(file);
-                        const table = loadTextDataWrapper(uniqueName, text, file.type);
+                        const fileType = lowerName.endsWith('.json')
+                            ? 'application/json'
+                            : lowerName.endsWith('.tsv')
+                                ? 'text/tab-separated-values'
+                                : 'text/csv';
+                        const text = await readFileText(
+                            file,
+                            fileType === 'application/json' ? undefined : FILE_PREVIEW_BYTE_LIMIT,
+                        );
+                        const table = loadTextDataWrapper(uniqueName, text, fileType, FILE_PREVIEW_ROW_LIMIT);
                         if (table) {
-                            previewTables.push(table);
-                            tableFiles.push(file);
+                            return { file, table };
                         } else {
-                            errors.push(t('upload.errors.failedToParse', { name: file.name }));
+                            return { file, error: t('upload.errors.failedToParse', { name: file.name }) };
                         }
                     } catch {
-                        errors.push(t('upload.errors.failedToRead', { name: file.name }));
+                        return { file, error: t('upload.errors.failedToRead', { name: file.name }) };
                     }
-                    continue;
                 }
 
                 if (isExcelFile) {
-                    const isLegacyXls = file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.xlsx');
-                    if (isLegacyXls) {
-                        try {
-                            const formData = new FormData();
-                            formData.append('file', file);
-                            const { data: result } = await apiRequest<any>(getUrls().PARSE_FILE, {
-                                method: 'POST',
-                                body: formData,
-                            });
-                            if (result.sheets?.length > 0) {
-                                for (const sheet of result.sheets) {
-                                    const sheetTitle = result.sheets.length > 1
-                                        ? `${uniqueName}-${sheet.sheet_name}`
-                                        : uniqueName;
-                                    const table = createTableFromFromObjectArray(sheetTitle, sheet.data);
-                                    previewTables.push(table);
-                                    tableFiles.push(file);
-                                }
-                            } else {
-                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                            }
-                        } catch {
-                            errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                        }
-                    } else {
-                        try {
-                            const arrayBuffer = await file.arrayBuffer();
-                            const tables = await loadBinaryDataWrapper(uniqueName, arrayBuffer);
-                            if (tables.length > 0) {
-                                previewTables.push(...tables);
-                                tableFiles.push(...tables.map(() => file));
-                            } else {
-                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                            }
-                        } catch {
-                            errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                        }
-                    }
-                    continue;
+                    return { file, workspaceFile: file };
                 }
 
-                workspaceFiles.push(file);
-            }
+                return { file, workspaceFile: file };
+            }));
+
+            const previewTables = results.flatMap(result => result.table ? [result.table] : []);
+            const tableFiles = results.flatMap(result => result.table ? [result.file] : []);
+            const workspaceFiles = results.flatMap(result => result.workspaceFile ? [result.workspaceFile] : []);
+            const errors = results.flatMap(result => result.error ? [result.error] : []);
 
             setFilePreviewTables(previewTables.length > 0 ? previewTables : null);
             setFilePreviewTableFiles(tableFiles);
             setFilePreviewWorkspaceFiles(workspaceFiles);
             setFilePreviewError(errors.length > 0 ? errors.join(' ') : null);
             setFilePreviewLoading(false);
+
+            const lastFile = filesToProcess.at(-1);
+            if (lastFile) {
+                const tableIndex = tableFiles.findIndex(file => file === lastFile);
+                if (tableIndex >= 0) {
+                    handlePreviewTableFile(tableIndex);
+                } else {
+                    await handlePreviewWorkspaceFile(lastFile);
+                }
+            }
         };
 
         processFiles();
      
-    }, [existingNames, t]);
+    }, [clearWorkspaceImagePreview, existingNames, filePreviewFiles, handlePreviewTableFile, handlePreviewWorkspaceFile, t]);
 
     // File input change handler
     const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -1552,16 +1683,26 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (!filePreviewTables || filePreviewTables.length === 0) {
             return;
         }
-        const table = filePreviewTables[filePreviewActiveIndex];
-        if (table) {
-            const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[0]?.name };
-            const tableWithSource = { ...table, source: sourceConfig };
+        const previewTable = filePreviewTables[filePreviewActiveIndex];
+        const sourceFile = filePreviewTableFiles[filePreviewActiveIndex];
+        if (previewTable && sourceFile) {
             setTableLoading(true);
             try {
+                const text = await readFileText(sourceFile);
+                const fullTable = loadTextDataWrapper(previewTable.id, text, sourceFile.name.toLowerCase().endsWith('.json')
+                    ? 'application/json'
+                    : sourceFile.name.toLowerCase().endsWith('.tsv')
+                        ? 'text/tab-separated-values'
+                        : 'text/csv');
+                if (!fullTable) throw new Error('Failed to parse file');
+                const sourceConfig: DataSourceConfig = { type: 'file', fileName: sourceFile.name };
                 await dispatch(loadTable({
-                    table: tableWithSource,
-                    file: storeOnServer ? filePreviewTableFiles[filePreviewActiveIndex] : undefined,
+                    table: { ...fullTable, source: sourceConfig },
+                    file: storeOnServer ? sourceFile : undefined,
                 }));
+            } catch {
+                setFilePreviewError(t('upload.errors.failedToRead', { name: sourceFile.name }));
+                return;
             } finally {
                 setTableLoading(false);
             }
@@ -1576,11 +1717,23 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
         setTableLoading(true);
         try {
+            const fullTables = await Promise.all((filePreviewTables || []).map(async (previewTable, index) => {
+                const sourceFile = filePreviewTableFiles[index];
+                const text = await readFileText(sourceFile);
+                const table = loadTextDataWrapper(previewTable.id, text, sourceFile.name.toLowerCase().endsWith('.json')
+                    ? 'application/json'
+                    : sourceFile.name.toLowerCase().endsWith('.tsv')
+                        ? 'text/tab-separated-values'
+                        : 'text/csv');
+                if (!table) throw new Error(`Failed to parse ${sourceFile.name}`);
+                return table;
+            }));
+
             // When storing on server, remove frontend-only orphans from the same
             // source files (sheets that existed before but are absent in the new batch).
             const seenSourceFiles = new Set<string>();
             if (storeOnServer) {
-                const newTableIds = new Set((filePreviewTables || []).map(t => t.id));
+                const newTableIds = new Set(fullTables.map(t => t.id));
                 const sourceFileNames = new Set<string>();
                 for (let i = 0; i < (filePreviewTables?.length || 0); i++) {
                     const fn = filePreviewTableFiles[i]?.name;
@@ -1593,8 +1746,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 }
             }
 
-            for (let i = 0; i < (filePreviewTables?.length || 0); i++) {
-                const table = filePreviewTables![i];
+            for (let i = 0; i < fullTables.length; i++) {
+                const table = fullTables[i];
                 const sourceFile = filePreviewTableFiles[i];
                 const fileName = sourceFile?.name;
                 const sourceConfig: DataSourceConfig = { type: 'file', fileName };
@@ -1610,18 +1763,35 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 }));
             }
             await Promise.all(filePreviewWorkspaceFiles.map(uploadWorkspaceFile));
+        } catch {
+            setFilePreviewError(t('upload.errors.failedToRead', { name: t('upload.selectedFiles', { defaultValue: 'selected files' }) }));
+            return;
         } finally {
             setTableLoading(false);
         }
         handleClose();
     };
 
-    const handleRemoveFilePreviewTable = (index: number): void => {
-        setFilePreviewTables((prev) => {
+    const handleRemoveSelectedFile = (fileToRemove: File): void => {
+        const retainedTableIndexes = filePreviewTableFiles
+            .map((file, index) => file !== fileToRemove ? index : -1)
+            .filter(index => index >= 0);
+        setFilePreviewTables(prev => {
             if (!prev) return prev;
-            const next = prev.filter((_, i) => i !== index);
+            const next = retainedTableIndexes.map(index => prev[index]).filter(Boolean);
             return next.length > 0 ? next : null;
         });
+        setFilePreviewTableFiles(prev => prev.filter(file => file !== fileToRemove));
+        setFilePreviewWorkspaceFiles(prev => prev.filter(file => file !== fileToRemove));
+        setFilePreviewFiles(prev => prev.filter(file => file !== fileToRemove));
+        setShowSelectedFileTablePreview(false);
+        if (selectedWorkspacePreviewFile === fileToRemove) {
+            setSelectedWorkspacePreviewFile(null);
+            setWorkspaceFilePreview(null);
+            setWorkspaceFileTablePreview(null);
+            clearWorkspaceImagePreview();
+            setWorkspaceFilePreviewError(null);
+        }
     };
 
     // Paste content handler
@@ -1823,6 +1993,41 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const hasMultipleUrlTables = (urlPreviewTables?.length || 0) > 1;
     const showFilePreview = filePreviewLoading || !!filePreviewError ||
         (filePreviewTables && filePreviewTables.length > 0) || filePreviewWorkspaceFiles.length > 0;
+    const hasTableFilePreview = filePreviewLoading || !!filePreviewError || showSelectedFileTablePreview || !!selectedWorkspacePreviewFile;
+    const hasSelectedFileAttachments = filePreviewFiles.length > 0 && !filePreviewLoading;
+    const attachmentControlSx = {
+        width: '100%',
+        height: 52,
+        boxSizing: 'border-box',
+        borderRadius: 0.5,
+        transition: transition.fast,
+    } as const;
+    const attachmentControlHoverSx = {
+        borderColor: theme.palette.primary.main,
+        backgroundColor: alpha(theme.palette.primary.main, theme.palette.action.hoverOpacity),
+    } as const;
+    const attachmentControlSelectedSx = {
+        backgroundColor: alpha(theme.palette.primary.main, theme.palette.action.selectedOpacity),
+        '&:hover': {
+            borderColor: theme.palette.primary.main,
+            backgroundColor: alpha(
+                theme.palette.primary.main,
+                theme.palette.action.selectedOpacity + theme.palette.action.hoverOpacity,
+            ),
+        },
+    } as const;
+    const attachmentControlFocusSx = {
+        outline: 'none',
+        borderColor: theme.palette.primary.main,
+    } as const;
+    const fileCategoryVisuals = {
+        table: { color: theme.palette.success.main, Icon: GridOnIcon },
+        pdf: { color: theme.palette.error.main, Icon: PictureAsPdfOutlinedIcon },
+        image: { color: theme.palette.info.main, Icon: ImageOutlinedIcon },
+        archive: { color: theme.palette.warning.dark, Icon: FolderZipOutlinedIcon },
+        document: { color: theme.palette.primary.main, Icon: DescriptionOutlinedIcon },
+        generic: { color: theme.palette.text.secondary, Icon: InsertDriveFileOutlinedIcon },
+    } as const;
     const showUrlPreview = urlPreviewLoading || !!urlPreviewError || (urlPreviewTables && urlPreviewTables.length > 0);
     const showExamples = exampleUrls.length > 0
         && (!urlPreviewTables || urlPreviewTables.length === 0)
@@ -2099,10 +2304,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         flexDirection: 'column',
                         height: '100%',
                         boxSizing: 'border-box',
-                        gap: 2,
-                        p: 2,
-                        justifyContent: showFilePreview ? 'flex-start' : 'center',
+                        overflow: 'hidden',
                     }}>
+                        <Box sx={{
+                            flex: 1,
+                            minHeight: 0,
+                            overflowY: 'auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
+                            p: 2,
+                            boxSizing: 'border-box',
+                            justifyContent: hasTableFilePreview ? 'flex-start' : 'center',
+                        }}>
                         <Box sx={{ width: '100%', maxWidth: showFilePreview ? '60%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <Input
                             slotProps={{
@@ -2118,7 +2332,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         />
                         
                         {/* File Upload Section */}
-                        <Box
+                        {!hasSelectedFileAttachments && <Box
                             sx={{
                                 border: '2px dashed',
                                 borderColor: isDragOver ? 'primary.main' : borderColor.divider,
@@ -2151,51 +2365,225 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     {t('upload.supportedFormats')}
                                 </Typography>
                             )}
-                        </Box>
+                        </Box>}
                         </Box>
 
                         {showFilePreview && (
-                            <Box sx={{ width: '90%', alignSelf: 'center' }}>
-                                <MultiTablePreview
-                                    loading={filePreviewLoading}
-                                    error={filePreviewError}
-                                    tables={filePreviewTables}
-                                    emptyLabel={t('upload.selectFileToPreview')}
-                                    onRemoveTable={handleRemoveFilePreviewTable}
-                                    activeIndex={filePreviewActiveIndex}
-                                    onActiveIndexChange={setFilePreviewActiveIndex}
-                                />
-                                {filePreviewWorkspaceFiles.length > 0 && (
-                                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                        {filePreviewWorkspaceFiles.map(file => (
-                                            <Box key={`${file.name}-${file.size}`} sx={{
-                                                display: 'flex', alignItems: 'center', gap: 1,
-                                                px: 1.25, py: 0.75,
-                                                border: '1px solid', borderColor: 'divider', borderRadius: 1,
+                            <Box sx={{ width: '100%', maxWidth: 1120, alignSelf: 'center' }}>
+                                {(filePreviewLoading || filePreviewError) && (
+                                    <MultiTablePreview
+                                        loading={filePreviewLoading}
+                                        error={filePreviewError}
+                                        tables={null}
+                                    />
+                                )}
+                                {filePreviewFiles.length > 0 && !filePreviewLoading && (
+                                    <Box sx={{
+                                        display: 'grid',
+                                        gridTemplateColumns: {
+                                            xs: 'minmax(0, 1fr)',
+                                            sm: 'repeat(auto-fill, minmax(280px, 1fr))',
+                                        },
+                                        justifyContent: 'start',
+                                        alignItems: 'start',
+                                        gap: 1.5,
+                                    }}>
+                                        {filePreviewFiles.map(file => {
+                                            const tableIndex = filePreviewTableFiles.findIndex(tableFile => tableFile === file);
+                                            const hasTablePreview = tableIndex >= 0;
+                                            const { color: categoryColor, Icon: CategoryIcon } = fileCategoryVisuals[
+                                                getFileCategory(file.name, hasTablePreview)
+                                            ];
+                                            const isPreviewSelected = (hasTablePreview
+                                                && showSelectedFileTablePreview
+                                                && filePreviewActiveIndex === tableIndex)
+                                                || selectedWorkspacePreviewFile === file;
+                                            const handlePreview = () => {
+                                                if (hasTablePreview) {
+                                                    handlePreviewTableFile(tableIndex);
+                                                } else {
+                                                    void handlePreviewWorkspaceFile(file);
+                                                }
+                                            };
+                                            return <Box
+                                                key={`${file.name}-${file.size}`}
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={handlePreview}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                        event.preventDefault();
+                                                        handlePreview();
+                                                    }
+                                                }}
+                                                sx={{
+                                                ...attachmentControlSx,
+                                                display: 'flex', alignItems: 'center', gap: 1.25,
+                                                minWidth: 0,
+                                                px: 1.25, py: 0.875,
+                                                border: `1px solid ${isPreviewSelected
+                                                    ? theme.palette.primary.main
+                                                    : theme.palette.text.disabled}`,
+                                                backgroundColor: 'background.paper',
+                                                ...(isPreviewSelected && attachmentControlSelectedSx),
+                                                cursor: 'pointer',
+                                                ...(!isPreviewSelected && { '&:hover': attachmentControlHoverSx }),
+                                                '&:focus-visible': attachmentControlFocusSx,
                                             }}>
-                                                <UploadFileIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
-                                                <Typography noWrap sx={{ flex: 1, fontSize: textVar.sm }}>
-                                                    {file.name}
+                                                <Box sx={{
+                                                    width: 34, height: 34, flexShrink: 0,
+                                                    display: 'grid', placeItems: 'center',
+                                                    borderRadius: 0.5,
+                                                    color: categoryColor,
+                                                    backgroundColor: 'action.hover',
+                                                }}>
+                                                    <CategoryIcon sx={{ fontSize: iconVar.md }} />
+                                                </Box>
+                                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                    <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 500 }}>
+                                                        {file.name}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                                                        {[
+                                                            file.name.includes('.')
+                                                                ? file.name.split('.').pop()?.toUpperCase()
+                                                                : t('upload.workspaceFile', { defaultValue: 'File' }),
+                                                            formatBytes(file.size),
+                                                        ].filter(Boolean).join(' · ')}
+                                                    </Typography>
+                                                </Box>
+                                                <Tooltip title={t('upload.removeFile', { defaultValue: 'Remove file' })}>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            handleRemoveSelectedFile(file);
+                                                        }}
+                                                        aria-label={t('upload.removeFile', { defaultValue: 'Remove file' })}
+                                                        sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+                                                    >
+                                                        <CloseIcon sx={{ fontSize: iconVar.md }} />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            </Box>;
+                                        })}
+                                        <Button
+                                            variant="text"
+                                            size="small"
+                                            startIcon={<AddIcon sx={{ fontSize: iconVar.md }} />}
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={filePreviewLoading || tableLoading}
+                                            sx={{
+                                                justifySelf: 'start',
+                                                alignSelf: 'center',
+                                                textTransform: 'none',
+                                                fontSize: textVar.sm,
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            {t('upload.addMoreFiles')}
+                                        </Button>
+                                    </Box>
+                                )}
+                                {showSelectedFileTablePreview && filePreviewTables?.[filePreviewActiveIndex] && (
+                                    <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${borderColor.divider}` }}>
+                                        <MultiTablePreview
+                                            table={filePreviewTables[filePreviewActiveIndex]}
+                                            showTableSelector={false}
+                                        />
+                                    </Box>
+                                )}
+                                {selectedWorkspacePreviewFile && (
+                                    <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${borderColor.divider}` }}>
+                                        <Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }}>
+                                            {selectedWorkspacePreviewFile.name}
+                                        </Typography>
+                                        <Typography sx={{ mb: 1, fontSize: textVar.xs, color: 'text.secondary' }}>
+                                            {[
+                                                selectedWorkspacePreviewFile.name.includes('.')
+                                                    ? selectedWorkspacePreviewFile.name.split('.').pop()?.toUpperCase()
+                                                    : t('upload.workspaceFile', { defaultValue: 'File' }),
+                                                formatBytes(selectedWorkspacePreviewFile.size),
+                                                selectedWorkspacePreviewFile.type || undefined,
+                                            ].filter(Boolean).join(' · ')}
+                                        </Typography>
+                                        {workspaceFilePreviewLoading && <Box sx={{ py: 4, textAlign: 'center' }}><CircularProgress size={24} /></Box>}
+                                        {workspaceFilePreviewError && <Alert severity="info">{workspaceFilePreviewError}</Alert>}
+                                        {workspaceFileImagePreviewUrl && (
+                                            <Box
+                                                component="img"
+                                                src={workspaceFileImagePreviewUrl}
+                                                alt={selectedWorkspacePreviewFile.name}
+                                                onError={() => {
+                                                    clearWorkspaceImagePreview();
+                                                    setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
+                                                }}
+                                                sx={{
+                                                    display: 'block',
+                                                    width: 'auto',
+                                                    height: 'auto',
+                                                    maxWidth: 'min(100%, 720px)',
+                                                    maxHeight: 'min(320px, 34vh)',
+                                                    mx: 'auto',
+                                                    objectFit: 'contain',
+                                                }}
+                                            />
+                                        )}
+                                        {workspaceFileTablePreview && (
+                                            <MultiTablePreview
+                                                tables={workspaceFileTablePreview}
+                                                maxHeight={360}
+                                            />
+                                        )}
+                                        {workspaceFilePreview && (
+                                            <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto', p: 2, bgcolor: 'background.default' }}>
+                                                <Typography component="pre" sx={{
+                                                    m: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+                                                    fontFamily: 'var(--df-font-mono)', fontSize: textVar.sm, lineHeight: 1.6,
+                                                }}>
+                                                    {workspaceFilePreview.content || t('upload.emptyFile')}
                                                 </Typography>
-                                                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
-                                                    {t('upload.workspaceFile', { defaultValue: 'File' })}
-                                                </Typography>
-                                            </Box>
-                                        ))}
+                                                {workspaceFilePreview.truncated && (
+                                                    <Typography sx={{ mt: 1.5, fontSize: textVar.xs, color: 'text.secondary' }}>
+                                                        {t('upload.previewTruncated')}
+                                                    </Typography>
+                                                )}
+                                            </Paper>
+                                        )}
                                     </Box>
                                 )}
                             </Box>
                         )}
+                        </Box>
 
-                        {((filePreviewTables && filePreviewTables.length > 0) || filePreviewWorkspaceFiles.length > 0) && (
-                            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, alignItems: 'center' }}>
-                                {filePreviewWorkspaceFiles.length === 0 && (
+                        {filePreviewFiles.length > 0 && (
+                            <Box sx={{
+                                flexShrink: 0,
+                                borderTop: `1px solid ${borderColor.divider}`,
+                                backgroundColor: 'background.paper',
+                                px: 2,
+                                py: 1,
+                            }}>
+                                <Box sx={{
+                                    width: '100%',
+                                    maxWidth: 1120,
+                                    mx: 'auto',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    gap: 1,
+                                }}>
+                                <Typography sx={{ mr: 0.5, fontSize: textVar.sm, color: 'text.secondary' }}>
+                                    {t('upload.filesSelected', { count: filePreviewFiles.length })}
+                                </Typography>
+                                <Box sx={{ flex: 1 }} />
+                                {filePreviewWorkspaceFiles.length === 0 && !!filePreviewTables?.length && (
                                     <Button
-                                        variant="outlined"
+                                        variant="contained"
                                         onClick={handleFileLoadSingleTable}
                                         disabled={filePreviewLoading || tableLoading}
-                                        startIcon={tableLoading ? <CircularProgress size={16} /> : undefined}
-                                        sx={{ textTransform: 'none', width: 240 }}
+                                        startIcon={tableLoading ? <CircularProgress size={16} color="inherit" /> : undefined}
+                                        sx={{ textTransform: 'none', minWidth: 180 }}
                                     >
                                         {tableLoading ? t('upload.loadingTable') : t('upload.loadTable')}
                                     </Button>
@@ -2206,13 +2594,16 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         onClick={handleFileLoadAllTables}
                                         disabled={filePreviewLoading || tableLoading}
                                         startIcon={tableLoading ? <CircularProgress size={16} color="inherit" /> : undefined}
-                                        sx={{ textTransform: 'none', width: 240 }}
+                                        sx={{ textTransform: 'none', minWidth: 200 }}
                                     >
                                         {tableLoading
                                             ? t('upload.loadingTable')
-                                            : t('upload.addAllToWorkspace', { defaultValue: 'Add all to workspace' })}
+                                            : filePreviewWorkspaceFiles.length === 1 && !filePreviewTables?.length
+                                                ? t('upload.addToWorkspace')
+                                                : t('upload.addAllToWorkspace')}
                                     </Button>
                                 )}
+                                </Box>
                             </Box>
                         )}
                     </Box>

@@ -49,6 +49,7 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -90,6 +91,7 @@ import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ResizeHandle } from '../components/ResizeHandle';
 import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
+import { formatBytes } from './ViewUtils';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -107,16 +109,6 @@ const SIDEBAR_PINNED_KEY = 'df-sidebar-pinned';
 // instead, where the user can filter, sample, or aggregate before loading.
 const RECOMMENDED_MAX_IMPORT_ROWS = 1_000_000;
 const RECOMMENDED_MAX_IMPORT_BYTES = 512 * 1024 * 1024; // 512 MB uncompressed
-
-// Human-readable byte size ("1.2 GB", "340 MB"). Returns '' when unknown.
-function formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    let value = bytes;
-    let i = 0;
-    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
-    return `${value >= 100 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
-}
 
 // Whether a catalog table is large enough that a direct full import is
 // discouraged in favor of the conversational loader.
@@ -320,16 +312,31 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                {/* Primary action — adding data is the main task. Styled like
-                    the view-switcher icons but kept in primary color as a
-                    subtle cue; opens the upload dialog (landing menu). */}
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
-                    <IconButton size="small" onClick={() => onOpenUploadDialog?.()} sx={{
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
+                    <IconButton
+                        size="small"
+                        onClick={() => onOpenUploadDialog?.('upload')}
+                        aria-label={t('sidebar.openUpload', { defaultValue: 'Upload data' })}
+                        sx={{
                         color: 'primary.main',
                         borderRadius: 1,
                         '&:hover': { bgcolor: 'action.hover' },
                     }}>
                         <AddCircleIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.openDataLoadingChat', { defaultValue: 'Add data with agent' })} placement="right">
+                    <IconButton
+                        size="small"
+                        onClick={() => onStartDataLoadingChat?.('')}
+                        aria-label={t('sidebar.openDataLoadingChat', { defaultValue: 'Add data with agent' })}
+                        sx={{
+                            color: 'text.secondary',
+                            borderRadius: 1,
+                            '&:hover': { color: 'primary.main', bgcolor: 'action.hover' },
+                        }}
+                    >
+                        <QuestionAnswerOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">

@@ -9,12 +9,16 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
+
 from data_formulator.errors import AppError, ErrorCode
 
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_DOCX_XML_BYTES = 5 * 1024 * 1024
 MAX_TEXT_CHARS = 200_000
+MAX_PDF_PREVIEW_PAGES = 20
 TEXT_EXTENSIONS = {
     ".csv", ".json", ".log", ".md", ".py", ".sql", ".tsv", ".txt", ".xml", ".yaml", ".yml",
 }
@@ -63,6 +67,39 @@ def _extract_docx_text(content: bytes) -> str:
     return "\n".join(paragraphs)
 
 
+def _extract_pdf_text(content: bytes) -> str:
+    try:
+        reader = PdfReader(io.BytesIO(content))
+        return "\n\n".join(
+            page.extract_text() or "" for page in reader.pages[:MAX_PDF_PREVIEW_PAGES]
+        )
+    except (PdfReadError, ValueError) as exc:
+        raise AppError(ErrorCode.FILE_PARSE_ERROR, "Invalid PDF document") from exc
+
+
+def extract_workspace_file_text(
+    name: str,
+    content: bytes,
+    media_type: str | None = None,
+) -> WorkspaceFileText:
+    """Extract bounded text from an uploaded or persisted workspace file."""
+    if len(content) > MAX_FILE_BYTES:
+        raise AppError(ErrorCode.FILE_TOO_LARGE, "File is too large to read")
+
+    extension = Path(name).suffix.lower()
+    if extension == ".docx":
+        text = _extract_docx_text(content)
+    elif extension == ".pdf":
+        text = _extract_pdf_text(content)
+    elif extension in TEXT_EXTENSIONS or (media_type or "").startswith("text/"):
+        text = content.decode("utf-8", errors="replace")
+    else:
+        raise AppError(ErrorCode.FILE_PARSE_ERROR, "Text extraction is not available for this file type")
+
+    bounded, truncated = _bounded_text(text)
+    return WorkspaceFileText(name=name, content=bounded, truncated=truncated)
+
+
 def read_workspace_file_text(workspace: Any, name: str) -> WorkspaceFileText:
     """Read a durable workspace file as bounded normalized text."""
     try:
@@ -70,16 +107,8 @@ def read_workspace_file_text(workspace: Any, name: str) -> WorkspaceFileText:
     except FileNotFoundError as exc:
         raise AppError(ErrorCode.TABLE_NOT_FOUND, "File not found") from exc
 
-    if workspace_file.file_size > MAX_FILE_BYTES:
-        raise AppError(ErrorCode.FILE_TOO_LARGE, "File is too large to read")
-
-    extension = Path(workspace_file.name).suffix.lower()
-    if extension == ".docx":
-        text = _extract_docx_text(content)
-    elif extension in TEXT_EXTENSIONS or (workspace_file.media_type or "").startswith("text/"):
-        text = content.decode("utf-8", errors="replace")
-    else:
-        raise AppError(ErrorCode.FILE_PARSE_ERROR, "Text extraction is not available for this file type")
-
-    bounded, truncated = _bounded_text(text)
-    return WorkspaceFileText(name=workspace_file.name, content=bounded, truncated=truncated)
+    return extract_workspace_file_text(
+        workspace_file.name,
+        content,
+        workspace_file.media_type,
+    )

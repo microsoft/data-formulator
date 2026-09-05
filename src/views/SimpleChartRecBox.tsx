@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, explanationContent, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport, shouldPreviewExplanationInCanvas } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest, apiRequest } from '../app/apiClient';
@@ -52,7 +52,6 @@ import { ClarificationPanel, ExplanationPanel, FailedDraftPanel } from './AgentP
 import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
 import { formatAnalystToolProgress } from './analystToolProgress';
-import { explanationContent, shouldPreviewExplanationInCanvas } from '../app/explanationPreview';
 
 // Approx footprint of the leading lightning-bolt IconButton (size small,
 // p:0.5 + 16px icon). Used to cap a starter chip so a single chip fits
