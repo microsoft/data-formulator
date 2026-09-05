@@ -26,6 +26,9 @@ import { alpha } from '@mui/material/styles';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
@@ -133,6 +136,58 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
             </Box>
 
             {children}
+        </Box>
+    );
+};
+
+interface ResponseOptionButtonProps {
+    children: ReactNode;
+    accentColor: string;
+    selected?: boolean;
+    disabled?: boolean;
+    onClick: () => void;
+}
+
+const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
+    children,
+    accentColor,
+    selected = false,
+    disabled = false,
+    onClick,
+}) => {
+    const theme = useTheme();
+    return (
+        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
+            <Typography
+                component="button"
+                type="button"
+                disabled={disabled}
+                onClick={onClick}
+                sx={{
+                    position: 'relative', zIndex: 1,
+                    px: '8px', py: '4px',
+                    borderRadius: '6px',
+                    border: `1px solid ${selected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
+                    backgroundColor: selected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
+                    cursor: disabled ? 'default' : 'pointer',
+                    fontSize: textVar.xs,
+                    fontWeight: selected ? 600 : 400,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.4,
+                    color: disabled ? theme.palette.text.disabled : theme.palette.text.primary,
+                    textAlign: 'left',
+                    fontFamily: theme.typography.fontFamily,
+                    '&:hover': disabled ? {} : {
+                        backgroundColor: alpha(accentColor, selected ? 0.16 : 0.08),
+                    },
+                }}
+            >
+                {children}
+            </Typography>
         </Box>
     );
 };
@@ -540,38 +595,19 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                         ? selected.value === option.value
                                                         : selected.answer === option.label);
                                                 return (
-                                                    <Box key={optionIndex} sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
-                                                        <Typography
-                                                            component="button"
-                                                            type="button"
-                                                            onClick={() => handleAnswer({
+                                                    <ResponseOptionButton
+                                                        key={optionIndex}
+                                                        accentColor={accentColor}
+                                                        selected={isSelected}
+                                                        onClick={() => handleAnswer({
                                                                 question_index: questionIndex,
                                                                 answer: option.label,
                                                                 ...(option.value ? { value: option.value } : {}),
                                                                 source: 'option',
                                                             })}
-                                                            sx={{
-                                                                position: 'relative', zIndex: 1,
-                                                                px: '8px', py: '4px',
-                                                                borderRadius: '6px',
-                                                                border: `1px solid ${isSelected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
-                                                                backgroundColor: isSelected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
-                                                                cursor: 'pointer',
-                                                                fontSize: textVar.xs,
-                                                                fontWeight: isSelected ? 600 : 400,
-                                                                display: 'inline-block',
-                                                                whiteSpace: 'normal',
-                                                                wordBreak: 'break-word',
-                                                                lineHeight: 1.4,
-                                                                color: theme.palette.text.primary,
-                                                                textAlign: 'left',
-                                                                fontFamily: theme.typography.fontFamily,
-                                                                '&:hover': { backgroundColor: alpha(accentColor, isSelected ? 0.16 : 0.08) },
-                                                            }}
-                                                        >
+                                                    >
                                                             {renderFieldHighlights(option.label, accentColor)}
-                                                        </Typography>
-                                                    </Box>
+                                                    </ResponseOptionButton>
                                                 );
                                             })}
                                         </Box>
@@ -666,6 +702,64 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
                 fontSize: textVar.sm,
             }}>
                 <CompactMarkdown content={content} color={theme.palette.text.primary} />
+            </Box>
+        </AgentPauseShell>
+    );
+};
+
+interface FailedDraftPanelProps {
+    prompt?: string;
+    error: string;
+    onClose: () => void;
+    onRetry: () => void;
+    retryDisabled?: boolean;
+}
+
+/** Focused view for a retained failed analysis round. */
+export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
+    prompt,
+    error,
+    onClose,
+    onRetry,
+    retryDisabled = false,
+}) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const accent = theme.palette.error.main;
+
+    return (
+        <AgentPauseShell
+            icon={<ErrorOutlineRoundedIcon sx={{ fontSize: textVar.xl, color: alpha(accent, 0.75) }} />}
+            accentColor={accent}
+            title={t('chartRec.failedAnalysisTitle', { defaultValue: 'Failed analysis' })}
+            closeTooltip={t('chartRec.pauseClose')}
+            onClose={onClose}
+        >
+            <Box sx={{ pb: '8px', pl: '20px', pr: '8px' }}>
+                {prompt && (
+                    <Typography sx={{
+                        mb: '5px', fontSize: textVar.sm, fontWeight: 500,
+                        color: theme.palette.text.primary, wordBreak: 'break-word',
+                    }}>
+                        {prompt}
+                    </Typography>
+                )}
+                <Typography sx={{
+                    fontSize: textVar.xs, lineHeight: 1.45,
+                    color: theme.palette.text.secondary, wordBreak: 'break-word',
+                }}>
+                    {error}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mt: '7px' }}>
+                    <ResponseOptionButton
+                        accentColor={theme.palette.primary.main}
+                        disabled={retryDisabled}
+                        onClick={onRetry}
+                    >
+                        <ReplayRoundedIcon sx={{ fontSize: iconVar.sm }} />
+                        {t('messages.retry', { defaultValue: 'Retry' })}
+                    </ResponseOptionButton>
+                </Box>
             </Box>
         </AgentPauseShell>
     );

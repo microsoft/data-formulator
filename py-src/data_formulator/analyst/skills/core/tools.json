@@ -23,6 +23,96 @@
   {
     "type": "function",
     "function": {
+      "name": "list_workspace_inputs",
+      "description": "List the data and durable file inputs available to this analysis run. Returns stable input IDs, kinds, media types, and capabilities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["data", "file"] },
+            "description": "Optional input kinds to include."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional case-insensitive file or data name filter."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "preview_workspace_input",
+      "description": "Preview one data or file input through its adapter. Data accepts a row locator and columns option; normalized text accepts a line locator. Call list_workspace_inputs to inspect accepted fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input_id": { "type": "string", "description": "Stable ID from the workspace-input context or list_workspace_inputs." },
+          "locator": { "type": "object", "description": "Optional canonical location: {\"row\": 1} for data or {\"line\": 1} for normalized text." },
+          "options": { "type": "object", "description": "Optional semantic adapter options; library-specific arguments are not accepted." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 2000, "default": 50 }
+        },
+        "required": ["input_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_workspace_input",
+      "description": "Read normalized content from one data or file input. Data accepts a row locator and columns option; normalized text accepts a line locator. Returns bounded content and continuation metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input_id": { "type": "string", "description": "Stable ID from the workspace-input context or list_workspace_inputs." },
+          "locator": { "type": "object", "description": "Optional canonical location: {\"row\": 1} for data or {\"line\": 1} for normalized text." },
+          "options": { "type": "object", "description": "Optional semantic adapter options; library-specific arguments are not accepted." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 2000, "default": 200 }
+        },
+        "required": ["input_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_workspace_inputs",
+      "description": "Search readable data and file inputs. Returns stable input IDs, canonical locators, and bounded matching text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Case-insensitive text to find." },
+          "input_ids": { "type": "array", "items": { "type": "string" }, "description": "Optional stable input IDs to search." },
+          "kinds": { "type": "array", "items": { "type": "string", "enum": ["data", "file"] }, "description": "Optional input kinds to search." },
+          "options": { "type": "object", "description": "Optional semantic adapter options; library-specific arguments are not accepted." },
+          "max_results": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_workspace_file",
+      "description": "Deprecated compatibility tool for old trajectories. Read a durable text or DOCX file by exact name. Prefer read_workspace_input with a stable input ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact file name listed in the workspace-files context."
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "inspect_source_data",
       "description": "Get a detailed summary of one or more analysis input tables — schema, field-level statistics, and sample rows. Cheaper than execute_python_script for basic data inspection.",
       "parameters": {
@@ -58,10 +148,23 @@
             "type": "string",
             "description": "≤12 words. State the question or hypothesis the chart investigates — don't recap the chart spec (x/y/color/split are already visible). Wrap a **column** in ** ** if it anchors the question."
           },
+          "input_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "description": "Stable ID listed in WORKSPACE INPUTS." },
+                "kind": { "type": "string", "enum": ["data", "file"] }
+              },
+              "required": ["id", "kind"],
+              "additionalProperties": false
+            },
+            "description": "Durable data or file inputs materially used to compute the output. Use [] when none were used. Do not include inputs only read for context."
+          },
           "input_tables": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Names listed in the analysis-input-tables context that the code reads."
+            "description": "Deprecated compatibility field for older trajectories. Use input_sources."
           },
           "code": {
             "type": "string",
@@ -84,7 +187,7 @@
             "description": "Map of field name -> human-readable display name for chart axes and table headers."
           }
         },
-        "required": ["title", "code", "output_variable", "chart"]
+        "required": ["title", "input_sources", "code", "output_variable", "chart"]
       }
     }
   },

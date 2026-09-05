@@ -30,6 +30,7 @@ import pyarrow.parquet as pq
 from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
     TableMetadata,
+    WorkspaceFileMetadata,
     load_metadata,
     save_metadata,
     update_metadata,
@@ -234,6 +235,7 @@ class Workspace:
         # all callers that need path-safe access (agents, routes, etc.).
         self._confined_root = ConfinedDir(self._path, mkdir=False)
         self._confined_data = ConfinedDir(self._path / "data")
+        self._confined_files = ConfinedDir(self._path / "files")
         self._confined_scratch = ConfinedDir(self._path / "scratch")
 
         # Initialize metadata if it doesn't exist
@@ -376,6 +378,66 @@ class Workspace:
             True if file exists, False otherwise
         """
         return self.get_file_path(filename).exists()
+
+    def _write_workspace_file(self, filename: str, content: bytes) -> None:
+        self._confined_files.resolve(filename).write_bytes(content)
+
+    def _read_workspace_file(self, filename: str) -> bytes:
+        return self._confined_files.resolve(filename).read_bytes()
+
+    def _delete_workspace_file(self, filename: str) -> None:
+        path = self._confined_files.resolve(filename)
+        if path.exists():
+            path.unlink()
+
+    def save_workspace_file(
+        self,
+        content: bytes,
+        filename: str,
+        media_type: str | None = None,
+    ) -> WorkspaceFileMetadata:
+        """Persist a non-tabular user file and return its metadata."""
+        safe_name = safe_data_filename(filename)
+        existing_names = set(self.get_metadata().files)
+        if safe_name in existing_names:
+            stem, suffix = os.path.splitext(safe_name)
+            counter = 2
+            while f"{stem}_{counter}{suffix}" in existing_names:
+                counter += 1
+            safe_name = f"{stem}_{counter}{suffix}"
+
+        import hashlib
+        workspace_file = WorkspaceFileMetadata(
+            name=safe_name,
+            filename=safe_name,
+            created_at=datetime.now(timezone.utc),
+            content_hash=hashlib.sha256(content).hexdigest(),
+            file_size=len(content),
+            media_type=media_type,
+        )
+        self._write_workspace_file(safe_name, content)
+        self._atomic_update_metadata(lambda metadata: metadata.add_file(workspace_file))
+        return workspace_file
+
+    def list_workspace_files(self) -> list[WorkspaceFileMetadata]:
+        return list(self.get_metadata().files.values())
+
+    def read_workspace_file(self, name: str) -> tuple[WorkspaceFileMetadata, bytes]:
+        workspace_file = self.get_metadata().files.get(name)
+        if workspace_file is None:
+            raise FileNotFoundError(name)
+        return workspace_file, self._read_workspace_file(workspace_file.filename)
+
+    def delete_workspace_file(self, name: str) -> bool:
+        workspace_file = self.get_metadata().files.get(name)
+        if workspace_file is None:
+            return False
+        self._delete_workspace_file(workspace_file.filename)
+        removed = [False]
+        self._atomic_update_metadata(
+            lambda metadata: removed.__setitem__(0, metadata.remove_file(name))
+        )
+        return removed[0]
     
     
     def delete_table(self, table_name: str) -> bool:

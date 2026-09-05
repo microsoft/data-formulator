@@ -219,6 +219,7 @@ Filter rules for propose_load_plan:
 
 Current date and time: {current_time}
 Currently loaded workspace tables: {table_names}
+Other workspace files available to inspect: {workspace_files}
 Connected data sources:
 {connector_summary}
 
@@ -2318,6 +2319,18 @@ class DataLoadingAgent:
                 message_code="TABLE_LIST_FAILED",
             )
 
+        workspace_files = "none"
+        try:
+            list_files = getattr(self.workspace, "list_workspace_files", None)
+            if callable(list_files):
+                files = list_files()
+                if files:
+                    workspace_files = ", ".join(
+                        f"files/{workspace_file.filename}" for workspace_file in files
+                    )
+        except Exception as e:
+            logger.warning("Could not list files for system prompt", exc_info=e)
+
         user_home = getattr(self.workspace, "user_home", None)
         connector_summary = _build_connector_summary_block(user_home)
 
@@ -2326,6 +2339,7 @@ class DataLoadingAgent:
 
         prompt = SYSTEM_PROMPT.format(
             table_names=table_names,
+            workspace_files=workspace_files,
             connector_summary=connector_summary,
             current_time=current_time,
         )

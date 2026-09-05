@@ -48,6 +48,7 @@ import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import SearchIcon from '@mui/icons-material/Search';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CloseIcon from '@mui/icons-material/Close';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -423,6 +424,14 @@ export const LogViewerDialog: FC<{
         }
     };
 
+    const handleCopySavedState = async () => {
+        try {
+            await navigator.clipboard.writeText(savedState);
+        } catch {
+            setError(t('logs.copySavedStateFailed', { defaultValue: 'Failed to copy saved state.' }));
+        }
+    };
+
     const handleRefresh = activeTab === 0 ? fetchLogs : fetchSavedState;
 
     return (
@@ -465,6 +474,19 @@ export const LogViewerDialog: FC<{
                                 sx={{ color: 'text.secondary' }}
                             >
                                 <SearchIcon fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>}
+                    {activeTab === 1 && <Tooltip title={t('logs.copySavedState', { defaultValue: 'Copy saved state' })}>
+                        <span>
+                            <IconButton
+                                size="small"
+                                onClick={handleCopySavedState}
+                                disabled={loading || !savedState}
+                                aria-label={t('logs.copySavedState', { defaultValue: 'Copy saved state' })}
+                                sx={{ color: 'text.secondary' }}
+                            >
+                                <ContentCopyIcon fontSize="small" />
                             </IconButton>
                         </span>
                     </Tooltip>}

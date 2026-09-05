@@ -64,6 +64,7 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
+import { uploadWorkspaceFile } from '../app/workspaceService';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
@@ -1287,6 +1288,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [filePreviewLoading, setFilePreviewLoading] = useState<boolean>(false);
     const [filePreviewError, setFilePreviewError] = useState<string | null>(null);
     const [filePreviewFiles, setFilePreviewFiles] = useState<File[]>([]);
+    const [filePreviewTableFiles, setFilePreviewTableFiles] = useState<File[]>([]);
+    const [filePreviewWorkspaceFiles, setFilePreviewWorkspaceFiles] = useState<File[]>([]);
     const [filePreviewActiveIndex, setFilePreviewActiveIndex] = useState<number>(0);
     const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
@@ -1372,6 +1375,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setFilePreviewLoading(false);
         setFilePreviewError(null);
         setFilePreviewFiles([]);
+        setFilePreviewTableFiles([]);
+        setFilePreviewWorkspaceFiles([]);
         // Reset URL tab state
         setTableURL("");
         setUrlAutoRefresh(false);
@@ -1396,24 +1401,29 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setFilePreviewFiles(selectedFiles);
         setFilePreviewError(null);
         setFilePreviewTables(null);
+        setFilePreviewTableFiles([]);
+        setFilePreviewWorkspaceFiles([]);
         setFilePreviewLoading(true);
 
         const previewTables: DictTable[] = [];
+        const tableFiles: File[] = [];
+        const workspaceFiles: File[] = [];
         const errors: string[] = [];
 
         const processFiles = async () => {
             for (const file of selectedFiles) {
                 const uniqueName = getUniqueTableName(file.name, existingNames);
+                const lowerName = file.name.toLowerCase();
                 const isTextFile = file.type === 'text/csv' || 
                     file.type === 'text/tab-separated-values' || 
                     file.type === 'application/json' ||
                     file.name.endsWith('.csv') || 
                     file.name.endsWith('.tsv') || 
-                    file.name.endsWith('.json');
+                    lowerName.endsWith('.json');
                 const isExcelFile = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
                     file.type === 'application/vnd.ms-excel' ||
-                    file.name.endsWith('.xlsx') || 
-                    file.name.endsWith('.xls');
+                    lowerName.endsWith('.xlsx') ||
+                    lowerName.endsWith('.xls');
 
                 if (isTextFile) {
                     try {
@@ -1421,6 +1431,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         const table = loadTextDataWrapper(uniqueName, text, file.type);
                         if (table) {
                             previewTables.push(table);
+                            tableFiles.push(file);
                         } else {
                             errors.push(t('upload.errors.failedToParse', { name: file.name }));
                         }
@@ -1447,6 +1458,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         : uniqueName;
                                     const table = createTableFromFromObjectArray(sheetTitle, sheet.data);
                                     previewTables.push(table);
+                                    tableFiles.push(file);
                                 }
                             } else {
                                 errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
@@ -1460,6 +1472,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             const tables = await loadBinaryDataWrapper(uniqueName, arrayBuffer);
                             if (tables.length > 0) {
                                 previewTables.push(...tables);
+                                tableFiles.push(...tables.map(() => file));
                             } else {
                                 errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
                             }
@@ -1470,10 +1483,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     continue;
                 }
 
-                errors.push(t('upload.errors.unsupportedFormat', { name: file.name }));
+                workspaceFiles.push(file);
             }
 
             setFilePreviewTables(previewTables.length > 0 ? previewTables : null);
+            setFilePreviewTableFiles(tableFiles);
+            setFilePreviewWorkspaceFiles(workspaceFiles);
             setFilePreviewError(errors.length > 0 ? errors.join(' ') : null);
             setFilePreviewLoading(false);
         };
@@ -1545,7 +1560,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             try {
                 await dispatch(loadTable({
                     table: tableWithSource,
-                    file: storeOnServer ? filePreviewFiles[filePreviewActiveIndex] || filePreviewFiles[0] : undefined,
+                    file: storeOnServer ? filePreviewTableFiles[filePreviewActiveIndex] : undefined,
                 }));
             } finally {
                 setTableLoading(false);
@@ -1555,7 +1570,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     };
 
     const handleFileLoadAllTables = async (): Promise<void> => {
-        if (!filePreviewTables || filePreviewTables.length === 0) {
+        if ((!filePreviewTables || filePreviewTables.length === 0) && filePreviewWorkspaceFiles.length === 0) {
             return;
         }
 
@@ -1565,10 +1580,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             // source files (sheets that existed before but are absent in the new batch).
             const seenSourceFiles = new Set<string>();
             if (storeOnServer) {
-                const newTableIds = new Set(filePreviewTables.map(t => t.id));
+                const newTableIds = new Set((filePreviewTables || []).map(t => t.id));
                 const sourceFileNames = new Set<string>();
-                for (let i = 0; i < filePreviewTables.length; i++) {
-                    const fn = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
+                for (let i = 0; i < (filePreviewTables?.length || 0); i++) {
+                    const fn = filePreviewTableFiles[i]?.name;
                     if (fn) sourceFileNames.add(fn);
                 }
                 for (const t of existingTables) {
@@ -1578,9 +1593,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 }
             }
 
-            for (let i = 0; i < filePreviewTables.length; i++) {
-                const table = filePreviewTables[i];
-                const fileName = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
+            for (let i = 0; i < (filePreviewTables?.length || 0); i++) {
+                const table = filePreviewTables![i];
+                const sourceFile = filePreviewTableFiles[i];
+                const fileName = sourceFile?.name;
                 const sourceConfig: DataSourceConfig = { type: 'file', fileName };
                 const tableWithSource = { ...table, source: sourceConfig };
 
@@ -1589,10 +1605,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 await dispatch(loadTable({
                     table: tableWithSource,
-                    file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
+                    file: storeOnServer ? sourceFile : undefined,
                     replaceSource: storeOnServer && isFirstForFile,
                 }));
             }
+            await Promise.all(filePreviewWorkspaceFiles.map(uploadWorkspaceFile));
         } finally {
             setTableLoading(false);
         }
@@ -1804,7 +1821,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     );
     const hasMultipleFileTables = (filePreviewTables?.length || 0) > 1;
     const hasMultipleUrlTables = (urlPreviewTables?.length || 0) > 1;
-    const showFilePreview = filePreviewLoading || !!filePreviewError || (filePreviewTables && filePreviewTables.length > 0);
+    const showFilePreview = filePreviewLoading || !!filePreviewError ||
+        (filePreviewTables && filePreviewTables.length > 0) || filePreviewWorkspaceFiles.length > 0;
     const showUrlPreview = urlPreviewLoading || !!urlPreviewError || (urlPreviewTables && urlPreviewTables.length > 0);
     const showExamples = exampleUrls.length > 0
         && (!urlPreviewTables || urlPreviewTables.length === 0)
@@ -2089,7 +2107,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <Input
                             slotProps={{
                                 input: {
-                                    accept: '.csv,.tsv,.json,.xlsx,.xls',
                                     multiple: true,
                                 },
                             }}
@@ -2148,21 +2165,42 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     activeIndex={filePreviewActiveIndex}
                                     onActiveIndexChange={setFilePreviewActiveIndex}
                                 />
+                                {filePreviewWorkspaceFiles.length > 0 && (
+                                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                        {filePreviewWorkspaceFiles.map(file => (
+                                            <Box key={`${file.name}-${file.size}`} sx={{
+                                                display: 'flex', alignItems: 'center', gap: 1,
+                                                px: 1.25, py: 0.75,
+                                                border: '1px solid', borderColor: 'divider', borderRadius: 1,
+                                            }}>
+                                                <UploadFileIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
+                                                <Typography noWrap sx={{ flex: 1, fontSize: textVar.sm }}>
+                                                    {file.name}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                                                    {t('upload.workspaceFile', { defaultValue: 'File' })}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                )}
                             </Box>
                         )}
 
-                        {filePreviewTables && filePreviewTables.length > 0 && (
+                        {((filePreviewTables && filePreviewTables.length > 0) || filePreviewWorkspaceFiles.length > 0) && (
                             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, alignItems: 'center' }}>
-                                <Button
-                                    variant="outlined"
-                                    onClick={handleFileLoadSingleTable}
-                                    disabled={filePreviewLoading || tableLoading}
-                                    startIcon={tableLoading ? <CircularProgress size={16} /> : undefined}
-                                    sx={{ textTransform: 'none', width: 240 }}
-                                >
-                                    {tableLoading ? t('upload.loadingTable') : t('upload.loadTable')}
-                                </Button>
-                                {hasMultipleFileTables && (
+                                {filePreviewWorkspaceFiles.length === 0 && (
+                                    <Button
+                                        variant="outlined"
+                                        onClick={handleFileLoadSingleTable}
+                                        disabled={filePreviewLoading || tableLoading}
+                                        startIcon={tableLoading ? <CircularProgress size={16} /> : undefined}
+                                        sx={{ textTransform: 'none', width: 240 }}
+                                    >
+                                        {tableLoading ? t('upload.loadingTable') : t('upload.loadTable')}
+                                    </Button>
+                                )}
+                                {(hasMultipleFileTables || filePreviewWorkspaceFiles.length > 0) && (
                                     <Button
                                         variant="contained"
                                         onClick={handleFileLoadAllTables}
@@ -2170,7 +2208,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         startIcon={tableLoading ? <CircularProgress size={16} color="inherit" /> : undefined}
                                         sx={{ textTransform: 'none', width: 240 }}
                                     >
-                                        {tableLoading ? t('upload.loadingTable') : t('upload.loadAllTables')}
+                                        {tableLoading
+                                            ? t('upload.loadingTable')
+                                            : t('upload.addAllToWorkspace', { defaultValue: 'Add all to workspace' })}
                                     </Button>
                                 )}
                             </Box>

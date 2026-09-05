@@ -19,7 +19,9 @@
     "orBrowse": "或浏览",
     "or": "或",
     "browse": "浏览",
-    "supportedFormats": "支持格式：CSV、TSV、JSON、Excel（xlsx、xls）",
+    "supportedFormats": "表格文件将转换为数据表，其他文件将保留在工作区中",
+    "workspaceFile": "文件",
+    "addAllToWorkspace": "全部添加到工作区",
     "placeholder": {
       "url": "输入 URL：https://example.com/data.json 或 /api/data",
       "paste": "在此粘贴数据（CSV、TSV 或 JSON 格式）"

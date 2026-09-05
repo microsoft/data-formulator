@@ -115,3 +115,25 @@ describe('dfSelectors.getActiveModel', () => {
     expect(dfSelectors.getActiveModel(state)).toEqual(userModel);
   });
 });
+
+describe('dfSelectors.selectSessionEmpty', () => {
+  const makeEmptySession = (workspaceFileCount: number): DataFormulatorState => ({
+    inputTables: [],
+    derivedTables: [],
+    textTurns: [],
+    draftNodes: [],
+    generatedReports: [],
+    dataLoadingChatMessages: [],
+    analystChatPending: null,
+    dataLoadingChatPending: null,
+    workspaceFileCount,
+  } as unknown as DataFormulatorState);
+
+  it('keeps a workspace that contains a non-table file', () => {
+    expect(dfSelectors.selectSessionEmpty(makeEmptySession(1))).toBe(false);
+  });
+
+  it('discards a workspace with no tables, files, or interactions', () => {
+    expect(dfSelectors.selectSessionEmpty(makeEmptySession(0))).toBe(true);
+  });
+});

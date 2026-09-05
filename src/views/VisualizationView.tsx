@@ -97,6 +97,9 @@ import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
 import { LocalFolderPanel } from './UnifiedDataUploadDialog';
+import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
+import { ExplanationCanvas } from './ExplanationCanvas';
+import { explanationContent } from '../app/explanationPreview';
 
 export interface VisPanelProps { }
 
@@ -1787,12 +1790,15 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const focusedFormTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
         : undefined;
+    const focusedExplanationTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain')
+        : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = (focusedId as { type: 'chart'; chartId: string }).chartId;
-        const chart = allCharts.find(c => c.id === chartId);
+        if (focusedId.type !== 'chart') return undefined;
+        const chart = allCharts.find(c => c.id === focusedId.chartId);
         return chart?.tableRef;
     }, [focusedId, allCharts]);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
@@ -1807,6 +1813,21 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
 
+    if (focusedId?.type === 'file') {
+        return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
+    }
+    if (focusedId?.type === 'explanation') {
+        return <ExplanationCanvas {...focusedId} />;
+    }
+    if (focusedExplanationTurn) {
+        return <ExplanationCanvas
+            content={explanationContent(
+                focusedExplanationTurn.content,
+                focusedExplanationTurn.answered ? focusedExplanationTurn.answer : undefined,
+            )}
+            textTurnId={focusedExplanationTurn.id}
+        />;
+    }
     if (focusedOperationTurn?.dataOperation) {
         return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;
     }

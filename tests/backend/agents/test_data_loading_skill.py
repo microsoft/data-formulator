@@ -10,6 +10,10 @@ import pytest
 from data_formulator.agents.agent_data_loading_chat import TOOLS
 from data_formulator.analyst.skills import build_registry
 from data_formulator.analyst.skills.base import SkillContext
+from data_formulator.analyst.workspace_inputs import (
+    WorkspaceInputManifest,
+    WorkspaceInputRef,
+)
 from data_formulator.data_operations import DataOperationRepository
 from data_formulator.datalake.catalog_cache import save_catalog
 from data_formulator.datalake.workspace import Workspace
@@ -103,12 +107,24 @@ def test_empty_workspace_preloads_data_loading_guidance(tmp_path: Path) -> None:
     from data_formulator.analyst.agent import AnalystAgent
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
-    agent._loaded_skills = agent._initial_loaded_skills([])
+    empty_inputs = WorkspaceInputManifest(inputs=())
+    data_inputs = WorkspaceInputManifest(inputs=(
+        WorkspaceInputRef(
+            id="data:orders",
+            kind="data",
+            display_name="orders",
+            media_type="application/vnd.data-formulator.table",
+            size_bytes=None,
+            content_hash=None,
+            capabilities=("read",),
+        ),
+    ))
+    agent._loaded_skills = agent._initial_loaded_skills(empty_inputs)
 
     prompt = agent._build_system_prompt()
 
     assert agent._loaded_skills == {"core", "data-loading"}
-    assert agent._initial_loaded_skills([{"name": "orders"}]) == {"core"}
+    assert agent._initial_loaded_skills(data_inputs) == {"core"}
     assert "[SKILL: data-loading] Preloaded for this run" in prompt
     assert "When nothing is loaded yet" in prompt
     assert "Call `summarize_data_sources({})`" in prompt
@@ -155,7 +171,9 @@ def test_resume_rehydrates_preloaded_data_loading_skill(tmp_path: Path) -> None:
     from data_formulator.analyst.agent import AnalystAgent
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
-    agent._loaded_skills = agent._initial_loaded_skills([])
+    agent._loaded_skills = agent._initial_loaded_skills(
+        WorkspaceInputManifest(inputs=()),
+    )
     system_prompt = agent._build_system_prompt()
     agent._loaded_skills = {"core"}
 

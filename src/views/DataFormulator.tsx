@@ -66,7 +66,7 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { AppDispatch, store } from '../app/store';
 import { generateUUID } from '../app/identity';
@@ -360,6 +360,25 @@ export const DataFormulatorFC = ({ }) => {
     // The dialog needs a workspace id to talk to the backend, but opening it is
     // not entering a session: stay on the landing page until data lands.
     const provisionalSession = uploadDialogOpen && sessionEmpty;
+
+    const closeUploadDialog = async () => {
+        setUploadDialogOpen(false);
+        const state = store.getState();
+        const workspaceId = state.activeWorkspace?.id;
+        if (workspaceId && dfSelectors.selectSessionEmpty(state)) {
+            try {
+                const files = await listWorkspaceFiles();
+                dispatch(dfActions.setWorkspaceFileCount(files.length));
+                const currentWorkspaceId = store.getState().activeWorkspace?.id;
+                if (files.length === 0 && currentWorkspaceId === workspaceId) {
+                    dispatch(dfActions.setActiveWorkspace(null));
+                }
+            } catch {
+                // Preserve the workspace when its backend contents cannot be checked.
+            }
+        }
+        refreshPageConnectors();
+    };
 
     // Seed the Data Loading chat through the single redux `pending` slot,
     // then navigate to the extract tab. This is the one channel that
@@ -1134,18 +1153,7 @@ export const DataFormulatorFC = ({ }) => {
                 )}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
-                    onClose={() => {
-                        setUploadDialogOpen(false);
-                        // Nothing was added, so the workspace minted to open the
-                        // dialog is discarded rather than left as a stub session.
-                        // Read live state: a table loaded immediately before close
-                        // lands in the same batch, leaving the rendered flag stale
-                        // and orphaning the data under a discarded workspace.
-                        if (dfSelectors.selectSessionEmpty(store.getState())) {
-                            dispatch(dfActions.setActiveWorkspace(null));
-                        }
-                        refreshPageConnectors();
-                    }}
+                    onClose={closeUploadDialog}
                     initialTab={uploadDialogInitialTab}
                     onConnectorsChanged={handleConnectorsChanged}
                 />

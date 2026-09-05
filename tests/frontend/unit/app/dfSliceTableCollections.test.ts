@@ -6,6 +6,7 @@ import {
   dfSelectors,
   fetchFieldSemanticType,
 } from "../../../../src/app/dfSlice";
+import { ROOTLESS_THREAD_ID } from "../../../../src/components/ComponentType";
 
 const sourceTable = {
   kind: "table" as const,
@@ -36,6 +37,27 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it("preserves generalized computation sources on derived tables", () => {
+    const withMixedSources = {
+      ...derivedTable,
+      derive: {
+        ...derivedTable.derive,
+        inputSources: [
+          { id: "data:hash:orders", kind: "data", displayName: "Orders" },
+          { id: "file:hash:notes.docx", kind: "file", displayName: "Notes" },
+        ],
+      },
+    };
+
+    const state = dataFormulatorReducer(
+      undefined,
+      dfActions.insertDerivedTables(withMixedSources as any),
+    );
+
+    expect(state.derivedTables[0].derive?.inputSources).toEqual(withMixedSources.derive.inputSources);
+    expect(state.derivedTables[0].derive?.source).toEqual(["orders"]);
+  });
+
   it("stores a Flint theme and returns an active custom variant to the base chart", () => {
     let state = dataFormulatorReducer(
       undefined,
@@ -286,6 +308,193 @@ describe("split table collections", () => {
     });
   });
 
+  it("replaces failed drafts under the same parent and transfers focus", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateDeriveStatus({ nodeId: "draft-failed", status: "error" })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.setFocused({ type: "draft", draftId: "draft-failed" })
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-retry",
+        displayId: "Retry",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+
+    expect(state.draftNodes.map(draft => draft.id)).toEqual(["draft-retry"]);
+    expect(state.focusedId).toEqual({ type: "draft", draftId: "draft-retry" });
+  });
+
+  it("retains the Analyst-selected sources on a failed draft", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders", "customers"],
+        interaction: [],
+      })
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateDraftSources({ draftId: "draft-failed", source: ["orders"] })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateDeriveStatus({ nodeId: "draft-failed", status: "error" })
+    );
+
+    expect(state.draftNodes[0].derive.source).toEqual(["orders"]);
+  });
+
+  it("clears an orphaned continuation answer when its failed draft is deleted", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-answer",
+        displayId: "Answer",
+        textKind: "explain",
+        content: "Previous explanation",
+        parentNodeId: "orders",
+        answered: true,
+        answer: "visualize conversation turns",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft-failed"));
+
+    expect(state.textTurns[0].answered).toBe(false);
+    expect(state.textTurns[0]).not.toHaveProperty("answer");
+  });
+
+  it("keeps a continuation answer when another child artifact remains", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-answer",
+        displayId: "Answer",
+        textKind: "explain",
+        content: "Previous explanation",
+        parentNodeId: "orders",
+        answered: true,
+        answer: "visualize conversation turns",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-child",
+        displayId: "Child",
+        textKind: "explain",
+        content: "Another response",
+        parentNodeId: "textTurn-answer",
+        createdAt: 2,
+      })
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft-failed"));
+
+    expect(state.textTurns[0].answered).toBe(true);
+    expect(state.textTurns[0].answer).toBe("visualize conversation turns");
+  });
+
+  it("resolves focused draft canvas context through its parent turn", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-answer",
+        displayId: "Answer",
+        textKind: "explain",
+        content: "Previous explanation",
+        parentNodeId: "orders",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.setFocused({ type: "draft", draftId: "draft-failed" })
+    );
+
+    expect(dfSelectors.getEffectiveTableId(state)).toBe("orders");
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "table", tableId: "orders" });
+  });
+
+  it("passes workspace file focus through to the canvas without a table context", () => {
+    const state = dataFormulatorReducer(
+      undefined,
+      dfActions.setFocused({ type: "file", fileName: "notes.docx" })
+    );
+
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "file", fileName: "notes.docx" });
+    expect(dfSelectors.getEffectiveTableId(state)).toBeUndefined();
+  });
+
   it("repairs authored child edges when a text turn is removed", () => {
     let state = dataFormulatorReducer(
       undefined,
@@ -459,6 +668,45 @@ describe("split table collections", () => {
     expect(state.textTurns[0].parentNodeId).toBe("orders");
     expect(state.draftNodes[0].parentNodeId).toBe("orders");
     expect(state.draftNodes[0].derive.trigger.tableId).toBe("orders");
+    expect(state.draftNodes[0].derive.source).toEqual([]);
+  });
+
+  it("removes deleted data provenance while retaining file provenance", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.insertDerivedTables({
+        ...derivedTable,
+        derive: {
+          ...derivedTable.derive,
+          inputSources: [
+            { id: "data:orders-v1:orders_workspace", kind: "data", displayName: "orders_workspace" },
+            { id: "file:docx-v1:notes.docx", kind: "file", displayName: "notes.docx" },
+          ],
+        },
+      } as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addChart({
+        id: "chart-summary",
+        chartType: "Bar Chart",
+        tableRef: "summary",
+        source: "user",
+        encodingMap: {},
+      } as any)
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeTableLocally("orders"));
+
+    expect(state.derivedTables[0].derive?.source).toEqual([]);
+    expect(state.derivedTables[0].derive?.trigger.tableId).toBe(ROOTLESS_THREAD_ID);
+    expect(state.derivedTables[0].derive?.inputSources).toEqual([
+      { id: "file:docx-v1:notes.docx", kind: "file", displayName: "notes.docx" },
+    ]);
   });
 });
 

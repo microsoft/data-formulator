@@ -31,7 +31,9 @@ from typing import Any, Generator
 
 from data_formulator.agents.agent_utils import generate_data_summary
 from data_formulator.agents.context import handle_inspect_source_data
+from data_formulator.datalake.workspace_file_content import read_workspace_file_text
 from data_formulator.security.code_signing import sign_result
+from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine, WorkspaceInputManifest
 
 from data_formulator.analyst.skills.base import (
     Event,
@@ -40,6 +42,58 @@ from data_formulator.analyst.skills.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_input_sources(
+    action: dict[str, Any],
+    manifest: WorkspaceInputManifest | None,
+) -> list[dict[str, str]]:
+    """Resolve action provenance to exact run-manifest inputs."""
+    by_id = {item.id: item for item in manifest.inputs} if manifest is not None else {}
+    raw_sources = action.get("input_sources")
+    if raw_sources is None:
+        legacy_names = action.get("input_tables", [])
+        if not isinstance(legacy_names, list):
+            raise ValueError("input_tables must be an array")
+        data_by_name = {
+            item.display_name: item for item in manifest.data
+        } if manifest is not None else {}
+        normalized = []
+        for raw_name in legacy_names:
+            name = str(raw_name).strip()
+            item = data_by_name.get(name)
+            if manifest is not None and item is None:
+                raise ValueError(f"Unknown legacy input table: {name}")
+            normalized.append({
+                "id": item.id if item is not None else name,
+                "kind": "data",
+                "display_name": item.display_name if item is not None else name,
+            })
+        return normalized
+
+    if not isinstance(raw_sources, list):
+        raise ValueError("input_sources must be an array")
+    normalized = []
+    seen: set[str] = set()
+    for raw_source in raw_sources:
+        if not isinstance(raw_source, dict):
+            raise ValueError("Each input source must be an object")
+        input_id = str(raw_source.get("id", "")).strip()
+        kind = raw_source.get("kind")
+        if not input_id or kind not in {"data", "file"}:
+            raise ValueError("Each input source requires a valid id and kind")
+        item = by_id.get(input_id)
+        if manifest is not None and (item is None or item.kind != kind):
+            raise ValueError(f"Unknown or mismatched input source: {input_id}")
+        if input_id in seen:
+            continue
+        seen.add(input_id)
+        normalized.append({
+            "id": input_id,
+            "kind": kind,
+            "display_name": item.display_name if item is not None else input_id,
+        })
+    return normalized
 
 class CoreSkill:
     """The core skill processor: the ``explore`` / ``inspect_source_data`` tool
@@ -83,6 +137,47 @@ class CoreSkill:
                 args.get("table_names", []), input_tables, ctx.workspace,
             )
             return ToolResult(text=text)
+        if name == "read_workspace_file":
+            result = read_workspace_file_text(ctx.workspace, args.get("name", ""))
+            suffix = "\n\n[Output truncated]" if result.truncated else ""
+            return ToolResult(text=f"[WORKSPACE FILE: {result.name}]\n\n{result.content}{suffix}")
+        input_tool_names = {
+            "list_workspace_inputs",
+            "preview_workspace_input",
+            "read_workspace_input",
+            "search_workspace_inputs",
+        }
+        input_engine = (
+            WorkspaceInputEngine(ctx.workspace, input_tables)
+            if name in input_tool_names else None
+        )
+        if name == "list_workspace_inputs" and input_engine is not None:
+            return ToolResult(text=input_engine.list_inputs(
+                kinds=args.get("kinds"),
+                query=args.get("query", ""),
+            ))
+        if name == "preview_workspace_input" and input_engine is not None:
+            return ToolResult(text=input_engine.preview_input(
+                args.get("input_id", ""),
+                locator=args.get("locator"),
+                options=args.get("options"),
+                limit=args.get("limit", 50),
+            ))
+        if name == "read_workspace_input" and input_engine is not None:
+            return ToolResult(text=input_engine.read_input(
+                args.get("input_id", ""),
+                locator=args.get("locator"),
+                options=args.get("options"),
+                limit=args.get("limit", 200),
+            ))
+        if name == "search_workspace_inputs" and input_engine is not None:
+            return ToolResult(text=input_engine.search_inputs(
+                args.get("query", ""),
+                input_ids=args.get("input_ids"),
+                kinds=args.get("kinds"),
+                options=args.get("options"),
+                max_results=args.get("max_results", 20),
+            ))
         return ToolResult(text=f"core has no tool '{name}'.")
 
     # ------------------------------------------------------------------
@@ -123,11 +218,30 @@ class CoreSkill:
         subtitle = action.get("subtitle", "")
         step_index = int((ctx.payload or {}).get("completed_step_count", 0)) + 1
 
+        try:
+            input_sources = _normalize_input_sources(
+                action,
+                (ctx.payload or {}).get("workspace_inputs"),
+            )
+        except ValueError as exc:
+            message = str(exc)
+            yield {
+                "type": "error",
+                "message": message,
+                "message_code": "agent.parseActionFailed",
+            }
+            return f"[OBSERVATION – Step {step_index} FAILED]\n\nError: {message}"
+
         yield {
             "type": "action",
             "action": "visualize",
             "display_instruction": display_instruction,
-            "input_tables": action.get("input_tables", []),
+            "input_sources": input_sources,
+            "input_tables": [
+                source["display_name"]
+                for source in input_sources
+                if source["kind"] == "data"
+            ],
         }
 
         viz_result = ctx.runtime.run_visualize_code(

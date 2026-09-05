@@ -449,6 +449,7 @@
     "textTurnEarlier_other": "之前的 {{count}} 条回复",
     "textTurnCollapse": "收起",
     "usingSources": "使用",
+    "switchingSources": "切换到",
     "hmm": "嗯...",
     "oops": "出错了...",
     "completed": "已完成",

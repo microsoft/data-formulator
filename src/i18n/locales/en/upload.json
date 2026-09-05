@@ -19,7 +19,9 @@
     "orBrowse": "or Browse",
     "or": "or",
     "browse": "Browse",
-    "supportedFormats": "Supported: CSV, TSV, JSON, Excel (xlsx, xls)",
+    "supportedFormats": "Tabular files become tables; other files are kept in the workspace",
+    "workspaceFile": "File",
+    "addAllToWorkspace": "Add all to workspace",
     "placeholder": {
       "url": "Enter URL: https://example.com/data.json or /api/data",
       "paste": "Paste your data here (CSV, TSV, or JSON format)"
