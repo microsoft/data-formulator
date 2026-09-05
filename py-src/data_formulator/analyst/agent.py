@@ -62,6 +62,12 @@ from data_formulator.analyst.skills import (
     build_registry,
 )
 from data_formulator.analyst.tools import build_tools
+from data_formulator.analyst.workspace_inputs import (
+    WorkspaceInputManifest,
+    build_workspace_input_manifest,
+    build_workspace_input_preview,
+    render_workspace_input_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +87,46 @@ _CORE_SKILL = "core"
 # emitted match — never the same text pasted by a user or echoed by the model.
 _SKILL_LOADED_BANNER = "[SKILL LOADED: {name}]"
 _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
+_SKILL_PRELOADED_RE = re.compile(
+    r"\[SKILL: ([^\]]+)\] Preloaded for this run"
+)
+
+_TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
+    "summarize_data_sources": (),
+    "list_data": ("source_id", "path", "filter_by"),
+    "find_data": ("query", "source_id", "path", "filter_by"),
+    "describe_data": ("source_id", "table_key"),
+    "probe_data": ("source_id", "table_key", "query"),
+    "describe_connector": ("source_type",),
+    "inspect_chart": ("chart_id",),
+    "search_data_tables": ("query",),
+    "search_knowledge": ("query",),
+    "list_workspace_inputs": ("kinds", "query"),
+    "preview_workspace_input": ("input_id", "locator"),
+    "read_workspace_input": ("input_id", "locator"),
+    "search_workspace_inputs": ("query", "input_ids", "kinds"),
+    "read_workspace_file": ("name",),
+}
+
+
+def _tool_progress_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Return model arguments safe and useful for user-facing progress."""
+    progress_args = {
+        key: args[key]
+        for key in _TOOL_PROGRESS_ARG_KEYS.get(tool_name, ())
+        if key in args
+    }
+    if tool_name == "probe_data" and isinstance(progress_args.get("query"), dict):
+        query = progress_args["query"]
+        progress_args["query"] = {
+            key: query[key]
+            for key in ("aggregates", "group_by", "limit")
+            if key in query
+        }
+        filters = query.get("filters")
+        if isinstance(filters, list) and filters:
+            progress_args["query"]["filter_count"] = len(filters)
+    return progress_args
 
 # ── Action-argument coercion ──────────────────────────────────────────────
 # Weaker models sometimes JSON-encode a nested action argument as a string
@@ -92,7 +138,7 @@ _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
 def _rescue_unpack_json_strings(data: dict) -> None:
     """In-place: parse values that are JSON-encoded strings back to objects."""
     for key in (
-        "chart", "input_tables", "questions", "options", "followups",
+        "chart", "input_sources", "input_tables", "questions", "options", "followups",
         "field_metadata", "field_display_names",
     ):
         val = data.get(key)
@@ -101,6 +147,18 @@ def _rescue_unpack_json_strings(data: dict) -> None:
                 data[key] = json.loads(val)
             except (json.JSONDecodeError, ValueError):
                 pass
+
+
+def _missing_action_fields(required: list[str], action_data: dict[str, Any]) -> list[str]:
+    """Return missing action fields, including provenance compatibility rules."""
+    missing = []
+    for field in required:
+        if field == "input_sources":
+            if "input_sources" not in action_data and "input_tables" not in action_data:
+                missing.append(field)
+        elif field not in action_data or not action_data.get(field):
+            missing.append(field)
+    return missing
 
 
 # ── Live tool-argument streaming (design-docs/36 §5) ───────────────────────
@@ -350,6 +408,16 @@ class AnalystAgent:
                 legal.update(meta.action_names)
         return frozenset(legal)
 
+    @staticmethod
+    def _initial_loaded_skills(
+        workspace_inputs: WorkspaceInputManifest,
+    ) -> set[str]:
+        """Return the skill gates that must be open before the first LLM call."""
+        loaded = {_CORE_SKILL}
+        if not workspace_inputs.has_analysis_capability:
+            loaded.add("data-loading")
+        return loaded
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -387,17 +455,27 @@ class AnalystAgent:
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
         final_status = "max_iterations"
+        workspace_files = sorted(
+            self.workspace.list_workspace_files(), key=lambda item: item.name.lower(),
+        )
+        workspace_inputs = build_workspace_input_manifest(
+            input_tables,
+            workspace_files,
+            self.workspace,
+        )
 
-        # Reset per-run skill + payload state. ``core`` is auto-loaded: its
-        # baseline tools + actions are always available and its SKILL.md body is
-        # appended to the system frame (see _build_system_prompt). Gated skills
-        # are added to this set as the model loads them. The payload carries
+        # Reset per-run skill + payload state. ``core`` is always loaded. With
+        # no analysis input tables, data loading is the immediate workflow, so expose
+        # its tools, actions, and guidance before the first model call instead
+        # of spending a round on load_skill. Other gated skills are added as the
+        # model loads them. The payload carries
         # everything a dispatched skill handler needs to build its own context
         # (e.g. the report skill rebuilds [AVAILABLE CHARTS] + thread
         # context).
-        self._loaded_skills = {_CORE_SKILL}
+        self._loaded_skills = self._initial_loaded_skills(workspace_inputs)
         self._run_payload = {
             "input_tables": input_tables,
+            "workspace_inputs": workspace_inputs,
             "charts": charts or [],
             "focused_thread": focused_thread,
             "other_threads": other_threads,
@@ -436,6 +514,8 @@ class AnalystAgent:
                     attached_images=attached_images,
                     charts=charts,
                     scratch_files=scratch_files,
+                    workspace_files=workspace_files,
+                    workspace_inputs=workspace_inputs,
                 )
                 rlog.log(
                     "context_built",
@@ -661,6 +741,10 @@ class AnalystAgent:
             m = _SKILL_LOADED_RE.match(content)
             if m:
                 name = self.registry.canonical_name(m.group(1).strip())
+                if self.registry.has(name):
+                    self._loaded_skills.add(name)
+            for preloaded in _SKILL_PRELOADED_RE.finditer(content):
+                name = self.registry.canonical_name(preloaded.group(1).strip())
                 if self.registry.has(name):
                     self._loaded_skills.add(name)
 
@@ -1165,15 +1249,18 @@ class AnalystAgent:
         context_lines = []
         if has_primary_tables:
             context_lines.append(
-                "- **[PRIMARY TABLE(S)]**: The table(s) the user is focused on. "
-                "Prioritize these, but freely use other available tables if needed."
+                "- **[PRIMARY ANALYSIS INPUTS]**: The analysis input table(s) the "
+                "user is focused on. Prioritize these, but freely use other "
+                "analysis inputs if needed."
             )
             context_lines.append(
-                "- **[OTHER AVAILABLE TABLES]**: Additional tables in the workspace."
+                "- **[OTHER ANALYSIS INPUTS]**: Additional materialized input "
+                "tables the analyst can read directly."
             )
         else:
             context_lines.append(
-                "- **[AVAILABLE TABLES]**: All tables in the workspace."
+                "- **[ANALYSIS INPUT TABLES]**: All materialized root data inputs "
+                "the analyst can read directly."
             )
         context_lines.append(
             "  Use `inspect_source_data` to get detailed stats and sample rows. "
@@ -1234,6 +1321,12 @@ class AnalystAgent:
             f"\n\n[SKILL: {_CORE_SKILL}] Always-on baseline — these tools and "
             f"actions are active for the whole run.\n\n{core_body}"
         )
+        for name in sorted(self._loaded_skills - {_CORE_SKILL}):
+            body = self.registry.load_body(name)
+            prompt += (
+                f"\n\n[SKILL: {name}] Preloaded for this run — its tools and "
+                f"actions are active now.\n\n{body}"
+            )
 
         if self._knowledge_store:
             knowledge_rules = self._knowledge_store.load_always_apply_rules()
@@ -1262,9 +1355,20 @@ class AnalystAgent:
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
+        workspace_files: list[Any] | None = None,
+        workspace_inputs: WorkspaceInputManifest | None = None,
     ) -> list[dict]:
         """Build the initial messages with 3-tier context."""
         table_summaries = self._build_lightweight_table_context(input_tables, primary_tables=primary_tables)
+        input_manifest = workspace_inputs or build_workspace_input_manifest(
+            input_tables, workspace_files or [], self.workspace,
+        )
+        input_preview = build_workspace_input_preview(input_manifest, self.workspace)
+        user_content = render_workspace_input_context(
+            input_manifest,
+            input_preview,
+            table_summaries,
+        ) + "\n\n"
 
         focused_block = ""
         if focused_thread:
@@ -1274,10 +1378,6 @@ class AnalystAgent:
         if other_threads:
             peripheral_block = self._build_peripheral_thread_context(other_threads)
 
-        if primary_tables:
-            user_content = f"{table_summaries}\n\n"
-        else:
-            user_content = f"[AVAILABLE TABLES]\n\n{table_summaries}\n\n"
         if focused_block:
             user_content += f"{focused_block}\n\n"
         if peripheral_block:
@@ -1597,10 +1697,14 @@ class AnalystAgent:
                     yield {
                         "type": "tool_start",
                         "tool": tool_name,
+                        "args": _tool_progress_args(tool_name, tool_args),
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
                         "skill": tool_args.get("name") if tool_name == "load_skill" else None,
+                        "query": tool_args.get("query") if tool_name in (
+                            "search_data_tables", "search_knowledge", "search_workspace_inputs",
+                        ) else None,
                     }
 
                     tool_t0 = time.time()
@@ -1807,7 +1911,7 @@ class AnalystAgent:
         # Pre-dispatch completeness check (belt-and-suspenders on top of the
         # skill handler's own validation). Missing fields → correct + retry.
         required = self.registry.action_required_fields(chosen_name)
-        missing = [f for f in required if not action_data.get(f)]
+        missing = _missing_action_fields(required, action_data)
         if missing:
             correction = (
                 f"The '{chosen_name}' action is missing required field(s): "

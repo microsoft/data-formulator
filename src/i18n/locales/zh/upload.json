@@ -4,7 +4,7 @@
     "sampleDatasets": "示例数据集",
     "sampleDatasetsDesc": "精选示例数据集",
     "uploadFile": "上传文件",
-    "uploadFileDesc": "CSV、TSV、JSON 或 Excel",
+    "uploadFileDesc": "数据表、Excel 工作簿或文档",
     "pasteData": "粘贴数据",
     "pasteDataDesc": "从剪贴板粘贴",
     "extractData": "数据加载助手",
@@ -19,7 +19,16 @@
     "orBrowse": "或浏览",
     "or": "或",
     "browse": "浏览",
-    "supportedFormats": "支持格式：CSV、TSV、JSON、Excel（xlsx、xls）",
+    "supportedFormats": "CSV、TSV 和 JSON 将转换为数据表；Excel 和其他文件将保留给智能助手处理",
+    "workspaceFile": "文件",
+    "previewUnavailable": "无法快速预览此文件。",
+    "emptyFile": "此文件为空。",
+    "previewTruncated": "预览内容已截断。",
+    "removeFile": "移除文件",
+    "filesSelected": "已选择 {{count}} 个文件",
+    "addMoreFiles": "添加更多文件",
+    "addToWorkspace": "添加到工作区",
+    "addAllToWorkspace": "全部添加到工作区",
     "placeholder": {
       "url": "输入 URL：https://example.com/data.json 或 /api/data",
       "paste": "在此粘贴数据（CSV、TSV 或 JSON 格式）"
@@ -43,10 +52,10 @@
     "agentChatSuggestionsLabel": "试试这样问",
     "agentChatSendTooltip": "开始与助手对话",
     "dataSourcesLabel": "已连接：",
-    "addSourceLabel": "或直接添加数据：",
+    "addSourceLabel": "添加数据：",
     "agentChatQuickAction": {
       "connect": "帮我连接数据源",
-      "askConnected": "已连接的数据源里有哪些数据？"
+      "askConnected": "我的数据源中有哪些可用数据？"
     },
     "agentChatSuggestion": {
       "askConnected": "已连接的数据源里有哪些数据集？",
@@ -69,6 +78,7 @@
     "addConnectionDesc": "连接到实时数据库",
     "connectorConnected": "已连接",
     "connectorDisconnected": "点击连接",
+    "connectorNotConnected": "未连接",
     "pickDataSourceType": "选择数据源类型以创建新连接。",
     "nameYourConnection": "为您的 {{type}} 连接命名。",
     "connectionName": "连接名称",

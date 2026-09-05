@@ -583,8 +583,8 @@ def generate_data_summary(
     Use WorkspaceWithTempData context manager to mount temp tables to workspace.
 
     When ``primary_tables`` is provided, the output is structured into tiered sections:
-    - **[PRIMARY TABLE]** / **[PRIMARY TABLES]**: Full detail for the tables the user is focused on.
-    - **[OTHER AVAILABLE TABLES]**: Full detail for the remaining tables.
+    - **[PRIMARY ANALYSIS INPUTS]**: Full detail for the input tables the user is focused on.
+    - **[OTHER ANALYSIS INPUTS]**: Full detail for the remaining input tables.
     Sections are omitted when empty.
 
     Args:
@@ -737,10 +737,9 @@ def generate_data_summary(
 
         sections = []
         if primary_parts:
-            header = "[PRIMARY TABLE]" if len(primary_parts) == 1 else "[PRIMARY TABLES]"
-            sections.append(header + "\n\n" + separator.join(primary_parts))
+            sections.append("[PRIMARY ANALYSIS INPUTS]\n\n" + separator.join(primary_parts))
         if other_parts:
-            sections.append("[OTHER AVAILABLE TABLES]\n\n" + separator.join(other_parts))
+            sections.append("[OTHER ANALYSIS INPUTS]\n\n" + separator.join(other_parts))
         return "\n\n".join(sections)
 
     # Join with visual separators (no tiering)

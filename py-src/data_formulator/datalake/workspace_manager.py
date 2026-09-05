@@ -46,6 +46,49 @@ def _strip_sensitive(state: dict) -> dict:
     return {k: v for k, v in state.items() if k not in _SENSITIVE_FIELDS}
 
 
+def _session_source_ids(state: dict) -> list[str]:
+    """Summarize input-table origins for lightweight session grouping."""
+    tables = state.get("inputTables")
+    if not isinstance(tables, list):
+        tables = state.get("tables")
+    if not isinstance(tables, list):
+        return []
+
+    source_ids: set[str] = set()
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        source = table.get("source")
+        source_config = table.get("sourceConfig")
+
+        if isinstance(source, dict) and source.get("kind") == "connector":
+            connector_id = source.get("connectorId") or source.get("connector_id")
+            if isinstance(connector_id, str) and connector_id:
+                source_ids.add(connector_id)
+                continue
+
+        config = source_config if isinstance(source_config, dict) else source
+        if not isinstance(config, dict):
+            continue
+        connector_id = (
+            config.get("connectorId")
+            or config.get("connector_id")
+            or config.get("sourceId")
+            or config.get("source_id")
+        )
+        if isinstance(connector_id, str) and connector_id:
+            source_ids.add(connector_id)
+            continue
+
+        source_type = config.get("type")
+        if source_type == "example":
+            source_ids.add("sample_datasets")
+        elif source_type in {"file", "paste", "url", "stream", "extract"}:
+            source_ids.add("upload")
+
+    return sorted(source_ids)
+
+
 class WorkspaceManager:
     """
     Manages the set of workspaces for a single user.
@@ -87,6 +130,7 @@ class WorkspaceManager:
         *,
         table_count: Optional[int] = None,
         chart_count: Optional[int] = None,
+        source_ids: Optional[list[str]] = None,
         provisional: Optional[bool] = None,
     ) -> None:
         """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
@@ -101,6 +145,7 @@ class WorkspaceManager:
 
         # Preserve createdAt if the meta file already exists.
         created_at = now_iso
+        existing: dict = {}
         if meta_file.exists():
             try:
                 existing = json.loads(meta_file.read_text(encoding="utf-8"))
@@ -121,8 +166,16 @@ class WorkspaceManager:
         }
         if table_count is not None:
             meta["tableCount"] = table_count
+        elif existing.get("tableCount") is not None:
+            meta["tableCount"] = existing["tableCount"]
         if chart_count is not None:
             meta["chartCount"] = chart_count
+        elif existing.get("chartCount") is not None:
+            meta["chartCount"] = existing["chartCount"]
+        if source_ids is not None:
+            meta["sourceIds"] = source_ids
+        elif isinstance(existing.get("sourceIds"), list):
+            meta["sourceIds"] = existing["sourceIds"]
         if provisional:
             meta["provisional"] = True
         meta_file.write_text(
@@ -217,6 +270,7 @@ class WorkspaceManager:
                 "updated_at": meta.get("updatedAt"),
                 "table_count": tc,
                 "chart_count": cc,
+                "source_ids": meta.get("sourceIds", []),
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -497,12 +551,20 @@ class WorkspaceManager:
 
         aw = clean_state.get("activeWorkspace")
         dn = aw["displayName"] if isinstance(aw, dict) and aw.get("displayName") else workspace_id
-        tables = clean_state.get("tables")
+        tables = clean_state.get("inputTables")
+        if not isinstance(tables, list):
+            tables = clean_state.get("tables")
         tc = len(tables) if isinstance(tables, list) else None
         charts = clean_state.get("charts")
         cc = len(charts) if isinstance(charts, list) else None
         # Saving state is the moment a session stops being provisional.
-        self._write_meta(workspace_id, dn, table_count=tc, chart_count=cc)
+        self._write_meta(
+            workspace_id,
+            dn,
+            table_count=tc,
+            chart_count=cc,
+            source_ids=_session_source_ids(clean_state),
+        )
 
         logger.debug(f"Saved session state to {state_file}")
 

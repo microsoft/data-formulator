@@ -47,6 +47,8 @@ _SAMPLE_CACHE_MAX = 64
 class SampleDatasetsLoader(ExternalDataLoader):
     """Browse and import the built-in sample datasets."""
 
+    DISPLAY_NAME = "Sample Datasets"
+
     # ------------------------------------------------------------------
     # Metadata
     # ------------------------------------------------------------------
@@ -59,10 +61,9 @@ class SampleDatasetsLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_mode() -> str:
-        # ``"none"`` declares that this loader needs no authentication and no
-        # connection setup. The connector framework treats such loaders as
-        # always-on: they cannot be connected/disconnected, expose no
-        # credentials UI, and are always reported as ``connected: true``.
+        # ``"none"`` declares that this loader needs no authentication or
+        # connection form. Users can still disable its availability through
+        # the connector preference managed by the framework.
         return "none"
 
     @staticmethod

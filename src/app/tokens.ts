@@ -8,6 +8,7 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import type { SxProps } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 
 // ── Border colors ──────────────────────────────────────────────────────
 
@@ -45,6 +46,9 @@ export const ComponentBorderStyle: SxProps = { border: `1px solid ${borderColor.
 
 /** Outer container border — panels, dialogs, popovers */
 export const ViewBorderStyle: SxProps = { border: `1px solid ${borderColor.view}` };
+
+/** Selected/highlighted agent-response surface. */
+export const agentResponseFill = (primaryColor: string) => alpha(primaryColor, 0.055);
 
 // ── Box shadows ────────────────────────────────────────────────────────
 

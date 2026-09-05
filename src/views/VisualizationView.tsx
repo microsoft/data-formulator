@@ -48,7 +48,7 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
@@ -97,6 +97,8 @@ import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
 import { LocalFolderPanel } from './UnifiedDataUploadDialog';
+import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
+import { ExplanationCanvas } from './ExplanationCanvas';
 
 export interface VisPanelProps { }
 
@@ -106,14 +108,25 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-interface OperationPreviewTable {
+interface OperationPreviewResponse {
     display_name: string;
     source_id?: string;
     table_description?: string;
     error?: string;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+}
+
+interface OperationPreviewTable extends OperationPreviewResponse {
     columns: string[];
     rows: Record<string, unknown>[];
 }
+
+export const normalizeOperationPreview = (preview: OperationPreviewResponse): OperationPreviewTable => ({
+    ...preview,
+    columns: Array.isArray(preview.columns) ? preview.columns : [],
+    rows: Array.isArray(preview.rows) ? preview.rows : [],
+});
 
 // Wide tables scroll horizontally; past this the row count makes the DOM the
 // bottleneck, so the remainder collapses into the trailing marker column.
@@ -159,12 +172,15 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
         setFailedPlans(new Set());
         const previewPlanIds = new Set(previewGroups.map(({ plan }) => plan.id));
         operation.plans.filter(plan => previewPlanIds.has(plan.id)).forEach(plan => {
-            apiRequest<{ previews: OperationPreviewTable[] }>('/api/agent/data-operation-preview', {
+            apiRequest<{ previews?: OperationPreviewResponse[] }>('/api/agent/data-operation-preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ operation_id: operation.id, plan_id: plan.id }),
             }).then(({ data }) => {
-                if (active) setPreviews(current => ({ ...current, [plan.id]: data.previews }));
+                if (active) setPreviews(current => ({
+                    ...current,
+                    [plan.id]: (data.previews ?? []).map(normalizeOperationPreview),
+                }));
             }).catch(() => {
                 if (active) setFailedPlans(current => new Set(current).add(plan.id));
             });
@@ -238,7 +254,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                                 </Typography>
                                             )}
                                         </Box>
-                                        {preview && (
+                                        {preview && !preview.error && (
                                             <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0 }}>
                                                 {t('dataLoading.operation.previewColumns', {
                                                     count: preview.columns.length,
@@ -261,7 +277,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                             ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
                                             : 'none',
                                     }}>
-                                        {failed ? (
+                                        {failed || preview?.error ? (
                                             <Typography sx={{ px: 1.5, py: 1.25, fontSize: textVar.xs, color: 'error.main' }}>
                                                 {t('dataLoading.operation.previewUnavailable', { defaultValue: 'Preview unavailable' })}
                                             </Typography>
@@ -1773,12 +1789,15 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const focusedFormTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
         : undefined;
+    const focusedExplanationTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain')
+        : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = (focusedId as { type: 'chart'; chartId: string }).chartId;
-        const chart = allCharts.find(c => c.id === chartId);
+        if (focusedId.type !== 'chart') return undefined;
+        const chart = allCharts.find(c => c.id === focusedId.chartId);
         return chart?.tableRef;
     }, [focusedId, allCharts]);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
@@ -1793,6 +1812,21 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
 
+    if (focusedId?.type === 'file') {
+        return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
+    }
+    if (focusedId?.type === 'explanation') {
+        return <ExplanationCanvas {...focusedId} />;
+    }
+    if (focusedExplanationTurn) {
+        return <ExplanationCanvas
+            content={explanationContent(
+                focusedExplanationTurn.content,
+                focusedExplanationTurn.answered ? focusedExplanationTurn.answer : undefined,
+            )}
+            textTurnId={focusedExplanationTurn.id}
+        />;
+    }
     if (focusedOperationTurn?.dataOperation) {
         return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;
     }

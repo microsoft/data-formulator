@@ -11,12 +11,13 @@ when_to_use: >-
    already listed in the workspace context.
 always_on: false
 tools:
-  - list_data
-  - find_data
-  - describe_data
-  - probe_data
-  - list_connectors
-  - describe_connector
+   - summarize_data_sources
+   - list_data
+   - find_data
+   - describe_data
+   - probe_data
+   - list_connectors
+   - describe_connector
 actions:
   - propose_data_operation
   - propose_connection
@@ -24,14 +25,40 @@ actions:
 
 # Skill: Data discovery
 
-The workspace tables listed in your context are the data already loaded into the
-system, and the only data that can be read directly. Everything these tools
-return is *not* loaded yet — it lives in a connected source and only becomes
-usable after the user selects a loading option and the server materializes it.
+The analysis input tables listed in your context are already materialized and
+are the only data that can be read directly. Everything these tools return is
+*not* loaded yet — it lives in a connected source and only becomes usable after
+the user selects a loading option and the server materializes it.
 
 Use these tools to determine whether connected sources contain data needed for
 the user's goal. They are read-only: discovering, describing, or probing a
 source does not add anything to the workspace analysis inputs.
+
+## When nothing is loaded yet
+
+Discovery is cheap. For a broad question such as “what data can I load?”, follow
+this sequence before answering:
+
+1. Call `summarize_data_sources({})` for a bounded overview of every connected source.
+2. Summarize its hierarchy stats, top-level items, and sample tables directly.
+3. Recommend concrete starting points. Use `list_data` or `find_data` only when
+   deeper navigation or search is needed.
+
+Use `list_data({source_id, path})` when the user wants to navigate a hierarchy,
+and a queried `find_data` when they name a subject. Summary samples and top-level
+items are bounded; respect their `omitted` counts.
+
+Pick the path that fits:
+
+- The user named a subject → `find_data`, then propose the tables that match.
+- The user asked what data exists, or asked nothing specific → summarize every
+   connected source using `summarize_data_sources`, then propose useful starting points.
+- Nothing is connected → `list_connectors`, then `propose_connection`, or say
+  they can upload a file.
+
+Never use `ask_user` to ask which connected source to inspect for a broad
+availability question. Summarize them all with one bounded call and answer directly.
+Use `ask_user` only for a choice that remains necessary after discovery.
 
 ## Adding a connector
 
@@ -62,13 +89,15 @@ seeds and are removed from persisted UI state.
 
 1. Use `find_data` when the user names a business concept or table. Use
    `list_data` when you need to browse available sources or hierarchy.
+   `list_data` returns one level; `find_data` searches recursively and may omit
+   `query` to enumerate folders or tables below an exact source path.
 2. Use `describe_data` before relying on columns, types, row counts, or filter
    values. Pass the exact `source_id` and `table_key` returned by discovery.
 3. Use `probe_data` only when metadata is insufficient to choose a useful
    bounded result. Probes are limited, read-only, and may be approximate.
-4. First reconcile discoveries with every table in `[PRIMARY TABLE(S)]`,
-   `[OTHER AVAILABLE TABLES]`, or `[AVAILABLE TABLES]`. If the needed data is
-   already loaded, use or explain that workspace table instead of proposing it.
+4. First reconcile discoveries with every table in `[PRIMARY ANALYSIS INPUTS]`,
+   `[OTHER ANALYSIS INPUTS]`, or `[ANALYSIS INPUT TABLES]`. If the needed data is
+   already loaded, use or explain that analysis input instead of proposing it.
 5. When there are genuinely missing useful alternatives, call
    `propose_data_operation` with one
    to three complete immutable plans. This pauses for the user's choice; it
@@ -90,6 +119,8 @@ yourself. Write it as you'd say it to a colleague, not as a schema summary.
    and one or more tables. The labels are buttons, not sentences — the
    reasoning belongs in your message text. The application displays table
    previews separately, so don't list columns as a substitute for explaining.
+- An option is one coherent choice: one or a group of tables that serve the same
+   analysis, and leave out the ones that don't.
 - Use only source IDs, table keys, columns, and values grounded by discovery.
 - For a whole table, omit `query`. Use the optional raw-row query only when the
    request needs filters, projection, ordering, or an intentional limit. It uses

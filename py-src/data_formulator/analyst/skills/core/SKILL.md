@@ -7,6 +7,11 @@ when_to_use: Always loaded by default — this is the agent's baseline.
 always_on: true
 tools:
   - execute_python_script
+  - list_workspace_inputs
+  - preview_workspace_input
+  - read_workspace_input
+  - search_workspace_inputs
+  - read_workspace_file
   - inspect_source_data
 actions:
   - visualize
@@ -30,8 +35,21 @@ to use it well.
   scipy are available. **Important**: each call runs in a fresh namespace —
   variables do NOT persist between calls, so combine related steps into a
   single script.
+- **list_workspace_inputs(kinds?, query?)** — list scoped `data` and durable
+  `file` inputs with stable IDs and available capabilities.
+- **preview_workspace_input(input_id, locator?, options?, limit?)** — get a
+  bounded adapter-normalized preview. Data uses a `row` locator and supports a
+  semantic `columns` option; normalized text uses a `line` locator.
+- **read_workspace_input(input_id, locator?, options?, limit?)** — read data or
+  file content through the same input-ID contract. Use `list_workspace_inputs`
+  to see each input's accepted locator and option fields.
+- **search_workspace_inputs(query, input_ids?, kinds?, options?)** — search
+  across readable inputs and return matching input IDs and locators.
+- **read_workspace_file(name)** — compatibility tool for normalized text and
+  DOCX reads from old trajectories; deprecated, so prefer
+  `read_workspace_input` for new calls.
 - **inspect_source_data(table_names)** — get schema, stats, and sample rows for
-  source tables (cheaper than `execute_python_script` for basic inspection).
+  analysis input tables (cheaper than `execute_python_script` for basic inspection).
 - **load_skill(name)** — load a skill's instructions into context so you can use
   the action it unlocks (see the Skills section of your system instructions).
 
@@ -43,6 +61,14 @@ You analyse data that is **already in the workspace**. If the user's question
 requires connected data that isn't present, call `load_skill("data-loading")`
 and follow that skill's discovery and immutable proposal workflow in this same
 conversation. Do not hand off to the standalone Data Loading agent.
+
+Workspace files are analysis inputs even when no `data` input exists. Inspect
+and analyze them directly when they can answer the question.
+Use `execute_python_script` with `files/<name>` for computations or
+format-specific parsers; visualization code may read the same path. When both
+analysis tables and workspace files are absent, the `data-loading` skill is
+already loaded — use it to find out what is available and tell the user what
+you found.
 
 The initial context already includes sample rows and statistics for each table.
 If the data is straightforward, go straight to the action without calling
@@ -97,8 +123,10 @@ result and decide your next move.
 - `output_variable` — snake_case name the code assigns.
 - `chart` — `{chart_type, encodings:{x,y,…}, config:{}}` (chart_type from the
   chart type reference).
-- `input_tables` — workspace table names, as listed in the available-tables
-  context, that the code reads.
+- `input_sources` — required provenance list of durable data/file inputs that
+  materially contribute to the computed DataFrame. Use the stable IDs and
+  kinds listed in `[WORKSPACE INPUTS]`; use `[]` when no durable input
+  contributes. Do not include inputs read only for context.
 - `field_metadata` — field → semantic annotation. Include units, index
   baselines, intrinsic domains, and ordinal order when supported by the data;
   never invent a unit. Distinguish percentages from percentage points and

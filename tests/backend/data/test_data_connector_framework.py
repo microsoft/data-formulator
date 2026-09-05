@@ -35,11 +35,15 @@ from data_formulator.data_connector import (
     _resolve_env_refs,
     _sanitize_error,
     connectors_bp,
+    list_available_connector_ids,
 )
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
 )
+from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
+from data_formulator.datalake.catalog_cache import save_catalog
+from data_formulator.datalake.connector_preferences import connector_is_enabled
 from data_formulator.errors import ErrorCode
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
@@ -483,6 +487,55 @@ class TestAuthRoutes:
         assert source._get_loader("test-user") is None
         vault_delete.assert_called_once_with("test-user")
         clear_token.assert_called_once_with("mock_db")
+
+    def test_no_auth_connector_can_disconnect_and_reconnect_without_deleting_cache(
+        self,
+        client,
+        tmp_path,
+    ):
+        sample_source = DataConnector.from_loader(
+            SampleDatasetsLoader,
+            source_id="sample_datasets",
+            display_name="Example Datasets",
+        )
+        DATA_CONNECTORS["sample_datasets"] = sample_source
+        save_catalog(tmp_path, "sample_datasets", [{
+            "name": "penguins",
+            "table_key": "penguins",
+            "metadata": {},
+        }])
+
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.datalake.workspace.get_user_home", return_value=tmp_path),
+        ):
+            disconnect = client.post("/api/connectors/disconnect", json={
+                "connector_id": "sample_datasets",
+            })
+            status = client.get("/api/connectors")
+
+            assert disconnect.status_code == 200
+            assert connector_is_enabled(tmp_path, "sample_datasets") is False
+            assert (tmp_path / "catalog_cache" / "sample_datasets.json").exists()
+            listed = {item["id"]: item for item in status.get_json()["data"]["connectors"]}
+            assert listed["sample_datasets"]["connected"] is False
+            with pytest.raises(ValueError, match="Connector is disconnected"):
+                sample_source._require_loader()
+
+            credentialed_source = DATA_CONNECTORS["mock_db"]
+            credentialed_source._loaders["test-user"] = MockLoader({"host": "localhost"})
+            available = list_available_connector_ids()
+            assert "mock_db" in available
+            assert "sample_datasets" not in available
+
+            reconnect = client.post("/api/connectors/connect", json={
+                "connector_id": "sample_datasets",
+            })
+
+        assert reconnect.status_code == 200
+        assert connector_is_enabled(tmp_path, "sample_datasets") is True
+        assert sample_source._get_loader("test-user") is not None
 
     def test_status_connected(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):

@@ -27,12 +27,14 @@ import {
     DialogContent,
     DialogContentText,
     DialogActions,
+    Divider,
     TextField,
     InputAdornment,
     Menu,
     MenuItem,
     ListItemIcon,
     ListItemText,
+    ListSubheader,
     ClickAwayListener,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -47,15 +49,16 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import PushPinIcon from '@mui/icons-material/PushPin';
@@ -88,6 +91,7 @@ import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ResizeHandle } from '../components/ResizeHandle';
 import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
+import { formatBytes } from './ViewUtils';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -105,16 +109,6 @@ const SIDEBAR_PINNED_KEY = 'df-sidebar-pinned';
 // instead, where the user can filter, sample, or aggregate before loading.
 const RECOMMENDED_MAX_IMPORT_ROWS = 1_000_000;
 const RECOMMENDED_MAX_IMPORT_BYTES = 512 * 1024 * 1024; // 512 MB uncompressed
-
-// Human-readable byte size ("1.2 GB", "340 MB"). Returns '' when unknown.
-function formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    let value = bytes;
-    let i = 0;
-    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
-    return `${value >= 100 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
-}
 
 // Whether a catalog table is large enough that a direct full import is
 // discouraged in favor of the conversational loader.
@@ -318,16 +312,31 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                {/* Primary action — adding data is the main task. Styled like
-                    the view-switcher icons but kept in primary color as a
-                    subtle cue; opens the upload dialog (landing menu). */}
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
-                    <IconButton size="small" onClick={() => onOpenUploadDialog?.()} sx={{
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
+                    <IconButton
+                        size="small"
+                        onClick={() => onOpenUploadDialog?.('upload')}
+                        aria-label={t('sidebar.openUpload', { defaultValue: 'Upload data' })}
+                        sx={{
                         color: 'primary.main',
                         borderRadius: 1,
                         '&:hover': { bgcolor: 'action.hover' },
                     }}>
                         <AddCircleIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.openDataLoadingChat', { defaultValue: 'Add data with agent' })} placement="right">
+                    <IconButton
+                        size="small"
+                        onClick={() => onStartDataLoadingChat?.('')}
+                        aria-label={t('sidebar.openDataLoadingChat', { defaultValue: 'Add data with agent' })}
+                        sx={{
+                            color: 'text.secondary',
+                            borderRadius: 1,
+                            '&:hover': { color: 'primary.main', bgcolor: 'action.hover' },
+                        }}
+                    >
+                        <QuestionAnswerOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
@@ -542,10 +551,12 @@ const DataSourceSidebarPanel: React.FC<{
 
     const [sessions, setSessions] = useState<WorkspaceSummary[]>([]);
 
-    // Session lists prioritize recent work. Creation-order views remain
-    // available when users need the original chronology.
+    // Default to creation chronology so auto-saves do not unexpectedly move
+    // older sessions. Modified time remains available as an explicit sort.
     type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
-    const [sessionSort, setSessionSort] = useState<SessionSortKey>('updated_desc');
+    type SessionGroupKey = 'source' | 'none';
+    const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
+    const [sessionGroup, setSessionGroup] = useState<SessionGroupKey>('source');
     const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
 
     const sortedSessions = useMemo(() => {
@@ -574,6 +585,39 @@ const DataSourceSidebarPanel: React.FC<{
                 return copy;
         }
     }, [sessions, sessionSort]);
+
+    const sessionSections = useMemo(() => {
+        if (sessionGroup === 'none') {
+            return [{ key: 'all', label: '', sessions: sortedSessions }];
+        }
+
+        const connectorNames = new Map(connectors.map(connector => [connector.id, connector.display_name]));
+        const sourceLabel = (sourceId: string): string => {
+            if (sourceId === 'upload') return t('sidebar.sourceUpload', { defaultValue: 'Upload' });
+            if (sourceId === 'sample_datasets') {
+                return connectorNames.get(sourceId)
+                    || t('sidebar.sourceExampleDatasets', { defaultValue: 'Example datasets' });
+            }
+            return connectorNames.get(sourceId) || sourceId;
+        };
+
+        const sections = new Map<string, { key: string; label: string; sessions: WorkspaceSummary[] }>();
+        for (const session of sortedSessions) {
+            const sourceIds = Array.from(new Set(session.source_ids || [])).sort();
+            const key = sourceIds.length > 0
+                ? sourceIds.join('|')
+                : session.table_count === 0 ? 'no-data' : 'other';
+            const label = sourceIds.length > 0
+                ? sourceIds.map(sourceLabel).sort((a, b) => a.localeCompare(b)).join(' / ')
+                : session.table_count === 0
+                    ? t('sidebar.sourceNoData', { defaultValue: 'No data' })
+                    : t('sidebar.sourceOther', { defaultValue: 'Other' });
+            const section = sections.get(key);
+            if (section) section.sessions.push(session);
+            else sections.set(key, { key, label, sessions: [session] });
+        }
+        return Array.from(sections.values());
+    }, [connectors, sessionGroup, sortedSessions, t]);
 
     const refreshSessions = useCallback(() => {
         listWorkspaces()
@@ -805,7 +849,7 @@ const DataSourceSidebarPanel: React.FC<{
 
     // Sort connectors by category
     const sortedConnectors = useMemo(
-        () => [...connectors].sort((a, b) => connectorSortOrder(a.source_type, b.source_type)),
+        () => [...connectors].sort((a, b) => connectorSortOrder(a.source_type ?? '', b.source_type ?? '')),
         [connectors],
     );
 
@@ -1599,10 +1643,8 @@ const DataSourceSidebarPanel: React.FC<{
     }, [clearConnectorUiState, deleteTarget, dispatch, onConnectorsChanged, t]);
 
     // ── Disconnect connector ──────────────────────────────────────────────
-    // For admin (non-deletable) connectors the user can't remove the
-    // definition itself, but they *can* clear stored credentials and the
-    // active loader so they (or the next user on this identity) can
-    // re-authenticate via "Edit connection".
+    // Clear stored credentials and the active loader without removing the
+    // connector definition, so the user can reconnect through its form.
 
     const handleDisconnectConnector = useCallback(async (connector: ConnectorInstance) => {
         try {
@@ -1634,6 +1676,36 @@ const DataSourceSidebarPanel: React.FC<{
         }
     }, [clearConnectorUiState, dispatch, t]);
 
+    const handleConnectConnector = useCallback(async (connector: ConnectorInstance) => {
+        if (connector.auth_mode !== 'none') {
+            onOpenUploadDialog?.(`connector:${connector.id}`);
+            return;
+        }
+        try {
+            await apiRequest(CONNECTOR_ACTION_URLS.CONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id }),
+            });
+            setConnectors(prev => prev.map(c => c.id === connector.id
+                ? { ...c, connected: true }
+                : c));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorConnected', { name: connector.display_name }),
+            }));
+        } catch (e: any) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: e?.apiError?.message || t('sidebar.failedConnectConnector'),
+            }));
+        }
+    }, [dispatch, onOpenUploadDialog, t]);
+
     // ── Render ───────────────────────────────────────────────────────────────
 
     const panelHeaderSx = {
@@ -1656,6 +1728,19 @@ const DataSourceSidebarPanel: React.FC<{
         p: 0,
         color: 'text.secondary',
         '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
+    } as const;
+
+    const panelSubActionSx = {
+        minWidth: 0,
+        p: 0,
+        color: 'text.secondary',
+        fontSize: textVar.xs,
+        fontWeight: 400,
+        lineHeight: 1.2,
+        textTransform: 'none',
+        '& .MuiButton-startIcon': { mr: 0.25 },
+        '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: iconVar.xs },
+        '&:hover': { color: 'primary.main', bgcolor: 'transparent' },
     } as const;
 
     const pinAction = (
@@ -1854,16 +1939,10 @@ const DataSourceSidebarPanel: React.FC<{
                                 of the connector header's chevron. */}
                             <Box
                                 onClick={() => {
-                                    // No-auth connectors (auth_mode = 'none')
-                                    // are always available — clicking the
-                                    // header just toggles expansion, never
-                                    // opens a credentials dialog.
-                                    const isAlwaysOn = connector.auth_mode === 'none';
-                                    if (connector.connected || isAlwaysOn) {
+                                    if (connector.connected) {
                                         toggleSource(connector.id);
                                     } else {
-                                        // Not connected — open config dialog for this connector
-                                        onOpenUploadDialog?.(`connector:${connector.id}`);
+                                        void handleConnectConnector(connector);
                                     }
                                 }}
                                 sx={{
@@ -1892,31 +1971,30 @@ const DataSourceSidebarPanel: React.FC<{
                                         pointerEvents: 'none',
                                     }}
                                 >
-                                    {(connector.connected || connector.auth_mode === 'none') && isExpanded
+                                    {connector.connected && isExpanded
                                         ? <ExpandMoreIcon sx={{ fontSize: iconVar.sm }} />
                                         : <ChevronRightIcon sx={{ fontSize: iconVar.sm }} />}
                                 </Box>
                                 {getConnectorIcon(connector.icon || connector.source_type, { sx: { fontSize: iconVar.md, opacity: 0.7 } })}
-                                {/* Status dot — green for live connections
-                                    and for always-on built-ins (which are
-                                    ready by definition), warning for
-                                    disconnected. */}
+                                {/* Status dot — green when this source is available
+                                    to the user and agent, warning when disconnected. */}
                                 <Box sx={{
                                     width: 6,
                                     height: 6,
                                     borderRadius: '50%',
                                     flexShrink: 0,
-                                    bgcolor: (connector.connected || connector.auth_mode === 'none')
+                                    bgcolor: connector.connected
                                         ? 'success.main'
                                         : 'warning.main',
                                 }} />
-                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, fontWeight: 500, color: (connector.connected || connector.auth_mode === 'none') ? 'text.primary' : 'text.secondary' }}>
+                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, fontWeight: 500, color: connector.connected ? 'text.primary' : 'text.secondary' }}>
                                     {connector.display_name}
                                 </Typography>
-                                {(connector.connected || connector.auth_mode === 'none') && (
+                                {connector.connected && (
                                     <Tooltip title={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}>
                                         <IconButton
                                             size="small"
+                                            aria-label={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}
                                             className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1939,50 +2017,11 @@ const DataSourceSidebarPanel: React.FC<{
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {/* Edit connection — available for both user and admin
-                                    connectors. Admin connectors can't be deleted, but
-                                    the user still needs a way to (re)enter credentials
-                                    or trigger a fresh login after disconnecting.
-                                    No-auth connectors have no credentials to configure,
-                                    so we skip this entirely. */}
-                                {connector.auth_mode !== 'none' && (
-                                <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
-                                    <IconButton
-                                        size="small"
-                                        className="connector-row-action"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onOpenUploadDialog?.(`connector:${connector.id}`);
-                                        }}
-                                        sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
-                                    >
-                                        <SettingsOutlinedIcon sx={{ fontSize: iconVar.sm }} />
-                                    </IconButton>
-                                </Tooltip>
-                                )}
-                                {connector.deletable ? (
-                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                {connector.connected ? (
+                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}>
                                         <IconButton
                                             size="small"
-                                            className="connector-row-action"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setDeleteTarget(connector);
-                                            }}
-                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
-                                        >
-                                            <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                ) : connector.connected && connector.auth_mode !== 'none' && (
-                                    /* Admin connector: surface Disconnect in place of Delete.
-                                       Only meaningful when there's an active session/credentials
-                                       to clear; if already disconnected, "Edit connection" is
-                                       the path to re-authenticate.
-                                       No-auth connectors have nothing to disconnect. */
-                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
-                                        <IconButton
-                                            size="small"
+                                            aria-label={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}
                                             className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1991,6 +2030,37 @@ const DataSourceSidebarPanel: React.FC<{
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'warning.main' } }}
                                         >
                                             <LinkOffOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                ) : (
+                                    <Tooltip title={t('sidebar.connectConnector', { defaultValue: 'Connect' })}>
+                                        <IconButton
+                                            size="small"
+                                            aria-label={t('sidebar.connectConnector', { defaultValue: 'Connect' })}
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleConnectConnector(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
+                                        >
+                                            <LinkOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                {connector.deletable && (
+                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            aria-label={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDeleteTarget(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
+                                        >
+                                            <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                 )}
@@ -2187,10 +2257,9 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={{ ...panelHeaderSx, borderBottomColor: sidebarEdge.border }}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
-                    <Box sx={{ flex: 1 }} />
                     <Tooltip title={t('sidebar.newSession', { defaultValue: 'New session' })} placement="bottom">
                         <IconButton
                             size="small"
@@ -2201,34 +2270,47 @@ const DataSourceSidebarPanel: React.FC<{
                             <AddIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip title={t('workspace.importZip')} placement="bottom">
-                        <IconButton
-                            size="small"
-                            aria-label={t('workspace.importZip')}
-                            onClick={() => importRef.current?.click()}
-                            sx={panelHeaderActionSx}
-                        >
-                            <UploadFileIcon sx={{ fontSize: iconVar.md }} />
+                    {pinAction}
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
+                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
-                    <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
-                    <Tooltip title={`${t('sidebar.sortSessions')}: ${({
-                        created_desc: t('sidebar.sortNewest'),
-                        created_asc: t('sidebar.sortOldest'),
-                        updated_desc: t('sidebar.sortRecentlyModified'),
-                        name_asc: t('sidebar.sortName'),
-                    } as Record<SessionSortKey, string>)[sessionSort]}`} placement="bottom">
-                        <IconButton
-                            size="small"
-                            aria-label={t('sidebar.sortSessions')}
+                </Box>
+                <Box sx={{
+                    px: 1.25, py: 0.375,
+                    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+                    borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, whiteSpace: 'nowrap' }}>
+                        <Button
+                            startIcon={<UploadFileIcon />}
+                            aria-label={t('sidebar.importSession', { defaultValue: 'Import session' })}
+                            onClick={() => importRef.current?.click()}
+                            sx={panelSubActionSx}
+                        >
+                            {t('sidebar.importSession', { defaultValue: 'Import session' })}
+                        </Button>
+                        <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                        <Button
+                            startIcon={<SortIcon />}
+                            aria-label={t('sidebar.organizeSessions', { defaultValue: 'Group and sort sessions' })}
                             aria-haspopup="menu"
                             aria-expanded={sessionSortAnchor ? 'true' : undefined}
                             onClick={(event) => setSessionSortAnchor(event.currentTarget)}
-                            sx={panelHeaderActionSx}
+                            sx={panelSubActionSx}
                         >
-                            <SortIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>
+                            {sessionGroup === 'source'
+                                ? `${t('sidebar.groupSourceShort', { defaultValue: 'Source' })} · `
+                                : ''}
+                            {({
+                                created_desc: t('sidebar.sortNewest'),
+                                created_asc: t('sidebar.sortOldest'),
+                                updated_desc: t('sidebar.sortRecentlyModified'),
+                                name_asc: t('sidebar.sortName'),
+                            } as Record<SessionSortKey, string>)[sessionSort]}
+                        </Button>
+                    </Box>
                     <Menu
                         anchorEl={sessionSortAnchor}
                         open={Boolean(sessionSortAnchor)}
@@ -2236,10 +2318,36 @@ const DataSourceSidebarPanel: React.FC<{
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                     >
+                        <ListSubheader sx={{ fontSize: textVar.xxs, lineHeight: '28px', color: 'text.disabled' }}>
+                            {t('sidebar.groupSessions', { defaultValue: 'Group' })}
+                        </ListSubheader>
                         {([
-                            ['updated_desc', t('sidebar.sortRecentlyModifiedFirst')],
+                            ['source', t('sidebar.groupBySource', { defaultValue: 'Data source' })],
+                            ['none', t('sidebar.noGrouping', { defaultValue: 'No grouping' })],
+                        ] as [SessionGroupKey, string][]).map(([key, label]) => (
+                            <MenuItem
+                                key={key}
+                                selected={sessionGroup === key}
+                                onClick={() => {
+                                    setSessionGroup(key);
+                                    setSessionSortAnchor(null);
+                                }}
+                                sx={{ fontSize: textVar.sm, py: 0.75 }}
+                            >
+                                <ListItemIcon sx={{ minWidth: 28 }}>
+                                    {sessionGroup === key && <CheckIcon sx={{ fontSize: iconVar.sm }} />}
+                                </ListItemIcon>
+                                <ListItemText primary={label} slotProps={{ primary: { sx: { fontSize: textVar.sm } } }} />
+                            </MenuItem>
+                        ))}
+                        <Divider />
+                        <ListSubheader sx={{ fontSize: textVar.xxs, lineHeight: '28px', color: 'text.disabled' }}>
+                            {t('sidebar.sortSessions', { defaultValue: 'Sort' })}
+                        </ListSubheader>
+                        {([
                             ['created_desc', t('sidebar.sortNewestFirst')],
                             ['created_asc', t('sidebar.sortOldestFirst')],
+                            ['updated_desc', t('sidebar.sortRecentlyModifiedFirst')],
                             ['name_asc', t('sidebar.sortNameAsc')],
                         ] as [SessionSortKey, string][]).map(([key, label]) => (
                             <MenuItem
@@ -2258,12 +2366,6 @@ const DataSourceSidebarPanel: React.FC<{
                             </MenuItem>
                         ))}
                     </Menu>
-                    {pinAction}
-                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
-                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>
                 </Box>
             <ScrollFadeContainer sx={{ overflowX: 'hidden', overscrollBehavior: 'contain' }} resetKey={sessions.length}>
                 {sessions.length === 0 ? (
@@ -2273,7 +2375,24 @@ const DataSourceSidebarPanel: React.FC<{
                         </Typography>
                     </Box>
                 ) : (
-                    sortedSessions.map((s) => {
+                    sessionSections.map((section, sectionIndex) => (
+                    <React.Fragment key={section.key}>
+                    {sessionGroup === 'source' && (
+                        <Box sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.75,
+                            px: 1.5, pt: sectionIndex === 0 ? 0.875 : 1.25, pb: 0.375,
+                        }}>
+                            <Typography noWrap title={section.label} sx={{
+                                maxWidth: '72%',
+                                fontSize: textVar.xxs, fontWeight: 500,
+                                color: 'text.secondary', lineHeight: 1.3,
+                            }}>
+                                {section.label}
+                            </Typography>
+                            <Box sx={{ flex: 1, height: '1px', bgcolor: 'rgba(0, 0, 0, 0.08)' }} />
+                        </Box>
+                    )}
+                    {section.sessions.map((s) => {
                         const isRenaming = renamingSession === s.id;
                         return (
                         <Tooltip
@@ -2404,7 +2523,9 @@ const DataSourceSidebarPanel: React.FC<{
                         </Box>
                         </Tooltip>
                         );
-                    })
+                    })}
+                    </React.Fragment>
+                    ))
                 )}
             </ScrollFadeContainer>
             </Box>

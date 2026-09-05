@@ -10,13 +10,13 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { migrateState } from './stateMigrations';
 import { getDataTable } from '../views/ChartUtils';
-import { getTriggers, getUrls, computeContentHash } from './utils';
+import { getUrls, computeContentHash } from './utils';
 import { apiRequest, ApiRequestError } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
 import i18n from '../i18n';
 import { Type } from '../data/types';
-import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporalType } from '../data/utils';
-import { Identity, IdentityType, getBrowserId } from './identity';
+import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
+import { Identity, getBrowserId } from './identity';
 import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
@@ -89,6 +89,7 @@ export interface ServerConfig {
         icon: string;
         params_form: Array<{name: string; type: string; required: boolean; default?: string; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
         pinned_params: Record<string, string>;
+        connection_identity?: string;
         hierarchy: Array<{key: string; label: string}>;
         effective_hierarchy: Array<{key: string; label: string}>;
         auth_instructions: string;
@@ -120,8 +121,17 @@ export type FocusedId =
     | { type: 'table'; tableId: string }
     | { type: 'chart'; chartId: string }
     | { type: 'report'; reportId: string }
+    | { type: 'file'; fileName: string }
+    | { type: 'explanation'; content: string; sourceTableId?: string; timestamps?: number[] }
     | { type: 'text'; textId: string }
+    | { type: 'draft'; draftId: string }
     | undefined;
+
+export const explanationContent = (content: string, answer?: string) =>
+    answer ? `${content}\n\n> ↳ ${answer}` : content;
+
+export const shouldPreviewExplanationInCanvas = (content: string) =>
+    content.length > 1000 || content.split('\n').length > 14;
 
 export const DEFAULT_ROW_LIMIT = 2_000_000;
 
@@ -285,6 +295,9 @@ export interface DataFormulatorState {
     // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
     activeWorkspace: { id: string; displayName: string; readOnly?: boolean } | null;
 
+    /** Backend-synchronized count of persisted non-table files in the active workspace. */
+    workspaceFileCount: number;
+
     /** Whether the data source sidebar is expanded (true) or collapsed to rail (false) */
     dataSourceSidebarOpen: boolean;
 
@@ -381,6 +394,7 @@ const initialState: DataFormulatorState = {
     sessionLoadingLabel: '',
 
     activeWorkspace: null,
+    workspaceFileCount: 0,
 
     dataSourceSidebarOpen: false,
 
@@ -497,6 +511,68 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     return state.derivedTables.filter(table => !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
 }
 
+const repairDeletedTableReferences = (state: DataFormulatorState, deletedTables: DictTable[]) => {
+    if (deletedTables.length === 0) return;
+    const deletedById = new Map(deletedTables.map(table => [table.id, table]));
+    const deletedIds = new Set(deletedById.keys());
+    const deletedWorkspaceNames = new Set(deletedTables.map(table => table.virtual.tableId));
+    const survivingIds = new Set(collectAllTables(state).map(table => table.id));
+    const resolveAnchor = (id: string) => {
+        let current: string | undefined = id;
+        const seen = new Set<string>();
+        while (current && deletedById.has(current) && !seen.has(current)) {
+            seen.add(current);
+            current = deletedById.get(current)?.derive?.trigger.tableId;
+        }
+        return current && survivingIds.has(current) ? current : ROOTLESS_THREAD_ID;
+    };
+
+    state.textTurns = state.textTurns.map(turn => deletedIds.has(turn.parentNodeId)
+        ? { ...turn, parentNodeId: resolveAnchor(turn.parentNodeId) }
+        : turn);
+    state.derivedTables = state.derivedTables.map(table => table.derive ? {
+        ...table,
+        ...(deletedIds.has(table.parentNodeId || '')
+            ? { parentNodeId: resolveAnchor(table.parentNodeId!) }
+            : {}),
+        derive: {
+            ...table.derive,
+            source: table.derive.source.filter(id => !deletedIds.has(id)),
+            ...(table.derive.inputSources ? {
+                inputSources: table.derive.inputSources.filter(source =>
+                    source.kind !== 'data'
+                    || !deletedWorkspaceNames.has(decodeURIComponent(source.id.slice(source.id.lastIndexOf(':') + 1)))),
+            } : {}),
+            trigger: deletedIds.has(table.derive.trigger.tableId)
+                ? { ...table.derive.trigger, tableId: resolveAnchor(table.derive.trigger.tableId) }
+                : table.derive.trigger,
+        },
+    } : table);
+    state.loadedTableNodes = state.loadedTableNodes
+        .filter(node => !deletedIds.has(node.tableId))
+        .map(node => deletedIds.has(node.parentNodeId)
+            ? { ...node, parentNodeId: resolveAnchor(node.parentNodeId) }
+            : node);
+    state.generatedReports = state.generatedReports
+        .filter(report => !report.triggerTableId || !deletedIds.has(report.triggerTableId))
+        .map(report => report.parentNodeId && deletedIds.has(report.parentNodeId)
+            ? { ...report, parentNodeId: resolveAnchor(report.parentNodeId) }
+            : report);
+    state.draftNodes = state.draftNodes.map(draft => ({
+        ...draft,
+        ...(deletedIds.has(draft.parentNodeId)
+            ? { parentNodeId: resolveAnchor(draft.parentNodeId) }
+            : {}),
+        derive: {
+            ...draft.derive,
+            source: draft.derive.source.filter(id => !deletedIds.has(id)),
+            trigger: deletedIds.has(draft.derive.trigger.tableId)
+                ? { ...draft.derive.trigger, tableId: resolveAnchor(draft.derive.trigger.tableId) }
+                : draft.derive.trigger,
+        },
+    }));
+};
+
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     const tables = collectAllTables(state);
     let currentFocusedChartId = state.focusedId?.type === 'chart' ? state.focusedId.chartId : undefined;
@@ -562,6 +638,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     deleteTablesFromWorkspace(tablesToDelete.map(t => t.virtual.tableId));
 
     state.derivedTables = state.derivedTables.filter(t => !tableIdsToDelete.includes(t.id));
+    repairDeletedTableReferences(state, tablesToDelete);
 
     // If the focus we just set lands on a table that has now been cascade-
     // deleted (e.g. a derived table whose only chart we just
@@ -610,19 +687,6 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     const tableToDelete = tables.find(t => t.id === tableId);
     if (!tableToDelete) return;
 
-    const directChildren = state.derivedTables.filter(t =>
-        t.derive?.trigger.tableId === tableId ||
-        t.derive?.source.includes(tableId)
-    );
-
-    if (directChildren.length > 0 && tableToDelete.derive) {
-        const parentTriggerId = tableToDelete.derive.trigger.tableId;
-        state.derivedTables = state.derivedTables.map(t => {
-            if (!t.derive || t.derive.trigger.tableId !== tableId) return t;
-            return { ...t, derive: { ...t.derive, trigger: { ...t.derive.trigger, tableId: parentTriggerId } } };
-        });
-    }
-
     state.inputTables = state.inputTables.filter(t => t.id !== tableId);
     state.derivedTables = state.derivedTables.filter(t => t.id !== tableId);
     state.loadedTableNodes = state.loadedTableNodes.filter(node => node.tableId !== tableId);
@@ -635,32 +699,7 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     // Delete reports triggered from this table
     state.generatedReports = state.generatedReports.filter(r => r.triggerTableId !== tableId);
 
-    // The data goes; the conversation about it stays. Turns and any live run
-    // anchored here move to the nearest surviving anchor — the table this one
-    // was derived from, else the thread's rootless origin (design-docs/42).
-    const survivingTables = collectAllTables(state);
-    const triggerId = tableToDelete.derive?.trigger.tableId;
-    const reanchorId = triggerId && survivingTables.some(t => t.id === triggerId)
-        ? triggerId
-        : ROOTLESS_THREAD_ID;
-    state.textTurns = state.textTurns.map(a =>
-        a.parentNodeId === tableId ? { ...a, parentNodeId: reanchorId } : a);
-    state.derivedTables = state.derivedTables.map(table =>
-        table.parentNodeId === tableId ? { ...table, parentNodeId: reanchorId } : table);
-    state.loadedTableNodes = state.loadedTableNodes.map(node =>
-        node.parentNodeId === tableId ? { ...node, parentNodeId: reanchorId } : node);
-    state.generatedReports = state.generatedReports.map(report =>
-        report.parentNodeId === tableId ? { ...report, parentNodeId: reanchorId } : report);
-    state.draftNodes = state.draftNodes.map(d =>
-        d.derive?.trigger.tableId === tableId || d.parentNodeId === tableId
-            ? {
-                ...d,
-                ...(d.parentNodeId === tableId ? { parentNodeId: reanchorId } : {}),
-                ...(d.derive?.trigger.tableId === tableId
-                    ? { derive: { ...d.derive, trigger: { ...d.derive.trigger, tableId: reanchorId } } }
-                    : {}),
-            }
-            : d);
+    repairDeletedTableReferences(state, [tableToDelete]);
 
     // Drop this table's starter questions / generation status
     delete state.starterQuestions[tableId];
@@ -895,6 +934,7 @@ export const dataFormulatorSlice = createSlice({
 
             // Clear active workspace so stale IDs don't persist across restarts
             state.activeWorkspace = null;
+            state.workspaceFileCount = 0;
             // Redux Persist will handle persistence automatically
             
         },
@@ -904,6 +944,10 @@ export const dataFormulatorSlice = createSlice({
         },
         setActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string; readOnly?: boolean } | null>) => {
             state.activeWorkspace = action.payload;
+            state.workspaceFileCount = 0;
+        },
+        setWorkspaceFileCount: (state, action: PayloadAction<number>) => {
+            state.workspaceFileCount = Math.max(0, action.payload);
         },
         resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
             // Fresh session data, but preserve user settings / server config / identity / view mode
@@ -1061,6 +1105,7 @@ export const dataFormulatorSlice = createSlice({
 
                 // Preserve or restore workspace name
                 activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
+                workspaceFileCount: 0,
 
                 dataSourceSidebarOpen: state.dataSourceSidebarOpen,
                 dataSourceSidebarTab: state.dataSourceSidebarTab,
@@ -1701,6 +1746,10 @@ export const dataFormulatorSlice = createSlice({
         // ?? Draft node reducers ??????????????????????????????????
         createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentNodeId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string }>) => {
             const { id, displayId, parentNodeId, parentTableId, source, interaction, chart, actionId } = action.payload;
+            const replacedDraftIds = new Set(state.draftNodes
+                .filter(existing => existing.parentNodeId === parentNodeId
+                    && (existing.derive?.status === 'error' || existing.derive?.status === 'interrupted'))
+                .map(existing => existing.id));
             const draft: DraftNode = {
                 kind: 'draft',
                 id,
@@ -1718,7 +1767,13 @@ export const dataFormulatorSlice = createSlice({
                 },
                 actionId,
             };
-            state.draftNodes = [...state.draftNodes, draft];
+            state.draftNodes = [
+                ...state.draftNodes.filter(existing => !replacedDraftIds.has(existing.id)),
+                draft,
+            ];
+            if (state.focusedId?.type === 'draft' && replacedDraftIds.has(state.focusedId.draftId)) {
+                state.focusedId = { type: 'draft', draftId: draft.id };
+            }
         },
         appendDraftInteraction: (state, action: PayloadAction<{ draftId: string; entry: InteractionEntry }>) => {
             const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
@@ -1734,6 +1789,10 @@ export const dataFormulatorSlice = createSlice({
             if (draft?.derive) {
                 draft.derive.runningPlan = action.payload.plan;
             }
+        },
+        updateDraftSources: (state, action: PayloadAction<{ draftId: string; source: string[] }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (draft?.derive) draft.derive.source = action.payload.source;
         },
         updateDeriveStatus: (state, action: PayloadAction<{ nodeId: string; status: DeriveStatus }>) => {
             const draft = state.draftNodes.find(d => d.id === action.payload.nodeId);
@@ -1776,7 +1835,31 @@ export const dataFormulatorSlice = createSlice({
             state.draftNodes = state.draftNodes.filter(d => d.id !== draftId);
         },
         removeDraftNode: (state, action: PayloadAction<string>) => {
+            const draft = state.draftNodes.find(item => item.id === action.payload);
             state.draftNodes = state.draftNodes.filter(d => d.id !== action.payload);
+            const parentTurn = draft
+                ? state.textTurns.find(turn => turn.id === draft.parentNodeId)
+                : undefined;
+            const parentHasOtherChildren = !!draft && (
+                state.draftNodes.some(item => item.parentNodeId === draft.parentNodeId)
+                || state.textTurns.some(turn => turn.parentNodeId === draft.parentNodeId)
+                || state.derivedTables.some(table => table.parentNodeId === draft.parentNodeId)
+                || state.loadedTableNodes.some(node => node.parentNodeId === draft.parentNodeId)
+                || state.generatedReports.some(report => report.parentNodeId === draft.parentNodeId)
+            );
+            if (parentTurn?.answered && parentTurn.answer && !parentHasOtherChildren) {
+                parentTurn.answered = false;
+                delete parentTurn.answer;
+            }
+            if (draft && state.focusedId?.type === 'draft' && state.focusedId.draftId === draft.id) {
+                if (state.textTurns.some(turn => turn.id === draft.parentNodeId)) {
+                    state.focusedId = { type: 'text', textId: draft.parentNodeId };
+                } else if (selectAllTables(state).some(table => table.id === draft.parentNodeId)) {
+                    state.focusedId = { type: 'table', tableId: draft.parentNodeId };
+                } else {
+                    state.focusedId = undefined;
+                }
+            }
         },
         appendTriggerInteraction: (state, action: PayloadAction<{ tableId: string; entries: InteractionEntry[] }>) => {
             const table = state.derivedTables.find(t => t.id === action.payload.tableId);
@@ -1821,6 +1904,7 @@ export const dataFormulatorSlice = createSlice({
             }
             
             state.derivedTables = state.derivedTables.filter(t => t.id != tableId);
+            if (tableToDelete) repairDeletedTableReferences(state, [tableToDelete]);
         },
         clearUnReferencedTables: (state) => {
             // remove all tables that are not referred
@@ -1833,6 +1917,7 @@ export const dataFormulatorSlice = createSlice({
             deleteTablesFromWorkspace(tablesToRemove.map(t => t.virtual.tableId));
             
             state.derivedTables = state.derivedTables.filter(t => !tablesToRemove.some(tr => tr.id == t.id));
+            repairDeletedTableReferences(state, tablesToRemove);
         },
         clearUnReferencedCustomConcepts: (state) => {
             let fieldNamesFromTables = collectAllTables(state).map(t => t.names).flat();
@@ -2345,8 +2430,17 @@ export const dataFormulatorSlice = createSlice({
                     };
                 }
 
-                const displayName = data["result"][0]["suggested_table_name"] as string | undefined;
-                const info = { tableId, ...(displayName ? { displayName } : {}), fields };
+                const suggestedName = data["result"][0]["suggested_table_name"] as string | undefined;
+                const normalizeName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
+                if (suggestedName && normalizeName(table.displayId || table.id) === normalizeName(table.id)) {
+                    state.inputTables = state.inputTables.map(item =>
+                        item.id === tableId ? { ...item, displayId: suggestedName } : item
+                    );
+                    state.derivedTables = state.derivedTables.map(item =>
+                        item.id === tableId ? { ...item, displayId: suggestedName } : item
+                    );
+                }
+                const info = { tableId, fields };
                 const existingIndex = state.tableSemantics.findIndex(item => item.tableId === tableId);
                 if (existingIndex >= 0) state.tableSemantics[existingIndex] = info;
                 else state.tableSemantics.push(info);
@@ -2603,6 +2697,7 @@ export const dfSelectors = {
         // Counted raw rather than via `selectAllTables`, which materializes
         // every table from its snapshot just to answer "are there any?".
         (state.inputTables?.length ?? 0) === 0
+        && (state.workspaceFileCount ?? 0) === 0
         && (state.derivedTables?.length ?? 0) === 0
         && (state.textTurns?.length ?? 0) === 0
         && (state.draftNodes?.length ?? 0) === 0
@@ -2622,6 +2717,26 @@ export const dfSelectors = {
     getEffectiveTableId: (state: DataFormulatorState): string | undefined => {
         if (!state.focusedId) return undefined;
         if (state.focusedId.type === 'table') return state.focusedId.tableId;
+        if (state.focusedId.type === 'draft') {
+            const focusedDraftId = state.focusedId.draftId;
+            const draft = state.draftNodes.find(item => item.id === focusedDraftId);
+            if (!draft) return undefined;
+            if (selectAllTables(state).some(table => table.id === draft.parentNodeId)) return draft.parentNodeId;
+            let parentTurn = state.textTurns.find(turn => turn.id === draft.parentNodeId);
+            const seen = new Set<string>();
+            while (parentTurn && !seen.has(parentTurn.id)) {
+                seen.add(parentTurn.id);
+                if (parentTurn.sourceChartId) {
+                    const chart = collectAllCharts(state).find(item => item.id === parentTurn?.sourceChartId);
+                    if (chart) return chart.tableRef;
+                }
+                if (selectAllTables(state).some(table => table.id === parentTurn?.parentNodeId)) {
+                    return parentTurn.parentNodeId;
+                }
+                parentTurn = state.textTurns.find(turn => turn.id === parentTurn?.parentNodeId);
+            }
+            return undefined;
+        }
         // A focused text artifact is non-canvas-owning (design-docs/41): resolve
         // it to its source chart's table, else its thread-parent table.
         if (state.focusedId.type === 'text') {
@@ -2644,9 +2759,10 @@ export const dfSelectors = {
             }
             return undefined;
         }
-        // type === 'chart': derive table from the chart's tableRef
+        if (state.focusedId.type !== 'chart') return undefined;
+        const focusedChartId = state.focusedId.chartId;
         let allCharts = collectAllCharts(state);
-        let chart = allCharts.find(c => c.id === (state.focusedId as { type: 'chart'; chartId: string }).chartId);
+        let chart = allCharts.find(c => c.id === focusedChartId);
         return chart?.tableRef;
     },
     /**
@@ -2659,15 +2775,30 @@ export const dfSelectors = {
         [
             (state: DataFormulatorState) => state.focusedId,
             (state: DataFormulatorState) => state.textTurns,
+            (state: DataFormulatorState) => state.draftNodes,
             (state: DataFormulatorState) => state.charts,
             selectTriggerCharts,
             selectAllTables,
         ],
-        (focusedId, textTurns, userCharts, triggerCharts, tables): FocusedId => {
-            if (focusedId?.type !== 'text') return focusedId;
-            const art = textTurns.find(a => a.id === focusedId.textId);
+        (focusedId, textTurns, draftNodes, userCharts, triggerCharts, tables): FocusedId => {
+            if (focusedId?.type !== 'text' && focusedId?.type !== 'draft') return focusedId;
+            const draft = focusedId.type === 'draft'
+                ? draftNodes.find(item => item.id === focusedId.draftId)
+                : undefined;
+            const focusedTextId = focusedId.type === 'text' ? focusedId.textId : draft?.parentNodeId;
+            if (!focusedTextId) return undefined;
+            if (tables.some(table => table.id === focusedTextId)) {
+                const tableCharts = [...userCharts, ...triggerCharts].filter(chart => chart.tableRef === focusedTextId);
+                const nearest = tableCharts[tableCharts.length - 1];
+                return nearest ? { type: 'chart', chartId: nearest.id } : { type: 'table', tableId: focusedTextId };
+            }
+            const art = textTurns.find(a => a.id === focusedTextId);
             if (!art) return undefined;
-            if (art.dataOperation || art.form) return focusedId;
+            if (art.dataOperation || art.form) return { type: 'text', textId: art.id };
+            if (art.textKind === 'explain'
+                && shouldPreviewExplanationInCanvas(explanationContent(art.content, art.answered ? art.answer : undefined))) {
+                return { type: 'text', textId: art.id };
+            }
             if (art.sourceChartId
                 && [...userCharts, ...triggerCharts].some(c => c.id === art.sourceChartId)) {
                 return { type: 'chart', chartId: art.sourceChartId };
@@ -2681,7 +2812,7 @@ export const dfSelectors = {
                 seen.add(cur.id);
                 const p: string | undefined = cur.parentNodeId;
                 if (!p) break;
-                const parentTurn = textTurns.find(tt => tt.id === p);
+                const parentTurn: TextTurn | undefined = textTurns.find(tt => tt.id === p);
                 if (parentTurn?.dataOperation || parentTurn?.form) {
                     return { type: 'text', textId: parentTurn.id };
                 }

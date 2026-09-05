@@ -7,14 +7,20 @@ import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
-import { Alert, Box, Paper, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Paper, Tooltip, Typography, alpha, useTheme } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
-import DeleteIcon from '@mui/icons-material/Delete';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import { iconVar, textVar } from '../app/layout';
+import { borderColor, radius, shadow } from '../app/tokens';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -26,18 +32,11 @@ export interface Message {
     diagnostics?: any, // full diagnostic payload from the backend agent pipeline
 }
 
-const TYPE_SYMBOLS: Record<string, string> = {
-    error: '✗',
-    warning: '⚠',
-    info: 'ℹ',
-    success: '✓',
-};
-
-const TYPE_COLORS: Record<string, string> = {
-    error: '#d32f2f',
-    warning: '#ed6c02',
-    info: '#0288d1',
-    success: '#2e7d32',
+const SeverityIcon: React.FC<{ type: Message['type'] }> = ({ type }) => {
+    if (type === 'error') return <ErrorOutlineIcon fontSize="inherit" />;
+    if (type === 'warning') return <WarningAmberOutlinedIcon fontSize="inherit" />;
+    if (type === 'success') return <CheckCircleOutlineIcon fontSize="inherit" />;
+    return <InfoOutlinedIcon fontSize="inherit" />;
 };
 
 // Helper function to format timestamp
@@ -51,6 +50,7 @@ const formatTimestamp = (timestamp: number) => {
 };
 
 const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnostics }) => {
+    const theme = useTheme();
     const [expanded, setExpanded] = React.useState(false);
     const [copied, setCopied] = React.useState(false);
     const jsonStr = React.useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics]);
@@ -63,40 +63,48 @@ const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnost
     }, [jsonStr]);
 
     return (
-        <div style={{ marginTop: 4 }}>
-            <Typography fontSize={10} sx={{ color: '#888', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <span
-                    style={{ color: '#6a1b9a', cursor: 'pointer', userSelect: 'none' }}
+        <Box sx={{ mt: 0.75 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                <Button
+                    size="small"
+                    color="inherit"
+                    startIcon={expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
                     onClick={() => setExpanded(prev => !prev)}
+                    sx={{
+                        minWidth: 0, p: 0, textTransform: 'none',
+                        fontSize: textVar.xs, color: 'text.secondary',
+                        '& .MuiButton-startIcon': { mr: 0.25 },
+                    }}
                 >
-                    {expanded ? '▾' : '▸'} diagnostics
-                </span>
+                    Diagnostics
+                </Button>
                 {expanded && (
                     <Tooltip title={copied ? 'Copied!' : 'Copy JSON'} placement="top">
-                        <IconButton size="small" onClick={handleCopy} sx={{ p: 0, ml: 0.5 }}>
-                            <ContentCopyIcon sx={{ fontSize: iconVar.xs, color: copied ? '#2e7d32' : '#888' }} />
+                        <IconButton size="small" onClick={handleCopy} sx={{ p: 0.375 }}>
+                            <ContentCopyIcon sx={{ fontSize: iconVar.xs, color: copied ? 'success.main' : 'text.secondary' }} />
                         </IconButton>
                     </Tooltip>
                 )}
-            </Typography>
+            </Box>
             {expanded && (
-                <pre style={{
+                <Box component="pre" sx={{
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
                     fontSize: textVar.xxs,
-                    margin: '2px 0',
-                    padding: '6px 8px',
-                    backgroundColor: '#f5f0ff',
-                    border: '1px solid #e0d4f5',
-                    borderRadius: 3,
+                    m: '4px 0 0',
+                    p: 1,
+                    color: 'text.primary',
+                    backgroundColor: alpha(theme.palette.text.primary, 0.04),
+                    border: `1px solid ${borderColor.component}`,
+                    borderRadius: radius.sm,
                     maxHeight: 400,
                     overflow: 'auto',
                     lineHeight: 1.4,
                 }}>
                     {jsonStr}
-                </pre>
+                </Box>
             )}
-        </div>
+        </Box>
     );
 });
 
@@ -107,6 +115,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     
     const dispatch = useDispatch();
     const { t } = useTranslation();
+    const theme = useTheme();
 
     const [openLastMessage, setOpenLastMessage] = React.useState(false);
     const [latestMessage, setLatestMessage] = React.useState<Message | undefined>();
@@ -184,170 +193,284 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     return (
         <Box>
             <Tooltip placement="left" title={t('messages.viewSystemMessages')}>
-                <IconButton 
-                    color={buttonSeverity === "default" ? "default" : buttonSeverity}
+                <IconButton
+                    color={buttonSeverity === 'default' ? 'default' : buttonSeverity}
                     sx={{
-                        position: "absolute", bottom: 16, right: 16,
+                        position: 'fixed', bottom: 16, right: 16,
                         width: 30,
                         height: 30,
                         zIndex: 10,
                         backgroundColor: 'white',
                         border: '1px solid',
-                        borderColor: buttonSeverity === "default" ? 'grey.400' : `${buttonSeverity}.main`,
+                        borderColor: buttonSeverity === 'default' ? 'grey.400' : `${buttonSeverity}.main`,
                         boxShadow: '0 0 6px rgba(0,0,0,0.1)',
-                        opacity: buttonSeverity === "default" ? 0.6 : 1,
+                        opacity: buttonSeverity === 'default' ? 0.6 : 1,
                         transition: 'all 0.3s ease',
                         '&:hover': {
                             transform: 'scale(1.1)',
                             backgroundColor: 'white',
                         },
                     }}
-                    onClick={() => setOpenMessages(true)}
+                    aria-label={t('messages.viewSystemMessages')}
+                    onClick={() => {
+                        setOpenLastMessage(false);
+                        setOpenMessages(open => !open);
+                    }}
                 >
-                    {buttonSeverity === "error" ? <ErrorOutlineIcon sx={{fontSize: 20}}/> :
-                     buttonSeverity === "warning" ? <ErrorOutlineIcon sx={{fontSize: 20}}/> :
-                     buttonSeverity === "success" ? <CheckCircleIcon sx={{fontSize: 20}}/> :
-                     <InfoIcon sx={{fontSize: 20}}/>}
+                    {buttonSeverity === 'error' ? <ErrorOutlineIcon sx={{ fontSize: 20 }} /> :
+                     buttonSeverity === 'warning' ? <ErrorOutlineIcon sx={{ fontSize: 20 }} /> :
+                     buttonSeverity === 'success' ? <CheckCircleIcon sx={{ fontSize: 20 }} /> :
+                     <InfoIcon sx={{ fontSize: 20 }} />}
                 </IconButton>
             </Tooltip>
             <Snackbar
                 open={openMessages}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
-                sx={{maxWidth: '500px', maxHeight: '70vh'}}
+                sx={{
+                    width: { xs: 'calc(100% - 32px)', sm: 420 },
+                    maxWidth: 420,
+                    maxHeight: 'min(70vh, 620px)',
+                    left: { xs: 16, sm: 'auto' },
+                    right: { xs: 16, sm: 16 },
+                    bottom: '54px !important',
+                }}
             >
-                <Paper elevation={3} sx={{
+                <Paper elevation={0} sx={{
                     width: '100%',
                     color: 'text.primary',
                     display: 'flex',
                     flexDirection: 'column',
-                    minWidth: '300px',
-                    py: 1,
+                    minWidth: 0,
+                    maxHeight: 'min(70vh, 620px)',
+                    overflow: 'hidden',
+                    border: `1px solid ${borderColor.view}`,
+                    borderRadius: radius.md,
+                    boxShadow: shadow.xl,
                 }}>
                     {/* Header */}
-                    <Box sx={{display: 'flex', alignItems: 'center', px: 1.5}}>
-                        <Typography variant="subtitle1" sx={{fontSize: textVar.sm, flexGrow: 1, color: 'text.secondary'}}>
-                            {t('messages.systemMessagesWithCount', { count: messages.length })}{messages.length > MAX_DISPLAY_MESSAGES ? ` — showing latest ${MAX_DISPLAY_MESSAGES}` : ''}
-                        </Typography>
+                    <Box sx={{
+                        display: 'flex', alignItems: 'center', gap: 0.5,
+                        minHeight: 42, px: 1.25,
+                        borderBottom: `1px solid ${borderColor.divider}`,
+                    }}>
+                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                            <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3 }}>
+                                {t('messages.systemMessagesWithCount', { count: messages.length })}
+                            </Typography>
+                            {messages.length > MAX_DISPLAY_MESSAGES && (
+                                <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled', lineHeight: 1.3 }}>
+                                    {t('messages.showingLatest', {
+                                        count: MAX_DISPLAY_MESSAGES,
+                                        defaultValue: 'Showing the latest {{count}}',
+                                    })}
+                                </Typography>
+                            )}
+                        </Box>
                         <Tooltip title={t('messages.clearAllMessages')}>
                             <IconButton
                                 size="small"
-                                color="warning"
-                                aria-label="delete"
+                                aria-label={t('messages.clearAllMessages')}
+                                disabled={messages.length === 0}
                                 onClick={() => {
                                     dispatch(dfActions.clearMessages());
                                     dispatch(dfActions.setDisplayedMessageIndex(0));
                                     setOpenMessages(false);
                                 }}
+                                sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}
                             >
-                                <DeleteIcon fontSize="small" />
+                                <DeleteOutlineIcon sx={{ fontSize: iconVar.md }} />
                             </IconButton>
                         </Tooltip>
                         <IconButton
                             size="small"
-                            aria-label="close"
+                            aria-label={t('common.close', { defaultValue: 'Close' })}
                             onClick={() => setOpenMessages(false)}
+                            sx={{ color: 'text.secondary' }}
                         >
-                            <CloseIcon fontSize="small" />
+                            <CloseIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Box>
-                    {/* Message list — plain text, no MUI Alert per row */}
-                    <div 
+                    <Box
                         ref={messagesScrollRef}
-                        style={{
+                        sx={{
                             overflow: 'auto',
                             flexGrow: 1,
-                            maxHeight: '50vh',
-                            minHeight: 100,
-                            padding: '4px 12px',
+                            minHeight: 120,
                         }}
                     >
                         {messages.length === 0 && (
-                            <Typography fontSize={10} sx={{ opacity: 0.5, fontStyle: 'italic' }}>{t('messages.noMessages')}</Typography>
+                            <Box sx={{
+                                minHeight: 160, px: 3, py: 4,
+                                display: 'flex', flexDirection: 'column',
+                                alignItems: 'center', justifyContent: 'center', gap: 1,
+                                color: 'text.disabled', textAlign: 'center',
+                            }}>
+                                <InfoOutlinedIcon sx={{ fontSize: iconVar.lg }} />
+                                <Typography sx={{ fontSize: textVar.xs }}>
+                                    {t('messages.noMessages')}
+                                </Typography>
+                            </Box>
                         )}
                         {groupedMessages.map((msg, index) => {
-                            const color = TYPE_COLORS[msg.type] || '#333';
-                            const symbol = TYPE_SYMBOLS[msg.type] || '•';
+                            const color = theme.palette[msg.type].main;
                             const hasDetails = !!(msg.detail || msg.code || msg.diagnostics);
                             const isExpanded = expandedMessages.has(index);
                             return (
-                                <div key={index} style={{ borderBottom: '1px solid #f0f0f0', padding: '2px 0' }}>
-                                    <Typography fontSize={10} component="div" sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
-                                        <span style={{ color, fontWeight: 600 }}>{symbol}</span>
-                                        <span style={{ color: '#888' }}>[{formatTimestamp(msg.timestamp)}]</span>
-                                        <span>(<span style={{ color: '#888' }}>{msg.component}</span>) {msg.value}</span>
-                                        {msg.count > 1 && (
-                                            <span style={{ 
-                                                color, fontWeight: 600,
-                                                border: `1px solid ${color}`, borderRadius: 3,
-                                                padding: '0 3px', marginLeft: 2
-                                            }}>×{msg.count}</span>
-                                        )}
-                                        {hasDetails && (
-                                            <span 
-                                                style={{ color: '#0288d1', cursor: 'pointer', userSelect: 'none' }}
-                                                onClick={() => toggleExpand(index)}
-                                            >
-                                                {isExpanded ? `▾ ${t('messages.details')}` : `▸ ${t('messages.details')}`}
-                                            </span>
-                                        )}
-                                    </Typography>
-                                    {hasDetails && isExpanded && (
-                                        <div style={{ marginLeft: 20, padding: '4px 0', color: '#555' }}>
-                                            {msg.detail && (
-                                                <div style={{ marginBottom: 4 }}>
-                                                    <Typography fontSize={10} sx={{ color: '#888' }}>— details —</Typography>
-                                                    <Typography fontSize={10}>{msg.detail}</Typography>
-                                                </div>
+                                <Box
+                                    key={index}
+                                    sx={{
+                                        display: 'flex', alignItems: 'flex-start', gap: 0.75,
+                                        px: 1.25, py: 0.875,
+                                        borderBottom: index < groupedMessages.length - 1
+                                            ? `1px solid ${borderColor.divider}`
+                                            : 'none',
+                                    }}
+                                >
+                                    <Box sx={{
+                                        mt: 0.25, flexShrink: 0, display: 'flex',
+                                        fontSize: iconVar.xs, color,
+                                    }}>
+                                        <SeverityIcon type={msg.type} />
+                                    </Box>
+                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                        <Typography sx={{
+                                            fontSize: textVar.xs, lineHeight: 1.4,
+                                            color: 'text.primary', overflowWrap: 'anywhere',
+                                        }}>
+                                            {msg.value}
+                                        </Typography>
+                                        <Box sx={{
+                                            display: 'flex', alignItems: 'center',
+                                            flexWrap: 'wrap', columnGap: 0.75, rowGap: 0.25,
+                                            mt: 0.25,
+                                        }}>
+                                            <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary' }}>
+                                                {msg.component}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled' }}>
+                                                {formatTimestamp(msg.timestamp)}
+                                            </Typography>
+                                            {msg.count > 1 && (
+                                                <Box component="span" sx={{
+                                                    color, fontSize: textVar.xxs,
+                                                    fontWeight: 600, lineHeight: 1.4,
+                                                }}>
+                                                    ×{msg.count}
+                                                </Box>
                                             )}
-                                            {msg.code && (
-                                                <div>
-                                                    <Typography fontSize={10} sx={{ color: '#888' }}>— code —</Typography>
-                                                    <pre style={{ 
-                                                        whiteSpace: 'pre-wrap', 
+                                            {hasDetails && (
+                                                <Button
+                                                    size="small"
+                                                    color="inherit"
+                                                    startIcon={isExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+                                                    onClick={() => toggleExpand(index)}
+                                                    sx={{
+                                                        minWidth: 0, p: 0,
+                                                        textTransform: 'none', fontSize: textVar.xxs,
+                                                        color: 'text.secondary',
+                                                        '& .MuiButton-startIcon': { mr: 0.125 },
+                                                        '&:hover': { color: 'primary.main', backgroundColor: 'transparent' },
+                                                    }}
+                                                >
+                                                    {t('messages.details')}
+                                                </Button>
+                                            )}
+                                        </Box>
+                                        {hasDetails && isExpanded && (
+                                            <Box sx={{
+                                                mt: 0.75, p: 1,
+                                                color: 'text.secondary',
+                                                backgroundColor: alpha(theme.palette.text.primary, 0.035),
+                                                border: `1px solid ${borderColor.component}`,
+                                                borderRadius: radius.sm,
+                                            }}>
+                                                {msg.detail && (
+                                                    <Typography sx={{
+                                                        fontSize: textVar.xs, lineHeight: 1.5,
+                                                        whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+                                                    }}>
+                                                        {msg.detail}
+                                                    </Typography>
+                                                )}
+                                                {msg.code && (
+                                                    <Box component="pre" sx={{
+                                                        whiteSpace: 'pre-wrap',
                                                         wordBreak: 'break-word',
                                                         fontSize: textVar.xxs,
-                                                        margin: '2px 0',
-                                                        padding: '4px 8px',
-                                                        backgroundColor: '#f8f8f8',
-                                                        borderRadius: 3,
+                                                        m: msg.detail ? '8px 0 0' : 0,
+                                                        p: 1,
+                                                        color: 'text.primary',
+                                                        backgroundColor: 'background.paper',
+                                                        border: `1px solid ${borderColor.component}`,
+                                                        borderRadius: radius.sm,
+                                                        overflow: 'auto',
                                                     }}>
                                                         {msg.code.split('\n').filter(line => line.trim() !== '').join('\n')}
-                                                    </pre>
-                                                </div>
-                                            )}
-                                            {msg.diagnostics && (
-                                                <DiagnosticsViewer diagnostics={msg.diagnostics} />
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
+                                                    </Box>
+                                                )}
+                                                {msg.diagnostics && <DiagnosticsViewer diagnostics={msg.diagnostics} />}
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </Box>
                             );
                         })}
-                    </div>
+                    </Box>
                 </Paper>
             </Snackbar>
             
-            {/* Last message toast — keep the single Alert for latest message popup */}
-            {latestMessage != undefined ? <Snackbar
+            {latestMessage != undefined ? (
+                <Snackbar
                 open={openLastMessage}
                 autoHideDuration={latestMessage?.type == "error" ? 20000 : 10000}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
                 onClose={handleClose}
+                sx={{
+                    bottom: '54px !important',
+                    maxWidth: { xs: 'calc(100% - 32px)', sm: 420 },
+                }}
             >
-                <Alert onClose={handleClose} severity={latestMessage?.type} sx={{ maxWidth: '400px', maxHeight: '600px', overflow: 'auto' }}>
-                    <Typography fontSize={12} component="span" sx={{margin: "auto"}}>
-                        <b>[{formatTimestamp(latestMessage.timestamp)}] ({latestMessage.component})</b> {latestMessage?.value}
-                    </Typography> 
-                    {latestMessage?.detail && <>
-                        <div style={{ borderTop: '1px solid #ddd', margin: '4px 0', fontSize: textVar.sm }}>{latestMessage.detail}</div>
-                    </>}
-                    {latestMessage?.code && 
-                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: textVar.xxs, opacity: 0.7, margin: '4px 0' }}>
+                <Alert
+                    onClose={handleClose}
+                    severity={latestMessage.type}
+                    variant="standard"
+                    sx={{
+                        width: '100%', maxHeight: 'min(60vh, 560px)', overflow: 'auto',
+                        alignItems: 'flex-start',
+                        border: `1px solid ${alpha(theme.palette[latestMessage.type].main, 0.24)}`,
+                        borderRadius: radius.md,
+                        boxShadow: shadow.xl,
+                        '& .MuiAlert-message': { width: '100%', minWidth: 0 },
+                    }}
+                >
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mb: 0.25 }}>
+                        {latestMessage.component} · {formatTimestamp(latestMessage.timestamp)}
+                    </Typography>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.primary', overflowWrap: 'anywhere' }}>
+                        {latestMessage.value}
+                    </Typography>
+                    {latestMessage.detail && (
+                        <Typography sx={{
+                            mt: 0.75, pt: 0.75,
+                            borderTop: `1px solid ${borderColor.divider}`,
+                            fontSize: textVar.xs, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+                        }}>
+                            {latestMessage.detail}
+                        </Typography>
+                    )}
+                    {latestMessage.code && (
+                        <Box component="pre" sx={{
+                            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                            fontSize: textVar.xxs, m: '8px 0 0', p: 1,
+                            backgroundColor: alpha(theme.palette.text.primary, 0.05),
+                            borderRadius: radius.sm,
+                        }}>
                             {latestMessage.code.split('\n').filter(line => line.trim() !== '').join('\n')}
-                        </pre>
-                    }
+                        </Box>
+                    )}
                 </Alert>    
-            </Snackbar> : ""}
+                </Snackbar>
+            ) : null}
         </Box>
     );
 });

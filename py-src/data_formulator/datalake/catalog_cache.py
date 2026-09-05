@@ -378,188 +378,292 @@ def list_cached_sources(workspace_root: Path | str) -> list[str]:
             sources = [s for s in sources if s in allowed]
         except Exception:
             logger.debug("Failed to filter cached sources by admin set", exc_info=True)
+    try:
+        from data_formulator.datalake.connector_preferences import disabled_connector_ids
+        disabled_sources = disabled_connector_ids(workspace_root)
+        sources = [source for source in sources if source not in disabled_sources]
+    except Exception:
+        logger.debug("Failed to filter disabled cached sources", exc_info=True)
     return sources
 
 
-def _search_python(
+def find_catalog_cache(
     workspace_root: Path | str,
-    needle: str,
-    all_ids: list[str],
-    exclude: set[str],
-    limit_per_source: int,
-    *,
-    exclude_pattern: re.Pattern | None = None,
-    fields: set[str] | None = None,
-    path_prefix: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    """Structured field search over the on-disk catalog cache.
-
-    ``needle`` is always a regex pattern (case-insensitive).  Callers who
-    want literal substring matching should ``re.escape`` first.  Invalid
-    patterns raise :class:`CatalogSearchError`.
-    """
-    match_fields = fields if fields is not None else {"name", "description", "columns"}
-
-    try:
-        compiled = re.compile(needle, re.IGNORECASE)
-    except re.error as exc:
-        raise CatalogSearchError(f"Invalid query regex: {exc}") from exc
-
-    def _matches(text: str) -> bool:
-        return bool(text) and compiled.search(text) is not None
-
-    results: list[dict[str, Any]] = []
-    plen = len(path_prefix) if path_prefix else 0
-    prefix = list(path_prefix or [])
-
-    for sid in all_ids:
-        raw = _load_catalog_raw(workspace_root, sid)
-        if not raw:
-            continue
-
-        original_source_id = raw.get("source_id", sid)
-        tables = raw.get("tables", [])
-
-        source_hits: list[dict[str, Any]] = []
-        for t in tables:
-            tname = t.get("name", "")
-            if tname in exclude:
-                continue
-
-            # Path-prefix filter
-            if plen:
-                tpath = t.get("path") or []
-                if not isinstance(tpath, list) or len(tpath) < plen:
-                    continue
-                if [str(s) for s in tpath[:plen]] != prefix:
-                    continue
-
-            # Exclude pattern (regex on name)
-            if exclude_pattern is not None and exclude_pattern.search(tname):
-                continue
-
-            score = 0
-            matched_cols: list[str] = []
-            match_reasons: list[str] = []
-            meta = t.get("metadata") or {}
-            table_key = t.get("table_key", "")
-
-            if "name" in match_fields and _matches(tname):
-                score += 10
-                match_reasons.append("table_name")
-
-            # Source description
-            src_desc = meta.get("description", "")
-            if "description" in match_fields and src_desc and _matches(src_desc):
-                score += 5
-                match_reasons.append("source_description")
-
-            # Source columns
-            if "columns" in match_fields:
-                for col in meta.get("columns", []):
-                    cname = col.get("name", "")
-                    if cname and _matches(cname):
-                        matched_cols.append(cname)
-                        score += 2
-                        if "column_name" not in match_reasons:
-                            match_reasons.append("column_name")
-                    cdesc = col.get("description", "")
-                    if cdesc and _matches(cdesc):
-                        matched_cols.append(cname)
-                        score += 1
-                        if "source_column_description" not in match_reasons:
-                            match_reasons.append("source_column_description")
-
-            if score > 0:
-                source_hits.append({
-                    "source_id": original_source_id,
-                    "table_key": table_key,
-                    "name": tname,
-                    "description": src_desc,
-                    "matched_columns": list(dict.fromkeys(matched_cols)),
-                    "score": score,
-                    "match_reasons": match_reasons,
-                    "metadata_status": meta.get("source_metadata_status", ""),
-                })
-
-        source_hits.sort(key=lambda r: -r["score"])
-        results.extend(source_hits[:limit_per_source])
-
-    results.sort(key=lambda r: -r["score"])
-    return results
-
-
-def search_catalog_cache(
-    workspace_root: Path | str,
-    query: str,
+    query: str | None = None,
     source_ids: list[str] | None = None,
-    limit_per_source: int = 20,
-    exclude_tables: set[str] | None = None,
+    limit: int = 100,
     *,
-    exclude_pattern: str | None = None,
+    filter_by: str | None = None,
     fields: list[str] | None = None,
     path_prefix: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    """Search across cached catalogs for tables matching a regex pattern.
+    exclude_tables: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Recursively find typed catalog nodes below an exact path.
 
-    ``query`` is treated as a case-insensitive regex.  Callers passing
-    user-typed keywords should ``re.escape`` the input first.  Invalid
-    patterns raise :class:`CatalogSearchError`.
-
-    Returns a flat list of match dicts with fields:
-    ``source_id``, ``table_key``, ``name``, ``description``,
-    ``matched_columns``, ``score``, ``match_reasons``, ``metadata_status``.
-
-    ``exclude_pattern``, ``fields``, and ``path_prefix`` further constrain
-    the search.
+    ``query`` is an optional case-insensitive regex. Omitting it enumerates all
+    selected descendants. Results are flat and include exact source paths.
     """
-    needle_raw = (query or "").strip()
-    if not needle_raw:
-        return []
+    node_filter = (filter_by or "").strip().lower() or None
+    if node_filter not in {None, "folder", "table"}:
+        raise ValueError("filter_by must be 'folder' or 'table'")
 
-    exclude = exclude_tables or set()
-    all_ids = source_ids or list_cached_sources(workspace_root)
-
-    # Compile exclude pattern up-front so a bad pattern surfaces clearly.
-    excl_re = None
-    if exclude_pattern:
+    pattern = None
+    if query and query.strip():
         try:
-            excl_re = re.compile(exclude_pattern, re.IGNORECASE)
+            pattern = re.compile(query.strip(), re.IGNORECASE)
         except re.error as exc:
-            raise CatalogSearchError(f"Invalid exclude regex: {exc}") from exc
+            raise CatalogSearchError(f"Invalid query regex: {exc}") from exc
 
-    fields_set = set(fields) if fields else None
+    match_fields = set(fields or ["name", "description", "columns"])
+    prefix = [str(segment) for segment in (path_prefix or [])]
+    excluded_tables = exclude_tables or set()
+    all_ids = source_ids if source_ids is not None else list_cached_sources(workspace_root)
+    try:
+        from data_formulator.datalake.connector_preferences import disabled_connector_ids
+        disabled_sources = disabled_connector_ids(workspace_root)
+        all_ids = [source_id for source_id in all_ids if source_id not in disabled_sources]
+    except Exception:
+        logger.debug("Failed to filter disabled catalog finder sources", exc_info=True)
+    cap = max(1, min(int(limit or 100), 500))
+    results: list[dict[str, Any]] = []
 
-    return _search_python(
-        workspace_root,
-        needle_raw,
-        all_ids,
-        exclude,
-        limit_per_source,
-        exclude_pattern=excl_re,
-        fields=fields_set,
-        path_prefix=list(path_prefix or []),
-    )
+    for source_id in all_ids:
+        raw = _load_catalog_raw(workspace_root, source_id)
+        if not raw:
+            continue
+        original_source_id = raw.get("source_id", source_id)
+        tables = raw.get("tables", []) or []
+        normalized_tables: list[tuple[dict[str, Any], list[str]]] = []
+        folder_stats: dict[tuple[str, ...], dict[str, Any]] = {}
+
+        for table in tables:
+            table_name = str(table.get("name", ""))
+            raw_path = table.get("path")
+            table_path = [str(segment) for segment in raw_path] if isinstance(raw_path, list) else []
+            if not table_path and table_name:
+                table_path = [table_name]
+            normalized_tables.append((table, table_path))
+
+            for depth in range(1, len(table_path)):
+                folder_path = tuple(table_path[:depth])
+                stats = folder_stats.setdefault(
+                    folder_path,
+                    {"children": set(), "descendant_table_count": 0},
+                )
+                child_type = "folder" if depth < len(table_path) - 1 else "table"
+                stats["children"].add((child_type, table_path[depth]))
+                stats["descendant_table_count"] += 1
+
+        if node_filter != "table":
+            for folder_path, stats in folder_stats.items():
+                if len(folder_path) <= len(prefix) or list(folder_path[:len(prefix)]) != prefix:
+                    continue
+                name = folder_path[-1]
+                if pattern is not None and pattern.search(name) is None:
+                    continue
+                results.append({
+                    "type": "folder",
+                    "source_id": original_source_id,
+                    "name": name,
+                    "path": list(folder_path),
+                    "child_count": len(stats["children"]),
+                    "descendant_table_count": stats["descendant_table_count"],
+                    "score": 10 if pattern is not None else 0,
+                    "match_reasons": ["folder_name"] if pattern is not None else [],
+                })
+
+        if node_filter == "folder":
+            continue
+
+        for table, table_path in normalized_tables:
+            if len(table_path) <= len(prefix) or table_path[:len(prefix)] != prefix:
+                continue
+
+            table_name = str(table.get("name", ""))
+            leaf_name = table_path[-1]
+            if table_name in excluded_tables:
+                continue
+
+            metadata = table.get("metadata") or {}
+            description = str(metadata.get("description", ""))
+            score = 0
+            matched_columns: list[str] = []
+            match_reasons: list[str] = []
+            if pattern is not None:
+                if "name" in match_fields and (
+                    pattern.search(leaf_name) or pattern.search(table_name)
+                ):
+                    score += 10
+                    match_reasons.append("table_name")
+                if "description" in match_fields and pattern.search(description):
+                    score += 5
+                    match_reasons.append("source_description")
+                if "columns" in match_fields:
+                    for column in metadata.get("columns", []):
+                        column_name = str(column.get("name", ""))
+                        column_description = str(column.get("description", ""))
+                        if pattern.search(column_name):
+                            score += 2
+                            matched_columns.append(column_name)
+                            if "column_name" not in match_reasons:
+                                match_reasons.append("column_name")
+                        if pattern.search(column_description):
+                            score += 1
+                            matched_columns.append(column_name)
+                            if "source_column_description" not in match_reasons:
+                                match_reasons.append("source_column_description")
+                if score == 0:
+                    continue
+
+            results.append({
+                "type": "table",
+                "source_id": original_source_id,
+                "name": leaf_name,
+                "path": table_path,
+                "table_key": table.get("table_key", "") or "",
+                "description": description[:120],
+                "matched_columns": list(dict.fromkeys(matched_columns)),
+                "score": score,
+                "match_reasons": match_reasons,
+                "metadata_status": metadata.get("source_metadata_status", ""),
+            })
+
+    results.sort(key=lambda item: (
+        -item["score"],
+        item["source_id"].casefold(),
+        0 if item["type"] == "folder" else 1,
+        [segment.casefold() for segment in item["path"]],
+        item["path"],
+    ))
+    return results[:cap], len(results) > cap
 
 
 # ---------------------------------------------------------------------------
 # Hierarchy navigation (used by the data loading agent's list_data tool)
 # ---------------------------------------------------------------------------
 
-# Hard cap on entries returned in one list_path_children response.  See
-# design-docs/32-data-loading-agent-navigation.md §5.  Truncation pushes the
-# agent toward find_data or a tighter filter rather than pagination.
-LIST_DATA_LIMIT = 200
+# Directory listings default to 100 immediate children and allow callers to
+# request at most 500.
+LIST_DATA_DEFAULT_LIMIT = 100
+LIST_DATA_MAX_LIMIT = 500
 
+# Compact orientation only; agents inspect a source before describing its data.
+SOURCE_TOP_LEVEL_PREVIEW = 12
+SUMMARY_TOP_LEVEL_LIMIT = 5
+SUMMARY_TABLE_LIMIT = 5
+
+
+def summarize_catalog_sources(
+    workspace_root: Path | str,
+    top_level_limit: int = SUMMARY_TOP_LEVEL_LIMIT,
+    table_limit: int = SUMMARY_TABLE_LIMIT,
+) -> list[dict[str, Any]]:
+    """Return bounded, branch-diverse impressions of cached sources."""
+    summaries: list[dict[str, Any]] = []
+    for source_id in list_cached_sources(workspace_root):
+        raw = _load_catalog_raw(workspace_root, source_id)
+        if not raw:
+            continue
+
+        original_source_id = raw.get("source_id", source_id)
+        tables = raw.get("tables", []) or []
+        folder_paths: set[tuple[str, ...]] = set()
+        top_folders: dict[str, int] = {}
+        root_tables: list[dict[str, Any]] = []
+        tables_by_branch: dict[str, list[dict[str, Any]]] = {}
+        max_depth = 0
+
+        for table in tables:
+            name = str(table.get("name", ""))
+            raw_path = table.get("path")
+            path = [str(segment) for segment in raw_path] if isinstance(raw_path, list) else []
+            if not path and name:
+                path = [name]
+            if not path:
+                continue
+
+            max_depth = max(max_depth, len(path) - 1)
+            for depth in range(1, len(path)):
+                folder_paths.add(tuple(path[:depth]))
+
+            item = {
+                "type": "table",
+                "name": path[-1],
+                "path": path,
+                "table_key": table.get("table_key", "") or "",
+            }
+            description = str((table.get("metadata") or {}).get("description", ""))
+            if description:
+                item["description"] = description[:80]
+
+            if len(path) == 1:
+                root_tables.append(item)
+                branch = ""
+            else:
+                branch = path[0]
+                top_folders[branch] = top_folders.get(branch, 0) + 1
+            tables_by_branch.setdefault(branch, []).append(item)
+
+        top_level: list[dict[str, Any]] = [
+            {
+                "type": "folder",
+                "name": name,
+                "path": [name],
+                "descendant_table_count": count,
+            }
+            for name, count in sorted(
+                top_folders.items(), key=lambda entry: (-entry[1], entry[0].casefold(), entry[0])
+            )
+        ]
+        root_tables.sort(key=lambda item: (item["name"].casefold(), item["name"]))
+        top_level.extend(root_tables)
+
+        for branch_tables in tables_by_branch.values():
+            branch_tables.sort(key=lambda item: (
+                [segment.casefold() for segment in item["path"]], item["path"]
+            ))
+        sample_tables: list[dict[str, Any]] = []
+        branch_names = sorted(tables_by_branch, key=lambda name: (name.casefold(), name))
+        sample_index = 0
+        while len(sample_tables) < table_limit:
+            added = False
+            for branch in branch_names:
+                branch_tables = tables_by_branch[branch]
+                if sample_index < len(branch_tables):
+                    sample_tables.append(branch_tables[sample_index])
+                    added = True
+                    if len(sample_tables) == table_limit:
+                        break
+            if not added:
+                break
+            sample_index += 1
+
+        summaries.append({
+            "source_id": original_source_id,
+            "table_count": len(tables),
+            "folder_count": len(folder_paths),
+            "max_depth": max_depth,
+            "top_level": top_level[:top_level_limit],
+            "sample_tables": sample_tables,
+            "omitted": {
+                "top_level": max(0, len(top_level) - top_level_limit),
+                "tables": max(0, len(tables) - len(sample_tables)),
+            },
+        })
+
+    summaries.sort(key=lambda summary: summary["source_id"])
+    return summaries
 
 def list_sources_summary(
     workspace_root: Path | str,
 ) -> list[dict[str, Any]]:
     """Return a per-source summary suitable for ``list_data()`` with no args.
 
-    Each entry: ``{source_id, table_count, is_hierarchical}``.  Sources whose
-    cache file is missing or unreadable are skipped silently — the agent
-    treats the cache as ground truth (see design-docs §8).
+    Each entry includes a bounded ``top_level`` preview and an explicit
+    ``top_level_truncated`` signal. The preview is orientation, not a substitute
+    for listing or finding data within the source.
+    Sources whose cache file is missing or unreadable are skipped silently — the
+    agent treats the cache as ground truth (see design-docs §8).
     """
     out: list[dict[str, Any]] = []
     for sid in list_cached_sources(workspace_root):
@@ -568,15 +672,28 @@ def list_sources_summary(
             continue
         tables = raw.get("tables", []) or []
         is_hier = False
+        folders: list[str] = []
+        seen_folders: set[str] = set()
+        leaves: list[str] = []
         for t in tables:
             p = t.get("path")
-            if isinstance(p, list) and len(p) >= 2:
+            p = [str(s) for s in p] if isinstance(p, list) else []
+            if len(p) >= 2:
                 is_hier = True
-                break
+                if p[0] not in seen_folders:
+                    seen_folders.add(p[0])
+                    folders.append(p[0])
+            else:
+                leaf = p[0] if p else str(t.get("name", ""))
+                if leaf:
+                    leaves.append(leaf)
+        top_level = folders + leaves
         out.append({
             "source_id": raw.get("source_id", sid),
             "table_count": len(tables),
             "is_hierarchical": is_hier,
+            "top_level": top_level[:SOURCE_TOP_LEVEL_PREVIEW],
+            "top_level_truncated": len(top_level) > SOURCE_TOP_LEVEL_PREVIEW,
         })
     out.sort(key=lambda r: r["source_id"])
     return out
@@ -586,8 +703,9 @@ def list_path_children(
     workspace_root: Path | str,
     source_id: str,
     path: list[str] | None = None,
-    filter: str | None = None,
-    limit: int = LIST_DATA_LIMIT,
+    filter_by: str | None = None,
+    limit: int = LIST_DATA_DEFAULT_LIMIT,
+    start_after: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """List direct children at a hierarchy level within a source's catalog.
 
@@ -601,35 +719,31 @@ def list_path_children(
       equal the input path.  At depth 0 we additionally surface records with
       empty path, using their ``name`` as the leaf.
 
-    ``filter`` is a case-insensitive substring match on the immediate child
-    segment / table name (the *next* segment after the prefix), equivalent to
-    ``ls <path>/*<filter>*``.  Not a regex — keep this primitive cheap.
-
-    Returns ``{source_id, path, folders, tables, total_folders, total_tables,
-    truncated, hint?}``.  Combined ``folders + tables`` are capped at ``limit``
-    (folders take precedence to preserve drill-down).
+    ``filter_by`` may be ``folder`` or ``table``. Results use deterministic
+    folder-first ordering and ``start_after`` is an exclusive node reference.
     """
     path = [str(p) for p in (path or [])]
     K = len(path)
-    cap = max(1, min(int(limit or LIST_DATA_LIMIT), LIST_DATA_LIMIT))
-    filt = (filter or "").strip().lower() or None
+    cap = max(1, min(int(limit or LIST_DATA_DEFAULT_LIMIT), LIST_DATA_MAX_LIMIT))
+    node_filter = (filter_by or "").strip().lower() or None
+    if node_filter not in {None, "folder", "table"}:
+        raise ValueError("filter_by must be 'folder' or 'table'")
 
     raw = _load_catalog_raw(workspace_root, source_id)
     if not raw:
         return {
             "source_id": source_id,
             "path": path,
-            "folders": [],
-            "tables": [],
-            "total_folders": 0,
-            "total_tables": 0,
+            "items": [],
+            "total_count": 0,
             "truncated": False,
         }
 
     original_sid = raw.get("source_id", source_id)
     tables_raw = raw.get("tables", []) or []
 
-    folder_counts: dict[str, int] = {}
+    folder_table_counts: dict[str, int] = {}
+    folder_child_names: dict[str, set[tuple[str, str]]] = {}
     leaf_tables: list[dict[str, Any]] = []
 
     for t in tables_raw:
@@ -649,9 +763,10 @@ def list_path_children(
         # Folder: at least one more segment after the prefix beyond the leaf.
         if plen >= K + 2:
             seg = tpath[K]
-            if filt and filt not in seg.lower():
-                continue
-            folder_counts[seg] = folder_counts.get(seg, 0) + 1
+            folder_table_counts[seg] = folder_table_counts.get(seg, 0) + 1
+            child_type = "folder" if plen >= K + 3 else "table"
+            child_name = tpath[K + 1]
+            folder_child_names.setdefault(seg, set()).add((child_type, child_name))
             continue
 
         # Table at this level.
@@ -663,53 +778,62 @@ def list_path_children(
         else:
             continue
 
-        if filt and filt not in leaf.lower():
-            continue
-
-        meta = t.get("metadata") or {}
-        desc = (meta.get("description") or "")[:120]
         leaf_tables.append({
+            "type": "table",
             "name": leaf,
+            "path": [*path, leaf],
             "table_key": t.get("table_key", "") or "",
-            "description": desc,
         })
 
-    # Sort folders by table_count desc then name; tables by name.
     folders = [
-        {"name": name, "table_count": cnt}
-        for name, cnt in sorted(
-            folder_counts.items(), key=lambda kv: (-kv[1], kv[0])
-        )
+        {
+            "type": "folder",
+            "name": name,
+            "path": [*path, name],
+            "child_count": len(folder_child_names[name]),
+            "descendant_table_count": table_count,
+        }
+        for name, table_count in folder_table_counts.items()
     ]
-    leaf_tables.sort(key=lambda r: r["name"])
+    folders.sort(key=lambda item: (item["name"].casefold(), item["name"]))
+    leaf_tables.sort(key=lambda item: (item["name"].casefold(), item["name"]))
+    items = (
+        folders if node_filter == "folder"
+        else leaf_tables if node_filter == "table"
+        else folders + leaf_tables
+    )
+    total_count = len(items)
 
-    total_folders = len(folders)
-    total_tables = len(leaf_tables)
-    total = total_folders + total_tables
-    truncated = total > cap
+    if start_after is not None:
+        try:
+            start_index = next(
+                index for index, item in enumerate(items)
+                if item["type"] == start_after.get("type")
+                and item["path"] == start_after.get("path")
+                and (
+                    item["type"] == "folder"
+                    or item["table_key"] == start_after.get("table_key")
+                )
+            )
+        except (AttributeError, StopIteration) as exc:
+            raise ValueError("start_after does not identify an immediate child") from exc
+        items = items[start_index + 1:]
 
-    # Combined cap: folders first (drill-down has higher value), then tables.
-    if total_folders >= cap:
-        folders = folders[:cap]
-        leaf_tables = []
-    else:
-        leaf_tables = leaf_tables[: cap - total_folders]
+    page_items = items[:cap]
+    truncated = len(items) > len(page_items)
 
     result: dict[str, Any] = {
         "source_id": original_sid,
         "path": path,
-        "folders": folders,
-        "tables": leaf_tables,
-        "total_folders": total_folders,
-        "total_tables": total_tables,
+        "items": page_items,
+        "total_count": total_count,
         "truncated": truncated,
     }
     if truncated:
-        remaining = total - len(folders) - len(leaf_tables)
-        result["hint"] = (
-            f"{remaining} more entries not shown. Use list_path_children(filter=...) "
-            f"to narrow, or find_data(query=..., scope='{original_sid}"
-            + (":" + "/".join(path) if path else "")
-            + "') to search this subtree."
-        )
+        last_item = page_items[-1]
+        result["next_start_after"] = {
+            key: last_item[key]
+            for key in ("type", "path", "table_key")
+            if key in last_item
+        }
     return result

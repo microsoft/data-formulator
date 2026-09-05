@@ -191,6 +191,7 @@ export const toolName = "Data Formulator"
 const LANGUAGE_LABELS: Record<string, string> = {
     en: 'EN',
     zh: '中文',
+    hi: 'हिन्दी',
     ja: '日本語',
     ko: '한국어',
     fr: 'FR',
@@ -1129,7 +1130,7 @@ const AppShell: FC = () => {
                 <AppBar position="static">
                     <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
                         <Box sx={{ width: 40, minWidth: 40, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            <Box component="img" sx={{ height: 20 }} alt="" src={dfLogo} />
+                            <Box component="img" sx={{ height: 20, display: 'block', transform: 'translateY(-2px)' }} alt="" src={dfLogo} />
                         </Box>
                         {isCompactToolbar ? (
                             <PageNavMenu isAboutPage={isAboutPage} />
@@ -1137,15 +1138,16 @@ const AppShell: FC = () => {
                         <>
                         <Button sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
-                            alignItems: 'stretch',
+                            alignItems: 'center',
                             backgroundColor: 'transparent',
                             minWidth: 0,
+                            height: 36,
                             px: 0.5,
                             "&:hover": {
                                 backgroundColor: "transparent"
                             }
                         }} color="inherit">
-                            <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
+                            <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, lineHeight: 1.2, letterSpacing: '0.03em' }}>
                                 {toolName}
                             </Typography>
                         </Button>

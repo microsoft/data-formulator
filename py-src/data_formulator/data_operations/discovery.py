@@ -50,11 +50,25 @@ def ensure_catalogs_current(user_home: Any) -> dict[str, Any]:
         return {}
     snapshots: dict[str, Any] = {}
     try:
-        from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
+        from data_formulator.data_connector import (
+            _ADMIN_CONNECTOR_IDS,
+            connector_is_available,
+            list_available_connector_ids,
+        )
         from data_formulator.datalake.catalog_cache import list_cached_sources
+        from data_formulator.datalake.connector_preferences import connector_is_enabled
         from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
 
-        source_ids = set(list_cached_sources(user_home)) | set(_ADMIN_CONNECTOR_IDS)
+        source_ids = (
+            set(list_cached_sources(user_home))
+            | set(_ADMIN_CONNECTOR_IDS)
+            | set(list_available_connector_ids())
+        )
+        source_ids = {
+            source_id for source_id in source_ids
+            if connector_is_enabled(user_home, source_id)
+            and connector_is_available(source_id) is not False
+        }
         for source_id in source_ids:
             snapshot = ensure_catalog_freshness(Path(user_home), source_id)
             if snapshot is not None:
@@ -79,11 +93,62 @@ def _freshness_payload(snapshot: Any) -> dict[str, Any]:
     }
 
 
+def _source_is_discoverable(source_id: str) -> bool:
+    """Hide sources known to be disconnected; keep unknown status compatible."""
+    try:
+        from data_formulator.data_connector import connector_is_available
+        return connector_is_available(source_id) is not False
+    except Exception:
+        logger.debug("Connector availability unavailable for %s", source_id, exc_info=True)
+        return True
+
+
 class DataDiscoveryService:
     """Read-only catalog discovery shared by data-loading entry points."""
 
     def __init__(self, workspace: Any):
         self.workspace = workspace
+
+    @staticmethod
+    def _connected_source_inventory(
+        user_home: Any,
+        snapshots: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        from data_formulator.datalake.catalog_cache import list_sources_summary
+
+        try:
+            sources = list_sources_summary(user_home)
+        except Exception:
+            logger.debug("connected source inventory failed", exc_info=True)
+            sources = []
+        try:
+            from data_formulator.data_connector import list_available_connector_ids
+            summarized_ids = {source.get("source_id") for source in sources}
+            sources.extend({
+                "source_id": source_id,
+                "table_count": 0,
+                "is_hierarchical": False,
+                "connected": True,
+                "catalog_status": "not_cached",
+            } for source_id in list_available_connector_ids() if source_id not in summarized_ids)
+        except Exception:
+            logger.debug("available connector inventory failed", exc_info=True)
+
+        sources = [
+            source for source in sources
+            if not source.get("source_id")
+            or _source_is_discoverable(source["source_id"])
+        ]
+        for source in sources:
+            source_id = source.get("source_id")
+            snapshot = snapshots.get(source_id)
+            if snapshot and (
+                snapshot.listing_freshness != "fresh"
+                or snapshot.metadata_freshness != "fresh"
+                or snapshot.last_refresh_error
+            ):
+                source["freshness"] = _freshness_payload(snapshot)
+        return sorted(sources, key=lambda source: source.get("source_id", ""))
 
     def list_data(self, args: dict[str, Any]) -> dict[str, Any]:
         from data_formulator.datalake.catalog_cache import (
@@ -93,33 +158,41 @@ class DataDiscoveryService:
 
         user_home = getattr(self.workspace, "user_home", None)
         if not user_home:
-            return {"sources": []}
+            return {"path": [], "items": [], "total_count": 0, "truncated": False}
         snapshots = ensure_catalogs_current(user_home)
 
         source_id = (args.get("source_id") or "").strip()
         if not source_id:
+            sources = self._connected_source_inventory(user_home, snapshots)
+            items = [{
+                "type": "source",
+                "name": source["source_id"],
+                "path": [source["source_id"]],
+                **{key: value for key, value in source.items() if key != "source_id"},
+            } for source in sources]
+            return {
+                "path": [],
+                "items": items,
+                "total_count": len(items),
+                "truncated": False,
+            }
+
+        from data_formulator.datalake.connector_preferences import connector_is_enabled
+        if not connector_is_enabled(user_home, source_id) or not _source_is_discoverable(source_id):
+            return {"error": f"Source '{source_id}' is disconnected."}
+
+        from data_formulator.datalake.catalog_cache import list_cached_sources
+        if source_id not in set(list_cached_sources(user_home)):
             try:
-                sources = list_sources_summary(user_home)
-            except Exception:
-                logger.debug("list_data: list_sources_summary failed", exc_info=True)
-                return {"sources": []}
-            # Mark unreachable sources so the agent steers around them instead
-            # of proposing a load that can only fail.
-            try:
-                from data_formulator.data_connector import connector_is_available
-                for source in sources:
-                    sid = source.get("source_id") or source.get("id")
-                    if sid in snapshots and (
-                        snapshots[sid].listing_freshness != "fresh"
-                        or snapshots[sid].metadata_freshness != "fresh"
-                        or snapshots[sid].last_refresh_error
-                    ):
-                        source["freshness"] = _freshness_payload(snapshots[sid])
-                    if sid and connector_is_available(sid) is False:
-                        source["connected"] = False
-            except Exception:
-                logger.debug("list_data: availability check failed", exc_info=True)
-            return {"sources": sources}
+                from data_formulator.data_connector import resolve_live_loader
+                from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
+                resolve_live_loader(source_id)
+                snapshot = ensure_catalog_freshness(user_home, source_id)
+                if snapshot is not None:
+                    snapshots[source_id] = snapshot
+            except Exception as exc:
+                logger.debug("list_data: catalog bootstrap failed", exc_info=True)
+                return {"error": f"Source '{source_id}' is connected but its catalog could not be loaded: {exc}"}
 
         path = args.get("path") or []
         if not isinstance(path, list):
@@ -130,7 +203,9 @@ class DataDiscoveryService:
                 user_home,
                 source_id,
                 path=path,
-                filter=args.get("filter"),
+                filter_by=args.get("filter_by"),
+                limit=args.get("limit") or 100,
+                start_after=args.get("start_after"),
             )
             if source_id in snapshots:
                 result["freshness"] = _freshness_payload(snapshots[source_id])
@@ -139,86 +214,141 @@ class DataDiscoveryService:
             logger.debug("list_data: list_path_children failed", exc_info=True)
             return {"error": f"list_data failed: {exc}"}
 
+    def summarize_data_sources(self, args: dict[str, Any]) -> dict[str, Any]:
+        from data_formulator.datalake.catalog_cache import summarize_catalog_sources
+
+        user_home = getattr(self.workspace, "user_home", None)
+        if not user_home:
+            return {"sources": []}
+        snapshots = ensure_catalogs_current(user_home)
+        inventory = self._connected_source_inventory(user_home, snapshots)
+        try:
+            cached = {
+                source["source_id"]: source
+                for source in summarize_catalog_sources(user_home)
+            }
+        except Exception:
+            logger.debug("summarize_data_sources: catalog summary failed", exc_info=True)
+            cached = {}
+
+        sources: list[dict[str, Any]] = []
+        for source in inventory:
+            source_id = source["source_id"]
+            summary = cached.get(source_id, {
+                "source_id": source_id,
+                "table_count": source.get("table_count", 0),
+                "folder_count": 0,
+                "max_depth": 0,
+                "top_level": [],
+                "sample_tables": [],
+                "omitted": {"top_level": 0, "tables": 0},
+            })
+            if source.get("catalog_status"):
+                summary["catalog_status"] = source["catalog_status"]
+            if source.get("freshness"):
+                summary["freshness"] = source["freshness"]
+            sources.append(summary)
+        return {"sources": sources}
+
     def find_data(self, args: dict[str, Any]) -> dict[str, Any]:
         from data_formulator.datalake.catalog_cache import (
             CatalogSearchError,
+            find_catalog_cache,
             list_cached_sources,
-            search_catalog_cache,
         )
 
-        query = (args.get("query") or "").strip()
-        if not query:
-            return {"error": "query is required"}
+        query = (args.get("query") or "").strip() or None
+        source_id = (args.get("source_id") or "").strip()
+        path = args.get("path") or []
+        if not isinstance(path, list):
+            return {"error": "path must be an array of strings"}
+        path = [str(segment) for segment in path]
+        if path and not source_id:
+            return {"error": "path requires source_id"}
 
-        scope_raw = (args.get("scope") or "all").strip()
-        exclude = args.get("exclude") or None
+        filter_by = (args.get("filter_by") or "").strip() or None
+        if filter_by not in {None, "folder", "table"}:
+            return {"error": "filter_by must be 'folder' or 'table'"}
+
         fields = args.get("fields") or None
         limit = args.get("limit")
         try:
-            limit = max(1, min(int(limit), 200)) if limit else 50
+            limit = max(1, min(int(limit), 500)) if limit else 100
         except (TypeError, ValueError):
-            limit = 50
+            limit = 100
 
-        search_workspace = False
-        source_ids: list[str] | None = None
-        path_prefix: list[str] | None = None
-
-        if scope_raw == "all":
-            search_workspace = True
-        elif scope_raw == "workspace":
-            search_workspace = True
-            source_ids = []
-        elif scope_raw == "connected":
-            pass
-        elif ":" in scope_raw:
-            source_id, _, path_str = scope_raw.partition(":")
-            source_ids = [source_id.strip()] if source_id.strip() else []
-            path_prefix = [segment for segment in path_str.split("/") if segment]
-        else:
-            source_ids = [scope_raw]
+        search_workspace = not source_id
+        source_ids = [source_id] if source_id else None
 
         user_home = getattr(self.workspace, "user_home", None)
         snapshots = ensure_catalogs_current(user_home)
         results: list[dict[str, Any]] = []
+        workspace_truncated = False
 
-        if search_workspace:
+        if search_workspace and filter_by != "folder":
             try:
-                metadata = self.workspace.get_metadata()
-                if metadata:
-                    for hit in metadata.search_tables(query, limit=min(limit, 50)):
+                if query:
+                    metadata = self.workspace.get_metadata()
+                    workspace_hits = (
+                        metadata.search_tables(query, limit=min(limit + 1, 501))
+                        if metadata else []
+                    )
+                    workspace_truncated = len(workspace_hits) > limit
+                    for hit in workspace_hits[:limit]:
                         results.append({
+                            "type": "table",
                             "source": "workspace",
                             "name": hit["name"],
+                            "path": [hit["name"]],
                             "description": (hit.get("description") or "")[:120],
                             "matched_columns": hit.get("matched_columns", []),
                             "status": "imported",
                         })
+                else:
+                    workspace_tables = self.workspace.list_tables()
+                    workspace_truncated = len(workspace_tables) > limit
+                    for table in workspace_tables[:limit]:
+                        name = table if isinstance(table, str) else table.get("name", "")
+                        if name:
+                            results.append({
+                                "type": "table",
+                                "source": "workspace",
+                                "name": name,
+                                "path": [name],
+                                "status": "imported",
+                            })
             except Exception:
                 logger.debug("find_data: workspace search failed", exc_info=True)
 
-        if source_ids != [] and user_home:
+        catalog_truncated = False
+        if user_home:
             try:
+                if source_ids is None:
+                    source_ids = [
+                        source_id for source_id in list_cached_sources(user_home)
+                        if _source_is_discoverable(source_id)
+                    ]
+                else:
+                    source_ids = [
+                        source_id for source_id in source_ids
+                        if _source_is_discoverable(source_id)
+                    ]
                 imported_names = {result["name"] for result in results}
-                cache_hits = search_catalog_cache(
+                cache_hits, catalog_truncated = find_catalog_cache(
                     user_home,
                     query,
                     source_ids=source_ids,
-                    limit_per_source=min(limit, 50),
+                    limit=limit,
                     exclude_tables=imported_names,
-                    exclude_pattern=exclude,
+                    filter_by=filter_by,
                     fields=fields,
-                    path_prefix=path_prefix,
+                    path_prefix=path,
                 )
-                for hit in cache_hits[:limit]:
-                    results.append({
-                        "source": hit.get("source_id", "connected"),
-                        "source_id": hit.get("source_id", ""),
-                        "table_key": hit.get("table_key", ""),
-                        "name": hit["name"],
-                        "description": (hit.get("description") or "")[:120],
-                        "matched_columns": hit.get("matched_columns", []),
-                        "status": "not imported",
-                    })
+                for hit in cache_hits:
+                    hit["source"] = hit.get("source_id", "connected")
+                    if hit["type"] == "table":
+                        hit["status"] = "not imported"
+                    results.append(hit)
             except CatalogSearchError as exc:
                 return {"error": str(exc)}
             except Exception:
@@ -226,7 +356,11 @@ class DataDiscoveryService:
 
         if not results:
             try:
-                known = sorted(list_cached_sources(user_home) or []) if user_home else []
+                known = sorted(
+                    source_id
+                    for source_id in (list_cached_sources(user_home) or [])
+                    if _source_is_discoverable(source_id)
+                ) if user_home else []
             except Exception:
                 known = []
             return {
@@ -237,15 +371,20 @@ class DataDiscoveryService:
                     for source_id, snapshot in snapshots.items()
                 },
                 "note": (
-                    f"No tables matched query={query!r} scope={scope_raw!r}. "
-                    "Try a broader pattern, alternation (a|b), or list_data to browse."
+                    f"No data matched query={query!r} in the requested scope. "
+                    "Try a broader pattern or use list_data to browse immediate children."
                 ),
+                "truncated": False,
             }
 
+        truncated = workspace_truncated or catalog_truncated or len(results) > limit
         return {
             "results": results[:limit],
             "query": query,
-            "scope": scope_raw,
+            "source_id": source_id or None,
+            "path": path,
+            "filter_by": filter_by,
+            "truncated": truncated,
             "catalog_freshness": {
                 source_id: _freshness_payload(snapshot)
                 for source_id, snapshot in snapshots.items()
@@ -257,6 +396,11 @@ class DataDiscoveryService:
 
         source_id = args.get("source_id", "")
         table_key = args.get("table_key", "")
+        user_home = getattr(self.workspace, "user_home", None)
+        if user_home:
+            from data_formulator.datalake.connector_preferences import connector_is_enabled
+            if not connector_is_enabled(user_home, source_id) or not _source_is_discoverable(source_id):
+                return {"error": f"Source '{source_id}' is disconnected."}
         return {
             "result": handle_read_catalog_metadata(
                 source_id,

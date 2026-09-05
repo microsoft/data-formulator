@@ -133,11 +133,10 @@ export let buildChartCards = (
 export let buildTableRefChip = (props: {
     tableId: string;
     table: DictTable | undefined;
-    displayName?: string;
     focused: boolean;
     dispatch: any;
 }) => {
-    const { tableId, table, displayName, focused, dispatch } = props;
+    const { tableId, table, focused, dispatch } = props;
     return <Box key={`regular-table-box-${tableId}`}
         data-table-id={tableId}
         className="data-thread-card-wrapper"
@@ -161,7 +160,7 @@ export let buildTableRefChip = (props: {
                             WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
                             wordBreak: 'break-all',
-                        }}>{displayName?.trim() || table?.displayId || tableId}</Typography>
+                        }}>{table?.displayId || tableId}</Typography>
                     </Box>
                 </Stack>
             </Box>
@@ -202,7 +201,6 @@ export let buildTriggerCard = (
 export interface BuildTableCardProps {
     tableId: string;
     tables: DictTable[];
-    inferredDisplayName?: string;
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[];
     highlightedTableIds: string[];
@@ -223,7 +221,7 @@ export interface BuildTableCardProps {
 
 export let buildTableCard = (props: BuildTableCardProps) => {
     const {
-        tableId, tables, inferredDisplayName, chartElements, usedIntermediateTableIds,
+        tableId, tables, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId,
         parentTable, tableIdList, collapsed, dispatch,
         handleOpenTableMenu, primaryBgColor, t, showOriginalName = true,
@@ -256,11 +254,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     let table = tables.find(t => t.id == tableId);
     const originalName = getOriginalName(table);
     const sourceTooltip = getSourceTooltip(table);
-    const workspaceName = table?.displayId || tableId;
+    const friendlyName = table?.displayId || tableId;
     const normalizeTableName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
-    const friendlyName = inferredDisplayName?.trim()
-        ? inferredDisplayName.trim()
-        : workspaceName;
     const rawName = showOriginalName
         && originalName
         && normalizeTableName(originalName) !== normalizeTableName(friendlyName)

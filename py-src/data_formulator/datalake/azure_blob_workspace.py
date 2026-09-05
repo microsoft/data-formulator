@@ -211,6 +211,10 @@ class AzureBlobWorkspace(Workspace):
         """Blob-internal key for a data file (under data/ subdirectory)."""
         return f"data/{filename}"
 
+    def _workspace_file_blob_key(self, filename: str) -> str:
+        """Blob-internal key for a non-tabular workspace file."""
+        return f"files/{filename}"
+
     def _cache_key(self, filename: str) -> str:
         """Globally-unique key for the disk cache: container + full blob name."""
         return f"{self._container_name}/{self._blob_name(filename)}"
@@ -413,6 +417,17 @@ class AzureBlobWorkspace(Workspace):
 
     def file_exists(self, filename: str) -> bool:
         return self._blob_exists(self._data_blob_key(safe_data_filename(filename)))
+
+    def _write_workspace_file(self, filename: str, content: bytes) -> None:
+        self._upload_bytes(self._workspace_file_blob_key(filename), content)
+
+    def _read_workspace_file(self, filename: str) -> bytes:
+        return self._download_bytes(self._workspace_file_blob_key(filename))
+
+    def _delete_workspace_file(self, filename: str) -> None:
+        blob_key = self._workspace_file_blob_key(filename)
+        if self._blob_exists(blob_key):
+            self._delete_blob(blob_key)
 
     def delete_table(self, table_name: str) -> bool:
         metadata = self.get_metadata()

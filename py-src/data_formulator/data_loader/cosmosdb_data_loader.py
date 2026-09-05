@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 
 import pandas as pd
@@ -10,6 +11,17 @@ from azure.cosmos.partition_key import PartitionKey
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from typing import Any
+
+# Cosmos DB has no identifier-quoting syntax for ORDER BY property paths, so
+# only plain (optionally dotted) property names are accepted.
+_COSMOS_PROPERTY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
+
+
+def _validate_cosmos_property(name: str) -> str:
+    """Validate a document property path used in an ORDER BY clause."""
+    if not name or not _COSMOS_PROPERTY_RE.match(name):
+        raise ValueError(f"Invalid column name: {name!r}")
+    return name
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +215,10 @@ class CosmosDBDataLoader(ExternalDataLoader):
         query = f"SELECT TOP {int(size)} * FROM c"
         if sort_columns and len(sort_columns) > 0:
             direction = "DESC" if sort_order == "desc" else "ASC"
-            order_parts = [f"c.{col} {direction}" for col in sort_columns]
+            order_parts = [
+                f"c.{_validate_cosmos_property(str(col))} {direction}"
+                for col in sort_columns
+            ]
             query += " ORDER BY " + ", ".join(order_parts)
 
         items = list(container.query_items(query=query, enable_cross_partition_query=True))

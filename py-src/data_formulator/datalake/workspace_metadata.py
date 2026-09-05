@@ -22,7 +22,7 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-METADATA_VERSION = "1.1"
+METADATA_VERSION = "1.2"
 METADATA_FILENAME = "workspace.yaml"
 LOCK_FILENAME = ".workspace.lock"
 MAX_LOCK_WAIT_SECONDS = 10
@@ -302,12 +302,49 @@ class TableMetadata:
 
 
 @dataclass
+class WorkspaceFileMetadata:
+    """Metadata for a persisted, non-tabular file in the workspace."""
+    name: str
+    filename: str
+    created_at: datetime
+    content_hash: str
+    file_size: int
+    media_type: str | None = None
+
+    def to_dict(self) -> dict:
+        result = {
+            "filename": self.filename,
+            "created_at": self.created_at.isoformat(),
+            "content_hash": self.content_hash,
+            "file_size": self.file_size,
+        }
+        if self.media_type is not None:
+            result["media_type"] = self.media_type
+        return result
+
+    @classmethod
+    def from_dict(cls, name: str, data: dict) -> "WorkspaceFileMetadata":
+        created_at = data["created_at"]
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        return cls(
+            name=name,
+            filename=data["filename"],
+            created_at=created_at,
+            content_hash=data["content_hash"],
+            file_size=data["file_size"],
+            media_type=data.get("media_type"),
+        )
+
+
+@dataclass
 class WorkspaceMetadata:
     """Metadata for the entire workspace."""
     version: str
     created_at: datetime
     updated_at: datetime
     tables: dict[str, TableMetadata] = field(default_factory=dict)
+    files: dict[str, WorkspaceFileMetadata] = field(default_factory=dict)
 
     def add_table(self, table: TableMetadata) -> None:
         """Add or update a table in the metadata."""
@@ -329,6 +366,19 @@ class WorkspaceMetadata:
     def list_tables(self) -> list[str]:
         """List all table names."""
         return list(self.tables.keys())
+
+    def add_file(self, workspace_file: WorkspaceFileMetadata) -> None:
+        """Add or update a non-tabular workspace file."""
+        self.files[workspace_file.name] = workspace_file
+        self.updated_at = datetime.now(timezone.utc)
+
+    def remove_file(self, name: str) -> bool:
+        """Remove a workspace file entry. Returns True if removed."""
+        if name in self.files:
+            del self.files[name]
+            self.updated_at = datetime.now(timezone.utc)
+            return True
+        return False
 
     def search_tables(self, query: str, limit: int = 50) -> list[dict]:
         """Search workspace tables by keyword across names, descriptions,
@@ -382,6 +432,10 @@ class WorkspaceMetadata:
                 name: table.to_dict() 
                 for name, table in self.tables.items()
             },
+            "files": {
+                name: workspace_file.to_dict()
+                for name, workspace_file in self.files.items()
+            },
         }
 
     @classmethod
@@ -400,12 +454,19 @@ class WorkspaceMetadata:
         if tables_data:
             for name, table_data in tables_data.items():
                 tables[name] = TableMetadata.from_dict(name, table_data)
+
+        files = {}
+        files_data = data.get("files", {})
+        if files_data:
+            for name, file_data in files_data.items():
+                files[name] = WorkspaceFileMetadata.from_dict(name, file_data)
         
         return cls(
             version=data["version"],
             created_at=created_at,
             updated_at=updated_at,
             tables=tables,
+            files=files,
         )
 
     @classmethod
@@ -417,6 +478,7 @@ class WorkspaceMetadata:
             created_at=now,
             updated_at=now,
             tables={},
+            files={},
         )
 
 
