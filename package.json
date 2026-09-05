@@ -5,7 +5,7 @@
     "private": true,
     "resolutions": {
         "lodash": "^4.18.1",
-        "vite": "^7.3.5",
+        "vite": "^8.2.1",
         "dompurify": "^3.4.13",
         "postcss": "^8.5.23",
         "esbuild": "^0.28.1",
@@ -133,7 +133,7 @@
         "jsdom": "^29.0.1",
         "sass": "^1.102.0",
         "typescript-eslint": "^8.65.0",
-        "vite": "^7.3.5",
+        "vite": "^8.2.1",
         "vitest": "^4.1.0"
     }
 }
