@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyInputSourceTransition,
+  resolveConversationParentNodeId,
   resolveDerivedTriggerTableId,
   resolveRunParentNodeId,
+  shouldShowInputSourceTransition,
   shouldAutoFocusGeneratedChart,
 } from '../../../../src/app/agentInteractionPolicy';
 import { ROOTLESS_THREAD_ID } from '../../../../src/components/ComponentType';
@@ -25,6 +27,19 @@ describe('agent interaction policy', () => {
     expect(resolveRunParentNodeId('textTurn-question')).toBe('textTurn-question');
   });
 
+  it('continues from the latest response when its chart is focused', () => {
+    const turns = [
+      { id: 'older-response', parentNodeId: 'orders', createdAt: 10 },
+      { id: 'latest-response', parentNodeId: 'older-response', createdAt: 20 },
+      { id: 'other-thread', parentNodeId: 'customers', createdAt: 30 },
+    ];
+
+    expect(resolveConversationParentNodeId(null, 'orders', turns, ['orders', 'customers']))
+      .toBe('latest-response');
+    expect(resolveConversationParentNodeId('older-response', 'orders', turns, ['orders', 'customers']))
+      .toBe('older-response');
+  });
+
   it('classifies generalized computation source transitions', () => {
     const data = { id: 'data:orders', kind: 'data' as const, displayName: 'Orders' };
     const file = { id: 'file:notes', kind: 'file' as const, displayName: 'Notes' };
@@ -35,5 +50,11 @@ describe('agent interaction policy', () => {
     expect(classifyInputSourceTransition([data], [data])).toBe('continue');
     expect(classifyInputSourceTransition([data], [data, file])).toBe('merge');
     expect(classifyInputSourceTransition([data], [other])).toBe('switch');
+  });
+
+  it('hides a source edge that only repeats the thread trigger table', () => {
+    expect(shouldShowInputSourceTransition('initial', 'orders', ['orders'])).toBe(false);
+    expect(shouldShowInputSourceTransition('merge', 'orders', ['orders', 'customers'])).toBe(true);
+    expect(shouldShowInputSourceTransition('switch', 'orders', [undefined])).toBe(true);
   });
 });

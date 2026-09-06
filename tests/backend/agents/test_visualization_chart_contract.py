@@ -7,7 +7,7 @@ import pytest
 from data_formulator.analyst.skills import build_registry
 from data_formulator.analyst.agent import _missing_action_fields
 from data_formulator.analyst.skills.base import SkillContext
-from data_formulator.analyst.skills.core.skill import CoreSkill
+from data_formulator.analyst.skills.visualization.skill import VisualizationSkill
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputManifest,
     WorkspaceInputRef,
@@ -20,7 +20,7 @@ pytestmark = [pytest.mark.backend]
 def test_visualize_schema_requires_generalized_input_sources():
     registry = build_registry()
     visualize = next(
-        spec for spec in registry.action_tools_for(["core"])
+        spec for spec in registry.action_tools_for(["meta"])
         if spec["function"]["name"] == "visualize"
     )
     parameters = visualize["function"]["parameters"]
@@ -57,7 +57,7 @@ def test_visualize_handler_forwards_title_and_subtitle():
     }
     ctx = SkillContext(client=None, workspace=MagicMock(), runtime=runtime)
 
-    list(CoreSkill()._handle_visualize({
+    list(VisualizationSkill()._handle_visualize({
         "title": "Growth Accelerated After 2020",
         "subtitle": "US monthly index, January 2006 = 100",
         "input_sources": [],
@@ -115,7 +115,7 @@ def test_visualize_emits_manifest_normalized_file_source():
         payload={"workspace_inputs": _manifest()},
     )
 
-    events = list(CoreSkill()._handle_visualize(_action(input_sources=[
+    events = list(VisualizationSkill()._handle_visualize(_action(input_sources=[
         {"id": "file:hash:notes.docx", "kind": "file"},
         {"id": "file:hash:notes.docx", "kind": "file"},
     ]), ctx))
@@ -138,7 +138,7 @@ def test_visualize_translates_legacy_table_names_to_stable_sources():
         payload={"workspace_inputs": _manifest()},
     )
 
-    events = list(CoreSkill()._handle_visualize(
+    events = list(VisualizationSkill()._handle_visualize(
         _action(input_tables=["orders"]), ctx,
     ))
 
@@ -155,7 +155,7 @@ def test_visualize_rejects_unknown_input_source_before_execution():
         payload={"workspace_inputs": _manifest()},
     )
 
-    events = list(CoreSkill()._handle_visualize(_action(input_sources=[
+    events = list(VisualizationSkill()._handle_visualize(_action(input_sources=[
         {"id": "file:missing:unknown.docx", "kind": "file"},
     ]), ctx))
 

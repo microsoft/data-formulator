@@ -12,7 +12,7 @@ from pypdf import PdfWriter
 from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.skills import build_registry
 from data_formulator.analyst.skills.base import SkillContext
-from data_formulator.analyst.skills.core.skill import CoreSkill
+from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputEngine,
     build_workspace_input_manifest,
@@ -21,6 +21,7 @@ from data_formulator.analyst.workspace_inputs import (
 )
 from data_formulator.datalake.file_manager import save_uploaded_file
 from data_formulator.datalake.workspace import Workspace
+from data_formulator.datalake.workspace_metadata import MemorySource
 
 
 pytestmark = [pytest.mark.backend]
@@ -73,6 +74,87 @@ def test_workspace_input_manifest_uses_only_run_scoped_data(tmp_path: Path) -> N
     assert [item.display_name for item in manifest.data] == ["selected"]
 
 
+def test_table_memory_is_a_reusable_data_input_with_provenance(tmp_path: Path) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    saved_file = workspace.save_workspace_file(
+        b"%PDF current report", "report.pdf", "application/pdf",
+    )
+    source_id = f"file:{saved_file.content_hash}:report.pdf"
+    memory = workspace.write_memory_table(
+        pd.DataFrame({"region": ["east", "west"], "revenue": [10, 20]}),
+        "quarterly revenue",
+        sources=[MemorySource(
+            input_id=source_id,
+            name="report.pdf",
+            content_hash=saved_file.content_hash,
+            media_type="application/pdf",
+            locator={"page": 2},
+        )],
+    )
+
+    engine = WorkspaceInputEngine(workspace, [])
+    item = engine.manifest.data[0]
+    listed = json.loads(engine.list_items())["inputs"][0]
+    preview = json.loads(engine.read_item(item.id, limit=1))
+
+    assert item.origin == "memory"
+    assert item.memory_id == memory.id
+    assert item.path == f"memory/{memory.filename}"
+    assert listed["adapter"]["name"] == "memory-table"
+    assert listed["sources"] == [{
+        "name": "report.pdf",
+        "input_id": source_id,
+        "media_type": "application/pdf",
+        "content_hash": saved_file.content_hash,
+        "locator": {"page": 2},
+    }]
+    assert preview["rows"] == [{"region": "east", "revenue": 10}]
+
+
+def test_stale_table_memory_is_not_an_analysis_input(tmp_path: Path) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    original = workspace.save_workspace_file(
+        b"%PDF original", "report.pdf", "application/pdf",
+    )
+    memory = workspace.write_memory_table(
+        pd.DataFrame({"value": [1]}),
+        "report values",
+        sources=[MemorySource(
+            input_id=f"file:{original.content_hash}:report.pdf",
+            name="report.pdf",
+            content_hash=original.content_hash,
+            media_type="application/pdf",
+        )],
+    )
+    assert any(item.memory_id == memory.id for item in WorkspaceInputEngine(workspace, []).manifest.data)
+
+    workspace.delete_workspace_file("report.pdf")
+    workspace.save_workspace_file(b"%PDF revised", "report.pdf", "application/pdf")
+
+    assert all(item.memory_id != memory.id for item in WorkspaceInputEngine(workspace, []).manifest.data)
+    assert workspace.get_memory_metadata(memory.id) is not None
+
+
+def test_text_memory_is_readable_and_searchable_workspace_item(tmp_path: Path) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    memory = workspace.write_memory_text(
+        "# Customer notes\n\nRenewal owner: Casey\n",
+        "customer notes",
+        description="Remembered account context.",
+    )
+    engine = WorkspaceInputEngine(workspace, [])
+    item = next(item for item in engine.manifest.files if item.memory_id == memory.id)
+
+    assert item.origin == "memory"
+    assert item.path == f"memory/{memory.filename}"
+    assert engine.read_item(item.id, locator={"line": 3}).endswith("Renewal owner: Casey")
+    assert json.loads(engine.search_items("Casey", input_ids=[item.id]))["matches"] == [{
+        "input_id": item.id,
+        "locator": {"line": 3},
+        "text": "Renewal owner: Casey",
+    }]
+
+
 def test_workspace_input_preview_is_bounded_and_rendered_with_data(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     workspace.save_workspace_file(b"abcdefghij", "notes.txt", "text/plain")
@@ -88,6 +170,8 @@ def test_workspace_input_preview_is_bounded_and_rendered_with_data(tmp_path: Pat
     assert preview.selected[0].content == "abcd"
     assert preview.selected[0].truncated is True
     assert "[WORKSPACE INPUTS]" in rendered
+    assert "complete current input inventory" in rendered
+    assert "do not call list_workspace_items before reading or searching" in rendered
     assert f"- {manifest.data[0].id}: orders" in rendered
     assert "\n\nTABLE_CTX" in rendered
     assert "### Preview: notes.txt (truncated)" in rendered
@@ -121,47 +205,51 @@ def test_file_only_workspace_is_an_analysis_input(tmp_path: Path) -> None:
     user_content = messages[1]["content"]
 
     manifest = build_workspace_input_manifest([], workspace_files, workspace)
-    assert agent._initial_loaded_skills(manifest) == {"core"}
+    assert agent._initial_loaded_skills(manifest) == {"meta"}
     assert "[WORKSPACE INPUTS]" in user_content
     assert "## Files" in user_content
     assert "README.md (text/markdown" in user_content
     assert "# Dataset notes" in user_content
-    assert "read_workspace_input" in user_content
+    assert "read_workspace_item" in user_content
     assert user_content.index("[WORKSPACE INPUTS]") < user_content.index("[USER QUESTION]")
 
 
-def test_core_workspace_file_tool_reads_docx(tmp_path: Path) -> None:
+def test_workspace_workspace_item_tool_reads_docx(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
-    workspace.save_workspace_file(
+    saved = workspace.save_workspace_file(
         _docx("Turn one Turn two"), "transcript.docx",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
-    result = CoreSkill().handle_tool(
-        "read_workspace_file",
-        {"name": "transcript.docx"},
+    result = WorkspaceSkill().handle_tool(
+        "read_workspace_item",
+        {"item_id": f"file:{saved.content_hash}:transcript.docx"},
         SkillContext(client=None, workspace=workspace),
     )
 
-    assert result.text == "[WORKSPACE FILE: transcript.docx]\n\nTurn one Turn two"
+    assert result.text.endswith("Turn one Turn two")
 
 
-def test_core_registry_exposes_workspace_file_tool() -> None:
-    tool_names = {
-        tool["function"]["name"]
-        for tool in build_registry().tools_for(["core"])
+def test_workspace_registry_exposes_workspace_file_tool() -> None:
+    tools = build_registry().tools_for(["meta"])
+    tool_names = {tool["function"]["name"] for tool in tools}
+
+    assert {name for name in tool_names if "workspace" in name} == {
+        "list_workspace_items",
+        "read_workspace_item",
+        "search_workspace_items",
+        "manage_workspace_memory",
     }
+    manage_schema = next(
+        tool["function"]["parameters"]
+        for tool in tools
+        if tool["function"]["name"] == "manage_workspace_memory"
+    )
+    assert "patch" in manage_schema["properties"]["action"]["enum"]
+    assert "text" in manage_schema["properties"]["kind"]["enum"]
 
-    assert {
-        "list_workspace_inputs",
-        "preview_workspace_input",
-        "read_workspace_input",
-        "search_workspace_inputs",
-        "read_workspace_file",
-    } <= tool_names
 
-
-def test_core_unified_input_tools_list_read_and_search(tmp_path: Path) -> None:
+def test_workspace_unified_input_tools_list_read_and_search(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     saved_file = workspace.save_workspace_file(
         b"alpha\nneedle value\nomega", "notes.txt", "text/plain",
@@ -171,36 +259,36 @@ def test_core_unified_input_tools_list_read_and_search(tmp_path: Path) -> None:
         workspace=workspace,
         payload={"input_tables": [{"name": "orders"}]},
     )
-    core = CoreSkill()
+    workspace_skill = WorkspaceSkill()
     file_id = f"file:{saved_file.content_hash}:notes.txt"
 
-    listed = json.loads(core.handle_tool("list_workspace_inputs", {}, context).text)
-    assert [(item["kind"], item["name"]) for item in listed["inputs"]] == [
+    listed = json.loads(workspace_skill.handle_tool("list_workspace_items", {}, context).text)
+    assert [(item["kind"], item["name"]) for item in listed["items"]] == [
         ("data", "orders"),
         ("file", "notes.txt"),
     ]
-    assert listed["inputs"][0]["adapter"] == {
+    assert listed["items"][0]["adapter"] == {
         "name": "data",
         "locator_fields": ["row"],
         "option_fields": ["columns"],
     }
-    assert listed["inputs"][1]["adapter"] == {
+    assert listed["items"][1]["adapter"] == {
         "name": "text",
         "locator_fields": ["line"],
         "option_fields": [],
     }
 
-    previewed = core.handle_tool(
-        "preview_workspace_input",
-        {"input_id": file_id, "locator": {"line": 2}, "limit": 1},
+    previewed = workspace_skill.handle_tool(
+        "read_workspace_item",
+        {"item_id": file_id, "locator": {"line": 2}, "limit": 1},
         context,
     ).text
     preview_header, preview_content = previewed.split("\n\n", 1)
     assert json.loads(preview_header)["locator"] == {"line": 2}
     assert preview_content == "needle value"
 
-    searched = json.loads(core.handle_tool(
-        "search_workspace_inputs",
+    searched = json.loads(workspace_skill.handle_tool(
+        "search_workspace_items",
         {"query": "needle", "kinds": ["file"]},
         context,
     ).text)
@@ -211,16 +299,187 @@ def test_core_unified_input_tools_list_read_and_search(tmp_path: Path) -> None:
     }]
 
 
+def test_workspace_lists_only_scoped_top_level_temp_items(tmp_path: Path) -> None:
+    context = SkillContext(
+        client=None,
+        workspace=Workspace("test-user", root_dir=tmp_path),
+        payload={
+            "scratch_files": [
+                "scratch/report.pdf",
+                "scratch/sales.csv",
+                "scratch/nested/private.txt",
+                "../outside.txt",
+            ],
+        },
+    )
+
+    listed = json.loads(WorkspaceSkill().handle_tool(
+        "list_workspace_items",
+        {"scope": "temp", "query": "report"},
+        context,
+    ).text)
+
+    assert listed == {
+        "scope": "temp",
+        "items": [{
+            "id": "temp:scratch/report.pdf",
+            "name": "report.pdf",
+            "kind": "temp",
+            "path": "scratch/report.pdf",
+            "capabilities": ["python"],
+        }],
+        "count": 1,
+    }
+
+
+def test_workspace_table_memory_tools_persist_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    saved_file = workspace.save_workspace_file(
+        b"%PDF", "report.pdf", "application/pdf",
+    )
+    manifest = build_workspace_input_manifest(
+        [], workspace.list_workspace_files(), workspace,
+    )
+
+    class Sandbox:
+        def run_python_code(self, **kwargs):
+            return {
+                "status": "ok",
+                "content": pd.DataFrame({"metric": ["revenue"], "value": [42]}),
+            }
+
+    monkeypatch.setattr("data_formulator.sandbox.create_sandbox", lambda mode: Sandbox())
+    context = SkillContext(
+        client=None,
+        workspace=workspace,
+        runtime=_agent(workspace),
+        payload={"workspace_inputs": manifest},
+    )
+    workspace_skill = WorkspaceSkill()
+    saved = json.loads(workspace_skill.handle_tool(
+        "manage_workspace_memory",
+        {
+            "action": "save",
+            "kind": "table",
+            "name": "quarterly metrics",
+            "description": "Metrics extracted from the quarterly report.",
+            "input_sources": [{
+                "id": manifest.files[0].id,
+                "kind": "file",
+                "locator": {"page": 2},
+            }],
+            "code": "result_df = pd.DataFrame()",
+            "output_variable": "result_df",
+        },
+        context,
+    ).text)
+
+    memory = workspace.get_memory_metadata(saved["id"])
+    assert memory is not None
+    assert memory.sources[0].input_id == f"file:{saved_file.content_hash}:report.pdf"
+    assert memory.sources[0].locator == {"page": 2}
+
+    listed = json.loads(workspace_skill.handle_tool(
+        "list_workspace_items", {"scope": "memory"}, context,
+    ).text)
+    assert listed["items"][0]["path"] == saved["path"]
+    refreshed = json.loads(workspace_skill.handle_tool(
+        "manage_workspace_memory",
+        {
+            "action": "refresh",
+            "memory_id": memory.id,
+            "input_sources": [{
+                "id": manifest.files[0].id,
+                "kind": "file",
+                "locator": {"page": 3},
+            }],
+            "code": "result_df = pd.DataFrame()",
+            "output_variable": "result_df",
+        },
+        context,
+    ).text)
+    assert refreshed["id"] == memory.id
+    assert workspace.get_memory_metadata(memory.id).sources[0].locator == {"page": 3}
+    renamed = json.loads(workspace_skill.handle_tool(
+        "manage_workspace_memory",
+        {"action": "rename", "memory_id": memory.id, "name": "report metrics"},
+        context,
+    ).text)
+    assert renamed == {"id": memory.id, "name": "report_metrics"}
+    deleted = json.loads(workspace_skill.handle_tool(
+        "manage_workspace_memory",
+        {"action": "delete", "memory_id": memory.id},
+        context,
+    ).text)
+    assert deleted == {"id": memory.id, "deleted": True}
+
+
+def test_workspace_manages_and_patches_text_memory(tmp_path: Path) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    context = SkillContext(client=None, workspace=workspace)
+    workspace_skill = WorkspaceSkill()
+
+    saved = json.loads(workspace_skill.handle_tool(
+        "manage_workspace_memory",
+        {
+            "action": "save",
+            "kind": "text",
+            "name": "customer notes",
+            "description": "Remembered account context.",
+            "content": "# Customer\n\nOwner: Casey\n",
+        },
+        context,
+    ).text)
+    item = next(
+        item for item in WorkspaceInputEngine(workspace, []).manifest.files
+        if item.memory_id == saved["id"]
+    )
+    assert workspace_skill.handle_tool(
+        "read_workspace_item", {"item_id": item.id}, context,
+    ).text.endswith("Owner: Casey")
+
+    patched = json.loads(workspace_skill.handle_tool(
+        "manage_workspace_memory",
+        {
+            "action": "patch",
+            "memory_id": saved["id"],
+            "expected_content_hash": saved["content_hash"],
+            "replacements": [{"old_text": "Owner: Casey", "new_text": "Owner: Morgan"}],
+            "append_text": "Status: active\n",
+        },
+        context,
+    ).text)
+    assert workspace.read_memory_text(saved["id"]) == (
+        "# Customer\n\nOwner: Morgan\nStatus: active\n"
+    )
+    assert patched["content_hash"] != saved["content_hash"]
+
+    with pytest.raises(ValueError, match="Memory changed while patching"):
+        workspace_skill.handle_tool(
+            "manage_workspace_memory",
+            {
+                "action": "patch",
+                "memory_id": saved["id"],
+                "expected_content_hash": saved["content_hash"],
+                "append_text": "stale",
+            },
+            context,
+        )
+
+
 def test_unified_input_tool_rejects_library_specific_options(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     saved_file = workspace.save_workspace_file(b"notes", "notes.txt", "text/plain")
     context = SkillContext(client=None, workspace=workspace)
 
     with pytest.raises(ValueError, match="Unsupported option fields.*dtype"):
-        CoreSkill().handle_tool(
-            "read_workspace_input",
+        WorkspaceSkill().handle_tool(
+            "read_workspace_item",
             {
-                "input_id": f"file:{saved_file.content_hash}:notes.txt",
+                "item_id": f"file:{saved_file.content_hash}:notes.txt",
                 "options": {"dtype": "str"},
             },
             context,
@@ -257,7 +516,7 @@ def test_stale_file_id_reports_current_version(tmp_path: Path) -> None:
     engine = WorkspaceInputEngine(workspace, [])
 
     with pytest.raises(ValueError, match=f"current input ID: file:{replacement.content_hash}:notes.txt"):
-        engine.read_input(old_id)
+        engine.read_item(old_id)
 
 
 def test_file_adapter_rejects_replacement_after_engine_creation(tmp_path: Path) -> None:
@@ -268,7 +527,7 @@ def test_file_adapter_rejects_replacement_after_engine_creation(tmp_path: Path) 
     workspace.save_workspace_file(b"new", "notes.txt", "text/plain")
 
     with pytest.raises(ValueError, match="Input changed while reading"):
-        engine.read_input(f"file:{original.content_hash}:notes.txt")
+        engine.read_item(f"file:{original.content_hash}:notes.txt")
 
 
 def test_file_input_id_encodes_unusual_name(tmp_path: Path) -> None:
@@ -278,7 +537,7 @@ def test_file_input_id_encodes_unusual_name(tmp_path: Path) -> None:
     file_input = WorkspaceInputEngine(workspace, []).manifest.files[0]
 
     assert file_input.id == f"file:{saved_file.content_hash}:notes%20%231.txt"
-    assert WorkspaceInputEngine(workspace, []).read_input(file_input.id).endswith("value")
+    assert WorkspaceInputEngine(workspace, []).read_item(file_input.id).endswith("value")
 
 
 def test_data_adapter_reads_pages_and_searches_rows(tmp_path: Path) -> None:
@@ -293,7 +552,7 @@ def test_data_adapter_reads_pages_and_searches_rows(tmp_path: Path) -> None:
     engine = WorkspaceInputEngine(workspace, [{"name": metadata.name}])
     data_id = engine.manifest.data[0].id
 
-    page = json.loads(engine.read_input(
+    page = json.loads(engine.read_item(
         data_id,
         locator={"row": 2},
         options={"columns": ["city"]},
@@ -302,7 +561,7 @@ def test_data_adapter_reads_pages_and_searches_rows(tmp_path: Path) -> None:
     assert page["rows"] == [{"city": "Portland"}]
     assert page["next_locator"] == {"row": 3}
 
-    search = json.loads(engine.search_inputs(
+    search = json.loads(engine.search_items(
         "Boston",
         input_ids=[data_id],
     ))
@@ -322,7 +581,7 @@ def test_search_rejects_unknown_input_ids(tmp_path: Path) -> None:
     engine = WorkspaceInputEngine(Workspace("test-user", root_dir=tmp_path), [])
 
     with pytest.raises(ValueError, match="Input not found"):
-        engine.search_inputs("needle", input_ids=["file:missing:notes.txt"])
+        engine.search_items("needle", input_ids=["file:missing:notes.txt"])
 
 
 def test_spreadsheet_adapter_reads_and_searches_sheets(tmp_path: Path) -> None:
@@ -348,13 +607,13 @@ def test_spreadsheet_adapter_reads_and_searches_sheets(tmp_path: Path) -> None:
     engine = WorkspaceInputEngine(workspace, [])
     file_id = f"file:{saved_file.content_hash}:report.xlsx"
 
-    listed = json.loads(engine.list_inputs())
+    listed = json.loads(engine.list_items())
     assert listed["inputs"][0]["adapter"] == {
         "name": "spreadsheet",
         "locator_fields": ["sheet", "row"],
         "option_fields": ["columns"],
     }
-    page = json.loads(engine.read_input(
+    page = json.loads(engine.read_item(
         file_id,
         locator={"sheet": "Summary", "row": 2},
         options={"columns": ["city"]},
@@ -363,7 +622,7 @@ def test_spreadsheet_adapter_reads_and_searches_sheets(tmp_path: Path) -> None:
     assert page["rows"] == [{"city": "Boston"}]
     assert page["sheet_names"] == ["Summary", "Notes"]
 
-    search = json.loads(engine.search_inputs("needle", input_ids=[file_id]))
+    search = json.loads(engine.search_items("needle", input_ids=[file_id]))
     assert search["matches"] == [{
         "input_id": file_id,
         "locator": {"sheet": "Notes", "row": 2},
@@ -388,13 +647,13 @@ def test_pdf_adapter_exposes_page_reads_and_eager_preview(tmp_path: Path) -> Non
     engine = WorkspaceInputEngine(workspace, [])
     file_id = f"file:{saved_file.content_hash}:notes.pdf"
 
-    listed = json.loads(engine.list_inputs())
+    listed = json.loads(engine.list_items())
     assert listed["inputs"][0]["adapter"] == {
         "name": "pdf",
         "locator_fields": ["page"],
         "option_fields": [],
     }
-    page = json.loads(engine.read_input(
+    page = json.loads(engine.read_item(
         file_id,
         locator={"page": 1},
         limit=1,

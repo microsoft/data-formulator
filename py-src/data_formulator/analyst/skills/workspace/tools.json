@@ -1,0 +1,103 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "list_workspace_items",
+      "description": "List workspace items only when a fresh or filtered inventory is needed. Do not list input scope before reading or searching: the [WORKSPACE INPUTS] context already provides complete current input IDs. memory includes stale entries and current content hashes; temp includes only temporary attachments scoped to this run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {"type": "string", "enum": ["input", "memory", "temp"], "default": "input"},
+          "kinds": {"type": "array", "items": {"type": "string", "enum": ["data", "file"]}, "description": "For input scope, optional item kinds to include."},
+          "query": {"type": "string", "description": "Optional case-insensitive name filter."}
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "manage_workspace_memory",
+      "description": "Create, refresh, patch, rename, or delete agent-maintained workspace memory. Table memory is materialized from sandboxed Python; text memory stores Markdown and supports hash-guarded exact patches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {"type": "string", "enum": ["save", "refresh", "patch", "rename", "delete"]},
+          "memory_id": {"type": "string", "description": "Required for refresh, patch, rename, and delete."},
+          "kind": {"type": "string", "enum": ["table", "text"], "description": "Required for save; inferred from the existing memory for refresh."},
+          "name": {"type": "string", "description": "Required for save and rename; optional for refresh."},
+          "description": {"type": "string", "description": "Required for save; optional for refresh."},
+          "input_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "description": "Stable ID listed by list_workspace_items with input scope."},
+                "kind": {"type": "string", "enum": ["data", "file"]},
+                "locator": {"type": "object", "description": "Optional source location used, such as {\"page\": 2}."}
+              },
+              "required": ["id", "kind"],
+              "additionalProperties": false
+            },
+            "description": "Required for table save/refresh. Optional provenance for text memory."
+          },
+          "code": {"type": "string", "description": "Required for table save/refresh; Python code producing the DataFrame to remember."},
+          "output_variable": {"type": "string", "description": "Required for table save/refresh; DataFrame variable produced by code."},
+          "content": {"type": "string", "description": "Required for text save/refresh; complete Markdown content."},
+          "expected_content_hash": {"type": "string", "description": "Required for patch; current hash from list_workspace_items with memory scope."},
+          "replacements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "old_text": {"type": "string", "description": "Exact non-empty text to replace."},
+                "new_text": {"type": "string", "description": "Replacement text; empty deletes the match."},
+                "replace_all": {"type": "boolean", "default": false}
+              },
+              "required": ["old_text", "new_text"],
+              "additionalProperties": false
+            },
+            "description": "For patch, ordered exact replacements. Ambiguous matches fail unless replace_all is true."
+          },
+          "append_text": {"type": "string", "description": "For patch, optional text appended after replacements."}
+        },
+        "required": ["action"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_workspace_item",
+      "description": "Read bounded normalized content from a workspace input. Data accepts a row locator and columns option; normalized text accepts a line locator. Temporary items with python-only capability should be read through execute_python_script using their path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {"type": "string", "description": "Stable input item ID from list_workspace_items."},
+          "locator": {"type": "object", "description": "Optional canonical location: {\"row\": 1} for data or {\"line\": 1} for normalized text."},
+          "options": {"type": "object", "description": "Optional semantic adapter options; library-specific arguments are not accepted."},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 200}
+        },
+        "required": ["item_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_workspace_items",
+      "description": "Search readable current input items. Returns stable item IDs, canonical locators, and bounded matching text. Stale memory and python-only temporary items are not searched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Case-insensitive text to find."},
+          "item_ids": {"type": "array", "items": {"type": "string"}, "description": "Optional stable item IDs to search."},
+          "kinds": {"type": "array", "items": {"type": "string", "enum": ["data", "file"]}, "description": "Optional input kinds to search."},
+          "options": {"type": "object", "description": "Optional semantic adapter options; library-specific arguments are not accepted."},
+          "max_results": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+        },
+        "required": ["query"]
+      }
+    }
+  }
+]

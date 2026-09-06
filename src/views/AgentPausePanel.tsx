@@ -113,10 +113,9 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                     {icon}
                 </Box>
                 <Typography sx={{
-                    fontSize: textVar.xs, fontWeight: 600,
+                    fontSize: textVar.sm, fontWeight: 600,
                     color: theme.palette.text.primary,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em', flex: 1,
+                    flex: 1,
                 }}>
                     {title}
                 </Typography>

@@ -22,7 +22,7 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-METADATA_VERSION = "1.2"
+METADATA_VERSION = "1.3"
 METADATA_FILENAME = "workspace.yaml"
 LOCK_FILENAME = ".workspace.lock"
 MAX_LOCK_WAIT_SECONDS = 10
@@ -338,6 +338,65 @@ class WorkspaceFileMetadata:
 
 
 @dataclass
+class MemorySource:
+    """A source reference retained by a derived workspace memory."""
+    input_id: str
+    name: str
+    content_hash: str | None = None
+    media_type: str | None = None
+    locator: dict[str, Any] | None = None
+
+
+@dataclass
+class WorkspaceMemoryMetadata:
+    """Metadata for an agent-maintained workspace memory artifact."""
+    id: str
+    name: str
+    kind: Literal["table", "text"]
+    filename: str
+    media_type: str
+    created_at: datetime
+    updated_at: datetime
+    content_hash: str
+    file_size: int
+    description: str | None = None
+    sources: list[MemorySource] = field(default_factory=list)
+    row_count: int | None = None
+    columns: list[ColumnInfo] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        result = asdict(self)
+        result.pop("id", None)
+        result["created_at"] = self.created_at.isoformat()
+        result["updated_at"] = self.updated_at.isoformat()
+        return result
+
+    @classmethod
+    def from_dict(cls, memory_id: str, data: dict) -> "WorkspaceMemoryMetadata":
+        created_at = data["created_at"]
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        updated_at = data["updated_at"]
+        if isinstance(updated_at, str):
+            updated_at = datetime.fromisoformat(updated_at)
+        return cls(
+            id=memory_id,
+            name=data["name"],
+            kind=data["kind"],
+            filename=data["filename"],
+            media_type=data["media_type"],
+            created_at=created_at,
+            updated_at=updated_at,
+            content_hash=data["content_hash"],
+            file_size=data["file_size"],
+            description=data.get("description"),
+            sources=[MemorySource(**source) for source in data.get("sources", [])],
+            row_count=data.get("row_count"),
+            columns=[ColumnInfo(**column) for column in data.get("columns", [])],
+        )
+
+
+@dataclass
 class WorkspaceMetadata:
     """Metadata for the entire workspace."""
     version: str
@@ -345,6 +404,7 @@ class WorkspaceMetadata:
     updated_at: datetime
     tables: dict[str, TableMetadata] = field(default_factory=dict)
     files: dict[str, WorkspaceFileMetadata] = field(default_factory=dict)
+    memory: dict[str, WorkspaceMemoryMetadata] = field(default_factory=dict)
 
     def add_table(self, table: TableMetadata) -> None:
         """Add or update a table in the metadata."""
@@ -376,6 +436,19 @@ class WorkspaceMetadata:
         """Remove a workspace file entry. Returns True if removed."""
         if name in self.files:
             del self.files[name]
+            self.updated_at = datetime.now(timezone.utc)
+            return True
+        return False
+
+    def add_memory(self, memory: WorkspaceMemoryMetadata) -> None:
+        """Add or update a workspace memory entry."""
+        self.memory[memory.id] = memory
+        self.updated_at = datetime.now(timezone.utc)
+
+    def remove_memory(self, memory_id: str) -> bool:
+        """Remove a workspace memory entry. Returns True if removed."""
+        if memory_id in self.memory:
+            del self.memory[memory_id]
             self.updated_at = datetime.now(timezone.utc)
             return True
         return False
@@ -436,6 +509,10 @@ class WorkspaceMetadata:
                 name: workspace_file.to_dict()
                 for name, workspace_file in self.files.items()
             },
+            "memory": {
+                memory_id: memory.to_dict()
+                for memory_id, memory in self.memory.items()
+            },
         }
 
     @classmethod
@@ -460,6 +537,12 @@ class WorkspaceMetadata:
         if files_data:
             for name, file_data in files_data.items():
                 files[name] = WorkspaceFileMetadata.from_dict(name, file_data)
+
+        memory = {}
+        memory_data = data.get("memory", {})
+        if memory_data:
+            for memory_id, item_data in memory_data.items():
+                memory[memory_id] = WorkspaceMemoryMetadata.from_dict(memory_id, item_data)
         
         return cls(
             version=data["version"],
@@ -467,6 +550,7 @@ class WorkspaceMetadata:
             updated_at=updated_at,
             tables=tables,
             files=files,
+            memory=memory,
         )
 
     @classmethod
@@ -479,6 +563,7 @@ class WorkspaceMetadata:
             updated_at=now,
             tables={},
             files={},
+            memory={},
         )
 
 

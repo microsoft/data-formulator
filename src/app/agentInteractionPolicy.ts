@@ -14,6 +14,42 @@ export function resolveRunParentNodeId(
     return continuationParentNodeId || focusedConversationNodeId || ROOTLESS_THREAD_ID;
 }
 
+type ConversationTurnRef = {
+    id: string;
+    parentNodeId: string;
+    createdAt: number;
+};
+
+export function resolveConversationParentNodeId(
+    focusedTurnId: string | null | undefined,
+    focusedTableId: string | null | undefined,
+    textTurns: ConversationTurnRef[],
+    tableIds: string[],
+): string | undefined {
+    if (focusedTurnId && textTurns.some(turn => turn.id === focusedTurnId)) {
+        return focusedTurnId;
+    }
+    if (!focusedTableId) return undefined;
+
+    const turnsById = new Map(textTurns.map(turn => [turn.id, turn]));
+    const knownTableIds = new Set(tableIds);
+    const belongsToFocusedTable = (turn: ConversationTurnRef) => {
+        let parentId: string | undefined = turn.parentNodeId;
+        const seen = new Set<string>();
+        while (parentId && !seen.has(parentId)) {
+            if (parentId === focusedTableId) return true;
+            if (knownTableIds.has(parentId)) return false;
+            seen.add(parentId);
+            parentId = turnsById.get(parentId)?.parentNodeId;
+        }
+        return false;
+    };
+
+    return textTurns
+        .filter(belongsToFocusedTable)
+        .sort((left, right) => right.createdAt - left.createdAt)[0]?.id;
+}
+
 export function resolveDerivedTriggerTableId(
     lastCreatedTableId: string | null,
     sourceTableId: string | undefined,
@@ -22,6 +58,17 @@ export function resolveDerivedTriggerTableId(
 }
 
 export type InputSourceTransition = 'none' | 'initial' | 'continue' | 'merge' | 'switch';
+
+export function shouldShowInputSourceTransition(
+    transition: InputSourceTransition,
+    triggerTableId: string | undefined,
+    inputSourceTableIds: Array<string | undefined>,
+): boolean {
+    if (transition === 'none' || transition === 'continue') return false;
+    const repeatsTrigger = inputSourceTableIds.length > 0
+        && inputSourceTableIds.every(tableId => !!tableId && tableId === triggerTableId);
+    return !repeatsTrigger;
+}
 
 export function classifyInputSourceTransition(
     previous: ComputationInputSource[],

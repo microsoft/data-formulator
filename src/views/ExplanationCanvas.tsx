@@ -42,11 +42,10 @@ export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceT
             backgroundColor: agentResponseFill(theme.palette.primary.main),
             borderRadius: '6px',
         }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', px: 2, py: 1.25, borderBottom: `1px solid ${borderColor.component}` }}>
-                <AgentToyIcon variant="explain" sx={{ fontSize: iconVar.md, color: 'primary.main' }} />
+            <Box sx={{ minHeight: 40, display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.5, boxSizing: 'border-box', borderBottom: `1px solid ${borderColor.component}` }}>
+                <AgentToyIcon variant="explain" sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
                 <Typography component="h2" sx={{
-                    fontSize: textVar.xs, fontWeight: 600, color: 'text.primary',
-                    textTransform: 'uppercase', letterSpacing: '0.06em',
+                    fontSize: textVar.md, fontWeight: 500, color: 'text.primary',
                 }}>
                     {t('chartRec.explanationTitle')}
                 </Typography>
@@ -59,8 +58,8 @@ export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceT
                 )}
                 <Box sx={{ flex: 1 }} />
             </Box>
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 2.5, fontSize: textVar.sm, userSelect: 'text' }}>
-                <CompactMarkdown content={content} color="text.primary" />
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 2.5, fontSize: textVar.md, userSelect: 'text' }}>
+                <CompactMarkdown content={content} color="text.primary" variant="document" />
             </Box>
         </Box>
     );

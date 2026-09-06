@@ -46,6 +46,7 @@
     "app": "应用",
     "data": "数据",
     "moreOptions": "更多选项",
+    "moreLanguages": "更多语言",
     "microsoftResearch": "微软研究院"
   },
   "logs": {
@@ -466,7 +467,6 @@
     "searching": "搜索中...",
     "listingConnectors": "检查可用连接器",
     "readingConnector": "读取连接器设置",
-    "usingTool": "使用 {{tool}}",
     "producingAction": "输出 {{action}} 中...",
     "jumpToThreadRange": "跳转到线程 {{label}}",
     "collapse": "收起",

@@ -11,8 +11,7 @@ const labels: Record<string, string> = {
     'dataThread.readingConnector': 'Reading connector setup',
 };
 
-const translate = (key: string, options?: Record<string, unknown>): string =>
-    labels[key] || `Using ${options?.tool}`;
+const translate = (key: string): string => labels[key] || key;
 
 describe('formatAnalystToolProgress', () => {
     it('keeps catalog paths compact', () => {
@@ -27,7 +26,7 @@ describe('formatAnalystToolProgress', () => {
 
         expect(formatAnalystToolProgress('find_data', {
             query: 'monthly revenue',
-            scope: 'mysql:mysql',
+            source_id: 'mysql:mysql',
         }, translate)).toBe('Searching: “monthly revenue” in mysql');
     });
 
@@ -48,6 +47,6 @@ describe('formatAnalystToolProgress', () => {
 
     it('always returns a visible fallback for unknown inspection tools', () => {
         expect(formatAnalystToolProgress('future_tool', {}, translate))
-            .toBe('Using future tool');
+            .toBe('future tool');
     });
 });

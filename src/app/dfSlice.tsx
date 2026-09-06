@@ -72,7 +72,6 @@ export interface ServerConfig {
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
     MAX_DISPLAY_ROWS: number;
-    AVAILABLE_LANGUAGES: string[];
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
     WORKSPACE_BACKEND: 'local' | 'azure_blob' | 'ephemeral';
@@ -127,8 +126,7 @@ export type FocusedId =
     | { type: 'draft'; draftId: string }
     | undefined;
 
-export const explanationContent = (content: string, answer?: string) =>
-    answer ? `${content}\n\n> ↳ ${answer}` : content;
+export const explanationContent = (content: string) => content;
 
 export const shouldPreviewExplanationInCanvas = (content: string) =>
     content.length > 1000 || content.split('\n').length > 14;
@@ -360,7 +358,6 @@ const initialState: DataFormulatorState = {
         DISABLE_DATA_CONNECTORS: false,
         DISABLE_CUSTOM_MODELS: false,
         MAX_DISPLAY_ROWS: 10000,
-        AVAILABLE_LANGUAGES: ['en', 'zh'],
         DEV_MODE: false,
         WORKSPACE_BACKEND: 'local',
     },
@@ -2796,7 +2793,7 @@ export const dfSelectors = {
             if (!art) return undefined;
             if (art.dataOperation || art.form) return { type: 'text', textId: art.id };
             if (art.textKind === 'explain'
-                && shouldPreviewExplanationInCanvas(explanationContent(art.content, art.answered ? art.answer : undefined))) {
+                && shouldPreviewExplanationInCanvas(explanationContent(art.content))) {
                 return { type: 'text', textId: art.id };
             }
             if (art.sourceChartId

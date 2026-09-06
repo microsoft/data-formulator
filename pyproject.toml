@@ -27,11 +27,11 @@ dependencies = [
     "flask-limiter",
     "openai",
     "python-dotenv",
-    # litellm 1.92+ switched to a Rust/maturin build and ships manylinux-only
-    # wheels (no win_amd64 / macosx / py3-none-any), so installs hang on
-    # Windows/macOS without a Rust toolchain. Pin to the last universal-wheel
-    # line; >=1.84.0 keeps the litellm CVE fix and allows aiohttp>=3.14.
-    "litellm>=1.84.0,<1.92",
+    # litellm 1.92 switched to a native Rust/maturin build and initially shipped
+    # Linux-only wheels. Newer releases restored native macOS/Windows wheels,
+    # but stay on the last universal pure-Python line until the new runtime and
+    # cross-platform packaging have dedicated compatibility coverage.
+    "litellm>=1.91.5,<1.92",
     "aiohttp>=3.14.3",
     "duckdb",
     "numpy",

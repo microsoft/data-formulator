@@ -1,0 +1,31 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "execute_python_script",
+      "description": "Execute a general-purpose Python script in the sandbox. Here you use it to inspect data, compute statistics, transform tables, or verify assumptions before you act — write results to stdout with print() and that output is returned to you (it is NOT shown to the user). The script is for your own analysis, not for producing the final visualization. pandas, numpy, duckdb, sklearn, scipy are available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purpose": {"type": "string", "description": "One-sentence description of what this script does and why (shown to user as progress)."},
+          "code": {"type": "string", "description": "Python script to execute. Use print() to surface output."}
+        },
+        "required": ["purpose", "code"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "inspect_source_data",
+      "description": "Get a detailed summary of one or more analysis input tables — schema, field-level statistics, and sample rows. Cheaper than execute_python_script for basic data inspection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_names": {"type": "array", "items": {"type": "string"}, "description": "Names listed in the analysis-input-tables context to inspect."}
+        },
+        "required": ["table_names"]
+      }
+    }
+  }
+]

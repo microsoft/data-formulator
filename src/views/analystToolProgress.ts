@@ -61,7 +61,7 @@ export const formatAnalystToolProgress = (
         case 'find_data': {
             const path = Array.isArray(values.path) ? values.path.join('/') : values.path;
             const scope = [shortSourceId(values.source_id), path].filter(Boolean).join('/');
-            detail = [values.query ? `“${values.query}”` : '', scope, values.filter_by ? `(${values.filter_by})` : '']
+            detail = [values.query ? `“${values.query}”` : '', scope ? `in ${scope}` : '', values.filter_by ? `(${values.filter_by})` : '']
                 .filter(Boolean).join(' ');
             break;
         }
@@ -80,6 +80,6 @@ export const formatAnalystToolProgress = (
     const labelKey = toolLabelKeys[tool];
     const label = labelKey
         ? t(labelKey)
-        : t('dataThread.usingTool', { tool: tool.replaceAll('_', ' ') });
+        : tool.replaceAll('_', ' ');
     return detail ? `${label}: ${truncateDetail(String(detail))}` : label;
 };

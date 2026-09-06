@@ -13,7 +13,7 @@ pytestmark = pytest.mark.backend
 
 
 def _skill():
-    skill = build_registry().get_skill("data-loading")
+    skill = build_registry().get_skill("load-data")
     assert skill is not None
     return skill
 

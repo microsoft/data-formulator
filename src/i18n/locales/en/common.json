@@ -46,6 +46,7 @@
     "app": "App",
     "data": "Data",
     "moreOptions": "More options",
+    "moreLanguages": "More languages",
     "microsoftResearch": "Microsoft Research"
   },
   "logs": {
@@ -466,7 +467,6 @@
     "searching": "searching...",
     "listingConnectors": "Checking available connectors",
     "readingConnector": "Reading connector setup",
-    "usingTool": "Using {{tool}}",
     "producingAction": "outputting {{action}}...",
     "jumpToThreadRange": "Jump to thread(s) {{label}}",
     "collapse": "collapse",

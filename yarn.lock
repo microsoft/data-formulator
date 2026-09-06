@@ -747,18 +747,26 @@
   resolved "https://registry.npmjs.org/@fontsource/roboto/-/roboto-4.5.8.tgz"
   integrity sha512-CnD7zLItIzt86q4Sj3kZUiLcBk1dSk81qcqgMGaZe7SQ1P8hFNxhMl5AZthK1zrDM5m74VVhaOpuMGIL4gagaA==
 
-"@humanfs/core@^0.19.1":
-  version "0.19.1"
-  resolved "https://registry.npmjs.org/@humanfs/core/-/core-0.19.1.tgz"
-  integrity sha512-5DyQ4+1JEUzejeK1JGICcideyfUbGixgS9jNgex5nqkW+cY7WZhxBigmieN5Qnw9ZosSNVC9KQKyb+GUaGyKUA==
-
-"@humanfs/node@^0.16.6":
-  version "0.16.7"
-  resolved "https://registry.npmjs.org/@humanfs/node/-/node-0.16.7.tgz"
-  integrity sha512-/zUx+yOsIrG4Y43Eh2peDeKCxlRt/gET6aHfaKpuq267qXdYDFViVHfMaLyygZOnl0kGWxFIgsBy8QFuTLUXEQ==
+"@humanfs/core@^0.19.2":
+  version "0.19.2"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@humanfs/core/-/core-0.19.2.tgz#a8272ca03b2acf492670222b2320b6c421bfde60"
+  integrity sha1-qCcsoDsqz0kmcCIrIyC2xCG/3mA=
   dependencies:
-    "@humanfs/core" "^0.19.1"
+    "@humanfs/types" "^0.15.0"
+
+"@humanfs/node@^0.16.6", "@humanfs/node@^0.16.8":
+  version "0.16.8"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@humanfs/node/-/node-0.16.8.tgz#8f800cccc13f4f8cd3116e2d9c0a94939da3e3ed"
+  integrity sha1-j4AMzME/T4zTEW4tnAqUk52j4+0=
+  dependencies:
+    "@humanfs/core" "^0.19.2"
+    "@humanfs/types" "^0.15.0"
     "@humanwhocodes/retry" "^0.4.0"
+
+"@humanfs/types@^0.15.0":
+  version "0.15.0"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@humanfs/types/-/types-0.15.0.tgz#f2a09f62012390b2bff3fc6fb248ddec8c09a090"
+  integrity sha1-8qCfYgEjkLK/8/xvskjd7IwJoJA=
 
 "@humanwhocodes/module-importer@^1.0.1":
   version "1.0.1"
@@ -1015,6 +1023,78 @@
     clsx "^2.1.1"
     prop-types "^15.8.1"
     react-transition-group "^4.4.5"
+
+"@napi-rs/canvas-android-arm64@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-android-arm64/-/canvas-android-arm64-0.1.100.tgz#b7c68b91d57702a5fc523fa82de72ea741e6766e"
+  integrity sha1-t8aLkdV3AqX8Uj+oLecup0Hmdm4=
+
+"@napi-rs/canvas-darwin-arm64@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-darwin-arm64/-/canvas-darwin-arm64-0.1.100.tgz#d1686fa6ca699b07640efa5f45425db0a4e725e2"
+  integrity sha1-0WhvpsppmwdkDvpfRUJdsKTnJeI=
+
+"@napi-rs/canvas-darwin-x64@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-darwin-x64/-/canvas-darwin-x64-0.1.100.tgz#92978fd7eca21f7f1b59bd13ba3ce7c0e7c879a1"
+  integrity sha1-kpeP1+yiH38bWb0TujznwOfIeaE=
+
+"@napi-rs/canvas-linux-arm-gnueabihf@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-linux-arm-gnueabihf/-/canvas-linux-arm-gnueabihf-0.1.100.tgz#95f9892e1d5a8274871d8ee406374e9ef692bd9f"
+  integrity sha1-lfmJLh1agnSHHY7kBjdOnvaSvZ8=
+
+"@napi-rs/canvas-linux-arm64-gnu@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-linux-arm64-gnu/-/canvas-linux-arm64-gnu-0.1.100.tgz#6b2b7c4bb016b8f5308115ac9ae909df4967a94b"
+  integrity sha1-ayt8S7AWuPUwgRWsmukJ30lnqUs=
+
+"@napi-rs/canvas-linux-arm64-musl@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-linux-arm64-musl/-/canvas-linux-arm64-musl-0.1.100.tgz#48cf6342543e4f87cf1f8e9b1aaa19ad85bcc178"
+  integrity sha1-SM9jQlQ+T4fPH46bGqoZrYW8wXg=
+
+"@napi-rs/canvas-linux-riscv64-gnu@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-linux-riscv64-gnu/-/canvas-linux-riscv64-gnu-0.1.100.tgz#71b011007b03755c834a961735302c5837b041da"
+  integrity sha1-cbARAHsDdVyDSpYXNTAsWDewQdo=
+
+"@napi-rs/canvas-linux-x64-gnu@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-linux-x64-gnu/-/canvas-linux-x64-gnu-0.1.100.tgz#3f479d3b8b8c4658e5dec1b943ad7d2eefd2811f"
+  integrity sha1-P0edO4uMRljl3sG5Q619Lu/SgR8=
+
+"@napi-rs/canvas-linux-x64-musl@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-linux-x64-musl/-/canvas-linux-x64-musl-0.1.100.tgz#1beaca22c1fe97709a9c287115cb3c90194ddec6"
+  integrity sha1-G+rKIsH+l3CanChxFcs8kBlN3sY=
+
+"@napi-rs/canvas-win32-arm64-msvc@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-win32-arm64-msvc/-/canvas-win32-arm64-msvc-0.1.100.tgz#8a1728b455dd17965f95c0bfdf6753be8c5851c0"
+  integrity sha1-ihcotFXdF5ZflcC/32dTvoxYUcA=
+
+"@napi-rs/canvas-win32-x64-msvc@0.1.100":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas-win32-x64-msvc/-/canvas-win32-x64-msvc-0.1.100.tgz#1e52883f8784ffdbe52dc2d47b05a0886aa6e9cf"
+  integrity sha1-HlKIP4eE/9vlLcLUewWgiGqm6c8=
+
+"@napi-rs/canvas@^0.1.80":
+  version "0.1.100"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/canvas/-/canvas-0.1.100.tgz#2c89a15c28a62e1372be23fd474762ae1a8b16b7"
+  integrity sha1-LImhXCimLhNyviP9R0dirhqLFrc=
+  optionalDependencies:
+    "@napi-rs/canvas-android-arm64" "0.1.100"
+    "@napi-rs/canvas-darwin-arm64" "0.1.100"
+    "@napi-rs/canvas-darwin-x64" "0.1.100"
+    "@napi-rs/canvas-linux-arm-gnueabihf" "0.1.100"
+    "@napi-rs/canvas-linux-arm64-gnu" "0.1.100"
+    "@napi-rs/canvas-linux-arm64-musl" "0.1.100"
+    "@napi-rs/canvas-linux-riscv64-gnu" "0.1.100"
+    "@napi-rs/canvas-linux-x64-gnu" "0.1.100"
+    "@napi-rs/canvas-linux-x64-musl" "0.1.100"
+    "@napi-rs/canvas-win32-arm64-msvc" "0.1.100"
+    "@napi-rs/canvas-win32-x64-msvc" "0.1.100"
 
 "@parcel/watcher-android-arm64@2.5.6":
   version "2.5.6"
@@ -1423,164 +1503,164 @@
   dependencies:
     "@babel/runtime" "^7.12.5"
 
-"@tiptap/core@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/core/-/core-3.29.2.tgz"
-  integrity sha1-kNJFkann+0UP+5XtakL1KTSOPp4=
+"@tiptap/core@3.30.5", "@tiptap/core@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/core/-/core-3.30.5.tgz#9929ae10a5e0892fb1a38a197ae8208cdd3801ea"
+  integrity sha1-mSmuEKXgiS+xo4oZeuggjN04Aeo=
 
-"@tiptap/extension-blockquote@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-blockquote/-/extension-blockquote-3.29.2.tgz"
-  integrity sha1-5lRxnO5bA5pbSvlyJuJlL1ktQZY=
+"@tiptap/extension-blockquote@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-blockquote/-/extension-blockquote-3.30.5.tgz#7f67c0b03be4fe09d55af264a2a3f3fe38861bd3"
+  integrity sha1-f2fAsDvk/gnVWvJkoqPz/jiGG9M=
 
-"@tiptap/extension-bold@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-bold/-/extension-bold-3.29.2.tgz"
-  integrity sha1-zQPVEJbKqRNcy7McK653i1+sUN8=
+"@tiptap/extension-bold@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-bold/-/extension-bold-3.30.5.tgz#c4f33edf4fe4a2213d64185ed5e86f9b48ae2f46"
+  integrity sha1-xPM+30/koiE9ZBhe1ehvm0iuL0Y=
 
-"@tiptap/extension-bubble-menu@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-bubble-menu/-/extension-bubble-menu-3.29.2.tgz"
-  integrity sha1-+Nye2lJbboKb5QGu784vtwbxhnc=
+"@tiptap/extension-bubble-menu@^3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-bubble-menu/-/extension-bubble-menu-3.30.5.tgz#5edcb97ec819036b4425eb074d971990a45bf388"
+  integrity sha1-Xty5fsgZA2tEJesHTZcZkKRb84g=
   dependencies:
     "@floating-ui/dom" "^1.0.0"
 
-"@tiptap/extension-bullet-list@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-bullet-list/-/extension-bullet-list-3.29.2.tgz"
-  integrity sha1-wlpgI8fuE+Nfdv/MT9Q2QV6foLc=
+"@tiptap/extension-bullet-list@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-bullet-list/-/extension-bullet-list-3.30.5.tgz#7147b5600b292ab5824c15230339c49b996811d0"
+  integrity sha1-cUe1YAspKrWCTBUjAznEm5loEdA=
 
-"@tiptap/extension-code-block@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-code-block/-/extension-code-block-3.29.2.tgz"
-  integrity sha1-/ZHyR10MniiayYzDIQ+G2GmvThY=
+"@tiptap/extension-code-block@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-code-block/-/extension-code-block-3.30.5.tgz#90f11909df4e1254a0f954dcf3726dc9c4f57937"
+  integrity sha1-kPEZCd9OElSg+VTc83JtycT1eTc=
 
-"@tiptap/extension-code@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-code/-/extension-code-3.29.2.tgz"
-  integrity sha1-iaE5iuXgvrzXgzwOc2IfEcyqSkQ=
+"@tiptap/extension-code@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-code/-/extension-code-3.30.5.tgz#e73b5c9c83572f2244b74f8798c15eb2687329fd"
+  integrity sha1-5ztcnINXLyJEt0+HmMFesmhzKf0=
 
-"@tiptap/extension-document@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-document/-/extension-document-3.29.2.tgz"
-  integrity sha1-IV1pLUtbnXu8jbj5udQiHypXyaE=
+"@tiptap/extension-document@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-document/-/extension-document-3.30.5.tgz#37a0f349f355428532fc5e4399a1df05fe379bb7"
+  integrity sha1-N6DzSfNVQoUy/F5DmaHfBf43m7c=
 
-"@tiptap/extension-dropcursor@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-dropcursor/-/extension-dropcursor-3.29.2.tgz"
-  integrity sha1-+qEbbQ2TEulk/PAIf9yYXKV7w0Q=
+"@tiptap/extension-dropcursor@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-dropcursor/-/extension-dropcursor-3.30.5.tgz#6434801d1f88d84be9a17855e0ed71ae4edbbcb2"
+  integrity sha1-ZDSAHR+I2EvpoXhV4O1xrk7bvLI=
 
-"@tiptap/extension-floating-menu@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-floating-menu/-/extension-floating-menu-3.29.2.tgz"
-  integrity sha1-c0ZysgueVHM5P2h0KYjioPmqG+M=
+"@tiptap/extension-floating-menu@^3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-floating-menu/-/extension-floating-menu-3.30.5.tgz#47156d5ae1f99edcd8dc9ad91c1104019b0481c0"
+  integrity sha1-RxVtWuH5ntzY3JrZHBEEAZsEgcA=
 
-"@tiptap/extension-gapcursor@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-gapcursor/-/extension-gapcursor-3.29.2.tgz"
-  integrity sha1-wh/WONnkkj8CYKelz9SjjPfAUhY=
+"@tiptap/extension-gapcursor@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-gapcursor/-/extension-gapcursor-3.30.5.tgz#59473f8ae8e05bb3eaf85cb3337a7115ac243ecf"
+  integrity sha1-WUc/iujgW7Pq+FyzM3pxFawkPs8=
 
-"@tiptap/extension-hard-break@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-hard-break/-/extension-hard-break-3.29.2.tgz"
-  integrity sha1-M066qcDS7tffkDdSTrD2sVcy+x0=
+"@tiptap/extension-hard-break@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-hard-break/-/extension-hard-break-3.30.5.tgz#90e306d80301511bd70357d8bb38324d0abe4682"
+  integrity sha1-kOMG2AMBURvXA1fYuzgyTQq+RoI=
 
-"@tiptap/extension-heading@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-heading/-/extension-heading-3.29.2.tgz"
-  integrity sha1-p7OS190s1GPZ7adVaq8Lspd5Wtk=
+"@tiptap/extension-heading@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-heading/-/extension-heading-3.30.5.tgz#553532bcca4cda2479ae0b0f528cbf5391c51d39"
+  integrity sha1-VTUyvMpM2iR5rgsPUoy/U5HFHTk=
 
-"@tiptap/extension-horizontal-rule@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-horizontal-rule/-/extension-horizontal-rule-3.29.2.tgz"
-  integrity sha1-oq/iAMKfk1X6GnnJb8c77wFru9I=
+"@tiptap/extension-horizontal-rule@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-horizontal-rule/-/extension-horizontal-rule-3.30.5.tgz#fa860425996bf49f89113c5c841e488d69e24177"
+  integrity sha1-+oYEJZlr9J+JETxchB5IjWniQXc=
 
-"@tiptap/extension-image@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-image/-/extension-image-3.29.2.tgz"
-  integrity sha1-PCKVNi0kt6a+T10s3/79JCT+Cgs=
+"@tiptap/extension-image@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-image/-/extension-image-3.30.5.tgz#8689a95e7353e524430e81ad2aadee37abc4f7b2"
+  integrity sha1-hompXnNT5SRDDoGtKq3uN6vE97I=
 
-"@tiptap/extension-italic@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-italic/-/extension-italic-3.29.2.tgz"
-  integrity sha1-PRaf3MNKYDME8UlGxvY43arcmvg=
+"@tiptap/extension-italic@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-italic/-/extension-italic-3.30.5.tgz#21d4efc55af18e67ffbead11e6bd9d515cbb447c"
+  integrity sha1-IdTvxVrxjmf/vq0R5r2dUVy7RHw=
 
-"@tiptap/extension-link@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-link/-/extension-link-3.29.2.tgz"
-  integrity sha1-qR/4YlzGCem6C/tdUFK0FoQ2xPU=
+"@tiptap/extension-link@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-link/-/extension-link-3.30.5.tgz#c30829c2a77734154abc5d78a88ffbc2a09570aa"
+  integrity sha1-wwgpwqd3NBVKvF14qI/7wqCVcKo=
   dependencies:
     linkifyjs "^4.3.3"
 
-"@tiptap/extension-list-item@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-list-item/-/extension-list-item-3.29.2.tgz"
-  integrity sha1-/r3bIrrfD6zr8zJbkV9l9KfI9pc=
+"@tiptap/extension-list-item@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-list-item/-/extension-list-item-3.30.5.tgz#abb9eb6c7045012ad52e1b6a5c8f4c74269ff8e4"
+  integrity sha1-q7nrbHBFASrVLhtqXI9MdCaf+OQ=
 
-"@tiptap/extension-list-keymap@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-list-keymap/-/extension-list-keymap-3.29.2.tgz"
-  integrity sha1-zbKaTOf9/5+YbfcTUBJy2fxkOTA=
+"@tiptap/extension-list-keymap@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-list-keymap/-/extension-list-keymap-3.30.5.tgz#02fc9ef93acd86de1cc399b27fae9ccf8d7dbb4b"
+  integrity sha1-Avye+TrNht4cw5myf66cz419u0s=
 
-"@tiptap/extension-list@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-list/-/extension-list-3.29.2.tgz"
-  integrity sha1-UzJOVfHInvz0ULDJL4Q2HO0V4qs=
+"@tiptap/extension-list@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-list/-/extension-list-3.30.5.tgz#4ba0c7fb629fce7dea91bfc538b2b2d04902339d"
+  integrity sha1-S6DH+2Kfzn3qkb/FOLKy0EkCM50=
 
-"@tiptap/extension-ordered-list@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-ordered-list/-/extension-ordered-list-3.29.2.tgz"
-  integrity sha1-IFPdrvJD5FW7Emf76BwzdIf6R3E=
+"@tiptap/extension-ordered-list@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-ordered-list/-/extension-ordered-list-3.30.5.tgz#e9cdc550ebd4838946ec726356e3728aa43fe0b9"
+  integrity sha1-6c3FUOvUg4lG7HJjVuNyiqQ/4Lk=
 
-"@tiptap/extension-paragraph@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-paragraph/-/extension-paragraph-3.29.2.tgz"
-  integrity sha1-2o3klFMIQ4kcOZ0YqxXqKy9eL/s=
+"@tiptap/extension-paragraph@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-paragraph/-/extension-paragraph-3.30.5.tgz#5134944deac793b24760add8563486503729076c"
+  integrity sha1-UTSUTerHk7JHYK3YVjSGUDcpB2w=
 
-"@tiptap/extension-strike@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-strike/-/extension-strike-3.29.2.tgz"
-  integrity sha1-/he2FAlV6PRcetMsZlOYkb6TREE=
+"@tiptap/extension-strike@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-strike/-/extension-strike-3.30.5.tgz#68a87354187846181086c179df24e187c2caa617"
+  integrity sha1-aKhzVBh4RhgQhsF53yThh8LKphc=
 
-"@tiptap/extension-table-cell@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table-cell/-/extension-table-cell-3.29.2.tgz"
-  integrity sha1-5A+Es7bNq8Cu/pJwVEvJu4u/Ncg=
+"@tiptap/extension-table-cell@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table-cell/-/extension-table-cell-3.30.5.tgz#f1bff48d6c9f7e2177815971fa1bbcd403a8f553"
+  integrity sha1-8b/0jWyffiF3gVlx+hu81AOo9VM=
 
-"@tiptap/extension-table-header@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table-header/-/extension-table-header-3.29.2.tgz"
-  integrity sha1-pK42cPJ1mpYey4QXuoFU1it5lHg=
+"@tiptap/extension-table-header@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table-header/-/extension-table-header-3.30.5.tgz#ef1847e12f7c35ca191c7a9ea46c6ac155a24721"
+  integrity sha1-7xhH4S98NcoZHHqepGxqwVWiRyE=
 
-"@tiptap/extension-table-row@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table-row/-/extension-table-row-3.29.2.tgz"
-  integrity sha1-TWMLxAhUQnzHLjqPeXAbHU6zMH0=
+"@tiptap/extension-table-row@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table-row/-/extension-table-row-3.30.5.tgz#9c4bcf4e70c6d17a582c3036ec076f672bf3ffbe"
+  integrity sha1-nEvPTnDG0XpYLDA27AdvZyvz/74=
 
-"@tiptap/extension-table@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table/-/extension-table-3.29.2.tgz"
-  integrity sha1-FQS8knchsBUjMnt/79S4owQcNV8=
+"@tiptap/extension-table@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-table/-/extension-table-3.30.5.tgz#ff61d121fd2f49c6fb84f1fa98d94c7a76aefee1"
+  integrity sha1-/2HRIf0vScb7hPH6mNlMenau/uE=
 
-"@tiptap/extension-text@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-text/-/extension-text-3.29.2.tgz"
-  integrity sha1-f1kAQ7kES9fLxHjGXiEbw/JTgzU=
+"@tiptap/extension-text@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-text/-/extension-text-3.30.5.tgz#3e56fd456312287ac130466e7e5de3f36edf6861"
+  integrity sha1-Plb9RWMSKHrBMEZufl3j827faGE=
 
-"@tiptap/extension-underline@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-underline/-/extension-underline-3.29.2.tgz"
-  integrity sha1-41RcwCBgj8t73eXxE20+6OMwy04=
+"@tiptap/extension-underline@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extension-underline/-/extension-underline-3.30.5.tgz#8558a5691c2621f3cf076e153c9319cd39e60d99"
+  integrity sha1-hVilaRwmIfPPB24VPJMZzTnmDZk=
 
-"@tiptap/extensions@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extensions/-/extensions-3.29.2.tgz"
-  integrity sha1-IHxu152xpbrsE/P9hlO0N/yiyLY=
+"@tiptap/extensions@3.30.5":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/extensions/-/extensions-3.30.5.tgz#e70a44694a7727c8a580fd04096f9110edfd74f0"
+  integrity sha1-5wpEaUp3J8ilgP0ECW+REO39dPA=
 
-"@tiptap/pm@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/pm/-/pm-3.29.2.tgz"
-  integrity sha1-3kYcb4mG74BwgvRnzeLY/fHM5Lw=
+"@tiptap/pm@3.30.5", "@tiptap/pm@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/pm/-/pm-3.30.5.tgz#6d53957bd9d5b0bbde3ec49b449deaf16b8822f0"
+  integrity sha1-bVOVe9nVsLvePsSbRJ3q8WuIIvA=
   dependencies:
     prosemirror-changeset "^2.4.1"
     prosemirror-commands "^1.7.1"
@@ -1596,47 +1676,47 @@
     prosemirror-transform "^1.12.0"
     prosemirror-view "^1.41.9"
 
-"@tiptap/react@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/react/-/react-3.29.2.tgz"
-  integrity sha1-eppfSrlnCO55afues22SgZ61u9Y=
+"@tiptap/react@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/react/-/react-3.30.5.tgz#f8fe9219fec744b87b0285237ded9aadbe9ad218"
+  integrity sha1-+P6SGf7HRLh7AoUjfe2arb6a0hg=
   dependencies:
     "@types/use-sync-external-store" "^0.0.6"
     fast-equals "^5.3.3"
     use-sync-external-store "^1.4.0"
   optionalDependencies:
-    "@tiptap/extension-bubble-menu" "^3.29.2"
-    "@tiptap/extension-floating-menu" "^3.29.2"
+    "@tiptap/extension-bubble-menu" "^3.30.5"
+    "@tiptap/extension-floating-menu" "^3.30.5"
 
-"@tiptap/starter-kit@^3.29.2":
-  version "3.29.2"
-  resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/starter-kit/-/starter-kit-3.29.2.tgz"
-  integrity sha1-nmG9/GKJI+nBzVpu2AodiErhhVw=
+"@tiptap/starter-kit@^3.30.4":
+  version "3.30.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@tiptap/starter-kit/-/starter-kit-3.30.5.tgz#40f291781c99611d9ded3deb1940b44a27852613"
+  integrity sha1-QPKReByZYR2d7T3rGUC0SieFJhM=
   dependencies:
-    "@tiptap/core" "^3.29.2"
-    "@tiptap/extension-blockquote" "^3.29.2"
-    "@tiptap/extension-bold" "^3.29.2"
-    "@tiptap/extension-bullet-list" "^3.29.2"
-    "@tiptap/extension-code" "^3.29.2"
-    "@tiptap/extension-code-block" "^3.29.2"
-    "@tiptap/extension-document" "^3.29.2"
-    "@tiptap/extension-dropcursor" "^3.29.2"
-    "@tiptap/extension-gapcursor" "^3.29.2"
-    "@tiptap/extension-hard-break" "^3.29.2"
-    "@tiptap/extension-heading" "^3.29.2"
-    "@tiptap/extension-horizontal-rule" "^3.29.2"
-    "@tiptap/extension-italic" "^3.29.2"
-    "@tiptap/extension-link" "^3.29.2"
-    "@tiptap/extension-list" "^3.29.2"
-    "@tiptap/extension-list-item" "^3.29.2"
-    "@tiptap/extension-list-keymap" "^3.29.2"
-    "@tiptap/extension-ordered-list" "^3.29.2"
-    "@tiptap/extension-paragraph" "^3.29.2"
-    "@tiptap/extension-strike" "^3.29.2"
-    "@tiptap/extension-text" "^3.29.2"
-    "@tiptap/extension-underline" "^3.29.2"
-    "@tiptap/extensions" "^3.29.2"
-    "@tiptap/pm" "^3.29.2"
+    "@tiptap/core" "3.30.5"
+    "@tiptap/extension-blockquote" "3.30.5"
+    "@tiptap/extension-bold" "3.30.5"
+    "@tiptap/extension-bullet-list" "3.30.5"
+    "@tiptap/extension-code" "3.30.5"
+    "@tiptap/extension-code-block" "3.30.5"
+    "@tiptap/extension-document" "3.30.5"
+    "@tiptap/extension-dropcursor" "3.30.5"
+    "@tiptap/extension-gapcursor" "3.30.5"
+    "@tiptap/extension-hard-break" "3.30.5"
+    "@tiptap/extension-heading" "3.30.5"
+    "@tiptap/extension-horizontal-rule" "3.30.5"
+    "@tiptap/extension-italic" "3.30.5"
+    "@tiptap/extension-link" "3.30.5"
+    "@tiptap/extension-list" "3.30.5"
+    "@tiptap/extension-list-item" "3.30.5"
+    "@tiptap/extension-list-keymap" "3.30.5"
+    "@tiptap/extension-ordered-list" "3.30.5"
+    "@tiptap/extension-paragraph" "3.30.5"
+    "@tiptap/extension-strike" "3.30.5"
+    "@tiptap/extension-text" "3.30.5"
+    "@tiptap/extension-underline" "3.30.5"
+    "@tiptap/extensions" "3.30.5"
+    "@tiptap/pm" "3.30.5"
 
 "@types/aria-query@^5.0.1":
   version "5.0.4"
@@ -2731,7 +2811,7 @@ cliui@^9.0.1:
     strip-ansi "^7.1.0"
     wrap-ansi "^9.0.0"
 
-clsx@^2.1.1:
+clsx@^2.0.0, clsx@^2.1.1:
   version "2.1.1"
   resolved "https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz"
   integrity sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==
@@ -4741,7 +4821,7 @@ longest-streak@^3.0.0:
   resolved "https://registry.npmjs.org/longest-streak/-/longest-streak-3.1.0.tgz"
   integrity sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==
 
-loose-envify@^1.1.0, loose-envify@^1.4.0:
+loose-envify@^1.0.0, loose-envify@^1.1.0, loose-envify@^1.4.0:
   version "1.4.0"
   resolved "https://registry.npmjs.org/loose-envify/-/loose-envify-1.4.0.tgz"
   integrity sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==
@@ -4771,6 +4851,16 @@ magic-string@^0.30.21:
   integrity sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==
   dependencies:
     "@jridgewell/sourcemap-codec" "^1.5.5"
+
+make-cancellable-promise@^2.0.0:
+  version "2.0.0"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/make-cancellable-promise/-/make-cancellable-promise-2.0.0.tgz#d582b3ea435205e31653dead33a10bea0696c2fa"
+  integrity sha1-1YKz6kNSBeMWU96tM6EL6gaWwvo=
+
+make-event-props@^2.0.0:
+  version "2.0.0"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/make-event-props/-/make-event-props-2.0.0.tgz#41f7a6e96841296d6835aebe94be86c25602f923"
+  integrity sha1-Qfem6WhBKW1oNa6+lL6GwlYC+SM=
 
 markdown-it-task-lists@^2.1.1:
   version "2.1.1"
@@ -4998,6 +5088,11 @@ mdurl@^2.0.0:
   version "5.2.1"
   resolved "https://registry.npmjs.org/memoize-one/-/memoize-one-5.2.1.tgz"
   integrity sha512-zYiwtZUcYyXKo/np96AGZAckk+FWWsUdJ3cHGGmld7+AhvcWmQyGCYUh1hc4Q/pkOhb65dQR/pqCyK0cOaHz4Q==
+
+merge-refs@^2.0.0:
+  version "2.0.0"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/merge-refs/-/merge-refs-2.0.0.tgz#0f1a3e902fde05f30f59279ce73d5d82d2f84dfa"
+  integrity sha1-Dxo+kC/eBfMPWSec5z1dgtL4Tfo=
 
 micromark-core-commonmark@^2.0.0:
   version "2.0.3"
@@ -5560,6 +5655,13 @@ pathe@^2.0.3:
   resolved "https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz"
   integrity sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==
 
+pdfjs-dist@5.4.296:
+  version "5.4.296"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/pdfjs-dist/-/pdfjs-dist-5.4.296.tgz#b1aa7ded8828f29537bc7cc99c1343c8b3a5d2d6"
+  integrity sha1-sap97Ygo8pU3vHzJnBNDyLOl0tY=
+  optionalDependencies:
+    "@napi-rs/canvas" "^0.1.80"
+
 picocolors@1.1.1, picocolors@^1.1.1:
   version "1.1.1"
   resolved "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz"
@@ -5922,6 +6024,20 @@ react-markdown@^10.1.0:
     unified "^11.0.0"
     unist-util-visit "^5.0.0"
     vfile "^6.0.0"
+
+react-pdf@^10.5.0:
+  version "10.5.0"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/react-pdf/-/react-pdf-10.5.0.tgz#5a28182cc0f275e055edfb1d067c8714e0ad1a65"
+  integrity sha1-WigYLMDydeBV7fsdBnyHFOCtGmU=
+  dependencies:
+    clsx "^2.0.0"
+    dequal "^2.0.3"
+    make-cancellable-promise "^2.0.0"
+    make-event-props "^2.0.0"
+    merge-refs "^2.0.0"
+    pdfjs-dist "5.4.296"
+    tiny-invariant "^1.0.0"
+    warning "^4.0.0"
 
 react-redux@^8.0.4:
   version "8.1.3"
@@ -6640,6 +6756,11 @@ text-segmentation@^1.0.3:
   integrity sha512-iOiPUo/BGnZ6+54OsWxZidGCsdU8YbE4PSpdPinp7DeMtUJNJBoJ/ouUSTJjHkh1KntHaltHl/gDs2FC4i5+Nw==
   dependencies:
     utrie "^1.0.2"
+
+tiny-invariant@^1.0.0:
+  version "1.3.3"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/tiny-invariant/-/tiny-invariant-1.3.3.tgz#46680b7a873a0d5d10005995eb90a70d74d60127"
+  integrity sha1-RmgLeoc6DV0QAFmV65CnDXTWASc=
 
 tinybench@^2.9.0:
   version "2.9.0"
@@ -7431,6 +7552,13 @@ w3c-xmlserializer@^5.0.0:
   integrity sha512-o8qghlI8NZHU1lLPrpi2+Uq7abh4GGPpYANlalzWxyWteJOCsr/P+oPBA49TOLu5FTZO4d3F9MnWJfiMo4BkmA==
   dependencies:
     xml-name-validator "^5.0.0"
+
+warning@^4.0.0:
+  version "4.0.3"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/warning/-/warning-4.0.3.tgz#16e9e077eb8a86d6af7d64aa1e05fd85b4678ca3"
+  integrity sha1-Fungd+uKhtavfWSqHgX9hbRnjKM=
+  dependencies:
+    loose-envify "^1.0.0"
 
 webidl-conversions@^8.0.1:
   version "8.0.1"

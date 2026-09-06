@@ -15,6 +15,8 @@ const resources = {
   hi: { translation: hi },
 };
 
+export const SUPPORTED_UI_LANGUAGES: readonly string[] = Object.keys(resources);
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)

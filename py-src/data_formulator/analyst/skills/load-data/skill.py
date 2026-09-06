@@ -15,15 +15,15 @@ from data_formulator.data_operations import (
     ProbeBudget,
 )
 
-_PROBE_BUDGET_KEY = "data_loading.probe_budget"
-_CONNECTORS_LISTED_KEY = "data_loading.connectors_listed"
+_PROBE_BUDGET_KEY = "load-data.probe_budget"
+_CONNECTORS_LISTED_KEY = "load-data.connectors_listed"
 _CONNECTORS_DISABLED_NOTE = (
     "External data connectors are disabled in this deployment. Use file upload "
     "or built-in sample datasets instead."
 )
 
 
-class DataLoadingSkill:
+class LoadDataSkill:
     """Read-only connected-source discovery for the unified analyst."""
 
     def handle_tool(
@@ -48,7 +48,7 @@ class DataLoadingSkill:
         elif name == "describe_connector":
             result = self._describe_connector(args)
         else:
-            result = {"error": f"data-loading has no tool '{name}'."}
+            result = {"error": f"load-data has no tool '{name}'."}
         return ToolResult(text=json.dumps(result, ensure_ascii=False, default=str))
 
     def handle_action(
@@ -61,7 +61,7 @@ class DataLoadingSkill:
             return (yield from self._propose_data_operation(spec, ctx))
         if action == "propose_connection":
             return (yield from self._propose_connection(spec, ctx))
-        message = f"data-loading has no committing action '{action}' in this phase."
+        message = f"load-data has no committing action '{action}' in this phase."
         yield {
             "type": "error",
             "message": message,
@@ -299,7 +299,7 @@ class DataLoadingSkill:
                     "say what you found and why in your reply text, and give each option a label"
                 )
             conversation_id = str(ctx.payload.get("conversation_id", "")).strip()
-            loaded_tables = DataLoadingSkill._already_loaded_tables(
+            loaded_tables = LoadDataSkill._already_loaded_tables(
                 tuple(step for plan in plans for step in plan.steps),
                 ctx.workspace,
             )
@@ -361,5 +361,5 @@ def _source_is_available(source_id: str) -> bool:
         return True
 
 
-def get_skill() -> DataLoadingSkill:
-    return DataLoadingSkill()
+def get_skill() -> LoadDataSkill:
+    return LoadDataSkill()

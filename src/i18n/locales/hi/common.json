@@ -46,6 +46,7 @@
     "app": "ऐप",
     "data": "डेटा",
     "moreOptions": "अधिक विकल्प",
+    "moreLanguages": "अधिक भाषाएँ",
     "microsoftResearch": "Microsoft Research"
   },
   "logs": {
@@ -465,7 +466,6 @@
     "searching": "खोजा जा रहा है...",
     "listingConnectors": "उपलब्ध कनेक्टर जांचे जा रहे हैं",
     "readingConnector": "कनेक्टर सेटअप पढ़ा जा रहा है",
-    "usingTool": "{{tool}} का उपयोग हो रहा है",
     "producingAction": "{{action}} आउटपुट हो रहा है...",
     "jumpToThreadRange": "थ्रेड(s) {{label}} पर जाएं",
     "collapse": "समेटें",

@@ -47,7 +47,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import { borderColor, transition, conversationWidth } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
-import { resolveDerivedTriggerTableId, resolveRunParentNodeId, shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
+import { resolveConversationParentNodeId, resolveDerivedTriggerTableId, resolveRunParentNodeId, shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ClarificationPanel, ExplanationPanel, FailedDraftPanel } from './AgentPausePanel';
 import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
@@ -1836,23 +1836,44 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             exploreFromChat(displayPrompt, clarificationCtx);
             return;
         }
-        // Follow-up typed in the main input while a text turn (clarify OR
-        // explain) is focused: treat the prompt as that turn's reply so it
-        // renders once (as the turn's answer) and threads into the same
-        // conversation — instead of duplicating (answer box AND a fresh prompt
-        // bubble) and starting an unrelated run (design-docs/41). Only for an
-        // unanswered turn; an answered one is locked, so a further prompt is a
-        // fresh turn.
+        // A prompt submitted while a text turn is focused always continues
+        // from that turn. An open turn consumes it as its answer; a completed
+        // turn keeps its existing answer and shows the follow-up as a new
+        // prompt beneath that response.
         const focusedTurn = focusedId?.type === 'text'
-            ? textTurns.find(tt => tt.id === focusedId.textId && !tt.answered)
+            ? textTurns.find(tt => tt.id === focusedId.textId)
             : undefined;
+        const conversationParentId = resolveConversationParentNodeId(
+            focusedTurn?.id,
+            focusedTableId,
+            textTurns,
+            tables.map(table => table.id),
+        );
         if (focusedTurn) {
-            dispatch(dfActions.updateTextTurn({ id: focusedTurn.id, answered: true, answer: prompt }));
-            exploreFromChat(prompt, { parentNodeId: focusedTurn.id }, displayPrompt);
+            if (!focusedTurn.answered) {
+                dispatch(dfActions.updateTextTurn({ id: focusedTurn.id, answered: true, answer: prompt }));
+                exploreFromChat(prompt, { parentNodeId: focusedTurn.id, isContinuation: true }, displayPrompt);
+            } else {
+                exploreFromChat(prompt, { parentNodeId: focusedTurn.id, isContinuation: false }, displayPrompt);
+            }
+            return;
+        }
+        if (conversationParentId) {
+            const conversationParent = textTurns.find(turn => turn.id === conversationParentId);
+            if (conversationParent && !conversationParent.answered) {
+                dispatch(dfActions.updateTextTurn({
+                    id: conversationParent.id,
+                    answered: true,
+                    answer: prompt,
+                }));
+                exploreFromChat(prompt, { parentNodeId: conversationParent.id, isContinuation: true }, displayPrompt);
+            } else {
+                exploreFromChat(prompt, { parentNodeId: conversationParentId, isContinuation: false }, displayPrompt);
+            }
             return;
         }
         exploreFromChat(prompt, undefined, displayPrompt);
-    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, textTurns, dispatch]);
+    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, focusedTableId, tables, textTurns, dispatch]);
 
     // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
     // with a prompt describing the captured workflow; we hand it straight to
@@ -2059,7 +2080,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         ? textTurns.find(tt => tt.id === focusedId.textId)
         : undefined;
     const focusedTextTurnContent = focusedTextTurn
-        ? explanationContent(focusedTextTurn.content, focusedTextTurn.answered ? focusedTextTurn.answer : undefined)
+        ? explanationContent(focusedTextTurn.content)
         : '';
     const focusedTextTurnUsesCanvas = focusedTextTurn?.textKind === 'explain'
         && shouldPreviewExplanationInCanvas(focusedTextTurnContent);

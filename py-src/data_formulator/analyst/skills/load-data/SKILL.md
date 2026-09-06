@@ -1,5 +1,5 @@
 ---
-name: data-loading
+name: load-data
 description: >-
    Discover connected data sources, add new data connectors through a
    user-confirmed form, inspect table metadata, and run bounded read-only probes
@@ -23,7 +23,7 @@ actions:
   - propose_connection
 ---
 
-# Skill: Data discovery
+# Load data
 
 The analysis input tables listed in your context are already materialized and
 are the only data that can be read directly. Everything these tools return is

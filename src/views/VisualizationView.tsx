@@ -1820,10 +1820,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     }
     if (focusedExplanationTurn) {
         return <ExplanationCanvas
-            content={explanationContent(
-                focusedExplanationTurn.content,
-                focusedExplanationTurn.answered ? focusedExplanationTurn.answer : undefined,
-            )}
+            content={explanationContent(focusedExplanationTurn.content)}
             textTurnId={focusedExplanationTurn.id}
         />;
     }
