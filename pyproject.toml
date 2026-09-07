@@ -39,7 +39,7 @@ dependencies = [
     "beautifulsoup4",
     "scikit-learn",
     "pyyaml",
-    "pyarrow>=13.0.0",
+    "pyarrow>=25.0.1",
     "xlrd",
     "openpyxl>=3.1.0",
     "lxml", # pandas.read_html web table extraction
@@ -53,7 +53,7 @@ dependencies = [
     "azure-keyvault-secrets", # kusto
     "pymysql", # mysql
     "clickhouse-connect", # clickhouse
-    "mssql-python>=1.11.0", # mssql
+    "mssql-python>=1.14.0", # mssql
     "psycopg2-binary", # postgresql
     "boto3", # s3, athena
     "google-cloud-bigquery", # bigquery
@@ -62,7 +62,7 @@ dependencies = [
     "databricks-sql-connector", # databricks
     # SSO / Auth deps
     "PyJWT[crypto]>=2.8.0", # OIDC JWT verification (includes cryptography)
-    "cryptography>=50.0.0", # Security floor for auth and local vault encryption
+    "cryptography>=50.0.1", # Security floor for auth and local vault encryption
     "requests", # GitHub OAuth code exchange, Superset API calls
     "flask-session>=0.8.0", # Server-side session (SQLite) for TokenStore
     "pypdf>=6.16.2",
@@ -73,9 +73,9 @@ dependencies = [
 # Needed for JavaScript single-page apps and pages behind a browser-verification
 # challenge that a plain HTTP fetch cannot pass. After installing, also run:
 #   python -m playwright install chromium
-browser = ["playwright>=1.40"]
+browser = ["playwright>=1.62.0"]
 desktop = [
-  "pyinstaller>=6.0",
+  "pyinstaller>=6.22.2",
   "pywebview>=5.0",
 ]
 
