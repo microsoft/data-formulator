@@ -2752,6 +2752,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // control there must keep both the form and its feedback open;
                 // only either surface's explicit close button dismisses it.
                 if (focusedTextTurn?.form) return;
+                // Long explanations also own the canvas. Clicking or selecting
+                // their document content must not be interpreted as dismissing
+                // the focused turn; the canvas close button owns that action.
+                if (focusedTextTurnUsesCanvas) return;
                 const isActiveClarify = focusedTextTurn?.textKind === 'clarify'
                     && !focusedTextTurn.answered
                     && (focusedTextTurn.options?.length ?? 0) > 0;
