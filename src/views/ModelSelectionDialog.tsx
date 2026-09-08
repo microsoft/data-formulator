@@ -109,7 +109,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         'azure': [],
         'anthropic': [],
         'gemini': [],
-        'ollama': []
+        'ollama': [],
+        'orcarouter': []
     });
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -223,7 +224,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             'azure': [],
             'anthropic': [],
             'gemini': [],
-            'ollama': []
+            'ollama': [],
+            'orcarouter': []
         };
 
         globalModels.forEach((modelConfig: any) => {
@@ -436,7 +438,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     setNewModelDiagnostic(null);
                 }}
             >
-                {['openai', 'azure', 'ollama', 'anthropic', 'gemini'].map(provider => (
+                {['openai', 'azure', 'ollama', 'anthropic', 'gemini', 'orcarouter'].map(provider => (
                     <MenuItem key={provider} value={provider}>{provider}</MenuItem>
                 ))}
             </TextField>

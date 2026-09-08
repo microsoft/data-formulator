@@ -1,0 +1,80 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "visualize",
+      "description": "Commit a data transform + chart: run code producing a DataFrame and render it. The agent observes the result and continues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "A concise, neutral analytical heading that names the subject, measure, and analytical lens, such as 'Year-over-year price change peaks'. Prefer a stable description of the view over a takeaway claim or narrated trend. Do not mention the chart type, imply causality, or editorialize. Shown as the chart heading."
+          },
+          "subtitle": {
+            "type": "string",
+            "description": "Concise supporting context not already clear from the title or axes. Use one phrase of at most 16 words to provide contextual details. Do not restate the measure or analytical lens named in the title."
+          },
+          "display_instruction": {
+            "type": "string",
+            "description": "≤12 words. State the question or hypothesis the chart investigates — don't recap the chart spec (x/y/color/split are already visible). Wrap a **column** in ** ** if it anchors the question."
+          },
+          "input_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "description": "Stable ID listed in WORKSPACE INPUTS."},
+                "kind": {"type": "string", "enum": ["data", "file"]}
+              },
+              "required": ["id", "kind"],
+              "additionalProperties": false
+            },
+            "description": "Durable data or file inputs materially used to compute the output. Use [] when none were used. Do not include inputs only read for context."
+          },
+          "input_tables": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Deprecated compatibility field for older trajectories. Use input_sources."
+          },
+          "code": {"type": "string", "description": "Python code producing a DataFrame assigned to output_variable."},
+          "output_variable": {"type": "string", "description": "snake_case name of the DataFrame variable the code assigns."},
+          "chart": {
+            "type": "object",
+            "properties": {
+              "chart_type": {"type": "string", "description": "Chart type from the chart type reference."},
+              "encodings": {
+                "type": "object",
+                "description": "Map of channel names to Flint encoding objects. A bare field-name string is also accepted as shorthand.",
+                "additionalProperties": {
+                  "oneOf": [
+                    {"type": "string"},
+                    {
+                      "type": "object",
+                      "properties": {
+                        "field": {"type": "string"},
+                        "type": {"type": "string", "enum": ["quantitative", "nominal", "ordinal", "temporal"]},
+                        "aggregate": {"type": "string", "enum": ["count", "sum", "average", "mean"]},
+                        "sortOrder": {"type": "string", "enum": ["ascending", "descending"]},
+                        "sortBy": {"type": "string"},
+                        "scheme": {"type": "string"}
+                      },
+                      "required": ["field"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "config": {"type": "object"}
+            },
+            "required": ["chart_type", "encodings"],
+            "additionalProperties": false
+          },
+          "field_metadata": {"type": "object", "description": "Map of field name -> SemanticType for the output columns."},
+          "field_display_names": {"type": "object", "description": "Map of field name -> human-readable display name for chart axes and table headers."}
+        },
+        "required": ["title", "input_sources", "code", "output_variable", "chart"]
+      }
+    }
+  }
+]

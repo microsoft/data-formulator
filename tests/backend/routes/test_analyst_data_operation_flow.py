@@ -85,6 +85,51 @@ def test_operation_preview_is_bounded_and_display_only(
     assert loader.calls == [("public.orders", {"size": 50})]
 
 
+def test_operation_preview_failure_keeps_table_shape(
+    agents_client,
+    tmp_path: Path,
+) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    plan = DataOperationPlan(
+        id="plan-1",
+        label="Recent orders",
+        summary="",
+        steps=(ConnectorQueryStep(
+            source_id="warehouse",
+            table_key="public.orders",
+            display_name="Recent orders",
+            source_table="public.orders",
+            query=LoadQuery(limit=100),
+        ),),
+    )
+    operation = DataOperation(id="operation-1", reason="Choose orders", plans=(plan,))
+    DataOperationRepository.for_workspace(workspace).create(
+        operation,
+        conversation_id="conversation-1",
+    )
+
+    with (
+        patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
+        patch("data_formulator.routes.agents.get_workspace", return_value=workspace),
+        patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            side_effect=RuntimeError("Warehouse unavailable"),
+        ),
+    ):
+        response = agents_client.post(
+            "/api/agent/data-operation-preview",
+            json={"operation_id": operation.id, "plan_id": plan.id},
+        )
+
+    assert response.status_code == 200
+    preview = response.get_json()["data"]["previews"][0]
+    assert preview["display_name"] == "Recent orders"
+    assert preview["source_id"] == "warehouse"
+    assert preview["error"] == "Warehouse unavailable"
+    assert preview["columns"] == []
+    assert preview["rows"] == []
+
+
 @pytest.fixture()
 def agents_client():
     from data_formulator.routes.agents import agent_bp

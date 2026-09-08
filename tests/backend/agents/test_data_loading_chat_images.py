@@ -5,6 +5,8 @@ as multimodal content blocks, with the user's instruction before the image.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
@@ -56,3 +58,18 @@ def test_build_system_prompt_accepts_workspace_table_name_strings() -> None:
     prompt = agent._build_system_prompt()
 
     assert "Currently loaded workspace tables: sales, inventory" in prompt
+
+
+def test_build_system_prompt_lists_non_table_workspace_files() -> None:
+    class Workspace:
+        def list_tables(self) -> list[str]:
+            return []
+
+        def list_workspace_files(self):
+            return [SimpleNamespace(filename="README.md")]
+
+    agent = DataLoadingAgent(client=None, workspace=Workspace())
+
+    prompt = agent._build_system_prompt()
+
+    assert "Other workspace files available to inspect: files/README.md" in prompt

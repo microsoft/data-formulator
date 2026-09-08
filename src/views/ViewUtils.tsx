@@ -33,6 +33,19 @@ export const DENSE_MENU_SLOT_PROPS = {
     },
 } as const;
 
+/** Human-readable byte size for compact metadata labels. */
+export const formatBytes = (bytes: number | null | undefined): string => {
+    if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex++;
+    }
+    return `${value >= 100 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+};
+
 export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTable[])  => {
     // group concepts based on which source table they belongs to
     return conceptShelfItems.map(f => {

@@ -10,13 +10,16 @@ plus a workspace.yaml metadata file.
 """
 
 import io
+import hashlib
 import json
 import os
 import re
 import shutil
 import logging
 import tempfile
+import threading
 import time
+import uuid
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -30,6 +33,9 @@ import pyarrow.parquet as pq
 from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
     TableMetadata,
+    WorkspaceFileMetadata,
+    MemorySource,
+    WorkspaceMemoryMetadata,
     load_metadata,
     save_metadata,
     update_metadata,
@@ -46,6 +52,7 @@ from data_formulator.datalake.parquet_utils import (
     DEFAULT_COMPRESSION,
 )
 from data_formulator.security.path_safety import ConfinedDir
+from data_formulator.datalake.text_edit import TextEditConflictError, apply_text_patch
 from werkzeug.utils import secure_filename
 
 logger = logging.getLogger(__name__)
@@ -118,6 +125,7 @@ def _sanitize_identity_id(identity_id: str) -> str:
 # execute_python DataFrames, fetch_url payloads, uploads). See Workspace.prune_scratch.
 # Default; overridable per server start via --scratch-max-size-mb (CLI_ARGS['scratch_max_bytes']).
 SCRATCH_MAX_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB
+WORKSPACE_TEXT_MEMORY_MAX_CHARS = 100_000
 
 
 def _configured_scratch_max_bytes() -> int:
@@ -234,7 +242,10 @@ class Workspace:
         # all callers that need path-safe access (agents, routes, etc.).
         self._confined_root = ConfinedDir(self._path, mkdir=False)
         self._confined_data = ConfinedDir(self._path / "data")
+        self._confined_files = ConfinedDir(self._path / "files")
+        self._confined_memory = ConfinedDir(self._path / "memory")
         self._confined_scratch = ConfinedDir(self._path / "scratch")
+        self._memory_lock = threading.RLock()
 
         # Initialize metadata if it doesn't exist
         if not metadata_exists(self._path):
@@ -376,6 +387,289 @@ class Workspace:
             True if file exists, False otherwise
         """
         return self.get_file_path(filename).exists()
+
+    def _write_workspace_file(self, filename: str, content: bytes) -> None:
+        self._confined_files.write(filename, content)
+
+    def _read_workspace_file(self, filename: str) -> bytes:
+        return self._confined_files.resolve(filename).read_bytes()
+
+    def _delete_workspace_file(self, filename: str) -> None:
+        path = self._confined_files.resolve(filename)
+        if path.exists():
+            path.unlink()
+
+    def save_workspace_file(
+        self,
+        content: bytes,
+        filename: str,
+        media_type: str | None = None,
+    ) -> WorkspaceFileMetadata:
+        """Persist a non-tabular user file and return its metadata."""
+        safe_name = safe_data_filename(filename)
+        existing_names = set(self.get_metadata().files)
+        if safe_name in existing_names:
+            stem, suffix = os.path.splitext(safe_name)
+            counter = 2
+            while f"{stem}_{counter}{suffix}" in existing_names:
+                counter += 1
+            safe_name = f"{stem}_{counter}{suffix}"
+
+        import hashlib
+        workspace_file = WorkspaceFileMetadata(
+            name=safe_name,
+            filename=safe_name,
+            created_at=datetime.now(timezone.utc),
+            content_hash=hashlib.sha256(content).hexdigest(),
+            file_size=len(content),
+            media_type=media_type,
+        )
+        self._write_workspace_file(safe_name, content)
+        self._atomic_update_metadata(lambda metadata: metadata.add_file(workspace_file))
+        return workspace_file
+
+    def list_workspace_files(self) -> list[WorkspaceFileMetadata]:
+        return list(self.get_metadata().files.values())
+
+    def read_workspace_file(self, name: str) -> tuple[WorkspaceFileMetadata, bytes]:
+        workspace_file = self.get_metadata().files.get(name)
+        if workspace_file is None:
+            raise FileNotFoundError(name)
+        return workspace_file, self._read_workspace_file(workspace_file.filename)
+
+    def delete_workspace_file(self, name: str) -> bool:
+        workspace_file = self.get_metadata().files.get(name)
+        if workspace_file is None:
+            return False
+        self._delete_workspace_file(workspace_file.filename)
+        removed = [False]
+        self._atomic_update_metadata(
+            lambda metadata: removed.__setitem__(0, metadata.remove_file(name))
+        )
+        return removed[0]
+
+    def _write_memory_file(self, filename: str, content: bytes) -> None:
+        self._confined_memory.write(filename, content)
+
+    def _read_memory_file(self, filename: str) -> bytes:
+        return self._confined_memory.resolve(filename).read_bytes()
+
+    def _delete_memory_file(self, filename: str) -> None:
+        path = self._confined_memory.resolve(filename)
+        if path.exists():
+            path.unlink()
+
+    def list_memory(self) -> list[WorkspaceMemoryMetadata]:
+        """List agent-maintained workspace memories in stable display order."""
+        return sorted(
+            self.get_metadata().memory.values(),
+            key=lambda item: (item.name.casefold(), item.id),
+        )
+
+    def get_memory_metadata(self, memory_ref: str) -> WorkspaceMemoryMetadata | None:
+        """Resolve workspace memory by stable ID or display name."""
+        memory = self.get_metadata().memory
+        if memory_ref in memory:
+            return memory[memory_ref]
+        matches = [item for item in memory.values() if item.name == memory_ref]
+        if len(matches) > 1:
+            raise ValueError(f"Memory name is ambiguous: {memory_ref}")
+        return matches[0] if matches else None
+
+    def write_memory_table(
+        self,
+        df: pd.DataFrame,
+        name: str,
+        *,
+        sources: list[MemorySource] | None = None,
+        description: str | None = None,
+        memory_id: str | None = None,
+        compression: str = DEFAULT_COMPRESSION,
+    ) -> WorkspaceMemoryMetadata:
+        """Create or refresh a durable tabular memory."""
+        safe_name = sanitize_table_name(name)
+        existing = self.get_memory_metadata(memory_id) if memory_id else None
+        if memory_id and existing is None:
+            raise FileNotFoundError(f"Memory not found: {memory_id}")
+        if existing is not None and existing.kind != "table":
+            raise ValueError(f"Memory is not tabular: {memory_id}")
+
+        stable_id = existing.id if existing else f"memory-{uuid.uuid4().hex}"
+        filename = existing.filename if existing else f"{safe_name}--{stable_id[7:19]}.parquet"
+        arrow_table = pa.Table.from_pandas(sanitize_dataframe_for_arrow(df))
+        buffer = io.BytesIO()
+        pq.write_table(arrow_table, buffer, compression=compression)
+        content = buffer.getvalue()
+        now = datetime.now(timezone.utc)
+        memory = WorkspaceMemoryMetadata(
+            id=stable_id,
+            name=safe_name,
+            kind="table",
+            filename=filename,
+            media_type="application/vnd.apache.parquet",
+            created_at=existing.created_at if existing else now,
+            updated_at=now,
+            content_hash=compute_arrow_table_hash(arrow_table),
+            file_size=len(content),
+            description=description if description is not None else getattr(existing, "description", None),
+            sources=list(sources) if sources is not None else list(getattr(existing, "sources", [])),
+            row_count=arrow_table.num_rows,
+            columns=get_arrow_column_info(arrow_table),
+        )
+        self._write_memory_file(filename, content)
+        self._atomic_update_metadata(lambda metadata: metadata.add_memory(memory))
+        return memory
+
+    def read_memory_table_as_df(self, memory_ref: str) -> pd.DataFrame:
+        """Read a tabular memory by stable ID or display name."""
+        memory = self.get_memory_metadata(memory_ref)
+        if memory is None:
+            raise FileNotFoundError(f"Memory not found: {memory_ref}")
+        if memory.kind != "table":
+            raise ValueError(f"Memory is not tabular: {memory_ref}")
+        return pd.read_parquet(io.BytesIO(self._read_memory_file(memory.filename)))
+
+    def write_memory_text(
+        self,
+        content: str,
+        name: str,
+        *,
+        sources: list[MemorySource] | None = None,
+        description: str | None = None,
+        memory_id: str | None = None,
+    ) -> WorkspaceMemoryMetadata:
+        """Create or replace a durable Markdown memory."""
+        with self._memory_lock:
+            return self._write_memory_text(
+                content,
+                name,
+                sources=sources,
+                description=description,
+                memory_id=memory_id,
+            )
+
+    def _write_memory_text(
+        self,
+        content: str,
+        name: str,
+        *,
+        sources: list[MemorySource] | None = None,
+        description: str | None = None,
+        memory_id: str | None = None,
+    ) -> WorkspaceMemoryMetadata:
+        if not isinstance(content, str):
+            raise ValueError("Text memory content must be a string")
+        if len(content) > WORKSPACE_TEXT_MEMORY_MAX_CHARS:
+            raise ValueError(
+                f"Text memory exceeds {WORKSPACE_TEXT_MEMORY_MAX_CHARS} characters"
+            )
+        safe_name = sanitize_table_name(name)
+        existing = self.get_memory_metadata(memory_id) if memory_id else None
+        if memory_id and existing is None:
+            raise FileNotFoundError(f"Memory not found: {memory_id}")
+        if existing is not None and existing.kind != "text":
+            raise ValueError(f"Memory is not text: {memory_id}")
+
+        stable_id = existing.id if existing else f"memory-{uuid.uuid4().hex}"
+        filename = existing.filename if existing else f"{safe_name}--{stable_id[7:19]}.md"
+        encoded = content.encode("utf-8")
+        now = datetime.now(timezone.utc)
+        memory = WorkspaceMemoryMetadata(
+            id=stable_id,
+            name=safe_name,
+            kind="text",
+            filename=filename,
+            media_type="text/markdown",
+            created_at=existing.created_at if existing else now,
+            updated_at=now,
+            content_hash=hashlib.sha256(encoded).hexdigest(),
+            file_size=len(encoded),
+            description=description if description is not None else getattr(existing, "description", None),
+            sources=list(sources) if sources is not None else list(getattr(existing, "sources", [])),
+        )
+        self._write_memory_file(filename, encoded)
+        self._atomic_update_metadata(lambda metadata: metadata.add_memory(memory))
+        return memory
+
+    def read_memory_text(self, memory_ref: str) -> str:
+        """Read a Markdown memory by stable ID or display name."""
+        memory = self.get_memory_metadata(memory_ref)
+        if memory is None:
+            raise FileNotFoundError(f"Memory not found: {memory_ref}")
+        if memory.kind != "text":
+            raise ValueError(f"Memory is not text: {memory_ref}")
+        return self._read_memory_file(memory.filename).decode("utf-8")
+
+    def patch_memory_text(
+        self,
+        memory_ref: str,
+        *,
+        expected_content_hash: str,
+        replacements: list[dict[str, Any]] | None = None,
+        append_text: str | None = None,
+    ) -> WorkspaceMemoryMetadata:
+        """Patch text memory with optimistic concurrency and exact replacements."""
+        with self._memory_lock:
+            return self._patch_memory_text(
+                memory_ref,
+                expected_content_hash=expected_content_hash,
+                replacements=replacements,
+                append_text=append_text,
+            )
+
+    def _patch_memory_text(
+        self,
+        memory_ref: str,
+        *,
+        expected_content_hash: str,
+        replacements: list[dict[str, Any]] | None = None,
+        append_text: str | None = None,
+    ) -> WorkspaceMemoryMetadata:
+        memory = self.get_memory_metadata(memory_ref)
+        if memory is None:
+            raise FileNotFoundError(f"Memory not found: {memory_ref}")
+        if memory.kind != "text":
+            raise ValueError(f"Memory is not text: {memory_ref}")
+        try:
+            content = apply_text_patch(
+                self.read_memory_text(memory.id),
+                expected_content_hash=expected_content_hash,
+                replacements=replacements,
+                append_text=append_text,
+                max_chars=WORKSPACE_TEXT_MEMORY_MAX_CHARS,
+            )
+        except TextEditConflictError as exc:
+            raise ValueError("Memory changed while patching") from exc
+
+        return self.write_memory_text(
+            content,
+            memory.name,
+            sources=memory.sources,
+            description=memory.description,
+            memory_id=memory.id,
+        )
+
+    def rename_memory(self, memory_ref: str, name: str) -> WorkspaceMemoryMetadata:
+        """Rename a memory without changing its stable identity or file."""
+        memory = self.get_memory_metadata(memory_ref)
+        if memory is None:
+            raise FileNotFoundError(f"Memory not found: {memory_ref}")
+        memory.name = sanitize_table_name(name)
+        memory.updated_at = datetime.now(timezone.utc)
+        self._atomic_update_metadata(lambda metadata: metadata.add_memory(memory))
+        return memory
+
+    def delete_memory(self, memory_ref: str) -> bool:
+        """Delete a workspace memory and its physical artifact."""
+        memory = self.get_memory_metadata(memory_ref)
+        if memory is None:
+            return False
+        self._delete_memory_file(memory.filename)
+        removed = [False]
+        self._atomic_update_metadata(
+            lambda metadata: removed.__setitem__(0, metadata.remove_memory(memory.id))
+        )
+        return removed[0]
     
     
     def delete_table(self, table_name: str) -> bool:

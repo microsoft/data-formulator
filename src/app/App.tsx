@@ -110,9 +110,9 @@ import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
-import TranslateIcon from '@mui/icons-material/Translate';
 import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
+import { SUPPORTED_UI_LANGUAGES } from '../i18n';
 import { syncVegaLocale } from '../i18n/vega-locale';
 import { buttonVar, iconVar, textVar } from './layout';
 
@@ -191,6 +191,7 @@ export const toolName = "Data Formulator"
 const LANGUAGE_LABELS: Record<string, string> = {
     en: 'EN',
     zh: '中文',
+    hi: 'हिन्दी',
     ja: '日本語',
     ko: '한국어',
     fr: 'FR',
@@ -199,40 +200,56 @@ const LANGUAGE_LABELS: Record<string, string> = {
 
 const LanguageSwitcher: React.FC = () => {
     const { i18n } = useTranslation();
-    const availableLanguages = useSelector(
-        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
-    );
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-    if (!availableLanguages || availableLanguages.length <= 1) return null;
+    if (SUPPORTED_UI_LANGUAGES.length <= 1) return null;
+    const current = i18n.language.split('-')[0];
 
     return (
-        <ToggleButtonGroup
-            value={i18n.language.split('-')[0]}
-            exclusive
-            onChange={(_, value) => value && i18n.changeLanguage(value)}
-            size="small"
-            sx={{ 
-                height: '28px', 
-                my: 'auto',
-                '& .MuiToggleButton-root': {
-                    textTransform: 'none',
-                    fontSize: textVar.sm,
-                    py: 0,
-                    minWidth: '40px',
+        <>
+            <Button
+                size="small"
+                color="inherit"
+                aria-haspopup="menu"
+                aria-expanded={Boolean(anchorEl)}
+                onClick={(event) => setAnchorEl(event.currentTarget)}
+                endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 16 }} />}
+                sx={{
+                    minWidth: 0,
+                    height: 28,
+                    px: 0.75,
                     color: 'text.secondary',
-                    borderColor: 'divider',
-                    '&.Mui-selected': {
-                        color: 'text.primary',
-                    },
-                },
-            }}
-        >
-            {availableLanguages.map(lang => (
-                <ToggleButton key={lang} value={lang}>
-                    {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
-                </ToggleButton>
-            ))}
-        </ToggleButtonGroup>
+                    fontSize: textVar.sm,
+                    fontWeight: 400,
+                    textTransform: 'none',
+                    '& .MuiButton-endIcon': { ml: 0.25 },
+                }}
+            >
+                {LANGUAGE_LABELS[current] || current.toUpperCase()}
+            </Button>
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={() => setAnchorEl(null)}
+            >
+                {SUPPORTED_UI_LANGUAGES.map(lang => (
+                    <MenuItem
+                        key={lang}
+                        selected={lang === current}
+                        onClick={() => {
+                            i18n.changeLanguage(lang);
+                            setAnchorEl(null);
+                        }}
+                        sx={menuItemSx}
+                    >
+                        <ListItemText primaryTypographyProps={{ fontSize: textVar.sm }}>
+                            {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                        </ListItemText>
+                        {lang === current && <CheckIcon sx={{ ml: 1, fontSize: 14, color: 'text.secondary' }} />}
+                    </MenuItem>
+                ))}
+            </Menu>
+        </>
     );
 };
 
@@ -263,30 +280,23 @@ const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
 /** Language options rendered as menu rows for the compact overflow menu. */
 const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
     const { i18n } = useTranslation();
-    const availableLanguages = useSelector(
-        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
-    );
 
-    if (!availableLanguages || availableLanguages.length <= 1) return null;
+    if (SUPPORTED_UI_LANGUAGES.length <= 1) return null;
     const current = i18n.language.split('-')[0];
 
     return (
         <>
-            {availableLanguages.map(lang => (
+            {SUPPORTED_UI_LANGUAGES.map(lang => (
                 <MenuItem
                     key={lang}
                     selected={lang === current}
                     onClick={() => { i18n.changeLanguage(lang); onSelect(); }}
                     sx={menuItemSx}
                 >
-                    <ListItemIcon>
-                        {lang === current
-                            ? <CheckIcon fontSize="small" />
-                            : <TranslateIcon fontSize="small" sx={{ opacity: 0.3 }} />}
-                    </ListItemIcon>
-                    <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>
+                    <ListItemText primaryTypographyProps={{ fontSize: textVar.sm }}>
                         {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
                     </ListItemText>
+                    {lang === current && <CheckIcon sx={{ ml: 1, fontSize: 14, color: 'text.secondary' }} />}
                 </MenuItem>
             ))}
         </>
@@ -1129,7 +1139,7 @@ const AppShell: FC = () => {
                 <AppBar position="static">
                     <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
                         <Box sx={{ width: 40, minWidth: 40, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            <Box component="img" sx={{ height: 20 }} alt="" src={dfLogo} />
+                            <Box component="img" sx={{ height: 20, display: 'block', transform: 'translateY(-2px)' }} alt="" src={dfLogo} />
                         </Box>
                         {isCompactToolbar ? (
                             <PageNavMenu isAboutPage={isAboutPage} />
@@ -1137,15 +1147,16 @@ const AppShell: FC = () => {
                         <>
                         <Button sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
-                            alignItems: 'stretch',
+                            alignItems: 'center',
                             backgroundColor: 'transparent',
                             minWidth: 0,
+                            height: 36,
                             px: 0.5,
                             "&:hover": {
                                 backgroundColor: "transparent"
                             }
                         }} color="inherit">
-                            <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
+                            <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, lineHeight: 1.2, letterSpacing: '0.03em' }}>
                                 {toolName}
                             </Typography>
                         </Button>

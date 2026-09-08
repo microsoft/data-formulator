@@ -181,10 +181,10 @@ export function buildDataLoadingQuickActions(
     { t, setInput, setImages, setAttachments, requestAutoSend }: BuildSuggestionsArgs,
 ): DataLoadingQuickAction[] {
     const connectLabel = t('upload.agentChatQuickAction.connect', {
-        defaultValue: 'Help me connect to my data source',
+        defaultValue: 'Help me connect my data source',
     });
     const askLabel = t('upload.agentChatQuickAction.askConnected', {
-        defaultValue: 'What data do we have from connected sources?',
+        defaultValue: 'What data are available from my sources?',
     });
 
     const fillAndSend = (text: string) => {

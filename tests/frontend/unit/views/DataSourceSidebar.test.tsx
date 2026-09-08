@@ -58,6 +58,7 @@ vi.mock('../../../../src/app/utils', () => ({
         DELETE: (id: string) => `/api/connectors/${id}`,
     },
     CONNECTOR_ACTION_URLS: {
+        CONNECT: '/api/connectors/connect',
         GET_CATALOG: '/api/connectors/get-catalog',
         GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
         GET_CACHED_CATALOG_TREE: '/api/connectors/get-cached-catalog-tree',
@@ -151,6 +152,108 @@ describe('DataSourceSidebar', () => {
         });
     });
 
+    it('opens the populated connector form from Connect when disconnected', async () => {
+        const onOpenUploadDialog = vi.fn();
+        vi.mocked(apiRequest).mockResolvedValue({
+            data: {
+                connectors: [{
+                    id: 'mysql-main',
+                    display_name: 'MySQL',
+                    source_type: 'MySQLDataLoader',
+                    auth_mode: 'password',
+                    connected: false,
+                    deletable: true,
+                    pinned_params: { host: 'db.example.com', database: 'sales' },
+                }],
+            },
+        });
+
+        render(<DataSourceSidebar onOpenUploadDialog={onOpenUploadDialog} />);
+
+        const connectButton = (await screen.findByTestId('LinkOutlinedIcon')).closest('button');
+        expect(connectButton).toHaveAttribute('aria-label', 'Connect');
+        fireEvent.click(connectButton!);
+
+        expect(onOpenUploadDialog).toHaveBeenCalledWith('connector:mysql-main');
+        expect(screen.queryByTestId('SettingsOutlinedIcon')).not.toBeInTheDocument();
+        expect(screen.getByTestId('DeleteOutlineIcon').closest('button')).toHaveAttribute('aria-label', 'Delete connector');
+    });
+
+    it('disconnects connected user connectors without deleting their definition', async () => {
+        vi.mocked(apiRequest).mockImplementation((url: string) => {
+            if (url === '/api/connectors') {
+                return Promise.resolve({
+                    data: {
+                        connectors: [{
+                            id: 'mysql-main',
+                            display_name: 'MySQL',
+                            source_type: 'MySQLDataLoader',
+                            auth_mode: 'password',
+                            connected: true,
+                            has_stored_credentials: true,
+                            deletable: true,
+                        }],
+                    },
+                });
+            }
+            return Promise.resolve({ data: {} });
+        });
+
+        render(<DataSourceSidebar />);
+
+    const disconnectButton = (await screen.findByTestId('LinkOffOutlinedIcon')).closest('button');
+    expect(disconnectButton).toHaveAttribute('aria-label', 'Disconnect');
+    fireEvent.click(disconnectButton!);
+
+        await waitFor(() => {
+            expect(apiRequest).toHaveBeenCalledWith('/api/connectors/disconnect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: 'mysql-main' }),
+            });
+        });
+        expect((await screen.findByTestId('LinkOutlinedIcon')).closest('button')).toHaveAttribute('aria-label', 'Connect');
+        expect(screen.getByTestId('DeleteOutlineIcon').closest('button')).toHaveAttribute('aria-label', 'Delete connector');
+    });
+
+    it('disconnects and reconnects Example Datasets without a form', async () => {
+        vi.mocked(apiRequest).mockImplementation((url: string) => {
+            if (url === '/api/connectors') {
+                return Promise.resolve({
+                    data: {
+                        connectors: [{
+                            id: 'sample_datasets',
+                            display_name: 'Example Datasets',
+                            source_type: 'SampleDatasetsLoader',
+                            auth_mode: 'none',
+                            connected: true,
+                            deletable: false,
+                        }],
+                    },
+                });
+            }
+            return Promise.resolve({ data: {} });
+        });
+
+        render(<DataSourceSidebar />);
+
+        fireEvent.click((await screen.findByTestId('LinkOffOutlinedIcon')).closest('button')!);
+        await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/connectors/disconnect', expect.anything()));
+
+        const connectButton = (await screen.findByTestId('LinkOutlinedIcon')).closest('button');
+        expect(connectButton).toHaveAttribute('aria-label', 'Connect');
+        fireEvent.click(connectButton!);
+
+        await waitFor(() => {
+            expect(apiRequest).toHaveBeenCalledWith('/api/connectors/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: 'sample_datasets' }),
+            });
+        });
+        expect(await screen.findByTestId('LinkOffOutlinedIcon')).toBeInTheDocument();
+    });
+
     it('returns to the landing state without creating an empty workspace', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         render(<DataSourceSidebar />);
@@ -166,7 +269,7 @@ describe('DataSourceSidebar', () => {
         }));
     });
 
-    it('shows recently modified sessions first and can switch to creation order', async () => {
+    it('shows newest-created sessions first and can switch to recently modified order', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         vi.mocked(listWorkspaces).mockResolvedValue([
             {
@@ -187,11 +290,52 @@ describe('DataSourceSidebar', () => {
 
         const recentlyEdited = await screen.findByText('Recently edited');
         const newerCreation = screen.getByText('Newer creation');
-        expect(recentlyEdited.compareDocumentPosition(newerCreation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
-        fireEvent.click(screen.getByRole('button', { name: 'sidebar.sortSessions' }));
-        fireEvent.click(await screen.findByText('sidebar.sortNewestFirst'));
-
         expect(newerCreation.compareDocumentPosition(recentlyEdited) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Group and sort sessions' }));
+        fireEvent.click(await screen.findByText('sidebar.sortRecentlyModifiedFirst'));
+
+        expect(recentlyEdited.compareDocumentPosition(newerCreation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('groups sessions by their summarized data sources by default', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        vi.mocked(apiRequest).mockResolvedValue({
+            data: {
+                connectors: [
+                    { id: 'kusto-prod', display_name: 'Kusto' },
+                    { id: 'mysql-main', display_name: 'MyMysqlDB' },
+                    { id: 'local-datasets', display_name: '~/datasets' },
+                ],
+            },
+        });
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            {
+                id: 'mixed',
+                display_name: 'Mixed sources',
+                created_at: '2026-08-15T10:00:00Z',
+                saved_at: '2026-08-15T10:00:00Z',
+                source_ids: ['kusto-prod', 'mysql-main'],
+            },
+            {
+                id: 'local',
+                display_name: 'Local data',
+                created_at: '2026-08-14T10:00:00Z',
+                saved_at: '2026-08-14T10:00:00Z',
+                source_ids: ['local-datasets'],
+            },
+        ]);
+
+        render(<DataSourceSidebar />);
+
+        expect(await screen.findByText('Kusto / MyMysqlDB')).toBeInTheDocument();
+        expect(screen.getByText('~/datasets')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Group and sort sessions' }));
+        fireEvent.click(await screen.findByText('No grouping'));
+
+        expect(screen.queryByText('Kusto / MyMysqlDB')).not.toBeInTheDocument();
+        expect(screen.getByText('Mixed sources')).toBeInTheDocument();
+        expect(screen.getByText('Local data')).toBeInTheDocument();
     });
 });

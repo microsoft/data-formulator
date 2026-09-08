@@ -42,6 +42,7 @@ export const ReportView: FC = () => {
     const config = useSelector((state: DataFormulatorState) => state.config);
     const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     // Thumbnails live in their own slice so updates don't churn `state.charts`.
     const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
@@ -143,9 +144,16 @@ export const ReportView: FC = () => {
         return sanitized || t('report.untitled');
     };
 
-    const getReportFileName = (extension: string): string => {
+    const getReportFileName = (extension: string, root?: ParentNode | null): string => {
         const date = new Date().toISOString().slice(0, 10);
-        return `${sanitizeFileName(getReportTitle())}-${date}.${extension}`;
+        const reportTitle = getReportTitle(root);
+        const sessionName = activeWorkspace?.displayName || activeWorkspace?.id || '';
+        const normalizeName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
+        const parts = [reportTitle];
+        if (sessionName && normalizeName(sessionName) !== normalizeName(reportTitle)) {
+            parts.push(sessionName);
+        }
+        return `${sanitizeFileName(parts.join(' - '))} - ${date}.${extension}`;
     };
 
     const renderReportToCanvas = async (): Promise<HTMLCanvasElement | null> => {
@@ -309,7 +317,7 @@ export const ReportView: FC = () => {
             const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
                 .map(node => node.outerHTML)
                 .join('\n');
-            const printTitle = sanitizeFileName(getReportTitle(exportClone.clone));
+            const printTitle = getReportFileName('pdf', exportClone.clone).replace(/\.pdf$/, '');
             const originalDocumentTitle = document.title;
             const doc = printFrame.contentDocument;
             const win = printFrame.contentWindow;
@@ -324,7 +332,7 @@ export const ReportView: FC = () => {
 <html>
 <head>
 <meta charset="utf-8" />
-<title>${printTitle}</title>
+<title></title>
 ${styles}
 <style>
     @page { margin: 18mm; }
@@ -374,6 +382,7 @@ ${styles}
 </body>
 </html>`);
             doc.close();
+            doc.title = printTitle;
 
             await waitForImages(doc);
             document.title = printTitle;

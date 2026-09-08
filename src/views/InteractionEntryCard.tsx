@@ -50,7 +50,11 @@ const PlanStepItem: React.FC<{
     const isFailed = step.startsWith('✗');
     const isWarning = step.startsWith('⚠');
     const isInfo = step.startsWith('📋');
-    const displayLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
+    const rawLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
+    // Trailing ellipsis marks the step still in flight; some labels ship their own.
+    const displayLine = showShimmer && !/(\.\.\.|…)$/.test(rawLine.trim())
+        ? `${rawLine}…`
+        : rawLine;
     const IconComp = getStepIconComponent(step);
 
     // Text stays in the normal muted color even for failed/warning steps — the
@@ -134,9 +138,14 @@ export const PlanStepsView: React.FC<{
     );
 };
 
-/** Compact Markdown for agent prose — inherits parent font-size (10px). */
-export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => {
+/** Markdown for agent prose. Document mode expands the hierarchy for reading canvases. */
+export const CompactMarkdown: React.FC<{
+    content: string;
+    color: string;
+    variant?: 'compact' | 'document';
+}> = ({ content, color, variant = 'compact' }) => {
     const theme = useTheme();
+    const isDocument = variant === 'document';
     return (
     <Box sx={{
         wordBreak: 'break-word',
@@ -145,6 +154,9 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
         // rendered markdown (incl. table cells) stays sans-serif. The `code`
         // component overrides this with the shared monospace token.
         fontFamily: theme.typography.fontFamily,
+        width: '100%',
+        maxWidth: isDocument ? 960 : 'none',
+        mx: isDocument ? 'auto' : 0,
         '& > :first-child': { mt: 0 },
         '& > :last-child': { mb: 0 },
     }}>
@@ -152,7 +164,31 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
             remarkPlugins={[remarkGfm]}
             components={{
                 p: ({ children }) => (
-                    <Typography component="p" sx={{ fontSize: 'inherit', color, lineHeight: 1.6, my: 0.25 }}>
+                    <Typography component="p" sx={{ fontSize: 'inherit', color, lineHeight: isDocument ? 1.65 : 1.6, my: isDocument ? 1 : 0.25 }}>
+                        {children}
+                    </Typography>
+                ),
+                h1: ({ children }) => (
+                    <Typography component="h1" sx={{
+                        fontSize: isDocument ? textVar.xxl : '1.2em', fontWeight: 600,
+                        lineHeight: 1.35, mt: 0, mb: isDocument ? 1.5 : 0.5, color,
+                    }}>
+                        {children}
+                    </Typography>
+                ),
+                h2: ({ children }) => (
+                    <Typography component="h2" sx={{
+                        fontSize: isDocument ? textVar.xl : '1.1em', fontWeight: 600,
+                        lineHeight: 1.4, mt: isDocument ? 2.5 : 0.75, mb: isDocument ? 1 : 0.5, color,
+                    }}>
+                        {children}
+                    </Typography>
+                ),
+                h3: ({ children }) => (
+                    <Typography component="h3" sx={{
+                        fontSize: isDocument ? textVar.lg : '1em', fontWeight: 600,
+                        lineHeight: 1.45, mt: isDocument ? 2 : 0.5, mb: isDocument ? 0.75 : 0.25, color,
+                    }}>
                         {children}
                     </Typography>
                 ),
@@ -163,10 +199,10 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                     <Box component="span" sx={{ fontStyle: 'italic' }}>{children}</Box>
                 ),
                 ul: ({ children }) => (
-                    <Box component="ul" sx={{ m: 0, my: 0.25, pl: 2 }}>{children}</Box>
+                    <Box component="ul" sx={{ m: 0, my: isDocument ? 1 : 0.25, pl: isDocument ? 3 : 2 }}>{children}</Box>
                 ),
                 ol: ({ children }) => (
-                    <Box component="ol" sx={{ m: 0, my: 0.25, pl: 2 }}>{children}</Box>
+                    <Box component="ol" sx={{ m: 0, my: isDocument ? 1 : 0.25, pl: isDocument ? 3 : 2 }}>{children}</Box>
                 ),
                 li: ({ children }) => (
                     <Typography component="li" sx={{ fontSize: 'inherit', color, lineHeight: 1.6 }}>
@@ -196,7 +232,7 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                     </Box>
                 ),
                 table: ({ children }) => (
-                    <Box sx={{ overflowX: 'auto', my: 0.5 }}>
+                    <Box sx={{ overflowX: 'auto', my: isDocument ? 1.5 : 0.5 }}>
                         <Box component="table" sx={{ borderCollapse: 'collapse', width: '100%', fontSize: 'inherit', color }}>
                             {children}
                         </Box>
@@ -204,15 +240,17 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                 ),
                 th: ({ children }) => (
                     <Box component="th" sx={{
-                        border: '1px solid rgba(0,0,0,0.12)', px: '5px', py: '2px',
-                        textAlign: 'left', fontWeight: 600, bgcolor: 'rgba(0,0,0,0.03)',
+                        border: `1px solid ${theme.palette.divider}`,
+                        px: isDocument ? 1 : '5px', py: isDocument ? 0.5 : '2px',
+                        textAlign: 'left', fontWeight: 600, bgcolor: 'action.hover',
                     }}>
                         {children}
                     </Box>
                 ),
                 td: ({ children }) => (
                     <Box component="td" sx={{
-                        border: '1px solid rgba(0,0,0,0.12)', px: '5px', py: '2px', verticalAlign: 'top',
+                        border: `1px solid ${theme.palette.divider}`,
+                        px: isDocument ? 1 : '5px', py: isDocument ? 0.5 : '2px', verticalAlign: 'top',
                     }}>
                         {children}
                     </Box>
@@ -610,11 +648,8 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
 
     if (pairs.length === 0) return null;
 
-    // Preview uses the LAST user reply (most recent resolution); fall back
-    // to the last agent question if that reply is empty.
+    // Preview uses the latest agent message and its resolving user reply.
     const lastPair = pairs[pairs.length - 1];
-    // Compact card preview: the agent's message (question / answer) plus the
-    // user's follow-up reply, shown as `↳ …`.
     const agentPreview = stripFieldMarkers(lastPair.agentEntry.displayContent || lastPair.agentEntry.content || '')
         .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
     const followup = stripFieldMarkers(lastPair.userEntry.displayContent || lastPair.userEntry.content || '')
@@ -650,9 +685,8 @@ export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> =
     return (
         <Box onClick={handleCardClick} sx={{ cursor: 'pointer' }}>
             {!expanded ? (
-                // Simple card: agent message preview + ↳ user reply. Same look
-                // for clarify / explain / delegate (primary-tinted). Explain
-                // clicks re-open the full popup; the others expand inline below.
+                // Simple conversation preview. Explain clicks re-open the full
+                // popup; clarify and delegate exchanges expand inline below.
                 <Box sx={{
                     borderRadius: radius.sm,
                     border: `1px solid ${borderColor.component}`,

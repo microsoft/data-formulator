@@ -28,10 +28,10 @@ frontend i18n.language
 | 模块 | 职责 |
 |------|------|
 | `src/app/utils.tsx` | `getAgentLanguage()`、`fetchWithIdentity()`、`translateBackend()` |
-| `src/app/App.tsx` | `LanguageSwitcher`，基于 `AVAILABLE_LANGUAGES` 切换前端语言 |
+| `src/app/App.tsx` | `LanguageSwitcher`，基于已注册的前端 locale 切换语言 |
 | `py-src/data_formulator/routes/agents.py` | `_get_ui_lang()`、`get_language_instruction()` |
 | `py-src/data_formulator/agents/agent_language.py` | `build_language_instruction()`、`inject_language_instruction()` |
-| `src/i18n/locales/{en,zh}/` | 前端翻译资源 |
+| `src/i18n/locales/{en,zh,hi}/` | 前端翻译资源 |
 
 ### 1.1 当前代码对照状态
 
@@ -322,7 +322,7 @@ messages.error.failedToOpenWorkspace
 1. 在 `agents/agent_language.py` 的 `LANGUAGE_DISPLAY_NAMES` 中添加语言代码和显示名。
 2. 如有特殊要求，添加到 `LANGUAGE_EXTRA_RULES`。
 3. 在 `src/i18n/locales/<lang>/` 添加完整翻译资源。
-4. 在服务端配置 `AVAILABLE_LANGUAGES`，让前端语言切换器显示该语言。
+4. 在 `src/i18n/index.ts` 注册 locale，让前端语言切换器显示该语言。
 5. 验证 `fetchWithIdentity()` 请求头、Agent 输出、固定 UI 文案都使用新语言。
 
 每种新语言至少需要与 en/zh 等价的 locale 结构：
@@ -343,7 +343,7 @@ src/i18n/locales/<lang>/
 ```
 
 `agent_language.py` 支持的 20 种 LLM 输出语言不等于前端 UI 已完整翻译 20 种语言。只有
-locale 文件和 `AVAILABLE_LANGUAGES` 都配置完成的语言，才应出现在前端语言切换器中。
+locale 文件完整并在 `src/i18n/index.ts` 注册的语言，才应出现在前端语言切换器中。
 
 ---
 

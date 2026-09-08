@@ -5,7 +5,7 @@
 
 This is the single user-facing data agent that replaces the separate
 ``DataAgent`` (structured-action visualization loop) and ``ReportGenAgent``
-(streaming report writer). It hosts a set of **core actions** plus a registry
+(streaming report writer). It hosts baseline capability actions plus a registry
 of **skills** that unlock additional **gated actions** on demand. See
 ``design-docs/35-unified-agent-skills-architecture.md`` and the action turn
 model in ``design-docs/36-artifact-turn-model.md``.
@@ -39,6 +39,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Generator
 
+import pandas as pd
+
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import (
     accumulate_reasoning_content,
@@ -53,6 +55,7 @@ from data_formulator.agents.context import (
 )
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.parquet_utils import df_to_safe_records
+from data_formulator.datalake.workspace_metadata import MemorySource
 
 from data_formulator.analyst.skills import (
     Event,
@@ -62,17 +65,20 @@ from data_formulator.analyst.skills import (
     build_registry,
 )
 from data_formulator.analyst.tools import build_tools
+from data_formulator.analyst.workspace_inputs import (
+    WorkspaceInputManifest,
+    build_workspace_input_manifest,
+    build_workspace_input_preview,
+    render_workspace_input_context,
+)
 
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "analyst"
 
-# The always-on baseline skill, auto-loaded at the start of every run. It owns
-# the built-in tools (execute_python_script / inspect_source_data) and the always-available
-# actions (visualize / delegate) plus the base prompt body (its SKILL.md). The
-# shell hardcodes nothing about those actions — legality is derived from
-# whichever skills are loaded.
-_CORE_SKILL = "core"
+# The always-on baseline profile. It composes concrete capability skills but
+# owns no tools, actions, schemas, or handlers itself.
+_META_SKILL = "meta"
 
 # Banner stamped at the START of a loaded skill's body message. It is the single
 # contract between the emitter (_load_skill_into_context) and the resume parser
@@ -81,6 +87,44 @@ _CORE_SKILL = "core"
 # emitted match — never the same text pasted by a user or echoed by the model.
 _SKILL_LOADED_BANNER = "[SKILL LOADED: {name}]"
 _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
+_SKILL_PRELOADED_PREFIX = "[SKILL: "
+_SKILL_PRELOADED_SUFFIX = " Preloaded for this run"
+
+_TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
+    "summarize_data_sources": (),
+    "list_data": ("source_id", "path", "filter_by"),
+    "find_data": ("query", "source_id", "path", "filter_by"),
+    "describe_data": ("source_id", "table_key"),
+    "probe_data": ("source_id", "table_key", "query"),
+    "describe_connector": ("source_type",),
+    "inspect_chart": ("chart_id",),
+    "search_data_tables": ("query",),
+    "search_knowledge": ("query",),
+    "list_workspace_items": ("scope", "kinds", "query"),
+    "read_workspace_item": ("item_id", "locator"),
+    "search_workspace_items": ("query", "item_ids", "kinds"),
+    "manage_workspace_memory": ("action", "memory_id", "name"),
+}
+
+
+def _tool_progress_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Return model arguments safe and useful for user-facing progress."""
+    progress_args = {
+        key: args[key]
+        for key in _TOOL_PROGRESS_ARG_KEYS.get(tool_name, ())
+        if key in args
+    }
+    if tool_name == "probe_data" and isinstance(progress_args.get("query"), dict):
+        query = progress_args["query"]
+        progress_args["query"] = {
+            key: query[key]
+            for key in ("aggregates", "group_by", "limit")
+            if key in query
+        }
+        filters = query.get("filters")
+        if isinstance(filters, list) and filters:
+            progress_args["query"]["filter_count"] = len(filters)
+    return progress_args
 
 # ── Action-argument coercion ──────────────────────────────────────────────
 # Weaker models sometimes JSON-encode a nested action argument as a string
@@ -92,7 +136,7 @@ _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
 def _rescue_unpack_json_strings(data: dict) -> None:
     """In-place: parse values that are JSON-encoded strings back to objects."""
     for key in (
-        "chart", "input_tables", "questions", "options", "followups",
+        "chart", "input_sources", "input_tables", "questions", "options", "followups",
         "field_metadata", "field_display_names",
     ):
         val = data.get(key)
@@ -101,6 +145,18 @@ def _rescue_unpack_json_strings(data: dict) -> None:
                 data[key] = json.loads(val)
             except (json.JSONDecodeError, ValueError):
                 pass
+
+
+def _missing_action_fields(required: list[str], action_data: dict[str, Any]) -> list[str]:
+    """Return missing action fields, including provenance compatibility rules."""
+    missing = []
+    for field in required:
+        if field == "input_sources":
+            if "input_sources" not in action_data and "input_tables" not in action_data:
+                missing.append(field)
+        elif field not in action_data or not action_data.get(field):
+            missing.append(field)
+    return missing
 
 
 # ── Live tool-argument streaming (design-docs/36 §5) ───────────────────────
@@ -170,7 +226,7 @@ class _StreamingArgExtractor:
 # stop criteria. This is the agent's own contract, so it lives here as code (not
 # as a skill body). ``_build_system_prompt`` fills the ``{...}`` slots via plain
 # string substitution (NOT str.format — braces elsewhere stay literal). The
-# always-loaded ``core`` skill's SKILL.md (the concrete tools + action schemas)
+# always-loaded ``meta`` bundle and its included capability guidance
 # is appended after this frame, unformatted, exactly like any other skill body.
 SYSTEM_PROMPT = """\
 You are an autonomous data analyst agent.
@@ -233,8 +289,8 @@ described in the capability sections below.
 
 ## Skills (load on demand)
 
-Your baseline capabilities come from the **core** skill, which is **always loaded
-automatically** (you'll see it below as `[SKILL: core]`). Beyond that baseline,
+Your baseline capabilities come from the **meta** skill bundle, which is **always loaded
+automatically** (you'll see it below as `[SKILL: meta]`). Beyond that baseline,
 extra capabilities are packaged as **extension skills** — each one unlocks an
 additional action (and sometimes extra tools), but only after you load it:
 1. Call the `load_skill("<name>")` tool — this reads the skill's instructions into
@@ -264,7 +320,7 @@ execute — you'll be asked to load it first. Extension skills available this ru
 
 
 class AnalystAgent:
-    """Unified data analyst agent — core actions + on-demand skills."""
+    """Unified data analyst agent with baseline and on-demand skills."""
 
     def __init__(
         self,
@@ -339,16 +395,26 @@ class AnalystAgent:
     def _legal_actions(self) -> frozenset[str]:
         """The set of committing actions currently legal to emit.
 
-        Every legal action is owned by a *loaded* skill. ``core`` is always
-        loaded, so its baseline actions are always legal; a gated skill's
-        actions become legal once that skill is loaded.
+        Every legal action is owned by an active concrete skill. ``meta`` is
+        always loaded and activates its included baseline capabilities; a gated
+        skill's actions become legal once that profile is loaded.
         """
         legal: set[str] = set()
-        for name in self._loaded_skills:
+        for name in self.registry.expanded_names(self._loaded_skills):
             meta = self.registry.metas.get(name)
             if meta:
                 legal.update(meta.action_names)
         return frozenset(legal)
+
+    @staticmethod
+    def _initial_loaded_skills(
+        workspace_inputs: WorkspaceInputManifest,
+    ) -> set[str]:
+        """Return the skill gates that must be open before the first LLM call."""
+        loaded = {_META_SKILL}
+        if not workspace_inputs.has_analysis_capability:
+            loaded.add("load-data")
+        return loaded
 
     # ------------------------------------------------------------------
     # Public API
@@ -387,17 +453,28 @@ class AnalystAgent:
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
         final_status = "max_iterations"
+        workspace_files = sorted(
+            self.workspace.list_workspace_files(), key=lambda item: item.name.lower(),
+        )
+        workspace_inputs = build_workspace_input_manifest(
+            input_tables,
+            workspace_files,
+            self.workspace,
+        )
 
-        # Reset per-run skill + payload state. ``core`` is auto-loaded: its
-        # baseline tools + actions are always available and its SKILL.md body is
-        # appended to the system frame (see _build_system_prompt). Gated skills
-        # are added to this set as the model loads them. The payload carries
+        # Reset per-run skill + payload state. ``meta`` is always loaded. With
+        # no analysis input tables, data loading is the immediate workflow, so expose
+        # its tools, actions, and guidance before the first model call instead
+        # of spending a round on load_skill. Other gated skills are added as the
+        # model loads them. The payload carries
         # everything a dispatched skill handler needs to build its own context
         # (e.g. the report skill rebuilds [AVAILABLE CHARTS] + thread
         # context).
-        self._loaded_skills = {_CORE_SKILL}
+        self._loaded_skills = self._initial_loaded_skills(workspace_inputs)
         self._run_payload = {
             "input_tables": input_tables,
+            "workspace_inputs": workspace_inputs,
+            "scratch_files": list(scratch_files or []),
             "charts": charts or [],
             "focused_thread": focused_thread,
             "other_threads": other_threads,
@@ -436,6 +513,8 @@ class AnalystAgent:
                     attached_images=attached_images,
                     charts=charts,
                     scratch_files=scratch_files,
+                    workspace_files=workspace_files,
+                    workspace_inputs=workspace_inputs,
                 )
                 rlog.log(
                     "context_built",
@@ -530,9 +609,8 @@ class AnalystAgent:
                 action_type = action.get("action")
                 logger.info(f"[AnalystAgent] Iteration {iteration}: action={action_type}")
 
-                # --- GATE: every action is owned by a skill; its owner must be
-                #     loaded. ``core`` is always loaded, so its actions pass
-                #     straight through.
+                # --- GATE: every action is owned by a concrete skill; that
+                #     owner must be active directly or through a loaded bundle.
                 owner = self.registry.action_owner(action_type)
                 if owner is None:
                     legal = ", ".join(sorted(self._legal_actions()))
@@ -546,7 +624,7 @@ class AnalystAgent:
                         message_code="agent.unknownAction",
                     )
                     continue
-                if owner not in self._loaded_skills:
+                if not self.registry.is_active(self._loaded_skills, owner):
                     # Gate closed — tell the model to load the skill, no execution.
                     self._set_action_observation(
                         trajectory, action_tool_call_id,
@@ -644,7 +722,7 @@ class AnalystAgent:
         """Re-open skill gates for bodies still present in a resumed trajectory.
 
         A skill is "loaded" iff its ``[SKILL LOADED: <name>]`` body is in
-        context. On resume ``_loaded_skills`` has just been reset to ``{core}``,
+        context. On resume ``_loaded_skills`` has just been reset to ``{meta}``,
         so scan the (persisted) trajectory for those banners and re-add every
         known skill whose body survived. Unknown names are ignored — only the
         registry decides what is real.
@@ -661,6 +739,13 @@ class AnalystAgent:
             m = _SKILL_LOADED_RE.match(content)
             if m:
                 name = self.registry.canonical_name(m.group(1).strip())
+                if self.registry.has(name):
+                    self._loaded_skills.add(name)
+            for candidate in content.split(_SKILL_PRELOADED_PREFIX)[1:]:
+                name, separator, remainder = candidate.partition("]")
+                if not separator or not remainder.startswith(_SKILL_PRELOADED_SUFFIX):
+                    continue
+                name = self.registry.canonical_name(name.strip())
                 if self.registry.has(name):
                     self._loaded_skills.add(name)
 
@@ -717,7 +802,7 @@ class AnalystAgent:
         tools_line = (
             f" New tools available: {', '.join(tool_names)}.\n" if tool_names else ""
         )
-        # Mirror the ``[SKILL: <name>]`` header the core body gets in
+        # Mirror the ``[SKILL: <name>]`` header the baseline body gets in
         # _build_system_prompt, so every capability bundle reads as one family —
         # here ``[SKILL LOADED: <name>]`` marks one that just became active. The
         # banner is built from the shared template so resume-time rehydration
@@ -774,7 +859,7 @@ class AnalystAgent:
             )
             return (
                 f"[SKILL ERROR] The '{skill_name}' skill cannot render "
-                f"'{action_type}'. Choose a core action instead."
+                f"'{action_type}'. Choose an available action instead."
             )
 
         ctx = SkillContext(
@@ -929,6 +1014,67 @@ class AnalystAgent:
     ) -> dict[str, Any]:
         """Public alias so skills can run explore code via ``ctx.runtime``."""
         return self._run_explore_code(code, input_tables)
+
+    def materialize_memory_table(
+        self,
+        code: str,
+        output_variable: str,
+        name: str,
+        sources: list[MemorySource],
+        *,
+        description: str | None = None,
+        memory_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Run code and persist one named DataFrame as workspace memory."""
+        from data_formulator.sandbox import create_sandbox
+
+        code, _, _ = ensure_output_variable_in_code(code, output_variable)
+        try:
+            from flask import current_app
+            sandbox_mode = current_app.config.get("CLI_ARGS", {}).get("sandbox", "local")
+        except (ImportError, RuntimeError):
+            sandbox_mode = "local"
+
+        try:
+            result = create_sandbox(sandbox_mode).run_python_code(
+                code=code,
+                workspace=self.workspace,
+                output_variable=output_variable,
+            )
+            if result.get("status") != "ok":
+                return {
+                    "status": "error",
+                    "error": str(result.get("content", "Unknown error")),
+                }
+            frame = result.get("content")
+            if not isinstance(frame, pd.DataFrame):
+                return {
+                    "status": "error",
+                    "error": f"{output_variable} must be a pandas DataFrame",
+                }
+            memory = self.workspace.write_memory_table(
+                frame,
+                name,
+                sources=sources,
+                description=description,
+                memory_id=memory_id,
+            )
+            return {
+                "status": "ok",
+                "memory": {
+                    "id": memory.id,
+                    "name": memory.name,
+                    "kind": memory.kind,
+                    "path": f"memory/{memory.filename}",
+                    "content_hash": memory.content_hash,
+                    "row_count": memory.row_count,
+                    "columns": [column.name for column in memory.columns],
+                    "source_count": len(memory.sources),
+                },
+            }
+        except Exception as exc:
+            logger.warning("[AnalystAgent] Saving table memory failed", exc_info=exc)
+            return {"status": "error", "error": str(exc)}
 
     # ------------------------------------------------------------------
     # Sandbox execution substrate
@@ -1165,15 +1311,18 @@ class AnalystAgent:
         context_lines = []
         if has_primary_tables:
             context_lines.append(
-                "- **[PRIMARY TABLE(S)]**: The table(s) the user is focused on. "
-                "Prioritize these, but freely use other available tables if needed."
+                "- **[PRIMARY ANALYSIS INPUTS]**: The analysis input table(s) the "
+                "user is focused on. Prioritize these, but freely use other "
+                "analysis inputs if needed."
             )
             context_lines.append(
-                "- **[OTHER AVAILABLE TABLES]**: Additional tables in the workspace."
+                "- **[OTHER ANALYSIS INPUTS]**: Additional materialized input "
+                "tables the analyst can read directly."
             )
         else:
             context_lines.append(
-                "- **[AVAILABLE TABLES]**: All tables in the workspace."
+                "- **[ANALYSIS INPUT TABLES]**: All materialized root data inputs "
+                "the analyst can read directly."
             )
         context_lines.append(
             "  Use `inspect_source_data` to get detailed stats and sample rows. "
@@ -1223,17 +1372,23 @@ class AnalystAgent:
         for slot, value in substitutions.items():
             prompt = prompt.replace(slot, value)
 
-        # Append the always-loaded ``core`` skill's capability body (the concrete
-        # tools + action schemas). It is plain content — no placeholders — and is
+        # Append the always-loaded ``meta`` bundle body, composed by the registry
+        # from its cross-capability guidance and included capability bodies. It is
         # framed with the same ``[SKILL: <name>]`` header as on-demand skills (see
         # _load_skill_into_context) so every capability bundle reads as one family:
-        # core is the always-active baseline, gated skills announce themselves when
+        # meta is the always-active baseline; gated skills announce themselves when
         # loaded.
-        core_body = self.registry.load_body(_CORE_SKILL)
+        meta_body = self.registry.load_body(_META_SKILL)
         prompt += (
-            f"\n\n[SKILL: {_CORE_SKILL}] Always-on baseline — these tools and "
-            f"actions are active for the whole run.\n\n{core_body}"
+            f"\n\n[SKILL: {_META_SKILL}] Always-on baseline — these tools and "
+            f"actions are active for the whole run.\n\n{meta_body}"
         )
+        for name in sorted(self._loaded_skills - {_META_SKILL}):
+            body = self.registry.load_body(name)
+            prompt += (
+                f"\n\n[SKILL: {name}] Preloaded for this run — its tools and "
+                f"actions are active now.\n\n{body}"
+            )
 
         if self._knowledge_store:
             knowledge_rules = self._knowledge_store.load_always_apply_rules()
@@ -1262,9 +1417,20 @@ class AnalystAgent:
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
+        workspace_files: list[Any] | None = None,
+        workspace_inputs: WorkspaceInputManifest | None = None,
     ) -> list[dict]:
         """Build the initial messages with 3-tier context."""
         table_summaries = self._build_lightweight_table_context(input_tables, primary_tables=primary_tables)
+        input_manifest = workspace_inputs or build_workspace_input_manifest(
+            input_tables, workspace_files or [], self.workspace,
+        )
+        input_preview = build_workspace_input_preview(input_manifest, self.workspace)
+        user_content = render_workspace_input_context(
+            input_manifest,
+            input_preview,
+            table_summaries,
+        ) + "\n\n"
 
         focused_block = ""
         if focused_thread:
@@ -1274,10 +1440,6 @@ class AnalystAgent:
         if other_threads:
             peripheral_block = self._build_peripheral_thread_context(other_threads)
 
-        if primary_tables:
-            user_content = f"{table_summaries}\n\n"
-        else:
-            user_content = f"[AVAILABLE TABLES]\n\n{table_summaries}\n\n"
         if focused_block:
             user_content += f"{focused_block}\n\n"
         if peripheral_block:
@@ -1441,9 +1603,9 @@ class AnalystAgent:
             self._explore_session = None
 
     def _current_tools(self) -> list[dict[str, Any]]:
-        """The tool set offered this turn: inspection tools (core tools +
+        """The tool set offered this turn: baseline inspection tools plus
         load_skill + loaded skills' tools) plus the committing **action**
-        tools of loaded skills (core's visualize/delegate always; write_report
+        tools of loaded skills (visualize/ask_user always; write_report
         once the report skill is loaded). The model gathers with inspection tools
         and acts with at most one action per turn."""
         extra_tools = self.registry.tools_for(self._loaded_skills)
@@ -1459,11 +1621,11 @@ class AnalystAgent:
         loaded skills. Tool names come from the registry's ``tools.json`` specs;
         the value is the skill processor that handles them."""
         mapping: dict[str, Any] = {}
-        for name in self._loaded_skills:
+        for name in self.registry.expanded_names(self._loaded_skills):
             skill = self.registry.get_skill(name)
             if skill is None:
                 continue
-            for spec in self.registry.tools_for([name]):
+            for spec in self.registry._specs_split(name)[0]:
                 fn_name = spec.get("function", {}).get("name")
                 if fn_name:
                     mapping[fn_name] = skill
@@ -1597,10 +1759,14 @@ class AnalystAgent:
                     yield {
                         "type": "tool_start",
                         "tool": tool_name,
+                        "args": _tool_progress_args(tool_name, tool_args),
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
                         "skill": tool_args.get("name") if tool_name == "load_skill" else None,
+                        "query": tool_args.get("query") if tool_name in (
+                            "search_data_tables", "search_knowledge", "search_workspace_items",
+                        ) else None,
                     }
 
                     tool_t0 = time.time()
@@ -1666,6 +1832,7 @@ class AnalystAgent:
                             language_instruction=self.language_instruction,
                             trajectory=messages,
                             payload=dict(self._run_payload),
+                            runtime=self,
                         )
                         try:
                             result = skill.handle_tool(tool_name, tool_args, skill_ctx)
@@ -1807,7 +1974,7 @@ class AnalystAgent:
         # Pre-dispatch completeness check (belt-and-suspenders on top of the
         # skill handler's own validation). Missing fields → correct + retry.
         required = self.registry.action_required_fields(chosen_name)
-        missing = [f for f in required if not action_data.get(f)]
+        missing = _missing_action_fields(required, action_data)
         if missing:
             correction = (
                 f"The '{chosen_name}' action is missing required field(s): "
