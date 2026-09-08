@@ -39,7 +39,37 @@
           },
           "code": {"type": "string", "description": "Python code producing a DataFrame assigned to output_variable."},
           "output_variable": {"type": "string", "description": "snake_case name of the DataFrame variable the code assigns."},
-          "chart": {"type": "object", "description": "Chart spec: {chart_type, encodings:{x,y,...}, config:{}}. chart_type from the chart type reference."},
+          "chart": {
+            "type": "object",
+            "properties": {
+              "chart_type": {"type": "string", "description": "Chart type from the chart type reference."},
+              "encodings": {
+                "type": "object",
+                "description": "Map of channel names to Flint encoding objects. A bare field-name string is also accepted as shorthand.",
+                "additionalProperties": {
+                  "oneOf": [
+                    {"type": "string"},
+                    {
+                      "type": "object",
+                      "properties": {
+                        "field": {"type": "string"},
+                        "type": {"type": "string", "enum": ["quantitative", "nominal", "ordinal", "temporal"]},
+                        "aggregate": {"type": "string", "enum": ["count", "sum", "average", "mean"]},
+                        "sortOrder": {"type": "string", "enum": ["ascending", "descending"]},
+                        "sortBy": {"type": "string"},
+                        "scheme": {"type": "string"}
+                      },
+                      "required": ["field"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "config": {"type": "object"}
+            },
+            "required": ["chart_type", "encodings"],
+            "additionalProperties": false
+          },
           "field_metadata": {"type": "object", "description": "Map of field name -> SemanticType for the output columns."},
           "field_display_names": {"type": "object", "description": "Map of field name -> human-readable display name for chart axes and table headers."}
         },

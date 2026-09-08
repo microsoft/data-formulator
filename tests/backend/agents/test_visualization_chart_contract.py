@@ -35,6 +35,24 @@ def test_visualize_schema_requires_generalized_input_sources():
     assert "Do not restate the measure or analytical lens" in subtitle_description
 
 
+def test_visualize_schema_accepts_flint_encoding_objects_and_string_shorthand():
+    registry = build_registry()
+    visualize = next(
+        spec for spec in registry.action_tools_for(["meta"])
+        if spec["function"]["name"] == "visualize"
+    )
+    chart_schema = visualize["function"]["parameters"]["properties"]["chart"]
+    encoding_options = chart_schema["properties"]["encodings"]["additionalProperties"]["oneOf"]
+
+    assert chart_schema["required"] == ["chart_type", "encodings"]
+    assert {option["type"] for option in encoding_options} == {"string", "object"}
+    object_option = next(option for option in encoding_options if option["type"] == "object")
+    assert object_option["required"] == ["field"]
+    assert object_option["properties"]["type"]["enum"] == [
+        "quantitative", "nominal", "ordinal", "temporal",
+    ]
+
+
 def test_visualize_required_fields_allow_empty_sources_and_legacy_tables():
     required = ["title", "input_sources", "code"]
 

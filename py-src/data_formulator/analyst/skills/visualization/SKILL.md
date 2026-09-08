@@ -24,6 +24,9 @@ to do next.
 - `field_metadata`: semantic annotations for encoded fields. Preserve units,
   baselines, intrinsic domains, and ordinal order; never invent a unit.
 - `field_display_names`: concise human-readable labels for axes and legends.
+- `chart.encodings`: map each channel to a Flint encoding object such as
+  `{"x": {"field": "category", "type": "nominal"}}`. A bare field-name
+  string is accepted as shorthand. Every `field` must name an output column.
 
 Choose the chart from the analytical intent: comparison, trend, distribution,
 relationship, composition, deviation, ranking, uncertainty, or spatial pattern.
