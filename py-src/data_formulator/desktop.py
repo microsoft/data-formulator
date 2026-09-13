@@ -1,4 +1,5 @@
 import ctypes
+import json
 import os
 import socket
 import sys
@@ -7,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from multiprocessing import freeze_support
+from pathlib import Path
 
 
 _INSTANCE_HOST = "127.0.0.1"
@@ -219,6 +221,34 @@ def _self_test_clr() -> int:
     return 0
 
 
+def _write_desktop_test_result(result_path: str, passed: bool, message: str) -> None:
+    Path(result_path).write_text(json.dumps({"passed": passed, "message": message}) + "\n")
+
+
+def _gui_is_ready(window) -> bool:
+    return window.evaluate_js(
+        "window.location.search.includes('desktop=1') && "
+        "document.readyState === 'complete' && "
+        "Boolean(document.getElementById('root')?.childElementCount)"
+    ) is True
+
+
+def _monitor_gui_test(window, result_path: str) -> None:
+    try:
+        while not _gui_is_ready(window):
+            time.sleep(0.25)
+        _write_desktop_test_result(result_path, True, "Frontend mounted in native webview")
+        os._exit(0)
+    except Exception as exc:
+        _write_desktop_test_result(result_path, False, str(exc))
+        os._exit(1)
+
+
+def _gui_test_timeout(result_path: str) -> None:
+    _write_desktop_test_result(result_path, False, "GUI self-test exceeded 120 seconds")
+    os._exit(1)
+
+
 def run_desktop() -> None:
     # PyInstaller replaces freeze_support() so spawned multiprocessing workers
     # enter their target function instead of relaunching the desktop app.
@@ -228,8 +258,21 @@ def run_desktop() -> None:
     if os.environ.get("DF_DESKTOP_SELF_TEST") == "1":
         sys.exit(_run_self_test())
 
+    gui_test = os.environ.get("DF_DESKTOP_GUI_TEST") == "1"
+    result_path = os.environ.get("DF_DESKTOP_TEST_RESULT", "")
+    if gui_test:
+        if not result_path or not os.environ.get("DATA_FORMULATOR_HOME"):
+            raise RuntimeError("GUI test requires DF_DESKTOP_TEST_RESULT and an isolated DATA_FORMULATOR_HOME")
+        _write_desktop_test_result(result_path, False, "GUI self-test started but did not finish")
+        watchdog = threading.Timer(120, _gui_test_timeout, args=(result_path,))
+        watchdog.daemon = True
+        watchdog.start()
+
     coordinator = _claim_single_instance()
     if coordinator is None:
+        if gui_test:
+            _write_desktop_test_result(result_path, False, "Another desktop instance is running")
+            sys.exit(1)
         return
 
     try:
@@ -284,11 +327,18 @@ def run_desktop() -> None:
                 _wait_until_ready(url)
             except Exception as exc:  # pragma: no cover - error path
                 print(f"Failed to start the backend: {exc}")
+                if gui_test:
+                    _write_desktop_test_result(result_path, False, f"Backend failed: {exc}")
+                    os._exit(1)
                 return
             window.load_url(url)
 
         threading.Thread(target=_start_backend, daemon=True).start()
-        webview.start()
+        if gui_test:
+            webview.start(_monitor_gui_test, (window, result_path), gui="edgechromium" if sys.platform == "win32" else None)
+            sys.exit(1)
+        else:
+            webview.start()
     finally:
         coordinator.close()
 

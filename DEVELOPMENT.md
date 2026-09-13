@@ -138,6 +138,48 @@ package. The alias is wired in `vite.config.ts` and `vitest.config.ts`.
     Open [http://localhost:5567](http://localhost:5567) to view it in the browser.
 
 
+## Desktop installer validation
+
+The `desktop builds` GitHub Actions workflow builds **unsigned test artifacts**.
+Validate this path before integrating production signing. Windows installers
+must be built and exercised on Windows; a successful macOS build is not Windows
+installation evidence. Use a disposable Windows 11 x64 user account with an
+interactive desktop, PowerShell 7, Inno Setup 6, Node/Yarn, and uv:
+
+```powershell
+yarn install --frozen-lockfile
+yarn build
+uv sync --extra desktop --frozen
+uv run pytest tests/backend/test_desktop_packaging.py tests/backend/test_startup_spinner.py tests/backend/test_desktop_single_instance.py -q
+uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir release -Unsigned
+```
+
+The wrapper emits a versioned `*-Setup-unsigned.exe`, SHA-256 sidecar, and
+`.payload.json` file manifest. Keep the manifest beside the installer when running
+the installed-app test (substitute the generated filename):
+
+```powershell
+./packaging/windows/test-installer.ps1 -Installer 'release/Data-Formulator-0.8.0b1-Windows-x64-Setup-unsigned.exe'
+```
+
+The test refuses to replace an existing installed app. It checks payload hashes,
+native GUI/backend/sandbox startup, same-version reinstall, uninstall, and
+retention of isolated application data. Logs and installation timing are saved
+under `build/installer-test`; GitHub CI uploads them even when a step fails.
+Different-version upgrade and browser-download acceptance remain separate tests.
+
+Setup installs per-user, preserves `DATA_FORMULATOR_HOME`/`~/.data_formulator`,
+and provisions Microsoft's WebView2 Runtime if absent (network access required
+in that case). Silent setup/uninstall supports
+`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="path"` in the intended user context.
+Uninstall does not remove user data or the shared WebView2 Runtime.
+
+Unsigned Windows installers are CI artifacts, not automatically published release
+assets. Production signing must cover the application, setup, and generated
+uninstaller before repeating validation on the actual browser download. Do not
+use manual unblocking or antivirus exclusions to declare a release usable.
+
 ## Docker
 
 Docker is the easiest way to run Data Formulator without installing Python or Node.js locally.
