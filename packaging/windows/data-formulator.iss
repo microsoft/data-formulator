@@ -49,8 +49,12 @@ SetupLogging=yes
 #ifdef UnsignedBuild
 SignedUninstaller=no
 #else
-SignTool=dfrelease
 SignedUninstaller=yes
+#ifdef ExternalUninstallerDir
+SignedUninstallerDir={#ExternalUninstallerDir}
+#else
+SignTool=dfrelease
+#endif
 #endif
 
 [Tasks]

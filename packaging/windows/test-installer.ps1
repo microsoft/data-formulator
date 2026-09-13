@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'signatures.ps1')
 if (Test-Path 'HKCU:\Software\Microsoft\Data Formulator\Installer') {
     throw 'Use a clean test account; refusing to replace an existing installed application'
 }
@@ -62,9 +63,7 @@ function Assert-DataRetained {
 }
 
 try {
-    if ($RequireSignatures -and (Get-AuthenticodeSignature -LiteralPath $installerPath).Status -ne 'Valid') {
-        throw 'Installer signature is invalid'
-    }
+    if ($RequireSignatures) { Assert-MicrosoftSignature $installerPath }
     $longInstallPath = Join-Path $temporary ('x' * 150)
     $longPathLog = Join-Path $reportsPath 'long-path.log'
     Invoke-Setup $installerPath @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$longInstallPath`"", "/LOG=`"$longPathLog`"") 7
@@ -84,6 +83,8 @@ try {
     Assert-DataRetained
     $uninstaller = Join-Path $installPath 'unins000.exe'
     if ($RequireSignatures) {
+        Assert-MicrosoftSignature $exe
+        Assert-MicrosoftSignature $uninstaller
         foreach ($binary in Get-ChildItem -LiteralPath $installPath -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll', '.pyd' }) {
             if ((Get-AuthenticodeSignature -LiteralPath $binary.FullName).Status -ne 'Valid') {
                 throw "Installed signature is invalid: $($binary.FullName)"
@@ -101,6 +102,7 @@ try {
     Invoke-Setup $installerPath @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installPath`"", "/LOG=`"$reportsPath\reinstall.log`"")
     Assert-Payload $payload
     Assert-DataRetained
+    if ($RequireSignatures) { Assert-MicrosoftSignature $uninstaller }
     & uv run --no-sync python (Join-Path $root 'packaging/test_desktop.py') --exe $exe --data-home $dataHome --reports (Join-Path $reportsPath 'reinstalled-runtime')
     if ($LASTEXITCODE -ne 0) { throw 'Reinstalled application smoke test failed' }
     Invoke-Setup $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$reportsPath\uninstall.log`"")

@@ -183,6 +183,27 @@ assets. Production signing must cover the application, setup, and generated
 uninstaller before repeating validation on the actual browser download. Do not
 use manual unblocking or antivirus exclusions to declare a release usable.
 
+For ADO task-based signing, the wrapper supports three explicit phases around an
+already-signed payload. These replace an inline `-SignCommand`; do not combine
+them with `-Unsigned`:
+
+```powershell
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir candidate -SigningPhase PrepareUninstaller -SignedUninstallerDir build/signed-uninstaller
+# ESRP signs the single generated EXE in build/signed-uninstaller.
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir candidate -SigningPhase AssembleInstaller -SignedUninstallerDir build/signed-uninstaller
+# ESRP signs the generated candidate/*-Setup.exe.
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir candidate -SigningPhase VerifyInstaller
+```
+
+Use an empty per-candidate cache and identical compiler/version/icon settings for
+preparation and assembly. The preparation phase recognizes only Inno's documented
+request to externally sign the generated uninstaller; other compilation failures
+are fatal. Assembly verifies the cached uninstaller but does not emit release
+checksums. Final verification requires valid payload signatures and timestamped
+Microsoft signatures on the launcher/setup before emitting checksum and manifest
+sidecars. Run `test-installer.ps1 -RequireSignatures` on the resulting installer
+before any promotion; this also verifies the installed uninstaller.
+
 ## Docker
 
 Docker is the easiest way to run Data Formulator without installing Python or Node.js locally.
