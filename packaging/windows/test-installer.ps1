@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$Installer,
     [string]$Reports = 'build/installer-test',
-    [switch]$RequireSignatures
+    [switch]$RequireSignatures,
+    [ValidateSet('Full', 'Headless')][string]$ValidationMode = 'Full'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,15 @@ if (-not $manifest.files -or @($manifest.files).Count -eq 0) { throw 'Payload ma
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 New-Item -ItemType Directory -Force $Reports | Out-Null
 $reportsPath = (Resolve-Path -LiteralPath $Reports).Path
+$report = @{
+    passed = $false
+    validationMode = $ValidationMode
+    guiVerified = $false
+    version = $manifest.version
+    signed = [bool]$RequireSignatures
+    installerSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+$report | ConvertTo-Json | Set-Content (Join-Path $reportsPath 'installation.json')
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ("dfi-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $installPath = Join-Path $temporary 'app'
 New-Item -ItemType Directory $temporary | Out-Null
@@ -95,22 +105,30 @@ try {
         $zone = Get-Content -LiteralPath $binary.FullName -Stream Zone.Identifier -ErrorAction SilentlyContinue
         if ($zone -match 'ZoneId=[34]') { throw "Installed binary retains Internet-zone metadata: $($binary.FullName)" }
     }
-    & uv run --no-sync python (Join-Path $root 'packaging/test_desktop.py') --exe $exe --data-home $dataHome --reports (Join-Path $reportsPath 'runtime')
+    $runtimeArguments = @('--exe', $exe, '--data-home', $dataHome)
+    if ($ValidationMode -eq 'Headless') { $runtimeArguments += '--headless' }
+    & uv run --no-sync python (Join-Path $root 'packaging/test_desktop.py') @runtimeArguments --reports (Join-Path $reportsPath 'runtime')
     if ($LASTEXITCODE -ne 0) { throw 'Installed application smoke test failed' }
-    @{ installSeconds = $timer.Elapsed.TotalSeconds; version = $version; signed = [bool]$RequireSignatures } |
-        ConvertTo-Json | Set-Content (Join-Path $reportsPath 'installation.json')
     Invoke-Setup $installerPath @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installPath`"", "/LOG=`"$reportsPath\reinstall.log`"")
     Assert-Payload $payload
     Assert-DataRetained
     if ($RequireSignatures) { Assert-MicrosoftSignature $uninstaller }
-    & uv run --no-sync python (Join-Path $root 'packaging/test_desktop.py') --exe $exe --data-home $dataHome --reports (Join-Path $reportsPath 'reinstalled-runtime')
+    & uv run --no-sync python (Join-Path $root 'packaging/test_desktop.py') @runtimeArguments --reports (Join-Path $reportsPath 'reinstalled-runtime')
     if ($LASTEXITCODE -ne 0) { throw 'Reinstalled application smoke test failed' }
     Invoke-Setup $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$reportsPath\uninstall.log`"")
     Assert-DataRetained
     if (Test-Path -LiteralPath $exe) { throw 'Uninstall left the application executable behind' }
     if (Test-Path 'HKCU:\Software\Microsoft\Data Formulator\Installer') { throw 'Uninstall left installer registration behind' }
+    $report.passed = $true
+    $report.guiVerified = $ValidationMode -eq 'Full'
+    $report.installSeconds = $timer.Elapsed.TotalSeconds
+    $report | ConvertTo-Json | Set-Content (Join-Path $reportsPath 'installation.json')
     $completed = $true
-    Write-Output "PASS: install, native GUI, reinstall and uninstall; reports: $reportsPath"
+    if ($ValidationMode -eq 'Headless') {
+        Write-Output "PASS: install, sandbox, reinstall and uninstall; GUI NOT VERIFIED (candidate only); reports: $reportsPath"
+    } else {
+        Write-Output "PASS: install, native GUI, reinstall and uninstall; reports: $reportsPath"
+    }
 } finally {
     try {
         $uninstaller = Join-Path $installPath 'unins000.exe'

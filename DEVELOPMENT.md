@@ -204,6 +204,14 @@ Microsoft signatures on the launcher/setup before emitting checksum and manifest
 sidecars. Run `test-installer.ps1 -RequireSignatures` on the resulting installer
 before any promotion; this also verifies the installed uninstaller.
 
+On a service-session ADO agent, `test-installer.ps1 -ValidationMode Headless`
+can exercise installation, signatures, payload integrity, sandbox/CLR, reinstall,
+and uninstall without an interactive desktop. This is **candidate-only**
+validation: `installation.json` records `guiVerified: false`, and the GUI report
+explicitly records that it was skipped. Full validation remains the default.
+Publish headless results only as distinctly labeled candidate artifacts; require
+full interactive and browser-download acceptance before release promotion.
+
 ## Docker
 
 Docker is the easiest way to run Data Formulator without installing Python or Node.js locally.

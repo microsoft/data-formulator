@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -170,6 +171,27 @@ def test_smoke_test_requires_fresh_gui_success(tmp_path, monkeypatch, result):
     assert "DF_DESKTOP_GUI_TEST" not in calls[0]
     assert "DF_DESKTOP_SELF_TEST" not in calls[1]
 
+def test_headless_smoke_test_cannot_reuse_gui_success(tmp_path, monkeypatch):
+    report = tmp_path / "gui-result.json"
+    report.write_text('{"passed": true}')
+    calls = []
+    monkeypatch.setattr(desktop_test, "run_process", lambda command, env, timeout, log: calls.append(env))
+    desktop_test.smoke_test(tmp_path / "app.exe", tmp_path / "data", tmp_path, headless=True)
+    assert len(calls) == 1
+    assert calls[0]["DF_DESKTOP_SELF_TEST"] == "1"
+    result = json.loads(report.read_text())
+    assert result["passed"] is False
+    assert result["skipped"] is True
+
+
+def test_headless_smoke_test_propagates_sandbox_failure(tmp_path, monkeypatch):
+    def fail(command, env, timeout, log):
+        raise RuntimeError("sandbox failed")
+
+    monkeypatch.setattr(desktop_test, "run_process", fail)
+    with pytest.raises(RuntimeError, match="sandbox failed"):
+        desktop_test.smoke_test(tmp_path / "app.exe", tmp_path / "data", tmp_path, headless=True)
+
 
 def test_desktop_process_failure_keeps_log(tmp_path):
     log = tmp_path / "failed.log"
@@ -230,3 +252,80 @@ fi
     assert output.exists() is succeeds
     if failure and failures:
         assert failure in result.stderr
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is required")
+@pytest.mark.parametrize("prepare_outcome", ["prepare", "unexpected-error"])
+def test_external_signing_phase_handoff(tmp_path, prepare_outcome):
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    (payload / "Data Formulator.exe").write_bytes(b"application")
+    bootstrapper = tmp_path / "bootstrapper.exe"
+    bootstrapper.touch()
+    compiler = tmp_path / "compiler.ps1"
+    compiler.write_text("""
+$definitions = @{}
+foreach ($argument in $args) {
+    if ($argument.StartsWith('/D')) {
+        $parts = $argument.Substring(2).Split('=', 2)
+        $definitions[$parts[0]] = $parts[1]
+    }
+}
+if ($env:FAKE_COMPILER_OUTCOME -ne 'assemble') {
+    $file = Join-Path $definitions.ExternalUninstallerDir 'uninst-cache.exe'
+    Set-Content -LiteralPath $file -Value 'uninstaller'
+    if ($env:FAKE_COMPILER_OUTCOME -eq 'prepare') {
+        Write-Output "Signed uninstaller mode is enabled. Sign $file and compile again"
+    } else { Write-Output 'Unrelated compiler error' }
+    exit 2
+}
+$file = Join-Path $definitions.OutputDir "Data-Formulator-$($definitions.AppVersion)-Windows-x64-Setup.exe"
+Set-Content -LiteralPath $file -Value 'setup'
+exit 0
+""")
+    script = """
+$ErrorActionPreference = 'Stop'
+function uv {
+    Write-Output '{"version":"0.8.0b1","windows_version":"0.8.0.20001"}'
+    $global:LASTEXITCODE = 0
+}
+function Get-AuthenticodeSignature {
+    param([string]$LiteralPath)
+    $status = if ($LiteralPath.EndsWith('uninst-cache.exe') -and $env:FAKE_CACHE_SIGNED -ne '1') { 'NotSigned' } else { 'Valid' }
+    [pscustomobject]@{
+        Status = $status
+        SignerCertificate = [pscustomobject]@{ Subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, C=US' }
+        TimeStamperCertificate = [pscustomobject]@{ Subject = 'CN=Timestamp' }
+    }
+}
+$common = @{ PayloadDir=$env:PAYLOAD; OutputDir=$env:CANDIDATE; Compiler=$env:COMPILER; Bootstrapper=$env:BOOTSTRAPPER }
+& $env:WRAPPER @common -SigningPhase PrepareUninstaller -SignedUninstallerDir $env:UNINSTALLER_CACHE
+if (@(Get-ChildItem $env:CANDIDATE -Filter '*.sha256').Count) { throw 'Preparation emitted a release checksum' }
+$env:FAKE_CACHE_SIGNED = '1'
+$env:FAKE_COMPILER_OUTCOME = 'assemble'
+& $env:WRAPPER @common -SigningPhase AssembleInstaller -SignedUninstallerDir $env:UNINSTALLER_CACHE
+if (@(Get-ChildItem $env:CANDIDATE -Filter '*.sha256').Count) { throw 'Assembly emitted a release checksum' }
+& $env:WRAPPER -PayloadDir $env:PAYLOAD -OutputDir $env:CANDIDATE -SigningPhase VerifyInstaller -Compiler 'missing-compiler'
+"""
+    output = tmp_path / "candidate"
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+        env={**os.environ, "WRAPPER": str(PROJECT_ROOT / "packaging/windows/build-installer.ps1"),
+             "PAYLOAD": str(payload), "CANDIDATE": str(output), "COMPILER": str(compiler),
+             "BOOTSTRAPPER": str(bootstrapper), "UNINSTALLER_CACHE": str(tmp_path / "cache"),
+             "FAKE_COMPILER_OUTCOME": prepare_outcome, "FAKE_CACHE_SIGNED": "0"},
+        capture_output=True, text=True, timeout=30,
+    )
+    if prepare_outcome == "unexpected-error":
+        assert result.returncode != 0
+        assert "Unexpected uninstaller preparation result" in result.stderr
+        assert not list(output.glob("*.sha256"))
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        manifests = list(output.glob("*.payload.json"))
+        assert len(manifests) == 1
+        manifest = json.loads(manifests[0].read_text(encoding="utf-8-sig"))
+        assert manifest["version"] == "0.8.0.20001"
+        assert {file["path"] for file in manifest["files"]} == {"Data Formulator.exe", ".data-formulator-payload"}
+        assert len(list(output.glob("*.sha256"))) == 1
+        assert (payload / "Data Formulator.exe").read_bytes() == b"application"

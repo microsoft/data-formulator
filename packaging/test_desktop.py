@@ -28,7 +28,9 @@ def run_process(command: list[str], env: dict, timeout: int, log: Path) -> None:
         raise RuntimeError(f"Desktop exited with {result}; see {log}")
 
 
-def smoke_test(executable: Path, home: Path, reports: Path) -> None:
+def smoke_test(executable: Path, home: Path, reports: Path, *, headless: bool = False) -> None:
+    result_path = reports / "gui-result.json"
+    result_path.unlink(missing_ok=True)
     env = os.environ.copy()
     for name in ("DF_DESKTOP_SELF_TEST", "DF_DESKTOP_GUI_TEST", "DF_DESKTOP_TEST_RESULT"):
         env.pop(name, None)
@@ -37,8 +39,9 @@ def smoke_test(executable: Path, home: Path, reports: Path) -> None:
         listener.bind(("127.0.0.1", 0))
         env["DF_DESKTOP_COORDINATION_PORT"] = str(listener.getsockname()[1])
     run_process([str(executable)], {**env, "DF_DESKTOP_SELF_TEST": "1"}, 180, reports / "sandbox.log")
-    result_path = reports / "gui-result.json"
-    result_path.unlink(missing_ok=True)
+    if headless:
+        result_path.write_text(json.dumps({"passed": False, "skipped": True, "message": "Headless candidate validation; GUI not verified"}) + "\n")
+        return
     run_process([str(executable)], {
         **env, "DF_DESKTOP_GUI_TEST": "1", "DF_DESKTOP_TEST_RESULT": str(result_path),
     }, 150, reports / "gui.log")
@@ -76,6 +79,7 @@ def main() -> None:
     source.add_argument("--dmg", type=Path)
     parser.add_argument("--reports", type=Path, required=True)
     parser.add_argument("--data-home", type=Path, help="Existing isolated test data directory to retain across runs")
+    parser.add_argument("--headless", action="store_true", help="Candidate-only sandbox check; does not verify the GUI")
     args = parser.parse_args()
     reports = args.reports.resolve()
     reports.mkdir(parents=True, exist_ok=True)
@@ -90,8 +94,14 @@ def main() -> None:
                 raise RuntimeError(f"Test data directory does not exist: {home}")
         else:
             home.mkdir()
-        smoke_test(executable, home, reports)
-    print(f"PASS: sandbox and native GUI; reports: {reports}")
+        if args.headless:
+            smoke_test(executable, home, reports, headless=True)
+        else:
+            smoke_test(executable, home, reports)
+    if args.headless:
+        print(f"PASS: sandbox only; GUI NOT VERIFIED (candidate only); reports: {reports}")
+    else:
+        print(f"PASS: sandbox and native GUI; reports: {reports}")
 
 
 if __name__ == "__main__":
