@@ -168,6 +168,9 @@ native GUI/backend/sandbox startup, same-version reinstall, uninstall, and
 retention of isolated application data. Logs and installation timing are saved
 under `build/installer-test`; GitHub CI uploads them even when a step fails.
 Different-version upgrade and browser-download acceptance remain separate tests.
+Setup rejects destinations that would exceed the supported payload path length
+before writing application files; use `/DIR="a shorter per-user path"` if needed.
+The installed-app test covers this failure path as well as normal installation.
 
 Setup installs per-user, preserves `DATA_FORMULATOR_HOME`/`~/.data_formulator`,
 and provisions Microsoft's WebView2 Runtime if absent (network access required

@@ -16,7 +16,7 @@ if (-not $manifest.files -or @($manifest.files).Count -eq 0) { throw 'Payload ma
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 New-Item -ItemType Directory -Force $Reports | Out-Null
 $reportsPath = (Resolve-Path -LiteralPath $Reports).Path
-$temporary = Join-Path ([IO.Path]::GetTempPath()) ("data-formulator-install-test-" + [guid]::NewGuid())
+$temporary = Join-Path ([IO.Path]::GetTempPath()) ("dfi-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $installPath = Join-Path $temporary 'app'
 New-Item -ItemType Directory $temporary | Out-Null
 $dataHome = Join-Path $temporary 'data'
@@ -26,13 +26,15 @@ $sentinelValue = [guid]::NewGuid().ToString()
 Set-Content -LiteralPath $sentinel -Value $sentinelValue -Encoding ascii
 $completed = $false
 
-function Invoke-Setup([string]$Executable, [string[]]$Arguments) {
+function Invoke-Setup([string]$Executable, [string[]]$Arguments, [int]$ExpectedExitCode = 0) {
     $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -PassThru
     if (-not $process.WaitForExit(600000)) {
         $process.Kill($true)
         throw 'Installer operation exceeded 10 minutes'
     }
-    if ($process.ExitCode -ne 0) { throw "Installer operation failed: $($process.ExitCode)" }
+    if ($process.ExitCode -ne $ExpectedExitCode) {
+        throw "Installer operation returned $($process.ExitCode); expected $ExpectedExitCode"
+    }
 }
 
 function Assert-Payload([string]$Directory) {
@@ -63,6 +65,13 @@ try {
     if ($RequireSignatures -and (Get-AuthenticodeSignature -LiteralPath $installerPath).Status -ne 'Valid') {
         throw 'Installer signature is invalid'
     }
+    $longInstallPath = Join-Path $temporary ('x' * 150)
+    $longPathLog = Join-Path $reportsPath 'long-path.log'
+    Invoke-Setup $installerPath @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$longInstallPath`"", "/LOG=`"$longPathLog`"") 7
+    if ((Get-Content -LiteralPath $longPathLog -Raw) -notmatch 'installation path is too long') {
+        throw 'Overlong installation did not report the expected path error'
+    }
+    if (Test-Path -LiteralPath $longInstallPath) { throw 'Overlong installation wrote application files' }
     $timer = [Diagnostics.Stopwatch]::StartNew()
     Invoke-Setup $installerPath @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installPath`"", "/LOG=`"$reportsPath\install.log`"")
     $timer.Stop()

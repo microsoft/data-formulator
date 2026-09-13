@@ -13,6 +13,9 @@
 #ifndef Bootstrapper
   #error Bootstrapper is required
 #endif
+#ifndef MaxPayloadRelativePath
+  #error MaxPayloadRelativePath is required
+#endif
 #ifdef UnsignedBuild
   #define ArtifactSuffix "-unsigned"
 #else
@@ -142,6 +145,10 @@ var
   ExitCode: Integer;
 begin
   Result := '';
+  if Length(AddBackslash(ExpandConstant('{app}'))) + {#MaxPayloadRelativePath} > 259 then begin
+    Result := 'The installation path is too long for the application payload. Run setup with /DIR="a shorter per-user path" and retry.';
+    Exit;
+  end;
   if AppIsRunning() then begin
     Result := 'Close Data Formulator and its running analyses before installing. No processes were stopped.';
     Exit;

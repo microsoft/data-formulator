@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -178,3 +179,54 @@ def test_desktop_process_failure_keeps_log(tmp_path):
             os.environ.copy(), 30, log,
         )
     assert "failure detail" in log.read_text()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Exercises the macOS shell builder")
+@pytest.mark.parametrize("failure,failures,verify_failure,attempts,succeeds", [
+    ("Resource busy", 1, False, 2, True),
+    ("Resource busy", 3, False, 3, False),
+    ("Permission denied", 1, False, 1, False),
+    ("", 0, True, 1, False),
+])
+def test_dmg_retries_only_resource_busy(tmp_path, failure, failures, verify_failure, attempts, succeeds):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    commands = {
+        "ditto": '#!/bin/bash\n/bin/cp -R "$1" "$2"\n',
+        "sleep": "#!/bin/bash\nexit 0\n",
+        "hdiutil": """#!/bin/bash
+if [[ $1 == verify ]]; then exit "$VERIFY_FAILURE"; fi
+count=0
+if [[ -f "$ATTEMPTS_FILE" ]]; then read -r count < "$ATTEMPTS_FILE"; fi
+count=$((count + 1))
+printf '%s\\n' "$count" > "$ATTEMPTS_FILE"
+for output in "$@"; do :; done
+printf 'candidate' > "$output"
+if [[ $count -le $FAILURES ]]; then
+    printf 'hdiutil: create failed - %s\\n' "$FAILURE" >&2
+    exit 1
+fi
+""",
+    }
+    for name, script in commands.items():
+        tool = tools / name
+        tool.write_text(script)
+        tool.chmod(0o755)
+    app = tmp_path / "Data Formulator.app"
+    executable = app / "Contents" / "MacOS" / "Data Formulator"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    output = tmp_path / "release" / "candidate.dmg"
+    attempts_file = tmp_path / "attempts"
+    result = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "packaging/macos/build-dmg.sh"), str(app), str(output)],
+        env={**os.environ, "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
+             "FAILURE": failure, "FAILURES": str(failures), "VERIFY_FAILURE": str(int(verify_failure)),
+             "ATTEMPTS_FILE": str(attempts_file)},
+        capture_output=True, text=True, timeout=30,
+    )
+    assert (result.returncode == 0) is succeeds, result.stderr
+    assert int(attempts_file.read_text()) == attempts
+    assert output.exists() is succeeds
+    if failure and failures:
+        assert failure in result.stderr

@@ -49,9 +49,19 @@ try {
     Copy-Item -LiteralPath $payload -Destination $stagedPayload -Recurse
     Get-ChildItem -LiteralPath $stagedPayload -Filter 'CodeSignSummary-*.md' -Recurse -File | Remove-Item -Force
     Set-Content -LiteralPath (Join-Path $stagedPayload '.data-formulator-payload') -Value $metadata.version -Encoding utf8
+    $files = @(Get-ChildItem -LiteralPath $stagedPayload -Recurse -File -Force | ForEach-Object {
+        @{
+            path = [IO.Path]::GetRelativePath($stagedPayload, $_.FullName).Replace('\', '/')
+            sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    })
+    $maxRelativePath = ($files | ForEach-Object {
+        "versions\$($metadata.windows_version)\$($_.path)".Length
+    } | Measure-Object -Maximum).Maximum
     $arguments = @(
         "/DPayloadDir=$stagedPayload", "/DOutputDir=$output", "/DBootstrapper=$Bootstrapper",
-        "/DAppVersion=$($metadata.version)", "/DWindowsVersion=$($metadata.windows_version)"
+        "/DAppVersion=$($metadata.version)", "/DWindowsVersion=$($metadata.windows_version)",
+        "/DMaxPayloadRelativePath=$maxRelativePath"
     )
     if ($Unsigned) { $arguments += '/DUnsignedBuild=1' }
     else { $arguments += "/Sdfrelease=$SignCommand" }
@@ -64,12 +74,6 @@ try {
     }
     $digest = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$installer.sha256" -Value "$digest  $([IO.Path]::GetFileName($installer))" -Encoding ascii
-    $files = @(Get-ChildItem -LiteralPath $stagedPayload -Recurse -File -Force | ForEach-Object {
-        @{
-            path = [IO.Path]::GetRelativePath($stagedPayload, $_.FullName).Replace('\', '/')
-            sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        }
-    })
     @{
         version = $metadata.windows_version
         files = $files
