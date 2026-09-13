@@ -260,6 +260,21 @@ approved disk-image signing/notarization workflow and copied-app acceptance
 before promoting a DMG. Keep a checksum and source/pipeline provenance for the
 exact final artifact.
 
+After notarization of the signed disk image, the final trust gate is:
+
+```bash
+uv run python packaging/macos/release.py staple-dmg \
+  --dmg 'candidate/Data-Formulator-macOS-arm64.dmg' --architecture arm64 \
+  --team-id "$APPROVED_APPLE_TEAM_ID" --reports build/mac-dmg-signature
+```
+
+Use `verify-dmg` instead when the disk-image ticket is already stapled. These
+commands require a valid outer Developer ID signature and notarization ticket,
+image Gatekeeper acceptance, and a valid stapled application after copying it
+out of the image and ejecting it. They record the final DMG SHA-256 only after
+all gates pass. The application must already have been stapled before creating
+the disk image.
+
 The signature report intentionally records `releaseEligible: false` and
 `guiVerified: false`: it is not a runtime or release-approval report. A headless
 smoke test cannot replace native GUI, browser-download/Gatekeeper, offline

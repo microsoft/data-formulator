@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import plistlib
 import subprocess
@@ -197,3 +198,55 @@ def test_run_preserves_failure_output(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="signature invalid"):
         release.run(["codesign", "--verify", "app"], log)
     assert "signature invalid" in log.read_text()
+
+
+@pytest.mark.parametrize("staple", [False, True])
+def test_dmg_requires_outer_and_copied_app_trust(bundle, tmp_path, monkeypatch, staple):
+    calls = fake_tools(monkeypatch)
+    image = tmp_path / "candidate.dmg"
+    image.write_bytes(b"signed disk image")
+    copied = []
+    verified = []
+    monkeypatch.setattr(release, "copy_from_dmg", lambda source, app: copied.append((source, app)))
+    monkeypatch.setattr(release, "verify", lambda *args, **kwargs: verified.append((args, kwargs)))
+    reports = tmp_path / "reports"
+    release.verify_dmg(image, "arm64", bundle[1], reports, TEAM_ID, staple=staple)
+    evidence = json.loads((reports / "dmg-signature.json").read_text())
+    assert evidence["passed"] is True
+    assert evidence["notarized"] is True
+    assert evidence["releaseEligible"] is False
+    assert evidence["sha256"] == hashlib.sha256(image.read_bytes()).hexdigest()
+    assert len(copied) == len(verified) == 1
+    assert verified[0][0][0] == copied[0][1]
+    assert verified[0][1] == {"notarized": True}
+    assert ["hdiutil", "verify", str(image)] in calls
+    assert ["xcrun", "stapler", "validate", str(image)] in calls
+    assert (["xcrun", "stapler", "staple", str(image)] in calls) is staple
+    assert any("context:primary-signature" in call for call in calls)
+
+
+@pytest.mark.parametrize("operation", ["--verify", "staple", "validate", "--assess"])
+def test_dmg_platform_failure_blocks_candidate(bundle, tmp_path, monkeypatch, operation):
+    fake_tools(monkeypatch, fail=lambda command: operation in command)
+    image = tmp_path / "candidate.dmg"
+    image.write_bytes(b"untrusted disk image")
+    reports = tmp_path / "reports"
+    with pytest.raises(RuntimeError, match="platform tool failed"):
+        release.verify_dmg(image, "arm64", bundle[1], reports, TEAM_ID, staple=True)
+    assert json.loads((reports / "dmg-signature.json").read_text())["passed"] is False
+
+
+def test_dmg_rejects_copied_app_failure(bundle, tmp_path, monkeypatch):
+    fake_tools(monkeypatch)
+    image = tmp_path / "candidate.dmg"
+    image.write_bytes(b"signed disk image")
+    monkeypatch.setattr(release, "copy_from_dmg", lambda *args: None)
+
+    def fail(*args, **kwargs):
+        raise ValueError("copied app is not trusted")
+
+    monkeypatch.setattr(release, "verify", fail)
+    reports = tmp_path / "reports"
+    with pytest.raises(ValueError, match="copied app"):
+        release.verify_dmg(image, "arm64", bundle[1], reports, TEAM_ID)
+    assert json.loads((reports / "dmg-signature.json").read_text())["passed"] is False

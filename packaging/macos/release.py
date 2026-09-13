@@ -7,12 +7,14 @@ import plistlib
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from packaging.version import Version
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from desktop_metadata import release_metadata
+from test_desktop import copy_from_dmg
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -92,12 +94,29 @@ def prepare(app: Path, output: Path, architecture: str, project: Path) -> None:
     run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(output)])
 
 
+def signing_requirement(team_id: str) -> str:
+    if not re.fullmatch(r"[A-Z0-9]{10}", team_id):
+        raise ValueError("Expected an explicitly approved, ten-character Apple Team ID")
+    return (
+        '=anchor apple generic and '
+        f'certificate leaf[subject.OU] = "{team_id}" and '
+        'certificate leaf[field.1.2.840.113635.100.6.1.13] exists'
+    )
+
+
+def check_identity(details: str, team_id: str) -> None:
+    if f"TeamIdentifier={team_id}" not in details:
+        raise ValueError("Signed artifact has an unexpected Apple Team ID")
+    if not re.search(r"^Authority=Developer ID Application:", details, re.MULTILINE):
+        raise ValueError("Artifact does not have a Developer ID Application signature")
+    if not re.search(r"^Timestamp=.+", details, re.MULTILINE):
+        raise ValueError("Developer ID signature has no secure timestamp")
+
+
 def verify(
     app: Path, architecture: str, project: Path, reports: Path,
     team_id: str, *, notarized: bool = False, staple: bool = False,
 ) -> None:
-    if not re.fullmatch(r"[A-Z0-9]{10}", team_id):
-        raise ValueError("Expected an explicitly approved, ten-character Apple Team ID")
     reports.mkdir(parents=True, exist_ok=True)
     report = reports / "signature.json"
     evidence = {
@@ -113,22 +132,13 @@ def verify(
         versions["shortVersion"], versions["buildVersion"],
     ):
         raise ValueError("Signed bundle version does not match the application source")
-    requirement = (
-        '=anchor apple generic and '
-        f'certificate leaf[subject.OU] = "{team_id}" and '
-        'certificate leaf[field.1.2.840.113635.100.6.1.13] exists'
-    )
+    requirement = signing_requirement(team_id)
     run(["codesign", "--verify", "--deep", "--strict", "--verbose=4",
          "-R", requirement, str(app)], log)
     details = run(["codesign", "-dvvv", str(app)], log)
-    if f"TeamIdentifier={team_id}" not in details:
-        raise ValueError("Signed bundle has an unexpected Apple Team ID")
-    if not re.search(r"^Authority=Developer ID Application:", details, re.MULTILINE):
-        raise ValueError("Application does not have a Developer ID Application signature")
+    check_identity(details, team_id)
     if not re.search(r"^CodeDirectory .*flags=.*\bruntime\b", details, re.MULTILINE):
         raise ValueError("Hardened runtime is not enabled")
-    if not re.search(r"^Timestamp=.+", details, re.MULTILINE):
-        raise ValueError("Developer ID signature has no secure timestamp")
     run(["codesign", "-d", "--entitlements", ":-", str(app)], reports / "entitlements.log")
     if staple:
         run(["xcrun", "stapler", "staple", str(app)], log)
@@ -142,6 +152,45 @@ def verify(
     evidence.update(versions)
     with executable.open("rb") as stream:
         evidence["executableSha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+    evidence["passed"] = True
+    report.write_text(json.dumps(evidence, indent=2) + "\n")
+
+
+def verify_dmg(
+    image: Path, architecture: str, project: Path, reports: Path,
+    team_id: str, *, staple: bool = False,
+) -> None:
+    reports.mkdir(parents=True, exist_ok=True)
+    report = reports / "dmg-signature.json"
+    evidence = {
+        "passed": False, "releaseEligible": False, "guiVerified": False,
+        "notarized": False, "architecture": architecture, "teamId": team_id,
+    }
+    report.write_text(json.dumps(evidence, indent=2) + "\n")
+    if not image.is_file() or image.suffix != ".dmg":
+        raise ValueError(f"Expected a disk image: {image}")
+    requirement = signing_requirement(team_id)
+    log = reports / "dmg-signature.log"
+    log.write_text("")
+    run(["hdiutil", "verify", str(image)], log)
+    run(["codesign", "--verify", "--strict", "--verbose=4",
+         "-R", requirement, str(image)], log)
+    check_identity(run(["codesign", "-dvvv", str(image)], log), team_id)
+    if staple:
+        run(["xcrun", "stapler", "staple", str(image)], log)
+    run(["xcrun", "stapler", "validate", str(image)], log)
+    run(["spctl", "--assess", "--type", "open", "--context",
+         "context:primary-signature", "--verbose=4", str(image)], log)
+    run(["codesign", "--verify", "--strict", "--verbose=4",
+         "-R", requirement, str(image)], log)
+    with tempfile.TemporaryDirectory(prefix="df-signed-dmg-") as directory:
+        app = Path(directory) / APP_NAME
+        copy_from_dmg(image.resolve(), app)
+        verify(app, architecture, project, reports / "copied-app", team_id, notarized=True)
+    with image.open("rb") as stream:
+        evidence["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+    evidence.update(bundle_versions(project))
+    evidence["notarized"] = True
     evidence["passed"] = True
     report.write_text(json.dumps(evidence, indent=2) + "\n")
 
@@ -160,11 +209,21 @@ def main() -> None:
             command.add_argument("--reports", type=Path, required=True)
             command.add_argument("--team-id", required=True)
             command.add_argument("--notarized", action="store_true")
+    for name in ("verify-dmg", "staple-dmg"):
+        command = commands.add_parser(name)
+        command.add_argument("--dmg", type=Path, required=True)
+        command.add_argument("--architecture", choices=("arm64", "x86_64"), required=True)
+        command.add_argument("--project", type=Path, default=PROJECT_ROOT / "pyproject.toml")
+        command.add_argument("--reports", type=Path, required=True)
+        command.add_argument("--team-id", required=True)
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("This helper requires macOS platform signing tools")
     if args.command == "prepare":
         prepare(args.app, args.output, args.architecture, args.project)
+    elif args.command in ("verify-dmg", "staple-dmg"):
+        verify_dmg(args.dmg, args.architecture, args.project, args.reports, args.team_id,
+                   staple=args.command == "staple-dmg")
     else:
         verify(args.app, args.architecture, args.project, args.reports, args.team_id,
                notarized=args.notarized, staple=args.command == "staple")
