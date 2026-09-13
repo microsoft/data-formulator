@@ -204,6 +204,12 @@ Microsoft signatures on the launcher/setup before emitting checksum and manifest
 sidecars. Run `test-installer.ps1 -RequireSignatures` on the resulting installer
 before any promotion; this also verifies the installed uninstaller.
 
+Inno Setup 6.6.1 names its external-signing cache `uninst-*.e32`, even for
+an x64 application. This is a PE executable, not the installed uninstaller's
+final filename. Preserve the compiler-generated cache name, include
+`uninst-*.e32` alongside `uninst-*.exe` in the ESRP uninstaller task's file
+pattern, and sign it in place before assembly.
+
 On a service-session ADO agent, `test-installer.ps1 -ValidationMode Headless`
 can exercise installation, signatures, payload integrity, sandbox/CLR, reinstall,
 and uninstall without an interactive desktop. This is **candidate-only**

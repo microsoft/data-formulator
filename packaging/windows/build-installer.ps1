@@ -54,7 +54,8 @@ if ($SignedUninstallerDir) {
     $SignedUninstallerDir = (Resolve-Path -LiteralPath $SignedUninstallerDir).Path
 }
 if ($SigningPhase -eq 'AssembleInstaller') {
-    $uninstallers = @(Get-ChildItem -LiteralPath $SignedUninstallerDir -Filter '*.exe' -File)
+    $uninstallers = @(Get-ChildItem -LiteralPath $SignedUninstallerDir -File |
+        Where-Object { $_.Name -like 'uninst-*' -and $_.Extension -in '.exe', '.e32' })
     if ($uninstallers.Count -ne 1) { throw 'Expected exactly one externally signed uninstaller' }
     Assert-MicrosoftSignature $uninstallers[0].FullName
 }
@@ -107,7 +108,8 @@ try {
             Tee-Object -Variable compilerOutput | Out-Host
         $compilerExitCode = $LASTEXITCODE
         if ($SigningPhase -eq 'PrepareUninstaller') {
-            $uninstallers = @(Get-ChildItem -LiteralPath $SignedUninstallerDir -Filter '*.exe' -File)
+            $uninstallers = @(Get-ChildItem -LiteralPath $SignedUninstallerDir -File |
+                Where-Object { $_.Name -like 'uninst-*' -and $_.Extension -in '.exe', '.e32' })
             $message = $compilerOutput -join "`n"
             if ($compilerExitCode -ne 2 -or $uninstallers.Count -ne 1 -or
                 $message -notmatch 'Signed uninstaller mode is enabled' -or
