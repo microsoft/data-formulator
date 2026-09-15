@@ -5,14 +5,14 @@ from typing import Any, Generator
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 
 
-class InteractionSkill:
+class MetaSkill:
     def handle_tool(
         self,
         name: str,
         args: dict[str, Any],
         ctx: SkillContext,
     ) -> ToolResult:
-        return ToolResult(text=f"interaction has no tool '{name}'.")
+        return ToolResult(text=f"meta has no tool '{name}'.")
 
     def handle_action(
         self,
@@ -22,12 +22,26 @@ class InteractionSkill:
     ) -> Generator[Event, None, str | None]:
         if action == "ask_user":
             return (yield from self._handle_interact(spec, ctx))
+        if action == "long_response":
+            content = spec.get("content")
+            if not isinstance(content, str) or not content.strip():
+                return "long_response requires a non-empty Markdown content string."
+            yield {
+                "type": "completion",
+                "status": "success",
+                "content": {
+                    "summary": content.strip(),
+                    "presentation": "long_response",
+                    "total_steps": ctx.payload.get("completed_step_count", 0),
+                },
+            }
+            return None
         yield {
             "type": "error",
-            "message": f"interaction cannot handle action '{action}'.",
+            "message": f"meta cannot handle action '{action}'.",
             "message_code": "agent.unknownAction",
         }
-        return f"interaction cannot handle action '{action}'."
+        return f"meta cannot handle action '{action}'."
 
     def _handle_interact(
         self, action: dict[str, Any], ctx: SkillContext,
@@ -54,7 +68,7 @@ class InteractionSkill:
         if not isinstance(raw_options, list):
             return []
         options: list[dict[str, Any]] = []
-        for raw_option in raw_options[:3]:
+        for raw_option in raw_options:
             if isinstance(raw_option, str):
                 label = raw_option.strip()
                 label_code = ""
@@ -78,7 +92,7 @@ class InteractionSkill:
         if not isinstance(raw_questions, list):
             return []
         questions: list[dict[str, Any]] = []
-        for raw_question in raw_questions[:3]:
+        for raw_question in raw_questions:
             if not isinstance(raw_question, dict):
                 continue
             text = str(raw_question.get("text", "")).strip()
@@ -125,5 +139,5 @@ class InteractionSkill:
         return {"questions": questions}
 
 
-def get_skill() -> InteractionSkill:
-    return InteractionSkill()
+def get_skill() -> MetaSkill:
+    return MetaSkill()

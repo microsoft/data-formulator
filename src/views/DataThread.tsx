@@ -506,7 +506,7 @@ const WorkspacePanel: FC<{
 };
 
 interface ThreadResponseCardProps {
-    responseKind: 'agent' | 'error';
+    responseKind: 'agent' | 'error' | 'form';
     selected: boolean;
     highlighted?: boolean;
     prompt?: string;
@@ -528,7 +528,9 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
-    const backgroundColor = responseKind === 'error'
+    const backgroundColor = responseKind === 'form'
+        ? alpha('#8064a2', highlighted ? 0.13 : 0.07)
+        : responseKind === 'error'
         ? alpha(theme.palette.warning.main, 0.055)
         : highlighted
             ? agentResponseFill(theme.palette.primary.main)
@@ -543,6 +545,7 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
                 width: '100%',
                 backgroundColor,
                 ...ComponentBorderStyle,
+                ...(responseKind === 'form' && { borderColor: alpha('#8064a2', 0.35) }),
                 borderRadius: '6px', cursor: 'pointer',
                 position: 'relative',
                 '& .response-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
@@ -1465,7 +1468,7 @@ let SingleThreadGroupView: FC<{
             .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
         // Once answered, the turn is history: it drops its card chrome and reads
         // as muted agent prose so the thread foregrounds what it produced.
-        const resolved = !!turn.answered;
+        const resolved = !!turn.answered && !turn.form;
         const loadedTableIds = (loadedTablesByTurn.get(turn.id) || []).map(node => node.tableId);
         const reportIds = (reportsByParentNode.get(turn.id) || []).map(report => report.id);
         const childTurnIds = (textTurnChildrenOf.get(turn.id) || []).map(child => child.id);
@@ -1494,7 +1497,7 @@ let SingleThreadGroupView: FC<{
             );
         const card = (
             <ThreadResponseCard
-                responseKind="agent"
+                responseKind={turn.form ? 'form' : 'agent'}
                 selected={isFocused}
                 highlighted={rowHL}
                 prompt={showPrompt ? turn.prompt : undefined}
@@ -1540,7 +1543,8 @@ let SingleThreadGroupView: FC<{
         // A turn that loaded tables skips the reply — the tables below already
         // say which option was taken.
         const loadedTables = loadedTablesByTurn.get(turn.id) || [];
-        if (turn.answered && turn.answer && loadedTables.length === 0) {
+        const connectedForm = turn.form?.kind === 'connector' && turn.form.connector.status === 'connected';
+        if (turn.answered && turn.answer && loadedTables.length === 0 && !connectedForm) {
             pushInteractionEntries(
                 [{ from: 'user', to: 'data-agent', role: 'prompt', content: turn.answer }],
                 keyNode, triggerType, turnHighlighted, `textturn-answer-${turn.id}`,

@@ -15,12 +15,13 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     registry = build_registry()
 
     assert registry.expanded_names(["meta"]) == [
-        "meta", "analysis", "workspace", "visualization", "interaction",
+        "meta", "analysis", "workspace", "visualization",
     ]
     assert registry.gated_skill_names() == ["load-data", "report"]
-    assert registry.get_skill("meta") is None
+    assert registry.get_skill("meta") is not None
+    assert not registry.has("interaction")
     assert registry.action_owner("visualize") == "visualization"
-    assert registry.action_owner("ask_user") == "interaction"
+    assert registry.action_owner("ask_user") == "meta"
     assert {
         spec["function"]["name"] for spec in registry.tools_for(["meta"])
     } == {
@@ -33,7 +34,49 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     }
     assert {
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])
-    } == {"visualize", "ask_user"}
+    } == {"visualize", "ask_user", "long_response"}
+    assert registry.action_owner("long_response") == "meta"
+
+
+def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> None:
+    from data_formulator.analyst.skills.base import SkillContext
+
+    skill = build_registry().get_skill("meta")
+    ctx = SkillContext(client=None, workspace=None, payload={"completed_step_count": 2})
+    assert list(skill.handle_action("long_response", {"content": "# Expanded answer\n\nDetails."}, ctx)) == [{
+        "type": "completion", "status": "success",
+        "content": {"summary": "# Expanded answer\n\nDetails.", "presentation": "long_response", "total_steps": 2},
+    }]
+    for content in [None, "", "   ", 42]:
+        events = skill.handle_action("long_response", {"content": content}, ctx)
+        with pytest.raises(StopIteration) as stopped:
+            next(events)
+        assert "non-empty" in stopped.value.value
+
+
+def test_connector_actions_are_registered_as_actions_not_read_only_tools() -> None:
+    registry = build_registry()
+    action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["load-data"])}
+    tool_names = {spec["function"]["name"] for spec in registry.tools_for(["load-data"])}
+
+    assert action_names == {"propose_data_operation", "propose_connection", "update_connector_form"}
+    for action_name in action_names:
+        assert registry.action_owner(action_name) == "load-data"
+        assert action_name not in tool_names
+    assert {"list_connectors", "describe_connector", "read_connector_form"} <= tool_names
+
+
+def test_meta_preserves_questions_and_options_beyond_three() -> None:
+    from data_formulator.analyst.skills.base import SkillContext
+
+    options = ["North", "South", "East", "West", "Central"]
+    questions = [{"text": "Choose a region", "responseType": "single_choice", "options": options}] * 4
+    events = list(build_registry().get_skill("meta").handle_action(
+        "ask_user", {"questions": questions}, SkillContext(client=None, workspace=None, payload={}),
+    ))
+    assert len(events[0]["questions"]) == 4
+    assert events[0]["questions"][0]["responseType"] == "single_choice"
+    assert [option["label"] for option in events[0]["questions"][0]["options"]] == options
 
 
 def _write_skill(

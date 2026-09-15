@@ -711,6 +711,25 @@ describe("split table collections", () => {
 });
 
 describe("text artifact canvas ownership", () => {
+  it.each(["explicit", "ancestry"])("keeps the chart for an ordinary long response with %s provenance", (provenance) => {
+    const state = {
+      ...dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any)),
+      focusedId: { type: "text", textId: "closing-answer" },
+      charts: [{ id: "chart-1", chartType: "Bar Chart", tableRef: "orders", source: "user", encodingMap: {} }],
+      textTurns: [
+        { kind: "text", id: "previous-answer", displayId: "previous-answer", textKind: "explain",
+          content: "Previous iteration", parentNodeId: "orders", createdAt: 1 },
+        { kind: "text", id: "closing-answer", displayId: "closing-answer", textKind: "explain",
+          content: "Detailed chart findings.\n".repeat(200), parentNodeId: "previous-answer", createdAt: 2,
+          ...(provenance === "explicit" ? { sourceChartId: "chart-1" } : {}) },
+      ],
+    };
+    expect(dfSelectors.selectCanvasTarget(state as any)).toEqual({ type: "chart", chartId: "chart-1" });
+    const expandedState = { ...state, textTurns: state.textTurns.map(turn =>
+      turn.id === "closing-answer" ? { ...turn, presentation: "long_response" } : turn) };
+    expect(dfSelectors.selectCanvasTarget(expandedState as any)).toEqual({ type: "text", textId: "closing-answer" });
+  });
+
   it.each([
     ["form", { form: { kind: "connector", title: "Connect", connector: { sourceType: "kusto", status: "pending" } } }],
     ["data operation", { dataOperation: { id: "operation-1", plans: [] } }],

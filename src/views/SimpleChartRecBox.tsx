@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, explanationContent, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport, shouldPreviewExplanationInCanvas } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, explanationContent, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest, apiRequest } from '../app/apiClient';
@@ -209,6 +209,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Text turns (clarify / explain / delegate) — design-docs/41. The focused
     // one (if any) drives the overlay panel above the chat.
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
+    const connectorParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams);
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -235,7 +236,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const [starterCollapsed, setStarterCollapsed] = useState(false);
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
     const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
-    const [attachedImages, setAttachedImages] = useState<string[]>([]);
+    const [attachedImages, setAttachedImages] = useState<{ url: string; scratchPath: string }[]>([]);
+    const [attachmentUploads, setAttachmentUploads] = useState(0);
     // Non-image attachments are uploaded to the workspace scratch/ folder (raw
     // bytes preserved) so the agent can read them with execute_python_script
     // (pandas) or hand off to data loading — instead of inlining text (which
@@ -351,6 +353,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // What the canvas resolves a focused text turn to — the nearest artifact
     // above it. Reused by "Close" so the panel and the canvas never disagree.
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
+    const [submittedPanelFocus, setSubmittedPanelFocus] = useState<typeof canvasTarget>(undefined);
+    const focusCanvasAfterReply = useCallback(() => {
+        dispatch(dfActions.setFocused(canvasTarget));
+        setSubmittedPanelFocus(canvasTarget);
+    }, [canvasTarget, dispatch]);
 
     const currentTable = tables.find(t => t.id === focusedTableId);
 
@@ -448,36 +455,39 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         setMentionHighlightIdx(0);
     }, [focusedTableId]);
 
-    // Handle paste events to capture images
-    // Attach files as conversation context. Images become reference images
-    // (sent to the model as attachments); every other file is uploaded to the
-    // workspace scratch/ folder (raw bytes) and referenced by path, so the
-    // agent reads it via execute_python_script / delegate rather than getting
-    // its bytes inlined into the prompt. Accepts a FileList (from the "+"
-    // input) or a File[] (from a paste).
     const handleAttachFiles = React.useCallback((fileList: FileList | File[] | null) => {
         if (!fileList) return;
-        Array.from(fileList).forEach(file => {
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = () => setAttachedImages(prev => [...prev, reader.result as string]);
-                reader.readAsDataURL(file);
-            } else {
+        const files = Array.from(fileList);
+        setAttachmentUploads(count => count + files.length);
+        files.forEach(async file => {
+            try {
+                const imageUrl = file.type.startsWith('image/')
+                    ? await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsDataURL(file);
+                    })
+                    : undefined;
                 const formData = new FormData();
                 formData.append('file', file);
-                apiRequest(getUrls().SCRATCH_UPLOAD_URL, { method: 'POST', body: formData })
-                    .then(({ data }) => {
-                        const scratchPath = (data as any)?.path || `scratch/${file.name}`;
-                        setAttachedFiles(prev => [...prev, { name: file.name, scratchPath }]);
-                    })
-                    .catch(err => {
-                        console.error('Scratch upload failed:', err);
-                        dispatch(dfActions.addMessages({
-                            timestamp: Date.now(), type: 'error',
-                            component: 'data-agent',
-                            value: t('chartRec.attachUploadFailed', { name: file.name, defaultValue: `Failed to attach ${file.name}` }),
-                        }));
-                    });
+                const { data } = await apiRequest(getUrls().SCRATCH_UPLOAD_URL, { method: 'POST', body: formData });
+                const scratchPath = data?.path;
+                if (!scratchPath) throw new Error('Upload returned no scratch path');
+                if (imageUrl) {
+                    setAttachedImages(prev => [...prev, { url: imageUrl, scratchPath }]);
+                } else {
+                    setAttachedFiles(prev => [...prev, { name: file.name, scratchPath }]);
+                }
+            } catch (err) {
+                console.error('Scratch upload failed:', err);
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data-agent',
+                    value: t('chartRec.attachUploadFailed', { name: file.name, defaultValue: `Failed to attach ${file.name}` }),
+                }));
+            } finally {
+                setAttachmentUploads(count => count - 1);
             }
         });
     }, [dispatch, t]);
@@ -737,12 +747,22 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             plan_id?: string;
             action?: 'elaborate';
         };
-    }, displayPrompt?: string) => {
+    }, displayPrompt?: string, explicitAttachments?: {
+        images: string[];
+        files: { name: string; scratchPath: string }[];
+    }) => {
+        if (attachmentUploads > 0) return;
+        const images = explicitAttachments?.images ?? attachedImages.map(image => image.url);
+        const files = explicitAttachments?.files ?? attachedFiles;
+        const scratchPaths = [
+            ...files.map(file => file.scratchPath),
+            ...(!explicitAttachments ? attachedImages.map(image => image.scratchPath) : []),
+        ];
         // A session can start without a table: a durable workspace file may be
         // enough source material for the agent to produce the first derived table.
         const hasNoAnalysisInputs = inputTables.length === 0;
         const hasExplicitParent = !!clarificationContext?.parentNodeId;
-        if ((!focusedTableId && !hasNoAnalysisInputs && !hasExplicitParent) || (!clarificationContext && prompt.trim() === "")) return;
+        if ((!focusedTableId && !hasNoAnalysisInputs && !hasExplicitParent) || (!clarificationContext && prompt.trim() === "" && images.length === 0 && files.length === 0)) return;
 
         // Non-image attachments live in the workspace scratch/ folder; we pass
         // their paths to the agent (see requestBody.scratch_files) rather than
@@ -752,8 +772,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // Names shown as chips on the user's message bubble so the sent message
         // reflects what was attached (files live in scratch/, images inline).
         const attachmentNames = [
-            ...attachedFiles.map(f => f.name),
-            ...attachedImages.map((_, i) => attachedImages.length > 1 ? `image ${i + 1}` : 'image'),
+            ...files.map(file => file.name),
+            ...images.map((_, index) => images.length > 1 ? `image ${index + 1}` : 'image'),
         ];
 
         // Every input table is in play, with the focused table's own inputs first.
@@ -881,8 +901,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             conversation_id: actionId,
             input_tables: actionTables.map(toAnalystTableRef),
             primary_tables: primaryTableNames,
-            ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
-            ...(attachedFiles.length > 0 ? { scratch_files: attachedFiles.map(f => f.scratchPath) } : {}),
+            ...(images.length > 0 ? { attached_images: images } : {}),
+            ...(scratchPaths.length > 0 ? { scratch_files: scratchPaths } : {}),
             model: activeModel,
             max_iterations: 10,
         };
@@ -916,6 +936,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 };
             });
         requestBody.charts = availableCharts;
+        const formOwner = canvasTarget?.type === 'text'
+            ? textTurns.find(turn => turn.id === canvasTarget.textId && turn.form)
+            : undefined;
+        if (formOwner?.form?.draft) {
+            const form = formOwner.form;
+            const values = connectorParams[`connector-form:${formOwner.id}`] || {};
+            requestBody.connector_form = {
+                form_id: formOwner.id,
+                source_type: form.connector.sourceType,
+                status: form.connector.status || 'pending',
+                revision: form.draft!.revision,
+                values: Object.fromEntries(form.draft!.fields
+                    .filter(name => typeof values[name] === 'string').map(name => [name, values[name]])),
+            };
+        }
 
         if (isResume) {
             // Resume: just send the assembled prompt as user_question. The
@@ -1086,9 +1121,24 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (result.form.kind !== 'connector') {
                     throw new Error(`Unsupported form artifact kind: ${String(result.form.kind)}`);
                 }
-                const sourceType = String(result.form.connector?.source_type || '').trim();
-                if (!sourceType) {
-                    throw new Error('Connector form artifact requires source_type');
+                const existingFormId = result.form.form_id;
+                if (existingFormId && existingFormId !== requestBody.connector_form?.form_id) {
+                    throw new Error('Connector update targets a form outside this request');
+                }
+                const sourceType = String(result.form.connector?.source_type ?? (existingFormId ? requestBody.connector_form.source_type : '')).trim();
+                if (existingFormId) {
+                    if (result.form.connector) {
+                        dispatch(dfActions.selectConnectorFormSource({
+                            id: existingFormId, sourceType,
+                            title: String(result.form.title || 'Connect a data source'),
+                            fields: [], revision: result.form.revision,
+                            prefilled: result.form.connector.prefilled || {},
+                        }));
+                    } else dispatch(dfActions.patchConnectorDraft({
+                        id: existingFormId,
+                        revision: result.form.revision,
+                        values: result.form.patch || {},
+                    }));
                 }
                 const turnId = `textTurn_${actionId}_${String(Date.now())}`;
                 const firstEntry = currentDraftInteraction[0];
@@ -1101,15 +1151,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     ...(!runIsContinuationRef.current && firstEntry?.role === 'prompt'
                         ? { prompt: firstEntry.displayContent || firstEntry.content }
                         : {}),
-                    form: {
+                    ...(existingFormId ? { sourceFormId: existingFormId } : { form: {
                         kind: 'connector',
+                        draft: { revision: 0, fields: [], changedByAgent: [], conflict: false },
                         title: String(result.form.title || `Connect to ${sourceType}`),
                         connector: {
                             sourceType,
                             prefilled: result.form.connector?.prefilled || {},
                             status: 'pending',
                         },
-                    },
+                    } }),
                     parentNodeId: runLastNodeRef.current || askedFromTable || ROOTLESS_THREAD_ID,
                     ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
                     actionId,
@@ -1562,6 +1613,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             id: turnId,
                             displayId: turnId,
                             textKind: isExplainEvent ? 'explain' : 'clarify',
+                            ...(formOwner && !dataOperation && !lastCreatedTableId && !reportId ? { sourceFormId: formOwner.id } : {}),
                             content: dataOperation?.description || normalizedClarification.summary,
                             ...(!runIsContinuationRef.current && currentDraftInteraction[0]?.role === 'prompt' ? { prompt: currentDraftInteraction[0].displayContent || currentDraftInteraction[0].content } : {}),
                             ...(isExplainEvent ? {} : { options: normalizedClarification.questions }),
@@ -1625,6 +1677,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         displayId: turnId,
                         textKind: 'explain',
                         content: summary,
+                        ...(result.content?.presentation === 'long_response' ? { presentation: 'long_response' as const } : {}),
+                        ...(formOwner && !lastCreatedTableId && !reportId ? { sourceFormId: formOwner.id } : {}),
                         ...(foldPrompt ? { prompt: firstEntry.displayContent || firstEntry.content } : {}),
                         parentNodeId: runLastNodeRef.current || askedFromTable || ROOTLESS_THREAD_ID,
                         // Canvas provenance only when the run produced nothing of
@@ -1793,7 +1847,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
             }
         })();
-    }, [focusedTableId, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles]);
+    }, [focusedTableId, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles, attachmentUploads, canvasTarget, textTurns, connectorParams]);
 
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').
@@ -1812,7 +1866,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [agentHandoffRequest]);
 
     // ── Unified submit handler ───────────────────────────────────────
-    const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string) => {
+    const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string, explicitAttachments?: Parameters<typeof exploreFromChat>[3]) => {
         if (clarificationCtx) {
             // Build the structured response payload. The backend assembles
             // the final LLM-facing text ("Selected answers: 1. xxx; 2. yyy\n
@@ -1833,7 +1887,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // as `prompt` — it powers both the timeline bubble and the
             // user message appended to the trajectory on the backend.
             const displayPrompt = formatClarificationResponses(responses);
-            exploreFromChat(displayPrompt, clarificationCtx);
+            exploreFromChat(displayPrompt, clarificationCtx, undefined, explicitAttachments);
             return;
         }
         // A prompt submitted while a text turn is focused always continues
@@ -1852,10 +1906,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (focusedTurn) {
             if (!focusedTurn.answered) {
                 dispatch(dfActions.updateTextTurn({ id: focusedTurn.id, answered: true, answer: prompt }));
-                exploreFromChat(prompt, { parentNodeId: focusedTurn.id, isContinuation: true }, displayPrompt);
+                exploreFromChat(prompt, { parentNodeId: focusedTurn.id, isContinuation: true }, displayPrompt, explicitAttachments);
             } else {
-                exploreFromChat(prompt, { parentNodeId: focusedTurn.id, isContinuation: false }, displayPrompt);
+                exploreFromChat(prompt, { parentNodeId: focusedTurn.id, isContinuation: false }, displayPrompt, explicitAttachments);
             }
+            focusCanvasAfterReply();
             return;
         }
         if (conversationParentId) {
@@ -1866,14 +1921,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     answered: true,
                     answer: prompt,
                 }));
-                exploreFromChat(prompt, { parentNodeId: conversationParent.id, isContinuation: true }, displayPrompt);
+                exploreFromChat(prompt, { parentNodeId: conversationParent.id, isContinuation: true }, displayPrompt, explicitAttachments);
             } else {
-                exploreFromChat(prompt, { parentNodeId: conversationParentId, isContinuation: false }, displayPrompt);
+                exploreFromChat(prompt, { parentNodeId: conversationParentId, isContinuation: false }, displayPrompt, explicitAttachments);
             }
             return;
         }
-        exploreFromChat(prompt, undefined, displayPrompt);
-    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, focusedTableId, tables, textTurns, dispatch]);
+        exploreFromChat(prompt, undefined, displayPrompt, explicitAttachments);
+    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, focusedTableId, tables, textTurns, dispatch, focusCanvasAfterReply]);
 
     // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
     // with a prompt describing the captured workflow; we hand it straight to
@@ -1908,23 +1963,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return () => window.removeEventListener('df-replay-workflow', handler);
     }, [exploreFromChat, isChatFormulating, focusedTableId, dispatch, t]);
 
-    // Re-open an explanation clicked in the data thread. Long markdown uses
-    // the canvas; concise responses retain the compact panel above the input.
     useEffect(() => {
         const handler = (e: Event) => {
             const detail = (e as CustomEvent).detail as { content?: string; sourceTableId?: string; timestamps?: number[] } | undefined;
             if (detail?.content) {
-                if (shouldPreviewExplanationInCanvas(detail.content)) {
-                    setViewingExplanation(null);
-                    dispatch(dfActions.setFocused({
-                        type: 'explanation',
-                        content: detail.content,
-                        sourceTableId: detail.sourceTableId,
-                        timestamps: detail.timestamps,
-                    }));
-                } else {
-                    setViewingExplanation({ content: detail.content, sourceTableId: detail.sourceTableId, timestamps: detail.timestamps });
-                }
+                setViewingExplanation({ content: detail.content, sourceTableId: detail.sourceTableId, timestamps: detail.timestamps });
             }
         };
         window.addEventListener('df-view-explanation', handler);
@@ -1965,24 +2008,33 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // means there's nothing to send beyond clicks; the user must either
     // click the remaining options (which auto-submits) or type something.
     const canSend = React.useMemo(() => {
-        if (workspaceReadOnly) return false;
+        if (workspaceReadOnly || attachmentUploads > 0) return false;
         // No tables yet: the first ask is how data gets here.
         if (!focusedTableId && inputTables.length > 0) return false;
-        return chatPrompt.trim().length > 0;
-    }, [chatPrompt, focusedTableId, inputTables.length, workspaceReadOnly]);
+        return chatPrompt.trim().length > 0 || attachedImages.length > 0 || attachedFiles.length > 0;
+    }, [chatPrompt, focusedTableId, inputTables.length, workspaceReadOnly, attachmentUploads, attachedImages.length, attachedFiles.length]);
 
     // A prompt seeded from the landing box: send it once the chat is idle.
     // The ref makes this one-shot even if the effect is double-invoked before
     // the store update lands (StrictMode).
-    const seededPromptRef = useRef<string | null>(null);
+    const seededPromptRef = useRef<typeof analystChatPending>(null);
     useEffect(() => {
-        if (!analystChatPending || isChatFormulating) return;
-        const text = analystChatPending.text;
-        if (seededPromptRef.current === text) return;
-        seededPromptRef.current = text;
+        if (!analystChatPending) {
+            seededPromptRef.current = null;
+            return;
+        }
+        if (!analystChatPending || isChatFormulating || attachmentUploads > 0) return;
+        const { text, images, attachments } = analystChatPending;
+        if (seededPromptRef.current === analystChatPending) return;
+        seededPromptRef.current = analystChatPending;
         dispatch(dfActions.clearAnalystChatPending());
-        if (text.trim().length > 0) submitChat(text);
-    }, [analystChatPending, isChatFormulating, submitChat, dispatch]);
+        if (text.trim().length > 0 || images.length > 0 || attachments.length > 0) {
+            submitChat(text, undefined, undefined, {
+                images,
+                files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })),
+            });
+        }
+    }, [analystChatPending, isChatFormulating, attachmentUploads, submitChat, dispatch]);
 
     // Handle a single clicked option (or confirmed free-text) inside the
     // ClarificationPanel. We record the selection by question index — the
@@ -2083,7 +2135,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         ? explanationContent(focusedTextTurn.content)
         : '';
     const focusedTextTurnUsesCanvas = focusedTextTurn?.textKind === 'explain'
-        && shouldPreviewExplanationInCanvas(focusedTextTurnContent);
+        && !focusedTextTurn.form && !focusedTextTurn.dataOperation
+        && canvasTarget?.type === 'text' && canvasTarget.textId === focusedTextTurn.id
+        && focusedTextTurn.presentation === 'long_response';
     const focusedDraft = focusedId?.type === 'draft'
         ? draftNodes.find(draft => draft.id === focusedId.draftId
             && (draft.derive?.status === 'error' || draft.derive?.status === 'interrupted'))
@@ -2175,7 +2229,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 : {}),
         };
         exploreFromChat(displayPrompt, ctx);
-    }, [exploreFromChat, focusedTextTurn, dispatch]);
+        focusCanvasAfterReply();
+    }, [exploreFromChat, focusedTextTurn, dispatch, focusCanvasAfterReply]);
 
     // Record a clicked option / typed answer inside a FOCUSED clarify turn's
     // panel (design-docs/41). Mirrors handleSelectAnswer but works off the
@@ -2269,7 +2324,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 read-only (question → answer). Gated to not overlap the legacy
                 live pause. Stays visible while a run is in flight so the user
                 can keep reading what they focused. */}
-            {focusedTextTurn && !focusedTextTurnUsesCanvas && !pendingClarification && (
+            {focusedTextTurn && focusedId !== submittedPanelFocus && !focusedTextTurnUsesCanvas && !pendingClarification && (
                 (focusedTextTurn.textKind === 'clarify' && !focusedTextTurn.answered && focusedTextTurn.options && focusedTextTurn.options.length > 0) ? (
                     // Desaturated rather than dimmed — opacity would blend it
                     // toward the background and just read as dark.
@@ -2361,7 +2416,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         <Chip
                             key={`img-${idx}`}
                             size="small"
-                            icon={<Box component="img" src={attachedImages[idx]} sx={{ width: 14, height: 14, objectFit: 'cover', borderRadius: '2px' }} />}
+                            icon={<Box component="img" src={attachedImages[idx].url} sx={{ width: 14, height: 14, objectFit: 'cover', borderRadius: '2px' }} />}
                             label={`image${attachedImages.length > 1 ? idx + 1 : ''}`}
                             onDelete={() => setAttachedImages(prev => prev.filter((_, i) => i !== idx))}
                             sx={{
@@ -2550,7 +2605,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.06) },
                             }}
                         >
-                            <AddIcon sx={{ fontSize: iconVar.lg }} />
+                            {attachmentUploads > 0 ? <CircularProgress size={16} /> : <AddIcon sx={{ fontSize: iconVar.lg }} />}
                         </IconButton>
                     </Tooltip>
                 </Box>
@@ -2751,7 +2806,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // A form turn owns the canvas. Interacting with any field or
                 // control there must keep both the form and its feedback open;
                 // only either surface's explicit close button dismisses it.
-                if (focusedTextTurn?.form) return;
+                if (canvasTarget?.type === 'text'
+                    && textTurns.some(turn => turn.id === canvasTarget.textId && turn.form)) return;
                 // Long explanations also own the canvas. Clicking or selecting
                 // their document content must not be interpreted as dismissing
                 // the focused turn; the canvas close button owns that action.

@@ -15,20 +15,21 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CircularProgress, Collapse, Typography, alpha, useTheme } from '@mui/material';
+import { Box, Button, CircularProgress, Collapse, IconButton, Menu, MenuItem, Typography, alpha, useTheme } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import { useDispatch } from 'react-redux';
-import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
+import { Trans, useTranslation } from 'react-i18next';
 import { apiRequest } from '../app/apiClient';
 import { deriveConnectorDisplayName } from '../app/connectorNames';
 import { CONNECTOR_URLS } from '../app/utils';
-import { dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { iconVar, textVar } from '../app/layout';
 import { getConnectorIcon } from '../icons';
 import { DataLoaderForm } from '../views/DBTableManager';
+import { ConnectedSourceOverview } from './ConnectedSourceOverview';
 import type { ConnectorFormPrompt, ConnectorInstance, ConnectorAuthPath } from './ComponentType';
 
 interface LoaderMeta {
@@ -65,8 +66,14 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     const sourceType = prompt.sourceType;
     const isConnected = prompt.status === 'connected';
     const isBare = variant === 'bare';
+    const draftKey = onResolved ? `connector-form:${messageId}` : sourceType;
+    const currentParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[draftKey]);
+    const draft = useSelector((state: DataFormulatorState) => state.textTurns.find(turn => turn.id === messageId)?.form?.draft);
 
-    const [meta, setMeta] = useState<LoaderMeta | null>(null);
+    const [loaders, setLoaders] = useState<LoaderMeta[]>([]);
+    const meta = loaders.find(loader => loader.type === sourceType) || null;
+    const [connecting, setConnecting] = useState(false);
+    const [sourceMenuAnchor, setSourceMenuAnchor] = useState<HTMLElement | null>(null);
     const [metaError, setMetaError] = useState<string>('');
     const [loadingMeta, setLoadingMeta] = useState(true);
     const [expanded, setExpanded] = useState(defaultExpanded);
@@ -77,6 +84,11 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     const createdIdRef = useRef<string | null>(prompt.connectorId ?? null);
     const generatedNameRef = useRef(prompt.connectionName || '');
     const seededRef = useRef(false);
+    useEffect(() => {
+        seededRef.current = false;
+        createdIdRef.current = prompt.connectorId ?? null;
+        generatedNameRef.current = prompt.connectionName || '';
+    }, [sourceType, messageId]);
 
     // Fetch the connector's param/auth schema. The agent only sends the type;
     // the frontend owns the full field definitions (same source the Add
@@ -88,14 +100,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
         apiRequest<any>(CONNECTOR_URLS.DATA_LOADERS, { method: 'GET' })
             .then(({ data }) => {
                 if (cancelled) return;
-                const found = (data.loaders || []).find((l: LoaderMeta) => l.type === sourceType) || null;
-                if (!found) {
-                    setMetaError(t('chatConnector.unavailable', {
-                        type: sourceType,
-                        defaultValue: 'Connector "{{type}}" is not available in this deployment.',
-                    }));
-                }
-                setMeta(found);
+                setLoaders(data.loaders || []);
             })
             .catch(() => {
                 if (!cancelled) {
@@ -106,7 +111,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
             })
             .finally(() => { if (!cancelled) setLoadingMeta(false); });
         return () => { cancelled = true; };
-    }, [sourceType]);  
+    }, []);
 
     // Seed prefilled values once. Non-sensitive fields (host, port, database, …)
     // go into redux like any typed value. Sensitive fields are handled
@@ -115,19 +120,26 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     useEffect(() => {
         if (!meta || seededRef.current || isConnected) return;
         seededRef.current = true;
+        if (onResolved) {
+            dispatch(dfActions.initializeConnectorDraft({
+                id: messageId,
+                fields: meta.params.filter(param => !param.sensitive && param.type !== 'password').map(param => param.name),
+            }));
+        }
         const prefilled = prompt.prefilled || {};
         for (const [name, value] of Object.entries(prefilled)) {
             const def = meta.params.find(p => p.name === name);
             if (!def) continue;
             if (def.sensitive || def.type === 'password') continue;
+            if (currentParams?.[name] !== undefined) continue;
             if (value === undefined || value === null || value === '') continue;
             dispatch(dfActions.updateDataLoaderConnectParam({
-                dataLoaderType: sourceType,
+                dataLoaderType: draftKey,
                 paramName: name,
                 paramValue: String(value),
             }));
         }
-    }, [meta, isConnected, prompt.prefilled, sourceType, dispatch]);
+    }, [meta, isConnected, prompt.prefilled, draftKey, currentParams, onResolved, messageId, dispatch]);
 
     // Credentials the user shared with the agent (e.g. a password). Passed to
     // the form as a one-time seed for its transient sensitive state — never
@@ -155,18 +167,19 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
         const cid = prompt.connectorId;
         if (!cid) return;
         let cancelled = false;
+        setConnDetails([]);
         apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(({ data }) => {
                 if (cancelled) return;
                 const inst = (data.connectors || []).find((c: ConnectorInstance) => c.id === cid);
                 if (!inst) return;
                 const rows: Array<{ label: string; value: string }> = [
-                    { label: t('chatConnector.detailType', { defaultValue: 'type' }), value: inst.source_type },
+                    { label: t('chatConnector.detailType', { defaultValue: 'type' }), value: inst.type_name || inst.source_type },
                 ];
                 const pinned = inst.pinned_params || {};
                 for (const def of inst.params_form || []) {
                     if (def.sensitive || def.type === 'password') continue;
-                    const v = pinned[def.name];
+                    const v = pinned[def.name] ?? def.default;
                     if (v === undefined || v === null || String(v) === '') continue;
                     rows.push({ label: def.name, value: String(v) });
                 }
@@ -272,8 +285,17 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     ) : metaError ? (
         <Typography sx={{ fontSize: textVar.sm, color: 'error.main' }}>{metaError}</Typography>
     ) : meta ? (
+        <Box>
+        {draft?.conflict && <Typography role="alert" sx={{ fontSize: textVar.sm, color: 'warning.main', mb: 1 }}>
+            {t('chatConnector.editConflict', { defaultValue: 'Your newer edits were kept. Ask the agent to review the current form again.' })}
+        </Typography>}
+        {!!draft?.changedByAgent.length && <Typography role="status" sx={{ fontSize: textVar.sm, color: 'text.secondary', mb: 1 }}>
+            {t('chatConnector.agentUpdated', { defaultValue: 'Updated by agent: {{fields}}', fields: draft.changedByAgent.join(', ') })}
+        </Typography>}
         <DataLoaderForm
-            dataLoaderType={sourceType}
+            key={sourceType}
+            dataLoaderType={draftKey}
+            loaderType={sourceType}
             paramDefs={meta.params}
             authInstructions={meta.auth_instructions || ''}
             delegatedLogin={meta.delegated_login}
@@ -291,17 +313,69 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                 }));
             }}
             onConnected={handleConnected}
+            onBusyChange={setConnecting}
             onBeforeConnect={handleBeforeConnect}
             initialSensitiveParams={sensitivePrefill}
         />
+        </Box>
+    ) : sourceType ? (
+        <Typography color="error" sx={{ fontSize: textVar.sm }}>
+            {t('chatConnector.unavailable', { type: sourceType, defaultValue: 'Connector "{{type}}" is not available in this deployment.' })}
+        </Typography>
     ) : null;
+
+    const sourceSelector = <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
+        {getConnectorIcon(sourceType, { sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 } })}
+        <Typography component="div" sx={{ minWidth: 0,
+            fontSize: isBare ? textVar.lg : textVar.md, fontWeight: 600, lineHeight: 1.35 }}>
+            <Trans i18nKey="chatConnector.connectionHeading"
+                defaults="Connect to <connector>{{name}}</connector>"
+                values={{ name: meta?.name || sourceType || t('chatConnector.chooseSource', { defaultValue: 'a data source' }) }}
+                components={{ connector: <Button
+                    variant="text" disableRipple disabled={loadingMeta || connecting}
+                    aria-label={t('chatConnector.connectorType', { defaultValue: 'Connector' })}
+                    aria-haspopup="menu" aria-expanded={Boolean(sourceMenuAnchor)}
+                    aria-controls={sourceMenuAnchor ? `connector-menu-${messageId}` : undefined}
+                    onClick={event => setSourceMenuAnchor(event.currentTarget)}
+                    endIcon={<ExpandMoreIcon />}
+                    sx={{ minWidth: 0, maxWidth: '100%', p: 0,
+                        fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', lineHeight: 'inherit',
+                        letterSpacing: 'inherit', verticalAlign: 'baseline',
+                        textTransform: 'none', color: 'primary.main', textAlign: 'left',
+                        overflowWrap: 'anywhere', borderRadius: 0,
+                        '& .MuiButton-endIcon': { color: 'inherit', flexShrink: 0, ml: 0.5, mr: 0 },
+                        '&:hover, &.Mui-focusVisible': {
+                            bgcolor: 'transparent', textDecoration: 'underline', textUnderlineOffset: '3px',
+                        },
+                    }} /> }}
+            />
+        </Typography>
+        <Menu id={`connector-menu-${messageId}`} anchorEl={sourceMenuAnchor}
+            open={Boolean(sourceMenuAnchor)} onClose={() => setSourceMenuAnchor(null)}
+            slotProps={{ paper: { sx: { maxHeight: 360, maxWidth: 'calc(100vw - 32px)', minWidth: 220 } } }}>
+            {loaders.filter(loader => !['sample_datasets', 'local_folder'].includes(loader.type)).map(loader =>
+                <MenuItem key={loader.type} selected={loader.type === sourceType} disabled={connecting}
+                    onClick={() => {
+                        if (connecting) return;
+                        setSourceMenuAnchor(null);
+                        dispatch(dfActions.selectConnectorFormSource({
+                            id: messageId, sourceType: loader.type,
+                            title: t('chatConnector.connectTo', { name: loader.name, defaultValue: 'Connect to {{name}}' }),
+                            fields: loader.params.filter(param => !param.sensitive && param.type !== 'password').map(param => param.name),
+                        }));
+                    }} sx={{ gap: 1, whiteSpace: 'normal', overflowWrap: 'anywhere', fontSize: textVar.sm }}>
+                    {getConnectorIcon(loader.type, { sx: { fontSize: iconVar.md, color: 'text.secondary', flexShrink: 0 } })}
+                    {loader.name}
+                </MenuItem>)}
+        </Menu>
+    </Box>;
 
     // Connected: a compact, borderless button that expands to reveal the
     // connection's non-sensitive configuration (mirrors the code-block cards).
     if (isConnected) {
         const name = prompt.connectionName || meta?.name || sourceType;
         return (
-            <Box sx={{ mt: 1, maxWidth: 420 }}>
+            <Box sx={{ mt: 1, maxWidth: isBare ? '100%' : 420 }}>
                 <Box
                     onClick={() => setConnExpanded(e => !e)}
                     sx={{
@@ -345,19 +419,23 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                                 <Typography sx={{ fontSize: textVar.xs, color: 'text.primary' }}>{prompt.tableCount}</Typography>
                             </React.Fragment>
                         )}
-                        {connDetails.length === 0 && typeof prompt.tableCount !== 'number' && (
+                        {!isBare && connDetails.length === 0 && typeof prompt.tableCount !== 'number' && (
                             <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', gridColumn: '1 / -1' }}>
                                 {t('chatConnector.noDetails', { defaultValue: 'No additional details.' })}
                             </Typography>
                         )}
                     </Box>
                 </Collapse>
+                {isBare && prompt.connectorId && <ConnectedSourceOverview connectorId={prompt.connectorId} />}
             </Box>
         );
     }
 
     if (isBare) {
-        return <Box sx={{ width: '100%', minWidth: 0, position: 'relative' }}>{formBody}</Box>;
+        return <Box sx={{ width: '100%', minWidth: 0, position: 'relative' }}>
+            <Box sx={{ pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>{sourceSelector}</Box>
+            {formBody}
+        </Box>;
     }
 
     return (
@@ -366,20 +444,16 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
             <Box
                 sx={{
                     display: 'flex', alignItems: 'center', gap: 1,
-                    px: 1.5, py: 1, cursor: 'pointer',
+                    px: 1.5, py: 1,
                     bgcolor: alpha(theme.palette.primary.main, 0.04),
                     borderBottom: expanded ? `1px solid ${theme.palette.divider}` : 'none',
                 }}
-                onClick={() => setExpanded(e => !e)}
             >
-                {getConnectorIcon(sourceType, { sx: { fontSize: iconVar.lg, opacity: 0.7 } })}
-                <Typography sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1 }}>
-                    {t('chatConnector.connectTo', {
-                        name: meta?.name || sourceType,
-                        defaultValue: 'Connect to {{name}}',
-                    })}
-                </Typography>
+                {sourceSelector}
+                <IconButton size="small" onClick={() => setExpanded(current => !current)} aria-expanded={expanded}
+                    aria-label={t('chatConnector.toggleForm', { defaultValue: 'Toggle connection details' })}>
                 {expanded ? <ExpandLessIcon sx={{ fontSize: iconVar.lg, opacity: 0.6 }} /> : <ExpandMoreIcon sx={{ fontSize: iconVar.lg, opacity: 0.6 }} />}
+                </IconButton>
             </Box>
 
             <Collapse in={expanded} timeout="auto" unmountOnExit>

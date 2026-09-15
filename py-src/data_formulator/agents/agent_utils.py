@@ -77,7 +77,24 @@ def attach_reasoning_content(msg: dict, choice_message) -> dict:
     rc = getattr(choice_message, "reasoning_content", None)
     if rc is not None:
         msg["reasoning_content"] = rc
+    items = accumulate_reasoning_items([], choice_message)
+    if items:
+        msg["reasoning_items"] = items
     return msg
+
+
+def accumulate_reasoning_items(accumulated: list[dict], delta) -> list[dict]:
+    """Retain complete opaque reasoning items for replay, replacing repeated snapshots by ID."""
+    items = list(accumulated)
+    for incoming in getattr(delta, "reasoning_items", None) or []:
+        item = incoming.model_dump(exclude_none=True) if hasattr(incoming, "model_dump") else dict(incoming)
+        existing = next((index for index, previous in enumerate(items)
+                         if item.get("id") and previous.get("id") == item["id"]), None)
+        if existing is None:
+            items.append(item)
+        else:
+            items[existing] = item
+    return items
 
 
 def accumulate_reasoning_content(

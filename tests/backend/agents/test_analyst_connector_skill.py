@@ -69,7 +69,29 @@ def test_list_and_describe_connectors() -> None:
     assert "Call propose_connection now" in described["next_action"]
 
 
-def test_propose_connection_requires_listing_first() -> None:
+def test_read_and_update_existing_form_filters_secrets_and_checks_revision() -> None:
+    skill = _skill()
+    ctx = _context()
+    ctx.payload["connector_form"] = {"form_id": "form-1", "source_type": "postgresql", "revision": 3,
+                                     "values": {"host": "db.example.com", "password": "secret", "unknown": "value"}}
+    with patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True):
+        current = json.loads(skill.handle_tool("read_connector_form", {}, ctx).text)
+        assert current["values"] == {"host": "db.example.com"}
+        assert "secret" not in json.dumps(current)
+        events = list(skill.handle_action("update_connector_form", {
+            "form_id": "form-1", "revision": 3, "values": {"host": "new.example.com"},
+        }, ctx))
+        assert events[0]["form"]["form_id"] == "form-1"
+        assert events[0]["form"]["patch"] == {"host": "new.example.com"}
+        for spec in [
+            {"form_id": "form-1", "revision": 2, "values": {"host": "old"}},
+            {"form_id": "other", "revision": 3, "values": {"host": "other"}},
+            {"form_id": "form-1", "revision": 3, "values": {"password": "secret"}},
+        ]:
+            assert list(skill.handle_action("update_connector_form", spec, ctx)) == []
+
+
+def test_propose_connection_opens_without_listing_first() -> None:
     skill = _skill()
     ctx = _context()
     with patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True):
@@ -77,8 +99,26 @@ def test_propose_connection_requires_listing_first() -> None:
             "propose_connection", {"source_type": "postgresql"}, ctx,
         ))
 
-    assert events[0]["type"] == "error"
-    assert "list_connectors" in events[0]["message"]
+    assert events[0]["type"] == "interact"
+    assert events[0]["form"]["connector"]["source_type"] == "postgresql"
+
+
+def test_propose_connection_can_open_an_unselected_form() -> None:
+    events = list(_skill().handle_action("propose_connection", {}, _context()))
+    assert events[0]["form"]["title"] == "Connect a data source"
+    assert events[0]["form"]["connector"] == {"source_type": "", "prefilled": {}}
+
+
+def test_propose_connection_reuses_pending_form_when_switching_sources() -> None:
+    ctx = _context()
+    ctx.payload["connector_form"] = {
+        "form_id": "existing", "source_type": "", "revision": 2, "status": "pending",
+    }
+    with patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True):
+        events = list(_skill().handle_action("propose_connection", {"source_type": "postgresql"}, ctx))
+    assert events[0]["form"]["form_id"] == "existing"
+    assert events[0]["form"]["revision"] == 2
+    assert events[0]["form"]["connector"]["source_type"] == "postgresql"
 
 
 def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
@@ -100,7 +140,7 @@ def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
         "form": {
             "kind": "connector",
             "title": "Connect to PostgreSQL",
-            "response": "Complete the PostgreSQL connection form to add this data source.",
+            "response": "Choose a connector and review the connection details before connecting.",
             "connector": {
                 "source_type": "postgresql",
                 "prefilled": {"host": "db.example.com", "password": "secret"},

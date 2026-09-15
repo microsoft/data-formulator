@@ -161,6 +161,7 @@ const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
                 component="button"
                 type="button"
                 disabled={disabled}
+                aria-pressed={selected}
                 onClick={onClick}
                 sx={{
                     position: 'relative', zIndex: 1,
@@ -233,7 +234,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     questions,
     dataOperation,
     variant = 'clarify',
-    selectedAnswers,
+    selectedAnswers: controlledAnswers,
     onSelectAnswer,
     onClearAnswer,
     onSubmit,
@@ -248,10 +249,15 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // they answer. A question's own index holds its typed text; the sentinel
     // key -1 holds the explain variant's panel-level custom-followup override.
     const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
+    const [localAnswers, setLocalAnswers] = useState<Record<number, ClarificationResponse>>({});
+    const [hasUsedSkip, setHasUsedSkip] = useState(false);
+    const selectedAnswers = controlledAnswers ?? localAnswers;
 
     useEffect(() => {
         submittedRef.current = false;
         setFreeTexts({});
+        setLocalAnswers({});
+        setHasUsedSkip(false);
     }, [questions]);
 
     const setFreeText = (key: number, value: string) =>
@@ -298,7 +304,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // an unfinished typed answer. The button belongs to the panel, not a row.
     const hasFreeTextQuestion = !isExplain && questions.some(q => q.responseType === 'free_text');
     const anyTextTyped = questions.some((_q, idx) => (freeTexts[idx] || '').trim().length > 0);
-    const showPanelSubmit = !isExplain && (hasFreeTextQuestion || anyTextTyped);
+    const showPanelSubmit = !isExplain && (hasFreeTextQuestion || anyTextTyped || hasUsedSkip);
 
     // Gather the reply: each question's clicked option, else its typed
     // free-text; plus (explain only) the optional panel-level custom override.
@@ -326,6 +332,11 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // pick is invalidated the moment the user starts typing.
     const recordFreeText = (idx: number, value: string) => {
         setFreeText(idx, value);
+        setLocalAnswers(previous => {
+            const next = { ...previous };
+            delete next[idx];
+            return next;
+        });
         const typed = value.trim();
         if (typed) {
             onSelectAnswer?.(idx, { question_index: idx, answer: typed, source: 'free_text' }, false);
@@ -362,9 +373,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         // sits at the end of the input line via an InputAdornment for tight
         // spacing rather than floating in its own column.
         const hasTypedAnswer = (freeTexts[idx] || '').trim().length > 0;
+        const isSkipped = selectedAnswers[idx]?.source === 'skip';
         return (
             <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '8px', pr: '4px' }}>
-                <Box sx={{ flex: '0 1 auto', width: '100%', maxWidth: 320 }}>
+            <Box sx={{ flex: '0 1 auto', minWidth: 0, width: '100%', maxWidth: 320 }}>
                     <TextField
                         value={freeTexts[idx] || ''}
                         onChange={(e) => recordFreeText(idx, e.target.value)}
@@ -391,6 +403,45 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         sx={freeTextSx}
                     />
                 </Box>
+                {questions[idx]?.responseType === 'free_text' && <Button
+                    size="small"
+                    variant="text"
+                    color="inherit"
+                    aria-pressed={isSkipped}
+                    sx={{
+                        flexShrink: 0, minWidth: 0, fontSize: textVar.xs, mb: '2px',
+                        px: '8px', py: '4px', borderRadius: '6px', lineHeight: 1.4,
+                        border: `1px solid ${isSkipped ? alpha(accentColor, 0.6) : 'transparent'}`,
+                        color: isSkipped ? theme.palette.text.primary : theme.palette.text.secondary,
+                        fontWeight: isSkipped ? 600 : 400,
+                        backgroundColor: isSkipped ? alpha(accentColor, 0.12) : 'transparent',
+                        textDecoration: 'none',
+                        '&:hover': {
+                            backgroundColor: isSkipped ? alpha(accentColor, 0.16) : 'transparent',
+                            textDecoration: 'none',
+                        },
+                    }}
+                    onClick={() => {
+                        setHasUsedSkip(true);
+                        setFreeText(idx, '');
+                        if (isSkipped) {
+                            setLocalAnswers(previous => {
+                                const next = { ...previous };
+                                delete next[idx];
+                                return next;
+                            });
+                            onClearAnswer?.(idx);
+                        } else {
+                            const response: ClarificationResponse = {
+                                question_index: idx, answer: t('chartRec.skipAnswer'), source: 'skip',
+                            };
+                            setLocalAnswers(previous => ({ ...previous, [idx]: response }));
+                            onSelectAnswer?.(idx, response, false);
+                        }
+                    }}
+                >
+                    {t('chartRec.skipAnswer')}
+                </Button>}
                 {trailing && <Box sx={{ flexShrink: 0, mb: '2px', ml: 'auto' }}>{trailing}</Box>}
             </Box>
         );
@@ -460,7 +511,12 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
             setFreeText(response.question_index, '');
         }
         if (onSelectAnswer) {
-            onSelectAnswer(response.question_index, response);
+            if (showPanelSubmit) onSelectAnswer(response.question_index, response, false);
+            else onSelectAnswer(response.question_index, response);
+            return;
+        }
+        if (showPanelSubmit) {
+            setLocalAnswers(previous => ({ ...previous, [response.question_index]: response }));
             return;
         }
         submitResponses([response]);

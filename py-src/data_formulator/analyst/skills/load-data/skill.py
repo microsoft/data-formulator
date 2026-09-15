@@ -47,6 +47,8 @@ class LoadDataSkill:
             result = self._list_connectors(ctx)
         elif name == "describe_connector":
             result = self._describe_connector(args)
+        elif name == "read_connector_form":
+            result = self._read_connector_form(ctx)
         else:
             result = {"error": f"load-data has no tool '{name}'."}
         return ToolResult(text=json.dumps(result, ensure_ascii=False, default=str))
@@ -61,6 +63,8 @@ class LoadDataSkill:
             return (yield from self._propose_data_operation(spec, ctx))
         if action == "propose_connection":
             return (yield from self._propose_connection(spec, ctx))
+        if action == "update_connector_form":
+            return (yield from self._update_connector_form(spec, ctx))
         message = f"load-data has no committing action '{action}' in this phase."
         yield {
             "type": "error",
@@ -76,6 +80,47 @@ class LoadDataSkill:
             return bool(current_app.config.get("CLI_ARGS", {}).get("disable_data_connectors"))
         except Exception:
             return False
+
+    def _read_connector_form(self, ctx: SkillContext) -> dict[str, Any]:
+        if self._connectors_disabled():
+            return {"error": _CONNECTORS_DISABLED_NOTE}
+        snapshot = ctx.payload.get("connector_form")
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("form_id"), str):
+            return {"error": "No connector form is currently targeted. Use propose_connection to open one."}
+        schema = self._describe_connector({"source_type": snapshot.get("source_type")})
+        if "error" in schema:
+            return schema
+        revision = snapshot.get("revision")
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+            return {"error": "The form has no valid revision. Reopen it before editing."}
+        values = snapshot.get("values") or {}
+        if not isinstance(values, dict):
+            return {"error": "Invalid form values."}
+        fields = [param for param in schema["params"] if not param["sensitive"]]
+        return {"form_id": snapshot["form_id"], "source_type": schema["type"], "revision": revision,
+                "status": snapshot.get("status", "pending"), "fields": fields,
+                "values": {param["name"]: values[param["name"]] for param in fields
+                           if isinstance(values.get(param["name"]), str)},
+                "credential_fields": [param["name"] for param in schema["params"] if param["sensitive"]]}
+
+    def _update_connector_form(self, spec: dict[str, Any], ctx: SkillContext) -> Generator[Event, None, str | None]:
+        current = self._read_connector_form(ctx)
+        if "error" in current:
+            return current["error"]
+        if (spec.get("form_id") != current["form_id"] or spec.get("revision") != current["revision"]
+                or current["status"] == "connected"):
+            return "The form is changed, connected, or not targeted. Read the current form before editing."
+        changes = spec.get("values")
+        allowed = {param["name"] for param in current["fields"]}
+        if not isinstance(changes, dict) or not changes or any(
+                name not in allowed or not isinstance(value, str) for name, value in changes.items()):
+            return "Only known non-sensitive form fields can be edited. Enter credentials directly in the form."
+        yield {"type": "interact", "form": {
+            "kind": "connector", "form_id": current["form_id"], "revision": current["revision"],
+            "patch": changes,
+            "response": str(ctx.payload.get("action_narration") or "Review the updated connection form before connecting."),
+        }}
+        return None
 
     @staticmethod
     def _skill_state(ctx: SkillContext) -> dict[str, Any]:
@@ -175,15 +220,12 @@ class LoadDataSkill:
         if self._connectors_disabled():
             yield {"type": "error", "message": _CONNECTORS_DISABLED_NOTE, "message_code": "agent.connectorsDisabled"}
             return _CONNECTORS_DISABLED_NOTE
-        if not self._skill_state(ctx).get(_CONNECTORS_LISTED_KEY):
-            message = "Call list_connectors before propose_connection."
-            yield {"type": "error", "message": message, "message_code": "agent.invalidConnector"}
-            return message
-
         from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
-        source_type = str(spec.get("source_type") or "").strip()
-        if source_type not in DATA_LOADERS or source_type == "sample_datasets":
+        current_form = ctx.payload.get("connector_form") or {}
+        reuse_form = isinstance(current_form, dict) and current_form.get("status") == "pending" and bool(current_form.get("form_id"))
+        source_type = str(spec.get("source_type") or (current_form.get("source_type") if reuse_form else "") or "").strip()
+        if source_type and (source_type not in DATA_LOADERS or source_type == "sample_datasets"):
             hint = DISABLED_LOADERS.get(source_type)
             message = f"Connector {source_type!r} is unavailable" + (f" (needs: {hint})." if hint else ".")
             yield {"type": "error", "message": message, "message_code": "agent.invalidConnector"}
@@ -197,18 +239,19 @@ class LoadDataSkill:
                 for key, value in prefilled_raw.items()
                 if value not in (None, "")
             }
-        display_name = DATA_LOADERS[source_type].DISPLAY_NAME or source_type
+        display_name = (DATA_LOADERS[source_type].DISPLAY_NAME or source_type) if source_type else None
         response = str(ctx.payload.get("action_narration") or "").strip()
         yield {
             "type": "interact",
             "thought": spec.get("thought", ""),
             "form": {
                 "kind": "connector",
-            "title": f"Connect to {display_name}",
-            "response": response or f"Complete the {display_name} connection form to add this data source.",
+                **({"form_id": current_form["form_id"], "revision": current_form["revision"]} if reuse_form else {}),
+                "title": f"Connect to {display_name}" if display_name else "Connect a data source",
+                "response": response or "Choose a connector and review the connection details before connecting.",
                 "connector": {
                     "source_type": source_type,
-                    "prefilled": prefilled,
+                    "prefilled": prefilled if source_type else {},
                 },
             },
         }

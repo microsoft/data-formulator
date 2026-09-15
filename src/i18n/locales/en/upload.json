@@ -54,8 +54,8 @@
     "dataSourcesLabel": "Connected to:",
     "addSourceLabel": "Add data:",
     "agentChatQuickAction": {
-      "connect": "Help me connect my data source",
-      "askConnected": "What data are available from my sources?"
+      "connect": "Guide me to connect a data source",
+      "askConnected": "List tables from my connected sources"
     },
     "agentChatSuggestion": {
       "askConnected": "What datasets do we have from connected sources?",

@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ClarificationPanel } from '../../../../src/views/AgentPausePanel';
 import { parseDataOperation } from '../../../../src/dataOperations/models';
+import type { ClarificationResponse } from '../../../../src/components/ComponentType';
 
 vi.mock('react-i18next', () => ({
   // The panel now lives in `AgentPausePanel.tsx` which transitively pulls
@@ -13,6 +14,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, any>) => {
       const labels: Record<string, string> = {
+        'chartRec.skipAnswer': 'Skip',
         'chartRec.clarificationTitle': 'Agent needs clarification',
         'chartRec.clarificationQuestionLabel': `${params?.index}.`,
         'chartRec.optionalClarification': '(optional)',
@@ -31,6 +33,51 @@ vi.mock('react-i18next', () => ({
 }));
 
 describe('ClarificationPanel', () => {
+  it('allows skipping, editing, and submitting a free-text answer alongside a choice', () => {
+    const onSubmit = vi.fn();
+    const questions = [
+      { text: 'Anything else?', responseType: 'free_text' as const },
+      { text: 'Which metric?', responseType: 'single_choice' as const, options: [{ label: 'Revenue' }] },
+    ];
+    const Harness = () => {
+      const [answers, setAnswers] = React.useState<Record<number, ClarificationResponse>>({});
+      return <ClarificationPanel questions={questions} onSubmit={onSubmit} onClose={() => {}}
+        {...{
+          selectedAnswers: answers,
+          onSelectAnswer: (index: number, response: ClarificationResponse, autoSubmit = true) => {
+            expect(autoSubmit).toBe(false);
+            setAnswers(previous => ({ ...previous, [index]: response }));
+          },
+          onClearAnswer: (index: number) => setAnswers(previous => {
+            const next = { ...previous }; delete next[index]; return next;
+          }),
+        }} />;
+    };
+    render(<Harness />);
+    const skip = screen.getByRole('button', { name: 'Skip' });
+    const submit = screen.getByRole('button', { name: 'chartRec.submitClarification' });
+    fireEvent.click(skip);
+    expect(skip).toHaveAttribute('aria-pressed', 'true');
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Revenue' }));
+    expect(submit).toBeEnabled();
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(skip);
+    expect(submit).toBeDisabled();
+    const input = screen.getByPlaceholderText('Type your answer...');
+    fireEvent.change(input, { target: { value: 'Draft answer' } });
+    fireEvent.click(skip);
+    expect(input).toHaveValue('');
+    fireEvent.change(input, { target: { value: 'Revised answer' } });
+    expect(skip).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(skip);
+    fireEvent.click(submit);
+    expect(onSubmit).toHaveBeenCalledWith([
+      { question_index: 0, source: 'skip', answer: 'Skip' },
+      { question_index: 1, source: 'option', answer: 'Revenue' },
+    ]);
+  });
+
   const operation = parseDataOperation({
     schema_version: 1,
     id: 'operation-1',

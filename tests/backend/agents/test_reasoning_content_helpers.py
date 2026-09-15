@@ -8,6 +8,7 @@ import pytest
 from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     accumulate_reasoning_content,
+    accumulate_reasoning_items,
 )
 
 
@@ -36,6 +37,19 @@ class _FakeDelta:
 # ---------------------------------------------------------------------------
 
 class TestAttachReasoningContent:
+    def test_opaque_reasoning_snapshots_survive_stream_and_message_reconstruction(self):
+        from types import SimpleNamespace
+
+        initial = {"type": "reasoning", "id": "rs_test", "summary": []}
+        complete = {**initial, "encrypted_content": "opaque-test"}
+        items = accumulate_reasoning_items([], SimpleNamespace(reasoning_items=[initial]))
+        updated = accumulate_reasoning_items(items, SimpleNamespace(reasoning_items=[complete]))
+        assert items == [initial]
+        assert updated == [complete]
+        assert accumulate_reasoning_items(updated, SimpleNamespace()) == updated
+        message = attach_reasoning_content({"role": "assistant"}, SimpleNamespace(reasoning_items=updated))
+        assert message["reasoning_items"] == [complete]
+
     def test_present(self):
         msg = {"role": "assistant", "content": "hi"}
         result = attach_reasoning_content(msg, _FakeMessage(reasoning_content="think"))

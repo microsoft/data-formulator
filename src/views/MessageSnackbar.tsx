@@ -436,19 +436,12 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                     variant="standard"
                     sx={{
                         width: '100%', maxHeight: 'min(60vh, 560px)', overflow: 'auto',
-                        alignItems: 'flex-start',
-                        border: `1px solid ${alpha(theme.palette[latestMessage.type].main, 0.24)}`,
-                        borderRadius: radius.md,
-                        boxShadow: shadow.xl,
                         '& .MuiAlert-message': { width: '100%', minWidth: 0 },
                     }}
                 >
-                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mb: 0.25 }}>
-                        {latestMessage.component} · {formatTimestamp(latestMessage.timestamp)}
-                    </Typography>
-                    <Typography sx={{ fontSize: textVar.xs, color: 'text.primary', overflowWrap: 'anywhere' }}>
+                    <Box sx={{ overflowWrap: 'anywhere' }}>
                         {latestMessage.value}
-                    </Typography>
+                    </Box>
                     {latestMessage.detail && (
                         <Typography sx={{
                             mt: 0.75, pt: 0.75,

@@ -547,6 +547,7 @@
     "hidePanel": "hide concept panel"
   },
   "chartRec": {
+    "skipAnswer": "Skip",
     "generateFromDescription": "Generate chart from description",
     "getSomeIdeas": "Get some ideas!",
     "ideasPrompt": "ideas?",

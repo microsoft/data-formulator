@@ -57,6 +57,145 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     data_formulator --dev   # Backend only (for frontend development)
     ```
 
+### Azure CLI Deployment Discovery
+
+In local mode, choose **Add Model > Azure > Azure CLI**, sign in, and select
+**Browse deployments**. The picker defaults to the CLI's current subscription
+and lists ready OpenAI model deployments grouped by resource. Selecting a
+deployment fills in its endpoint and deployment name; **Test and save** checks
+inference access using the existing Azure identity configuration.
+
+Discovery uses read-only Azure CLI commands with explicit subscription arguments;
+it does not change the active CLI subscription, create deployments, or retrieve
+API keys. No additional app registration or Python package is required.
+
+The initial picker supports public Azure OpenAI and Foundry (`AIServices`)
+resources in enabled subscriptions in the current CLI tenant. It does not list
+the undeployed Foundry catalog, other model formats, or sovereign-cloud endpoints.
+To change tenant, sign in with the intended tenant through Azure CLI and reopen
+the model dialog. Resource/deployment read permissions are separate from inference
+permissions. Partial discovery failures are shown per resource. **Enter manually**
+remains available for restricted discovery, unsupported endpoints, and custom
+configurations. Network restrictions still apply to inference.
+
+### OpenRouter Account Connection
+
+In Select Model, choose **Add Model > OpenRouter > Connect OpenRouter**. Authorization
+uses OpenRouter's OAuth PKCE flow; no application client secret is needed. After
+authorization, choose a tool-capable model and use **Test and save**. Model tests
+and subsequent usage are billed to the user's OpenRouter account.
+
+The returned API key stays in the backend's encrypted credential vault. Model
+configurations, including knowledge-distillation requests and workspace exports,
+carry only a per-user connection reference. One OpenRouter account connection can
+serve multiple models. Removing a model does not disconnect the account.
+**Disconnect** forgets the saved key locally; revoke it separately in OpenRouter's
+key settings when needed. Reconnect starts a new authorization flow rather than
+refreshing a subscription token.
+
+Local loopback callback origins are supported in local mode, including Vite's dev
+port. Hosted deployments require HTTPS. When a reverse proxy changes the apparent
+origin, set `MODEL_CONNECTION_ALLOWED_ORIGINS` to the exact public frontend origin
+(comma-separated for multiple origins). The frontend origin must route
+`/api/model-endpoints/connections/openrouter/callback` to this backend. Authorization
+state expires after ten minutes and is bound to the initiating Data Formulator
+identity, so callbacks also work when opened in an external browser.
+
+The credential vault must be available; it is currently disabled when data
+connectors are disabled. Persist `DATA_FORMULATOR_HOME` and its vault key across
+restarts. If `DF_ALLOWED_API_BASES` is configured, include
+`https://openrouter.ai/api/v1` to permit inference through this connection.
+
+### GitHub Copilot Account Connection (Experimental)
+
+In Select Model, choose **Add Model > Sign in > GitHub Copilot > Connect GitHub
+Copilot**. Copy the displayed device code, open GitHub, and authorize the account.
+After authorization, select a compatible model and choose **Test and save**. Testing
+and subsequent agent requests consume the account's Copilot allowance; subscription
+limits, model access, and organization policies still apply. This is not GitHub
+Models or an API-key integration.
+
+Device authorization uses the same default public OAuth client ID as LiteLLM's
+Copilot adapter. `GITHUB_COPILOT_CLIENT_ID` can override it, but an arbitrary OAuth
+app is not guaranteed Copilot entitlement. The adapter uses Copilot internal token
+exchange endpoints and client headers; this is not a claim of official GitHub
+support for third-party subscription clients. Review applicable GitHub terms and
+organization policies before enabling it in a deployment.
+
+Data Formulator stores the GitHub OAuth token and expiring Copilot token in its
+identity-scoped encrypted vault. Device polling honors the provider interval and
+`slow_down`; cancellation and expiry prevent a late exchange from saving tokens.
+Copilot tokens are refreshed when resolving a connection for a new inference client
+or model refresh. The frontend and saved model configurations receive no tokens.
+Multiple saved models can share one connection; **Edit > Disconnect** forgets that
+connection locally without deleting the models or revoking GitHub authorization.
+Revocation is available separately in GitHub's application settings.
+
+The installed LiteLLM `github_copilot/` adapter ignores explicit API keys and reads
+a shared on-disk cache. Data Formulator therefore uses LiteLLM's OpenAI-compatible
+transport with explicit vault-resolved credentials and Copilot headers instead.
+It does not read or write LiteLLM's Copilot token files or launch terminal login.
+The picker includes enabled tool-calling chat models advertising
+`/chat/completions` or `/responses`. The backend caches each model's transport in
+the account connection when the catalog is refreshed; models advertising both
+keep Chat Completions. Responses-only models use the Responses transport. Models
+advertising only native protocols such as `/v1/messages` remain excluded.
+
+### ChatGPT Account Connection (Experimental)
+
+In Select Model, choose **Add Model > Sign in > ChatGPT > Sign in with ChatGPT**.
+Enable device-code login in ChatGPT security settings, then enter the displayed
+code on OpenAI's authorization page. Select an account model and choose **Test
+and save**. Testing and agent requests use the account's subscription allowance;
+model availability, usage limits, and applicable OpenAI terms still apply. This
+is separate from OpenAI API-key access and does not provide API credits.
+
+OAuth access and refresh tokens stay in Data Formulator's identity-scoped encrypted
+vault. The browser and saved models hold only a connection reference. Tokens are
+refreshed when resolving a new inference client or loading the model catalog.
+**Edit > Disconnect** deletes the local connection while retaining saved models;
+manage authorization separately in ChatGPT settings.
+
+The pinned LiteLLM version's native ChatGPT adapter uses a shared token file by
+default. The small `agents/chatgpt_transport.py` compatibility override replaces
+its config factories with request-authenticated subclasses, without global tokens,
+environment changes, or token files. Native ChatGPT request transformation,
+Responses streaming, and response parsing remain in LiteLLM. Revalidate this
+override when upgrading LiteLLM. The integration uses ChatGPT's Codex backend and
+model catalog, which can change independently of the public OpenAI API; it is not
+a claim of official support for third-party subscription clients.
+
+### Model Client Transports
+
+Agents use the same `Client.get_completion` and `get_completion_with_tools`
+methods for both transports. `Client` dispatches internally to Chat Completions
+or LiteLLM's Responses bridge, returning chat-style messages and streaming deltas.
+The provider model identity is unchanged; bridge-specific prefixes and parameter
+mapping are confined to the transport implementation.
+
+Backend OpenAI and Azure configurations can select `api_type: "responses"` or
+`api_type: "chat_completions"`; omitting it preserves existing LiteLLM routing.
+This is a backend configuration option, not a new control in the model dialog.
+Copilot resolves the value from its server-side catalog, overriding caller input.
+Refresh the model list to pick up changed Copilot capabilities.
+
+Explicit Responses requests use `store: false` and request encrypted reasoning
+items for replay in locally managed message history. Both streaming agent loops
+retain these opaque items without rendering them as user-visible text. The
+transport supports text and function tools, not provider-hosted tools or
+background Responses jobs. It does not retry failed generation on a different
+transport. Live provider behavior, billing, and immediate upstream cancellation
+still require integration testing; the network-free tests verify protocol
+conversion, tool turns, reasoning replay, streaming, usage, and failure handling.
+
+The encrypted vault must be enabled and persisted as described above. No callback
+URL is needed for device authorization. Outbound access is required to
+`github.com`, `api.github.com`, and the Copilot API. Only these API bases are accepted:
+`https://api.githubcopilot.com`, `https://api.individual.githubcopilot.com`,
+`https://api.business.githubcopilot.com`, and `https://api.enterprise.githubcopilot.com`.
+Include the applicable bases in `DF_ALLOWED_API_BASES` when that allowlist is enabled.
+Custom GitHub Enterprise hosts are not supported by this initial implementation.
+
 ## Frontend (TypeScript)
 
 - **Install NPM packages**  
@@ -137,6 +276,80 @@ package. The alias is wired in `vite.config.ts` and `vitest.config.ts`.
 
     Open [http://localhost:5567](http://localhost:5567) to view it in the browser.
 
+
+## Desktop installer validation
+
+The `desktop builds` GitHub Actions workflow builds **unsigned test artifacts**.
+Validate this path before integrating production signing. Windows installers
+must be built and exercised on Windows; a successful macOS build is not Windows
+installation evidence. Use a disposable Windows 11 x64 user account with an
+interactive desktop, PowerShell 7, Inno Setup 6, Node/Yarn, and uv:
+
+```powershell
+yarn install --frozen-lockfile
+yarn build
+uv sync --extra desktop --frozen
+uv run pytest tests/backend/test_desktop_packaging.py tests/backend/test_startup_spinner.py tests/backend/test_desktop_single_instance.py -q
+uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir release -Unsigned
+```
+
+The wrapper emits a versioned `*-Setup-unsigned.exe`, SHA-256 sidecar, and
+`.payload.json` file manifest. Keep the manifest beside the installer when running
+the installed-app test (substitute the generated filename):
+
+```powershell
+./packaging/windows/test-installer.ps1 -Installer 'release/Data-Formulator-0.8.0b1-Windows-x64-Setup-unsigned.exe'
+```
+
+The test refuses to replace an existing installed app. It checks payload hashes,
+native GUI/backend/sandbox startup, same-version reinstall, uninstall, and
+retention of isolated application data. Logs and installation timing are saved
+under `build/installer-test`; GitHub CI uploads them even when a step fails.
+Different-version upgrade and browser-download acceptance remain separate tests.
+Setup rejects destinations that would exceed the supported payload path length
+before writing application files; use `/DIR="a shorter per-user path"` if needed.
+The installed-app test covers this failure path as well as normal installation.
+
+Setup installs per-user, preserves `DATA_FORMULATOR_HOME`/`~/.data_formulator`,
+and provisions Microsoft's WebView2 Runtime if absent (network access required
+in that case). Silent setup/uninstall supports
+`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="path"` in the intended user context.
+Uninstall does not remove user data or the shared WebView2 Runtime.
+
+Unsigned Windows installers are CI artifacts, not automatically published release
+assets. Production signing must cover the application, setup, and generated
+uninstaller before repeating validation on the actual browser download. Do not
+use manual unblocking or antivirus exclusions to declare a release usable.
+
+For ADO task-based signing, the wrapper supports three explicit phases around an
+already-signed payload. These replace an inline `-SignCommand`; do not combine
+them with `-Unsigned`:
+
+```powershell
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir candidate -SigningPhase PrepareUninstaller -SignedUninstallerDir build/signed-uninstaller
+# ESRP signs the single generated EXE in build/signed-uninstaller.
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir candidate -SigningPhase AssembleInstaller -SignedUninstallerDir build/signed-uninstaller
+# ESRP signs the generated candidate/*-Setup.exe.
+./packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir candidate -SigningPhase VerifyInstaller
+```
+
+Use an empty per-candidate cache and identical compiler/version/icon settings for
+preparation and assembly. The preparation phase recognizes only Inno's documented
+request to externally sign the generated uninstaller; other compilation failures
+are fatal. Assembly verifies the cached uninstaller but does not emit release
+checksums. Final verification requires valid payload signatures and timestamped
+Microsoft signatures on the launcher/setup before emitting checksum and manifest
+sidecars. Run `test-installer.ps1 -RequireSignatures` on the resulting installer
+before any promotion; this also verifies the installed uninstaller.
+
+On a service-session ADO agent, `test-installer.ps1 -ValidationMode Headless`
+can exercise installation, signatures, payload integrity, sandbox/CLR, reinstall,
+and uninstall without an interactive desktop. This is **candidate-only**
+validation: `installation.json` records `guiVerified: false`, and the GUI report
+explicitly records that it was skipped. Full validation remains the default.
+Publish headless results only as distinctly labeled candidate artifacts; require
+full interactive and browser-download acceptance before release promotion.
 
 ## Docker
 

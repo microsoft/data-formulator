@@ -110,7 +110,8 @@ export interface ModelConfig {
     api_base?: string;
     api_version?: string;
     /** Non-sensitive server hint describing how a global model authenticates. */
-    auth_mode?: 'key' | 'azure_identity';
+    auth_mode?: 'key' | 'azure_identity' | 'account';
+    connection_id?: string;
     /** True for models configured server-side via .env. Their credentials never leave the server. */
     is_global?: boolean;
 }
@@ -127,9 +128,6 @@ export type FocusedId =
     | undefined;
 
 export const explanationContent = (content: string) => content;
-
-export const shouldPreviewExplanationInCanvas = (content: string) =>
-    content.length > 1000 || content.split('\n').length > 14;
 
 export const DEFAULT_ROW_LIMIT = 2_000_000;
 
@@ -1964,6 +1962,11 @@ export const dataFormulatorSlice = createSlice({
             let dataLoaderType = action.payload.dataLoaderType;
             let params = action.payload.params;
             state.dataLoaderConnectParams[dataLoaderType] = params;
+            const form = state.textTurns.find(turn => `connector-form:${turn.id}` === dataLoaderType)?.form;
+            if (form?.draft) {
+                form.draft.revision += 1;
+                form.draft.changedByAgent = [];
+            }
         },
         updateDataLoaderConnectParam: (state, action: PayloadAction<{dataLoaderType: string, paramName: string, paramValue: string}>) => {
             let dataLoaderType = action.payload.dataLoaderType;
@@ -1973,6 +1976,11 @@ export const dataFormulatorSlice = createSlice({
             let paramName = action.payload.paramName;
             let paramValue = action.payload.paramValue;
             state.dataLoaderConnectParams[dataLoaderType][paramName] = paramValue;
+            const form = state.textTurns.find(turn => `connector-form:${turn.id}` === dataLoaderType)?.form;
+            if (form?.draft) {
+                form.draft.revision += 1;
+                form.draft.changedByAgent = form.draft.changedByAgent.filter(name => name !== paramName);
+            }
         },
         deleteDataLoaderConnectParams: (state, action: PayloadAction<string>) => {
             let dataLoaderType = action.payload;
@@ -2188,6 +2196,52 @@ export const dataFormulatorSlice = createSlice({
             const turn = state.textTurns.find(a => a.id === id);
             if (turn) Object.assign(turn, patch);
         },
+        selectConnectorFormSource: (state, action: PayloadAction<{ id: string; sourceType: string; title: string; fields: string[]; revision?: number; prefilled?: Record<string, string> }>) => {
+            const { id, sourceType, title, fields } = action.payload;
+            const turn = state.textTurns.find(item => item.id === id);
+            const message = state.dataLoadingChatMessages.find(item => item.id === id);
+            const connector = turn?.form?.connector || message?.connectorForm;
+            if (turn?.form?.draft && action.payload.revision !== undefined && turn.form.draft.revision !== action.payload.revision) {
+                turn.form.draft.conflict = true;
+                return;
+            }
+            if (!connector || connector.status === 'connected' || connector.sourceType === sourceType) return;
+            connector.sourceType = sourceType;
+            delete connector.prefilled;
+            if (action.payload.prefilled) connector.prefilled = action.payload.prefilled;
+            delete connector.connectorId;
+            delete connector.connectionName;
+            if (turn?.form) {
+                turn.form.title = title;
+                turn.form.draft = {
+                    revision: (turn.form.draft?.revision ?? 0) + 1,
+                    fields, changedByAgent: [], conflict: false,
+                };
+                delete state.dataLoaderConnectParams[`connector-form:${id}`];
+            }
+        },
+        initializeConnectorDraft: (state, action: PayloadAction<{ id: string; fields: string[] }>) => {
+            const form = state.textTurns.find(turn => turn.id === action.payload.id)?.form;
+            if (!form || form.connector.status === 'connected') return;
+            if (!form.draft) form.draft = { revision: 0, fields: [], changedByAgent: [], conflict: false };
+            form.draft.fields = action.payload.fields;
+        },
+        patchConnectorDraft: (state, action: PayloadAction<{ id: string; revision: number; values: Record<string, string> }>) => {
+            const { id, revision, values } = action.payload;
+            const form = state.textTurns.find(turn => turn.id === id)?.form;
+            if (!form?.draft || form.connector.status === 'connected') return;
+            if (form.draft.revision !== revision) {
+                form.draft.conflict = true;
+                return;
+            }
+            const key = `connector-form:${id}`;
+            const params = state.dataLoaderConnectParams[key] ??= {};
+            const fields = Object.keys(values).filter(name => form.draft!.fields.includes(name) && typeof values[name] === 'string');
+            for (const name of fields) params[name] = values[name];
+            form.draft.revision += 1;
+            form.draft.changedByAgent = fields;
+            form.draft.conflict = false;
+        },
         removeTextTurn: (state, action: PayloadAction<string>) => {
             const turnId = action.payload;
             const turn = state.textTurns.find(a => a.id === turnId);
@@ -2205,6 +2259,10 @@ export const dataFormulatorSlice = createSlice({
                 || state.textTurns.some(child => child.parentNodeId === turnId)
             );
             state.textTurns = state.textTurns.filter(a => a.id !== turnId);
+            delete state.dataLoaderConnectParams[`connector-form:${turnId}`];
+            for (const remaining of state.textTurns) {
+                if (remaining.sourceFormId === turnId) delete remaining.sourceFormId;
+            }
             if (parentTurn?.answered && parentTurn.answer && !hasSiblingTurns && !hasProducedArtifacts) {
                 parentTurn.answered = false;
                 delete parentTurn.answer;
@@ -2792,9 +2850,11 @@ export const dfSelectors = {
             const art = textTurns.find(a => a.id === focusedTextId);
             if (!art) return undefined;
             if (art.dataOperation || art.form) return { type: 'text', textId: art.id };
-            if (art.textKind === 'explain'
-                && shouldPreviewExplanationInCanvas(explanationContent(art.content))) {
+            if (art.textKind === 'explain' && art.presentation === 'long_response') {
                 return { type: 'text', textId: art.id };
+            }
+            if (art.sourceFormId && textTurns.some(turn => turn.id === art.sourceFormId && turn.form)) {
+                return { type: 'text', textId: art.sourceFormId };
             }
             if (art.sourceChartId
                 && [...userCharts, ...triggerCharts].some(c => c.id === art.sourceChartId)) {

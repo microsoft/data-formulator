@@ -546,6 +546,7 @@
     "hidePanel": "कॉन्सेप्ट पैनल छिपाएं"
   },
   "chartRec": {
+    "skipAnswer": "छोड़ें",
     "generateFromDescription": "विवरण से चार्ट उत्पन्न करें",
     "getSomeIdeas": "कुछ विचार प्राप्त करें!",
     "ideasPrompt": "विचार?",

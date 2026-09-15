@@ -83,10 +83,10 @@ def test_registry_exposes_discovery_tools_only_after_load_data_skill() -> None:
     assert "delegate" not in registry.metas["meta"].action_names
     meta = registry.metas["load-data"]
     assert meta.always_on is False
-    assert meta.action_names == ("propose_data_operation", "propose_connection")
+    assert meta.action_names == ("propose_data_operation", "propose_connection", "update_connector_form")
     assert meta.tool_names == (
         "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
-        "list_connectors", "describe_connector",
+        "list_connectors", "describe_connector", "read_connector_form",
     )
     assert registry.tools_for(["meta"]) != registry.tools_for(["meta", "load-data"])
     assert {
@@ -146,7 +146,7 @@ def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_name
     agent._loaded_skills = {"meta"}
 
     assert agent._loaded_skills == {"meta"}
-    assert agent._legal_actions() == frozenset({"visualize", "ask_user"})
+    assert agent._legal_actions() == frozenset({"visualize", "ask_user", "long_response"})
     handlers = agent._loaded_skill_tool_map()
     assert isinstance(handlers["execute_python_script"], AnalysisSkill)
     assert isinstance(handlers["list_workspace_items"], WorkspaceSkill)
@@ -155,7 +155,6 @@ def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_name
     assert "# Analysis" in prompt
     assert "# Workspace" in prompt
     assert "# Visualization" in prompt
-    assert "# Interaction" in prompt
 
 
 def test_tool_progress_args_are_useful_and_credential_safe() -> None:
@@ -450,6 +449,7 @@ def test_discovery_parameter_contract_matches_standalone_agent() -> None:
     skill_specs = {
         spec["function"]["name"]: executable_schema(spec["function"]["parameters"])
         for spec in registry.tools_for(["load-data"])
+        if spec["function"]["name"] != "read_connector_form"
     }
     standalone_specs = {
         spec["function"]["name"]: executable_schema(spec["function"]["parameters"])

@@ -14,6 +14,12 @@ import {
 } from '../../../../src/app/clarification';
 
 describe('clarification helpers', () => {
+  it('normalizes legacy multiple-choice questions to single choice without truncating options', () => {
+    const options = ['North', 'South', 'East', 'West', 'Central'];
+    const normalized = normalizeClarifyEvent({ questions: [{ text: 'Choose regions', responseType: 'multiple_choice', options }] });
+    expect(normalized.questions[0].responseType).toBe('single_choice');
+    expect(normalized.questions[0].options?.map(option => option.label)).toEqual(options);
+  });
   it('normalizes structured clarify events and translates backend codes', () => {
     const normalized = normalizeClarifyEvent({
       type: 'clarify',

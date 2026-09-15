@@ -768,7 +768,7 @@ export const DataFormulatorFC = ({ }) => {
                     onDragEnd={(sizes) => { setSashDragging(false); snapToColumns(sizes); }}
                     proportionalLayout={false}
                 >
-                    <Allotment.Pane minSize={paneWidth(1)} 
+                    <Allotment.Pane key="thread" minSize={paneWidth(1)} 
                             preferredSize={paneWidth(preferredColumns)} 
                             // Uncapped with the canvas away, so the thread can take
                             // the whole surface. Must be an explicit Infinity:
@@ -776,9 +776,11 @@ export const DataFormulatorFC = ({ }) => {
                             maxSize={canvasOpen ? paneWidth(columnCap) : Number.POSITIVE_INFINITY} snap={false}>
                         {threadPanel}
                     </Allotment.Pane>
-                    <Allotment.Pane minSize={tokens.canvas.min} visible={canvasOpen}>
-                        {canvasPanel}
-                    </Allotment.Pane>
+                    {canvasTarget && (
+                        <Allotment.Pane key="canvas" minSize={tokens.canvas.min} visible={canvasOpen}>
+                            {canvasPanel}
+                        </Allotment.Pane>
+                    )}
                 </Allotment>
             </Box>
         </Box>

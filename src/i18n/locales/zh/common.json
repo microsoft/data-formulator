@@ -602,6 +602,7 @@
     "hidePanel": "隐藏概念面板"
   },
   "chartRec": {
+    "skipAnswer": "跳过",
     "generateFromDescription": "根据描述生成图表",
     "getSomeIdeas": "获取一些灵感！",
     "ideasPrompt": "灵感？",

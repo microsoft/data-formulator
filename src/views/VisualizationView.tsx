@@ -350,15 +350,16 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
             return (
                 <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
                     <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+                        {form.connector.status === 'connected' && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
                             {getConnectorIcon(form.connector.sourceType, {
                                 sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 },
                             })}
                             <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, lineHeight: 1.35 }}>
                                 {form.title}
                             </Typography>
-                        </Box>
+                        </Box>}
                         <ConnectorFormCard
+                            key={turn.id}
                             messageId={turn.id}
                             prompt={form.connector}
                             variant="bare"
@@ -370,6 +371,7 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                                     form: {
                                         kind: 'connector',
                                         title: form.title,
+                                        draft: form.draft,
                                         connector: {
                                             sourceType: form.connector.sourceType,
                                             status: resolution.status,
@@ -1790,7 +1792,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
         : undefined;
     const focusedExplanationTurn = focusedId?.type === 'text'
-        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain')
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain' && !turn.form && !turn.dataOperation)
         : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {

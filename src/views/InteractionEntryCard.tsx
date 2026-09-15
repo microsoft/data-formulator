@@ -3,9 +3,10 @@
 
 import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Box, Collapse, Typography, useTheme } from '@mui/material';
+import { Box, Collapse, Tooltip, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -18,6 +19,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import WbIncandescentIcon from '@mui/icons-material/WbIncandescent';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { InteractionEntry } from '../components/ComponentType';
 import { AgentIcon } from '../icons';
@@ -308,6 +310,11 @@ export interface InteractionEntryCardProps {
     onClick?: (entry: InteractionEntry) => void;
 }
 
+const isExploreIdeasEntry = (entry: InteractionEntry) =>
+    entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')
+    && Object.keys(i18n.store.data).some(language =>
+        entry.content === i18n.getResource(language, 'translation', 'chartRec.exploreIdeasPrompt'));
+
 export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({ entry, highlighted = false, resolved = false, onClick }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -320,11 +327,13 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     // User prompts and user instructions — card with custom palette
     if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
         const palette = theme.palette.custom;
+        const isExploreIdeas = isExploreIdeasEntry(entry);
+        if (isExploreIdeas && !entry.attachments?.length) return null;
         // Provenance for multi-input derivations is rendered as a structural
         // "merge node" in the timeline gutter (see DataThread), so the
         // instruction card itself stays free of chip-strip chrome.
         return (
-            <Box onClick={handleClick} sx={{
+            <Box onClick={isExploreIdeas ? undefined : handleClick} sx={{
                 fontSize: textVar.xs,
                 color: theme.palette.text.primary,
                 py: 0.5, px: 1,
@@ -340,11 +349,16 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 overflowY: 'auto',
                 overscrollBehavior: 'contain',
                 ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
+                ...(isExploreIdeas ? {
+                    width: 'fit-content', maxWidth: '100%',
+                    p: 0, border: 'none', borderRadius: 0,
+                    backgroundColor: 'transparent',
+                } : {}),
                 ...clickSx,
             }}>
-                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                {!isExploreIdeas && <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                     {renderFieldHighlights(text, palette.main)}
-                </Typography>
+                </Typography>}
                 {entry.attachments && entry.attachments.length > 0 && (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px', mt: 0.5 }}>
                         {entry.attachments.map((name, i) => (
@@ -766,6 +780,13 @@ ResolvedConversationCard.displayName = 'ResolvedConversationCard';
 /** Returns the appropriate gutter icon for an InteractionEntry. */
 export function getEntryGutterIcon(entry: InteractionEntry, color: string): React.ReactNode {
     const iconSx = { width: 18, height: 18, color };
+    if (isExploreIdeasEntry(entry)) {
+        return (
+            <Tooltip title={i18n.t('chartRec.askedForRecommendations')}>
+                <WbIncandescentIcon role="img" aria-label={i18n.t('chartRec.askedForRecommendations')} sx={{ ...iconSx, transform: 'rotate(180deg)' }} />
+            </Tooltip>
+        );
+    }
     if (entry.from === 'user') {
         return <PersonIcon sx={iconSx} />;
     }

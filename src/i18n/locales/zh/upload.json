@@ -54,8 +54,8 @@
     "dataSourcesLabel": "已连接：",
     "addSourceLabel": "添加数据：",
     "agentChatQuickAction": {
-      "connect": "帮我连接数据源",
-      "askConnected": "我的数据源中有哪些可用数据？"
+      "connect": "引导我连接数据源",
+      "askConnected": "列出已连接数据源中的表"
     },
     "agentChatSuggestion": {
       "askConnected": "已连接的数据源里有哪些数据集？",

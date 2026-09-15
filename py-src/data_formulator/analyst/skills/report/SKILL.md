@@ -5,9 +5,10 @@ description: >-
   report — note, blog post, executive summary, KPI dashboard, slide brief, or
   multi-section analytical report, with embedded charts.
 when_to_use: >-
-  The user asks to write up / summarize / report on what they explored, or
-  wants a shareable narrative document built from the charts and findings in
-  the data thread. Not for producing a single new chart (use visualize).
+  The user requests a report deliverable or a shareable narrative document
+  built from charts and findings in the data thread. Not for an ordinary
+  answer or summary, even if it needs expansion (follow the meta response rules),
+  or for producing a single new chart (use visualize).
 always_on: false
 tools:
   - inspect_chart

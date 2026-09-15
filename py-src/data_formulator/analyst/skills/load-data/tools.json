@@ -2,6 +2,30 @@
   {
     "type": "function",
     "function": {
+      "name": "read_connector_form",
+      "description": "Read the currently targeted connector form artifact, its revision, schema and non-sensitive user-edited values. Credentials are never returned.",
+      "parameters": { "type": "object", "properties": {}, "required": [] }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_connector_form",
+      "description": "Patch the existing form artifact after reading it. Preserve unrelated fields; never connect, save credentials, or create a replacement form. Pause for user review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": { "type": "string" },
+          "revision": { "type": "integer", "minimum": 0 },
+          "values": { "type": "object", "additionalProperties": { "type": "string" } }
+        },
+        "required": ["form_id", "revision", "values"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "summarize_data_sources",
       "description": "Return a bounded overview of every connected data source: hierarchy stats, top-level items, branch-diverse sample tables, and explicit omitted counts. Use this first for broad questions about what data is available.",
       "parameters": { "type": "object", "properties": {}, "required": [] }
@@ -134,7 +158,7 @@
     "type": "function",
     "function": {
       "name": "list_connectors",
-      "description": "List connector types available in this deployment. Call this before propose_connection because built-ins, plugins, and missing dependencies vary by deployment. If the user's requested type is present, you MUST call propose_connection in the same turn; do not merely say you will open a form.",
+      "description": "List connector types available in this deployment when you need to look up a type key or answer a question about supported sources. Not required to open the connection form: propose_connection can show the selector directly.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -159,7 +183,7 @@
     "type": "function",
     "function": {
       "name": "propose_connection",
-      "description": "REQUIRED terminal action when the user wants an available connector and its source_type is known. This is the only operation that opens the user-confirmed add-connector form on the canvas. Call list_connectors first. Prefill only values the user supplied; never invent credentials or connect automatically.",
+      "description": "Open the user-confirmed connection form with a connector selector. Call immediately when the user wants to connect a source, even if its type is unknown; omit source_type to let the user choose in the form. No prior discovery call is required. Provide a known source_type to preselect it. Never invent credentials or connect automatically.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -170,7 +194,7 @@
             "additionalProperties": {}
           }
         },
-        "required": ["source_type"]
+        "required": []
       }
     }
   },

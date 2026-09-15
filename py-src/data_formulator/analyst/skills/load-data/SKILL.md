@@ -18,9 +18,8 @@ tools:
    - probe_data
    - list_connectors
    - describe_connector
-actions:
-  - propose_data_operation
-  - propose_connection
+   - read_connector_form
+actions: [propose_data_operation, propose_connection, update_connector_form]
 ---
 
 # Load data
@@ -62,12 +61,26 @@ Use `ask_user` only for a choice that remains necessary after discovery.
 
 ## Adding a connector
 
+A connector form is a persistent canvas artifact, not a question or explanation.
+When helping with an existing form, first call `read_connector_form`. It returns
+the request-time snapshot of user-edited non-sensitive fields and a revision.
+Refer to that artifact in your explanation; do not open a duplicate form or ask
+the user to repeat values already present. To fill or correct fields, call
+`update_connector_form` with its exact form ID and revision and only the fields
+that need changing. Use known values from the user or verified setup information;
+never invent hostnames or credentials. The UI rejects stale edits if the user
+changes the draft during your request. Read again on the next turn after a conflict.
+Credentials are entered directly in the secure form, never read or edited by
+these operations. An update only changes the draft; the user must click Connect.
+
 When the user wants to connect a new source, do not merely ask them to navigate
 to settings and do not attempt to connect on their behalf.
 
-1. Call `list_connectors` first because available built-ins and plugins vary by
-   deployment. For a broad request such as "help me connect", summarize the
-   concrete available types and ask which one they use.
+1. For a broad request such as "help me connect", call `propose_connection({})`
+   immediately. The form contains a connector selector; do not ask a separate
+   source-type question. No discovery call is required to open it. Use
+   `list_connectors` only when you need to look up a type key or answer a question
+   about supported connectors.
 2. Once the source type is known, call `describe_connector` when field or auth
    details are useful.
 3. **When the requested source type is known and available, you MUST call
@@ -80,6 +93,11 @@ to settings and do not attempt to connect on their behalf.
    connection string or config snippet. Never invent missing values.
 4. The form is only a proposal. The user reviews it and clicks Connect; the
    action must never connect automatically.
+
+When the user requests a different connector while a pending form is targeted,
+call `propose_connection` with the new source type. It reuses that form and resets
+its fields. With no source type, it keeps the current choice. For edits within
+the same connector, use `read_connector_form` and `update_connector_form` instead.
 
 Prefilled values may include credentials the user deliberately supplied. Do not
 repeat those values in prose or subsequent tool output. They are transient form

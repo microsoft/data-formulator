@@ -44,6 +44,7 @@ import pandas as pd
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import (
     accumulate_reasoning_content,
+    accumulate_reasoning_items,
     attach_reasoning_content,
     ensure_output_variable_in_code,
 )
@@ -234,54 +235,27 @@ You are an autonomous data analyst agent.
 Your goal is to help the user by exploring their data, producing visualizations,
 and — when asked — packaging the findings (e.g. into a written report). You
 operate in a loop: gather what you need with inspection tools, take an **action**
-when you want to act on the data, read its result, and repeat — then stop by
-giving your final answer in plain text.
+when ready, read its result, and repeat until the task is complete.
 
 ## Tools vs. actions
 
 Everything you do is a function/tool call, but calls come in two kinds and
 keeping them straight is essential:
 
-- **Inspection tools** (internal — for gathering information). Functions like
-  `execute_python_script`, `inspect_source_data`, `inspect_chart`, and `load_skill` that
-  inspect data or load instructions *before* you act. Their results return to
-  you and are **not** shown to the user. They commit nothing and are
-  **independent** — none depends on another's result — so call as many as you
-  need, across as many rounds as you need, until you have enough to act.
-- **Actions** (committing — shown to the user). A discrete operation like
-  `visualize`, `ask_user`, `delegate`, and (once the report skill is loaded)
-  `write_report`. Each renders a user-visible surface, and its result is
-  returned to you just like a tool result so you can react to it.
+- **Inspection tools** gather information or load instructions. Their results
+    return to you, not as user-facing answers. Use as many inspection rounds as
+    needed; group independent calls and wait for results before dependent calls.
+- **Actions** produce user-visible results. Nonterminal actions return a result
+    for you to inspect; terminal actions finish or pause the run as documented by
+    their owning skill.
 
-**Actions are sequential — take exactly one, then wait for its result.** This is
-the key difference from inspection tools: those are independent, but each
-action's result shapes your next decision — the chart you'd draw next depends on
-what this one reveals — so choosing two at once would make the second a blind
-guess, decided before you've seen the first's outcome. Do all your inspection
-first, then commit the single action that fits.
+**Actions are sequential: take exactly one, then inspect its result before
+choosing another.** If you emit several actions at once, only the first runs
+and the rest are discarded.
 
-Treat each action like one turn in a back-and-forth: **you act → its result
-answers → you act again.** Even when you're planning a sequence of charts,
-surface them one at a time so each reacts to the last. (If you do emit several
-actions at once, only the first runs and the rest are discarded — batching only
-loses work.)
-
-**To finish, reply with plain text and no action.** Plain text is your
-**closing answer** — the run is over and you expect nothing further (the user's
-next message starts a fresh turn). Use it whenever you've done what was asked,
-including answering a question you fully resolved.
-
-**Whenever you expect the user to reply — a question, a clarification, or a set
-of choices — use the `ask_user` action instead.** It renders a question widget
-and pauses the run for their reply, so the conversation resumes in the same
-turn. `ask_user` accepts free-text questions (no clickable options required), so
-reach for it for *any* followup-seeking turn, not only structured choices. Keep
-your reasoning and explanations in your reply text, not inside `ask_user`. Plain
-text never asks for input; `ask_user` always does. There is no separate "stop"
-or "summary" action: you stop by simply not acting.
-
-The concrete actions available to you — and how to use each well — are
-described in the capability sections below.
+Plain text without an action ends the run. The always-loaded meta skill
+defines when to answer in plain text, deliver an expanded answer, or ask for a
+reply. Follow each capability's instructions for choosing and using its actions.
 
 ## Understanding your context
 
@@ -308,8 +282,6 @@ execute — you'll be asked to load it first. Extension skills available this ru
 
 - You have a budget of **{max_iterations} actions** for this run — a **hard
     ceiling, not a target**.
-- Match the response depth to the user's request. Create charts that materially
-    contribute to the answer, and stop when the answer is sufficient.
 
 {agent_exploration_rules}"""
 
@@ -433,6 +405,7 @@ class AnalystAgent:
         charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
         conversation_id: str = "",
+        connector_form: dict[str, Any] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -471,11 +444,14 @@ class AnalystAgent:
         # (e.g. the report skill rebuilds [AVAILABLE CHARTS] + thread
         # context).
         self._loaded_skills = self._initial_loaded_skills(workspace_inputs)
+        if connector_form:
+            self._loaded_skills.add("load-data")
         self._run_payload = {
             "input_tables": input_tables,
             "workspace_inputs": workspace_inputs,
             "scratch_files": list(scratch_files or []),
             "charts": charts or [],
+            "connector_form": connector_form,
             "focused_thread": focused_thread,
             "other_threads": other_threads,
             "primary_tables": primary_tables,
@@ -2117,6 +2093,7 @@ class AnalystAgent:
 
         content_parts: list[str] = []
         reasoning_acc: str | None = None
+        reasoning_items: list[dict] = []
         finish_reason = "stop"
         # idx -> {"id", "name", "arguments"}
         tool_calls_acc: dict[int, dict[str, Any]] = {}
@@ -2134,6 +2111,7 @@ class AnalystAgent:
                 finish_reason = choice0.finish_reason
 
             reasoning_acc = accumulate_reasoning_content(reasoning_acc, delta)
+            reasoning_items = accumulate_reasoning_items(reasoning_items, delta)
 
             content = getattr(delta, "content", None)
             if content:
@@ -2168,6 +2146,7 @@ class AnalystAgent:
             content="".join(content_parts) or None,
             tool_calls=tool_call_objs or None,
             reasoning_content=reasoning_acc,
+            reasoning_items=reasoning_items,
         )
         choice = SimpleNamespace(message=message, finish_reason=finish_reason)
         return SimpleNamespace(choices=[choice])

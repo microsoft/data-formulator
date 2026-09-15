@@ -19,7 +19,7 @@ import re
 import pandas as pd
 
 from data_formulator.agent_config import reasoning_effort_for
-from data_formulator.agents.agent_utils import accumulate_reasoning_content
+from data_formulator.agents.agent_utils import accumulate_reasoning_content, accumulate_reasoning_items
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
@@ -981,6 +981,7 @@ class DataLoadingAgent:
             tool_calls_acc = {}  # id -> {name, arguments_str}
             current_text = []
             accumulated_reasoning = None
+            reasoning_items = []
             finish_reason = None
 
             for chunk in response:
@@ -994,6 +995,7 @@ class DataLoadingAgent:
                 accumulated_reasoning = accumulate_reasoning_content(
                     accumulated_reasoning, delta
                 )
+                reasoning_items = accumulate_reasoning_items(reasoning_items, delta)
 
                 # Stream text tokens
                 if hasattr(delta, 'content') and delta.content:
@@ -1027,6 +1029,8 @@ class DataLoadingAgent:
             assistant_msg = {"role": "assistant", "content": "".join(current_text) or None}
             if accumulated_reasoning is not None:
                 assistant_msg["reasoning_content"] = accumulated_reasoning
+            if reasoning_items:
+                assistant_msg["reasoning_items"] = reasoning_items
             assistant_msg["tool_calls"] = []
             for idx in sorted(tool_calls_acc.keys()):
                 tc = tool_calls_acc[idx]

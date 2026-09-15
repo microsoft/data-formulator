@@ -117,6 +117,12 @@ class KustoDataLoader(ExternalDataLoader):
                 "required_fields": [],
                 "kind": "ambient",
                 "default": not microsoft_sign_in,
+                "cli_login": {
+                    "provider": "azure",
+                    "label": "Sign in with Azure CLI",
+                    "status_url": "/api/local/azure-status",
+                    "login_url": "/api/local/azure-login",
+                },
             },
             {
                 "id": "service_principal",

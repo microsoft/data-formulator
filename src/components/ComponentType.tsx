@@ -70,7 +70,7 @@ export interface ClarificationResponse {
     answer: string;
     /** Opaque selected option value; never rendered as the user's answer. */
     value?: string;
-    source: 'option' | 'free_text' | 'freeform';
+    source: 'option' | 'free_text' | 'freeform' | 'skip';
 }
 
 /** Legacy persisted value retained only for rendering historical sessions. */
@@ -148,6 +148,7 @@ export interface TextTurn {
     displayId: string;
     /** clarify carries `options`; explain has none. */
     textKind: 'clarify' | 'explain';
+    presentation?: 'long_response';
     /** Markdown: the question preamble, or the answer. */
     content: string;
     /** The user message that triggered this turn (shown with the card so the
@@ -159,6 +160,7 @@ export interface TextTurn {
     dataOperation?: DataOperation;
     /** A user-confirmed form artifact that owns the canvas while focused. */
     form?: FormArtifact;
+    sourceFormId?: string;
     /** True once the user has responded to THIS clarify — it then locks
      *  (read-only). A later response is a *new* conversation, not a re-answer. */
     answered?: boolean;
@@ -283,6 +285,12 @@ export interface ConnectorFormArtifact {
     kind: 'connector';
     title: string;
     connector: ConnectorFormPrompt;
+    draft?: {
+        revision: number;
+        fields: string[];
+        changedByAgent: string[];
+        conflict: boolean;
+    };
 }
 
 /** Canvas-owning form artifacts. Add future form kinds to this union. */

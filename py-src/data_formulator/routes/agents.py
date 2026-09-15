@@ -221,6 +221,10 @@ def get_client(model_config, trusted=False):
         if isinstance(model_config[key], str):
             model_config[key] = model_config[key].strip()
 
+    if not trusted:
+        from data_formulator.routes.model_endpoints import resolve_model_connection
+        model_config = resolve_model_connection(model_config)
+
     # Validate caller-provided api_base against the allowlist (SSRF
     # protection).  Registry configs are exempt because their api_base is set
     # by the operator's env vars, not by a request.
@@ -240,6 +244,8 @@ def get_client(model_config, trusted=False):
         model_config.get("api_key") or None,
         model_config.get("api_base") or None,
         model_config.get("api_version") or None,
+        api_type=model_config.get("api_type"),
+        chatgpt_account_id=model_config.get("chatgpt_account_id"),
     )
 
     return client
@@ -618,6 +624,7 @@ def analyst_streaming():
                 charts=charts,
                 scratch_files=scratch_files,
                 conversation_id=conversation_id,
+                connector_form=content.get("connector_form"),
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 
