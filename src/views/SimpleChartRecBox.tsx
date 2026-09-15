@@ -2018,7 +2018,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // The ref makes this one-shot even if the effect is double-invoked before
     // the store update lands (StrictMode).
     const seededPromptRef = useRef<typeof analystChatPending>(null);
-    useEffect(() => {
+    React.useLayoutEffect(() => {
         if (!analystChatPending) {
             seededPromptRef.current = null;
             return;

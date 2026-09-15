@@ -2,6 +2,7 @@ from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
+from azure.kusto.data._models import KustoResultTable
 
 from data_formulator.data_loader.kusto_data_loader import (
     KustoDataLoader,
@@ -17,6 +18,34 @@ def _loader() -> KustoDataLoader:
     loader.kusto_cluster = "https://example.kusto.windows.net"
     loader.kusto_database = "analytics"
     return loader
+
+
+@pytest.mark.parametrize("column_type", ["float", "real", "double"])
+def test_query_converts_floating_point_result_types(column_type: str) -> None:
+    loader = _loader()
+    loader.client.execute.return_value = Mock(primary_results=[KustoResultTable({
+        "Columns": [
+            {"ColumnName": "metric", "ColumnType": column_type},
+            {"ColumnName": "label", "ColumnType": "string"},
+        ],
+        "Rows": [
+            [1.25, "finite"],
+            [None, "null"],
+            ["NaN", "nan"],
+            ["Infinity", "positive"],
+            ["-Infinity", "negative"],
+        ],
+    })])
+
+    frame = loader.query("Metrics | take 10")
+
+    assert str(frame["metric"].dtype) == "Float64"
+    assert frame["metric"].iloc[0] == 1.25
+    assert pd.isna(frame["metric"].iloc[1])
+    assert pd.isna(frame["metric"].iloc[2])
+    assert frame["metric"].iloc[3] == float("inf")
+    assert frame["metric"].iloc[4] == float("-inf")
+    assert frame["label"].tolist() == ["finite", "null", "nan", "positive", "negative"]
 
 
 def test_connection_uses_direct_sdk_probe() -> None:

@@ -348,16 +348,10 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                 );
             }
             return (
-                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
-                    <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
-                        {form.connector.status === 'connected' && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
-                            {getConnectorIcon(form.connector.sourceType, {
-                                sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 },
-                            })}
-                            <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, lineHeight: 1.35 }}>
-                                {form.title}
-                            </Typography>
-                        </Box>}
+                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: form.connector.status === 'connected' ? 'hidden' : 'auto', bgcolor: 'background.default' }}>
+                    <Box sx={{ width: '100%', maxWidth: form.connector.status === 'connected' ? 'none' : 624,
+                        height: form.connector.status === 'connected' ? '100%' : 'auto', mx: 'auto',
+                        px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
                         <ConnectorFormCard
                             key={turn.id}
                             messageId={turn.id}

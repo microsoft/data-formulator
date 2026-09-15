@@ -22,6 +22,8 @@ it('shows cached catalog metadata first and only requests a bounded preview afte
     vi.mocked(apiRequest).mockImplementation(async url => {
         if (url === CONNECTOR_ACTION_URLS.GET_CATALOG_TREE) return { data: { tree: [
             { name: 'Events', node_type: 'table', path: ['db', 'Events'], metadata: { row_count: 100 } },
+            { name: 'EventsArchive', node_type: 'table', path: ['db', 'EventsArchive'], metadata: { row_count: 100 } },
+            { name: 'Users', node_type: 'table', path: ['db', 'Users'], metadata: null },
         ] } } as any;
         return { data: { columns: [{ name: 'value', type: 'number' }], rows: [{ value: 1 }], total_row_count: 100 } } as any;
     });
@@ -29,12 +31,36 @@ it('shows cached catalog metadata first and only requests a bounded preview afte
     render(<Provider store={store}><ConnectedSourceOverview connectorId="source" /></Provider>);
     const table = await screen.findByRole('button', { name: 'Events' });
     expect(vi.mocked(apiRequest).mock.calls).toHaveLength(1);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search tables' }), { target: { value: 'Events' } });
+    const catalog = screen.getByRole('navigation', { name: 'Tables' });
     fireEvent.click(table);
     await screen.findByText('Preview: 1 / 100');
+    expect(screen.queryByRole('navigation', { name: 'Tables' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Previous table' })).toBeDisabled();
     const previewCall = vi.mocked(apiRequest).mock.calls.find(([url]) => url === CONNECTOR_ACTION_URLS.PREVIEW_DATA)!;
     expect(JSON.parse(String(previewCall[1]?.body))).toEqual({
-        connector_id: 'source', source_table: { id: 'Events', name: 'Events' }, limit: 10,
+        connector_id: 'source', source_table: { id: 'Events', name: 'Events' }, limit: 50,
     });
+    fireEvent.click(screen.getByRole('tab', { name: 'Columns' }));
+    expect(screen.getByRole('tabpanel', { name: 'Columns' })).toBeTruthy();
+    expect(screen.getByRole('rowheader', { name: 'value' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+    expect(screen.getByText('db / Events')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Sample data' }));
+    expect(screen.getByRole('tabpanel', { name: 'Sample data' })).toBeTruthy();
+    expect(vi.mocked(apiRequest).mock.calls).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Next table' }));
+    await screen.findByText('Preview: 1 / 100');
+    expect(screen.getByRole('heading', { name: 'EventsArchive' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next table' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous table' }));
+    await screen.findByText('Preview: 1 / 100');
+    expect(screen.getByRole('heading', { name: 'Events' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to tables' }));
+    expect(screen.getByRole('navigation', { name: 'Tables' })).toBe(catalog);
+    expect(screen.getByRole('textbox', { name: 'Search tables' })).toHaveValue('Events');
+    expect(screen.queryByRole('region', { name: 'Table details' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Users' })).toBeNull();
     fireEvent.change(screen.getByRole('textbox', { name: 'Search tables' }), { target: { value: 'absent' } });
     expect(screen.queryByRole('button', { name: 'Events' })).toBeNull();
 });

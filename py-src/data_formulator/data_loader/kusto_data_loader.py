@@ -20,7 +20,7 @@ from data_formulator.data_loader.external_data_loader import ExternalDataLoader,
 from data_formulator.data_loader import probe_utils
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRequestProperties
-from azure.kusto.data.helpers import dataframe_from_result_table
+from azure.kusto.data.helpers import dataframe_from_result_table, parse_float
 
 logger = logging.getLogger(__name__)
 
@@ -326,7 +326,10 @@ class KustoDataLoader(ExternalDataLoader):
             properties.set_option("notruncation", True)
         result = self.client.execute(self.kusto_database, kql, properties)
         logger.info(f"Query executed successfully, returning results.")
-        df = dataframe_from_result_table(result.primary_results[0])
+        df = dataframe_from_result_table(
+            result.primary_results[0],
+            converters_by_type={"float": lambda column, frame: parse_float(frame, column)},
+        )
         
         # Convert datetime columns properly
         df = self._convert_kusto_datetime_columns(df)

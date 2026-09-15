@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, CircularProgress, IconButton, TextField, Tooltip, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, IconButton, InputAdornment, Tab, Tabs, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import CloseIcon from '@mui/icons-material/Close';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import SearchIcon from '@mui/icons-material/Search';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { apiRequest } from '../app/apiClient';
@@ -12,6 +15,8 @@ import { loadTable } from '../app/tableThunks';
 import { CatalogTreeNode, collectNamespaceIds } from './CatalogTree';
 import { VirtualizedCatalogTree } from './VirtualizedCatalogTree';
 import { ColumnMeta, ConnectorTablePreview } from './ConnectorTablePreview';
+
+const CATALOG_PREVIEW_ROW_LIMIT = 50;
 
 export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ connectorId }) => {
     const { t } = useTranslation();
@@ -24,10 +29,13 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     const [error, setError] = useState('');
     const [refresh, setRefresh] = useState(0);
     const [selected, setSelected] = useState<CatalogTreeNode | null>(null);
+    const [detailOpen, setDetailOpen] = useState(false);
     const [preview, setPreview] = useState<{ columns: ColumnMeta[]; rows: Record<string, any>[]; count: number | null } | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState('');
     const [importing, setImporting] = useState(false);
+    const [activeTab, setActiveTab] = useState<'data' | 'columns' | 'overview'>('data');
+    const [catalogScrollParent, setCatalogScrollParent] = useState<HTMLDivElement | null>(null);
     const previewRequest = useRef<AbortController | null>(null);
     const sourceRef = (node: CatalogTreeNode) => {
         const name = node.metadata?._source_name || node.metadata?._catalogName || node.name;
@@ -39,6 +47,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
         setLoading(true);
         setError('');
         setSelected(null);
+        setDetailOpen(false);
         setPreview(null);
         setPreviewError('');
         setPreviewLoading(false);
@@ -63,13 +72,14 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
         const controller = new AbortController();
         previewRequest.current = controller;
         setSelected(node);
+        setDetailOpen(true);
         setPreview(null);
         setPreviewError('');
         setPreviewLoading(true);
         try {
             const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-                body: JSON.stringify({ connector_id: connectorId, source_table: sourceRef(node), limit: 10 }),
+                body: JSON.stringify({ connector_id: connectorId, source_table: sourceRef(node), limit: CATALOG_PREVIEW_ROW_LIMIT }),
             });
             if (!controller.signal.aborted) {
                 const rows = data.rows || [];
@@ -79,7 +89,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                     return { ...column, source_type: column.source_type ?? catalogColumn?.source_type ?? catalogColumn?.type,
                         description: column.description ?? catalogColumn?.description };
                 });
-                setPreview({ columns, rows, count: total != null && (total > rows.length || rows.length < 10)
+                setPreview({ columns, rows, count: total != null && (total > rows.length || rows.length < CATALOG_PREVIEW_ROW_LIMIT)
                     ? total : node.metadata?.row_count ?? null });
             }
         } catch (caught) {
@@ -101,29 +111,119 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     const filtered = matches(tree);
     const countTables = (nodes: CatalogTreeNode[]): number => nodes.reduce((count, node) => count + Number(node.node_type === 'table') + countTables(node.children || []), 0);
 
-    return <Box sx={{ mt: 2, minWidth: 0 }}>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5 }}>
-            <TextField fullWidth size="small" label={t('chatConnector.searchTables', { defaultValue: 'Search tables' })}
-                value={query} onChange={event => setQuery(event.target.value)} />
-            <Tooltip title={t('chatConnector.refreshCatalog', { defaultValue: 'Refresh catalog' })}><span>
-                <IconButton disabled={loading || importing} onClick={() => setRefresh(current => current + 1)}
-                    aria-label={t('chatConnector.refreshCatalog', { defaultValue: 'Refresh catalog' })}><RefreshIcon /></IconButton>
-            </span></Tooltip>
+    const selectedColumns: ColumnMeta[] = preview?.columns || selected?.metadata?.columns || [];
+    const rowCount = preview?.count ?? selected?.metadata?.row_count;
+    const description = selected?.metadata?.description || selected?.metadata?.source_description;
+    const tableCount = countTables(tree);
+    const collectTables = (nodes: CatalogTreeNode[]): CatalogTreeNode[] => nodes.flatMap(node =>
+        node.node_type === 'table' ? [node] : collectTables(node.children || []));
+    const matchingTables = collectTables(filtered);
+    const selectedIndex = matchingTables.findIndex(node => node.path.join('/') === selected?.path.join('/'));
+    const previousTable = matchingTables[selectedIndex - 1];
+    const nextTable = selectedIndex >= 0 ? matchingTables[selectedIndex + 1] : undefined;
+
+    return <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', flex: 1, minHeight: 0 }}>
+        <Box component="nav" aria-label={t('chatConnector.tables', { defaultValue: 'Tables' })}
+            aria-hidden={detailOpen}
+            sx={{ gridArea: '1 / 1', visibility: detailOpen ? 'hidden' : 'visible', display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, pt: 2 }}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5 }}>
+                <TextField fullWidth size="small" placeholder={t('chatConnector.searchTables', { defaultValue: 'Search tables' })}
+                    slotProps={{ htmlInput: { 'aria-label': t('chatConnector.searchTables', { defaultValue: 'Search tables' }) },
+                        input: {
+                            startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18 }} /></InputAdornment>,
+                            endAdornment: !loading && !error ? <InputAdornment position="end">
+                                <Tooltip title={t('chatConnector.catalogCount', { defaultValue: '{{count}} tables', count: tableCount })}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>{tableCount.toLocaleString()}</Typography>
+                                </Tooltip>
+                            </InputAdornment> : undefined,
+                        } }}
+                    sx={{ minWidth: 0, '& .MuiInputBase-root': { fontSize: 13 } }} value={query} onChange={event => setQuery(event.target.value)} />
+                <Tooltip title={t('chatConnector.refreshCatalog', { defaultValue: 'Refresh catalog' })}><span>
+                    <IconButton size="small" disabled={loading || importing} onClick={() => setRefresh(current => current + 1)}
+                        aria-label={t('chatConnector.refreshCatalog', { defaultValue: 'Refresh catalog' })}><RefreshIcon fontSize="small" /></IconButton>
+                </span></Tooltip>
+            </Box>
+            {query.trim() && !loading && !error && <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+                {t('chatConnector.catalogMatches', { defaultValue: '{{count}} matching tables', count: countTables(filtered) })}
+            </Typography>}
+            <Box ref={setCatalogScrollParent} sx={{ flex: 1, minHeight: 0, overflow: 'auto', pb: 1 }}>
+                {loading ? <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
+                    <CircularProgress size={16} /><Typography variant="body2">{t('chatConnector.loadingCatalog', { defaultValue: 'Loading source catalog...' })}</Typography>
+                </Box> : error ? <Typography variant="body2" color="error" role="alert" sx={{ overflowWrap: 'anywhere' }}>{error}</Typography> :
+                    filtered.length ? <VirtualizedCatalogTree nodes={filtered} loadedMap={loadedMap}
+                        expandedIds={query.trim() ? collectNamespaceIds(filtered) : expanded} onExpandedChange={setExpanded}
+                        onItemClick={node => void previewTable(node)} selectedItemId={selected?.path.join('/')}
+                        loadingItemId={previewLoading ? selected?.path.join('/') : null} maxHeight="none" rowHeight={32} scrollParent={catalogScrollParent} />
+                    : <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>{t('chatConnector.noTables', { defaultValue: 'No matching tables found.' })}</Typography>}
+            </Box>
         </Box>
-        {loading ? <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
-            <CircularProgress size={16} /><Typography variant="body2">{t('chatConnector.loadingCatalog', { defaultValue: 'Loading source catalog...' })}</Typography>
-        </Box> : error ? <Typography color="error" role="alert" sx={{ overflowWrap: 'anywhere' }}>{error}</Typography> : <>
-            <Typography variant="caption" color="text.secondary">{t('chatConnector.catalogCount', { defaultValue: '{{count}} tables', count: countTables(tree) })}</Typography>
-            {filtered.length ? <VirtualizedCatalogTree nodes={filtered} loadedMap={loadedMap}
-                expandedIds={query.trim() ? collectNamespaceIds(filtered) : expanded} onExpandedChange={setExpanded}
-                onItemClick={node => void previewTable(node)} selectedItemId={selected?.path.join('/')}
-                loadingItemId={previewLoading ? selected?.path.join('/') : null} maxHeight={360} />
-                : <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>{t('chatConnector.noTables', { defaultValue: 'No matching tables found.' })}</Typography>}
-        </>}
-        {selected && <Box sx={{ mt: 2, borderTop: 1, borderColor: 'divider', pt: 1 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}><IconButton size="small" disabled={importing}
-                aria-label={t('chatConnector.closePreview', { defaultValue: 'Close preview' })}
-                onClick={() => { previewRequest.current?.abort(); setSelected(null); setPreviewLoading(false); }}><CloseIcon fontSize="small" /></IconButton></Box>
+        <Box component="section" aria-label={t('chatConnector.tableDetails', { defaultValue: 'Table details' })}
+            sx={{ gridArea: '1 / 1', display: detailOpen ? 'flex' : 'none', flexDirection: 'column', minWidth: 0, minHeight: 0, pt: 1.5 }}>
+        {selected && <>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1, mb: 1, flexShrink: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flex: '1 1 280px', minWidth: 0 }}>
+                <Tooltip title={t('chatConnector.backToTables', { defaultValue: 'Back to tables' })}>
+                    <span><IconButton size="small" color="primary" disabled={importing} aria-label={t('chatConnector.backToTables', { defaultValue: 'Back to tables' })}
+                        onClick={() => { previewRequest.current?.abort(); setDetailOpen(false); setPreviewLoading(false); }}><ArrowBackIcon fontSize="small" /></IconButton></span>
+                </Tooltip>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography component="h2" sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', lineHeight: 1.5, overflowWrap: 'anywhere', m: 0 }}>{selected.name}</Typography>
+                    <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', color: 'text.secondary', mt: 0.25,
+                        '& .MuiTypography-root': { fontSize: 12, fontWeight: 400, lineHeight: 1.5 } }}>
+                        {rowCount != null && <Typography variant="caption">{t('chatConnector.rowCount', { defaultValue: '{{count}} rows', count: Number(rowCount).toLocaleString() })}</Typography>}
+                        <Typography variant="caption">{t('chatConnector.columnCount', { defaultValue: '{{count}} columns', count: selectedColumns.length })}</Typography>
+                        {loadedMap[selected.path.join('/')] && <Typography variant="caption">{t('connectorPreview.loaded', { defaultValue: 'Loaded' })}</Typography>}
+                    </Box>
+                </Box>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5, ml: 'auto', minWidth: 0, maxWidth: '100%',
+                    color: 'text.secondary', '& .MuiTypography-root': { fontSize: 12, fontWeight: 400 },
+                    '& .MuiButton-root:not(.Mui-disabled) .MuiSvgIcon-root': { color: 'primary.main' },
+                    '& .MuiButton-root:hover': { bgcolor: 'action.hover' } }}>
+                <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto', minWidth: 0, maxWidth: '100%' }}>
+                    <Tooltip title={`${t('chatConnector.previousTable', { defaultValue: 'Previous table' })}${previousTable ? `: ${previousTable.name}` : ''}`}>
+                        <Box component="span" sx={{ minWidth: 0, maxWidth: 180, flex: '0 1 auto' }}>
+                            <Button size="small" color="inherit" disabled={importing || !previousTable} startIcon={<ChevronLeftIcon fontSize="small" />}
+                                aria-label={t('chatConnector.previousTable', { defaultValue: 'Previous table' })}
+                                sx={{ width: '100%', minWidth: 0, height: 30, px: 0.75, textTransform: 'none', color: 'text.secondary' }}
+                                onClick={() => previousTable && void previewTable(previousTable)}>
+                                <Typography component="span" variant="caption" noWrap sx={{ minWidth: 0 }}>
+                                    {previousTable?.name}
+                                </Typography>
+                            </Button>
+                        </Box>
+                    </Tooltip>
+                    <Tooltip title={`${t('chatConnector.nextTable', { defaultValue: 'Next table' })}${nextTable ? `: ${nextTable.name}` : ''}`}>
+                        <Box component="span" sx={{ minWidth: 0, maxWidth: 180, flex: '0 1 auto' }}>
+                            <Button size="small" color="inherit" disabled={importing || !nextTable} endIcon={<ChevronRightIcon fontSize="small" />}
+                                aria-label={t('chatConnector.nextTable', { defaultValue: 'Next table' })}
+                                sx={{ width: '100%', minWidth: 0, height: 30, px: 0.75, textTransform: 'none', color: 'text.secondary' }}
+                                onClick={() => nextTable && void previewTable(nextTable)}>
+                                <Typography component="span" variant="caption" noWrap sx={{ minWidth: 0 }}>
+                                    {nextTable?.name}
+                                </Typography>
+                            </Button>
+                        </Box>
+                    </Tooltip>
+                </Box>
+                </Box>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+            <Tabs value={activeTab} onChange={(_event, value) => setActiveTab(value)} variant="scrollable" scrollButtons="auto"
+                aria-label={t('chatConnector.tableDetails', { defaultValue: 'Table details' })}
+                sx={{ minHeight: 36, minWidth: 0, maxWidth: '100%',
+                    '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1.5, py: 0.75, textTransform: 'none', fontSize: 13,
+                        fontWeight: 400, color: 'text.secondary', '&.Mui-selected': { color: 'primary.main', fontWeight: 600 } },
+                    '& .MuiTabs-indicator': { height: 2 } }}>
+                <Tab value="data" id="source-tab-data" aria-controls="source-panel-data" label={t('chatConnector.sampleData', { defaultValue: 'Sample data' })} />
+                <Tab value="columns" id="source-tab-columns" aria-controls="source-panel-columns" label={t('chatConnector.columns', { defaultValue: 'Columns' })} />
+                <Tab value="overview" id="source-tab-overview" aria-controls="source-panel-overview" label={t('chatConnector.overview', { defaultValue: 'Overview' })} />
+            </Tabs>
+            {activeTab === 'data' && preview && <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', py: 0.75, fontSize: 12, fontWeight: 400 }}>
+                {t('chatConnector.sampleCount', { defaultValue: '{{count}} sample rows', count: preview.rows.length })}
+            </Typography>}
+            </Box>
             {previewError && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography color="error" role="alert" sx={{ overflowWrap: 'anywhere', minWidth: 0 }}>{previewError}</Typography>
                 <Tooltip title={t('chatConnector.retryPreview', { defaultValue: 'Retry preview' })}>
@@ -131,8 +231,36 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                         onClick={() => void previewTable(selected)}><RefreshIcon /></IconButton>
                 </Tooltip>
             </Box>}
-            <ConnectorTablePreview connectorId={connectorId} sourceTable={sourceRef(selected)} displayName={selected.name}
-                pathBreadcrumb={selected.path.join(' / ')} tableDescription={selected.metadata?.description}
+            <Box role="tabpanel" id="source-panel-overview" aria-labelledby="source-tab-overview" hidden={activeTab !== 'overview'} sx={{ overflow: 'auto', py: 2 }}>
+                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.7 }}>
+                    {description || t('chatConnector.noDescription', { defaultValue: 'No description available.' })}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 3, mb: 0.5 }}>{t('chatConnector.tablePath', { defaultValue: 'Table path' })}</Typography>
+                <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selected.path.join(' / ')}</Typography>
+            </Box>
+            <Box role="tabpanel" id="source-panel-columns" aria-labelledby="source-tab-columns" hidden={activeTab !== 'columns'} sx={{ overflow: 'auto', flex: activeTab === 'columns' ? 1 : undefined, minHeight: 0 }}>
+                {selectedColumns.length ? <Table size="small" stickyHeader aria-label={t('chatConnector.columns', { defaultValue: 'Columns' })}
+                    sx={{ tableLayout: 'fixed', '& .MuiTableCell-root': { fontSize: 12, py: 1, px: 1.5, overflowWrap: 'anywhere', verticalAlign: 'top' } }}>
+                    <TableHead><TableRow>
+                        <TableCell sx={{ width: '35%' }}>{t('chatConnector.columnName', { defaultValue: 'Name' })}</TableCell>
+                        <TableCell sx={{ width: '25%' }}>{t('chatConnector.columnType', { defaultValue: 'Type' })}</TableCell>
+                        <TableCell>{t('chatConnector.columnDescription', { defaultValue: 'Description' })}</TableCell>
+                    </TableRow></TableHead>
+                    <TableBody>{selectedColumns.map(column => <TableRow key={column.name}>
+                        <TableCell component="th" scope="row">{column.name}</TableCell>
+                        <TableCell sx={{ color: 'text.secondary' }}>{column.source_type || column.type}</TableCell>
+                        <TableCell sx={{ color: 'text.secondary' }}>{column.description || '-'}</TableCell>
+                    </TableRow>)}</TableBody>
+                </Table> : <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>{previewLoading
+                    ? t('chatConnector.loadingColumns', { defaultValue: 'Loading columns...' })
+                    : t('chatConnector.noColumns', { defaultValue: 'No column metadata available.' })}</Typography>}
+            </Box>
+            <Box role="tabpanel" id="source-panel-data" aria-labelledby="source-tab-data" hidden={activeTab !== 'data'}
+                sx={{ display: activeTab === 'data' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', pt: 1.5 }}>
+            <ConnectorTablePreview key={`${connectorId}:${selected.path.join('/')}`} connectorId={connectorId} sourceTable={sourceRef(selected)} displayName={selected.name}
+                hideHeader
+                dockActions
+                previewRowLimit={CATALOG_PREVIEW_ROW_LIMIT}
                 columns={preview?.columns || []} sampleRows={preview?.rows || []} rowCount={preview?.count ?? null}
                 loading={previewLoading || importing} alreadyLoaded={Boolean(loadedMap[selected.path.join('/')])}
                 hideLoadActions={!preview || !!previewError}
@@ -149,6 +277,9 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                     } catch (caught) { setPreviewError(caught instanceof Error ? caught.message : String(caught)); }
                     finally { setImporting(false); }
                 }} />
-        </Box>}
+            </Box>
+        </>}
+        </Box>
+        </Box>
     </Box>;
 };

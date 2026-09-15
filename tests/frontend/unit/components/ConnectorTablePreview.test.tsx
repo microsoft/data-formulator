@@ -1,7 +1,8 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ConnectorTablePreview } from '../../../../src/components/ConnectorTablePreview';
+import { apiRequest } from '../../../../src/app/apiClient';
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
@@ -59,6 +60,32 @@ describe('ConnectorTablePreview source metadata', () => {
 
         expect(screen.getByText('Orders from the warehouse')).toBeDefined();
         expect(screen.queryByText('Source metadata')).toBeNull();
+    });
+
+    it.each([undefined, 50])('uses preview limit %s for rendering and refresh requests', async previewRowLimit => {
+        const limit = previewRowLimit ?? 10;
+        const rows = Array.from({ length: limit }, (_, index) => ({ value: `sample-${index + 1}` }));
+        const onRefreshPreview = vi.fn();
+        vi.mocked(apiRequest).mockReset();
+        vi.mocked(apiRequest).mockResolvedValue({ data: {
+            columns: [{ name: 'value', type: 'STRING' }], rows, total_row_count: limit,
+        } } as any);
+        render(<ConnectorTablePreview
+            {...baseProps}
+            columns={[{ name: 'value', type: 'STRING' }]}
+            sampleRows={[...rows, { value: 'beyond-limit' }]}
+            rowCount={null}
+            previewRowLimit={previewRowLimit}
+            onRefreshPreview={onRefreshPreview}
+        />);
+
+        expect(screen.getByText(`sample-${limit}`)).toBeDefined();
+        expect(screen.queryByText('beyond-limit')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Preview', exact: true }));
+        await waitFor(() => expect(onRefreshPreview).toHaveBeenCalledWith(
+            rows, [{ name: 'value', type: 'STRING' }], null,
+        ));
+        expect(JSON.parse(String(vi.mocked(apiRequest).mock.calls[0][1]?.body)).import_options.size).toBe(limit);
     });
 
     it('uses descriptions on table headers without restoring the old metadata panel', () => {

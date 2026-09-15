@@ -15,8 +15,9 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, CircularProgress, Collapse, IconButton, Menu, MenuItem, Typography, alpha, useTheme } from '@mui/material';
+import { Box, Button, CircularProgress, Collapse, IconButton, Menu, MenuItem, Tooltip, Typography, alpha, useTheme } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useDispatch, useSelector } from 'react-redux';
@@ -78,7 +79,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     const [loadingMeta, setLoadingMeta] = useState(true);
     const [expanded, setExpanded] = useState(defaultExpanded);
     // Connected-state: collapsible details panel (non-sensitive only).
-    const [connExpanded, setConnExpanded] = useState(isBare);
+    const [connExpanded, setConnExpanded] = useState(false);
     const [connDetails, setConnDetails] = useState<Array<{ label: string; value: string }>>([]);
 
     const createdIdRef = useRef<string | null>(prompt.connectorId ?? null);
@@ -374,8 +375,38 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     // connection's non-sensitive configuration (mirrors the code-block cards).
     if (isConnected) {
         const name = prompt.connectionName || meta?.name || sourceType;
+        if (isBare) return (
+            <Box sx={{ height: '100%', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ pb: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                        {getConnectorIcon(sourceType, { sx: { fontSize: 16, color: 'text.secondary', flexShrink: 0 } })}
+                        <Typography component="h1" sx={{ minWidth: 0, m: 0, fontSize: 12, lineHeight: 1.5, fontWeight: 400, color: 'text.secondary', overflowWrap: 'anywhere' }}>{name}</Typography>
+                        <Tooltip title={t('chatConnector.connected', { defaultValue: 'Connected' })}>
+                            <CheckIcon aria-label={t('chatConnector.connected', { defaultValue: 'Connected' })} sx={{ fontSize: 14, color: 'success.main', flexShrink: 0 }} />
+                        </Tooltip>
+                        <Tooltip title={t('chatConnector.connectionDetails', { defaultValue: 'Connection details' })}>
+                            <IconButton size="small" aria-label={t('chatConnector.connectionDetails', { defaultValue: 'Connection details' })}
+                                sx={{ ml: 'auto', color: 'text.secondary', flexShrink: 0 }}
+                                aria-expanded={connExpanded} onClick={() => setConnExpanded(current => !current)}>
+                                <InfoOutlinedIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                    <Collapse in={connExpanded} unmountOnExit>
+                        <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: 'minmax(80px, auto) minmax(0, 1fr)',
+                            columnGap: 2, rowGap: 0.75, mt: 1.5, mb: 0, maxHeight: 140, overflow: 'auto' }}>
+                            {connDetails.map(row => <React.Fragment key={row.label}>
+                                <Typography component="dt" variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{row.label.replace(/_/g, ' ')}</Typography>
+                                <Typography component="dd" variant="caption" sx={{ m: 0, overflowWrap: 'anywhere' }}>{row.value}</Typography>
+                            </React.Fragment>)}
+                        </Box>
+                    </Collapse>
+                </Box>
+                {prompt.connectorId && <ConnectedSourceOverview key={prompt.connectorId} connectorId={prompt.connectorId} />}
+            </Box>
+        );
         return (
-            <Box sx={{ mt: 1, maxWidth: isBare ? '100%' : 420 }}>
+            <Box sx={{ mt: 1, maxWidth: 420 }}>
                 <Box
                     onClick={() => setConnExpanded(e => !e)}
                     sx={{
@@ -426,7 +457,6 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                         )}
                     </Box>
                 </Collapse>
-                {isBare && prompt.connectorId && <ConnectedSourceOverview connectorId={prompt.connectorId} />}
             </Box>
         );
     }
