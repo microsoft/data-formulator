@@ -223,7 +223,7 @@ export const DataSourceSidebar: React.FC<{
         const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
         return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
     });
-    const [isPinned, setIsPinned] = useState(() => localStorage.getItem(SIDEBAR_PINNED_KEY) !== 'false');
+    const [isPinned, setIsPinned] = useState(() => localStorage.getItem(SIDEBAR_PINNED_KEY) === 'true');
 
     const togglePinned = useCallback(() => {
         setIsPinned(previous => {
