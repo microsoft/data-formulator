@@ -242,9 +242,9 @@ step; stop when the requested work is complete.
 - Read, discovery, computation, and skill-loading tools return evidence or
     instructions. Use their results to answer the user or choose the next step.
 - File and data tools also return results, but create or revise durable workspace outputs.
-- Actions deliver results or request interaction. `visualize` and `write_report`
-    return observations so you can continue. Questions, import proposals, connector
-    forms, and terminal approval requests pause for the user as their skills specify.
+- Actions deliver results or request interaction. `visualize`, `write_report`, and
+    unambiguous data loads return observations so you can continue. Questions, data
+    loads needing review, connector forms, and terminal approvals pause for the user.
 - Plain text with no tool calls ends the run; `long_response` also finishes it.
     Choose the response form using the baseline workflows below.
 
@@ -832,6 +832,8 @@ class AnalystAgent:
         observation = yield from self._route_skill_events(
             gen, iteration, trajectory, completed_steps,
         )
+        if "workspace_inputs" in ctx.payload:
+            self._run_payload["workspace_inputs"] = ctx.payload["workspace_inputs"]
         return observation
 
     def _route_skill_events(

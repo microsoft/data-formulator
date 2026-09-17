@@ -27,6 +27,24 @@ def test_focused_context_includes_text_turn_and_loading_decision() -> None:
     assert "Loaded workspace tables: netflix_movies" in context
 
 
+def test_focused_context_includes_workflow_status_and_outputs() -> None:
+    context = build_focused_thread_context([{
+        "workflow": {
+            "run_id": "native", "status": "completed",
+            "steps": [{"id": "analyze", "description": "Compare prices", "status": "passed"}],
+            "checks": [{"id": "coverage", "status": "passed"}],
+            "output_ids": ["prices", "brief"],
+            "reports": [{"id": "brief", "content": "# Price comparison"}],
+        },
+    }])
+
+    assert '"status": "completed"' in context
+    assert '"description": "Compare prices"' in context
+    assert '"id": "coverage", "status": "passed"' in context
+    assert '"output_ids": ["prices", "brief"]' in context
+    assert "# Price comparison" in context
+
+
 def test_table_context_uses_analysis_input_headings() -> None:
     workspace = MagicMock()
     workspace.user_home = None

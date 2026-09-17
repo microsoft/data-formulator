@@ -177,6 +177,8 @@ export interface TerminalExecution {
 }
 
 export interface TextTurn {
+    workflowCardFor?: string;
+    workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply'; afterOutputIds?: string[] };
     kind: 'text';
     id: string;
     displayId: string;
@@ -188,6 +190,32 @@ export interface TextTurn {
     /** The user message that triggered this turn (shown with the card so the
      *  exchange stays self-contained — the run produced no table to anchor it). */
     prompt?: string;
+    outputIds?: string[];
+    workflow?: {
+        runId: string;
+        status: string;
+        stepId: string;
+        calls: number;
+        toolCalls?: number;
+        activity?: string;
+        appliedMessageIds?: string[];
+        planRevision?: number;
+        planReviewPending?: boolean;
+        planHistory?: { revision: number; reason: string; steps: NonNullable<TextTurn['workflow']>['steps'];
+            checks: NonNullable<NonNullable<TextTurn['workflow']>['checks']> }[];
+        terminalRequest?: { id: string; argv: string[]; cwd: string; purpose: string; timeout_seconds: number };
+        dataOperation?: DataOperation;
+        interactionId?: string;
+        questions?: ClarificationQuestion[];
+        steps: { id: string; description?: string; instructions: string; status: 'pending' | 'current' | 'reviewing' | 'passed' | 'failed' | 'visited' | 'completed'; checkIds?: string[];
+            elapsedSeconds?: number;
+            next?: string; checkers?: { id: string; condition?: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[];
+            assessment?: { status: string; explanation: string; evidence_ids: string[] } }[];
+        outputVersions: Record<string, string>;
+        checks?: { id: string; status: string; explanation: string }[];
+        transitions?: { from: string; to: string; reason: string; plan_revision?: number }[];
+        log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number }[];
+    };
     executions?: TerminalExecution[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];

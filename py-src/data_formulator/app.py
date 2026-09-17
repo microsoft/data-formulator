@@ -315,6 +315,9 @@ def _register_blueprints():
     from data_formulator.routes.knowledge import knowledge_bp
     app.register_blueprint(knowledge_bp)
 
+    from data_formulator.routes.workflows import workflow_bp
+    app.register_blueprint(workflow_bp)
+
     # Auto-register all installed data loaders as DataConnector instances.
     # We always run this so the connectors blueprint and the built-in
     # 'sample_datasets' connector are available; the function itself

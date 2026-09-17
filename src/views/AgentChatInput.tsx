@@ -166,7 +166,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
          
     }, []);
 
-    const canSend = (value.trim().length > 0 || images.length > 0) && !inProgress && !disabled;
+    const canSend = (value.trim().length > 0 || images.length > 0 || !!attachments?.length) && !inProgress && !disabled;
 
     // Shared file intake: images become inline previews, everything else is
     // handed to `onNonImageFile` (scratch upload → attachment chip). Used by

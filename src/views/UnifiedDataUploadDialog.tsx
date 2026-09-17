@@ -2004,7 +2004,16 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 aria-pressed={browseConnector?.id === conn.id}
                                 sx={{ display: { xs: 'none', lg: 'inline-flex' }, justifyContent: 'flex-start', textTransform: 'none', overflowWrap: 'anywhere', color: 'text.primary', bgcolor: browseConnector?.id === conn.id ? 'action.selected' : undefined }}
                                 onClick={() => selectBrowseConnector(conn.id)}>
-                                {conn.display_name}
+                                <Box component="span" sx={{ flex: 1, minWidth: 0, textAlign: 'left' }}>{conn.display_name}</Box>
+                                <Tooltip title={conn.connected
+                                    ? t('upload.connectorConnected', { defaultValue: 'Connected' })
+                                    : t('upload.connectorDisconnected', { defaultValue: 'Disconnected' })}>
+                                    <Box component="span" role="img" aria-label={conn.connected
+                                        ? t('upload.connectorConnected', { defaultValue: 'Connected' })
+                                        : t('upload.connectorDisconnected', { defaultValue: 'Disconnected' })}
+                                        sx={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, ml: 1,
+                                            bgcolor: conn.connected ? 'success.main' : 'error.main' }} />
+                                </Tooltip>
                             </Button>
                         ))}
                         <Button startIcon={<AddIcon />} onClick={() => setActiveTab('add-connection')} sx={{ alignSelf: 'flex-start', textTransform: 'none' }}>

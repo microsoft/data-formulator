@@ -348,7 +348,7 @@ it.each(['derived', 'loaded', 'ongoing'].flatMap(scenario => [5, 6].map(count =>
       expect(getComputedStyle(block!).breakInside).toBe('avoid');
     }
     const flow = screen.getByText('Request 0').closest('[data-thread-column-flow]');
-    expect(getComputedStyle(flow!).columnFill).toBe('auto');
+    expect(getComputedStyle(flow!).display).toBe('grid');
     if (scenario !== 'ongoing') {
       expect(screen.getAllByText('Result').find(element => element.closest('[data-thread-flow-block]'))?.closest('[data-thread-flow-block]'))
         .toBe(screen.getByText(`Request ${count - 1}`).closest('[data-thread-flow-block]'));
@@ -426,7 +426,7 @@ it.each(['none', 'user', 'pending', 'new-run'] as const)(
   },
 );
 
-it('initializes dense column height to 1.5 viewports before animation frames run', () => {
+it('initializes the dense segment target to 1.5 viewports without fixing column height', () => {
   const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(900);
   vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
   const store = configureStore({ reducer: dataFormulatorReducer });
@@ -440,9 +440,127 @@ it('initializes dense column height to 1.5 viewports before animation frames run
       }),
     }));
     const flow = container.querySelector('[data-thread-column-flow]')!;
-    expect(getComputedStyle(flow).columnFill).toBe('auto');
-    expect(getComputedStyle(flow).height).toBe('1350px');
-    expect(getComputedStyle(flow).minHeight).toBe('150%');
+    expect(getComputedStyle(flow).display).toBe('grid');
+    expect(flow.getAttribute('data-thread-segment-height')).toBe('1350');
+    expect(getComputedStyle(flow).height).toBe('');
+    expect(getComputedStyle(flow).gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))');
+    expect(flow.querySelectorAll('[data-thread-segment]')).toHaveLength(1);
+    expect(screen.getByText('A short conversation').closest('[data-thread-column]')?.getAttribute('data-thread-column')).toBe('0');
+  } finally {
+    height.mockRestore();
+  }
+});
+
+it.each([
+  { counts: [1, 1, 12], columns: ['0', '0', '1'] },
+  { counts: [12, 1, 1], columns: ['0', '1', '1'] },
+])('balances three consecutive threads with sizes $counts into contiguous columns', ({ counts, columns }) => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  counts.forEach((count, thread) => {
+    for (let turn = 0; turn < count; turn++) store.dispatch(dfActions.addTextTurn({ kind: 'text',
+      id: `thread-${thread}-turn-${turn}`, displayId: 'Response', textKind: 'explain',
+      content: `Thread ${thread} response ${turn}`, createdAt: turn,
+      parentNodeId: turn ? `thread-${thread}-turn-${turn - 1}` : `conversation-root:thread-${thread}`,
+    }));
+  });
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  const { container } = render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread, { denseColumns: true }) }),
+    }),
+  }));
+  expect(counts.map((_, thread) => screen.getByText(`Thread ${thread} response 0`)
+    .closest('[data-thread-column]')?.getAttribute('data-thread-column'))).toEqual(columns);
+  expect(container.querySelectorAll('[data-thread-column]')).toHaveLength(2);
+});
+
+it('balances consecutive pieces and visually joins neighbors without discarding internal splits', () => {
+  const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  const appendTable = (index: number) => {
+    const parent = index ? `segment-table-${index - 1}` : CONVERSATION_ROOT_ID;
+    store.dispatch(dfActions.addTableToStore({ kind: 'table', id: `segment-table-${index}`,
+      displayId: `Output ${index}`, names: [], metadata: {}, rows: [], parentNodeId: parent,
+      derive: { source: [], code: '', dialog: [], trigger: {
+        tableId: parent, resultTableId: `segment-table-${index}`, instruction: `Create output ${index}`,
+        interaction: [{ from: 'data-agent', to: 'user', role: 'instruction', content: `Result ${index}` }],
+      } },
+    } as any));
+  };
+  for (let index = 0; index < 4; index++) appendTable(index);
+  store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'later-thread', displayId: 'Later thread',
+    names: [], metadata: {}, rows: [], parentNodeId: 'conversation-root:later',
+    derive: { source: [], code: '', dialog: [], trigger: {
+      tableId: 'conversation-root:later', resultTableId: 'later-thread', instruction: 'Independent analysis',
+      interaction: [{ from: 'data-agent', to: 'user', role: 'instruction', content: 'Later analysis' }],
+    } },
+  } as any));
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  try {
+    const { container, rerender } = render(React.createElement(Provider, { store, children:
+      React.createElement(ThemeProvider, { theme, children:
+        React.createElement(LayoutProvider, { children: React.createElement(DataThread, { denseColumns: true }) }),
+      }),
+    }));
+    const segmentOf = (index: number) => container.querySelector(`[data-thread-flow-block="output-segment-table-${index}"]`)
+      ?.closest('[data-thread-segment]')?.getAttribute('data-thread-segment');
+    const originalSegments = Array.from({ length: 4 }, (_, index) => segmentOf(index));
+    expect(originalSegments).toEqual(['0', '0', '0', '1']);
+    act(() => {
+      for (let index = 4; index < 10; index++) appendTable(index);
+      for (let index = 0; index < 8; index++) store.dispatch(dfActions.addTextTurn({ kind: 'text',
+        id: `earlier-note-${index}`, displayId: `Note ${index}`, textKind: 'explain',
+        content: 'Earlier output details '.repeat(30), parentNodeId: 'segment-table-0', createdAt: index,
+      }));
+    });
+    expect(Array.from({ length: 10 }, (_, index) => segmentOf(index)))
+      .toEqual(['0', '0', '0', '0', '0', '0', '1', '1', '1', '1']);
+    const pieceOf = (index: number) => container.querySelector(`[data-thread-flow-block="output-segment-table-${index}"]`)
+      ?.closest('[data-thread-active]');
+    expect(pieceOf(0)).toBe(pieceOf(2));
+    expect(pieceOf(0)).not.toBe(pieceOf(3));
+    expect(pieceOf(3)).toBe(pieceOf(5));
+    expect(pieceOf(6)).toBe(pieceOf(8));
+    expect(pieceOf(6)).not.toBe(pieceOf(9));
+    const flow = container.querySelector('[data-thread-column-flow]')!;
+    expect(Array.from(flow.children, segment => segment.getAttribute('data-thread-segment'))).toEqual(['0', '1']);
+    expect(getComputedStyle(flow).gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))');
+    expect(getComputedStyle(flow.parentElement!).overflowX).toBe('hidden');
+    const lastOutput = container.querySelector('[data-thread-flow-block="output-segment-table-9"]')!;
+    const laterOutput = container.querySelector('[data-thread-flow-block="output-later-thread"]')!;
+    expect(lastOutput.compareDocumentPosition(laterOutput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(laterOutput.closest('[data-thread-segment]')?.getAttribute('data-thread-segment')).toBe('1');
+    expect(container.querySelectorAll('[data-thread-item^="used-table-ref-"]')).toHaveLength(0);
+    act(() => { store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'segment-table-0' })); });
+    expect(container.querySelectorAll('[data-thread-highlighted="true"]')).toHaveLength(4);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open thread conversation' })[1]);
+    expect(store.getState().focusedId).toMatchObject({ type: 'conversation', tableId: 'segment-table-9' });
+    expect(container.querySelectorAll('[data-thread-active="true"]')).toHaveLength(4);
+    for (let index = 0; index < 10; index++) {
+      expect(container.querySelectorAll(`[data-thread-flow-block="output-segment-table-${index}"]`)).toHaveLength(1);
+    }
+    rerender(React.createElement(Provider, { store, children:
+      React.createElement(ThemeProvider, { theme, children:
+        React.createElement(LayoutProvider, { children: React.createElement(DataThread, { denseColumns: false }) }),
+      }),
+    }));
+    expect(container.querySelectorAll('[data-thread-segment]')).toHaveLength(1);
+    for (let index = 0; index < 10; index++) expect(segmentOf(index)).toBe('0');
+    expect(container.querySelectorAll('[data-thread-active]')).toHaveLength(5);
+    expect(container.querySelectorAll('[data-thread-joined-above="true"]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-thread-joined-below="true"]')).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: 'Open thread conversation' })).toHaveLength(2);
+    for (let index = 0; index < 10; index++) {
+      expect(container.querySelectorAll(`[data-thread-flow-block="output-segment-table-${index}"]`)).toHaveLength(1);
+    }
+    rerender(React.createElement(Provider, { store, children:
+      React.createElement(ThemeProvider, { theme, children:
+        React.createElement(LayoutProvider, { children: React.createElement(DataThread, { denseColumns: true }) }),
+      }),
+    }));
+    expect(Array.from({ length: 10 }, (_, index) => segmentOf(index)))
+      .toEqual(['0', '0', '0', '0', '0', '0', '1', '1', '1', '1']);
+    expect(container.querySelectorAll('[data-thread-joined-above="true"]')).toHaveLength(2);
   } finally {
     height.mockRestore();
   }

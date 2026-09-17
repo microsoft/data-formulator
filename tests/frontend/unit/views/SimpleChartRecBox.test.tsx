@@ -62,7 +62,7 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'result', status: 'success', content: { result: {
                 status: 'ok', content: { rows: [{ value: 4 }],
                     virtual: { table_name: 'doubled', row_count: 1 } },
-                refined_goal: { output_variable: 'result' },
+                refined_goal: { output_variable: 'result', display_name: 'Doubled Measurements' },
             } } };
             await running;
         });
@@ -77,6 +77,7 @@ describe('Analyst landing attachment handoff', () => {
             expect(dispatchSpy.mock.calls.map(([action]) => action)
                 .filter(dfActions.updateDraftSources.match).at(-1)?.payload.source).toEqual(['measurements']);
             const derived = dfSelectors.getAllTables(store.getState()).find(table => table.id === 'doubled');
+            expect(derived?.displayId).toBe('Doubled Measurements');
             expect(derived?.derive?.source).toEqual(['measurements']);
             expect(derived?.derive?.trigger.tableId).toBe('measurements');
             expect(derived?.derive?.trigger.interaction.at(-1)?.inputTableNames).toEqual(['Measurements']);

@@ -55,6 +55,7 @@ import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle'
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
+import { WorkflowProgress } from './WorkflowPanel';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ConversationCanvas } from './ConversationCanvas';
 
@@ -1779,6 +1780,9 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const focusedOperationTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.dataOperation)
         : undefined;
+    const focusedWorkflowTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflow)
+        : undefined;
     const focusedFormTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
         : undefined;
@@ -1813,6 +1817,12 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     }
     if (focusedId?.type === 'explanation') {
         return <ExplanationCanvas {...focusedId} />;
+    }
+    if (focusedWorkflowTurn) {
+        if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {
+            return <DataOperationCanvas operation={focusedWorkflowTurn.workflow.dataOperation} />;
+        }
+        return <WorkflowProgress key={focusedWorkflowTurn.id} turn={focusedWorkflowTurn} canvas />;
     }
     if (focusedExplanationTurn) {
         return <ExplanationCanvas content={explanationContent(focusedExplanationTurn.content)} textTurnId={focusedExplanationTurn.id} executions={focusedExplanationTurn.executions} />;

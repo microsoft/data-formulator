@@ -755,7 +755,7 @@ export const SourceTableShelf: FC<{
     );
     });
 
-    return <Box sx={{
+    return <Box data-thread-shelf sx={{
         ...sx,
         '& .selected-card': {
             boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,

@@ -101,6 +101,7 @@ include = ["data_formulator*"]
 [tool.setuptools.package-data]
 "*" = ["SKILL.md", "tools.json"]
 "data_formulator.data_loader.guides" = ["*.md"]
+"data_formulator.workflows" = ["*.yaml", "*.md"]
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"

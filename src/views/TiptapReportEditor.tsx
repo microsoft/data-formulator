@@ -539,7 +539,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
         if (!editor) return;
         // While the writing phase streams, the lightweight typewriter view owns the
         // display — defer the (expensive) markdown parse until the stream completes.
-        if (generatingPhase === 'writing') return;
+        if (isGenerating && generatingPhase === 'writing') return;
         if (!isFocused.current) {
             editor.commands.setContent(content, { emitUpdate: false });
         } else {
@@ -551,7 +551,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                 editor.commands.setContent(content, { emitUpdate: false });
             }
         }
-    }, [editor, content, generatingPhase]);
+    }, [editor, content, generatingPhase, isGenerating]);
 
     const copyAsRichText = useCallback(async () => {
         if (!editor) return;

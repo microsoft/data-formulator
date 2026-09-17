@@ -116,32 +116,33 @@ export let buildChartCards = (
         </Box>);
 }
 
-export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType }: {
+export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, children }: {
     title: string;
     selected: boolean;
     onClick: () => void;
     notes?: string;
     actions?: React.ReactNode;
-    artifactType: 'table' | 'file' | 'report';
+    artifactType: 'table' | 'file' | 'report' | 'workflow';
+    children?: React.ReactNode;
 }) => {
     const tone = artifactType === 'report' ? 'secondary' : 'primary';
     return <Card
     className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
     sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center',
         ...ComponentBorderStyle, borderRadius: '6px',
-        backgroundColor: theme => artifactType === 'file' ? theme.palette.background.paper
+        backgroundColor: theme => artifactType === 'file' || artifactType === 'workflow' ? theme.palette.background.paper
             : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
         '--artifact-selection-color': theme => theme.palette[tone].light,
         '& .artifact-actions': { opacity: 0, transition: 'opacity 0.15s' },
         '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
         '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } },
     }}>
-    <ButtonBase disableRipple onClick={onClick} sx={{ flex: 1, minWidth: 0, alignSelf: 'stretch',
+    <ButtonBase disableRipple onClick={onClick} aria-label={children ? title : undefined} sx={{ flex: 1, minWidth: 0, alignSelf: 'stretch',
         display: 'block', textAlign: 'left', padding: '4px 8px 4px 6px',
         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: `${tone}.main`, outlineOffset: -2 },
     }}>
-        <Typography component="span" sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
-            display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>
+        {children || <Typography component="span" sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
+            display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>}
         {notes && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs,
             color: 'text.secondary', overflowWrap: 'anywhere' }}>{notes}</Typography>}
     </ButtonBase>

@@ -22,7 +22,7 @@ load is needed for these workflows.
 | User goal | Workflow | Done when |
 |---|---|---|
 | Analyze available data | Reuse context; inspect or compute only what is missing; call `visualize` when a chart helps. | The requested result is delivered and interpreted. |
-| Analyze a new subject or load data | Check workspace inputs; search connected catalogs; inspect matching metadata; call `propose_data_operation` for a suitable missing dataset. | A grounded proposal awaits approval; after a successful import, continue the requested analysis. |
+| Analyze a new subject or load data | Check workspace inputs; search connected catalogs; inspect matching metadata; call `propose_data_operation` for a suitable missing dataset. | Use `user_review_needed: false` for a clear single recommendation; ambiguous choices or material substitutions require review. Continue analysis after successful import. |
 | Find out what data exists | Use workspace inventory for available inputs or catalog discovery for connected sources; summarize coverage and limits. | The availability question is answered; no unsolicited import is needed. |
 | Connect or repair a source | Open `propose_connection`, or read and update the targeted connector form. | The form awaits the user's review and Connect; do not claim it is connected yet. |
 | Create or revise a file | Use `create_file` or `edit_file`. | The requested artifact exists as a durable workspace file, not merely a description of how to create it. |

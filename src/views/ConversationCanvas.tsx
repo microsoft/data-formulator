@@ -57,6 +57,7 @@ export const ConversationCanvas = ({ textTurnId, entryIndex, nodeIds }: { textTu
             || loadedNodes.find(node => node.tableId === table.id)?.parentNodeId || table.derive?.trigger.tableId })),
         ...loadedNodes,
         ...fileNodes,
+        ...reports,
     ];
     const path = nodeIds ?? [textTurnId];
     const pathIds = new Set(path);
@@ -67,6 +68,8 @@ export const ConversationCanvas = ({ textTurnId, entryIndex, nodeIds }: { textTu
     }, [textTurnId, entryIndex]);
 
     const artifactButtonSx = { textTransform: 'none', fontSize: textVar.xs, justifyContent: 'flex-start' } as const;
+    const reportArtifact = (report: typeof reports[number]) => <Button key={report.id} startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
+        onClick={() => { dispatch(dfActions.setFocused({ type: 'report', reportId: report.id })); dispatch(dfActions.setViewMode('report')); }}>{report.title || t('conversation.report', { defaultValue: 'Report' })}</Button>;
     const fileArtifact = (file: typeof fileNodes[number]) => <Box key={file.id} sx={{ mb: 1 }}>
         <Tooltip describeChild title={file.path}>
             <Button startIcon={<AttachFileIcon />} sx={{ ...artifactButtonSx, maxWidth: '100%', overflowWrap: 'anywhere' }}
@@ -160,6 +163,8 @@ export const ConversationCanvas = ({ textTurnId, entryIndex, nodeIds }: { textTu
                 '& strong': { fontWeight: 600 },
             }}>
                 {path.map(nodeId => {
+                    const report = reports.find(item => item.id === nodeId);
+                    if (report) return reportArtifact(report);
                     const file = fileNodes.find(item => item.id === nodeId);
                     if (file) return pathIds.has(file.parentNodeId) && turns.some(turn => turn.id === file.parentNodeId)
                         ? null : fileArtifact(file);
@@ -180,8 +185,7 @@ export const ConversationCanvas = ({ textTurnId, entryIndex, nodeIds }: { textTu
                                 onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}>
                                 {turn.form?.title || t('conversation.openInteraction', { defaultValue: 'Open interaction' })}
                             </Button>}
-                            {reports.filter(report => report.parentNodeId === turn.id).map(report => <Button key={report.id} startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
-                                onClick={() => { dispatch(dfActions.setFocused({ type: 'report', reportId: report.id })); dispatch(dfActions.setViewMode('report')); }}>{report.title || t('conversation.report', { defaultValue: 'Report' })}</Button>)}
+                            {reports.filter(report => report.parentNodeId === turn.id && !pathIds.has(report.id)).map(reportArtifact)}
                             </>)}
                         </Box>
                         {turn.answered && turn.answer && userMessage(turn.answer, `${turn.id}-answer`)}

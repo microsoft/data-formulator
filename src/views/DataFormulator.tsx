@@ -57,7 +57,8 @@ import { useContainerSize, useLayout } from '../app/LayoutProvider';
 import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
+import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
+import { LandingDataEntry } from './LandingDataEntry';
 import { ReportView } from './ReportView';
 import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -912,8 +913,17 @@ export const DataFormulatorFC = ({ }) => {
             )}
 
             <Box sx={{ mt: 5 }}>
-                <DataLoadMenu 
-                    onSelectTab={(tab) => openUploadDialog(tab)}
+                <LandingDataEntry
+                    onStartChat={startAnalystChat}
+                    ensureActiveWorkspace={() => {
+                        if (!store.getState().activeWorkspace) {
+                            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
+                        }
+                    }}
+                    onUpload={() => openUploadDialog('upload')}
+                    onConnect={() => openUploadDialog('add-connection')}
+                    onLinkFolder={serverConfig?.IS_LOCAL_MODE ? () => openUploadDialog('local-folder') : undefined}
+                    readOnly={activeWorkspace?.readOnly}
                     onSelectConnector={(conn) => {
                         // Already-authed connector → open the data-source
                         // sidebar focused on it. Otherwise open the upload
@@ -924,7 +934,6 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
-                    serverConfig={serverConfig}
                     connectors={pageConnectors}
                 />
             </Box>

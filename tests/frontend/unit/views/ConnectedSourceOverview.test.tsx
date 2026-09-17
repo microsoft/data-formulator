@@ -8,6 +8,7 @@ import { apiRequest } from '../../../../src/app/apiClient';
 import { CONNECTOR_ACTION_URLS, CONNECTOR_URLS } from '../../../../src/app/utils';
 import { ConnectedSourceOverview } from '../../../../src/components/ConnectedSourceOverview';
 import { DataLoadMenu, UnifiedDataUploadDialog } from '../../../../src/views/UnifiedDataUploadDialog';
+import { LandingDataEntry } from '../../../../src/views/LandingDataEntry';
 import * as workspaceService from '../../../../src/app/workspaceService';
 
 let resizeObservers: Set<() => void>;
@@ -71,6 +72,53 @@ it('offers direct upload and browsing with an agent tip instead of a chat compos
     expect(onSelectTab).toHaveBeenLastCalledWith('database');
     expect(screen.getByText('You can also ask the agent to find and load data.')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
+});
+
+it('keeps the landing chat, quick actions, and source links separate from the load menu', () => {
+    const onStartChat = vi.fn();
+    const onUpload = vi.fn();
+    const onConnect = vi.fn();
+    const onSelectConnector = vi.fn();
+    const connector = { id: 'examples', display_name: 'Example Datasets', connected: true } as any;
+    render(<LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={vi.fn()}
+        onUpload={onUpload} onConnect={onConnect} onSelectConnector={onSelectConnector} connectors={[connector]} />);
+    expect(screen.queryByRole('button', { name: 'Browse data sources' })).toBeNull();
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Compare weekly sales' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(onStartChat).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onStartChat).toHaveBeenLastCalledWith('Compare weekly sales', [], []);
+    expect(input).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Guide me to connect a data source' }));
+    expect(onStartChat).toHaveBeenLastCalledWith('Guide me to connect a data source', [], []);
+    fireEvent.click(screen.getByRole('button', { name: 'Example Datasets' }));
+    expect(onSelectConnector).toHaveBeenCalledWith(connector);
+    fireEvent.click(screen.getByRole('button', { name: 'Upload Data' }));
+    expect(onUpload).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect databases' }));
+    expect(onConnect).toHaveBeenCalledOnce();
+});
+
+it('uploads landing attachments into a session and submits the server filename', async () => {
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockResolvedValue({ data: { path: 'scratch/sales-123.csv' } } as any);
+    const ensureActiveWorkspace = vi.fn();
+    const onStartChat = vi.fn();
+    const { container } = render(<LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={ensureActiveWorkspace}
+        onUpload={vi.fn()} onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['sales\n12'], 'sales.csv', { type: 'text/csv' })] } });
+    expect(ensureActiveWorkspace).toHaveBeenCalledOnce();
+    await screen.findByText('sales-123.csv');
+    fireEvent.click(screen.getByRole('button', { name: 'Start chatting with the agent' }));
+    expect(onStartChat).toHaveBeenCalledWith('', [], ['sales-123.csv']);
+});
+
+it('disables the landing composer and quick actions in read-only sessions', () => {
+    render(<LandingDataEntry onStartChat={vi.fn()} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()}
+        onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} readOnly />);
+    expect(screen.getByRole('textbox')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Guide me to connect a data source' })).toHaveClass('Mui-disabled');
 });
 
 it('browses a connector using the artifact preview inside the load dialog', async () => {

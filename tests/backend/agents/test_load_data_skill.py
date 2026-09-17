@@ -205,7 +205,7 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
     assert "search connected catalogs with `find_data` before asking the user" in prompt
     assert "need not block a bounded catalog search" in prompt
     assert "call `propose_data_operation` in the same run" in prompt
-    assert "The proposal itself obtains user confirmation" in prompt
+    assert "Set `user_review_needed: false` for one unambiguous recommended load" in prompt
     assert "If the user asked only to find or describe available data" in prompt
     assert "A statement of intended\nwork is not completion" in prompt
     assert "Prefer `ask_user`" in prompt
@@ -216,7 +216,8 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
     }
     assert "Search results are not loaded data" in specs["find_data"]["description"]
     assert "instead of ending with a promise" in specs["propose_data_operation"]["description"]
-    assert "it does not execute one" in specs["propose_data_operation"]["description"]
+    assert "user_review_needed=false" in specs["propose_data_operation"]["description"]
+    assert "user_review_needed" in specs["propose_data_operation"]["parameters"]["required"]
 
 
 def test_tool_progress_args_are_useful_and_credential_safe() -> None:
@@ -366,6 +367,58 @@ def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path
         "op": "GTE",
         "value": "2025-01-01",
     }
+
+
+@pytest.mark.parametrize("through_agent", [False, True])
+def test_unambiguous_load_executes_without_review_or_narration(tmp_path: Path, through_agent: bool) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    _save_orders_catalog(workspace.user_home)
+    loader = MagicMock()
+    loader.fetch_data_as_arrow.return_value = pa.table({"amount": [10.0, 20.0]})
+    loader.get_safe_params.return_value = {}
+    skill = build_registry().get_skill("workspace")
+    spec = {"user_review_needed": False,
+            "options": [{"label": "Recent orders", "tables": [{"source_id": "warehouse", "table_key": "public.orders"}]}]}
+    with patch("data_formulator.data_connector.resolve_live_loader", return_value=loader):
+        if through_agent:
+            from data_formulator.analyst.agent import AnalystAgent
+            analyst = AnalystAgent(client=None, workspace=workspace)
+            analyst._run_payload = {"input_tables": [], "conversation_id": "conversation-1"}
+            generator = analyst._dispatch_skill_action("workspace", "propose_data_operation", spec, [], 1, [])
+            events = [next(generator)]
+            with pytest.raises(StopIteration) as stopped:
+                next(generator)
+            assert stopped.value.value
+            assert analyst._run_payload["input_tables"]
+            assert analyst._run_payload["workspace_inputs"].inputs
+        else:
+            events = list(skill.handle_action("propose_data_operation", spec, _context(workspace)))
+    assert [event["type"] for event in events] == ["data_operation_result"]
+    operation = events[0]["operation"]
+    assert operation["status"] == "loaded"
+    assert operation["result_table_ids"]
+    assert workspace.list_tables()
+    loader.fetch_data_as_arrow.assert_called_once()
+
+
+def test_multiple_load_options_still_require_review(tmp_path: Path) -> None:
+    _save_orders_catalog(tmp_path)
+    skill = build_registry().get_skill("workspace")
+    option = {"label": "Recent orders", "tables": [{"source_id": "warehouse", "table_key": "public.orders"}]}
+    with patch("data_formulator.data_connector.resolve_live_loader") as loader:
+        events = list(skill.handle_action("propose_data_operation", {
+            "user_review_needed": False, "response": "Which scope should I use?", "options": [option, option],
+        }, _context(_Workspace(tmp_path))))
+    assert events[0]["type"] == "interact"
+    loader.assert_not_called()
+
+
+@pytest.mark.parametrize("flag", ["false", 0, None])
+def test_review_flag_requires_a_boolean(tmp_path: Path, flag) -> None:
+    skill = build_registry().get_skill("workspace")
+    events = list(skill.handle_action("propose_data_operation", {"user_review_needed": flag}, _context(_Workspace(tmp_path))))
+    assert events[0]["type"] == "error"
+    assert "must be a boolean" in events[0]["message"]
 
 
 def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:

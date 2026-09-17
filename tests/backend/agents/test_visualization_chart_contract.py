@@ -26,6 +26,7 @@ def test_visualize_schema_requires_generalized_input_sources():
     parameters = visualize["function"]["parameters"]
 
     assert "title" in parameters["required"]
+    assert "display_name" in parameters["required"]
     assert "input_sources" in parameters["required"]
     assert "input_tables" not in parameters["required"]
     assert parameters["properties"]["input_sources"]["items"]["properties"]["kind"]["enum"] == ["data", "file"]

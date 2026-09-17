@@ -99,9 +99,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     const displayName = targetTable?.displayId
         || targetTable?.id
         || 'table';
-    const realName = targetTable?.derive
-        ? targetTable.virtual?.tableId
-        : targetTable?.source?.originalTableName || targetTable?.virtual?.tableId;
+    const realName = targetTable?.source?.type === 'file' ? targetTable.source.fileName : undefined;
     const showRealName = !!realName
         && realName.toLowerCase().replace(/[\s_-]+/g, '') !== displayName.toLowerCase().replace(/[\s_-]+/g, '');
 

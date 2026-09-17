@@ -1,8 +1,37 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { store } from '../../../../src/app/store';
+import { dfActions } from '../../../../src/app/dfSlice';
+import { setCachedChart, invalidateChart } from '../../../../src/app/chartCache';
 import { expect, it, vi } from 'vitest';
 import { TerminalApprovalDialog, TerminalExecutionView, TerminalMessageContent } from '../../../../src/components/TerminalApprovalDialog';
 import { migrateState } from '../../../../src/app/stateMigrations';
+
+it.each(['compact', 'document'] as const)('renders bounded chart previews in %s Markdown and refreshes delayed thumbnails without allowing unsafe URLs', variant => {
+    const chartId = `markdown-comparison-${variant}`;
+    const image = 'data:image/png;base64,cG5n';
+    store.dispatch(dfActions.resetState());
+    const { container } = render(<Provider store={store}><TerminalMessageContent variant={variant}
+        content={`## Two-period comparison\n\n![Price changes by item and period](chart://${chartId})\n\n![Unsafe](javascript:alert%281%29)\n\n[Unsafe link](javascript:alert%281%29)`} /></Provider>);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByRole('img', { name: 'Price changes by item and period' })).toBeTruthy();
+    try {
+        setCachedChart(chartId, { svg: '', fullPngDataUrl: image, thumbnailDataUrl: image,
+            naturalWidth: 400, naturalHeight: 300, specKey: 'comparison' });
+        act(() => { store.dispatch(dfActions.updateChartThumbnail({ chartId, thumbnail: image })); });
+        expect(container.querySelector(`img[data-chart-id="${chartId}"]`)).toHaveAttribute('src', image);
+        const previewStyle = getComputedStyle(container.querySelector('img')!);
+        expect(previewStyle.maxWidth).toBe('min(100%, 320px)');
+        expect(previewStyle.maxHeight).toBe('200px');
+        expect(previewStyle.width).toBe('auto');
+        expect(previewStyle.height).toBe('auto');
+        expect(container.querySelectorAll('img')).toHaveLength(1);
+        expect(screen.getByText('Unsafe link').getAttribute('href')).not.toContain('javascript:');
+    } finally {
+        invalidateChart(chartId);
+    }
+});
 
 it('displays migrated commands without inventing exact arguments or success', () => {
     const content = 'Inspect usage.\n\n**Command**\n\n```bash\naz account show\n```\n\n**Working directory:** `/workspace`\n\n**Result**\n\n```text\n{"subscription":"example"}\n```';

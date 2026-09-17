@@ -4,7 +4,7 @@
 import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
-import Markdown from 'react-markdown';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Box, Collapse, Tooltip, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
@@ -22,11 +22,13 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import WbIncandescentIcon from '@mui/icons-material/WbIncandescent';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { InteractionEntry } from '../components/ComponentType';
+import { ShimmerText } from '../components/FunComponents';
 import { AgentIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
 import { textVar } from '../app/layout';
-import { useDispatch } from 'react-redux';
-import { dfActions } from '../app/dfSlice';
+import { useDispatch, useSelector } from 'react-redux';
+import { dfActions, dfSelectors } from '../app/dfSlice';
+import { getCachedChart } from '../app/chartCache';
 
 export const workspaceFileFromHref = (href: string): string | null => {
     const prefixes = ['/api/workspace/files/', '/api/agent/workspace/scratch/', '/api/workspace/scratch/', 'scratch/', './scratch/'];
@@ -48,6 +50,22 @@ const WorkspaceArtifactLink: React.FC<{ href: string; fileName: string; children
         event.stopPropagation();
         dispatch(dfActions.setFocused({ type: 'file', fileName }));
     }} sx={{ color: 'primary.main', textDecoration: 'underline', overflowWrap: 'anywhere' }}>{children}</Box>;
+};
+
+const markdownImageSx = {
+    display: 'block', width: 'auto', height: 'auto',
+    maxWidth: 'min(100%, 320px)', maxHeight: 200, objectFit: 'contain',
+} as const;
+
+const MarkdownChartImage: React.FC<{ chartId: string; alt?: string }> = ({ chartId, alt }) => {
+    const thumbnail = useSelector(dfSelectors.getChartThumbnail(chartId));
+    const cached = getCachedChart(chartId);
+    const src = cached?.fullPngDataUrl || thumbnail || cached?.thumbnailDataUrl;
+    return src
+        ? <Box component="img" src={src} alt={alt || chartId} data-chart-id={chartId}
+            sx={markdownImageSx} />
+        : <Box component="span" role="img" aria-label={alt || chartId} data-chart-id={chartId}
+            sx={{ color: 'text.secondary' }}>{alt || chartId}</Box>;
 };
 
 /** Pick the icon component for a step line based on known prefixes. */
@@ -97,20 +115,6 @@ const PlanStepItem: React.FC<{
             display: 'flex', alignItems: 'flex-start', gap: '4px',
             position: 'relative', overflow: 'hidden',
             cursor: 'pointer',
-            ...(showShimmer ? {
-                '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0, left: 0, width: '100%', height: '100%',
-                    background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-                    animation: 'windowWipe 2s ease-in-out infinite',
-                    zIndex: 1, pointerEvents: 'none',
-                },
-                '@keyframes windowWipe': {
-                    '0%': { transform: 'translateX(-100%)' },
-                    '100%': { transform: 'translateX(100%)' },
-                },
-            } : {}),
         }}
         onClick={() => setExpanded(prev => !prev)}
         >
@@ -127,7 +131,7 @@ const PlanStepItem: React.FC<{
                     overflow: 'hidden',
                 } : {}),
             }}>
-                {displayLine}
+                {showShimmer ? <ShimmerText tone="neutral" fontSize="inherit" fontWeight={400}>{displayLine}</ShimmerText> : displayLine}
             </Typography>
             {trailing}
         </Box>
@@ -188,7 +192,12 @@ export const CompactMarkdown: React.FC<{
     }}>
         <Markdown
             remarkPlugins={[remarkGfm]}
+            urlTransform={(url, key, node) => key === 'src' && node.tagName === 'img' && url.startsWith('chart://')
+                ? url : defaultUrlTransform(url)}
             components={{
+                img: ({ src, alt }) => src?.startsWith('chart://')
+                    ? <MarkdownChartImage chartId={src.slice('chart://'.length)} alt={alt} />
+                    : src ? <Box component="img" src={src} alt={alt} sx={markdownImageSx} /> : null,
                 a: ({ href, children }) => {
                     const fileName = workspaceFileFromHref(href || '');
                     return fileName

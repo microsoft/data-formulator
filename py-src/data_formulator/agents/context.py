@@ -8,6 +8,7 @@ can construct tiered context (primary/other tables, focused thread,
 peripheral threads) from the same code.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -68,6 +69,8 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
             lines.append(f"  Analyst: {step['agent_response']}")
         if step.get("user_answer"):
             lines.append(f"  User reply: {step['user_answer']}")
+        if step.get("workflow"):
+            lines.append("  Workflow status and outputs: " + json.dumps(step["workflow"], ensure_ascii=False))
         operation = step.get("data_operation")
         if operation:
             options = ", ".join(operation.get("options") or [])

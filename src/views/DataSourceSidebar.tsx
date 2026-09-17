@@ -49,7 +49,7 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import { WorkflowGears } from '../components/FunComponents';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -65,7 +65,7 @@ import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import SortIcon from '@mui/icons-material/Sort';
 import CheckIcon from '@mui/icons-material/Check';
 
-import { KnowledgePanel } from './KnowledgePanel';
+import { WorkflowPanel } from './WorkflowPanel';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -349,7 +349,7 @@ export const DataSourceSidebar: React.FC<{
                         bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
                         borderRadius: 1,
                     }}>
-                        <LightbulbOutlinedIcon fontSize="small" />
+                        <WorkflowGears running={false} size={20} />
                     </IconButton>
                 </Tooltip>
             </Box>
@@ -2467,7 +2467,7 @@ const DataSourceSidebarPanel: React.FC<{
                         </IconButton>
                     </Tooltip>
                 </Box>
-                <KnowledgePanel />
+                <WorkflowPanel onCreateSession={createNewSession} />
             </Box>
             )}
 

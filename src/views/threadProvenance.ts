@@ -1,5 +1,29 @@
 import { createConversationRootId, isConversationRootId, type DictTable, type TextTurn, type Trigger, type LoadedTableNode, type FileNode, type ComputationInputSource } from '../components/ComponentType';
 
+export function resolveArtifactParentNodeId(parentNodeId: string | undefined, artifacts: { id: string; parentNodeId?: string }[]): string | undefined {
+    const seen = new Set<string>();
+    let current = parentNodeId;
+    while (current && !seen.has(current)) {
+        seen.add(current);
+        const artifact = artifacts.find(node => node.id === current);
+        if (!artifact) return current;
+        current = artifact.parentNodeId;
+    }
+    return undefined;
+}
+
+export function orderThreadOutputs<Item extends { outputNodeId?: string }>(items: Item[], turns: TextTurn[]): Item[] {
+    const result = [...items];
+    for (const turn of turns) {
+        if (!turn.outputIds?.length) continue;
+        const positions = new Map(turn.outputIds.map((id, index) => [id, index]));
+        const slots = result.flatMap((item, index) => item.outputNodeId && positions.has(item.outputNodeId) ? [index] : []);
+        const ordered = slots.map(index => result[index]).sort((first, second) => positions.get(first.outputNodeId!)! - positions.get(second.outputNodeId!)!);
+        slots.forEach((slot, index) => { result[slot] = ordered[index]; });
+    }
+    return result;
+}
+
 export function getConversationInputContext(
     parentNodeId: string | undefined,
     tables: DictTable[],
@@ -59,6 +83,7 @@ export function getThreadLeadUpTurns(
     turns: TextTurn[],
     loadedNodes: LoadedTableNode[] = [],
     fileNodes: FileNode[] = [],
+    reports: { id: string; parentNodeId?: string }[] = [],
 ): TextTurn[] {
     const result: TextTurn[] = [];
     const seen = new Set<string>();
@@ -75,17 +100,20 @@ export function getThreadLeadUpTurns(
         if (parentTable?.derive) break;
         const parent = parentTable?.parentNodeId
             || loadedNodes.find(node => node.tableId === current || node.id === current)?.parentNodeId
-            || fileNodes.find(node => node.id === current)?.parentNodeId;
+            || fileNodes.find(node => node.id === current)?.parentNodeId
+            || reports.find(node => node.id === current)?.parentNodeId;
         if (!parent) break;
         current = parent;
     }
     return result;
 }
 
-export function getThreadConversationIds(targetId: string, tables: DictTable[], turns: TextTurn[], loadedNodes: LoadedTableNode[] = [], fileNodes: FileNode[] = []): string[] {
+export function getThreadConversationIds(targetId: string, tables: DictTable[], turns: TextTurn[], loadedNodes: LoadedTableNode[] = [], fileNodes: FileNode[] = [], reports: { id: string; parentNodeId?: string }[] = []): string[] {
     const parents = new Map<string, string | undefined>([
         ...turns.map(turn => [turn.id, turn.parentNodeId || createConversationRootId(turn.id)] as const),
+        ...loadedNodes.map(node => [node.id, node.parentNodeId] as const),
         ...fileNodes.map(node => [node.id, node.parentNodeId] as const),
+        ...reports.map(node => [node.id, node.parentNodeId] as const),
         ...tables.map(table => [table.id, getThreadParentNodeId(table)
             || loadedNodes.find(node => node.tableId === table.id)?.parentNodeId
             || table.derive?.trigger.tableId] as const),
@@ -99,7 +127,7 @@ export function getThreadConversationIds(targetId: string, tables: DictTable[], 
         current = parents.get(current);
     }
     const turnIds = new Set(turns.map(turn => turn.id));
-    const fileIds = new Set(fileNodes.map(node => node.id));
+    const artifactIds = new Set([...fileNodes, ...reports].map(node => node.id));
     const excludedTurns = new Set<string>();
     for (const table of tables.filter(item => !spine.has(item.id))) {
         current = parents.get(table.id);
@@ -112,8 +140,17 @@ export function getThreadConversationIds(targetId: string, tables: DictTable[], 
     }
     const children = new Map<string, string[]>();
     for (const [id, parent] of parents) {
-        if (!parent || excludedTurns.has(id) || (!turnIds.has(id) && !fileIds.has(id) && !spine.has(id))) continue;
+        if (!parent || excludedTurns.has(id) || (!turnIds.has(id) && !artifactIds.has(id) && !spine.has(id))) continue;
         children.set(parent, [...(children.get(parent) || []), id]);
+    }
+    for (const turn of turns) {
+        const order = turn.outputIds?.map(id => loadedNodes.find(node => node.id === id)?.tableId || id);
+        if (!order) continue;
+        children.get(turn.id)?.sort((first, second) => {
+            const firstIndex = order.indexOf(first);
+            const secondIndex = order.indexOf(second);
+            return (firstIndex < 0 ? order.length : firstIndex) - (secondIndex < 0 ? order.length : secondIndex);
+        });
     }
     const result: string[] = [];
     const visited = new Set<string>();
@@ -133,6 +170,7 @@ export function resolveThreadParentTableId(
     textTurns: TextTurn[],
     loadedNodes: LoadedTableNode[] = [],
     fileNodes: FileNode[] = [],
+    reports: { id: string; parentNodeId?: string }[] = [],
 ): string | undefined {
     const tableIds = new Set(tables.map(candidate => candidate.id));
     const turnsById = new Map(textTurns.map(turn => [turn.id, turn]));
@@ -151,7 +189,8 @@ export function resolveThreadParentTableId(
         } else {
             parentId = turnsById.get(parentId)?.parentNodeId
                 || loadedNodes.find(node => node.id === parentId)?.parentNodeId
-                || fileNodes.find(node => node.id === parentId)?.parentNodeId;
+                || fileNodes.find(node => node.id === parentId)?.parentNodeId
+                || reports.find(node => node.id === parentId)?.parentNodeId;
         }
     }
 
@@ -164,6 +203,7 @@ export function getThreadTriggers(
     textTurns: TextTurn[],
     loadedNodes: LoadedTableNode[] = [],
     fileNodes: FileNode[] = [],
+    reports: { id: string; parentNodeId?: string }[] = [],
 ): Trigger[] {
     const tablesById = new Map(tables.map(table => [table.id, table]));
     const triggers: Trigger[] = [];
@@ -172,7 +212,7 @@ export function getThreadTriggers(
 
     while (table?.derive && !seen.has(table.id)) {
         seen.add(table.id);
-        const parentTableId = resolveThreadParentTableId(table, tables, textTurns, loadedNodes, fileNodes);
+        const parentTableId = resolveThreadParentTableId(table, tables, textTurns, loadedNodes, fileNodes, reports);
         triggers.unshift({
             ...table.derive.trigger,
             tableId: parentTableId || table.derive.trigger.tableId,
@@ -189,7 +229,8 @@ export function isThreadLeafTable(
     textTurns: TextTurn[],
     loadedNodes: LoadedTableNode[] = [],
     fileNodes: FileNode[] = [],
+    reports: { id: string; parentNodeId?: string }[] = [],
 ): boolean {
     return !tables.some(candidate => candidate.derive
-        && resolveThreadParentTableId(candidate, tables, textTurns, loadedNodes, fileNodes) === table.id);
+        && resolveThreadParentTableId(candidate, tables, textTurns, loadedNodes, fileNodes, reports) === table.id);
 }

@@ -79,7 +79,9 @@ Use structured queries, not generated source-specific SQL.
 Reconcile discoveries with existing workspace inputs to avoid duplicate imports.
 For suitable missing data needed by an import or analysis request,
 call `propose_data_operation` in the same run, not a promise to load later.
-The proposal itself obtains user confirmation; do not ask permission separately.
+Set `user_review_needed: false` for one unambiguous recommended load and continue
+from its execution result without a confirmation pause. Set it to true if the
+user must resolve ambiguity or approve a material change to their requested data.
 If the user asked only to find or describe available data, answer with findings
 without an unsolicited import. If nothing suitable is accessible, explain what
 was checked and offer a concrete connection or upload next step.
@@ -94,8 +96,11 @@ invent operation IDs or hashes; the server creates them.
 
 Alongside the call, briefly explain what was found and what each choice provides,
 including coverage or compromises. Use concise option labels, not reasoning in
-labels or column lists instead of an explanation. Wait for the user's choice and
-the actual import result before claiming data is loaded or analyzing it.
+labels or column lists instead of an explanation. Supply `response` when there is
+no accompanying narration. Multiple alternatives always require review. Changes
+to requested subjects, date coverage, or granularity also require review, even
+with one option. Wait for the actual import result before claiming data is loaded
+or analyzing it. Review is the default for legacy calls that omit the flag.
 
 ## Connections and External Access
 

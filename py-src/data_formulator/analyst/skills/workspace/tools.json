@@ -3,12 +3,12 @@
     "type": "function",
     "function": {
       "name": "create_data",
-      "description": "Create a registered workspace table for analysis, not a scratch export. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame. Declare actual data/file input_sources; use [] for generated data without inputs and clearly identify synthetic data. Returns the table name and content hash.",
+      "description": "Create an independently needed registered workspace table, not a scratch export or staging table for a chart. For chart-specific transformations, use visualize directly: it publishes both the derived table and chart. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame. Declare actual data/file input_sources; use [] for generated data without inputs and clearly identify synthetic data. Returns the table name and content hash.",
       "parameters": {
         "type": "object",
         "properties": {
           "table_name": { "type": "string", "description": "New workspace table identifier, using letters, digits and underscores." },
-          "display_name": { "type": "string", "maxLength": 80, "description": "Short human-readable title." },
+          "display_name": { "type": "string", "maxLength": 80, "description": "Short human-readable table title, supplied when creating the table. Describe its contents; do not use the internal identifier or wait for background naming." },
           "rows": { "type": "array", "items": { "type": "object" }, "description": "Literal records. Omit when using code." },
           "code": { "type": "string", "description": "Python that reads listed inputs and computes output_variable; do not write files directly." },
           "output_variable": { "type": "string", "description": "Variable containing the resulting pandas DataFrame." },
@@ -16,7 +16,7 @@
             "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
           }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Exact IDs from list_workspace_items(scope=input), or scratch/... paths with kind=file. Only inputs materially used." }
         },
-        "required": ["table_name", "input_sources"],
+        "required": ["table_name", "display_name", "input_sources"],
         "additionalProperties": false
       }
     }
@@ -643,10 +643,14 @@
     "type": "function",
     "function": {
       "name": "propose_data_operation",
-      "description": "Offer one to three complete immutable connected-data loading alternatives and pause for the user's selection. When a suitable missing dataset is found for an import or analysis request, call this in the same run instead of ending with a promise to load it. One option is enough when the choice is clear. This call creates the user-confirmation step; no separate permission question is needed. Discovery must ground every source, table, filter, and sort field. This proposes a load; it does not execute one or mean the data is already loaded.",
+      "description": "Load connected data needed for the user's task. When suitable missing data is found, call this in the same run instead of ending with a promise to load it. Set user_review_needed=false with exactly one complete recommended option to load it automatically and continue from the actual result. Set true when the source, scope, or alternatives need the user's choice, including substitutions that change requested subjects, date coverage, or granularity. Multiple options always require review. Discovery must ground every source, table, filter, and sort field. Only successful execution means data is loaded.",
       "parameters": {
         "type": "object",
         "properties": {
+          "user_review_needed": {
+            "type": "boolean",
+            "description": "False to execute one unambiguous recommended option without confirmation. True to ask about ambiguity or material deviations from the user's request."
+          },
           "response": {
             "type": "string",
             "description": "Fallback only. Leave empty when you narrate in your message text, which is what the user reads."
@@ -760,6 +764,7 @@
           }
         },
         "required": [
+          "user_review_needed",
           "options"
         ]
       }

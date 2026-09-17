@@ -46,6 +46,12 @@ class VisualizationSkill:
         step_index = int((ctx.payload or {}).get("completed_step_count", 0)) + 1
 
         try:
+            display_name = action.get("display_name")
+            if display_name is not None:
+                if (not isinstance(display_name, str) or not display_name.strip() or len(display_name) > 80
+                        or any(ord(character) < 32 or ord(character) == 127 for character in display_name)):
+                    raise ValueError("display_name must be a non-empty single-line table title of at most 80 characters")
+                display_name = display_name.strip()
             input_sources = normalize_input_sources(
                 action,
                 (ctx.payload or {}).get("workspace_inputs"),
@@ -96,6 +102,8 @@ class VisualizationSkill:
             return observation
 
         transform_result = viz_result["transform_result"]
+        if display_name is not None:
+            transform_result.setdefault("refined_goal", {})["display_name"] = display_name
         sign_result(transform_result)
         transformed_data = transform_result["content"]
         ctx.runtime.register_run_chart(transform_result, chart_spec)

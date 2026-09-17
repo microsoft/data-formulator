@@ -149,7 +149,7 @@ interface ResponseOptionButtonProps {
     onClick: () => void;
 }
 
-const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
+export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
     children,
     accentColor,
     selected = false,
@@ -229,7 +229,7 @@ interface ClarificationPanelProps {
     /** Close: de-highlight the pause and switch focus to the previous chart. */
     onClose: () => void;
     /** Delete: remove this pending pause block. */
-    onDelete: () => void;
+    onDelete?: () => void;
 }
 
 export const ClarificationPanel: FC<ClarificationPanelProps> = ({
@@ -771,6 +771,7 @@ interface FailedDraftPanelProps {
     onClose: () => void;
     onRetry: () => void;
     retryDisabled?: boolean;
+    retryLabel?: string;
 }
 
 /** Focused view for a retained failed analysis round. */
@@ -780,6 +781,7 @@ export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
     onClose,
     onRetry,
     retryDisabled = false,
+    retryLabel,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -789,7 +791,7 @@ export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
         <AgentPauseShell
             icon={<ErrorOutlineRoundedIcon sx={{ fontSize: textVar.xl, color: alpha(accent, 0.75) }} />}
             accentColor={accent}
-            title={t('chartRec.failedAnalysisTitle', { defaultValue: 'Failed analysis' })}
+            title={t('chartRec.interruptedTitle', { defaultValue: 'Interrupted' })}
             closeTooltip={t('chartRec.pauseClose')}
             onClose={onClose}
         >
@@ -815,7 +817,7 @@ export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
                         onClick={onRetry}
                     >
                         <ReplayRoundedIcon sx={{ fontSize: iconVar.sm }} />
-                        {t('messages.retry', { defaultValue: 'Retry' })}
+                        {retryLabel || t('messages.retry', { defaultValue: 'Retry' })}
                     </ResponseOptionButton>
                 </Box>
             </Box>

@@ -528,9 +528,9 @@ ${styles}
         }
     }, [focusedReportId, charts, tables, chartThumbnails]);
 
-    // Keep local content in sync with Redux during streaming (status === 'generating')
+    // Sync both streaming updates and the final committed content.
     useEffect(() => {
-        if (currentReport && currentReport.status === 'generating') {
+        if (currentReport) {
             setGeneratedReport(currentReport.content);
         }
     }, [currentReport?.content, currentReport?.status]);

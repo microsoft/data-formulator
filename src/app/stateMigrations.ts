@@ -413,7 +413,7 @@ const MIGRATIONS: Migration[] = [
                 }
                 return current?.startsWith('conversation-root:') ? current : `conversation-root:${id}`;
             };
-            const migrated = { ...state, __stateVersion: 8 };
+            const migrated: Record<string, any> = { ...state, __stateVersion: 8 };
             for (const key of collections) {
                 if (!Array.isArray(state[key])) continue;
                 migrated[key] = state[key].map((node: any) => ({

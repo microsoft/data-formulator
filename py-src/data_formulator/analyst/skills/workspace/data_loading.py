@@ -4,6 +4,7 @@ import json
 from typing import Any, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
+from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
 from data_formulator.data_operations import (
     ConnectorQueryStep,
     DataDiscoveryService,
@@ -12,6 +13,7 @@ from data_formulator.data_operations import (
     DataOperationPlan,
     DataOperationRepository,
     LoadQuery,
+    OperationError,
     ProbeBudget,
 )
 
@@ -285,9 +287,13 @@ class WorkspaceDataLoading:
         ctx: SkillContext,
     ) -> Generator[Event, None, str | None]:
         try:
+            user_review_needed = spec.get("user_review_needed", True)
+            if not isinstance(user_review_needed, bool):
+                raise ValueError("user_review_needed must be a boolean")
             raw_plans = spec.get("options")
             if not isinstance(raw_plans, list) or not 1 <= len(raw_plans) <= 3:
                 raise ValueError("propose_data_operation requires one to three options")
+            user_review_needed = user_review_needed or len(raw_plans) > 1
             discovery = DataDiscoveryService(ctx.workspace)
             resolved_plans: list[DataOperationPlan] = []
             for raw_plan in raw_plans:
@@ -332,6 +338,8 @@ class WorkspaceDataLoading:
             # for models that emit a bare tool call with no accompanying text.
             narration = str(ctx.payload.get("action_narration") or "").strip()
             response = narration or str(spec.get("response", "")).strip()
+            if not response and not user_review_needed:
+                response = plans[0].label
             operation = DataOperation(
                 reason="",
                 plans=plans,
@@ -353,7 +361,8 @@ class WorkspaceDataLoading:
                     "Use those analysis input tables directly, explain their relevance, "
                     "or propose only missing data."
                 )
-            DataOperationRepository.for_workspace(ctx.workspace).create(
+            repository = DataOperationRepository.for_workspace(ctx.workspace)
+            repository.create(
                 operation,
                 conversation_id=conversation_id,
             )
@@ -365,6 +374,21 @@ class WorkspaceDataLoading:
                 "message_code": "agent.invalidDataOperation",
             }
             return message
+
+        if not user_review_needed:
+            selected = repository.select(operation.id, operation.plans[0].id)
+            try:
+                result = DataOperationExecutor(ctx.workspace).execute(selected)
+                completed = repository.finish(operation.id, result.result_table_ids, result.failed_steps)
+            except Exception as exc:
+                completed = repository.fail(operation.id, OperationError(code="IMPORT_FAILED", message=str(exc)))
+            input_tables = ctx.payload.setdefault("input_tables", [])
+            existing_names = {table["name"] for table in input_tables}
+            input_tables.extend({"name": name, "rows": [], "virtual": True}
+                                for name in completed.result_table_ids if name not in existing_names)
+            ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
+            yield {"type": "data_operation_result", "operation": completed.to_public_dict()}
+            return "Connected-data loading finished. Inspect the actual result before continuing:\n" + json.dumps(completed.to_public_dict())
 
         yield {
             "type": "interact",

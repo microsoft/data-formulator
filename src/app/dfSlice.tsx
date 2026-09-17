@@ -1174,6 +1174,7 @@ export const dataFormulatorSlice = createSlice({
             const existingIdx = state.loadedTableNodes.findIndex(item => item.id === node.id);
             if (existingIdx >= 0) state.loadedTableNodes[existingIdx] = node;
             else state.loadedTableNodes.push(node);
+            state.focusedId = { type: 'reference', referenceId: node.id };
         },
         upsertFileNode: (state, action: PayloadAction<FileNode>) => {
             const node = action.payload;
@@ -2734,7 +2735,10 @@ export const dfSelectors = {
             }
             const art = textTurns.find(a => a.id === focusedTextId);
             if (!art) return undefined;
-            if (art.dataOperation || art.form) return { type: 'text', textId: art.id };
+            if (art.workflowCardFor && textTurns.some(turn => turn.id === art.workflowCardFor && turn.workflow)) {
+                return { type: 'text', textId: art.workflowCardFor };
+            }
+            if (art.dataOperation || art.form || art.workflow) return { type: 'text', textId: art.id };
             if (art.textKind === 'explain' && art.presentation === 'long_response') {
                 return { type: 'text', textId: art.id };
             }
