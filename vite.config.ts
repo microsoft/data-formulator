@@ -44,6 +44,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api/agent/analyst-streaming': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,

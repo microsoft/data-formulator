@@ -206,6 +206,7 @@ def build_workspace_input_manifest(
                 capabilities=("preview", "read", "search", "schema", "sample", "python"),
                 source=source,
                 sources=(source,) if source else (),
+                path=f"data/{metadata.filename}" if metadata is not None else None,
             )
         )
 
@@ -256,6 +257,7 @@ def build_workspace_input_manifest(
                 size_bytes=workspace_file.file_size,
                 content_hash=workspace_file.content_hash,
                 capabilities=_file_capabilities(workspace_file.name, workspace_file.media_type),
+                path=f"files/{workspace_file.name}",
             )
         )
 
@@ -533,12 +535,22 @@ class WorkspaceInputEngine:
             }
         except ValueError:
             adapter = None
+        metadata = self.workspace.get_table_metadata(item.display_name) if item.kind == "data" and item.origin == "workspace" else None
+        if item.kind == "file" and item.origin == "workspace":
+            metadata = self.workspace.get_metadata().files.get(item.display_name)
         return {
             "id": item.id,
             "kind": item.kind,
             "name": item.display_name,
             "media_type": item.media_type,
             "size_bytes": item.size_bytes,
+            "content_hash": item.content_hash,
+            "data_origin": getattr(metadata, "origin", None),
+            "managed_by": getattr(metadata, "origin", None) or "user",
+            "display_name": getattr(metadata, "display_name", None) or item.display_name,
+            "role": getattr(metadata, "role", None),
+            "edit_policy": getattr(metadata, "edit_policy", None) or "protected",
+            "stale": getattr(metadata, "stale", False),
             "capabilities": list(item.capabilities),
             "origin": item.origin,
             "memory_id": item.memory_id,

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
 import pytest
 
-from data_formulator.agents.agent_data_loading_chat import TOOLS
 from data_formulator.analyst.skills import build_registry
 from data_formulator.analyst.skills.base import SkillContext
 from data_formulator.analyst.workspace_inputs import (
@@ -72,41 +71,44 @@ def _save_orders_catalog(user_home: Path) -> None:
     }])
 
 
-def test_registry_exposes_discovery_tools_only_after_load_data_skill() -> None:
+def test_workspace_owns_discovery_and_loading_without_an_extra_skill_gate() -> None:
     registry = build_registry()
 
-    assert registry.has("load-data")
+    assert not registry.has("load-data")
     assert not registry.has("load")
     assert not registry.has("data-loading")
     assert not registry.has("data_loading")
     assert not registry.has("sources")
     assert "delegate" not in registry.metas["meta"].action_names
-    meta = registry.metas["load-data"]
+    meta = registry.metas["workspace"]
     assert meta.always_on is False
     assert meta.action_names == ("propose_data_operation", "propose_connection", "update_connector_form")
-    assert meta.tool_names == (
+    assert set(meta.tool_names) == {
+        "create_file", "edit_file", "create_data", "update_data", "list_workspace_items",
+        "read_workspace_item", "search_workspace_items",
         "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
         "list_connectors", "describe_connector", "read_connector_form",
-    )
-    assert registry.tools_for(["meta"]) != registry.tools_for(["meta", "load-data"])
+    }
+    assert registry.tools_for(["meta"]) == registry.tools_for(["meta", "workspace"])
     assert {
         spec["function"]["name"]
-        for spec in registry.tools_for(["load-data"])
+        for spec in registry.tools_for(["workspace"])
     } == set(meta.tool_names)
     assert {
         spec["function"]["name"]
-        for spec in registry.action_tools_for(["load-data"])
+        for spec in registry.action_tools_for(["workspace"])
     } == set(meta.action_names)
 
 
-def test_load_data_uses_one_canonical_skill_directory() -> None:
+def test_workspace_uses_one_canonical_skill_directory() -> None:
     registry = build_registry()
 
-    assert registry.canonical_name("load-data") == "load-data"
-    assert registry._doc_paths["load-data"].parent.name == "load-data"
+    assert registry.canonical_name("workspace") == "workspace"
+    assert registry._doc_paths["workspace"].parent.name == "workspace"
+    assert "load-data" not in registry.gated_skill_names()
 
 
-def test_empty_workspace_preloads_load_data_guidance(tmp_path: Path) -> None:
+def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
     from data_formulator.analyst.agent import AnalystAgent
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
@@ -126,13 +128,45 @@ def test_empty_workspace_preloads_load_data_guidance(tmp_path: Path) -> None:
 
     prompt = agent._build_system_prompt()
 
-    assert agent._loaded_skills == {"meta", "load-data"}
+    assert agent._loaded_skills == {"meta"}
     assert agent._initial_loaded_skills(data_inputs) == {"meta"}
-    assert "[SKILL: load-data] Preloaded for this run" in prompt
-    assert "When nothing is loaded yet" in prompt
-    assert "Call `summarize_data_sources({})`" in prompt
-    assert "Never use `ask_user` to ask which connected source" in prompt
-    assert "Summarize them all with one bounded call" in prompt
+    assert prompt.count("# Workspace\n") == 1
+    assert "load-data" not in prompt
+    assert "## Read Available Data" in prompt
+    assert "## Create or Revise Workspace Outputs" in prompt
+    assert "## Bring In Missing Data" in prompt
+    assert "## Common Workflows" in prompt
+    assert "## Data Boundaries" in prompt
+    assert "files need no promotion or another upload to be read" in prompt
+    assert "call `propose_data_operation` in the same run" in prompt
+    assert "The user chooses an import option or clicks Connect" in prompt
+    assert "are the only data that can be read directly" not in prompt
+    assert "propose_data_operation" in agent._legal_actions()
+    assert "`summarize_data_sources({})` across connected sources" in prompt
+    assert "Do not ask which source to inspect for a broad availability question" in prompt
+
+
+def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
+    from data_formulator.analyst.agent import AnalystAgent
+
+    agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
+    agent._loaded_skills = {"meta"}
+    prompt = " ".join(agent._build_system_prompt().split())
+    for rule in (
+        "File and data tools also return results, but create or revise durable workspace outputs",
+        "all sibling calls, including non-action tools, are discarded",
+        "Plain text with no tool calls ends the run",
+        "The namespace persists within an inspection cycle",
+        "Visualization code must be standalone",
+        "Discovery does not load data or make catalog paths readable",
+        "Host commands require explicit approval",
+        "Never write directly to `data/`, `files/`, `memory/`, or hidden runtime files",
+    ):
+        assert rule in prompt
+    assert "Each call has a fresh namespace" not in prompt
+    report = " ".join(agent.registry.load_body("report").split())
+    assert "returns an observation; it does not end the run" in report
+    assert "delivered as-is and the run ends" not in report
 
 
 def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_names(
@@ -146,15 +180,43 @@ def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_name
     agent._loaded_skills = {"meta"}
 
     assert agent._loaded_skills == {"meta"}
-    assert agent._legal_actions() == frozenset({"visualize", "ask_user", "long_response"})
+    assert agent._legal_actions() == frozenset({
+        "visualize", "ask_user", "long_response",
+        "propose_data_operation", "propose_connection", "update_connector_form",
+    })
     handlers = agent._loaded_skill_tool_map()
     assert isinstance(handlers["execute_python_script"], AnalysisSkill)
     assert isinstance(handlers["list_workspace_items"], WorkspaceSkill)
+    assert handlers["find_data"] is handlers["list_workspace_items"]
+    assert handlers["read_connector_form"] is handlers["list_workspace_items"]
     prompt = agent._build_system_prompt()
     assert "[SKILL: meta] Always-on baseline" in prompt
     assert "# Analysis" in prompt
     assert "# Workspace" in prompt
     assert "# Visualization" in prompt
+
+
+def test_discovery_to_import_policy_preserves_confirmation_and_optional_questions(tmp_path: Path) -> None:
+    from data_formulator.analyst.agent import AnalystAgent
+
+    agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
+    agent._loaded_skills = {"meta"}
+    prompt = agent._build_system_prompt()
+    assert "search connected catalogs with `find_data` before asking the user" in prompt
+    assert "need not block a bounded catalog search" in prompt
+    assert "call `propose_data_operation` in the same run" in prompt
+    assert "The proposal itself obtains user confirmation" in prompt
+    assert "If the user asked only to find or describe available data" in prompt
+    assert "A statement of intended\nwork is not completion" in prompt
+    assert "Prefer `ask_user`" in prompt
+    assert "a preference, not a requirement" in prompt
+    specs = {
+        spec["function"]["name"]: spec["function"]
+        for spec in agent.registry.tools_for(["meta"]) + agent.registry.action_tools_for(["meta"])
+    }
+    assert "Search results are not loaded data" in specs["find_data"]["description"]
+    assert "instead of ending with a promise" in specs["propose_data_operation"]["description"]
+    assert "it does not execute one" in specs["propose_data_operation"]["description"]
 
 
 def test_tool_progress_args_are_useful_and_credential_safe() -> None:
@@ -192,7 +254,12 @@ def test_tool_progress_args_are_useful_and_credential_safe() -> None:
     assert _tool_progress_args("unknown_tool", {"token": "secret"}) == {}
 
 
-def test_resume_rehydrates_preloaded_load_data_skill(tmp_path: Path) -> None:
+@pytest.mark.parametrize("legacy_body", [
+    "",
+    "[SKILL LOADED: load-data]\nLegacy discovery guidance",
+    "[SKILL: load-data] Preloaded for this run\nLegacy discovery guidance",
+])
+def test_resume_keeps_workspace_loading_available_without_a_separate_gate(tmp_path: Path, legacy_body: str) -> None:
     from data_formulator.analyst.agent import AnalystAgent
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
@@ -202,14 +269,58 @@ def test_resume_rehydrates_preloaded_load_data_skill(tmp_path: Path) -> None:
     system_prompt = agent._build_system_prompt()
     agent._loaded_skills = {"meta"}
 
-    agent._rehydrate_loaded_skills([{"role": "system", "content": system_prompt}])
+    agent._rehydrate_loaded_skills([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": legacy_body},
+    ])
 
-    assert agent._loaded_skills == {"meta", "load-data"}
+    assert agent._loaded_skills == {"meta"}
+    assert "propose_data_operation" in agent._legal_actions()
+    assert "find_data" in agent._loaded_skill_tool_map()
+
+
+@pytest.mark.parametrize("has_system_prompt", [True, False])
+def test_resume_preserves_existing_instructions_and_conversation(tmp_path: Path, has_system_prompt: bool) -> None:
+    from data_formulator.analyst.agent import AnalystAgent
+
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    client = MagicMock()
+    client.model = "test-model"
+    agent = AnalystAgent(client=client, workspace=workspace)
+    history = [
+        {"role": "user", "content": "I want consumer price data"},
+        {"role": "assistant", "content": None, "tool_calls": [{
+            "id": "load-report", "type": "function",
+            "function": {"name": "load_skill", "arguments": '{"name":"report"}'},
+        }]},
+        {"role": "tool", "tool_call_id": "load-report", "content": "Skill loaded"},
+        {"role": "user", "content": "[SKILL LOADED: report]\nSTALE REPORT INSTRUCTIONS"},
+        {"role": "user", "content": "[SKILL LOADED: load-data]\nSTALE LOADING INSTRUCTIONS"},
+        {"role": "system", "content": "Preserve this unrelated run instruction"},
+        {"role": "user", "content": "Please find available data first"},
+    ]
+    trajectory = ([{"role": "system", "content": "STALE BASELINE INSTRUCTIONS"}] if has_system_prompt else []) + history
+    original_trajectory = list(trajectory)
+    agent._build_system_prompt = MagicMock(side_effect=AssertionError("Resume must not rebuild instructions"))
+    observed = []
+
+    def next_action(messages, *args, **kwargs):
+        observed.extend(messages)
+        yield {"type": "agent_action", "final_text": "Ready"}
+
+    agent._get_next_action = next_action
+    events = list(agent.run([], "Please find available data first", trajectory=trajectory))
+    assert events[-1]["type"] == "completion"
+    assert observed[:-1] == original_trajectory
+    agent._build_system_prompt.assert_not_called()
+    assert agent._loaded_skills == {"meta", "report"}
+    assert "find_data" in agent._loaded_skill_tool_map()
+    assert "write_report" in agent._legal_actions()
 
 
 def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -259,7 +370,7 @@ def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path
 
 def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -278,7 +389,7 @@ def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:
 
 
 def test_invalid_proposal_returns_recoverable_observation(tmp_path: Path) -> None:
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
     generator = skill.handle_action(
         "propose_data_operation",
@@ -294,7 +405,7 @@ def test_invalid_proposal_returns_recoverable_observation(tmp_path: Path) -> Non
 
 def test_proposal_does_not_require_plan_descriptions(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -325,7 +436,7 @@ def test_minimal_proposal_resolves_table_fields_from_catalog(tmp_path: Path) -> 
             "row_count": 1200,
         },
     }])
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -360,7 +471,7 @@ def test_minimal_proposal_resolves_table_fields_from_catalog(tmp_path: Path) -> 
 
 def test_canonical_proposal_does_not_add_canvas_prose(tmp_path: Path) -> None:
     _save_orders_catalog(tmp_path)
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -402,7 +513,7 @@ def test_proposal_rejects_exact_query_already_loaded_in_workspace(tmp_path: Path
             },
         },
     )
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
 
     events = list(skill.handle_action(
@@ -433,33 +544,6 @@ def test_proposal_rejects_exact_query_already_loaded_in_workspace(tmp_path: Path
     assert "recent_orders" in events[0]["message"]
 
 
-def test_discovery_parameter_contract_matches_standalone_agent() -> None:
-    def executable_schema(value):
-        if isinstance(value, dict):
-            return {
-                key: executable_schema(item)
-                for key, item in value.items()
-                if key != "description"
-            }
-        if isinstance(value, list):
-            return [executable_schema(item) for item in value]
-        return value
-
-    registry = build_registry()
-    skill_specs = {
-        spec["function"]["name"]: executable_schema(spec["function"]["parameters"])
-        for spec in registry.tools_for(["load-data"])
-        if spec["function"]["name"] != "read_connector_form"
-    }
-    standalone_specs = {
-        spec["function"]["name"]: executable_schema(spec["function"]["parameters"])
-        for spec in TOOLS
-        if spec["function"]["name"] in skill_specs
-    }
-
-    assert skill_specs == standalone_specs
-
-
 def test_skill_uses_shared_catalog_discovery(tmp_path: Path) -> None:
     save_catalog(tmp_path, "warehouse", [{
         "name": "orders",
@@ -467,7 +551,7 @@ def test_skill_uses_shared_catalog_discovery(tmp_path: Path) -> None:
         "path": ["public", "orders"],
         "metadata": {"description": "Customer orders"},
     }])
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
 
     result = skill.handle_tool(
@@ -488,7 +572,7 @@ def test_probe_budget_is_shared_within_run_and_isolated_between_runs(tmp_path: P
         "path": ["public", "orders"],
         "metadata": {},
     }])
-    skill = build_registry().get_skill("load-data")
+    skill = build_registry().get_skill("workspace")
     assert skill is not None
     loader = _Loader()
     shared_state: dict = {}

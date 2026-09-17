@@ -37,8 +37,6 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import HistoryIcon from '@mui/icons-material/History';
-import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 
@@ -47,18 +45,16 @@ import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
-import { createTableFromFromObjectArray, createTableFromText, loadBinaryDataWrapper, loadTextDataWrapper, readFileText } from '../data/utils';
-import { DataLoadingChat } from './DataLoadingChat';
+import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, readFileText } from '../data/utils';
 import { ScrollFadeContainer } from '../components/ScrollFade';
-import { AnimatedAgentToyIcon } from './AgentToyIcon';
-import { AgentChatInput } from './AgentChatInput';
-import { buildDataLoadingSuggestions, buildDataLoadingQuickActions } from './dataLoadingSuggestions';
 import { getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { deriveConnectorDisplayName } from '../app/connectorNames';
 import { generateUUID } from '../app/identity';
 import { DataLoaderForm } from './DBTableManager';
+import { ConnectedSourceOverview } from '../components/ConnectedSourceOverview';
 import { MultiTablePreview } from './MultiTablePreview';
+import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
 import { formatBytes } from './ViewUtils';
 import { 
     Checkbox,
@@ -72,21 +68,12 @@ import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
 import {
-    previewUploadedWorkspaceFile,
     uploadWorkspaceFile,
-    type WorkspaceFilePreview,
 } from '../app/workspaceService';
 
 const FILE_PREVIEW_BYTE_LIMIT = 256 * 1024;
-const FILE_PREVIEW_ROW_LIMIT = 20;
+const FILE_PREVIEW_ROW_LIMIT = 100;
 const BROWSER_IMAGE_PREVIEW_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
-const SERVER_TEXT_PREVIEW_PATTERN = /\.(docx|pdf|csv|json|log|md|py|sql|tsv|txt|xml|ya?ml)$/i;
-
-interface CachedWorkspaceFilePreview {
-    text?: WorkspaceFilePreview;
-    tables?: DictTable[];
-    unavailable?: boolean;
-}
 
 type FileCategory = 'table' | 'pdf' | 'image' | 'archive' | 'document' | 'generic';
 
@@ -99,7 +86,7 @@ const getFileCategory = (fileName: string, hasTablePreview: boolean): FileCatego
     return 'generic';
 };
 
-export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'local-folder' | 'add-connection' | `connector:${string}`;
+export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -569,30 +556,7 @@ export interface DataLoadMenuProps {
      * instead of opening an in-dialog catalog tab.
      */
     onSelectConnector?: (connector: ConnectorInstance) => void;
-    /**
-     * Called when the user submits a prompt from the top-level Data Loading
-     * Agent chat box. Implementations should hand the payload off to the
-     * agent chat surface, which will auto-send it as a fresh user
-     * message. Attachments are file names (already uploaded to the
-     * session scratch space) — the chat surface re-injects them as
-     * `[Uploaded: name]` mentions when building the backend payload.
-     * If not provided, the chat box falls back to `onSelectTab('extract')`.
-     */
-    onStartChat?: (prompt: string, images: string[], attachments: string[]) => void;
-    /**
-     * True when a prior data-loading agent conversation exists in
-     * state. When set together with `onResumeChat`, the menu renders
-     * a small "Resume previous" affordance next to the agent label so
-     * the user can re-open the previous thread instead of being forced
-     * to overwrite it with a new query.
-     */
-    hasPriorConversation?: boolean;
-    /**
-     * Called when the user clicks the "Resume previous" affordance.
-     * Should open the agent chat surface without clearing the existing
-     * message history and without auto-sending anything.
-     */
-    onResumeChat?: () => void;
+    mode?: 'menu' | 'browse';
     serverConfig?: { WORKSPACE_BACKEND?: string; IS_LOCAL_MODE?: boolean };
     connectors?: ConnectorInstance[];
 }
@@ -600,36 +564,12 @@ export interface DataLoadMenuProps {
 export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
     onSelectTab, 
     onSelectConnector,
-    onStartChat,
-    hasPriorConversation = false,
-    onResumeChat,
+    mode = 'menu',
     serverConfig = { WORKSPACE_BACKEND: 'local' },
     connectors = [],
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
-    const dispatch = useDispatch<AppDispatch>();
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    // Backend requires an active workspace (X-Workspace-Id header) for
-    // scratch uploads and chat. The menu can be opened on the entry
-    // surface before any workspace has been picked, so we lazily mint
-    // one here — the parent's `openUploadDialog` does the same when it
-    // can, but we cover the path where this menu is rendered directly.
-    const ensureActiveWorkspace = (): string => {
-        if (activeWorkspace?.id) return activeWorkspace.id;
-        const now = new Date();
-        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-        const wsId = `session_${date}_${time}_${generateUUID().slice(0, 4)}`;
-        dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: 'Untitled Session' }));
-        return wsId;
-    };
-    // One-off file upload is surfaced as an "Upload data" action in the
-    // connected-sources row (see `connectorActionSources`). Paste Data and
-    // Load from URL used to live here too, but they are now subsumed by the
-    // Data Loading Agent chat box at the top of the menu (paste text into the
-    // prompt; the agent's fetch_url loads any URL). Sample datasets are
-    // exposed as the built-in `sample_datasets` connector below.
 
     // Data connections — persistent configured sources (databases, services, etc.)
     const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action'; tooltip?: React.ReactNode }> = [
@@ -739,160 +679,27 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         onSelectTab(sourceValue);
     };
 
-    // ------------------------------------------------------------------
-    // Data Loading Agent quick-chat box. Surfaced at the top of the menu
-    // so users can start a conversation with the agent directly. Pressing
-    // Enter (or the send button) hands the prompt/images off to the chat
-    // surface via `onStartChat`, which opens the agent and auto-sends.
-    // Falls back to `onSelectTab('extract')` if no handler is provided.
-    // ------------------------------------------------------------------
-    const [agentInput, setAgentInput] = useState('');
-    const [agentImages, setAgentImages] = useState<string[]>([]);
-    const [agentAttachments, setAgentAttachments] = useState<string[]>([]);
-    const submitAgentChat = () => {
-        const text = agentInput.trim();
-        if (text.length === 0 && agentImages.length === 0 && agentAttachments.length === 0) {
-            // Empty submission — just surface the chat.
-            if (onStartChat) onStartChat('', [], []);
-            else onSelectTab('extract');
-            return;
-        }
-        // Pass payload pieces unchanged — the chat surface builds the
-        // backend mentions itself. We deliberately do NOT pre-inject
-        // `[Uploaded: name]` into `text` here, so the visible message
-        // bubble stays clean and the file chips render uniformly.
-        if (onStartChat) {
-            onStartChat(text, agentImages, agentAttachments);
-        } else {
-            onSelectTab('extract');
-        }
-        setAgentInput('');
-        setAgentImages([]);
-        setAgentAttachments([]);
-    };
-
-    // Suggestions surfaced as a focus-time dropdown — sourced from a shared
-    // factory so the in-session `DataLoadingChat` panel renders the exact
-    // same list. See `dataLoadingSuggestions.ts`. Auto-run is routed
-    // through `onStartChat` so the parent dialog can dispatch its
-    // `clearChatMessages` + `setDataLoadingChatPending` sequence
-    // atomically — same path as a manual submit.
-    const agentChatSuggestions = useMemo(() => buildDataLoadingSuggestions({
-        t,
-        setInput: setAgentInput,
-        setImages: setAgentImages,
-        setAttachments: setAgentAttachments,
-        ensureActiveWorkspace,
-        requestAutoSend: onStartChat
-            ? (payload) => {
-                  onStartChat(payload.text, payload.images, payload.attachments);
-                  setAgentInput('');
-                  setAgentImages([]);
-                  setAgentAttachments([]);
-              }
-            : undefined,
-         
-    }), [t, onStartChat]);
-    const quickActions = useMemo(() => buildDataLoadingQuickActions({
-        t,
-        setInput: setAgentInput,
-        setImages: setAgentImages,
-        setAttachments: setAgentAttachments,
-        requestAutoSend: onStartChat
-            ? (payload) => {
-                  onStartChat(payload.text, payload.images, payload.attachments);
-                  setAgentInput('');
-                  setAgentImages([]);
-                  setAgentAttachments([]);
-              }
-            : undefined,
-         
-    }), [t, onStartChat]);
-    const agentChatBox = (
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: HERO_WIDTH, alignSelf: 'center' }}>
-            <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, rowGap: 0.75 }}>
-                {quickActions.map((qa) => (
-                    <Chip
-                        key={qa.kind}
-                        icon={<BoltOutlinedIcon />}
-                        label={qa.label}
-                        onClick={qa.onClick}
-                        disabled={activeWorkspace?.readOnly === true}
-                        variant="outlined"
-                        size="small"
-                        sx={{
-                            fontSize: textVar.md, height: 30, borderRadius: 2,
-                            color: 'text.secondary',
-                            borderColor: alpha(theme.palette.text.primary, 0.12),
-                            '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
-                            '&:hover': {
-                                bgcolor: 'action.hover',
-                                borderColor: alpha(theme.palette.text.primary, 0.2),
-                            },
-                        }}
-                    />
-                ))}
+    if (mode === 'menu') {
+        return (
+            <Box sx={{ width: '100%', maxWidth: 640, mx: 'auto' }}>
+            <Box sx={{ width: '100%', maxWidth: 640, mx: 'auto', display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+                <Button variant="outlined" onClick={() => onSelectTab('upload')}
+                    sx={{ minHeight: 140, p: 3, gap: 1.5, flexDirection: 'column', textTransform: 'none', color: 'text.primary', borderColor: 'divider', borderRadius: 2 }}>
+                    <UploadFileIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
+                    {t('upload.uploadFiles', { defaultValue: 'Upload files' })}
+                </Button>
+                <Button variant="outlined" onClick={() => onSelectTab('database')}
+                    sx={{ minHeight: 140, p: 3, gap: 1.5, flexDirection: 'column', textTransform: 'none', color: 'text.primary', borderColor: 'divider', borderRadius: 2 }}>
+                    <GridOnIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
+                    {t('upload.browseDataSources', { defaultValue: 'Browse data sources' })}
+                </Button>
             </Box>
-            <AgentChatInput
-                value={agentInput}
-                onChange={setAgentInput}
-                images={agentImages}
-                onImagesChange={setAgentImages}
-                onSend={submitAgentChat}
-                disabled={activeWorkspace?.readOnly === true}
-                layout="stacked"
-                sx={{
-                    // Landing hero: a gentle lift + faint primary-tinted
-                    // border so it reads as the focal point without visually
-                    // crowding the chips above / source rows below. Focus-within
-                    // still escalates to the component's default primary ring.
-                    borderColor: alpha(theme.palette.primary.main, 0.38),
-                    boxShadow: '0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)',
-                    '&:hover': {
-                        boxShadow: '0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)',
-                    },
-                }}
-                leadingSlot={hasPriorConversation && onResumeChat ? (
-                    <Tooltip title={t('upload.resumePreviousConversation', { defaultValue: 'Previous conversation' })}>
-                        <IconButton size="small" onClick={onResumeChat} sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
-                            <HistoryIcon sx={{ fontSize: iconVar.lg }} />
-                        </IconButton>
-                    </Tooltip>
-                ) : undefined}
-                onNonImageFile={(file) => {
-                    // Upload non-image files (Excel, CSV, JSON, …) to the
-                    // session scratch space. The filename is shown as a
-                    // chip; the `[Uploaded: name]` mention is appended to
-                    // the outgoing prompt at send-time so the editable
-                    // input stays clean.
-                    ensureActiveWorkspace();
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
-                        method: 'POST', body: formData,
-                    }).then(({ data }) => {
-                        // The backend hash-suffixes the filename; store the
-                        // server-assigned name so the `[Uploaded:]` mention
-                        // resolves to the real scratch file.
-                        const scratchName = (data?.path || `scratch/${file.name}`).replace(/^scratch\//, '');
-                        setAgentAttachments(prev => [...prev, scratchName]);
-                    }).catch(err => console.error('Upload failed:', err));
-                }}
-                attachments={agentAttachments}
-                onAttachmentsChange={setAgentAttachments}
-                minRows={4}
-                tabSuggestion={t('upload.agentChatTabSuggestion', {
-                    defaultValue: 'What dataset do we have here?',
-                })}
-                focusSuggestionsLabel={t('upload.agentChatSuggestionsLabel', { defaultValue: 'Try asking' })}
-                focusSuggestions={agentChatSuggestions}
-                placeholder={t('upload.agentChatPlaceholder', {
-                    defaultValue: 'Ask the agent to find datasets, or extract data from an image or text…',
-                })}
-                sendTooltip={t('upload.agentChatSendTooltip', { defaultValue: 'Start chatting with the agent' })}
-            />
-        </Box>
-    );
+            <Typography sx={{ mt: 2, textAlign: 'center', fontSize: textVar.sm, color: 'text.secondary' }}>
+                {t('upload.askAgentTip', { defaultValue: 'You can also ask the agent to find and load data.' })}
+            </Typography>
+            </Box>
+        );
+    }
 
     return (
         <Box sx={{ 
@@ -903,10 +710,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             mx: 0,
             textAlign: 'left',
         }}>
-            {/* Data Loading Agent quick-chat — the hero of this surface */}
-            {agentChatBox}
-
-            {/* Sources — same width as the chat box so they read as part of it */}
             <Box sx={{ width: '100%', maxWidth: HERO_WIDTH, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {/* Row 1 — connected data sources (as lightweight links):
                     the already-connected instances. The "add a connection"
@@ -1011,9 +814,11 @@ const AddConnectionPanel: React.FC<{
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     // Track the created connector ID so DataLoaderForm can use it
     const createdIdRef = useRef<string | null>(null);
+    const provisionalIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         createdIdRef.current = null;
+        provisionalIdRef.current = null;
     }, [identityKey]);
 
     // Fetch available loader types
@@ -1062,12 +867,26 @@ const AddConnectionPanel: React.FC<{
             }),
         });
         createdIdRef.current = data.id;
+        provisionalIdRef.current = data.id;
         return data.id;
     }, [selectedType, selectedLoader]);
+
+    const handleConnectionFailed = useCallback(async () => {
+        const connectorId = provisionalIdRef.current;
+        if (!connectorId) return;
+        provisionalIdRef.current = null;
+        createdIdRef.current = null;
+        try {
+            await apiRequest(CONNECTOR_URLS.DELETE(connectorId), { method: 'DELETE' });
+        } catch (error) {
+            console.warn('Failed to remove unverified connector', connectorId, error);
+        }
+    }, []);
 
     // After DataLoaderForm successfully connects, fetch full connector info and notify parent
     const handleConnected = useCallback(async () => {
         const cid = createdIdRef.current;
+        provisionalIdRef.current = null;
         if (!cid) return;
         try {
             const { data: listData } = await apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' });
@@ -1237,6 +1056,7 @@ const AddConnectionPanel: React.FC<{
                                 }}
                                 onConnected={handleConnected}
                                 onBeforeConnect={handleBeforeConnect}
+                                onConnectionFailed={handleConnectionFailed}
                                 onAskAgent={onAskAgent}
                             />
                         </ScrollFadeContainer>
@@ -1256,6 +1076,7 @@ const AddConnectionPanel: React.FC<{
 export interface UnifiedDataUploadDialogProps {
     open: boolean;
     onClose: () => void;
+    onStartChat?: (prompt: string, images: string[], attachments: string[]) => void;
     initialTab?: UploadTabType;
     onConnectorsChanged?: () => void;
 }
@@ -1263,6 +1084,7 @@ export interface UnifiedDataUploadDialogProps {
 export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = ({
     open,
     onClose,
+    onStartChat,
     initialTab = 'menu',
     onConnectorsChanged,
 }) => {
@@ -1271,7 +1093,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector(dfSelectors.getAllTables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
@@ -1290,14 +1111,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     // Connector instances fetched from GET /api/connectors
     const [connectorInstances, setConnectorInstances] = useState<ConnectorInstance[]>([]);
+    const [connectorListLoading, setConnectorListLoading] = useState(false);
+    const [connectorListError, setConnectorListError] = useState('');
     const [connectorPendingDelete, setConnectorPendingDelete] = useState<ConnectorInstance | null>(null);
     const [connectorNameDraft, setConnectorNameDraft] = useState('');
 
     // Fetch connector list when dialog opens
     const refreshConnectors = useCallback(() => {
+        setConnectorListLoading(true);
+        setConnectorListError('');
         apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(({ data }) => setConnectorInstances(data.connectors || []))
-            .catch(() => { /* connector list is best-effort */ });
+            .catch(error => setConnectorListError(error instanceof Error ? error.message : String(error)))
+            .finally(() => setConnectorListLoading(false));
     }, []);
 
     useEffect(() => {
@@ -1326,25 +1152,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [filePreviewActiveIndex, setFilePreviewActiveIndex] = useState<number>(0);
     const [showSelectedFileTablePreview, setShowSelectedFileTablePreview] = useState(false);
     const [selectedWorkspacePreviewFile, setSelectedWorkspacePreviewFile] = useState<File | null>(null);
-    const [workspaceFilePreview, setWorkspaceFilePreview] = useState<WorkspaceFilePreview | null>(null);
-    const [workspaceFileTablePreview, setWorkspaceFileTablePreview] = useState<DictTable[] | null>(null);
-    const [workspaceFileImagePreviewUrl, setWorkspaceFileImagePreviewUrl] = useState<string | null>(null);
-    const [workspaceFilePreviewLoading, setWorkspaceFilePreviewLoading] = useState(false);
-    const [workspaceFilePreviewError, setWorkspaceFilePreviewError] = useState<string | null>(null);
-    const workspacePreviewRequestRef = useRef(0);
-    const workspaceImagePreviewUrlRef = useRef<string | null>(null);
-    const workspaceFilePreviewCacheRef = useRef(new WeakMap<File, CachedWorkspaceFilePreview>());
     const [isDragOver, setIsDragOver] = useState<boolean>(false);
-
-    const clearWorkspaceImagePreview = useCallback(() => {
-        if (workspaceImagePreviewUrlRef.current) {
-            URL.revokeObjectURL(workspaceImagePreviewUrlRef.current);
-            workspaceImagePreviewUrlRef.current = null;
-        }
-        setWorkspaceFileImagePreviewUrl(null);
-    }, []);
-
-    useEffect(() => clearWorkspaceImagePreview, [clearWorkspaceImagePreview]);
 
     // URL tab state (separate from file upload)
     const [tableURL, setTableURL] = useState<string>("");
@@ -1432,12 +1240,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setFilePreviewWorkspaceFiles([]);
         setShowSelectedFileTablePreview(false);
         setSelectedWorkspacePreviewFile(null);
-        setWorkspaceFilePreview(null);
-        setWorkspaceFileTablePreview(null);
-        clearWorkspaceImagePreview();
-        setWorkspaceFilePreviewLoading(false);
-        setWorkspaceFilePreviewError(null);
-        workspacePreviewRequestRef.current += 1;
         // Reset URL tab state
         setTableURL("");
         setUrlAutoRefresh(false);
@@ -1448,91 +1250,32 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setUrlPreviewActiveIndex(0);
         setExampleUrls([]);
         onClose();
-    }, [clearWorkspaceImagePreview, onClose]);
+    }, [onClose]);
 
-    // Connector setup escape hatch: queue the seeded question and switch to the
-    // data-loading chat, where the agent can inspect config and finish setup.
+    const handleStartChat = useCallback((text: string, images: string[], attachments: string[]) => {
+        if (activeWorkspace?.readOnly) return;
+        if (onStartChat) {
+            onStartChat(text, images, attachments);
+        } else {
+            dispatch(dfActions.queueAnalystTask({ text, images, attachments }));
+        }
+        handleClose();
+    }, [onStartChat, handleClose, activeWorkspace?.readOnly, dispatch]);
+
     const handleAskAgent = useCallback((prompt: string) => {
-        dispatch(dfActions.queueDataLoadingTask({ text: prompt, images: [], attachments: [] }));
-        setActiveTab('extract');
-    }, [dispatch]);
+        handleStartChat(prompt, [], []);
+    }, [handleStartChat]);
 
     const handlePreviewWorkspaceFile = useCallback(async (file: File): Promise<void> => {
-        const requestId = workspacePreviewRequestRef.current + 1;
-        workspacePreviewRequestRef.current = requestId;
         setShowSelectedFileTablePreview(false);
         setSelectedWorkspacePreviewFile(file);
-        setWorkspaceFilePreview(null);
-        setWorkspaceFileTablePreview(null);
-        clearWorkspaceImagePreview();
-        setWorkspaceFilePreviewError(null);
-
-        const isImage = BROWSER_IMAGE_PREVIEW_PATTERN.test(file.name);
-        const isWorkbook = /\.xlsx$/i.test(file.name);
-        const hasServerTextPreview = SERVER_TEXT_PREVIEW_PATTERN.test(file.name) || file.type.startsWith('text/');
-        const cachedPreview = isImage ? undefined : workspaceFilePreviewCacheRef.current.get(file);
-        if (cachedPreview) {
-            setWorkspaceFilePreview(cachedPreview.text ?? null);
-            setWorkspaceFileTablePreview(cachedPreview.tables ?? null);
-            setWorkspaceFilePreviewError(cachedPreview.unavailable ? t('upload.previewUnavailable') : null);
-            setWorkspaceFilePreviewLoading(false);
-            return;
-        }
-
-        if (!isImage && !isWorkbook && !hasServerTextPreview) {
-            workspaceFilePreviewCacheRef.current.set(file, { unavailable: true });
-            setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
-            setWorkspaceFilePreviewLoading(false);
-            return;
-        }
-
-        setWorkspaceFilePreviewLoading(true);
-        try {
-            if (isImage) {
-                const imageUrl = URL.createObjectURL(file);
-                workspaceImagePreviewUrlRef.current = imageUrl;
-                setWorkspaceFileImagePreviewUrl(imageUrl);
-            } else if (isWorkbook) {
-                const tables = await loadBinaryDataWrapper(file.name, await file.arrayBuffer(), FILE_PREVIEW_ROW_LIMIT);
-                workspaceFilePreviewCacheRef.current.set(file, tables.length > 0
-                    ? { tables }
-                    : { unavailable: true });
-                if (workspacePreviewRequestRef.current === requestId) {
-                    if (tables.length > 0) {
-                        setWorkspaceFileTablePreview(tables);
-                    } else {
-                        setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
-                    }
-                }
-            } else {
-                const preview = await previewUploadedWorkspaceFile(file);
-                workspaceFilePreviewCacheRef.current.set(file, { text: preview });
-                if (workspacePreviewRequestRef.current === requestId) {
-                    setWorkspaceFilePreview(preview);
-                }
-            }
-        } catch {
-            if (workspacePreviewRequestRef.current === requestId) {
-                setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
-            }
-        } finally {
-            if (workspacePreviewRequestRef.current === requestId) {
-                setWorkspaceFilePreviewLoading(false);
-            }
-        }
-    }, [clearWorkspaceImagePreview, t]);
+    }, []);
 
     const handlePreviewTableFile = useCallback((tableIndex: number): void => {
-        workspacePreviewRequestRef.current += 1;
         setSelectedWorkspacePreviewFile(null);
-        setWorkspaceFilePreview(null);
-        setWorkspaceFileTablePreview(null);
-        clearWorkspaceImagePreview();
-        setWorkspaceFilePreviewLoading(false);
-        setWorkspaceFilePreviewError(null);
         setFilePreviewActiveIndex(tableIndex);
         setShowSelectedFileTablePreview(true);
-    }, [clearWorkspaceImagePreview]);
+    }, []);
 
     // Shared file processing logic (used by both file input and drag-and-drop)
     const processUploadedFiles = useCallback((selectedFiles: File[]): void => {
@@ -1550,24 +1293,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setFilePreviewWorkspaceFiles([]);
         setShowSelectedFileTablePreview(false);
         setSelectedWorkspacePreviewFile(null);
-        setWorkspaceFilePreview(null);
-        setWorkspaceFileTablePreview(null);
-        clearWorkspaceImagePreview();
-        setWorkspaceFilePreviewLoading(false);
-        setWorkspaceFilePreviewError(null);
-        workspacePreviewRequestRef.current += 1;
         setFilePreviewLoading(true);
 
         const processFiles = async () => {
             const results = await Promise.all(filesToProcess.map(async file => {
                 const uniqueName = getUniqueTableName(file.name, existingNames);
                 const lowerName = file.name.toLowerCase();
+                if (file.type === 'application/json' || lowerName.endsWith('.json')) {
+                    return { file, workspaceFile: file };
+                }
                 const isTextFile = file.type === 'text/csv' || 
                     file.type === 'text/tab-separated-values' || 
-                    file.type === 'application/json' ||
                     file.name.endsWith('.csv') || 
-                    file.name.endsWith('.tsv') || 
-                    lowerName.endsWith('.json');
+                    file.name.endsWith('.tsv');
                 const isExcelFile = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     || file.type === 'application/vnd.ms-excel'
                     || lowerName.endsWith('.xlsx')
@@ -1575,15 +1313,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 if (isTextFile) {
                     try {
-                        const fileType = lowerName.endsWith('.json')
-                            ? 'application/json'
-                            : lowerName.endsWith('.tsv')
-                                ? 'text/tab-separated-values'
-                                : 'text/csv';
-                        const text = await readFileText(
-                            file,
-                            fileType === 'application/json' ? undefined : FILE_PREVIEW_BYTE_LIMIT,
-                        );
+                        const fileType = lowerName.endsWith('.tsv')
+                            ? 'text/tab-separated-values'
+                            : 'text/csv';
+                        const text = await readFileText(file, FILE_PREVIEW_BYTE_LIMIT);
                         const table = loadTextDataWrapper(uniqueName, text, fileType, FILE_PREVIEW_ROW_LIMIT);
                         if (table) {
                             return { file, table };
@@ -1626,7 +1359,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
         processFiles();
      
-    }, [clearWorkspaceImagePreview, existingNames, filePreviewFiles, handlePreviewTableFile, handlePreviewWorkspaceFile, t]);
+    }, [existingNames, filePreviewFiles, handlePreviewTableFile, handlePreviewWorkspaceFile, t]);
 
     // File input change handler
     const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -1689,11 +1422,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             setTableLoading(true);
             try {
                 const text = await readFileText(sourceFile);
-                const fullTable = loadTextDataWrapper(previewTable.id, text, sourceFile.name.toLowerCase().endsWith('.json')
-                    ? 'application/json'
-                    : sourceFile.name.toLowerCase().endsWith('.tsv')
-                        ? 'text/tab-separated-values'
-                        : 'text/csv');
+                const fullTable = loadTextDataWrapper(previewTable.id, text, sourceFile.name.toLowerCase().endsWith('.tsv')
+                    ? 'text/tab-separated-values'
+                    : 'text/csv');
                 if (!fullTable) throw new Error('Failed to parse file');
                 const sourceConfig: DataSourceConfig = { type: 'file', fileName: sourceFile.name };
                 await dispatch(loadTable({
@@ -1720,11 +1451,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             const fullTables = await Promise.all((filePreviewTables || []).map(async (previewTable, index) => {
                 const sourceFile = filePreviewTableFiles[index];
                 const text = await readFileText(sourceFile);
-                const table = loadTextDataWrapper(previewTable.id, text, sourceFile.name.toLowerCase().endsWith('.json')
-                    ? 'application/json'
-                    : sourceFile.name.toLowerCase().endsWith('.tsv')
-                        ? 'text/tab-separated-values'
-                        : 'text/csv');
+                const table = loadTextDataWrapper(previewTable.id, text, sourceFile.name.toLowerCase().endsWith('.tsv')
+                    ? 'text/tab-separated-values'
+                    : 'text/csv');
                 if (!table) throw new Error(`Failed to parse ${sourceFile.name}`);
                 return table;
             }));
@@ -1787,10 +1516,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setShowSelectedFileTablePreview(false);
         if (selectedWorkspacePreviewFile === fileToRemove) {
             setSelectedWorkspacePreviewFile(null);
-            setWorkspaceFilePreview(null);
-            setWorkspaceFileTablePreview(null);
-            clearWorkspaceImagePreview();
-            setWorkspaceFilePreviewError(null);
         }
     };
 
@@ -2048,11 +1773,20 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             'menu': t('upload.title'),
             'upload': t('upload.uploadFile'),
             'paste': t('upload.pasteData'),
-            'extract': t('upload.dataAssistant'),
             'url': t('upload.loadFromUrl'),
-            'database': t('upload.database'),
+            'database': t('upload.browseDataSources', { defaultValue: 'Browse data sources' }),
         };
         return tabTitles[activeTab] || t('upload.addData');
+    };
+
+    const [browseConnectorId, setBrowseConnectorId] = useState<string | null>(null);
+    const browseConnector = connectorInstances.find(conn => conn.id === (
+        activeTab.startsWith('connector:') ? activeTab.slice('connector:'.length) : browseConnectorId
+    ));
+    const selectBrowseConnector = (connectorId: string) => {
+        setBrowseConnectorId(connectorId);
+        const connector = connectorInstances.find(conn => conn.id === connectorId);
+        setActiveTab(connector && !connector.connected ? `connector:${connectorId}` : 'database');
     };
 
     const activeConnector = activeTab.startsWith('connector:')
@@ -2142,7 +1876,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {activeTab !== 'menu' && !(activeTab === 'add-connection' && serverConfig.DISABLE_DATA_CONNECTORS) && (
                     <IconButton
                         size="small"
-                        onClick={() => setActiveTab('menu')}
+                        aria-label={t('common.back', { defaultValue: 'Back' })}
+                        onClick={() => setActiveTab(activeConnector?.id === browseConnectorId ? 'database' : 'menu')}
                         sx={{ mr: 0.5 }}
                     >
                         <ArrowBackIcon fontSize="small" />
@@ -2197,23 +1932,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         </IconButton>
                     </Tooltip>
                 )}
-                {activeTab === 'extract' && dataLoadingChatMessages.length > 0 && (
-                    <Tooltip title={t('upload.resetExtraction')}>
-                        <IconButton 
-                            size="small" 
-                            color='warning' 
-                            sx={{
-                                '&:hover': { 
-                                    transform: 'rotate(180deg)', 
-                                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
-                                } 
-                            }} 
-                            onClick={() => dispatch(dfActions.clearChatMessages())}
-                        >
-                            <RestartAltIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                )}
                 {activeTab !== 'menu' && (
                     <Tooltip title={
                         isEphemeral
@@ -2252,48 +1970,88 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {/* Main Menu */}
                 <TabPanel value={activeTab} index="menu">
                     <Box sx={{ p: 2, boxSizing: 'border-box', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                        <Box sx={{ width: '100%', maxWidth: 860 }}>
-                        <DataLoadMenu 
-                            onSelectTab={(tab) => setActiveTab(tab)}
-                            onSelectConnector={(conn) => {
-                                // Already-authed connector → close dialog and
-                                // hand off to the data-source sidebar. Otherwise
-                                // fall through to the in-dialog auth/connect form.
-                                if (conn.connected || conn.sso_auto_connect) {
-                                    handleClose();
-                                    dispatch(dfActions.focusConnector(conn.id));
-                                } else {
-                                    setActiveTab(`connector:${conn.id}` as UploadTabType);
-                                }
-                            }}
-                            onStartChat={(prompt, images, attachments) => {
-                                const hasText = prompt.trim().length > 0;
-                                const hasImages = images.length > 0;
-                                const hasAttachments = attachments.length > 0;
-                                // Always surface the chat. Preserve any prior
-                                // conversation (Option A): `queueDataLoadingTask`
-                                // drops a "new request" divider when a thread
-                                // already exists, then enqueues the submission
-                                // as a redux `pending` slot — `DataLoadingChat`
-                                // consumes it on render and auto-sends. The
-                                // header reset button starts a blank slate.
-                                if (hasText || hasImages || hasAttachments) {
-                                    dispatch(dfActions.queueDataLoadingTask({
-                                        text: prompt, images, attachments,
-                                    }));
-                                }
-                                setActiveTab('extract');
-                            }}
-                            hasPriorConversation={dataLoadingChatMessages.length > 0}
-                            onResumeChat={() => {
-                                // Reopen the existing thread without
-                                // clearing messages or auto-sending.
-                                setActiveTab('extract');
-                            }}
-                            serverConfig={serverConfig}
-                            connectors={connectorInstances}
-                        />
-                        </Box>
+                        <DataLoadMenu onSelectTab={setActiveTab} />
+                    </Box>
+                </TabPanel>
+
+                <TabPanel value={activeTab} index={activeTab.startsWith('connector:') ? activeTab : 'database'}>
+                    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: { xs: 'column', lg: 'row' } }}>
+                    <Box component="nav" aria-label={t('upload.browseDataSources', { defaultValue: 'Browse data sources' })}
+                        sx={{ p: 2, width: { xs: '100%', lg: 220 }, boxSizing: 'border-box', flexShrink: 0, overflow: 'auto', maxHeight: { xs: '35%', lg: '100%' }, borderRight: { lg: `1px solid ${theme.palette.divider}` }, borderBottom: { xs: `1px solid ${theme.palette.divider}`, lg: 'none' }, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {connectorListLoading && <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CircularProgress size={16} />
+                            <Typography sx={{ fontSize: textVar.sm }}>{t('common.loading', { defaultValue: 'Loading...' })}</Typography>
+                        </Box>}
+                        {connectorListError && <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}
+                            action={<Button size="small" onClick={refreshConnectors}>{t('common.retry', { defaultValue: 'Retry' })}</Button>}>
+                            {connectorListError}
+                        </Alert>}
+                        {!connectorListLoading && !connectorListError && connectorInstances.length === 0 &&
+                            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>
+                                {t('upload.noDataSources', { defaultValue: 'No data sources connected.' })}
+                            </Typography>}
+                        {connectorInstances.length > 0 && <TextField select size="small"
+                            label={t('upload.dataSource', { defaultValue: 'Data source' })}
+                            value={browseConnector?.id || ''}
+                            onChange={event => selectBrowseConnector(event.target.value)}
+                            slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+                            sx={{ display: { xs: 'flex', lg: 'none' }, '& select': { textOverflow: 'ellipsis' } }}>
+                            <option value="" disabled>{t('upload.selectDataSource', { defaultValue: 'Select a data source' })}</option>
+                            {connectorInstances.map(conn => <option key={conn.id} value={conn.id}>{conn.display_name}</option>)}
+                        </TextField>}
+                        {connectorInstances.map(conn => (
+                            <Button key={conn.id} variant="text" startIcon={getConnectorIcon(conn.icon)}
+                                aria-pressed={browseConnector?.id === conn.id}
+                                sx={{ display: { xs: 'none', lg: 'inline-flex' }, justifyContent: 'flex-start', textTransform: 'none', overflowWrap: 'anywhere', color: 'text.primary', bgcolor: browseConnector?.id === conn.id ? 'action.selected' : undefined }}
+                                onClick={() => selectBrowseConnector(conn.id)}>
+                                {conn.display_name}
+                            </Button>
+                        ))}
+                        <Button startIcon={<AddIcon />} onClick={() => setActiveTab('add-connection')} sx={{ alignSelf: 'flex-start', textTransform: 'none' }}>
+                            {t('upload.addConnection', { defaultValue: 'Connect databases' })}
+                        </Button>
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, px: 2, pb: 2, display: 'flex', flexDirection: 'column' }}>
+                        {browseConnector?.connected && !activeTab.startsWith('connector:')
+                            ? <ConnectedSourceOverview key={browseConnector.id} connectorId={browseConnector.id} />
+                            : browseConnector ? <ScrollFadeContainer sx={{ p: 2, boxSizing: 'border-box' }} resetKey={browseConnector.id}>
+                                <DataLoaderForm
+                                    key={browseConnector.id}
+                                    dataLoaderType={browseConnector.id}
+                                    loaderType={browseConnector.icon}
+                                    paramDefs={browseConnector.params_form}
+                                    authInstructions={browseConnector.auth_instructions || ''}
+                                    connectorId={browseConnector.id}
+                                    autoConnect={browseConnectorId === browseConnector.id && !!browseConnector.sso_auto_connect}
+                                    ssoAutoConnect={browseConnectorId === browseConnector.id && !!browseConnector.sso_auto_connect}
+                                    delegatedLogin={browseConnector.delegated_login}
+                                    authMode={browseConnector.auth_mode}
+                                    authPaths={browseConnector.auth_paths}
+                                    hasStoredCredentials={browseConnector.has_stored_credentials}
+                                    onImport={() => {}}
+                                    onAskAgent={handleAskAgent}
+                                    onFinish={(status, message) => {
+                                        dispatch(dfActions.addMessages({
+                                            timestamp: Date.now(),
+                                            component: 'connector',
+                                            type: status === 'success' ? 'success' : 'error',
+                                            value: message,
+                                        }));
+                                    }}
+                                    onConnected={() => {
+                                        setConnectorInstances(prev =>
+                                            prev.map(conn => conn.id === browseConnector.id ? { ...conn, connected: true } : conn)
+                                        );
+                                        onConnectorsChanged?.();
+                                        setBrowseConnectorId(browseConnector.id);
+                                        setActiveTab('database');
+                                    }}
+                                />
+                            </ScrollFadeContainer>
+                            : <Typography sx={{ m: 'auto', p: 2, color: 'text.secondary', fontSize: textVar.md }}>
+                                {t('upload.selectDataSource', { defaultValue: 'Select a data source' })}
+                            </Typography>}
+                    </Box>
                     </Box>
                 </TabPanel>
 
@@ -2309,7 +2067,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <Box sx={{
                             flex: 1,
                             minHeight: 0,
-                            overflowY: 'auto',
+                            overflowY: showSelectedFileTablePreview ? 'hidden' : 'auto',
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 2,
@@ -2317,7 +2075,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             boxSizing: 'border-box',
                             justifyContent: hasTableFilePreview ? 'flex-start' : 'center',
                         }}>
-                        <Box sx={{ width: '100%', maxWidth: showFilePreview ? '60%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Box sx={{ width: '100%', maxWidth: showFilePreview ? '60%' : 760, alignSelf: 'center', display: hasSelectedFileAttachments ? 'none' : 'flex', flexDirection: 'column', gap: 2 }}>
                         <Input
                             slotProps={{
                                 input: {
@@ -2369,7 +2127,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         </Box>
 
                         {showFilePreview && (
-                            <Box sx={{ width: '100%', maxWidth: 1120, alignSelf: 'center' }}>
+                            <Box sx={{ width: '100%', maxWidth: 1120, alignSelf: 'center',
+                                ...((selectedWorkspacePreviewFile || showSelectedFileTablePreview) && { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }),
+                            }}>
                                 {(filePreviewLoading || filePreviewError) && (
                                     <MultiTablePreview
                                         loading={filePreviewLoading}
@@ -2387,6 +2147,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         justifyContent: 'start',
                                         alignItems: 'start',
                                         gap: 1.5,
+                                        flexShrink: 0,
                                     }}>
                                         {filePreviewFiles.map(file => {
                                             const tableIndex = filePreviewTableFiles.findIndex(tableFile => tableFile === file);
@@ -2486,70 +2247,23 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     </Box>
                                 )}
                                 {showSelectedFileTablePreview && filePreviewTables?.[filePreviewActiveIndex] && (
-                                    <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${borderColor.divider}` }}>
+                                    <Box sx={{ mt: 1.5, flex: 1, minHeight: 0, overflow: 'auto', overscrollBehavior: 'contain', borderTop: `1px solid ${borderColor.divider}` }}>
                                         <MultiTablePreview
                                             table={filePreviewTables[filePreviewActiveIndex]}
                                             showTableSelector={false}
+                                            maxRows={FILE_PREVIEW_ROW_LIMIT}
+                                            hideRowCount
+                                            meta={t('upload.previewFirstRows', {
+                                                defaultValue: 'Previewing first {{rows}} rows · {{columns}} columns',
+                                                rows: Math.min(filePreviewTables[filePreviewActiveIndex].rows.length, FILE_PREVIEW_ROW_LIMIT),
+                                                columns: filePreviewTables[filePreviewActiveIndex].names.length,
+                                            })}
                                         />
                                     </Box>
                                 )}
                                 {selectedWorkspacePreviewFile && (
-                                    <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${borderColor.divider}` }}>
-                                        <Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }}>
-                                            {selectedWorkspacePreviewFile.name}
-                                        </Typography>
-                                        <Typography sx={{ mb: 1, fontSize: textVar.xs, color: 'text.secondary' }}>
-                                            {[
-                                                selectedWorkspacePreviewFile.name.includes('.')
-                                                    ? selectedWorkspacePreviewFile.name.split('.').pop()?.toUpperCase()
-                                                    : t('upload.workspaceFile', { defaultValue: 'File' }),
-                                                formatBytes(selectedWorkspacePreviewFile.size),
-                                                selectedWorkspacePreviewFile.type || undefined,
-                                            ].filter(Boolean).join(' · ')}
-                                        </Typography>
-                                        {workspaceFilePreviewLoading && <Box sx={{ py: 4, textAlign: 'center' }}><CircularProgress size={24} /></Box>}
-                                        {workspaceFilePreviewError && <Alert severity="info">{workspaceFilePreviewError}</Alert>}
-                                        {workspaceFileImagePreviewUrl && (
-                                            <Box
-                                                component="img"
-                                                src={workspaceFileImagePreviewUrl}
-                                                alt={selectedWorkspacePreviewFile.name}
-                                                onError={() => {
-                                                    clearWorkspaceImagePreview();
-                                                    setWorkspaceFilePreviewError(t('upload.previewUnavailable'));
-                                                }}
-                                                sx={{
-                                                    display: 'block',
-                                                    width: 'auto',
-                                                    height: 'auto',
-                                                    maxWidth: 'min(100%, 720px)',
-                                                    maxHeight: 'min(320px, 34vh)',
-                                                    mx: 'auto',
-                                                    objectFit: 'contain',
-                                                }}
-                                            />
-                                        )}
-                                        {workspaceFileTablePreview && (
-                                            <MultiTablePreview
-                                                tables={workspaceFileTablePreview}
-                                                maxHeight={360}
-                                            />
-                                        )}
-                                        {workspaceFilePreview && (
-                                            <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto', p: 2, bgcolor: 'background.default' }}>
-                                                <Typography component="pre" sx={{
-                                                    m: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
-                                                    fontFamily: 'var(--df-font-mono)', fontSize: textVar.sm, lineHeight: 1.6,
-                                                }}>
-                                                    {workspaceFilePreview.content || t('upload.emptyFile')}
-                                                </Typography>
-                                                {workspaceFilePreview.truncated && (
-                                                    <Typography sx={{ mt: 1.5, fontSize: textVar.xs, color: 'text.secondary' }}>
-                                                        {t('upload.previewTruncated')}
-                                                    </Typography>
-                                                )}
-                                            </Paper>
-                                        )}
+                                    <Box sx={{ mt: 1.5, flex: 1, minHeight: 240, overflow: 'hidden', borderTop: `1px solid ${borderColor.divider}` }}>
+                                        <WorkspaceFileCanvas fileName={selectedWorkspacePreviewFile.name} sourceFile={selectedWorkspacePreviewFile} />
                                     </Box>
                                 )}
                             </Box>
@@ -2943,55 +2657,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </Box>
                 </TabPanel>
 
-                {/* Per-connector Tabs — one per registered instance */}
-                {connectorInstances.map((conn) => (
-                    <TabPanel key={conn.id} value={activeTab} index={`connector:${conn.id}` as UploadTabType}>
-                        <Box sx={{ height: '100%', minHeight: 0, display: 'flex' }}>
-                            <ScrollFadeContainer sx={{ p: 2, boxSizing: 'border-box' }} resetKey={conn.id}>
-                            <DataLoaderForm
-                                dataLoaderType={conn.id}
-                                loaderType={conn.icon}
-                                paramDefs={conn.params_form}
-                                authInstructions={conn.auth_instructions || ''}
-                                connectorId={conn.id}
-                                // Dialog never auto-connects: it's a
-                                // view/edit/re-auth surface for an existing
-                                // connector. Catalog browsing lives in the
-                                // data-source sidebar. Auto-connecting here
-                                // would close the dialog before the user
-                                // sees the form.
-                                autoConnect={false}
-                                ssoAutoConnect={false}
-                                delegatedLogin={conn.delegated_login}
-                                authMode={conn.auth_mode}
-                                authPaths={conn.auth_paths}
-                                hasStoredCredentials={conn.has_stored_credentials}
-                                onImport={() => {}}
-                                onAskAgent={handleAskAgent}
-                                onFinish={(status, message) => {
-                                    dispatch(dfActions.addMessages({
-                                        timestamp: Date.now(),
-                                        component: 'connector',
-                                        type: status === 'success' ? 'success' : 'error',
-                                        value: message,
-                                    }));
-                                }}
-                                onConnected={() => {
-                                    setConnectorInstances(prev =>
-                                        prev.map(c => c.id === conn.id ? { ...c, connected: true } : c)
-                                    );
-                                    onConnectorsChanged?.();
-                                    // Hand off to the data-source sidebar — the
-                                    // dialog no longer owns catalog browsing.
-                                    handleClose();
-                                    dispatch(dfActions.focusConnector(conn.id));
-                                }}
-                            />
-                            </ScrollFadeContainer>
-                        </Box>
-                    </TabPanel>
-                ))}
-
                 {/* Add Connection Tab */}
                 <TabPanel value={activeTab} index="add-connection">
                     <AddConnectionPanel
@@ -3007,17 +2672,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 return [...prev, newConnector];
                             });
                             onConnectorsChanged?.();
-                            // Hand off to the data-source sidebar — the dialog
-                            // no longer owns catalog browsing.
-                            handleClose();
-                            dispatch(dfActions.focusConnector(newConnector.id));
+                            setBrowseConnectorId(newConnector.id);
+                            setActiveTab('database');
                         }}
                     />
-                </TabPanel>
-
-                {/* Extract Data Tab */}
-                <TabPanel value={activeTab} index="extract">
-                    <DataLoadingChat onTableLoaded={handleClose} />
                 </TabPanel>
 
                 {/* Local folder is no longer a dedicated tab — the "Link local

@@ -225,6 +225,11 @@ class TableMetadata:
     original_name: str | None = None
     source_file: str | None = None
     description: str | None = None
+    origin: str | None = None
+    role: str | None = None
+    edit_policy: str | None = None
+    input_sources: list[dict] | None = None
+    stale: bool = False
 
     def to_dict(self) -> dict:
         """Convert to dictionary for YAML serialization."""
@@ -261,6 +266,12 @@ class TableMetadata:
             result["source_file"] = self.source_file
         if self.description is not None:
             result["description"] = self.description
+        for key in ("origin", "role", "edit_policy", "input_sources"):
+            value = getattr(self, key)
+            if value is not None:
+                result[key] = value
+        if self.stale:
+            result["stale"] = True
         
         return result
 
@@ -298,6 +309,11 @@ class TableMetadata:
             original_name=data.get("original_name"),
             source_file=data.get("source_file"),
             description=data.get("description"),
+            origin=data.get("origin"),
+            role=data.get("role"),
+            edit_policy=data.get("edit_policy"),
+            input_sources=data.get("input_sources"),
+            stale=data.get("stale", False),
         )
 
 
@@ -310,6 +326,9 @@ class WorkspaceFileMetadata:
     content_hash: str
     file_size: int
     media_type: str | None = None
+    display_name: str | None = None
+    origin: str | None = None
+    edit_policy: str | None = None
 
     def to_dict(self) -> dict:
         result = {
@@ -320,6 +339,12 @@ class WorkspaceFileMetadata:
         }
         if self.media_type is not None:
             result["media_type"] = self.media_type
+        if self.display_name is not None:
+            result["display_name"] = self.display_name
+        if self.origin is not None:
+            result["origin"] = self.origin
+        if self.edit_policy is not None:
+            result["edit_policy"] = self.edit_policy
         return result
 
     @classmethod
@@ -334,6 +359,9 @@ class WorkspaceFileMetadata:
             content_hash=data["content_hash"],
             file_size=data["file_size"],
             media_type=data.get("media_type"),
+            display_name=data.get("display_name"),
+            origin=data.get("origin"),
+            edit_policy=data.get("edit_policy"),
         )
 
 

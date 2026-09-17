@@ -116,6 +116,9 @@ export const DataLoaderForm: React.FC<{
     /** Called before the connect step. Returns the effective connectorId to use.
      *  Used by AddConnectionPanel to create the connector before connecting. */
     onBeforeConnect?: (params: Record<string, any>) => Promise<string>,
+    /** Called when a connection attempt fails. Create-on-connect hosts use this
+     *  to remove a connector that has never connected successfully. */
+    onConnectionFailed?: () => Promise<void> | void,
     /** When true, sensitive fields render with a ••••• placeholder so the
      *  user knows credentials are stored on the server (and sees the field
      *  is intentionally empty for security, not a missing config). */
@@ -134,7 +137,7 @@ export const DataLoaderForm: React.FC<{
     /** Hands the user to the data agent chat with a seeded question when they
      *  get stuck on setup. Omitted inside the chat card itself. */
     onAskAgent?: (prompt: string) => void,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBusyChange, onBeforeConnect, hasStoredCredentials, compact = false, comfortableSpacing = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBusyChange, onBeforeConnect, onConnectionFailed, hasStoredCredentials, compact = false, comfortableSpacing = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const loaderTypeKey = loaderType || dataLoaderType;
@@ -497,6 +500,14 @@ export const DataLoaderForm: React.FC<{
     // Connection timeout in milliseconds (30 seconds)
     const CONNECTION_TIMEOUT_MS = 30_000;
 
+    const reportConnectionFailure = useCallback(async (message: string) => {
+        try {
+            await onConnectionFailed?.();
+        } finally {
+            onFinish('error', message);
+        }
+    }, [onConnectionFailed, onFinish]);
+
     // Helper: connect via data connector. Catalog browsing happens in the
     // data-source sidebar after the dialog closes; this form only validates
     // the connection and hands off via onConnected.
@@ -543,9 +554,9 @@ export const DataLoaderForm: React.FC<{
         } catch (error: any) {
             clearTimeout(timeoutId);
             if (error.name === 'AbortError') {
-                onFinish("error", t('db.connectionTimeout'));
+                await reportConnectionFailure(t('db.connectionTimeout'));
             } else {
-                onFinish("error", error.message || 'Failed to connect');
+                await reportConnectionFailure(error.message || 'Failed to connect');
             }
         } finally {
             cancelledPoll = true;
@@ -553,7 +564,7 @@ export const DataLoaderForm: React.FC<{
             setConnectProgress('');
             setIsConnecting(false);
         }
-    }, [getCurrentParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+    }, [getCurrentParams, persistCredentials, onConnected, onBeforeConnect, reportConnectionFailure, t]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -570,7 +581,7 @@ export const DataLoaderForm: React.FC<{
             }
             if (!connectorIdRef.current) return;
         } catch (err: any) {
-            onFinish('error', err.message || 'Failed to create connector');
+            await reportConnectionFailure(err.message || 'Failed to create connector');
             setIsConnecting(false);
             return;
         }
@@ -600,7 +611,7 @@ export const DataLoaderForm: React.FC<{
         );
 
         if (!popup) {
-            onFinish("error", t('db.popupBlocked') || 'Popup was blocked. Please allow popups and try again.');
+            await reportConnectionFailure(t('db.popupBlocked') || 'Popup was blocked. Please allow popups and try again.');
             setIsConnecting(false);
             return;
         }
@@ -613,7 +624,7 @@ export const DataLoaderForm: React.FC<{
 
             const { access_token, refresh_token, expires_in, user, error } = event.data;
             if (error) {
-                onFinish("error", error);
+                await reportConnectionFailure(error);
                 setIsConnecting(false);
                 return;
             }
@@ -652,8 +663,10 @@ export const DataLoaderForm: React.FC<{
                     }
                     onConnected?.();
                 } catch (err: any) {
-                    onFinish("error", err.message || 'Login failed');
+                    await reportConnectionFailure(err.message || 'Login failed');
                 }
+            } else {
+                await reportConnectionFailure('Login failed');
             }
             setIsConnecting(false);
         };
@@ -665,9 +678,10 @@ export const DataLoaderForm: React.FC<{
                 if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
                 window.removeEventListener('message', handler);
                 setIsConnecting(false);
+                void reportConnectionFailure('Login was cancelled');
             }
         }, 1000);
-    }, [delegatedLogin, getCurrentParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+    }, [delegatedLogin, getCurrentParams, persistCredentials, onConnected, onBeforeConnect, reportConnectionFailure, t]);
 
 
     // Auto-connect on mount from vault credentials or SSO token passthrough.

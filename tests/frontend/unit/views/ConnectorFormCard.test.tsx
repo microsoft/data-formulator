@@ -32,8 +32,9 @@ it('opens an unselected form and switches connectors without retaining credentia
     };
     const view = render(<Provider store={store}><Form /></Provider>);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Connector' }).hasAttribute('disabled')).toBe(false));
-    fireEvent.click(screen.getByRole('button', { name: 'Connector' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'MySQL' }));
+    expect(screen.getByText('Choose a connector')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'PostgreSQL' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'MySQL' }));
     const host = await screen.findByRole('textbox');
     fireEvent.change(host, { target: { value: 'old.example' } });
     fireEvent.change(view.container.querySelector('input[type="password"]')!, { target: { value: 'private-secret' } });
@@ -54,11 +55,12 @@ it('opens an unselected form and switches connectors without retaining credentia
 
 it('keeps the form pending through creation and failed connection, resolving only after success', async () => {
     let finishConnect!: (result: any) => void;
+    let createCount = 0;
     vi.mocked(apiRequest).mockReset();
     vi.mocked(apiRequest).mockImplementation(async (url) => {
         if (url === CONNECTOR_URLS.DATA_LOADERS) return { data: { loaders: [{ type: 'mysql', name: 'MySQL',
             params: [{ name: 'host', type: 'string', tier: 'connection', required: true }] }] } } as any;
-        if (url === CONNECTOR_URLS.CREATE) return { data: { id: 'connector-1' } } as any;
+        if (url === CONNECTOR_URLS.CREATE) return { data: { id: `connector-${++createCount}` } } as any;
         if (url === CONNECTOR_ACTION_URLS.CONNECT) return new Promise(resolve => { finishConnect = resolve; });
         return { data: { connectors: [] } } as any;
     });
@@ -80,10 +82,13 @@ it('keeps the form pending through creation and failed connection, resolving onl
     expect(busyForm.getAttribute('aria-busy')).toBe('false');
     expect(screen.getByDisplayValue('db.example')).toBeTruthy();
     expect(onResolved).not.toHaveBeenCalled();
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(CONNECTOR_URLS.DELETE('connector-1'), { method: 'DELETE' });
     fireEvent.click(screen.getByRole('button', { name: 'Create Connector' }));
     await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === CONNECTOR_ACTION_URLS.CONNECT)).toHaveLength(2));
     await act(async () => finishConnect({ data: { status: 'connected' } }));
-    expect(onResolved).toHaveBeenCalledWith(expect.objectContaining({ status: 'connected', connectorId: 'connector-1' }));
+    expect(onResolved).toHaveBeenCalledWith(expect.objectContaining({ status: 'connected', connectorId: 'connector-2' }));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([url, options]) =>
+        url === CONNECTOR_URLS.CREATE && options?.method === 'POST')).toHaveLength(2);
 });
 
 it('keeps reopened drafts, tracks typing before blur, and applies agent updates to visible fields', async () => {

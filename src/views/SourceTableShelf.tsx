@@ -34,13 +34,11 @@ import {
 import { alpha } from '@mui/material/styles';
 
 import AddIcon from '@mui/icons-material/Add';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
 import { useTranslation } from 'react-i18next';
@@ -58,7 +56,7 @@ import {
 import { useDataRefresh } from '../app/useDataRefresh';
 import { ViewBorderStyle } from '../app/tokens';
 import { StreamIcon, TableIcon } from '../icons';
-import { buildTableCard } from './DataThreadCards';
+import { ArtifactMenuButton, buildTableCard, ThreadArtifactCard } from './DataThreadCards';
 import { RefreshDataDialog } from './RefreshDataDialog';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { iconVar, textVar } from '../app/layout';
@@ -491,9 +489,7 @@ export const SourceTableShelf: FC<{
         setDeletingFileName(workspaceFile.name);
         try {
             await deleteWorkspaceFile(workspaceFile.name);
-            if (focusedId?.type === 'file' && focusedId.fileName === workspaceFile.name) {
-                dispatch(dfActions.setFocused(undefined));
-            }
+            dispatch(dfActions.removeFileNodes(workspaceFile.name));
         } catch (error) {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
@@ -703,7 +699,6 @@ export const SourceTableShelf: FC<{
                     collapsed: false,
                     dispatch,
                     handleOpenTableMenu,
-                    primaryBgColor: theme.palette.primary.bgcolor,
                     t,
                     showOriginalName: true,
                 })}
@@ -711,7 +706,9 @@ export const SourceTableShelf: FC<{
         </Box>;
     }), [visibleTables, tables, highlightedTableIds, focusedTableId, theme, t]);
 
-    const fileCards = workspaceFiles.map(workspaceFile => (
+    const fileCards = workspaceFiles.map(workspaceFile => {
+        const fileName = workspaceFile.temporary ? workspaceFile.name.replace(/^scratch\//, '') : workspaceFile.name;
+        return (
         <Box key={`workspace-file-${workspaceFile.name}`} sx={{ display: 'flex', flexDirection: 'row' }}>
             <Box sx={{
                 width: GUTTER_WIDTH, flexShrink: 0,
@@ -719,47 +716,44 @@ export const SourceTableShelf: FC<{
             }}>
                 <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
                 <Box sx={{ flexShrink: 0, zIndex: 1, bgcolor: 'white', display: 'flex' }}>
-                    <AttachFileIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.35)' }} />
+                    <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.35)' }} />
                 </Box>
                 <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
             </Box>
             <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: GUTTER_GAP, pr: CARD_INSET_RIGHT }}>
-                <Box className={focusedId?.type === 'file' && focusedId.fileName === workspaceFile.name ? 'selected-card' : ''} sx={{
-                    display: 'flex', alignItems: 'center', gap: 0.5,
-                    px: 1.25, py: 0.75,
-                    border: '1px solid rgba(0,0,0,0.12)',
-                    borderRadius: '6px',
-                    bgcolor: 'white',
-                    opacity: deletingFileName === workspaceFile.name ? 0.55 : 1,
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: 'rgba(0,0,0,0.025)' },
-                }} onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: workspaceFile.name }))}>
-                    <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: textVar.sm, color: 'text.primary' }}>
-                        {workspaceFile.name}
-                    </Typography>
-                    {deletingFileName === workspaceFile.name ? (
-                        <CircularProgress size={16} />
+                <Box sx={{ width: '100%', minWidth: 0,
+                    ...(deletingFileName === workspaceFile.name ? {
+                        opacity: 0.55, '& .artifact-actions': { opacity: 1 },
+                    } : {}),
+                }}>
+                <ThreadArtifactCard
+                    artifactType="file"
+                    title={workspaceFile.display_name || fileName}
+                    notes={workspaceFile.display_name && workspaceFile.display_name !== fileName ? fileName : undefined}
+                    selected={focusedId?.type === 'file' && focusedId.fileName === workspaceFile.name}
+                    onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: workspaceFile.name }))}
+                    actions={deletingFileName === workspaceFile.name ? (
+                        <Box sx={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <CircularProgress size={16} />
+                        </Box>
                     ) : (
-                        <IconButton
-                            size="small"
-                            aria-label={t('dataThread.fileActions', {
+                        <ArtifactMenuButton
+                            tooltip={t('dataThread.moreOptions')}
+                            label={t('dataThread.fileActions', {
                                 name: workspaceFile.name,
                                 defaultValue: `Actions for ${workspaceFile.name}`,
                             })}
-                            onClick={(event) => {
-                                event.stopPropagation();
+                            onClick={anchorEl => {
                                 setSelectedFileForMenu(workspaceFile);
-                                setFileMenuAnchorEl(event.currentTarget);
+                                setFileMenuAnchorEl(anchorEl);
                             }}
-                            sx={{ p: 0.25, color: 'text.secondary' }}
-                        >
-                            <MoreVertIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    )}
+                        />
+                    )} />
                 </Box>
             </Box>
         </Box>
-    ));
+    );
+    });
 
     return <Box sx={{
         ...sx,
@@ -767,6 +761,10 @@ export const SourceTableShelf: FC<{
             boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
             borderColor: 'transparent',
             margin: '1px 0',
+        },
+        '& .selected-artifact-card': {
+            boxShadow: '0 0 0 2px var(--artifact-selection-color)',
+            borderColor: 'transparent',
         },
         padding: '6px',
     }}>
@@ -948,19 +946,6 @@ export const SourceTableShelf: FC<{
             onClick={(event) => event.stopPropagation()}
         >
             <MenuItem
-                onClick={(event) => {
-                    event.stopPropagation();
-                    if (selectedFileForMenu) {
-                        dispatch(dfActions.setFocused({ type: 'file', fileName: selectedFileForMenu.name }));
-                    }
-                    handleCloseFileMenu();
-                }}
-                sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
-            >
-                <VisibilityOutlinedIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
-                {t('dataThread.previewFile', { defaultValue: 'Preview file' })}
-            </MenuItem>
-            <MenuItem
                 onClick={handleDeleteFile}
                 sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
             >
@@ -1000,7 +985,7 @@ export const SourceTableShelf: FC<{
                     }}
                     sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
                 >
-                    <AttachFileIcon sx={{
+                    <InsertDriveFileOutlinedIcon sx={{
                         fontSize: textVar.xl,
                         color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
                     }} />

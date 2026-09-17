@@ -2,14 +2,118 @@
   {
     "type": "function",
     "function": {
-      "name": "list_workspace_items",
-      "description": "List workspace items only when a fresh or filtered inventory is needed. Do not list input scope before reading or searching: the [WORKSPACE INPUTS] context already provides complete current input IDs. memory includes stale entries and current content hashes; temp includes only temporary attachments scoped to this run.",
+      "name": "create_data",
+      "description": "Create a registered workspace table for analysis, not a scratch export. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame. Declare actual data/file input_sources; use [] for generated data without inputs and clearly identify synthetic data. Returns the table name and content hash.",
       "parameters": {
         "type": "object",
         "properties": {
-          "scope": {"type": "string", "enum": ["input", "memory", "temp"], "default": "input"},
-          "kinds": {"type": "array", "items": {"type": "string", "enum": ["data", "file"]}, "description": "For input scope, optional item kinds to include."},
-          "query": {"type": "string", "description": "Optional case-insensitive name filter."}
+          "table_name": { "type": "string", "description": "New workspace table identifier, using letters, digits and underscores." },
+          "display_name": { "type": "string", "maxLength": 80, "description": "Short human-readable title." },
+          "rows": { "type": "array", "items": { "type": "object" }, "description": "Literal records. Omit when using code." },
+          "code": { "type": "string", "description": "Python that reads listed inputs and computes output_variable; do not write files directly." },
+          "output_variable": { "type": "string", "description": "Variable containing the resulting pandas DataFrame." },
+          "input_sources": { "type": "array", "items": { "type": "object", "properties": {
+            "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
+          }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Exact IDs from list_workspace_items(scope=input), or scratch/... paths with kind=file. Only inputs materially used." }
+        },
+        "required": ["table_name", "input_sources"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_data",
+      "description": "Explicitly revise agent-created editable workspace data under the same table ID. User uploads and connector tables are protected; create a derived copy instead. Provide rows OR Python producing a replacement DataFrame, actual input_sources, and the current table content_hash. On conflict reread and reconcile. Failed validation leaves the existing data intact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_name": { "type": "string", "description": "Exact existing workspace table name." },
+          "expected_content_hash": { "type": "string", "pattern": "^[0-9a-f]{32}$", "description": "Current table content_hash from inventory or the latest create/update result." },
+          "display_name": { "type": "string", "maxLength": 80 },
+          "rows": { "type": "array", "items": { "type": "object" } },
+          "code": { "type": "string", "description": "Recompute replacement data from listed inputs. Do not write files directly." },
+          "output_variable": { "type": "string", "description": "Resulting pandas DataFrame." },
+          "input_sources": { "type": "array", "items": { "type": "object", "properties": {
+            "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
+          }, "required": ["id", "kind"], "additionalProperties": false } }
+        },
+        "required": ["table_name", "expected_content_hash", "input_sources"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_file",
+      "description": "Create an agent-managed durable workspace file from literal text OR a sandboxed Python output variable. Python may read listed workspace and scratch inputs. A DataFrame becomes a Parquet file; str becomes UTF-8; bytes are saved as-is. Rejects existing filenames: use edit_file for revisions. Files appear immediately in the workspace and input inventory. For registered analysis tables use create_data; a file extension never registers data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Filename including extension, without directories, e.g. summary.md."
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Always provide a concise human-readable title for the Workspace card: 2-5 meaningful words, preserving acronyms, e.g. UNESCO Education. Omit extensions, underscores, and redundant details. This is separate from the actual filename."
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete UTF-8 text contents, up to 2 MB; omit when using code."
+          },
+          "code": {
+            "type": "string",
+            "description": "Python producing output_variable. Read either source or scratch inputs, but do not write files directly."
+          },
+          "output_variable": {
+            "type": "string",
+            "description": "Variable produced by code containing a DataFrame (requires .parquet filename), str, or bytes. Binary artifacts are limited to 128 MB."
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_workspace_items",
+      "description": "List workspace items when a fresh or filtered inventory is needed. input includes user and agent-managed data/files, with content_hash and edit_policy; memory includes existing memory; temp includes visible execution intermediates and legacy scratch files. Prefer relevant user-managed inputs. All listed paths can be read in Python.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "input",
+              "memory",
+              "temp"
+            ],
+            "default": "input"
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "data",
+                "file"
+              ]
+            },
+            "description": "For input scope, optional item kinds to include."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional case-insensitive name filter."
+          }
         }
       }
     }
@@ -17,51 +121,74 @@
   {
     "type": "function",
     "function": {
-      "name": "manage_workspace_memory",
-      "description": "Create, refresh, patch, rename, or delete agent-maintained workspace memory. Table memory is materialized from sandboxed Python; text memory stores Markdown and supports hash-guarded exact patches.",
+      "name": "edit_file",
+      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or list_workspace_items(scope=input). User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied.",
       "parameters": {
         "type": "object",
         "properties": {
-          "action": {"type": "string", "enum": ["save", "refresh", "patch", "rename", "delete"]},
-          "memory_id": {"type": "string", "description": "Required for refresh, patch, rename, and delete."},
-          "kind": {"type": "string", "enum": ["table", "text"], "description": "Required for save; inferred from the existing memory for refresh."},
-          "name": {"type": "string", "description": "Required for save and rename; optional for refresh."},
-          "description": {"type": "string", "description": "Required for save; optional for refresh."},
-          "input_sources": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {"type": "string", "description": "Stable ID listed by list_workspace_items with input scope."},
-                "kind": {"type": "string", "enum": ["data", "file"]},
-                "locator": {"type": "object", "description": "Optional source location used, such as {\"page\": 2}."}
-              },
-              "required": ["id", "kind"],
-              "additionalProperties": false
-            },
-            "description": "Required for table save/refresh. Optional provenance for text memory."
+          "path": {
+            "type": "string",
+            "description": "Exact existing files/... path from the input inventory or create_file result."
           },
-          "code": {"type": "string", "description": "Required for table save/refresh; Python code producing the DataFrame to remember."},
-          "output_variable": {"type": "string", "description": "Required for table save/refresh; DataFrame variable produced by code."},
-          "content": {"type": "string", "description": "Required for text save/refresh; complete Markdown content."},
-          "expected_content_hash": {"type": "string", "description": "Required for patch; current hash from list_workspace_items with memory scope."},
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Optional short title of 2-5 meaningful words. Preserve acronyms; omit extensions and underscores."
+          },
+          "code": {
+            "type": "string",
+            "description": "Python producing output_variable. Read sources or scratch but do not write files directly."
+          },
+          "output_variable": {
+            "type": "string",
+            "description": "DataFrame (requires .parquet), str, or bytes for full replacement. Binary artifacts are limited to 128 MB."
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete replacement UTF-8 text, up to 2 MB."
+          },
+          "expected_content_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Current SHA-256 of the file bytes. On conflict, reread and reconcile before retrying."
+          },
           "replacements": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "old_text": {"type": "string", "description": "Exact non-empty text to replace."},
-                "new_text": {"type": "string", "description": "Replacement text; empty deletes the match."},
-                "replace_all": {"type": "boolean", "default": false}
+                "old_text": {
+                  "type": "string",
+                  "description": "Exact non-empty text to replace."
+                },
+                "new_text": {
+                  "type": "string",
+                  "description": "Replacement text; empty deletes the match."
+                },
+                "replace_all": {
+                  "type": "boolean",
+                  "default": false
+                }
               },
-              "required": ["old_text", "new_text"],
+              "required": [
+                "old_text",
+                "new_text"
+              ],
               "additionalProperties": false
             },
             "description": "For patch, ordered exact replacements. Ambiguous matches fail unless replace_all is true."
           },
-          "append_text": {"type": "string", "description": "For patch, optional text appended after replacements."}
+          "append_text": {
+            "type": "string",
+            "description": "For patch, optional text appended after replacements."
+          }
         },
-        "required": ["action"]
+        "required": [
+          "path",
+          "expected_content_hash"
+        ],
+        "additionalProperties": false
       }
     }
   },
@@ -73,12 +200,28 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "item_id": {"type": "string", "description": "Stable input item ID from list_workspace_items."},
-          "locator": {"type": "object", "description": "Optional canonical location: {\"row\": 1} for data or {\"line\": 1} for normalized text."},
-          "options": {"type": "object", "description": "Optional semantic adapter options; library-specific arguments are not accepted."},
-          "limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 200}
+          "item_id": {
+            "type": "string",
+            "description": "Stable input item ID from list_workspace_items."
+          },
+          "locator": {
+            "type": "object",
+            "description": "Optional canonical location: {\"row\": 1} for data or {\"line\": 1} for normalized text."
+          },
+          "options": {
+            "type": "object",
+            "description": "Optional semantic adapter options; library-specific arguments are not accepted."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 200
+          }
         },
-        "required": ["item_id"]
+        "required": [
+          "item_id"
+        ]
       }
     }
   },
@@ -90,13 +233,535 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "query": {"type": "string", "description": "Case-insensitive text to find."},
-          "item_ids": {"type": "array", "items": {"type": "string"}, "description": "Optional stable item IDs to search."},
-          "kinds": {"type": "array", "items": {"type": "string", "enum": ["data", "file"]}, "description": "Optional input kinds to search."},
-          "options": {"type": "object", "description": "Optional semantic adapter options; library-specific arguments are not accepted."},
-          "max_results": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+          "query": {
+            "type": "string",
+            "description": "Case-insensitive text to find."
+          },
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional stable item IDs to search."
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "data",
+                "file"
+              ]
+            },
+            "description": "Optional input kinds to search."
+          },
+          "options": {
+            "type": "object",
+            "description": "Optional semantic adapter options; library-specific arguments are not accepted."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_connector_form",
+      "description": "Read the currently targeted connector form artifact, its revision, schema and non-sensitive user-edited values. Credentials are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_connector_form",
+      "description": "Patch the existing form artifact after reading it. Preserve unrelated fields; never connect, save credentials, or create a replacement form. Pause for user review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "form_id",
+          "revision",
+          "values"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "summarize_data_sources",
+      "description": "Return a bounded overview of every connected data source: hierarchy stats, top-level items, branch-diverse sample tables, and explicit omitted counts. Use this first for broad questions about what data is available.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_data",
+      "description": "List connected-source catalogs like ls. With no arguments, return immediate source nodes at the catalog root. With source_id and optional exact path, return immediate typed children only. Use filter_by for folders or tables and start_after when truncated. Use summarize_data_sources instead for a broad overview.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Connected source identifier. Omit for catalog-root source nodes."
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact hierarchy path segments."
+          },
+          "filter_by": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "table"
+            ],
+            "description": "Optional immediate-child node type."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Maximum items. Default 100."
+          },
+          "start_after": {
+            "type": "object",
+            "description": "Exclusive continuation reference returned as next_start_after.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "folder",
+                  "table"
+                ]
+              },
+              "path": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "table_key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "path"
+            ]
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "find_data",
+      "description": "Recursively find data below an optional exact source path. Query is an optional case-insensitive regex; omit it to enumerate descendants. Results are flat typed nodes with exact paths. For a named subject missing from workspace inputs, search before asking the user to supply data or specify analysis scope. Inspect matching metadata, then call propose_data_operation if loading is needed for the user's task. Search results are not loaded data. Use summarize_data_sources instead for a broad overview.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Optional case-insensitive regex. Omit to enumerate."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Optional connected source identifier."
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact recursive search root. Requires source_id."
+          },
+          "filter_by": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "table"
+            ],
+            "description": "Optional result node type."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "description",
+                "columns"
+              ]
+            },
+            "description": "Fields to search. Omit for all."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "describe_data",
+      "description": "Read cached metadata, columns, types, description, and row count for one discovered table.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "table_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "table_key"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "probe_data",
+      "description": "Run a bounded read-only structured query against one connected table. Use only after describe_data. Results are evidence for planning and do not become workspace inputs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "table_key": {
+            "type": "string"
+          },
+          "query": {
+            "type": "object",
+            "properties": {
+              "filters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "EQ",
+                        "NEQ",
+                        "GT",
+                        "GTE",
+                        "LT",
+                        "LTE",
+                        "IN",
+                        "ILIKE",
+                        "BETWEEN",
+                        "IS_NULL"
+                      ]
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "column",
+                    "op"
+                  ]
+                }
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "group_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "aggregates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "count",
+                        "count_distinct",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "column": {
+                      "type": "string"
+                    },
+                    "as": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op"
+                  ]
+                }
+              },
+              "order_by": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": {
+                      "type": "string"
+                    },
+                    "dir": {
+                      "type": "string",
+                      "enum": [
+                        "asc",
+                        "desc"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "column"
+                  ]
+                }
+              },
+              "limit": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "required": [
+          "source_id",
+          "table_key"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_connectors",
+      "description": "List connector types available in this deployment when you need to look up a type key or answer a question about supported sources. Not required to open the connection form: propose_connection can show the selector directly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "describe_connector",
+      "description": "Return setup fields and authentication choices for one source_type returned by list_connectors. After this, call propose_connection in the same turn; describing fields does not open the form.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "description": "Connector type key returned by list_connectors."
+          }
+        },
+        "required": [
+          "source_type"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_connection",
+      "description": "Open the user-confirmed connection form with a connector selector. Call immediately when the user wants to connect a source, even if its type is unknown; omit source_type to let the user choose in the form. No prior discovery call is required. Provide a known source_type to preselect it. Never invent credentials or connect automatically.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "description": "Connector type key returned by list_connectors."
+          },
+          "prefilled": {
+            "type": "object",
+            "description": "Optional connector field values already supplied by the user. Values seed the live form and must not be repeated in prose.",
+            "additionalProperties": {}
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_data_operation",
+      "description": "Offer one to three complete immutable connected-data loading alternatives and pause for the user's selection. When a suitable missing dataset is found for an import or analysis request, call this in the same run instead of ending with a promise to load it. One option is enough when the choice is clear. This call creates the user-confirmation step; no separate permission question is needed. Discovery must ground every source, table, filter, and sort field. This proposes a load; it does not execute one or mean the data is already loaded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string",
+            "description": "Fallback only. Leave empty when you narrate in your message text, which is what the user reads."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Concise action label, ideally 2-6 words."
+                },
+                "tables": {
+                  "type": "array",
+                  "description": "The tables that serve the same analysis.",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "table_key": {
+                        "type": "string"
+                      },
+                      "query": {
+                        "type": "object",
+                        "description": "Optional raw-row subset. Omit to load the whole table subject to server limits.",
+                        "properties": {
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "column": {
+                                  "type": "string"
+                                },
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "EQ",
+                                    "NEQ",
+                                    "GT",
+                                    "GTE",
+                                    "LT",
+                                    "LTE",
+                                    "IN",
+                                    "ILIKE",
+                                    "BETWEEN",
+                                    "IS_NULL"
+                                  ]
+                                },
+                                "value": {}
+                              },
+                              "required": [
+                                "column",
+                                "op"
+                              ]
+                            }
+                          },
+                          "columns": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "order_by": {
+                            "type": "array",
+                            "maxItems": 1,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "column": {
+                                  "type": "string"
+                                },
+                                "dir": {
+                                  "type": "string",
+                                  "enum": [
+                                    "asc",
+                                    "desc"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "column"
+                              ]
+                            }
+                          },
+                          "limit": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "source_id",
+                      "table_key"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "label",
+                "tables"
+              ]
+            }
+          }
+        },
+        "required": [
+          "options"
+        ]
       }
     }
   }

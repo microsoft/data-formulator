@@ -5,6 +5,7 @@ import { Provider } from 'react-redux';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
+import { buildTableRefChip } from '../../../../src/views/DataThreadCards';
 import { apiRequest, streamRequest } from '../../../../src/app/apiClient';
 
 vi.mock('../../../../src/app/apiClient', () => ({
@@ -38,6 +39,148 @@ describe('Analyst landing attachment handoff', () => {
     const requestBody = (index = 0) => JSON.parse(
         vi.mocked(streamRequest).mock.calls[index][1].body as string,
     );
+
+    it('registers agent data and refreshes it under the same table and reference IDs', async () => {
+        let value = 1;
+        let finishRun!: () => void;
+        const running = new Promise<void>(resolve => { finishRun = resolve; });
+        vi.mocked(apiRequest).mockImplementation(async () => ({ data: {
+            tables: [{ name: 'measurements', columns: [{ name: 'value', type: 'INTEGER' }],
+                row_count: 1, sample_rows: [{ value }], content_hash: `hash-${value}`,
+                origin: 'agent', role: 'source', edit_policy: 'agent_editable', input_sources: [] }],
+            result: [], statistics: {},
+        } }) as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_result', tool: 'create_data', status: 'ok',
+                stdout: JSON.stringify({ table_name: 'measurements', display_name: 'Measurements' }) };
+            value = 2;
+            yield { type: 'tool_result', tool: 'update_data', status: 'ok',
+                stdout: JSON.stringify({ table_name: 'measurements', display_name: 'Measurements' }) };
+            yield { type: 'action', action: 'visualize', input_sources: [
+                { id: 'data:hash-2:measurements', kind: 'data', display_name: 'measurements' },
+            ] };
+            yield { type: 'result', status: 'success', content: { result: {
+                status: 'ok', content: { rows: [{ value: 4 }],
+                    virtual: { table_name: 'doubled', row_count: 1 } },
+                refined_goal: { output_variable: 'result' },
+            } } };
+            await running;
+        });
+        const { store, dispatchSpy } = mountTask({ text: 'Create and revise measurements', images: [], attachments: [] });
+        try {
+            await waitFor(() => expect(dfSelectors.getAllTables(store.getState())[0]?.rows).toEqual([{ value: 2 }]));
+            expect(store.getState().inputTables).toHaveLength(1);
+            expect(store.getState().loadedTableNodes).toHaveLength(1);
+            expect(store.getState().loadedTableNodes[0].parentNodeId).toMatch(/^conversation-root:/);
+            expect(store.getState().inputTables[0].dataProvenance?.editPolicy).toBe('agent_editable');
+            await waitFor(() => expect(store.getState().derivedTables).toHaveLength(1));
+            expect(dispatchSpy.mock.calls.map(([action]) => action)
+                .filter(dfActions.updateDraftSources.match).at(-1)?.payload.source).toEqual(['measurements']);
+            const derived = dfSelectors.getAllTables(store.getState()).find(table => table.id === 'doubled');
+            expect(derived?.derive?.source).toEqual(['measurements']);
+            expect(derived?.derive?.trigger.tableId).toBe('measurements');
+            expect(derived?.derive?.trigger.interaction.at(-1)?.inputTableNames).toEqual(['Measurements']);
+            expect(store.getState().fileNodes).toEqual([]);
+        } finally {
+            await act(async () => { finishRun(); });
+        }
+    });
+
+    it('keeps newly created data after its request in an initially empty conversation', async () => {
+        let finishRun!: () => void;
+        const running = new Promise<void>(resolve => { finishRun = resolve; });
+        vi.mocked(apiRequest).mockResolvedValue({ data: {
+            tables: [{ name: 'retail_sales', columns: [{ name: 'revenue', type: 'INTEGER' }],
+                row_count: 1, sample_rows: [{ revenue: 1200 }], content_hash: 'retail-hash',
+                origin: 'agent', role: 'source', edit_policy: 'agent_editable', input_sources: [] }],
+            result: [], statistics: {},
+        } } as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_result', tool: 'create_data', status: 'ok',
+                stdout: JSON.stringify({ table_name: 'retail_sales', display_name: 'Retail Sales' }) };
+            await running;
+            yield { type: 'completion', status: 'success', content: { summary: 'Created Retail Sales.' } };
+        });
+        const { store } = mountTask({ text: 'Create a demo dataset', images: [], attachments: [] });
+        let rootId: string | undefined;
+        try {
+            await waitFor(() => expect(store.getState().loadedTableNodes).toHaveLength(1));
+            const draft = store.getState().draftNodes[0];
+            rootId = draft.parentNodeId;
+            expect(rootId).toMatch(/^conversation-root:/);
+            expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(draft.id);
+        } finally {
+            await act(async () => { finishRun(); });
+        }
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
+        const response = store.getState().textTurns[0];
+        expect(response.parentNodeId).toBe(rootId);
+        expect(response.prompt).toBe('Create a demo dataset');
+        expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(response.id);
+        expect(store.getState().draftNodes).toHaveLength(0);
+        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: response.id })));
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'retail_sales' });
+    });
+
+    it('focuses a loaded-table reference and continues its conversation', async () => {
+        let finishRun!: () => void;
+        const running = new Promise<void>(resolve => { finishRun = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () { await running; });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({
+                kind: 'text', id: 'loaded-reply', displayId: 'loaded-reply', textKind: 'explain',
+                parentNodeId: 'conversation-root:college', content: 'Loaded college majors.', createdAt: 1,
+            }));
+            store.dispatch(dfActions.addLoadedTableNode({
+                kind: 'loaded-table', id: 'college-reference', tableId: 'college-majors',
+                parentNodeId: 'loaded-reply', createdAt: 2,
+            }));
+        });
+        const reference = render(buildTableRefChip({
+            tableId: 'college-majors', loadedTableNodeId: 'college-reference',
+            table: undefined, focused: false, dispatch: store.dispatch,
+        }));
+        fireEvent.click(reference.getByRole('button', { name: 'college-majors' }));
+        expect(store.getState().focusedId).toEqual({ type: 'reference', referenceId: 'college-reference' });
+        expect(reference.container.querySelector('.selected-artifact-card')).toBeNull();
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'college-majors' });
+        expect(dfSelectors.getEffectiveTableId(store.getState())).toBe('college-majors');
+        try {
+            act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Which majors pay most?', images: [], attachments: [] })));
+            await waitFor(() => expect(store.getState().draftNodes).toHaveLength(1));
+            expect(store.getState().draftNodes[0].parentNodeId).toBe('loaded-reply');
+            expect(store.getState().textTurns[0].answered).not.toBe(true);
+        } finally {
+            await act(async () => { finishRun(); });
+        }
+    });
+
+    it.each(['create_file', 'edit_file'])('refreshes artifacts immediately after %s without adding a durable table', async tool => {
+        const refreshed = vi.fn();
+        let finishRun!: () => void;
+        const running = new Promise<void>(resolve => { finishRun = resolve; });
+        window.addEventListener('df:workspace-files-changed', refreshed);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_result', tool, status: 'ok', stdout: JSON.stringify({
+                path: 'files/summary.md', name: 'summary.md', display_name: 'Summary',
+                content_hash: 'current-hash', available_in_workspace: true,
+            }) };
+            await running;
+        });
+        try {
+            const { store } = mountTask({ text: 'Revise the summary draft', images: [], attachments: [] });
+            await waitFor(() => expect(refreshed).toHaveBeenCalled());
+            expect(store.getState().inputTables).toHaveLength(0);
+            expect(store.getState().fileNodes).toHaveLength(1);
+            expect(store.getState().fileNodes[0]).toMatchObject({ path: 'summary.md', displayName: 'Summary' });
+            act(() => store.dispatch(dfActions.setFocused({ type: 'reference', referenceId: store.getState().fileNodes[0].id })));
+            expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'summary.md' });
+        } finally {
+            await act(async () => { finishRun(); });
+            window.removeEventListener('df:workspace-files-changed', refreshed);
+        }
+    });
 
     it.each([
         { submission: 'panel', target: 'chart' },
@@ -73,12 +216,16 @@ describe('Analyst landing attachment handoff', () => {
             const draft = dispatchSpy.mock.calls.map(([action]) => action).find(dfActions.createDraftNode.match);
             expect(draft?.payload.parentNodeId).toBe('question');
             act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: 'question' })));
-            expect(screen.getByTestId('explanation-panel').textContent).toBe('Which metric?');
+            if (target === 'self') expect(screen.getByTestId('explanation-panel').textContent).toBe('Which metric?');
+            else {
+                expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual(previousCanvas);
+                expect(screen.getByTestId('explanation-panel').textContent).toBe('Which metric?');
+            }
             await act(async () => { finishRun(); });
         },
     );
 
-    it.each([undefined, 'long_response'])('uses completion presentation, not length, for the existing response card: %s', async (presentation) => {
+    it.each([undefined, 'long_response'])('reserves the document canvas for explicit long responses: %s', async (presentation) => {
         const content = presentation ? 'An explicitly expanded answer.' : 'A normal answer. '.repeat(200);
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'completion', status: 'success', content: { summary: content, presentation } };
@@ -94,7 +241,7 @@ describe('Analyst landing attachment handoff', () => {
             expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: turn.id });
             expect(screen.queryByTestId('explanation-panel')).toBeNull();
         } else {
-            expect(dfSelectors.selectCanvasTarget(store.getState())).toBeUndefined();
+            expect(dfSelectors.selectCanvasTarget(store.getState())?.type).not.toBe('text');
             expect(screen.getByTestId('explanation-panel').textContent).toBe(content);
         }
     });
@@ -156,6 +303,65 @@ describe('Analyst landing attachment handoff', () => {
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: formId });
     });
 
+    it.each(['approve', 'reject'] as const)('resumes a terminal proposal only after explicit %s and records its outcome', async decision => {
+        const proposal = { id: 'terminal-request', argv: ['find', '/data', '-name', '*.csv'],
+            cwd: '/data', purpose: 'Find CSV data', timeout_seconds: 60 };
+        const trajectory = [{ role: 'user', content: 'Find local data' }];
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'interact', terminal_request: proposal, trajectory, completed_step_count: 2 } as any;
+        });
+        const { store } = mountTask({ text: 'Find local data', images: [], attachments: [] });
+        await screen.findByRole('dialog');
+        expect(streamRequest).toHaveBeenCalledTimes(1);
+        const originalConversation = requestBody().conversation_id;
+        expect(store.getState().textTurns).toHaveLength(1);
+        const intentId = store.getState().textTurns[0].id;
+        expect(store.getState().textTurns[0]).toMatchObject({
+            content: proposal.purpose,
+            executions: [{ id: proposal.id, status: 'awaiting_approval', argv: proposal.argv }],
+        });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'terminal_running' };
+            yield { type: 'terminal_result', request: proposal,
+                result: decision === 'approve' ? { exit_code: 0, output: '/data/sales.csv' } : { rejected: true } } as any;
+            yield { type: 'interact', form: { kind: 'connector', title: 'Local data',
+                response: 'Review the discovered folder.', connector: { source_type: 'local_folder' } } } as any;
+        });
+        fireEvent.click(screen.getByRole('button', { name: decision === 'approve' ? 'Run once' : 'Reject' }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(requestBody(1)).toMatchObject({
+            conversation_id: originalConversation, trajectory, completed_step_count: 2,
+            terminal_response: { request_id: proposal.id, decision },
+        });
+        expect(requestBody(1).terminal_response).not.toHaveProperty('argv');
+        await waitFor(() => expect(store.getState().textTurns.some(turn => turn.form)).toBe(true));
+        expect(store.getState().textTurns).toHaveLength(2);
+        expect(store.getState().textTurns[0]).toMatchObject({
+            id: intentId, content: proposal.purpose,
+            executions: [{ id: proposal.id, status: decision === 'approve' ? 'completed' : 'rejected',
+                result: decision === 'approve' ? { exit_code: 0, output: '/data/sales.csv' } : { rejected: true } }],
+        });
+        expect(store.getState().textTurns[1].parentNodeId).toBe(intentId);
+        expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('marks a command interrupted if its stream ends before a result', async () => {
+        const proposal = { id: 'dropped-command', argv: ['find', '/data'], cwd: '/data',
+            purpose: 'Find local data', timeout_seconds: 60 };
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'interact', terminal_request: proposal, trajectory: [], completed_step_count: 1 } as any;
+        });
+        const { store } = mountTask({ text: 'Find local data', images: [], attachments: [] });
+        await screen.findByRole('dialog');
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'terminal_running' } as any;
+            throw new Error('Connection lost');
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Run once' }));
+        await waitFor(() => expect(store.getState().textTurns[0].executions?.[0].status).toBe('interrupted'));
+        expect(store.getState().textTurns).toHaveLength(1);
+    });
+
     it('sends queued images and uploaded scratch paths and labels the prompt', async () => {
         const image = 'data:image/png;base64,aW1hZ2U=';
         const { store, dispatchSpy } = mountTask({
@@ -209,6 +415,20 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody()).not.toHaveProperty('attached_images');
         expect(requestBody()).not.toHaveProperty('scratch_files');
+    });
+
+    it.each(['scratch/computed.parquet', 'notes.md'])('sends the focused file independently of attachments: %s', async fileName => {
+        const { store } = mountTask();
+        act(() => store.dispatch(dfActions.setFocused({ type: 'file', fileName })));
+        act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Analyze this file', images: [], attachments: [] })));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().focused_file).toBe(fileName);
+        expect(requestBody()).not.toHaveProperty('scratch_files');
+        await waitFor(() => expect(store.getState().draftNodes.every(draft => draft.status !== 'running')).toBe(true));
+        act(() => store.dispatch(dfActions.setFocused(undefined)));
+        act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Next question', images: [], attachments: [] })));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(requestBody(1)).not.toHaveProperty('focused_file');
     });
 
     it.each([

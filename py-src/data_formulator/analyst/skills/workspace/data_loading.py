@@ -15,16 +15,16 @@ from data_formulator.data_operations import (
     ProbeBudget,
 )
 
-_PROBE_BUDGET_KEY = "load-data.probe_budget"
-_CONNECTORS_LISTED_KEY = "load-data.connectors_listed"
+_PROBE_BUDGET_KEY = "workspace.probe_budget"
+_CONNECTORS_LISTED_KEY = "workspace.connectors_listed"
 _CONNECTORS_DISABLED_NOTE = (
     "External data connectors are disabled in this deployment. Use file upload "
     "or built-in sample datasets instead."
 )
 
 
-class LoadDataSkill:
-    """Read-only connected-source discovery for the unified analyst."""
+class WorkspaceDataLoading:
+    """Connected-source discovery and confirmed imports for the workspace skill."""
 
     def handle_tool(
         self,
@@ -50,7 +50,7 @@ class LoadDataSkill:
         elif name == "read_connector_form":
             result = self._read_connector_form(ctx)
         else:
-            result = {"error": f"load-data has no tool '{name}'."}
+            result = {"error": f"workspace has no data-loading tool '{name}'."}
         return ToolResult(text=json.dumps(result, ensure_ascii=False, default=str))
 
     def handle_action(
@@ -65,7 +65,7 @@ class LoadDataSkill:
             return (yield from self._propose_connection(spec, ctx))
         if action == "update_connector_form":
             return (yield from self._update_connector_form(spec, ctx))
-        message = f"load-data has no committing action '{action}' in this phase."
+        message = f"workspace has no data-loading action '{action}'."
         yield {
             "type": "error",
             "message": message,
@@ -342,7 +342,7 @@ class LoadDataSkill:
                     "say what you found and why in your reply text, and give each option a label"
                 )
             conversation_id = str(ctx.payload.get("conversation_id", "")).strip()
-            loaded_tables = LoadDataSkill._already_loaded_tables(
+            loaded_tables = WorkspaceDataLoading._already_loaded_tables(
                 tuple(step for plan in plans for step in plan.steps),
                 ctx.workspace,
             )
@@ -403,6 +403,3 @@ def _source_is_available(source_id: str) -> bool:
     except Exception:
         return True
 
-
-def get_skill() -> LoadDataSkill:
-    return LoadDataSkill()

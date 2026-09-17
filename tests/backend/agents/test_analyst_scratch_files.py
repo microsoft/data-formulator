@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from data_formulator.analyst.agent import AnalystAgent
+from data_formulator.datalake.workspace import Workspace
 
 pytestmark = [pytest.mark.backend]
 
@@ -27,6 +28,49 @@ def _agent() -> AnalystAgent:
 
 
 class TestScratchFileInjection:
+    @pytest.mark.parametrize("resume", [False, True])
+    def test_agent_loop_receives_current_scratch_focus(self, tmp_path, resume):
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        workspace.confined_scratch.write("sample.csv", b"category,value\na,1\nb,2\n")
+        client = MagicMock()
+        client.model = "test-model"
+        agent = AnalystAgent(client=client, workspace=workspace)
+        agent._build_lightweight_table_context = lambda *args, **kwargs: "No durable tables"
+        agent._build_system_prompt = lambda *args, **kwargs: "SYS"
+        observed = []
+
+        def next_action(messages, *args, **kwargs):
+            observed.extend(messages)
+            yield {"type": "agent_action", "final_text": "Ready to inspect the selected CSV."}
+
+        agent._get_next_action = next_action
+        trajectory = [{"role": "user", "content": "Earlier context had no files."}] if resume else None
+        events = list(agent.run([], "visualize this data", trajectory=trajectory, focused_file="scratch/sample.csv"))
+        assert events[-1]["type"] == "completion"
+        assert events[-1]["status"] == "success"
+        assert '"selected_file": {"path": "scratch/sample.csv"' in observed[-1]["content"]
+        assert '"scratch_files": ["scratch/sample.csv"]' in observed[-1]["content"]
+        assert "promotion or another upload is not required" in observed[-1]["content"]
+
+    def test_file_context_includes_prior_scratch_and_current_selection(self, tmp_path):
+        agent = _agent()
+        agent.workspace = Workspace("test-user", root_dir=tmp_path)
+        agent.workspace.confined_scratch.write("computed.parquet", b"binary not for prompt")
+        agent.workspace.confined_scratch.write("_explore_ns/private.txt", b"private")
+        agent.workspace.save_workspace_file(b"private content", "notes.md")
+        for name, path in [("scratch/computed.parquet", "scratch/computed.parquet"), ("notes.md", "files/notes.md")]:
+            context = agent._build_file_selection_context(name)
+            assert '"path": "' + path + '"' in context
+            assert "visualize them directly" in context
+            assert "binary not for prompt" not in context
+            assert "private content" not in context
+            assert "_explore_ns" not in context
+        context = agent._build_file_selection_context(None)
+        assert "No file is currently selected" in context
+        assert "scratch/computed.parquet" in context
+        for name in ["scratch/missing.parquet", "scratch/../data/private.parquet", "missing.md"]:
+            assert "unavailable or expired" in agent._build_file_selection_context(name)
+
     def test_scratch_note_injected(self):
         agent = _agent()
         msgs = agent._build_initial_messages(
@@ -37,7 +81,10 @@ class TestScratchFileInjection:
         assert "[ATTACHED FILES]" in user
         assert "scratch/sales_a1b2c3d4.xlsx" in user
         assert "execute_python_script" in user
-        assert "supported data operation" in user
+        assert "create_file" in user
+        assert "edit_file" in user
+        assert "add_to_workspace" not in user
+        assert "Prioritize relevant user-managed sources" in user
         # The note precedes the question, and the question is still present.
         assert "[USER QUESTION]" in user
         assert user.index("[ATTACHED FILES]") < user.index("[USER QUESTION]")

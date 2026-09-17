@@ -7,7 +7,7 @@ import {
   shouldShowInputSourceTransition,
   shouldAutoFocusGeneratedChart,
 } from '../../../../src/app/agentInteractionPolicy';
-import { ROOTLESS_THREAD_ID } from '../../../../src/components/ComponentType';
+const CONVERSATION_ROOT_ID = 'conversation-root:test';
 
 describe('agent interaction policy', () => {
   it('keeps generated chart auto-focus disabled while the user is viewing a chart', () => {
@@ -16,13 +16,16 @@ describe('agent interaction policy', () => {
   });
 
   it('introduces a table only when a derived result uses one', () => {
-    expect(resolveDerivedTriggerTableId(null, undefined)).toBe(ROOTLESS_THREAD_ID);
-    expect(resolveDerivedTriggerTableId(null, 'orders')).toBe('orders');
-    expect(resolveDerivedTriggerTableId('derived-orders', 'orders')).toBe('derived-orders');
+    expect(resolveDerivedTriggerTableId(null, undefined, CONVERSATION_ROOT_ID)).toBe(CONVERSATION_ROOT_ID);
+    expect(resolveDerivedTriggerTableId(null, 'orders', CONVERSATION_ROOT_ID)).toBe('orders');
+    expect(resolveDerivedTriggerTableId('derived-orders', 'orders', CONVERSATION_ROOT_ID)).toBe('derived-orders');
   });
 
-  it('starts fresh runs rootless and preserves explicit continuations', () => {
-    expect(resolveRunParentNodeId(null)).toBe(ROOTLESS_THREAD_ID);
+  it('starts fresh conversation roots and preserves explicit continuations', () => {
+    const rootId = resolveRunParentNodeId(null);
+    expect(rootId).toMatch(/^conversation-root:/);
+    expect(resolveRunParentNodeId(null)).not.toBe(rootId);
+    expect(resolveRunParentNodeId(null, null, CONVERSATION_ROOT_ID)).toBe(CONVERSATION_ROOT_ID);
     expect(resolveRunParentNodeId(null, 'derived-orders')).toBe('derived-orders');
     expect(resolveRunParentNodeId('textTurn-question')).toBe('textTurn-question');
   });

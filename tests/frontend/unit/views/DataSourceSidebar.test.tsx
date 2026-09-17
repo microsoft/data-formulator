@@ -292,13 +292,13 @@ describe('DataSourceSidebar', () => {
         const newerCreation = screen.getByText('Newer creation');
         expect(newerCreation.compareDocumentPosition(recentlyEdited) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Group and sort sessions' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Sort sessions' }));
         fireEvent.click(await screen.findByText('sidebar.sortRecentlyModifiedFirst'));
 
         expect(recentlyEdited.compareDocumentPosition(newerCreation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it('groups sessions by their summarized data sources by default', async () => {
+    it('shows sessions in one sorted list without source grouping controls', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         vi.mocked(apiRequest).mockResolvedValue({
             data: {
@@ -328,14 +328,16 @@ describe('DataSourceSidebar', () => {
 
         render(<DataSourceSidebar />);
 
-        expect(await screen.findByText('Kusto / MyMysqlDB')).toBeInTheDocument();
-        expect(screen.getByText('~/datasets')).toBeInTheDocument();
-
-        fireEvent.click(screen.getByRole('button', { name: 'Group and sort sessions' }));
-        fireEvent.click(await screen.findByText('No grouping'));
-
+        const mixed = await screen.findByText('Mixed sources');
+        const local = screen.getByText('Local data');
+        expect(mixed.compareDocumentPosition(local) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(screen.queryByText('Kusto / MyMysqlDB')).not.toBeInTheDocument();
-        expect(screen.getByText('Mixed sources')).toBeInTheDocument();
-        expect(screen.getByText('Local data')).toBeInTheDocument();
+        expect(screen.queryByText('~/datasets')).not.toBeInTheDocument();
+        expect(screen.queryByText('No data')).not.toBeInTheDocument();
+        expect(screen.queryByText('Other')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Sort sessions' }));
+        expect(screen.queryByText('No grouping')).not.toBeInTheDocument();
+        expect(screen.queryByText('Data source')).not.toBeInTheDocument();
+        expect(screen.getByText('sidebar.sortRecentlyModifiedFirst')).toBeInTheDocument();
     });
 });

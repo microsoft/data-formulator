@@ -89,6 +89,23 @@ def extract_workspace_file_text(
     extension = Path(name).suffix.lower()
     if extension == ".docx":
         text = _extract_docx_text(content)
+    elif extension in {".xlsx", ".xls"}:
+        import pandas as pd
+
+        sections = []
+        truncated = False
+        try:
+            with pd.ExcelFile(io.BytesIO(content)) as workbook:
+                truncated = len(workbook.sheet_names) > 10
+                for sheet in workbook.sheet_names[:10]:
+                    frame = workbook.parse(sheet, nrows=51, header=None).fillna("")
+                    truncated = truncated or len(frame) > 50 or len(frame.columns) > 50
+                    sample = frame.iloc[:50, :50].map(lambda value: str(value)[:1000])
+                    sections.append(f"Sheet: {sheet}\n{sample.to_csv(index=False, header=False, sep=chr(9))}")
+        except Exception as exc:
+            raise AppError(ErrorCode.FILE_PARSE_ERROR, "Unable to preview this workbook") from exc
+        bounded, text_truncated = _bounded_text("\n".join(sections))
+        return WorkspaceFileText(name=name, content=bounded, truncated=truncated or text_truncated)
     elif extension == ".pdf":
         text = _extract_pdf_text(content)
     elif extension in TEXT_EXTENSIONS or (media_type or "").startswith("text/"):

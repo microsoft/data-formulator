@@ -8,7 +8,7 @@
  * manager is active. All backends expose the same API contract.
  */
 
-import { fetchWithIdentity, getUrls } from './utils';
+import { CONNECTOR_ACTION_URLS, fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
@@ -28,6 +28,8 @@ export interface WorkspaceSummary {
 }
 
 export interface WorkspaceFile {
+    temporary?: boolean;
+    display_name?: string;
     name: string;
     filename: string;
     created_at: string;
@@ -38,9 +40,12 @@ export interface WorkspaceFile {
 
 export interface WorkspaceFilePreview {
     name: string;
-    kind: 'text';
+    kind: 'text' | 'table';
     content: string;
     truncated: boolean;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+    row_count?: number;
 }
 
 async function isEphemeralBackend(): Promise<boolean> {
@@ -101,6 +106,10 @@ function _notifyListChanged(): void {
 export function onWorkspaceFilesChanged(cb: () => void): () => void {
     window.addEventListener(WORKSPACE_FILES_CHANGED, cb);
     return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, cb);
+}
+
+export function notifyWorkspaceFilesChanged(): void {
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
 }
 
 type PreparedInputTablePreview = {
@@ -325,6 +334,25 @@ export async function listWorkspaceFiles(): Promise<WorkspaceFile[]> {
     return data.files;
 }
 
+export async function previewConnectorFile(connectorId: string, sourcePath: string, signal?: AbortSignal): Promise<File> {
+    const response = await fetchWithIdentity('/api/connectors/preview-file', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+        body: JSON.stringify({ connector_id: connectorId, source_path: sourcePath }),
+    });
+    await assertDownloadResponseOk(response, 'File preview failed');
+    const blob = await response.blob();
+    return new File([blob], sourcePath.split('/').pop() || sourcePath, { type: blob.type });
+}
+
+export async function importConnectorFile(connectorId: string, sourcePath: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>(CONNECTOR_ACTION_URLS.IMPORT_FILE, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connector_id: connectorId, source_path: sourcePath }),
+    });
+    notifyWorkspaceFilesChanged();
+    return data;
+}
+
 export async function uploadWorkspaceFile(file: File): Promise<WorkspaceFile> {
     const formData = new FormData();
     formData.append('file', file);
@@ -341,6 +369,40 @@ export async function deleteWorkspaceFile(name: string): Promise<void> {
         method: 'DELETE',
     });
     window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+}
+
+export async function renameWorkspaceFile(name: string, newName: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>(`/api/workspace/files/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function createWorkspaceTextFile(name: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>('/api/workspace/files/text', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function readWorkspaceTextFile(name: string): Promise<WorkspaceFile & { content: string }> {
+    const { data } = await apiRequest<WorkspaceFile & { content: string }>(
+        `/api/workspace/files/${encodeURIComponent(name)}/text`,
+    );
+    return data;
+}
+
+export async function saveWorkspaceTextFile(name: string, content: string, contentHash: string): Promise<WorkspaceFile & { content: string }> {
+    const { data } = await apiRequest<WorkspaceFile & { content: string }>(
+        `/api/workspace/files/${encodeURIComponent(name)}/text`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, content_hash: contentHash }) },
+    );
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
 }
 
 export async function previewWorkspaceFile(name: string): Promise<WorkspaceFilePreview> {

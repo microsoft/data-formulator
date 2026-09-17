@@ -487,6 +487,12 @@ def list_tables():
                     "source_type": meta.source_type,
                     "source_filename": meta.filename,
                     "original_name": meta.original_name,
+                    "content_hash": meta.content_hash,
+                    "origin": meta.origin,
+                    "role": meta.role,
+                    "edit_policy": meta.edit_policy or "protected",
+                    "input_sources": meta.input_sources,
+                    "stale": meta.stale,
                 }
                 if meta.description is not None:
                     table_entry["description"] = meta.description

@@ -50,7 +50,6 @@ AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
     "data_rec":            "low",      # chart / transformation recommendation
     "analyst":             "low",      # unified multi-step exploration + report agent
     "interactive_explore": "low",      # exploration idea agent
-    "data_loading_chat":   "low",      # conversational data loading w/ tools
 
     # ── Light: single-turn extractors / classifiers / formatters ────────────
     "data_load":           "minimal",  # one-shot type inference

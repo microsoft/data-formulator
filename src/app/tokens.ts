@@ -14,7 +14,7 @@ import { alpha } from '@mui/material/styles';
 
 export const borderColor = {
     /** 0.12 — section dividers, table borders, tab underlines, sidebar edges
-     *  DataLoadingChat, ExplComponents, RefreshDataDialog, ReportView tables,
+    *  ExplComponents, RefreshDataDialog, ReportView tables,
      *  TableSelectionView, DataLoadingThread, DBTableManager */
     divider: 'rgba(0, 0, 0, 0.12)',
 
@@ -82,7 +82,7 @@ export const transition = {
     normal: 'all 0.2s ease',
 
     /** Drawer slides, focus rings, snackbar entrances
-     *  MessageSnackbar, DataLoadingChat, AgentRulesDialog */
+    *  MessageSnackbar, AgentRulesDialog */
     slow: 'all 0.3s ease',
 } as const;
 
@@ -119,7 +119,7 @@ export const radius = {
     sm: 1,
 
     /** Floating panels, dialogs, chat cards, table containers
-     *  DataThread popups, ChatDialog, About, DataLoadingChat, TableSelectionView */
+    *  DataThread popups, ChatDialog, About, TableSelectionView */
     md: 2,
 
     /** Status indicators, model icons

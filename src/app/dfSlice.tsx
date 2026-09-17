@@ -2,9 +2,9 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification, TextTurn, InputTable, TableSemanticsInfo, LoadedTableNode } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, PendingClarification, TextTurn, InputTable, TableSemanticsInfo, LoadedTableNode } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
-import { DictTable, ROOTLESS_THREAD_ID } from "../components/ComponentType";
+import { DictTable, FileNode, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
@@ -118,11 +118,13 @@ export interface ModelConfig {
 
 
 export type FocusedId = 
+    | { type: 'conversation'; tableId: string; entryIndex?: number; nodeIds?: string[] }
     | { type: 'table'; tableId: string }
+    | { type: 'reference'; referenceId: string }
     | { type: 'chart'; chartId: string }
     | { type: 'report'; reportId: string }
     | { type: 'file'; fileName: string }
-    | { type: 'explanation'; content: string; sourceTableId?: string; timestamps?: number[] }
+    | { type: 'explanation'; content: string; sourceTableId?: string; timestamps?: number[]; executions?: TextTurn['executions'] }
     | { type: 'text'; textId: string }
     | { type: 'draft'; draftId: string }
     | undefined;
@@ -189,6 +191,7 @@ export interface DataFormulatorState {
     inputTables: InputTable[];
     derivedTables: DictTable[];
     loadedTableNodes: LoadedTableNode[];
+    fileNodes: FileNode[];
     tableSemantics: TableSemanticsInfo[];
     draftNodes: DraftNode[];
     charts: Chart[];
@@ -240,28 +243,6 @@ export interface DataFormulatorState {
     dataCleanBlocks: DataCleanBlock[];
     cleanInProgress: boolean;
 
-    // Conversational data loading chat
-    dataLoadingChatMessages: ChatMessage[];
-    dataLoadingChatInProgress: boolean;
-    /**
-     * Monotonic counter bumped whenever the chat is reset externally
-     * (clearChatMessages). DataLoadingChat watches this to abort any
-     * in-flight stream and discard partial dispatches that would
-     * otherwise pollute the freshly-cleared thread.
-     * Transient — not persisted.
-     */
-    dataLoadingChatResetCounter: number;
-    /**
-     * Pending submission queued for the data-loading chat. Set by any
-     * surface that wants to hand a prompt off to the chat (the menu
-     * agent input box, suggestion auto-run, external dialog callers).
-     * `DataLoadingChat` consumes it on render: it clears the slot and
-     * sends the carried payload as a fresh user message. Using a single
-     * redux slot (instead of props + a reset counter) eliminates the
-     * cross-tick race where the parent's pre-clear would otherwise
-     * cancel the auto-send for the new prompt. Transient — not persisted.
-     */
-    dataLoadingChatPending: { text: string; images: string[]; attachments: string[]; hidden?: boolean } | null;
     /** Seeded prompt for the analyst (data-thread) chat, e.g. from the landing box. */
     analystChatPending: { text: string; images: string[]; attachments: string[] } | null;
     /**
@@ -332,6 +313,7 @@ const initialState: DataFormulatorState = {
     inputTables: [],
     derivedTables: [],
     loadedTableNodes: [],
+    fileNodes: [],
     tableSemantics: [],
     draftNodes: [],
     charts: [],
@@ -374,10 +356,6 @@ const initialState: DataFormulatorState = {
     dataCleanBlocks: [],
     cleanInProgress: false,
 
-    dataLoadingChatMessages: [],
-    dataLoadingChatInProgress: false,
-    dataLoadingChatResetCounter: 0,
-    dataLoadingChatPending: null,
     analystChatPending: null,
     connectorRefreshRequest: 0,
     agentHandoffRequest: null,
@@ -456,6 +434,7 @@ const toInputTable = (table: DictTable): InputTable => ({
     },
     description: table.description || '',
     ...(table.source ? { sourceConfig: table.source } : {}),
+    ...(table.dataProvenance ? { dataProvenance: table.dataProvenance } : {}),
     addedAt: Date.now(),
 });
 
@@ -517,14 +496,18 @@ const repairDeletedTableReferences = (state: DataFormulatorState, deletedTables:
         const seen = new Set<string>();
         while (current && deletedById.has(current) && !seen.has(current)) {
             seen.add(current);
-            current = deletedById.get(current)?.derive?.trigger.tableId;
+            const deleted = deletedById.get(current);
+            current = deleted?.parentNodeId || deleted?.derive?.trigger.tableId;
         }
-        return current && survivingIds.has(current) ? current : ROOTLESS_THREAD_ID;
+        return current && (survivingIds.has(current) || isConversationRootId(current)
+            || state.textTurns.some(turn => turn.id === current)) ? current : createConversationRootId(current || id);
     };
 
     state.textTurns = state.textTurns.map(turn => deletedIds.has(turn.parentNodeId)
         ? { ...turn, parentNodeId: resolveAnchor(turn.parentNodeId) }
         : turn);
+    state.fileNodes = state.fileNodes.map(node => deletedIds.has(node.parentNodeId)
+        ? { ...node, parentNodeId: resolveAnchor(node.parentNodeId) } : node);
     state.derivedTables = state.derivedTables.map(table => table.derive ? {
         ...table,
         ...(deletedIds.has(table.parentNodeId || '')
@@ -685,6 +668,10 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     state.inputTables = state.inputTables.filter(t => t.id !== tableId);
     state.derivedTables = state.derivedTables.filter(t => t.id !== tableId);
     state.loadedTableNodes = state.loadedTableNodes.filter(node => node.tableId !== tableId);
+    if (state.focusedId?.type === 'reference') {
+        const focusedNodeId = state.focusedId.referenceId;
+        if (![...state.loadedTableNodes, ...state.fileNodes].some(node => node.id === focusedNodeId)) state.focusedId = undefined;
+    }
     state.tableSemantics = state.tableSemantics.filter(info => info.tableId !== tableId);
     state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== tableId);
 
@@ -896,6 +883,7 @@ export const dataFormulatorSlice = createSlice({
             state.inputTables = [];
             state.derivedTables = [];
             state.loadedTableNodes = [];
+            state.fileNodes = [];
             state.tableSemantics = [];
             state.draftNodes = [];
             state.charts = [];
@@ -918,10 +906,6 @@ export const dataFormulatorSlice = createSlice({
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
 
-            state.dataLoadingChatMessages = [];
-            state.dataLoadingChatInProgress = false;
-            state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
-            state.dataLoadingChatPending = null;
             state.analystChatPending = null;
 
             state.generatedReports = [];
@@ -1038,6 +1022,7 @@ export const dataFormulatorSlice = createSlice({
                     };
                 }),
                 loadedTableNodes: saved.loadedTableNodes || [],
+                fileNodes: saved.fileNodes || [],
                 tableSemantics: saved.tableSemantics || [],
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
@@ -1078,8 +1063,6 @@ export const dataFormulatorSlice = createSlice({
                 focusedId: saved.focusedId || undefined,
                 config: { ...initialState.config, ...savedConfig },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
-                dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
-                dataLoadingChatPending: null,
                 analystChatPending: null,
                 generatedReports: saved.generatedReports || [],
                 textTurns: saved.textTurns || [],
@@ -1091,8 +1074,6 @@ export const dataFormulatorSlice = createSlice({
                 chartSynthesisInProgress: [],
                 tableLoadsInFlight: 0,
                 cleanInProgress: false,
-                dataLoadingChatInProgress: false,
-                dataLoadingChatResetCounter: 0,
                 connectorRefreshRequest: 0,
                 agentHandoffRequest: null,
                 sessionLoading: false,
@@ -1193,6 +1174,26 @@ export const dataFormulatorSlice = createSlice({
             const existingIdx = state.loadedTableNodes.findIndex(item => item.id === node.id);
             if (existingIdx >= 0) state.loadedTableNodes[existingIdx] = node;
             else state.loadedTableNodes.push(node);
+        },
+        upsertFileNode: (state, action: PayloadAction<FileNode>) => {
+            const node = action.payload;
+            const existing = state.fileNodes.find(item => item.path === node.path);
+            if (existing) {
+                existing.displayName = node.displayName;
+                existing.contentHash = node.contentHash;
+                if (node.notes !== undefined) existing.notes = node.notes;
+            } else state.fileNodes.push(node);
+        },
+        removeFileNodes: (state, action: PayloadAction<string>) => {
+            const removedIds = new Set(state.fileNodes.filter(node => node.path === action.payload).map(node => node.id));
+            state.fileNodes = state.fileNodes.filter(node => node.path !== action.payload);
+            if (state.focusedId?.type === 'file' && state.focusedId.fileName === action.payload) {
+                state.focusedId = undefined;
+            } else if (state.focusedId?.type === 'reference' && removedIds.has(state.focusedId.referenceId)) {
+                state.focusedId = undefined;
+            } else if (state.focusedId?.type === 'conversation' && state.focusedId.nodeIds) {
+                state.focusedId.nodeIds = state.focusedId.nodeIds.filter(id => !removedIds.has(id));
+            }
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             const tableId = action.payload;
@@ -1785,9 +1786,12 @@ export const dataFormulatorSlice = createSlice({
                 draft.derive.runningPlan = action.payload.plan;
             }
         },
-        updateDraftSources: (state, action: PayloadAction<{ draftId: string; source: string[] }>) => {
+        updateDraftSources: (state, action: PayloadAction<{ draftId: string; source: string[]; inputSources?: ComputationInputSource[] }>) => {
             const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
-            if (draft?.derive) draft.derive.source = action.payload.source;
+            if (draft?.derive) {
+                draft.derive.source = action.payload.source;
+                draft.derive.inputSources = action.payload.inputSources;
+            }
         },
         updateDeriveStatus: (state, action: PayloadAction<{ nodeId: string; status: DeriveStatus }>) => {
             const draft = state.draftNodes.find(d => d.id === action.payload.nodeId);
@@ -1829,9 +1833,16 @@ export const dataFormulatorSlice = createSlice({
             state.derivedTables = [...state.derivedTables, table];
             state.draftNodes = state.draftNodes.filter(d => d.id !== draftId);
         },
-        removeDraftNode: (state, action: PayloadAction<string>) => {
-            const draft = state.draftNodes.find(item => item.id === action.payload);
-            state.draftNodes = state.draftNodes.filter(d => d.id !== action.payload);
+        removeDraftNode: (state, action: PayloadAction<string | { draftId: string; fileParentNodeId: string }>) => {
+            const draftId = typeof action.payload === 'string' ? action.payload : action.payload.draftId;
+            const fileParentNodeId = typeof action.payload === 'string' ? undefined : action.payload.fileParentNodeId;
+            const draft = state.draftNodes.find(item => item.id === draftId);
+            if (draft) {
+                for (const node of [...state.fileNodes, ...state.loadedTableNodes]) {
+                    if (node.parentNodeId === draft.id) node.parentNodeId = fileParentNodeId ?? draft.parentNodeId;
+                }
+            }
+            state.draftNodes = state.draftNodes.filter(d => d.id !== draftId);
             const parentTurn = draft
                 ? state.textTurns.find(turn => turn.id === draft.parentNodeId)
                 : undefined;
@@ -1840,6 +1851,7 @@ export const dataFormulatorSlice = createSlice({
                 || state.textTurns.some(turn => turn.parentNodeId === draft.parentNodeId)
                 || state.derivedTables.some(table => table.parentNodeId === draft.parentNodeId)
                 || state.loadedTableNodes.some(node => node.parentNodeId === draft.parentNodeId)
+                || state.fileNodes.some(node => node.parentNodeId === draft.parentNodeId)
                 || state.generatedReports.some(report => report.parentNodeId === draft.parentNodeId)
             );
             if (parentTurn?.answered && parentTurn.answer && !parentHasOtherChildren) {
@@ -2011,41 +2023,6 @@ export const dataFormulatorSlice = createSlice({
         setCleanInProgress: (state, action: PayloadAction<boolean>) => {
             state.cleanInProgress = action.payload;
         },
-        // Conversational data loading chat actions
-        addChatMessage: (state, action: PayloadAction<ChatMessage>) => {
-            state.dataLoadingChatMessages = [...state.dataLoadingChatMessages, action.payload];
-        },
-        updateLastChatMessage: (state, action: PayloadAction<Partial<ChatMessage>>) => {
-            if (state.dataLoadingChatMessages.length > 0) {
-                const lastIndex = state.dataLoadingChatMessages.length - 1;
-                state.dataLoadingChatMessages[lastIndex] = {
-                    ...state.dataLoadingChatMessages[lastIndex],
-                    ...action.payload,
-                };
-            }
-        },
-        clearChatMessages: (state) => {
-            // Reset is a coherent operation: clear messages, drop the
-            // in-progress flag, and bump the reset counter so the chat
-            // surface aborts its in-flight stream and discards any
-            // pending dispatches from that stream. Doing all three in
-            // one reducer avoids interleaving with redux/react render
-            // cycles that would otherwise let stale messages slip in.
-            state.dataLoadingChatMessages = [];
-            state.dataLoadingChatInProgress = false;
-            state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
-            // Note: `dataLoadingChatPending` is intentionally left
-            // alone. Callers that want "fresh slate + auto-send the
-            // new prompt" dispatch `clearChatMessages` followed by
-            // `setDataLoadingChatPending` in the same tick — clearing
-            // pending here would race with that ordering.
-        },
-        setDataLoadingChatPending: (
-            state,
-            action: PayloadAction<{ text: string; images: string[]; attachments: string[]; hidden?: boolean }>,
-        ) => {
-            state.dataLoadingChatPending = action.payload;
-        },
         queueAnalystTask: (
             state,
             action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
@@ -2055,117 +2032,8 @@ export const dataFormulatorSlice = createSlice({
         clearAnalystChatPending: (state) => {
             state.analystChatPending = null;
         },
-        queueDataLoadingTask: (
-            state,
-            action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
-        ) => {
-            // Start a new data-loading task while PRESERVING the prior
-            // conversation (Option A). Retriggers (agent delegate, a fresh
-            // query from the menu, a sample-task click) no longer wipe the
-            // thread — instead, when history exists we drop a lightweight
-            // "new request" divider so the boundary between tasks is clear,
-            // then queue the submission for `DataLoadingChat` to auto-send.
-            // The explicit reset button (`clearChatMessages`) remains the way
-            // to start from a blank slate.
-            if (state.dataLoadingChatMessages.length > 0) {
-                state.dataLoadingChatMessages = [
-                    ...state.dataLoadingChatMessages,
-                    {
-                        id: `divider-${Date.now()}`,
-                        role: 'assistant',
-                        content: '',
-                        divider: true,
-                        timestamp: Date.now(),
-                    },
-                ];
-            }
-            state.dataLoadingChatPending = action.payload;
-        },
-        // Move an earlier task "section" to the end so it becomes the latest
-        // one the user continues from — a lightweight, NON-destructive way to
-        // resume a prior conversation. `anchorId` is the id of the section's
-        // first message (a divider for tasks after the first, or the first
-        // bubble for the opening task). Nothing is deleted: the whole thread is
-        // preserved (and any tables already loaded stay in the workspace); only
-        // the order changes. The promoted block is guaranteed to start with a
-        // divider so it reads as the current section's boundary at the top.
-        promoteDataLoadingChatSection: (
-            state,
-            action: PayloadAction<{ anchorId: string }>,
-        ) => {
-            const msgs = state.dataLoadingChatMessages;
-            const startIdx = msgs.findIndex(m => m.id === action.payload.anchorId);
-            if (startIdx < 0) return;
-            // Section ends just before the next divider (or at the array end).
-            let endIdx = msgs.length;
-            for (let i = startIdx + 1; i < msgs.length; i += 1) {
-                if (msgs[i].divider) { endIdx = i; break; }
-            }
-            // Already the last section — nothing to promote.
-            if (endIdx === msgs.length) return;
-            const block = msgs.slice(startIdx, endIdx);
-            const rest = [...msgs.slice(0, startIdx), ...msgs.slice(endIdx)];
-            const promoted = block[0]?.divider
-                ? block
-                : [
-                    {
-                        id: `divider-${Date.now()}`,
-                        role: 'assistant' as const,
-                        content: '',
-                        divider: true,
-                        timestamp: Date.now(),
-                    },
-                    ...block,
-                ];
-            state.dataLoadingChatMessages = [...rest, ...promoted];
-        },
-        clearDataLoadingChatPending: (state) => {
-            state.dataLoadingChatPending = null;
-        },
-        confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
-            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
-            if (msg?.pendingLoads) {
-                const pending = msg.pendingLoads.find(p => p.name === action.payload.tableName);
-                if (pending) {
-                    pending.confirmed = true;
-                }
-            }
-        },
-        markLoadPlanConfirmed: (state, action: PayloadAction<{messageId: string}>) => {
-            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
-            if (msg?.loadPlan) {
-                msg.loadPlan.confirmed = true;
-            }
-        },
-        resolveConnectorForm: (
-            state,
-            action: PayloadAction<{
-                messageId: string;
-                status: 'pending' | 'connected';
-                connectorId?: string;
-                connectionName?: string;
-                tableCount?: number;
-            }>,
-        ) => {
-            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
-            if (msg?.connectorForm) {
-                msg.connectorForm.status = action.payload.status;
-                if (action.payload.connectorId !== undefined) {
-                    msg.connectorForm.connectorId = action.payload.connectorId;
-                }
-                if (action.payload.connectionName !== undefined) {
-                    msg.connectorForm.connectionName = action.payload.connectionName;
-                }
-                if (action.payload.tableCount !== undefined) {
-                    msg.connectorForm.tableCount = action.payload.tableCount;
-                }
-            }
-        },
         requestConnectorRefresh: (state) => {
             state.connectorRefreshRequest = (state.connectorRefreshRequest ?? 0) + 1;
-        },
-        setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
-            state.dataLoadingChatInProgress = action.payload;
         },
         /**
          * Legacy report-generation hand-off. Data loading stays within the
@@ -2199,8 +2067,7 @@ export const dataFormulatorSlice = createSlice({
         selectConnectorFormSource: (state, action: PayloadAction<{ id: string; sourceType: string; title: string; fields: string[]; revision?: number; prefilled?: Record<string, string> }>) => {
             const { id, sourceType, title, fields } = action.payload;
             const turn = state.textTurns.find(item => item.id === id);
-            const message = state.dataLoadingChatMessages.find(item => item.id === id);
-            const connector = turn?.form?.connector || message?.connectorForm;
+            const connector = turn?.form?.connector;
             if (turn?.form?.draft && action.payload.revision !== undefined && turn.form.draft.revision !== action.payload.revision) {
                 turn.form.draft.conflict = true;
                 return;
@@ -2254,6 +2121,7 @@ export const dataFormulatorSlice = createSlice({
             const hasProducedArtifacts = !!turn && (
                 state.derivedTables.some(table => table.parentNodeId === turnId)
                 || state.loadedTableNodes.some(node => node.parentNodeId === turnId)
+                || state.fileNodes.some(node => node.parentNodeId === turnId)
                 || state.draftNodes.some(draft => draft.parentNodeId === turnId)
                 || state.generatedReports.some(report => report.parentNodeId === turnId)
                 || state.textTurns.some(child => child.parentNodeId === turnId)
@@ -2268,6 +2136,9 @@ export const dataFormulatorSlice = createSlice({
                 delete parentTurn.answer;
             }
             if (turn) {
+                for (const node of state.fileNodes) {
+                    if (node.parentNodeId === turnId) node.parentNodeId = turn.parentNodeId;
+                }
                 state.textTurns = state.textTurns.map(child =>
                     child.parentNodeId === turnId
                         ? { ...child, parentNodeId: turn.parentNodeId }
@@ -2459,7 +2330,10 @@ export const dataFormulatorSlice = createSlice({
             // persisted blob (chartSynthesisInProgress is already blacklisted
             // in store.ts).
             incoming.cleanInProgress = false;
-            incoming.dataLoadingChatInProgress = false;
+            delete incoming.dataLoadingChatMessages;
+            delete incoming.dataLoadingChatPending;
+            delete incoming.dataLoadingChatInProgress;
+            delete incoming.dataLoadingChatResetCounter;
             incoming.sessionLoading = false;
             incoming.sessionLoadingLabel = '';
             incoming.messages = [];
@@ -2757,9 +2631,7 @@ export const dfSelectors = {
         && (state.textTurns?.length ?? 0) === 0
         && (state.draftNodes?.length ?? 0) === 0
         && (state.generatedReports?.length ?? 0) === 0
-        && (state.dataLoadingChatMessages?.length ?? 0) === 0
         && state.analystChatPending == null
-        && state.dataLoadingChatPending == null
     ),
     /** All models visible in the UI: global (server-managed) first, then user-added. */
     getAllModels: (state: DataFormulatorState): ModelConfig[] => {
@@ -2771,7 +2643,12 @@ export const dfSelectors = {
     },
     getEffectiveTableId: (state: DataFormulatorState): string | undefined => {
         if (!state.focusedId) return undefined;
+        if (state.focusedId.type === 'conversation') return state.focusedId.tableId;
         if (state.focusedId.type === 'table') return state.focusedId.tableId;
+        if (state.focusedId.type === 'reference') {
+            const nodeId = state.focusedId.referenceId;
+            return state.loadedTableNodes.find(node => node.id === nodeId)?.tableId;
+        }
         if (state.focusedId.type === 'draft') {
             const focusedDraftId = state.focusedId.draftId;
             const draft = state.draftNodes.find(item => item.id === focusedDraftId);
@@ -2834,8 +2711,16 @@ export const dfSelectors = {
             (state: DataFormulatorState) => state.charts,
             selectTriggerCharts,
             selectAllTables,
+            (state: DataFormulatorState) => state.loadedTableNodes,
+            (state: DataFormulatorState) => state.fileNodes,
         ],
-        (focusedId, textTurns, draftNodes, userCharts, triggerCharts, tables): FocusedId => {
+        (focusedId, textTurns, draftNodes, userCharts, triggerCharts, tables, loadedTableNodes, fileNodes): FocusedId => {
+            if (focusedId?.type === 'reference') {
+                const node = loadedTableNodes.find(item => item.id === focusedId.referenceId);
+                if (node) return { type: 'table', tableId: node.tableId };
+                const file = fileNodes.find(item => item.id === focusedId.referenceId);
+                return file ? { type: 'file', fileName: file.path } : undefined;
+            }
             if (focusedId?.type !== 'text' && focusedId?.type !== 'draft') return focusedId;
             const draft = focusedId.type === 'draft'
                 ? draftNodes.find(item => item.id === focusedId.draftId)
@@ -2852,6 +2737,11 @@ export const dfSelectors = {
             if (art.dataOperation || art.form) return { type: 'text', textId: art.id };
             if (art.textKind === 'explain' && art.presentation === 'long_response') {
                 return { type: 'text', textId: art.id };
+            }
+            const outputs = loadedTableNodes.filter(node => node.parentNodeId === art.id);
+            const latestOutput = outputs[outputs.length - 1];
+            if (latestOutput && tables.some(table => table.id === latestOutput.tableId)) {
+                return { type: 'table', tableId: latestOutput.tableId };
             }
             if (art.sourceFormId && textTurns.some(turn => turn.id === art.sourceFormId && turn.form)) {
                 return { type: 'text', textId: art.sourceFormId };

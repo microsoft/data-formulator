@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { ComputationInputSource, ROOTLESS_THREAD_ID } from '../components/ComponentType';
+import { ComputationInputSource, createConversationRootId } from '../components/ComponentType';
 
 export function shouldAutoFocusGeneratedChart(userChartFocusLocked: boolean): boolean {
     return !userChartFocusLocked;
@@ -10,8 +10,9 @@ export function shouldAutoFocusGeneratedChart(userChartFocusLocked: boolean): bo
 export function resolveRunParentNodeId(
     continuationParentNodeId: string | null | undefined,
     focusedConversationNodeId?: string | null,
+    newConversationRootId?: string,
 ): string {
-    return continuationParentNodeId || focusedConversationNodeId || ROOTLESS_THREAD_ID;
+    return continuationParentNodeId || focusedConversationNodeId || newConversationRootId || createConversationRootId();
 }
 
 type ConversationTurnRef = {
@@ -53,8 +54,9 @@ export function resolveConversationParentNodeId(
 export function resolveDerivedTriggerTableId(
     lastCreatedTableId: string | null,
     sourceTableId: string | undefined,
+    conversationRootId: string,
 ): string {
-    return lastCreatedTableId || sourceTableId || ROOTLESS_THREAD_ID;
+    return lastCreatedTableId || sourceTableId || conversationRootId;
 }
 
 export type InputSourceTransition = 'none' | 'initial' | 'continue' | 'merge' | 'switch';

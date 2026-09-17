@@ -9,16 +9,18 @@ import { dfActions } from '../app/dfSlice';
 import { iconVar, textVar } from '../app/layout';
 import { agentResponseFill, borderColor } from '../app/tokens';
 import { AgentToyIcon } from './AgentToyIcon';
-import { CompactMarkdown } from './InteractionEntryCard';
+import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
+import type { TerminalExecution } from '../components/ComponentType';
 
 interface ExplanationCanvasProps {
     content: string;
     sourceTableId?: string;
     timestamps?: number[];
     textTurnId?: string;
+    executions?: TerminalExecution[];
 }
 
-export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceTableId, timestamps, textTurnId }) => {
+export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceTableId, timestamps, textTurnId, executions }) => {
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const theme = useTheme();
@@ -59,7 +61,7 @@ export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceT
                 <Box sx={{ flex: 1 }} />
             </Box>
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 2.5, fontSize: textVar.md, userSelect: 'text' }}>
-                <CompactMarkdown content={content} color="text.primary" variant="document" />
+                <TerminalMessageContent content={content} executions={executions} variant="document" />
             </Box>
         </Box>
     );

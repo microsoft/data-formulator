@@ -32,6 +32,7 @@ import pyarrow.parquet as pq
 
 from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
+    WorkspaceLock,
     TableMetadata,
     WorkspaceFileMetadata,
     MemorySource,
@@ -389,7 +390,13 @@ class Workspace:
         return self.get_file_path(filename).exists()
 
     def _write_workspace_file(self, filename: str, content: bytes) -> None:
-        self._confined_files.write(filename, content)
+        target = self._confined_files.resolve(filename)
+        temporary = self._confined_files.resolve(f".write-{uuid.uuid4().hex}")
+        try:
+            temporary.write_bytes(content)
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _read_workspace_file(self, filename: str) -> bytes:
         return self._confined_files.resolve(filename).read_bytes()
@@ -399,34 +406,132 @@ class Workspace:
         if path.exists():
             path.unlink()
 
+    def _rename_workspace_file(self, filename: str, new_filename: str) -> None:
+        source = self._confined_files.resolve(filename)
+        target = self._confined_files.resolve(new_filename)
+        if target.exists() and not source.samefile(target):
+            raise ValueError("A file with this name already exists")
+        source.rename(target)
+
     def save_workspace_file(
         self,
         content: bytes,
         filename: str,
         media_type: str | None = None,
+        *,
+        display_name: str | None = None,
+        agent_managed: bool = False,
+        expected_content_hash: str | None = None,
     ) -> WorkspaceFileMetadata:
-        """Persist a non-tabular user file and return its metadata."""
-        safe_name = safe_data_filename(filename)
-        existing_names = set(self.get_metadata().files)
-        if safe_name in existing_names:
-            stem, suffix = os.path.splitext(safe_name)
-            counter = 2
-            while f"{stem}_{counter}{suffix}" in existing_names:
-                counter += 1
-            safe_name = f"{stem}_{counter}{suffix}"
-
+        """Persist a workspace file, guarding agent edits against ownership and hash conflicts."""
         import hashlib
-        workspace_file = WorkspaceFileMetadata(
-            name=safe_name,
-            filename=safe_name,
-            created_at=datetime.now(timezone.utc),
-            content_hash=hashlib.sha256(content).hexdigest(),
-            file_size=len(content),
-            media_type=media_type,
-        )
-        self._write_workspace_file(safe_name, content)
-        self._atomic_update_metadata(lambda metadata: metadata.add_file(workspace_file))
-        return workspace_file
+        saved = []
+
+        def add(metadata):
+            safe_name = safe_data_filename(filename)
+            existing = metadata.files.get(safe_name)
+            if expected_content_hash is not None:
+                if not agent_managed:
+                    raise ValueError("Hash-checked binary edits require agent_managed")
+                if existing is None:
+                    raise FileNotFoundError(safe_name)
+                if existing.origin != "agent" or existing.edit_policy != "agent_editable":
+                    raise ValueError("This workspace file is protected; create a copy instead")
+                if hashlib.sha256(self._read_workspace_file(existing.filename)).hexdigest() != expected_content_hash:
+                    raise TextEditConflictError("File changed; read it again before editing")
+            elif existing is not None:
+                if agent_managed:
+                    raise ValueError("A file with this name already exists; use edit_file")
+                stem, suffix = os.path.splitext(safe_name)
+                counter = 2
+                while f"{stem}_{counter}{suffix}" in metadata.files:
+                    counter += 1
+                safe_name = f"{stem}_{counter}{suffix}"
+            workspace_file = WorkspaceFileMetadata(
+                name=safe_name, filename=safe_name,
+                created_at=existing.created_at if expected_content_hash is not None else datetime.now(timezone.utc),
+                content_hash=hashlib.sha256(content).hexdigest(),
+                file_size=len(content), media_type=media_type,
+                display_name=display_name if display_name is not None else (
+                    existing.display_name if expected_content_hash is not None else None),
+                origin="agent" if agent_managed else None,
+                edit_policy="agent_editable" if agent_managed else None,
+            )
+            self._write_workspace_file(safe_name, content)
+            metadata.add_file(workspace_file)
+            saved.append(workspace_file)
+
+        self._atomic_update_metadata(add)
+        return saved[0]
+
+    def save_workspace_text_file(
+        self, name: str, content: str, expected_hash: str | None = None,
+    ) -> WorkspaceFileMetadata:
+        import hashlib
+
+        if not name or safe_data_filename(name) != name or any(character in name for character in '/\\'):
+            raise ValueError("Invalid filename")
+        encoded = content.encode("utf-8")
+        if len(encoded) > 2_000_000 or "\x00" in content:
+            raise ValueError("Text files must be UTF-8 text under 2 MB")
+        result = []
+
+        def update(metadata):
+            existing = metadata.files.get(name)
+            if expected_hash is None and existing is not None:
+                raise ValueError("A file with this name already exists")
+            if expected_hash is not None:
+                if existing is None:
+                    raise ValueError("File no longer exists")
+                current_content = self._read_workspace_file(existing.filename)
+                if hashlib.sha256(current_content).hexdigest() != expected_hash:
+                    raise ValueError("File changed since it was opened. Reopen it before saving.")
+                current_content.decode("utf-8")
+            workspace_file = WorkspaceFileMetadata(
+                name=name, filename=name,
+                created_at=existing.created_at if existing else datetime.now(timezone.utc),
+                content_hash=hashlib.sha256(encoded).hexdigest(),
+                file_size=len(encoded), media_type="text/plain",
+                display_name=existing.display_name if existing else None,
+                origin=existing.origin if existing else None,
+                edit_policy=existing.edit_policy if existing else None,
+            )
+            self._write_workspace_file(name, encoded)
+            metadata.add_file(workspace_file)
+            result.append(workspace_file)
+
+        self._atomic_update_metadata(update)
+        return result[0]
+
+    def rename_workspace_file(self, name: str, new_name: str) -> WorkspaceFileMetadata:
+        if not new_name or new_name in (".", "..") or safe_data_filename(new_name) != new_name or any(character in new_name for character in '/\\'):
+            raise ValueError("Invalid filename")
+        result = []
+
+        def update(metadata):
+            existing = metadata.files.get(name)
+            if existing is None:
+                raise FileNotFoundError(name)
+            if new_name == name:
+                result.append(existing)
+                return
+            if new_name in metadata.files:
+                raise ValueError("A file with this name already exists")
+            renamed = WorkspaceFileMetadata(
+                name=new_name, filename=new_name, created_at=existing.created_at,
+                content_hash=existing.content_hash, file_size=existing.file_size,
+                media_type=existing.media_type,
+                display_name=existing.display_name,
+                origin=existing.origin,
+                edit_policy=existing.edit_policy,
+            )
+            self._rename_workspace_file(existing.filename, new_name)
+            metadata.remove_file(name)
+            metadata.add_file(renamed)
+            result.append(renamed)
+
+        self._atomic_update_metadata(update)
+        return result[0]
 
     def list_workspace_files(self) -> list[WorkspaceFileMetadata]:
         return list(self.get_metadata().files.values())
@@ -893,6 +998,173 @@ class Workspace:
     # ------------------------------------------------------------------
     # Parquet management
     # ------------------------------------------------------------------
+
+    def upload_file(self, content: bytes, filename: str) -> None:
+        self._confined_data.write(safe_data_filename(filename), content)
+
+    def add_parquet_from_arrow(self, table: pa.Table, name: str) -> TableMetadata:
+        buffer = io.BytesIO()
+        pq.write_table(table, buffer, compression=DEFAULT_COMPRESSION)
+        content = buffer.getvalue()
+        saved = []
+
+        def add(metadata):
+            base = sanitize_table_name(name)
+            candidate = base
+            counter = 2
+            while candidate in metadata.tables or self.file_exists(f"{candidate}.parquet"):
+                candidate = f"{base}_{counter}"
+                counter += 1
+            now = datetime.now(timezone.utc)
+            item = TableMetadata(
+                name=candidate, filename=f"{candidate}.parquet", file_type="parquet",
+                source_type="data_loader", created_at=now, last_synced=now,
+                content_hash=compute_arrow_table_hash(table), file_size=len(content),
+                row_count=table.num_rows, columns=get_arrow_column_info(table),
+            )
+            self.upload_file(content, item.filename)
+            metadata.add_table(item)
+            saved.append(item)
+
+        self._atomic_update_metadata(add)
+        return saved[0]
+
+    def resolve_scratch_file(self, name: str) -> Path:
+        parts = Path(name).parts
+        if (not parts or Path(name).is_absolute() or "\\" in name
+                or parts[0] == "data_operations"
+                or any(part.startswith((".", "_")) for part in parts)):
+            raise ValueError("Not a visible temporary file")
+        path = self.confined_scratch.resolve(name)
+        if not path.is_file():
+            raise FileNotFoundError(name)
+        return path
+
+    def save_scratch_file(
+        self, name: str, content: bytes, *, expected_content_hash: str | None = None,
+        display_name: str | None = None,
+    ) -> None:
+        with WorkspaceLock(self.confined_scratch.root):
+            path = self.confined_scratch.resolve(name)
+            if expected_content_hash is None:
+                try:
+                    with path.open("xb") as output:
+                        output.write(content)
+                except FileExistsError as exc:
+                    raise ValueError("A scratch file with this name already exists; use edit_scratch_file") from exc
+            else:
+                path = self.resolve_scratch_file(name)
+                with path.open("rb") as source:
+                    current_hash = hashlib.file_digest(source, "sha256").hexdigest()
+                if current_hash != expected_content_hash:
+                    raise TextEditConflictError("Scratch file changed; read it again before editing")
+                display_name = display_name or self.get_scratch_display_name(name)
+                temporary = self.confined_scratch.resolve(f".edit-{uuid.uuid4().hex}")
+                try:
+                    with temporary.open("xb") as output:
+                        output.write(content)
+                    temporary.replace(path)
+                finally:
+                    temporary.unlink(missing_ok=True)
+            if display_name is not None:
+                self.set_scratch_display_name(name, display_name)
+
+    def set_scratch_display_name(self, name: str, display_name: str) -> None:
+        path = self.resolve_scratch_file(name)
+        stat = path.stat()
+        key = hashlib.sha256(name.encode("utf-8")).hexdigest()
+        self.confined_scratch.write(f".display_names/{key}.json", json.dumps({
+            "display_name": display_name,
+            "mtime_ns": stat.st_mtime_ns,
+            "file_size": stat.st_size,
+        }, ensure_ascii=False).encode("utf-8"))
+
+    def get_scratch_display_name(self, name: str) -> str | None:
+        try:
+            stat = self.resolve_scratch_file(name).stat()
+            key = hashlib.sha256(name.encode("utf-8")).hexdigest()
+            metadata = json.loads(self.confined_scratch.read_text(f".display_names/{key}.json"))
+            if not isinstance(metadata, dict):
+                return None
+            display_name = metadata.get("display_name")
+            if (metadata.get("mtime_ns") == stat.st_mtime_ns
+                    and metadata.get("file_size") == stat.st_size
+                    and isinstance(display_name, str) and display_name.strip()
+                    and len(display_name) <= 80
+                    and not any(ord(character) < 32 or ord(character) == 127 for character in display_name)):
+                return display_name
+        except (OSError, ValueError):
+            pass
+        return None
+
+    def list_scratch_files(self) -> list[str]:
+        names = []
+        for path in self.confined_scratch.rglob("*"):
+            name = path.relative_to(self.confined_scratch.root).as_posix()
+            try:
+                self.resolve_scratch_file(name)
+            except (ValueError, OSError):
+                continue
+            names.append(f"scratch/{name}")
+        return sorted(names)
+
+    def save_agent_data(
+        self, df: pd.DataFrame, table_name: str, *, input_sources: list[dict],
+        expected_content_hash: str | None = None, display_name: str | None = None,
+    ) -> TableMetadata:
+        safe_name = sanitize_table_name(table_name)
+        if not table_name or safe_name != table_name:
+            raise ValueError("table_name must be a valid workspace table identifier")
+        if not isinstance(df, pd.DataFrame) or not len(df.columns):
+            raise ValueError("Data must be a DataFrame with at least one column")
+        if not df.columns.is_unique or any(not isinstance(column, str) or not column for column in df.columns):
+            raise ValueError("Data columns must have unique non-empty string names")
+        buffer = io.BytesIO()
+        arrow_table = pa.Table.from_pandas(sanitize_dataframe_for_arrow(df), preserve_index=False)
+        pq.write_table(arrow_table, buffer, compression=DEFAULT_COMPRESSION)
+        content = buffer.getvalue()
+        if len(content) > 128 * 1024 * 1024:
+            raise ValueError("Data outputs must be under 128 MB")
+        now = datetime.now(timezone.utc)
+        filename = f"{safe_name}-{uuid.uuid4().hex}.parquet"
+        result = TableMetadata(
+            name=safe_name, source_type="data_loader", filename=filename, file_type="parquet",
+            created_at=now, last_synced=now, content_hash=compute_dataframe_hash(df),
+            file_size=len(content), row_count=len(df), columns=get_arrow_column_info(arrow_table),
+            original_name=display_name or safe_name, origin="agent", role="derived" if input_sources else "source",
+            edit_policy="agent_editable", input_sources=input_sources,
+        )
+
+        def commit(metadata: WorkspaceMetadata) -> None:
+            existing = metadata.get_table(safe_name)
+            if expected_content_hash is None:
+                if existing is not None:
+                    raise ValueError("Table already exists; use update_data")
+            else:
+                if existing is None:
+                    raise ValueError("Table does not exist")
+                if existing.origin != "agent" or existing.edit_policy != "agent_editable":
+                    raise ValueError("This table is protected; create a derived copy instead")
+                if existing.content_hash != expected_content_hash:
+                    raise TextEditConflictError("Table changed; read it again before updating")
+                result.created_at = existing.created_at
+                result.original_name = display_name or existing.original_name
+            self.upload_file(content, filename)
+            metadata.add_table(result)
+            changed = {safe_name}
+            while True:
+                dependents = {name for name, table in metadata.tables.items()
+                              if name not in changed and any(
+                                  source.get("kind") == "data" and source.get("table_name") in changed
+                                  for source in table.input_sources or [])}
+                if not dependents:
+                    break
+                for name in dependents:
+                    metadata.tables[name].stale = True
+                changed.update(dependents)
+
+        self._atomic_update_metadata(commit)
+        return result
 
     def write_parquet_from_arrow(
         self,

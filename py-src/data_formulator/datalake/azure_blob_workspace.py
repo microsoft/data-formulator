@@ -426,6 +426,12 @@ class AzureBlobWorkspace(Workspace):
     def _write_workspace_file(self, filename: str, content: bytes) -> None:
         self._upload_bytes(self._workspace_file_blob_key(filename), content)
 
+    def _rename_workspace_file(self, filename: str, new_filename: str) -> None:
+        if self._blob_exists(self._workspace_file_blob_key(new_filename)):
+            raise ValueError("A file with this name already exists")
+        self._write_workspace_file(new_filename, self._read_workspace_file(filename))
+        self._delete_workspace_file(filename)
+
     def _read_workspace_file(self, filename: str) -> bytes:
         return self._download_bytes(self._workspace_file_blob_key(filename))
 
@@ -748,6 +754,11 @@ class AzureBlobWorkspace(Workspace):
                 local_file.parent.mkdir(parents=True, exist_ok=True)
                 data = self._container.download_blob(blob.name).readall()
                 local_file.write_bytes(data)
+            for name in self.list_scratch_files():
+                source = self.resolve_scratch_file(name.removeprefix("scratch/"))
+                target = tmp_path / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
             yield tmp_path
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

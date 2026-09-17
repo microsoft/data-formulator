@@ -26,9 +26,67 @@
  */
 
 /** Current persisted-state schema version. Bump when adding a migration. */
-export const DF_STATE_VERSION = 6;
+export const DF_STATE_VERSION = 8;
 
 type SavedState = Record<string, any>;
+
+function migrateTerminalRecord(turn: any): any {
+    if (typeof turn?.content !== 'string') return turn;
+    const executions = Array.isArray(turn.executions) ? turn.executions : [];
+    const migratedExecutions: any[] = [];
+    const matched = new Set<string>();
+    const ids = new Set(executions.map((execution: any) => execution.id));
+    const quoteArgument = (argument: string) => /^[A-Za-z0-9_@%+=:,./-]+$/.test(argument) ? argument
+        : argument.includes("'") ? `"${argument.replace(/[\\"$`]/g, '\\$&')}"` : `'${argument}'`;
+    const pattern = /```json[^\S\n]*\n([\s\S]*?)\n```|\*\*Command\*\*\s*\n\s*```(?:bash|sh|shell)\n([\s\S]*?)\n```\s*\n\s*\*\*Working directory:\*\* `((?:\\`|[^`])*)`(?:\s*\n\s*\*\*Result\*\*\s*\n\s*```text\n([\s\S]*?)\n```)?/g;
+    const content = turn.content.replace(pattern, (block: string, json: string | undefined, command: string, cwd: string, output: string | undefined, offset: number) => {
+        let record: any;
+        let result: unknown;
+        if (json !== undefined) {
+            try {
+                const parsed = JSON.parse(json);
+                if (!parsed || !Array.isArray(parsed.argv) || !parsed.argv.every((argument: unknown) => typeof argument === 'string')
+                    || typeof parsed.cwd !== 'string') return block;
+                result = parsed.result;
+                record = { argv: parsed.argv, cwd: parsed.cwd, purpose: '', status: 'unknown' };
+            } catch { return block; }
+        } else {
+            record = { argv: [], commandText: command, cwd: cwd.replace(/\\`/g, '`'), purpose: '', status: 'unknown' };
+            if (output !== undefined) {
+                try { result = JSON.parse(output); } catch { result = output; }
+            }
+        }
+        if (result !== undefined) {
+            record.result = result && typeof result === 'object' && !Array.isArray(result)
+                ? result : { output: typeof result === 'string' ? result : JSON.stringify(result) };
+            const outcome = record.result;
+            record.status = outcome.rejected ? 'rejected'
+                : outcome.error || outcome.timed_out || (outcome.exit_code != null && outcome.exit_code !== 0) ? 'failed'
+                : outcome.exit_code === 0 ? 'completed' : 'unknown';
+        }
+        const existing = executions.find((execution: any) => !matched.has(execution.id) && execution.cwd === record.cwd
+            && (record.commandText === undefined ? JSON.stringify(execution.argv) === JSON.stringify(record.argv)
+                : record.commandText === execution.commandText || record.commandText === execution.argv?.map(quoteArgument).join(' ')
+                    || (['bash', 'sh', 'zsh'].includes(execution.argv?.[0]) && execution.argv?.[1] === '-lc'
+                        && record.commandText === execution.argv.slice(2).join(' ')))
+            && (record.result === undefined || JSON.stringify(record.result) === JSON.stringify(execution.result)));
+        if (existing) {
+            matched.add(existing.id);
+            migratedExecutions.push(existing);
+        } else {
+            let id = `${turn.id || 'record'}-terminal-${offset}`;
+            while (ids.has(id)) id += '-legacy';
+            ids.add(id);
+            migratedExecutions.push({ ...record, id });
+        }
+        return '';
+    });
+    return migratedExecutions.length === 0 ? turn : {
+        ...turn, content: content.trim(),
+        ...(turn.displayContent === turn.content ? { displayContent: content.trim() } : {}),
+        executions: [...migratedExecutions, ...executions.filter((execution: any) => !matched.has(execution.id))],
+    };
+}
 
 /**
  * Closing answers used to live inline on a table's trigger as a `summary`
@@ -313,40 +371,67 @@ const MIGRATIONS: Migration[] = [
         },
     },
     {
-        // Table labels have one owner: `displayId`. Older states also stored an
-        // inferred table label on `tableSemantics`; preserve that suggestion
-        // only when the table still has its default label, then remove it from
-        // the field-semantics collection.
-        to: 6,
-        migrate: (s) => {
-            const semantics = Array.isArray(s.tableSemantics) ? s.tableSemantics : [];
-            const suggestedNames = new Map<string, string>();
-            const tableSemantics = semantics.map(({ displayName, ...info }: any) => {
-                if (info?.tableId && typeof displayName === 'string' && displayName.trim()) {
-                    suggestedNames.set(info.tableId, displayName.trim());
+        to: 7,
+        migrate: (state) => ({
+            ...state,
+            textTurns: Array.isArray(state.textTurns) ? state.textTurns.map(migrateTerminalRecord) : state.textTurns,
+            derivedTables: Array.isArray(state.derivedTables) ? state.derivedTables.map((table: any) => {
+                const interaction = table?.derive?.trigger?.interaction;
+                if (!Array.isArray(interaction)) return table;
+                return { ...table, derive: { ...table.derive, trigger: { ...table.derive.trigger,
+                    interaction: interaction.map((entry: any, index: number) => {
+                        if (entry.from === 'user') return entry;
+                        const migrated = migrateTerminalRecord({ ...entry, id: `${table.id}-interaction-${index}` });
+                        const { id, ...result } = migrated;
+                        return { ...result, ...(entry.id !== undefined ? { id: entry.id } : {}) };
+                    }),
+                } } };
+            }) : state.derivedTables,
+            __stateVersion: 7,
+        }),
+    },
+    {
+        to: 8,
+        migrate: (state) => {
+            const legacyRoot = '__rootless_thread__';
+            const collections = ['textTurns', 'derivedTables', 'draftNodes', 'loadedTableNodes', 'fileNodes', 'generatedReports'];
+            const nodes = collections.flatMap(key => Array.isArray(state[key]) ? state[key] : []);
+            const roots = new Map<string, string>();
+            for (const node of nodes) {
+                if (node.id && (!node.parentNodeId || node.parentNodeId === legacyRoot)) {
+                    roots.set(node.id, `conversation-root:${node.actionId ? `action:${node.actionId}` : node.id}`);
                 }
-                return info;
-            });
-            const normalizeName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
-            const migrateTableName = (table: any) => {
-                if (!table?.id) return table;
-                const suggestion = suggestedNames.get(table.id);
-                const currentName = table.displayId || table.id;
-                return suggestion && normalizeName(currentName) === normalizeName(table.id)
-                    ? { ...table, displayId: suggestion }
-                    : table;
+            }
+            const parents = new Map<string, string>(nodes.filter(node => node.id).map(node =>
+                [node.id, roots.get(node.id) || node.parentNodeId]));
+            const rootOf = (id: string): string => {
+                const seen = new Set<string>();
+                let current = id;
+                while (parents.has(current) && !seen.has(current)) {
+                    seen.add(current);
+                    current = parents.get(current)!;
+                }
+                return current?.startsWith('conversation-root:') ? current : `conversation-root:${id}`;
             };
-            return {
-                ...s,
-                inputTables: Array.isArray(s.inputTables)
-                    ? s.inputTables.map(migrateTableName)
-                    : s.inputTables,
-                derivedTables: Array.isArray(s.derivedTables)
-                    ? s.derivedTables.map(migrateTableName)
-                    : s.derivedTables,
-                tableSemantics,
-                __stateVersion: 6,
-            };
+            const migrated = { ...state, __stateVersion: 8 };
+            for (const key of collections) {
+                if (!Array.isArray(state[key])) continue;
+                migrated[key] = state[key].map((node: any) => ({
+                    ...node,
+                    ...(roots.has(node.id) ? { parentNodeId: roots.get(node.id) } : {}),
+                    ...(node.derive?.trigger?.tableId === legacyRoot ? {
+                        derive: { ...node.derive, trigger: { ...node.derive.trigger, tableId: rootOf(node.id) } },
+                    } : {}),
+                    ...(node.triggerTableId === legacyRoot ? { triggerTableId: rootOf(node.id) } : {}),
+                }));
+            }
+            if (state.focusedId?.type === 'conversation' && state.focusedId.tableId === legacyRoot) {
+                const focusedRoots = new Set<string>((state.focusedId.nodeIds || []).map(rootOf));
+                migrated.focusedId = focusedRoots.size === 1
+                    ? { ...state.focusedId, tableId: [...focusedRoots][0] }
+                    : undefined;
+            }
+            return migrated;
         },
     },
 ];

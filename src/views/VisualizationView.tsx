@@ -56,6 +56,7 @@ import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
+import { ConversationCanvas } from './ConversationCanvas';
 
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
@@ -195,10 +196,6 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                     <Typography sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
                         {operation.canvasTitle || t('dataLoading.operation.previewHeading', { defaultValue: 'Tables to load' })}
                     </Typography>
-                    <Typography sx={{ mt: 0.25, fontSize: textVar.xs, color: 'text.secondary' }}>
-                        {operation.canvasSummary
-                            || t('dataLoading.operation.previewGuide', { defaultValue: 'A preview of each table before it is added to your workspace.' })}
-                    </Typography>
                 </Box>
                 {previewGroups.map(({ plan, tables }) => (
                     <Box key={plan.id}>
@@ -319,7 +316,7 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
 
     switch (form.kind) {
         case 'connector':
-            if (form.connector.sourceType === 'local_folder') {
+            if (form.connector.sourceType === 'local_folder' && form.connector.status !== 'connected') {
                 return (
                     <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
                         <Box sx={{ width: '100%', maxWidth: 624, height: '100%', mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, boxSizing: 'border-box' }}>
@@ -1786,7 +1783,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
         : undefined;
     const focusedExplanationTurn = focusedId?.type === 'text'
-        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain' && !turn.form && !turn.dataOperation)
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain' && turn.presentation === 'long_response' && !turn.form && !turn.dataOperation)
         : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
@@ -1811,14 +1808,14 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     if (focusedId?.type === 'file') {
         return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
     }
+    if (focusedId?.type === 'conversation') {
+        return <ConversationCanvas textTurnId={focusedId.tableId} entryIndex={focusedId.entryIndex} nodeIds={focusedId.nodeIds} />;
+    }
     if (focusedId?.type === 'explanation') {
         return <ExplanationCanvas {...focusedId} />;
     }
     if (focusedExplanationTurn) {
-        return <ExplanationCanvas
-            content={explanationContent(focusedExplanationTurn.content)}
-            textTurnId={focusedExplanationTurn.id}
-        />;
+        return <ExplanationCanvas content={explanationContent(focusedExplanationTurn.content)} textTurnId={focusedExplanationTurn.id} executions={focusedExplanationTurn.executions} />;
     }
     if (focusedOperationTurn?.dataOperation) {
         return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;

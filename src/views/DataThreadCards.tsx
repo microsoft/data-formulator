@@ -6,11 +6,10 @@ import React, { memo } from 'react';
 import {
     Box,
     Typography,
-    Stack,
     Card,
+    ButtonBase,
     IconButton,
     Tooltip,
-    ButtonGroup,
     useTheme,
     alpha,
 } from '@mui/material';
@@ -23,7 +22,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
 import { TriggerCard } from './EncodingShelfCard';
-import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
+import { ComponentBorderStyle, shadow } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 
 
@@ -117,54 +116,80 @@ export let buildChartCards = (
         </Box>);
 }
 
-// ─── Table Reference Card ────────────────────────────────────────────────────
+export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType }: {
+    title: string;
+    selected: boolean;
+    onClick: () => void;
+    notes?: string;
+    actions?: React.ReactNode;
+    artifactType: 'table' | 'file' | 'report';
+}) => {
+    const tone = artifactType === 'report' ? 'secondary' : 'primary';
+    return <Card
+    className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
+    sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center',
+        ...ComponentBorderStyle, borderRadius: '6px',
+        backgroundColor: theme => artifactType === 'file' ? theme.palette.background.paper
+            : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
+        '--artifact-selection-color': theme => theme.palette[tone].light,
+        '& .artifact-actions': { opacity: 0, transition: 'opacity 0.15s' },
+        '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
+        '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } },
+    }}>
+    <ButtonBase disableRipple onClick={onClick} sx={{ flex: 1, minWidth: 0, alignSelf: 'stretch',
+        display: 'block', textAlign: 'left', padding: '4px 8px 4px 6px',
+        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: `${tone}.main`, outlineOffset: -2 },
+    }}>
+        <Typography component="span" sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
+            display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>
+        {notes && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs,
+            color: 'text.secondary', overflowWrap: 'anywhere' }}>{notes}</Typography>}
+    </ButtonBase>
+    {actions && <Box className="artifact-actions" sx={{ display: 'flex', flexShrink: 0, pr: 0.25 }}>{actions}</Box>}
+</Card>;
+};
 
-/**
- * A pointer to a table whose real card lives elsewhere — the shelf (a thread's
- * source origin) or an earlier column (a continuation's carried-over parent).
- * It is a reference, not a node: clickable, but it never carries charts, turns
- * or drafts.
- *
- * Focus is shown as `selected-ref-card`, not the full `selected-card` ring: the
- * ring means "this card is what the canvas is showing", and a focused table can
- * appear in several places at once. Only its owning card wears the ring, so a
- * single focused table never looks like several selections.
- */
+export const ArtifactMenuButton = ({ label, tooltip = label, onClick }: {
+    label: string;
+    tooltip?: string;
+    onClick: (anchorEl: HTMLElement) => void;
+}) => <Tooltip title={tooltip}>
+    <IconButton aria-label={label} size="small" sx={{ p: 0.25, color: 'text.secondary' }}
+        onClick={event => { event.stopPropagation(); onClick(event.currentTarget); }}>
+        <MoreVertIcon sx={{ fontSize: iconVar.md }} />
+    </IconButton>
+</Tooltip>;
+
+export const ArtifactDeleteButton = ({ label, onClick, disabled = false }: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+}) => <Tooltip title={label}><span>
+    <IconButton aria-label={label} size="small" color="error" disabled={disabled}
+        sx={{ p: 0.5 }} onClick={event => { event.stopPropagation(); onClick(); }}>
+        <DeleteIcon sx={{ fontSize: iconVar.md }} />
+    </IconButton>
+</span></Tooltip>;
+
 export let buildTableRefChip = (props: {
     tableId: string;
+    loadedTableNodeId?: string;
     table: DictTable | undefined;
     focused: boolean;
     dispatch: any;
+    onDelete?: () => void;
+    deleteLabel?: string;
 }) => {
     const { tableId, table, focused, dispatch } = props;
     return <Box key={`regular-table-box-${tableId}`}
         data-table-id={tableId}
         className="data-thread-card-wrapper"
         sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-        <Card className={`data-thread-card ${focused ? 'selected-ref-card' : ''}`} elevation={0}
-            sx={{ width: '100%',
-                ...ComponentBorderStyle,
-                borderRadius: '6px',
-            }}
-            onClick={() => {
-                dispatch(dfActions.setFocused({ type: 'table', tableId }));
-            }}>
-            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center' }}>
-                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: textVar.sm, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
-                    <Box sx={{ margin: '4px 8px 4px 2px', minWidth: 0, flex: 1 }}>
-                        <Typography fontSize="inherit" sx={{
-                            color: 'text.primary',
-                            fontWeight: 500,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            wordBreak: 'break-all',
-                        }}>{table?.displayId || tableId}</Typography>
-                    </Box>
-                </Stack>
-            </Box>
-        </Card>
+        <ThreadArtifactCard artifactType="table" title={table?.displayId || tableId} selected={focused}
+            onClick={() => dispatch(dfActions.setFocused(props.loadedTableNodeId
+                ? { type: 'reference', referenceId: props.loadedTableNodeId }
+                : { type: 'table', tableId }))}
+            actions={props.onDelete && <ArtifactDeleteButton label={props.deleteLabel || 'Delete table'} onClick={props.onDelete} />} />
     </Box>
 }
 
@@ -212,7 +237,6 @@ export interface BuildTableCardProps {
     dispatch: any;
     /** Only the source-table shelf offers a table menu; thread cards omit it. */
     handleOpenTableMenu?: (table: DictTable, anchorEl: HTMLElement) => void;
-    primaryBgColor: string | undefined;
     /** i18n `t` from `useTranslation()` */
     t: (key: string, options?: Record<string, unknown>) => string;
     /** Whether source cards show their original name alongside the workspace identifier. */
@@ -224,7 +248,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         tableId, tables, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId,
         parentTable, tableIdList, collapsed, dispatch,
-        handleOpenTableMenu, primaryBgColor, t, showOriginalName = true,
+        handleOpenTableMenu, t, showOriginalName = true,
     } = props;
 
     const getOriginalName = (tbl: DictTable | undefined): string | null => {
@@ -232,28 +256,11 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         return tbl.source?.originalTableName || tbl.virtual?.tableId || tbl.id;
     };
 
-    const getSourceTooltip = (tbl: DictTable | undefined): string | null => {
-        if (!tbl || tbl.derive) return null;
-        const src = tbl.source;
-        if (!src) return null;
-        switch (src.type) {
-            case 'file': return src.fileName || t('dataThread.sourceFile');
-            case 'paste': return t('dataThread.sourcePaste');
-            case 'url': return src.url || t('dataThread.sourceUrl');
-            case 'stream': return src.url || t('dataThread.sourceStream');
-            case 'database': return src.databaseTable || t('dataThread.sourceDatabase');
-            case 'example': return t('dataThread.sourceExample');
-            case 'extract': return t('dataThread.sourceExtract');
-            default: return null;
-        }
-    };
-
     // filter charts relevant to this
     let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId));
 
     let table = tables.find(t => t.id == tableId);
     const originalName = getOriginalName(table);
-    const sourceTooltip = getSourceTooltip(table);
     const friendlyName = table?.displayId || tableId;
     const normalizeTableName = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '');
     const rawName = showOriginalName
@@ -261,8 +268,6 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         && normalizeTableName(originalName) !== normalizeTableName(friendlyName)
         ? originalName
         : null;
-
-    let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
 
     let collapsedProps = collapsed ? { width: '50%', "& canvas": { width: 60, maxHeight: 50 } } : { width: '100%' }
 
@@ -274,101 +279,23 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             {buildChartCard(ce, focusedChartId)}
         </Box>)
 
-    const isHighlighted = highlightedTableIds.includes(tableId);
-
-    const tableNameBlock = (
-        <Box sx={{
-            margin: '4px 8px 4px 2px', minWidth: 0, flex: 1,
-            display: 'flex', alignItems: 'baseline', flexWrap: 'wrap',
-            columnGap: 0.75, rowGap: 0.25,
-        }}>
-            <Typography fontSize="inherit" sx={{
-                color: 'text.primary',
-                fontWeight: 500,
-                flex: '0 0 auto',
-                minWidth: 0,
-                maxWidth: '100%',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-            }}>{friendlyName}</Typography>
-            {rawName && (
-                <Typography sx={{
-                    fontSize: textVar.xxs,
-                    color: 'text.disabled',
-                    lineHeight: 1.3,
-                    flex: '0 0 auto',
-                    minWidth: 0,
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                }}>
-                    {rawName}
-                </Typography>
-            )}
-        </Box>
-    );
-
     let regularTableBox = <Box key={`regular-table-box-${tableId}`}
         data-table-id={tableId}
         className="data-thread-card-wrapper"
         sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-        <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
-            sx={{ width: '100%', 
-                backgroundColor: primaryBgColor,
-                ...ComponentBorderStyle,
-                ...(isHighlighted ? { borderLeft: '2px solid', borderLeftColor: 'primary.main' } : {}),
-                borderRadius: '6px',
-                }}
-            onClick={() => {
-                dispatch(dfActions.setFocused({ type: 'table', tableId }));
-            }}>
-            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
-                '& .delete-table-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                '&:hover .delete-table-btn': { opacity: 1 },
-            }}>
-                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: textVar.sm, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
-                    {sourceTooltip
-                        ? <Tooltip title={sourceTooltip} placement="top" arrow><span style={{ minWidth: 0, flex: 1 }}>{tableNameBlock}</span></Tooltip>
-                        : tableNameBlock}
-                </Stack>
+            <Box sx={{ display: 'flex', width: '100%', minWidth: 0 }}>
+            <ThreadArtifactCard artifactType="table" title={friendlyName} notes={rawName || undefined}
+                selected={tableId === focusedTableId}
+                onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId }))}
+                actions={<>
                 {!table?.derive && handleOpenTableMenu && (
-                    <ButtonGroup aria-label={t('dataThread.tableCardActionsAria')} variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
-                        <Tooltip key="more-options-btn-tooltip" title={t('dataThread.moreOptions')}>
-                            <IconButton className="more-options-btn" color="primary" aria-label={t('dataThread.moreOptions')} size="small" sx={{ padding: 0.25, '&:hover': {
-                                transform: 'scale(1.2)',
-                                transition: transition.fast
-                                } }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleOpenTableMenu(table!, event.currentTarget);
-                                }}
-                            >
-                                <MoreVertIcon fontSize="small" sx={{ fontSize: iconVar.md }} />
-                            </IconButton>
-                        </Tooltip>
-                    </ButtonGroup>
+                    <ArtifactMenuButton label={t('dataThread.moreOptions')}
+                        onClick={anchorEl => handleOpenTableMenu(table!, anchorEl)} />
                 )}
-                {table?.derive && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                        <Tooltip title={t('dataThread.deleteTable')}>
-                            <IconButton className="delete-table-btn" aria-label={t('dataThread.deleteTable')} size="small" color="error" sx={{ 
-                                padding: 0.5, flexShrink: 0, mr: 0.25,
-                                '&:hover': { transform: 'scale(1.15)' },
-                            }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    dispatch(dfActions.deleteTable(tableId));
-                                }}
-                            >
-                                <DeleteIcon sx={{ fontSize: iconVar.md }} />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                )}
+                {table?.derive && <ArtifactDeleteButton label={t('dataThread.deleteTable')}
+                    onClick={() => dispatch(dfActions.deleteTable(tableId))} />}
+                </>} />
             </Box>
-        </Card>
     </Box>
 
     return [

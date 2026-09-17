@@ -2,9 +2,73 @@ import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { json } from '@codemirror/lang-json';
 import { openSearchPanel, search } from '@codemirror/search';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import React from 'react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
+import * as apiClient from '../../../../src/app/apiClient';
 
-import { createSavedStateSearchPanel, getSavedStateAutoFoldRanges } from '../../../../src/views/LogViewerDialog';
+import { LogViewerDialog, createSavedStateSearchPanel, getSavedStateAutoFoldRanges } from '../../../../src/views/LogViewerDialog';
+
+it('inspects scratch files only in the diagnostics tab', async () => {
+    const request = vi.spyOn(apiClient, 'apiRequest').mockImplementation(async (url: string) => ({ data:
+        url.includes('include_temp') ? { files: [
+            { name: 'source.md', file_size: 12 },
+            { name: 'scratch/intermediate.txt', file_size: 6, temporary: true },
+        ] } : url.includes('/preview') ? { kind: 'text', content: 'sample', truncated: false } : { content: 'log' },
+    }));
+    const store = configureStore({ reducer: () => ({ activeWorkspace: { id: 'workspace-1' } }) });
+    const rendered = render(React.createElement(Provider, { store, children:
+        React.createElement(LogViewerDialog, { open: true, hideTrigger: true }),
+    }));
+    try {
+        fireEvent.click(screen.getByRole('tab', { name: 'Scratch files' }));
+        fireEvent.click(await screen.findByText('intermediate.txt'));
+        await waitFor(() => expect(screen.getByText('sample')).toBeTruthy());
+        expect(screen.queryByText('source.md')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Download scratch file' })).toBeTruthy();
+        expect(request.mock.calls.some(([url]) => url.includes('scratch%2Fintermediate.txt/preview'))).toBe(true);
+    } finally {
+        rendered.unmount();
+        request.mockRestore();
+    }
+});
+
+it('keeps the content frame fixed across tab loading, errors and empty content', async () => {
+    let rejectSavedState!: (error: Error) => void;
+    const pending = new Promise<never>((_, reject) => { rejectSavedState = reject; });
+    const request = vi.spyOn(apiClient, 'apiRequest').mockImplementation(async (url: string) => {
+        if (url.includes('sessions/load')) return pending;
+        return { data: url.includes('include_temp') ? { files: [] } : { content: 'Short log', path: '/logs/server.log' } };
+    });
+    const store = configureStore({ reducer: () => ({ activeWorkspace: { id: 'workspace-1' } }) });
+    const rendered = render(React.createElement(Provider, { store, children:
+        React.createElement(LogViewerDialog, { open: true, hideTrigger: true }),
+    }));
+    const expectStableFrame = () => {
+        const style = getComputedStyle(screen.getByTestId('diagnostics-content'));
+        expect(style.height).toBe('60vh');
+        expect(style.overflow).toBe('hidden');
+        expect(style.flexBasis).toBe('60vh');
+    };
+    try {
+        await screen.findByText('Short log');
+        expectStableFrame();
+        fireEvent.click(screen.getByRole('tab', { name: 'Saved state' }));
+        expect(screen.getByRole('progressbar')).toBeTruthy();
+        expectStableFrame();
+        await act(async () => rejectSavedState(new Error('State unavailable')));
+        await screen.findByText('State unavailable');
+        expectStableFrame();
+        fireEvent.click(screen.getByRole('tab', { name: 'Scratch files' }));
+        await screen.findByText('No scratch files.');
+        expectStableFrame();
+    } finally {
+        rendered.unmount();
+        request.mockRestore();
+    }
+});
 
 describe('saved-state auto folding', () => {
     it('folds only the configured array-aware state paths', () => {

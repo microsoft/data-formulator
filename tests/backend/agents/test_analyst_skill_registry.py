@@ -17,7 +17,7 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     assert registry.expanded_names(["meta"]) == [
         "meta", "analysis", "workspace", "visualization",
     ]
-    assert registry.gated_skill_names() == ["load-data", "report"]
+    assert registry.gated_skill_names() == ["report", "terminal"]
     assert registry.get_skill("meta") is not None
     assert not registry.has("interaction")
     assert registry.action_owner("visualize") == "visualization"
@@ -27,14 +27,22 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     } == {
         "execute_python_script",
         "inspect_source_data",
+        "create_file",
+        "edit_file",
+        "create_data",
+        "update_data",
         "list_workspace_items",
         "read_workspace_item",
         "search_workspace_items",
-        "manage_workspace_memory",
+        "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
+        "list_connectors", "describe_connector", "read_connector_form",
     }
     assert {
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])
-    } == {"visualize", "ask_user", "long_response"}
+    } == {
+        "visualize", "ask_user", "long_response",
+        "propose_data_operation", "propose_connection", "update_connector_form",
+    }
     assert registry.action_owner("long_response") == "meta"
 
 
@@ -56,12 +64,12 @@ def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> 
 
 def test_connector_actions_are_registered_as_actions_not_read_only_tools() -> None:
     registry = build_registry()
-    action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["load-data"])}
-    tool_names = {spec["function"]["name"] for spec in registry.tools_for(["load-data"])}
+    action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])}
+    tool_names = {spec["function"]["name"] for spec in registry.tools_for(["workspace"])}
 
     assert action_names == {"propose_data_operation", "propose_connection", "update_connector_form"}
     for action_name in action_names:
-        assert registry.action_owner(action_name) == "load-data"
+        assert registry.action_owner(action_name) == "workspace"
         assert action_name not in tool_names
     assert {"list_connectors", "describe_connector", "read_connector_form"} <= tool_names
 

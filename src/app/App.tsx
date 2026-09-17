@@ -60,7 +60,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
-import { LayoutProvider } from './LayoutProvider';
+import { LayoutProvider, menuPaperSlotProps } from './LayoutProvider';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
@@ -1173,11 +1173,6 @@ const AppShell: FC = () => {
                         </Box>
                         </>
                         )}
-                        {!isCompactToolbar && !activeWorkspace && (
-                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.secondary', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                                {t('appBar.microsoftResearch')}
-                            </Typography>
-                        )}
                         {/* Workspace name — session indicator/switcher. Centered
                             absolutely when there is room, otherwise it flows
                             between the nav menu and the trailing actions. */}
@@ -1575,6 +1570,65 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             };
         })(),
         components: {
+            MuiMenu: {
+                defaultProps: { slotProps: { paper: menuPaperSlotProps } },
+                styleOverrides: {
+                    paper: { maxWidth: 'calc(100vw - 32px)', borderRadius: 4, fontSize: 'var(--df-menu-font-size, max(0.875rem, var(--df-text-md, 13px)))' },
+                    list: { paddingTop: 4, paddingBottom: 4 },
+                },
+            },
+            MuiMenuItem: {
+                defaultProps: { dense: true },
+                styleOverrides: {
+                    root: {
+                        fontSize: 'var(--df-menu-font-size, max(0.875rem, var(--df-text-md, 13px)))',
+                        lineHeight: 1.4,
+                        minHeight: `max(${buttonVar.heightMedium}, 2em)`,
+                        padding: '0.4em 0.85em',
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        '& .MuiListItemIcon-root': { minWidth: '1.85em', fontSize: 'inherit', flexShrink: 0 },
+                        '& .MuiSvgIcon-root': { fontSize: '1.2em' },
+                        '& .MuiListItemText-primary': { fontSize: 'inherit', lineHeight: 'inherit' },
+                        '& .MuiListItemText-secondary': { fontSize: '0.9em' },
+                    },
+                },
+            },
+            MuiDialog: {
+                styleOverrides: {
+                    paper: {
+                        '--df-control-font-size': 'max(0.875rem, var(--df-text-md, 13px))',
+                        fontSize: 'var(--df-control-font-size)',
+                    },
+                },
+            },
+            MuiDialogTitle: {
+                styleOverrides: { root: { fontSize: '1.2em', lineHeight: 1.4, padding: '16px 20px 12px' } },
+            },
+            MuiDialogContent: {
+                styleOverrides: { root: { fontSize: 'inherit', padding: '12px 20px 16px' } },
+            },
+            MuiDialogContentText: {
+                styleOverrides: { root: { fontSize: 'inherit', lineHeight: 1.5 } },
+            },
+            MuiDialogActions: {
+                styleOverrides: { root: { padding: '8px 20px 16px', gap: 4 } },
+            },
+            MuiInputBase: {
+                styleOverrides: { root: { fontSize: 'var(--df-control-font-size, max(0.875rem, var(--df-text-md, 13px)))', lineHeight: 1.5 } },
+            },
+            MuiInputLabel: {
+                styleOverrides: { root: { fontSize: 'var(--df-control-font-size, max(0.875rem, var(--df-text-md, 13px)))' } },
+            },
+            MuiFormHelperText: {
+                styleOverrides: { root: { fontSize: 'max(0.75rem, var(--df-text-xs, 11px))' } },
+            },
+            MuiAlert: {
+                styleOverrides: {
+                    root: { fontSize: 'var(--df-control-font-size, max(0.875rem, var(--df-text-md, 13px)))', lineHeight: 1.5 },
+                    icon: { fontSize: '1.4em' },
+                },
+            },
             MuiButton: {
                 defaultProps: {
                     disableElevation: true,
@@ -1599,7 +1653,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     sizeSmall: {
                         minHeight: buttonVar.heightSmall,
                         padding: `0 ${buttonVar.paddingSmall}`,
-                        fontSize: textVar.sm,
+                        fontSize: `var(--df-control-font-size, ${textVar.sm})`,
                         '& .MuiButton-icon > :nth-of-type(1)': {
                             fontSize: iconVar.sm,
                         },
@@ -1607,7 +1661,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     sizeMedium: {
                         minHeight: buttonVar.heightMedium,
                         padding: `0 ${buttonVar.paddingMedium}`,
-                        fontSize: textVar.md,
+                        fontSize: `var(--df-control-font-size, ${textVar.md})`,
                         '& .MuiButton-icon > :nth-of-type(1)': {
                             fontSize: iconVar.md,
                         },

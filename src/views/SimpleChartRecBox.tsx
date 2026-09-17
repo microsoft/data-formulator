@@ -28,7 +28,7 @@ import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { Chart, ClarificationResponse, ComputationInputSource, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo, ROOTLESS_THREAD_ID } from "../components/ComponentType";
+import { Chart, ClarificationResponse, ComputationInputSource, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo, createConversationRootId } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -37,7 +37,8 @@ import { toAnalystTableRef, workspaceTableIdOf } from '../app/tableResolution';
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
-import AddIcon from '@mui/icons-material/Add';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import BoltIcon from '@mui/icons-material/Bolt';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -52,6 +53,7 @@ import { ClarificationPanel, ExplanationPanel, FailedDraftPanel } from './AgentP
 import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
 import { formatAnalystToolProgress } from './analystToolProgress';
+import { TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
 
 // Approx footprint of the leading lightning-bolt IconButton (size small,
 // p:0.5 + 16px icon). Used to cap a starter chip so a single chip fits
@@ -231,6 +233,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // clears). Tracks the draftId we've already auto-submitted for.
     const clarifySubmittedRef = useRef<string | null>(null);
     const [isChatFormulating, setIsChatFormulating] = useState(false);
+    const [pendingTerminal, setPendingTerminal] = useState<{
+        proposal: TerminalProposal;
+        trajectory: any[];
+        completedStepCount: number;
+        actionId: string;
+        parentNodeId: string;
+        lastCreatedTableId: string | null;
+        sourceTableIds: string[];
+    } | null>(null);
     // Whether the getting-started starter questions are collapsed (click the
     // lightning bolt to expand/collapse).
     const [starterCollapsed, setStarterCollapsed] = useState(false);
@@ -313,11 +324,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, []);
 
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
+    const loadedTableNodes = useSelector((state: DataFormulatorState) => state.loadedTableNodes);
+    const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
+    const focusedReference = focusedId?.type === 'reference'
+        ? [...loadedTableNodes, ...fileNodes].find(node => node.id === focusedId.referenceId)
+        : undefined;
     const analystChatPending = useSelector((state: DataFormulatorState) => state.analystChatPending);
 
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
+        if (focusedId.type === 'conversation') return focusedId.tableId;
         if (focusedId.type === 'table') return focusedId.tableId;
+        if (focusedId.type === 'reference') return focusedReference?.kind === 'loaded-table' ? focusedReference.tableId : undefined;
         if (focusedId.type === 'chart') {
             const chart = charts.find(c => c.id === focusedId.chartId);
             return chart?.tableRef;
@@ -343,7 +361,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return resolveNodeTable(turn.id, textTurns, tables);
         }
         return undefined;
-    }, [focusedId, charts, generatedReports, textTurns, tables, draftNodes])();
+    }, [focusedId, charts, generatedReports, textTurns, tables, draftNodes, focusedReference])();
 
     // Remember the last chart the user focused so a pause "Close" can restore it.
     useEffect(() => {
@@ -742,6 +760,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         parentNodeId?: string;
         isContinuation?: boolean;
         sourceTableIds?: string[];
+        terminalResponse?: { request_id: string; decision: 'approve' | 'reject' };
         interactionResponse?: {
             operation_id: string;
             plan_id?: string;
@@ -797,15 +816,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const actionTables = selectedTableIds
             .map(id => inputTableById.get(id))
             .filter((input): input is NonNullable<typeof input> => !!input);
+        const runSourceTables = new Map(tables.filter(table => selectedTableIds.includes(table.id))
+            .map(table => [table.id, table]));
         const resolveInputSourceTableIds = (sources: ComputationInputSource[]) => {
             const sourceNames = sources
                 .filter(source => source.kind === 'data')
                 .map(source => source.displayName.replace(/\.[^/.]+$/, ""));
-            return selectedTableIds.filter(id => {
-                const table = tables.find(candidate => candidate.id === id);
-                const name = table?.virtual?.tableId || table?.id.replace(/\.[^/.]+$/, "");
+            return [...runSourceTables.values()].filter(table => {
+                const name = table.virtual?.tableId || table.id.replace(/\.[^/.]+$/, "");
                 return !!name && sourceNames.includes(name);
-            });
+            }).map(table => table.id);
         };
 
         // Seed the auto-focus baseline with whatever chart the user is
@@ -833,9 +853,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // Conversation follows an existing thread artifact by default. A
         // merely-focused source table is workspace context, not a thread yet.
         const focusedConversationNodeId = (() => {
+            if (focusedId?.type === 'conversation') return focusedId.nodeIds?.[focusedId.nodeIds.length - 1] || focusedId.tableId;
             if (focusedId?.type === 'text') return focusedId.textId;
             if (focusedId?.type === 'chart') {
                 return charts.find(chart => chart.id === focusedId.chartId)?.tableRef ?? null;
+            }
+            if (focusedId?.type === 'reference') {
+                return focusedReference?.parentNodeId;
             }
             if (focusedId?.type === 'table') {
                 return tables.find(table => table.id === focusedId.tableId)?.derive
@@ -854,6 +878,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const askedFromNode = resolveRunParentNodeId(
             clarificationContext?.parentNodeId,
             focusedConversationNodeId,
+            createConversationRootId(),
         );
         runLastNodeRef.current = askedFromNode;
         // A continuation (answering a turn) — its leading prompt is already the
@@ -903,6 +928,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             primary_tables: primaryTableNames,
             ...(images.length > 0 ? { attached_images: images } : {}),
             ...(scratchPaths.length > 0 ? { scratch_files: scratchPaths } : {}),
+            ...(focusedId?.type === 'file' ? { focused_file: focusedId.fileName }
+                : focusedReference?.kind === 'file' ? { focused_file: focusedReference.path } : {}),
             model: activeModel,
             max_iterations: 10,
         };
@@ -961,6 +988,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             requestBody.completed_step_count = clarificationContext!.completedStepCount || 0;
             if (clarificationContext!.interactionResponse) {
                 requestBody.interaction_response = clarificationContext!.interactionResponse;
+            }
+            if (clarificationContext!.terminalResponse) {
+                requestBody.terminal_response = clarificationContext!.terminalResponse;
             }
         } else {
             requestBody.user_question = agentPrompt;
@@ -1028,8 +1058,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     timestamp: Date.now() }
             ];
             createNextDraft(
-                resolveRunParentNodeId(askedFromNode),
-                resolveRunParentNodeId(askedFromTable),
+                askedFromNode,
+                askedFromTable || askedFromNode,
                 initialEntries,
             );
         }
@@ -1100,7 +1130,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 parentNodeId: runLastNodeRef.current
                     || askedFromNode
                     || focusedTableId
-                    || ROOTLESS_THREAD_ID,
+                    || askedFromNode,
                 // Anchor to the run's current table (the draft's table) so the
                 // thread can render the generating card. While streaming, the
                 // card is rendered INSIDE the draft block (after the thinking
@@ -1116,7 +1146,53 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return newId;
         };
 
+        let terminalResultReceived = false;
         const processStreamingResult = async (result: any) => {
+            if (result.type === 'terminal_result' || (result.type === 'interact' && result.terminal_request)) {
+                const proposal = (result.terminal_request || result.request) as TerminalProposal;
+                const turnId = `textTurn_${actionId}_terminal_${proposal.id}`;
+                if (result.type === 'terminal_result') {
+                    terminalResultReceived = true;
+                    const outcome = result.result || {};
+                    dispatch(dfActions.updateTextTurn({
+                        id: turnId,
+                        executions: [{
+                            id: proposal.id, argv: proposal.argv, cwd: proposal.cwd, purpose: proposal.purpose,
+                            status: outcome.rejected ? 'rejected'
+                                : outcome.error || outcome.timed_out || (outcome.exit_code != null && outcome.exit_code !== 0)
+                                    ? 'failed' : 'completed',
+                            result: outcome,
+                        }],
+                    }));
+                    return;
+                }
+                const firstEntry = currentDraftInteraction[0];
+                dispatch(dfActions.addTextTurn({
+                    kind: 'text', id: turnId, displayId: turnId, textKind: 'explain',
+                    content: proposal.purpose,
+                    executions: [{
+                        id: proposal.id, argv: proposal.argv, cwd: proposal.cwd, purpose: proposal.purpose,
+                        status: 'awaiting_approval',
+                    }],
+                    ...(!runIsContinuationRef.current && firstEntry?.role === 'prompt'
+                        ? { prompt: firstEntry.displayContent || firstEntry.content } : {}),
+                    parentNodeId: runLastNodeRef.current || askedFromTable || askedFromNode,
+                    ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
+                    actionId, createdAt: Date.now(),
+                }));
+                runLastNodeRef.current = turnId;
+                runIsContinuationRef.current = true;
+                if (result.type === 'interact') {
+                    setPendingTerminal({ proposal, trajectory: result.trajectory,
+                        completedStepCount: result.completed_step_count || 0, actionId,
+                        parentNodeId: turnId, lastCreatedTableId, sourceTableIds: selectedTableIds });
+                    setChatPrompt('');
+                    setAttachedImages([]);
+                    setAttachedFiles([]);
+                    dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
+                }
+                return;
+            }
             if (result.type === "interact" && result.form) {
                 if (result.form.kind !== 'connector') {
                     throw new Error(`Unsupported form artifact kind: ${String(result.form.kind)}`);
@@ -1161,7 +1237,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             status: 'pending',
                         },
                     } }),
-                    parentNodeId: runLastNodeRef.current || askedFromTable || ROOTLESS_THREAD_ID,
+                    parentNodeId: runLastNodeRef.current || askedFromTable || askedFromNode,
                     ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
                     actionId,
                     createdAt: Date.now(),
@@ -1169,7 +1245,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 runLastNodeRef.current = turnId;
                 dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
                 if (currentDraftId) {
-                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                    dispatch(dfActions.removeDraftNode({ draftId: currentDraftId, fileParentNodeId: turnId }));
                     currentDraftId = null;
                 }
                 setIsChatFormulating(false);
@@ -1349,6 +1425,46 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // ── tool_result: mark the last tool step as done ──
             if (result.type === "tool_result") {
                 const isError = result.status === "error" || !!result.error;
+                if (['create_data', 'update_data'].includes(result.tool) && !isError) {
+                    const output = JSON.parse(result.stdout || '{}');
+                    if (typeof output.table_name === 'string') {
+                        const { data } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                        const workspaceTable = (data.tables || []).find((item: any) => item.name === output.table_name);
+                        if (workspaceTable) {
+                            const table = buildDictTableFromWorkspace(workspaceTable, undefined);
+                            const existing = runSourceTables.get(table.id) || tables.find(item => item.id === table.id);
+                            table.displayId = existing?.displayId || output.display_name || table.displayId;
+                            runSourceTables.set(table.id, table);
+                            dispatch(dfActions.addTableToStore(table));
+                            dispatch(dfActions.addLoadedTableNode({
+                                kind: 'loaded-table', id: `data-reference-${actionId}-${table.id}`, tableId: table.id,
+                                parentNodeId: currentDraftId || runLastNodeRef.current || askedFromNode, createdAt: Date.now(),
+                            }));
+                            dispatch(fetchFieldSemanticType(table));
+                            dispatch(fetchColumnStats(table));
+                        }
+                    }
+                }
+                if (['create_file', 'edit_file'].includes(result.tool) && !isError) {
+                    notifyWorkspaceFilesChanged();
+                    let file;
+                    try {
+                        file = JSON.parse(result.stdout || '{}');
+                    } catch {
+                        file = null;
+                    }
+                    if (file && typeof file.path === 'string' && file.path.startsWith('files/')
+                        && typeof file.content_hash === 'string' && file.available_in_workspace === true) {
+                        const fileName = file.path.slice('files/'.length);
+                        dispatch(dfActions.upsertFileNode({
+                            kind: 'file', id: `file-${fileName}`, path: fileName,
+                            displayName: file.display_name || file.name || fileName,
+                            contentHash: file.content_hash,
+                            parentNodeId: currentDraftId || runLastNodeRef.current || askedFromTable || askedFromNode,
+                            createdAt: Date.now(),
+                        }));
+                    }
+                }
                 for (let i = thinkingSteps.length - 1; i >= 0; i--) {
                     if (!thinkingSteps[i].startsWith('✓') && !thinkingSteps[i].startsWith('✗')) {
                         thinkingSteps[i] = (isError ? '✗ ' : '✓ ') + thinkingSteps[i];
@@ -1382,6 +1498,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     dispatch(dfActions.updateDraftSources({
                         draftId: currentDraftId,
                         source: resolveInputSourceTableIds(lastAgentInputSources),
+                        inputSources: lastAgentInputSources,
                     }));
                 }
                 if (result.action === "visualize") {
@@ -1418,10 +1535,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // Resolve source tables from agent's input_tables (names it chose to use)
                 const resolvedSourceIds = resolveInputSourceTableIds(lastAgentInputSources);
                 const resolvedSourceNames = resolvedSourceIds.map((id: string) => {
-                    const tbl = tables.find(t2 => t2.id === id);
+                    const tbl = runSourceTables.get(id);
                     return tbl?.displayId || tbl?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
                 });
-                const triggerTableId = resolveDerivedTriggerTableId(lastCreatedTableId, resolvedSourceIds[0]);
+                const triggerTableId = resolveDerivedTriggerTableId(lastCreatedTableId, resolvedSourceIds[0], askedFromNode);
                 candidateTable.derive = {
                     code: code || t('chartRec.explorationStepCodeComment', { step: createdTables.length + 1 }),
                     codeSignature: result.content?.result?.code_signature,
@@ -1489,13 +1606,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
 
                 createdTables.push(candidateTable);
+                runSourceTables.set(candidateTable.id, candidateTable);
                 lastCreatedTableId = candidateTableId;
 
                 // The authored edge controls appearance; derive.trigger remains
                 // the data/agent anchor even when both happen to name one table.
                 candidateTable.parentNodeId = runLastNodeRef.current
                     || currentDraftParentTableId
-                    || ROOTLESS_THREAD_ID;
+                    || askedFromNode;
                 runLastNodeRef.current = candidateTableId;
 
                 const names = candidateTable.names;
@@ -1606,7 +1724,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const turnId = `textTurn_${actionId}_${String(Date.now())}`;
                     // design-docs/42: the turn FOLLOWS the run's last node
                     // (the asked-from table, or the previous node in the run).
-                    const parentNodeId = runLastNodeRef.current || askedFromTable || ROOTLESS_THREAD_ID;
+                    const parentNodeId = runLastNodeRef.current || askedFromTable || askedFromNode;
                     if (parentNodeId) {
                         dispatch(dfActions.addTextTurn({
                             kind: 'text',
@@ -1680,7 +1798,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         ...(result.content?.presentation === 'long_response' ? { presentation: 'long_response' as const } : {}),
                         ...(formOwner && !lastCreatedTableId && !reportId ? { sourceFormId: formOwner.id } : {}),
                         ...(foldPrompt ? { prompt: firstEntry.displayContent || firstEntry.content } : {}),
-                        parentNodeId: runLastNodeRef.current || askedFromTable || ROOTLESS_THREAD_ID,
+                        parentNodeId: runLastNodeRef.current || askedFromTable || askedFromNode,
                         // Canvas provenance only when the run produced nothing of
                         // its own; otherwise the answer belongs to what it just
                         // made, and the parent walk resolves to that.
@@ -1695,6 +1813,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         createdAt: Date.now(),
                     }));
                     runLastNodeRef.current = turnId;
+                    if (currentDraftId) {
+                        thinkingSteps = [];
+                        pendingThought = '';
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+                        dispatch(dfActions.removeDraftNode({ draftId: currentDraftId, fileParentNodeId: turnId }));
+                        currentDraftId = null;
+                    }
                     return turnId;
                 };
 
@@ -1718,15 +1843,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         // resolves to the nearest chart, so this doesn't hide the
                         // artifact the answer is about.
                         dispatch(dfActions.setFocused({ type: 'text', textId: closingTurnId }));
-                    }
-                    // Pure Q&A run — the agent committed no action, so retire the
-                    // draft that was standing in for the run.
-                    if (closingTurnId && !lastCreatedTableId && currentDraftId) {
-                        thinkingSteps = [];
-                        pendingThought = '';
-                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
-                        dispatch(dfActions.removeDraftNode(currentDraftId));
-                        currentDraftId = null;
                     }
                 }
             }
@@ -1845,9 +1961,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
                     currentDraftId = null;
                 }
+            } finally {
+                if (clarificationContext?.terminalResponse?.decision === 'approve' && !terminalResultReceived) {
+                    const owner = textTurns.find(turn => turn.id === clarificationContext.parentNodeId);
+                    if (owner?.executions) {
+                        dispatch(dfActions.updateTextTurn({
+                            id: owner.id,
+                            executions: owner.executions.map(execution => execution.id === clarificationContext.terminalResponse!.request_id
+                                ? { ...execution, status: 'interrupted' } : execution),
+                        }));
+                    }
+                }
+                notifyWorkspaceFilesChanged();
             }
         })();
-    }, [focusedTableId, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, dispatch, t, attachedImages, attachedFiles, attachmentUploads, canvasTarget, textTurns, connectorParams]);
+    }, [focusedId, focusedTableId, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, generatedReports, focusedReference, dispatch, t, attachedImages, attachedFiles, attachmentUploads, canvasTarget, textTurns, connectorParams]);
 
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').
@@ -1897,6 +2025,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const focusedTurn = focusedId?.type === 'text'
             ? textTurns.find(tt => tt.id === focusedId.textId)
             : undefined;
+        if (focusedId?.type === 'reference') {
+            if (!focusedReference) return;
+            exploreFromChat(prompt, { parentNodeId: focusedReference.parentNodeId, isContinuation: false }, displayPrompt, explicitAttachments);
+            return;
+        }
         const conversationParentId = resolveConversationParentNodeId(
             focusedTurn?.id,
             focusedTableId,
@@ -1928,7 +2061,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return;
         }
         exploreFromChat(prompt, undefined, displayPrompt, explicitAttachments);
-    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, focusedTableId, tables, textTurns, dispatch, focusCanvasAfterReply]);
+    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, focusedTableId, tables, textTurns, focusedReference, dispatch, focusCanvasAfterReply]);
 
     // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
     // with a prompt describing the captured workflow; we hand it straight to
@@ -2134,10 +2267,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const focusedTextTurnContent = focusedTextTurn
         ? explanationContent(focusedTextTurn.content)
         : '';
-    const focusedTextTurnUsesCanvas = focusedTextTurn?.textKind === 'explain'
+    const focusedTextTurnUsesCanvas = !!focusedTextTurn && (focusedTextTurn.textKind === 'explain' || focusedTextTurn.answered)
         && !focusedTextTurn.form && !focusedTextTurn.dataOperation
-        && canvasTarget?.type === 'text' && canvasTarget.textId === focusedTextTurn.id
-        && focusedTextTurn.presentation === 'long_response';
+        && canvasTarget?.type === 'text' && canvasTarget.textId === focusedTextTurn.id;
     const focusedDraft = focusedId?.type === 'draft'
         ? draftNodes.find(draft => draft.id === focusedId.draftId
             && (draft.derive?.status === 'error' || draft.derive?.status === 'interrupted'))
@@ -2344,6 +2476,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 ) : (
                     <ExplanationPanel
                         content={focusedTextTurnContent}
+                        executions={focusedTextTurn.executions}
                         onClose={() => closeTextTurn()}
                         onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
                     />
@@ -2594,19 +2727,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         style={{ display: 'none' }}
                         onChange={(e) => { handleAttachFiles(e.target.files); if (e.target) e.target.value = ''; }}
                     />
-                    <Tooltip title={t('chartRec.attachContext', { defaultValue: 'Attach context (image or file)' })}>
-                        <IconButton
-                            size="small"
-                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                            sx={{
-                                p: 0.5,
-                                color: theme.palette.text.secondary,
-                                borderRadius: '4px',
-                                '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.06) },
-                            }}
-                        >
-                            {attachmentUploads > 0 ? <CircularProgress size={16} /> : <AddIcon sx={{ fontSize: iconVar.lg }} />}
-                        </IconButton>
+                    <Tooltip title="Attach file">
+                        <span>
+                            <IconButton size="small" aria-label="Attach file"
+                                disabled={workspaceReadOnly || isChatFormulating || attachmentUploads > 0}
+                                onClick={() => fileInputRef.current?.click()}>
+                                {attachmentUploads > 0 ? <CircularProgress size={16} /> : <AttachFileIcon sx={{ fontSize: iconVar.lg }} />}
+                            </IconButton>
+                        </span>
                     </Tooltip>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
@@ -2817,13 +2945,32 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     && (focusedTextTurn.options?.length ?? 0) > 0;
                 if (isActiveClarify) return;
                 const el = e.target as HTMLElement | null;
-                if (el?.closest?.('.data-thread-card')) return;
+                if (el?.closest?.('[data-thread-item], .data-thread-card')) return;
                 if (focusedDraft) closeFocusedDraft();
                 else closeTextTurn();
             }}
         >
             {/* Shares its width with the thread block above (see tokens). */}
             <Box sx={{ width: '100%', maxWidth: conversationWidth, mx: 'auto' }}>
+                {pendingTerminal && <TerminalApprovalDialog key={pendingTerminal.proposal.id}
+                    proposal={pendingTerminal.proposal}
+                    onDecision={decision => {
+                        const pending = pendingTerminal;
+                        setPendingTerminal(null);
+                        dispatch(dfActions.updateTextTurn({
+                            id: pending.parentNodeId,
+                            executions: [{
+                                id: pending.proposal.id, argv: pending.proposal.argv,
+                                cwd: pending.proposal.cwd, purpose: pending.proposal.purpose,
+                                status: decision === 'approve' ? 'running' : 'rejected',
+                            }],
+                        }));
+                        exploreFromChat(decision === 'approve' ? 'Run the approved terminal command.' : 'Do not run this terminal command.', {
+                            ...pending,
+                            isContinuation: true,
+                            terminalResponse: { request_id: pending.proposal.id, decision },
+                        }, undefined, { images: [], files: [] });
+                    }} />}
                 {gettingStartedBlock}
                 {/* The input box */}
                 {inputBox}

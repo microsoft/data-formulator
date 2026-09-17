@@ -39,6 +39,8 @@ import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
 import { iconVar, textVar } from '../app/layout';
 import { DataOperationCard } from '../components/DataOperationCard';
 import type { DataOperation } from '../dataOperations/models';
+import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
+import type { TerminalExecution } from '../components/ComponentType';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -720,6 +722,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
 interface ExplanationPanelProps {
     /** The agent's plain-text answer (markdown) to display read-only. */
     content: string;
+    executions?: TerminalExecution[];
     /** Close: de-highlight the panel and switch focus to the previous chart. */
     onClose: () => void;
     /** Delete: remove this explanation block from the thread. */
@@ -733,7 +736,7 @@ interface ExplanationPanelProps {
  * but carries no inputs or actions — it's purely "here's what I said",
  * dismissible by the header's delete button or by focusing another item.
  */
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, executions, onClose, onDelete }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
@@ -756,7 +759,7 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
                 pb: '8px', pl: '20px', pr: '8px',
                 fontSize: textVar.sm,
             }}>
-                <CompactMarkdown content={content} color={theme.palette.text.primary} />
+                <TerminalMessageContent content={content} executions={executions} />
             </Box>
         </AgentPauseShell>
     );

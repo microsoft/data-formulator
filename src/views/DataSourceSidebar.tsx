@@ -49,7 +49,6 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -92,6 +91,7 @@ import { ResizeHandle } from '../components/ResizeHandle';
 import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
 import { formatBytes } from './ViewUtils';
+import { importConnectorFile } from '../app/workspaceService';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -169,8 +169,8 @@ export const DataSourceSidebar: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
     connectorRefreshKey?: number;
     onConnectorsChanged?: () => void;
-    onStartDataLoadingChat?: (text: string) => void;
-}> = ({ onOpenUploadDialog, connectorRefreshKey = 0, onConnectorsChanged, onStartDataLoadingChat }) => {
+    onAskAgent?: (text: string) => void;
+}> = ({ onOpenUploadDialog, connectorRefreshKey = 0, onConnectorsChanged, onAskAgent }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -315,7 +315,7 @@ export const DataSourceSidebar: React.FC<{
                 <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
                     <IconButton
                         size="small"
-                        onClick={() => onOpenUploadDialog?.('upload')}
+                        onClick={() => onOpenUploadDialog?.('menu')}
                         aria-label={t('sidebar.openUpload', { defaultValue: 'Upload data' })}
                         sx={{
                         color: 'primary.main',
@@ -323,20 +323,6 @@ export const DataSourceSidebar: React.FC<{
                         '&:hover': { bgcolor: 'action.hover' },
                     }}>
                         <AddCircleIcon fontSize="small" />
-                    </IconButton>
-                </Tooltip>
-                <Tooltip title={t('sidebar.openDataLoadingChat', { defaultValue: 'Add data with agent' })} placement="right">
-                    <IconButton
-                        size="small"
-                        onClick={() => onStartDataLoadingChat?.('')}
-                        aria-label={t('sidebar.openDataLoadingChat', { defaultValue: 'Add data with agent' })}
-                        sx={{
-                            color: 'text.secondary',
-                            borderRadius: 1,
-                            '&:hover': { color: 'primary.main', bgcolor: 'action.hover' },
-                        }}
-                    >
-                        <QuestionAnswerOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
@@ -357,7 +343,7 @@ export const DataSourceSidebar: React.FC<{
                         <RelationalDBIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Agent knowledge' })} placement="right">
+                <Tooltip title={t('knowledge.workflows')} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
                         bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
@@ -396,7 +382,7 @@ export const DataSourceSidebar: React.FC<{
                         connectorRefreshKey={connectorRefreshKey}
                         onConnectorsChanged={onConnectorsChanged}
                         disableConnectors={disableConnectors}
-                        onStartDataLoadingChat={onStartDataLoadingChat}
+                        onAskAgent={onAskAgent}
                     />
                     <ResizeHandle
                         direction="horizontal"
@@ -421,8 +407,8 @@ const DataSourceSidebarPanel: React.FC<{
     connectorRefreshKey?: number;
     onConnectorsChanged?: () => void;
     disableConnectors?: boolean;
-    onStartDataLoadingChat?: (text: string) => void;
-}> = ({ panelWidth, onOpenUploadDialog, onCollapse, isPinned, onTogglePinned, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onStartDataLoadingChat }) => {
+    onAskAgent?: (text: string) => void;
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, isPinned, onTogglePinned, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onAskAgent }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -554,9 +540,7 @@ const DataSourceSidebarPanel: React.FC<{
     // Default to creation chronology so auto-saves do not unexpectedly move
     // older sessions. Modified time remains available as an explicit sort.
     type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
-    type SessionGroupKey = 'source' | 'none';
     const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
-    const [sessionGroup, setSessionGroup] = useState<SessionGroupKey>('source');
     const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
 
     const sortedSessions = useMemo(() => {
@@ -585,39 +569,6 @@ const DataSourceSidebarPanel: React.FC<{
                 return copy;
         }
     }, [sessions, sessionSort]);
-
-    const sessionSections = useMemo(() => {
-        if (sessionGroup === 'none') {
-            return [{ key: 'all', label: '', sessions: sortedSessions }];
-        }
-
-        const connectorNames = new Map(connectors.map(connector => [connector.id, connector.display_name]));
-        const sourceLabel = (sourceId: string): string => {
-            if (sourceId === 'upload') return t('sidebar.sourceUpload', { defaultValue: 'Upload' });
-            if (sourceId === 'sample_datasets') {
-                return connectorNames.get(sourceId)
-                    || t('sidebar.sourceExampleDatasets', { defaultValue: 'Example datasets' });
-            }
-            return connectorNames.get(sourceId) || sourceId;
-        };
-
-        const sections = new Map<string, { key: string; label: string; sessions: WorkspaceSummary[] }>();
-        for (const session of sortedSessions) {
-            const sourceIds = Array.from(new Set(session.source_ids || [])).sort();
-            const key = sourceIds.length > 0
-                ? sourceIds.join('|')
-                : session.table_count === 0 ? 'no-data' : 'other';
-            const label = sourceIds.length > 0
-                ? sourceIds.map(sourceLabel).sort((a, b) => a.localeCompare(b)).join(' / ')
-                : session.table_count === 0
-                    ? t('sidebar.sourceNoData', { defaultValue: 'No data' })
-                    : t('sidebar.sourceOther', { defaultValue: 'Other' });
-            const section = sections.get(key);
-            if (section) section.sessions.push(session);
-            else sections.set(key, { key, label, sessions: [session] });
-        }
-        return Array.from(sections.values());
-    }, [connectors, sessionGroup, sortedSessions, t]);
 
     const refreshSessions = useCallback(() => {
         listWorkspaces()
@@ -1214,6 +1165,13 @@ const DataSourceSidebarPanel: React.FC<{
         setPreview(null);
         setPreviewAnchor(null);
 
+        if (nodeMeta.artifact_kind === 'file') {
+            setPreviewLoading(null);
+            setPreview({ connectorId, node, columns: [], sampleRows: [], rowCount: null, loading: false });
+            setPreviewAnchor(anchorEl);
+            return;
+        }
+
         // Cache hit: re-open instantly, no query. Repeats are free.
         const cached = previewCacheRef.current[cacheKey];
         if (cached && !cached.loading) {
@@ -1409,6 +1367,12 @@ const DataSourceSidebarPanel: React.FC<{
     // thunk. No session creation, no user messaging — callers own that so this
     // can be reused for both single imports and sequential batch loads.
     const loadTableNode = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
+        if (node.metadata?.artifact_kind === 'file') {
+            return importConnectorFile(connectorId, node.path.join('/')).then(file => {
+                dispatch(dfActions.setFocused({ type: 'file', fileName: file.name }));
+                return { truncated: false };
+            });
+        }
         const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
         const tableObj: DictTable = {
@@ -1481,7 +1445,7 @@ const DataSourceSidebarPanel: React.FC<{
         // the conversational data-loading chat so the user can filter, sample,
         // or aggregate before loading — instead of a direct bulk import.
         const oversized = tables.filter(isTableTooLarge);
-        if (oversized.length > 0 && onStartDataLoadingChat) {
+        if (oversized.length > 0 && onAskAgent) {
             const connector = connectors.find(c => c.id === connectorId);
             const connectorName = connector?.display_name || connectorId;
             const describe = (n: CatalogTreeNode) => {
@@ -1506,7 +1470,7 @@ const DataSourceSidebarPanel: React.FC<{
             });
             clearSelection();
             closePreview();
-            onStartDataLoadingChat(promptText);
+            onAskAgent(promptText);
             return;
         }
 
@@ -1559,7 +1523,7 @@ const DataSourceSidebarPanel: React.FC<{
         }
         closePreview();
         clearSelection();
-    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, connectors, onStartDataLoadingChat, t]);
+    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, connectors, onAskAgent, t]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
@@ -2135,6 +2099,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                 const sourceName = node.metadata?._source_name || node.name;
                                                 const item: CatalogTableDragItem = {
                                                     type: CATALOG_TABLE_ITEM,
+                                                    artifactKind: node.metadata?.artifact_kind === 'file' ? 'file' : 'table',
                                                     connectorId: connector.id,
                                                     tableName: sourceName,
                                                     tableId: dsId != null ? String(dsId) : sourceName,
@@ -2294,15 +2259,12 @@ const DataSourceSidebarPanel: React.FC<{
                         <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                         <Button
                             startIcon={<SortIcon />}
-                            aria-label={t('sidebar.organizeSessions', { defaultValue: 'Group and sort sessions' })}
+                            aria-label={t('sidebar.sortSessionList', { defaultValue: 'Sort sessions' })}
                             aria-haspopup="menu"
                             aria-expanded={sessionSortAnchor ? 'true' : undefined}
                             onClick={(event) => setSessionSortAnchor(event.currentTarget)}
                             sx={panelSubActionSx}
                         >
-                            {sessionGroup === 'source'
-                                ? `${t('sidebar.groupSourceShort', { defaultValue: 'Source' })} · `
-                                : ''}
                             {({
                                 created_desc: t('sidebar.sortNewest'),
                                 created_asc: t('sidebar.sortOldest'),
@@ -2318,29 +2280,6 @@ const DataSourceSidebarPanel: React.FC<{
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                     >
-                        <ListSubheader sx={{ fontSize: textVar.xxs, lineHeight: '28px', color: 'text.disabled' }}>
-                            {t('sidebar.groupSessions', { defaultValue: 'Group' })}
-                        </ListSubheader>
-                        {([
-                            ['source', t('sidebar.groupBySource', { defaultValue: 'Data source' })],
-                            ['none', t('sidebar.noGrouping', { defaultValue: 'No grouping' })],
-                        ] as [SessionGroupKey, string][]).map(([key, label]) => (
-                            <MenuItem
-                                key={key}
-                                selected={sessionGroup === key}
-                                onClick={() => {
-                                    setSessionGroup(key);
-                                    setSessionSortAnchor(null);
-                                }}
-                                sx={{ fontSize: textVar.sm, py: 0.75 }}
-                            >
-                                <ListItemIcon sx={{ minWidth: 28 }}>
-                                    {sessionGroup === key && <CheckIcon sx={{ fontSize: iconVar.sm }} />}
-                                </ListItemIcon>
-                                <ListItemText primary={label} slotProps={{ primary: { sx: { fontSize: textVar.sm } } }} />
-                            </MenuItem>
-                        ))}
-                        <Divider />
                         <ListSubheader sx={{ fontSize: textVar.xxs, lineHeight: '28px', color: 'text.disabled' }}>
                             {t('sidebar.sortSessions', { defaultValue: 'Sort' })}
                         </ListSubheader>
@@ -2375,24 +2314,7 @@ const DataSourceSidebarPanel: React.FC<{
                         </Typography>
                     </Box>
                 ) : (
-                    sessionSections.map((section, sectionIndex) => (
-                    <React.Fragment key={section.key}>
-                    {sessionGroup === 'source' && (
-                        <Box sx={{
-                            display: 'flex', alignItems: 'center', gap: 0.75,
-                            px: 1.5, pt: sectionIndex === 0 ? 0.875 : 1.25, pb: 0.375,
-                        }}>
-                            <Typography noWrap title={section.label} sx={{
-                                maxWidth: '72%',
-                                fontSize: textVar.xxs, fontWeight: 500,
-                                color: 'text.secondary', lineHeight: 1.3,
-                            }}>
-                                {section.label}
-                            </Typography>
-                            <Box sx={{ flex: 1, height: '1px', bgcolor: 'rgba(0, 0, 0, 0.08)' }} />
-                        </Box>
-                    )}
-                    {section.sessions.map((s) => {
+                    sortedSessions.map((s) => {
                         const isRenaming = renamingSession === s.id;
                         return (
                         <Tooltip
@@ -2523,9 +2445,7 @@ const DataSourceSidebarPanel: React.FC<{
                         </Box>
                         </Tooltip>
                         );
-                    })}
-                    </React.Fragment>
-                    ))
+                    })
                 )}
             </ScrollFadeContainer>
             </Box>
@@ -2538,7 +2458,7 @@ const DataSourceSidebarPanel: React.FC<{
                     sx={panelHeaderSx}
                 >
                     <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
-                        {t('knowledge.title', { defaultValue: 'Agent Knowledge' })}
+                        {t('knowledge.workflows')}
                     </Typography>
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
@@ -2589,6 +2509,10 @@ const DataSourceSidebarPanel: React.FC<{
                     const sourceTableRef = buildSourceTableRef(preview.node);
                     const nodeMeta = preview.node.metadata || {};
                     const sourceDescription = nodeMeta.source_description || preview.tableDescription || nodeMeta.description;
+                    if (nodeMeta.artifact_kind === 'file') return <Box sx={{ p: 2 }}>
+                        <Typography sx={{ fontSize: textVar.md, overflowWrap: 'anywhere' }}>{preview.node.name}</Typography>
+                        <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 1 }}>{nodeMeta.file_type?.toUpperCase()} · {formatBytes(nodeMeta.file_size)}</Typography>
+                    </Box>;
                     return (
                         <Box sx={{ p: 2, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
                             <ConnectorTablePreview

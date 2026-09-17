@@ -17,7 +17,7 @@
     "type": "function",
     "function": {
       "name": "ask_user",
-      "description": "Ask the user something and pause for their reply — the run resumes in the same turn with their answer in context. Use this for ANY turn where you want the user to respond: a choice to make, a clarification you need before acting, or a brief statement paired with clickable follow-ups. Put your reasoning, rationale, and context in your normal reply text, not inside this call. Prefer this over ending your turn with a plain-text question: plain text ends the run and the user's next message starts a fresh turn without this context, whereas ask_user keeps the conversation going. Reserve plain text (no action) for your final answer when you expect nothing further.",
+      "description": "Ask the user something and pause for their reply; the run resumes in the same turn with their answer in context. Prefer this when you want the user to respond: a choice to make, a clarification you need before acting, or a brief statement paired with clickable follow-ups. Put your reasoning, rationale, and context in your normal reply text, not inside this call. This is a preference, not a requirement; plain-text responses remain available when they fit the conversation better. Plain text ends the run, whereas ask_user preserves the paused turn for the reply.",
       "parameters": {
         "type": "object",
         "properties": {

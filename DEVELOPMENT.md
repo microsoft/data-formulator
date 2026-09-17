@@ -57,6 +57,60 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     data_formulator --dev   # Backend only (for frontend development)
     ```
 
+### Local Terminal Skill
+
+The analyst can use the `terminal` skill to locate data files, inspect installed
+data clients, query metadata through existing CLI logins, and troubleshoot a
+connection. For example: "Find CSV files in my Downloads folder and help me
+connect the folder." Discoveries feed back into the existing connector form and
+data-loading workflow; running a CLI does not register or load a source by itself.
+
+The initial implementation supports single-user local mode on macOS and Linux.
+Every command opens a **Run once / Reject** dialog showing its exact argument
+array, working directory, purpose, and host-access warning. Approval is stored
+server-side for one invocation, tied to the identity, workspace, and conversation, and
+expires after ten minutes or a backend restart. Chat text cannot grant access.
+There is no automatic approval, persistent full-access grant, or Codex dependency
+in this first version; unmatched commands are effectively always `ask`.
+
+Commands run with OS-enforced filesystem write confinement: macOS uses
+`/usr/bin/sandbox-exec`; Linux requires Bubblewrap (`bwrap`) and enabled user
+namespaces. The server supplies the workspace scratch directory, the only
+writable persistent file area. Children inherit the restriction. Commands receive
+its absolute path in `DF_SCRATCH_DIR`; temporary/cache directories also live there.
+The working directory does not grant write access. Missing or failing confinement
+never falls back to unrestricted execution. CLIs that must update credentials or
+install packages outside scratch require user-managed setup.
+
+Each command has a fresh process, no interactive stdin, a 60-second timeout, and
+the last 32 KiB of combined output. The process group is terminated on timeout or
+when the execution generator closes; macOS process-group cleanup alone does not
+guarantee termination of deliberately detached descendants. Ordinary server API
+key environment variables are not inherited, but local files and cached CLI
+credentials remain accessible. Command arguments and results appear in the
+conversation and are sent to the configured model, so do not print credentials
+or other sensitive data. Complete interactive authentication outside the agent.
+This is write confinement, not complete isolation: network access remains enabled,
+and remote mutations or effects delegated to external services are not prevented
+by the filesystem boundary. Exact-command approval is still required.
+
+Scratch files are absent from the ordinary workspace listing. In Backend Log,
+the **Scratch files** tab lists visible scratch entries for the active workspace,
+with read-only previews and downloads. Hidden execution state remains internal.
+
+Terminal access is rejected in hosted mode, on Windows, when data connectors are
+disabled, or without a matching local Host and Origin. The Vite analyst proxy
+preserves Host for this check. Restart the backend after adding the skill; Vite
+reloads its proxy configuration automatically. Pending approvals are transient
+and cannot be restored after reloading the page; ask for a fresh proposal.
+
+Focused checks (no browser automation required):
+
+```bash
+uv run pytest tests/backend/agents/test_terminal_skill.py tests/backend/agents/test_analyst_skill_registry.py tests/backend/routes/test_analyst_data_operation_flow.py
+npx vitest run tests/frontend/unit/views/TerminalApprovalDialog.test.tsx
+```
+
 ### Azure CLI Deployment Discovery
 
 In local mode, choose **Add Model > Azure > Azure CLI**, sign in, and select

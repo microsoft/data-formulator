@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import zipfile
 from pathlib import Path
@@ -25,6 +26,253 @@ from data_formulator.datalake.workspace_metadata import MemorySource
 
 
 pytestmark = [pytest.mark.backend]
+
+
+def test_agent_workspace_file_storage_preserves_ownership_and_guards_edits(tmp_path, monkeypatch):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    created = workspace.save_workspace_file(b"first", "notes.md", "text/markdown",
+                                            agent_managed=True, display_name="Notes")
+    with pytest.raises(ValueError, match="already exists"):
+        workspace.save_workspace_file(b"collision", "notes.md", agent_managed=True)
+    updated = workspace.save_workspace_file(b"second", "notes.md", "text/markdown",
+                                            agent_managed=True, expected_content_hash=created.content_hash)
+    write_bytes = Path.write_bytes
+
+    def interrupted_write(path, content):
+        write_bytes(path, b"partial")
+        raise OSError("interrupted write")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "write_bytes", interrupted_write)
+        with pytest.raises(OSError, match="interrupted"):
+            workspace.save_workspace_file(b"replacement", "notes.md", agent_managed=True,
+                                          expected_content_hash=updated.content_hash)
+    assert workspace.read_workspace_file("notes.md")[1] == b"second"
+    assert workspace.read_workspace_file("notes.md")[0].content_hash == updated.content_hash
+    with pytest.raises(ValueError, match="changed"):
+        workspace.save_workspace_file(b"stale", "notes.md", agent_managed=True,
+                                      expected_content_hash=created.content_hash)
+    protected = workspace.save_workspace_file(b"original", "source.txt")
+    with pytest.raises(ValueError, match="protected"):
+        workspace.save_workspace_file(b"overwrite", "source.txt", agent_managed=True,
+                                      expected_content_hash=protected.content_hash)
+    workspace.save_workspace_text_file("notes.md", "user revision", updated.content_hash)
+    workspace.rename_workspace_file("notes.md", "renamed.md")
+    restored, content = Workspace("test-user", root_dir=tmp_path).read_workspace_file("renamed.md")
+    assert content == b"user revision"
+    assert restored.origin == "agent"
+    assert restored.edit_policy == "agent_editable"
+    assert restored.display_name == "Notes"
+    assert workspace.list_scratch_files() == []
+    skill = WorkspaceSkill()
+    context = SkillContext(client=None, workspace=workspace)
+    output = json.loads(skill.handle_tool("create_file", {
+        "filename": "generated.md", "content": "First", "display_name": "Generated Notes",
+    }, context).text)
+    assert output["path"] == "files/generated.md"
+    assert output["temporary"] is False
+    revised = json.loads(skill.handle_tool("edit_file", {
+        "path": output["path"], "expected_content_hash": output["content_hash"], "append_text": " revision",
+    }, context).text)
+    assert workspace.read_workspace_file("generated.md")[1] == b"First revision"
+    assert revised["display_name"] == "Generated Notes"
+    assert any(item.display_name == "generated.md" for item in context.payload["workspace_inputs"].files)
+    assert workspace.list_scratch_files() == []
+
+
+def test_agent_data_create_update_and_protected_sources(tmp_path):
+    registry = build_registry()
+    assert {"create_data", "update_data", "create_file", "edit_file"} <= set(registry.metas["workspace"].tool_names)
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    skill = WorkspaceSkill()
+    ctx = SkillContext(client=None, workspace=workspace)
+    created = json.loads(skill.handle_tool("create_data", {
+        "table_name": "measurements", "rows": [{"value": 1}], "input_sources": [],
+    }, ctx).text)
+    assert created["table_name"] == "measurements"
+    assert workspace.read_data_as_df("measurements")["value"].tolist() == [1]
+    with pytest.raises(ValueError, match="exists"):
+        skill.handle_tool("create_data", {
+            "table_name": "measurements", "rows": [{"value": 2}], "input_sources": [],
+        }, ctx)
+    updated = json.loads(skill.handle_tool("update_data", {
+        "table_name": "measurements", "rows": [{"value": 3}], "input_sources": [],
+        "expected_content_hash": created["content_hash"],
+    }, ctx).text)
+    assert updated["table_name"] == created["table_name"]
+    assert workspace.read_data_as_df("measurements")["value"].tolist() == [3]
+    inventory = json.loads(skill.handle_tool("list_workspace_items", {"scope": "input"}, ctx).text)
+    assert inventory["items"][0]["content_hash"] == updated["content_hash"]
+    assert ctx.payload["workspace_inputs"].data[0].display_name == "measurements"
+    with pytest.raises(ValueError, match="changed"):
+        skill.handle_tool("update_data", {
+            "table_name": "measurements", "rows": [{"value": 4}], "input_sources": [],
+            "expected_content_hash": created["content_hash"],
+        }, ctx)
+    workspace.write_parquet(pd.DataFrame({"value": [9]}), "uploaded")
+    with pytest.raises(ValueError, match="protected"):
+        skill.handle_tool("update_data", {
+            "table_name": "uploaded", "rows": [{"value": 0}], "input_sources": [],
+            "expected_content_hash": workspace.get_table_metadata("uploaded").content_hash,
+        }, ctx)
+    assert workspace.read_data_as_df("uploaded")["value"].tolist() == [9]
+
+
+def test_agent_data_python_provenance_staleness_and_failed_update(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    skill = WorkspaceSkill()
+    ctx = SkillContext(client=None, workspace=workspace, runtime=_agent(workspace))
+    created = json.loads(skill.handle_tool("create_data", {
+        "table_name": "measurements", "rows": [{"value": 2}], "input_sources": [],
+    }, ctx).text)
+    source = ctx.payload["workspace_inputs"].data[0]
+    workspace.save_scratch_file("factor.txt", b"2")
+    derived = json.loads(skill.handle_tool("create_data", {
+        "table_name": "doubled", "input_sources": [{"id": source.id, "kind": "data"},
+                                                      {"id": "scratch/factor.txt", "kind": "file"}],
+        "code": f"import pandas as pd\nresult = pd.read_parquet({created['path']!r})\nresult['value'] *= int(open('scratch/factor.txt').read())",
+        "output_variable": "result",
+    }, ctx).text)
+    assert workspace.read_data_as_df("doubled")["value"].tolist() == [4]
+    assert workspace.get_table_metadata("doubled").role == "derived"
+    assert derived["input_sources"][0]["content_hash"] == created["content_hash"]
+    assert derived["input_sources"][1]["content_hash"] == hashlib.sha256(b"2").hexdigest()
+    original_file = workspace.get_table_metadata("measurements").filename
+    with pytest.raises(ValueError):
+        skill.handle_tool("update_data", {
+            "table_name": "measurements", "expected_content_hash": created["content_hash"],
+            "input_sources": [], "code": "result = 'not a table'", "output_variable": "result",
+        }, ctx)
+    assert workspace.get_table_metadata("measurements").filename == original_file
+    assert workspace.read_data_as_df("measurements")["value"].tolist() == [2]
+    skill.handle_tool("update_data", {
+        "table_name": "measurements", "expected_content_hash": created["content_hash"],
+        "rows": [{"value": 3}], "input_sources": [],
+    }, ctx)
+    assert workspace.get_table_metadata("doubled").stale
+    assert workspace.read_data_as_df("doubled")["value"].tolist() == [4]
+    restored = Workspace("test-user", root_dir=tmp_path).get_table_metadata("measurements")
+    assert restored.origin == "agent"
+    assert restored.edit_policy == "agent_editable"
+
+
+def test_create_file_is_create_only_and_listed_as_input(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.save_workspace_file(b"original", "source.md", "text/markdown")
+    skill = WorkspaceSkill()
+    ctx = SkillContext(client=None, workspace=workspace)
+    result = json.loads(skill.handle_tool("create_file", {
+        "filename": "summary.md", "content": "# Summary", "display_name": "  UNESCO Education  ",
+    }, ctx).text)
+    assert result["path"] == "files/summary.md"
+    assert result["url"] == "/api/workspace/files/summary.md"
+    assert result["display_name"] == "UNESCO Education"
+    assert Workspace("test-user", root_dir=tmp_path).read_workspace_file("summary.md")[0].display_name == "UNESCO Education"
+    assert workspace.list_scratch_files() == []
+    assert workspace.read_workspace_file("summary.md")[1] == b"# Summary"
+    assert workspace.read_workspace_file("source.md")[1] == b"original"
+    listed = json.loads(skill.handle_tool("list_workspace_items", {"scope": "input", "query": "summary"}, ctx).text)
+    item = listed["items"][0]
+    assert item["path"] == result["path"]
+    assert item["display_name"] == "UNESCO Education"
+    assert item["managed_by"] == "agent"
+    assert item["edit_policy"] == "agent_editable"
+    assert item["content_hash"] == result["content_hash"]
+    assert "# Summary" in skill.handle_tool("read_workspace_item", {"item_id": item["id"]}, ctx).text
+    assert json.loads(skill.handle_tool("search_workspace_items", {"query": "Summary"}, ctx).text)["matches"]
+    with pytest.raises(ValueError, match="already exists"):
+        skill.handle_tool("create_file", {"filename": "summary.md", "content": "overwrite"}, ctx)
+    assert workspace.read_workspace_file("summary.md")[1] == b"# Summary"
+    for filename in ("../escape.md", "/absolute.md", "sub/file.md", "sub\\file.md", "_internal.md", ".hidden", "data_operations"):
+        with pytest.raises(ValueError):
+            skill.handle_tool("create_file", {"filename": filename, "content": "bad"}, ctx)
+    with pytest.raises(ValueError, match="2 MB"):
+        skill.handle_tool("create_file", {"filename": "large.md", "content": "x" * 2_000_001}, ctx)
+    for display_name in ("", "   ", "x" * 81, "two\nlines", 42):
+        with pytest.raises(ValueError, match="display_name"):
+            skill.handle_tool("create_file", {
+                "filename": "invalid.md", "content": "bad", "display_name": display_name,
+            }, ctx)
+    assert "invalid.md" not in workspace.get_metadata().files
+
+
+def test_obsolete_write_tools_are_not_available(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.save_workspace_file(b"original", "summary.md", "text/markdown")
+    workspace.confined_scratch.write("summary.md", b"# Generated")
+    workspace.set_scratch_display_name("summary.md", "Education Summary")
+    ctx = SkillContext(client=None, workspace=workspace)
+    for name in ("create_temp_file", "add_to_workspace", "manage_workspace_memory", "create_scratch_file", "edit_scratch_file"):
+        result = WorkspaceSkill().handle_tool(name, {
+            "path": "scratch/summary.md", "filename": "new.md", "content": "changed",
+            "action": "save", "kind": "text", "name": "new", "description": "notes",
+        }, ctx)
+        assert "has no tool" in result.text
+    assert [item.name for item in workspace.list_workspace_files()] == ["summary.md"]
+    assert workspace.list_memory() == []
+    assert workspace.read_workspace_file("summary.md")[1] == b"original"
+    assert workspace.confined_scratch.read_text("summary.md") == "# Generated"
+
+
+def test_python_artifact_combines_user_source_and_prior_scratch(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.write_parquet(pd.DataFrame({"value": [2, 3]}), "source")
+    workspace.confined_scratch.write("factor.txt", b"4")
+    ctx = SkillContext(client=None, workspace=workspace, runtime=_agent(workspace))
+    result = json.loads(WorkspaceSkill().handle_tool("create_file", {
+        "filename": "computed.parquet",
+        "code": "import pandas as pd\nresult = pd.read_parquet('data/source.parquet')\n"
+                "result['value'] *= int(open('scratch/factor.txt').read())",
+        "output_variable": "result",
+    }, ctx).text)
+    assert result["path"] == "files/computed.parquet"
+    assert pd.read_parquet(io.BytesIO(workspace.read_workspace_file("computed.parquet")[1]))["value"].tolist() == [8, 12]
+    assert workspace.read_data_as_df("source")["value"].tolist() == [2, 3]
+    revised = json.loads(WorkspaceSkill().handle_tool("edit_file", {
+        "path": result["path"], "expected_content_hash": result["content_hash"],
+        "code": "import pandas as pd\nresult = pd.read_parquet('files/computed.parquet')\nresult['value'] += 1",
+        "output_variable": "result",
+    }, ctx).text)
+    computed = ctx.runtime.run_explore_code(
+        f"import pandas as pd\nprint(pd.read_parquet({revised['path']!r})['value'].sum())", [],
+    )
+    assert computed["status"] == "ok"
+    assert computed["stdout"].strip() == "22"
+    assert workspace.read_data_as_df("source")["value"].tolist() == [2, 3]
+    assert ctx.payload.get("input_tables", []) == []
+
+
+def test_file_edits_do_not_register_or_overwrite_sources(tmp_path):
+    registry = build_registry()
+    assert "add_to_workspace" not in registry.metas["workspace"].tool_names
+    schema = next(tool["function"] for tool in registry.tools_for(["workspace"])
+                  if tool["function"]["name"] == "create_file")
+    assert "code" in schema["parameters"]["properties"]
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.write_parquet(pd.DataFrame({"value": [1]}), "computed")
+    original = pd.DataFrame({"value": [8, 12]}).to_parquet(index=False)
+    workspace.save_workspace_file(original, "computed.parquet", agent_managed=True)
+    ctx = SkillContext(client=None, workspace=workspace, payload={"input_tables": []})
+    skill = WorkspaceSkill()
+    result = json.loads(skill.handle_tool("edit_file", {
+        "path": "files/computed.parquet", "expected_content_hash": hashlib.sha256(original).hexdigest(),
+        "content": original,
+    }, ctx).text)
+    assert result["path"] == "files/computed.parquet"
+    assert workspace.read_data_as_df("computed")["value"].tolist() == [1]
+    assert workspace.get_table_metadata("computed_2") is None
+    assert ctx.payload["input_tables"] == []
+    items = json.loads(skill.handle_tool("list_workspace_items", {"scope": "input"}, ctx).text)["items"]
+    assert not any(item["name"] == "computed_2" for item in items)
+    workspace.confined_scratch.write("nested/prior.txt", b"prior")
+    workspace.confined_scratch.write("_explore_ns/private.txt", b"private")
+    items = json.loads(skill.handle_tool("list_workspace_items", {"scope": "temp"}, ctx).text)["items"]
+    assert {item["path"] for item in items} == {"scratch/nested/prior.txt"}
+    for path in ("data/computed.parquet", "scratch/../data/computed.parquet", "scratch/_explore_ns/private.txt"):
+        with pytest.raises(ValueError):
+            skill.handle_tool("edit_file", {
+                "path": path, "expected_content_hash": result["content_hash"], "content": "bad",
+            }, ctx)
 
 
 def _docx(text: str) -> bytes:
@@ -238,15 +486,16 @@ def test_workspace_registry_exposes_workspace_file_tool() -> None:
         "list_workspace_items",
         "read_workspace_item",
         "search_workspace_items",
-        "manage_workspace_memory",
     }
-    manage_schema = next(
+    assert {"create_file", "edit_file"} <= tool_names
+    assert not {"create_scratch_file", "edit_scratch_file"} & tool_names
+    edit_schema = next(
         tool["function"]["parameters"]
         for tool in tools
-        if tool["function"]["name"] == "manage_workspace_memory"
+        if tool["function"]["name"] == "edit_file"
     )
-    assert "patch" in manage_schema["properties"]["action"]["enum"]
-    assert "text" in manage_schema["properties"]["kind"]["enum"]
+    assert edit_schema["required"] == ["path", "expected_content_hash"]
+    assert {"content", "code", "replacements", "append_text"} <= edit_schema["properties"].keys()
 
 
 def test_workspace_unified_input_tools_list_read_and_search(tmp_path: Path) -> None:
@@ -299,7 +548,44 @@ def test_workspace_unified_input_tools_list_read_and_search(tmp_path: Path) -> N
     }]
 
 
-def test_workspace_lists_only_scoped_top_level_temp_items(tmp_path: Path) -> None:
+def test_edit_file_patches_replaces_and_rejects_stale_writes(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    protected = workspace.save_workspace_file(b"Protected", "source.md")
+    ctx = SkillContext(client=None, workspace=workspace)
+    skill = WorkspaceSkill()
+    created = json.loads(skill.handle_tool("create_file", {
+        "filename": "notes.md", "content": "Owner: Casey\n", "display_name": "Team Notes",
+    }, ctx).text)
+    patched = json.loads(skill.handle_tool("edit_file", {
+        "path": created["path"], "expected_content_hash": created["content_hash"],
+        "replacements": [{"old_text": "Casey", "new_text": "Morgan"}], "append_text": "Ready\n",
+    }, ctx).text)
+    assert workspace.read_workspace_file("notes.md")[1] == b"Owner: Morgan\nReady\n"
+    assert patched["display_name"] == "Team Notes"
+    assert patched["content_hash"] != created["content_hash"]
+    with pytest.raises(ValueError, match="changed"):
+        skill.handle_tool("edit_file", {
+            "path": created["path"], "expected_content_hash": created["content_hash"], "content": "stale",
+        }, ctx)
+    replaced = json.loads(skill.handle_tool("edit_file", {
+        "path": created["path"], "expected_content_hash": patched["content_hash"],
+        "content": "Revised", "display_name": "Revised Notes",
+    }, ctx).text)
+    assert replaced["display_name"] == "Revised Notes"
+    assert workspace.read_workspace_file("notes.md")[1] == b"Revised"
+    assert workspace.read_workspace_file("source.md")[1] == b"Protected"
+    assert ctx.payload.get("scratch_files", []) == []
+    with pytest.raises(ValueError, match="protected"):
+        skill.handle_tool("edit_file", {"path": "files/source.md", "expected_content_hash": protected.content_hash,
+                                      "content": "overwrite"}, ctx)
+    for path in ("files/../notes.md", "scratch/../files/notes.md", "scratch/_private.txt", "files/missing.md"):
+        with pytest.raises((ValueError, FileNotFoundError)):
+            skill.handle_tool("edit_file", {
+                "path": path, "expected_content_hash": replaced["content_hash"], "content": "bad",
+            }, ctx)
+
+
+def test_workspace_lists_visible_temp_items_from_storage(tmp_path: Path) -> None:
     context = SkillContext(
         client=None,
         workspace=Workspace("test-user", root_dir=tmp_path),
@@ -313,6 +599,9 @@ def test_workspace_lists_only_scoped_top_level_temp_items(tmp_path: Path) -> Non
         },
     )
 
+    context.workspace.confined_scratch.write("report.pdf", b"report")
+    context.workspace.confined_scratch.write("sales.csv", b"sales")
+    context.workspace.confined_scratch.write("_internal/report.pdf", b"private")
     listed = json.loads(WorkspaceSkill().handle_tool(
         "list_workspace_items",
         {"scope": "temp", "query": "report"},
@@ -325,6 +614,7 @@ def test_workspace_lists_only_scoped_top_level_temp_items(tmp_path: Path) -> Non
             "id": "temp:scratch/report.pdf",
             "name": "report.pdf",
             "kind": "temp",
+            "content_hash": hashlib.sha256(b"report").hexdigest(),
             "path": "scratch/report.pdf",
             "capabilities": ["python"],
         }],
@@ -332,142 +622,59 @@ def test_workspace_lists_only_scoped_top_level_temp_items(tmp_path: Path) -> Non
     }
 
 
-def test_workspace_table_memory_tools_persist_provenance(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_file_binary_edits_recheck_hash_after_computation(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
-    saved_file = workspace.save_workspace_file(
-        b"%PDF", "report.pdf", "application/pdf",
-    )
-    manifest = build_workspace_input_manifest(
-        [], workspace.list_workspace_files(), workspace,
-    )
+    context = SkillContext(client=None, workspace=workspace, runtime=_agent(workspace))
+    skill = WorkspaceSkill()
+    saved = json.loads(skill.handle_tool("create_file", {
+        "filename": "report.bin", "code": "result = bytes([0, 1, 255])", "output_variable": "result",
+    }, context).text)
+    assert workspace.read_workspace_file("report.bin")[1] == bytes([0, 1, 255])
+    arguments = {"path": saved["path"], "expected_content_hash": saved["content_hash"], "output_variable": "result"}
+    with pytest.raises(ValueError):
+        skill.handle_tool("edit_file", {**arguments, "code": "raise ValueError('failed')"}, context)
+    assert workspace.read_workspace_file("report.bin")[1] == bytes([0, 1, 255])
+    revised = json.loads(skill.handle_tool("edit_file", {
+        **arguments, "code": "result = bytes([0, 2, 254])",
+    }, context).text)
+    assert workspace.read_workspace_file("report.bin")[1] == bytes([0, 2, 254])
 
-    class Sandbox:
-        def run_python_code(self, **kwargs):
-            return {
-                "status": "ok",
-                "content": pd.DataFrame({"metric": ["revenue"], "value": [42]}),
-            }
+    class ConcurrentRuntime:
+        def run_explore_code(self, *args, **kwargs):
+            workspace.save_workspace_file(b"concurrent", "report.bin", agent_managed=True,
+                                          expected_content_hash=revised["content_hash"])
+            return {"status": "ok", "output": b"stale output"}
 
-    monkeypatch.setattr("data_formulator.sandbox.create_sandbox", lambda mode: Sandbox())
-    context = SkillContext(
-        client=None,
-        workspace=workspace,
-        runtime=_agent(workspace),
-        payload={"workspace_inputs": manifest},
-    )
-    workspace_skill = WorkspaceSkill()
-    saved = json.loads(workspace_skill.handle_tool(
-        "manage_workspace_memory",
-        {
-            "action": "save",
-            "kind": "table",
-            "name": "quarterly metrics",
-            "description": "Metrics extracted from the quarterly report.",
-            "input_sources": [{
-                "id": manifest.files[0].id,
-                "kind": "file",
-                "locator": {"page": 2},
-            }],
-            "code": "result_df = pd.DataFrame()",
-            "output_variable": "result_df",
-        },
-        context,
-    ).text)
-
-    memory = workspace.get_memory_metadata(saved["id"])
-    assert memory is not None
-    assert memory.sources[0].input_id == f"file:{saved_file.content_hash}:report.pdf"
-    assert memory.sources[0].locator == {"page": 2}
-
-    listed = json.loads(workspace_skill.handle_tool(
-        "list_workspace_items", {"scope": "memory"}, context,
-    ).text)
-    assert listed["items"][0]["path"] == saved["path"]
-    refreshed = json.loads(workspace_skill.handle_tool(
-        "manage_workspace_memory",
-        {
-            "action": "refresh",
-            "memory_id": memory.id,
-            "input_sources": [{
-                "id": manifest.files[0].id,
-                "kind": "file",
-                "locator": {"page": 3},
-            }],
-            "code": "result_df = pd.DataFrame()",
-            "output_variable": "result_df",
-        },
-        context,
-    ).text)
-    assert refreshed["id"] == memory.id
-    assert workspace.get_memory_metadata(memory.id).sources[0].locator == {"page": 3}
-    renamed = json.loads(workspace_skill.handle_tool(
-        "manage_workspace_memory",
-        {"action": "rename", "memory_id": memory.id, "name": "report metrics"},
-        context,
-    ).text)
-    assert renamed == {"id": memory.id, "name": "report_metrics"}
-    deleted = json.loads(workspace_skill.handle_tool(
-        "manage_workspace_memory",
-        {"action": "delete", "memory_id": memory.id},
-        context,
-    ).text)
-    assert deleted == {"id": memory.id, "deleted": True}
+    context.runtime = ConcurrentRuntime()
+    with pytest.raises(ValueError, match="changed"):
+        skill.handle_tool("edit_file", {
+            **arguments, "expected_content_hash": revised["content_hash"], "code": "result = b'stale output'",
+        }, context)
+    assert workspace.read_workspace_file("report.bin")[1] == b"concurrent"
+    assert workspace.list_scratch_files() == []
 
 
-def test_workspace_manages_and_patches_text_memory(tmp_path: Path) -> None:
+def test_file_text_edits_preserve_bytes_and_reject_invalid_patches(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     context = SkillContext(client=None, workspace=workspace)
-    workspace_skill = WorkspaceSkill()
-
-    saved = json.loads(workspace_skill.handle_tool(
-        "manage_workspace_memory",
-        {
-            "action": "save",
-            "kind": "text",
-            "name": "customer notes",
-            "description": "Remembered account context.",
-            "content": "# Customer\n\nOwner: Casey\n",
-        },
-        context,
-    ).text)
-    item = next(
-        item for item in WorkspaceInputEngine(workspace, []).manifest.files
-        if item.memory_id == saved["id"]
-    )
-    assert workspace_skill.handle_tool(
-        "read_workspace_item", {"item_id": item.id}, context,
-    ).text.endswith("Owner: Casey")
-
-    patched = json.loads(workspace_skill.handle_tool(
-        "manage_workspace_memory",
-        {
-            "action": "patch",
-            "memory_id": saved["id"],
-            "expected_content_hash": saved["content_hash"],
-            "replacements": [{"old_text": "Owner: Casey", "new_text": "Owner: Morgan"}],
-            "append_text": "Status: active\n",
-        },
-        context,
-    ).text)
-    assert workspace.read_memory_text(saved["id"]) == (
-        "# Customer\n\nOwner: Morgan\nStatus: active\n"
-    )
-    assert patched["content_hash"] != saved["content_hash"]
-
-    with pytest.raises(ValueError, match="Memory changed while patching"):
-        workspace_skill.handle_tool(
-            "manage_workspace_memory",
-            {
-                "action": "patch",
-                "memory_id": saved["id"],
-                "expected_content_hash": saved["content_hash"],
-                "append_text": "stale",
-            },
-            context,
-        )
+    skill = WorkspaceSkill()
+    saved = json.loads(skill.handle_tool("create_file", {
+        "filename": "notes.txt", "content": "Owner: Casey\r\nOwner: Casey\r\n",
+    }, context).text)
+    arguments = {"path": saved["path"], "expected_content_hash": saved["content_hash"]}
+    for changes in ({}, {"content": "bad", "append_text": "bad"}, {"content": None},
+                    {"replacements": [{"old_text": "missing", "new_text": "bad"}]},
+                    {"replacements": [{"old_text": "Casey", "new_text": "Morgan"}]}):
+        with pytest.raises(ValueError):
+            skill.handle_tool("edit_file", {**arguments, **changes}, context)
+        assert workspace.read_workspace_file("notes.txt")[1] == b"Owner: Casey\r\nOwner: Casey\r\n"
+    revised = json.loads(skill.handle_tool("edit_file", {
+        **arguments, "replacements": [{"old_text": "Casey", "new_text": "Morgan", "replace_all": True}],
+        "append_text": "Status: active\r\n",
+    }, context).text)
+    content = workspace.read_workspace_file("notes.txt")[1]
+    assert content == b"Owner: Morgan\r\nOwner: Morgan\r\nStatus: active\r\n"
+    assert revised["content_hash"] == hashlib.sha256(content).hexdigest()
 
 
 def test_unified_input_tool_rejects_library_specific_options(tmp_path: Path) -> None:

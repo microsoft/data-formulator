@@ -4,8 +4,7 @@
 // Shared chat-style input box for agent surfaces. Renders a rounded
 // border with focus glow, an inline image-preview row, a file-attach
 // affordance, a multiline `InputBase`, and a send/stop button. Used by
-// both the in-chat `DataLoadingChat` and the landing-page Data Loading
-// Agent quick-start box so they look and behave identically (paste
+// the landing-page and upload-menu quick-start boxes (paste
 // image, drag attach, Shift+Enter, etc.).
 
 import * as React from 'react';
@@ -19,7 +18,7 @@ import {
     alpha,
     useTheme,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -50,6 +49,7 @@ export interface AgentChatInputProps {
      * non-image files are silently ignored (image-only mode).
      */
     onNonImageFile?: (file: File) => void;
+    onFileCreated?: () => void;
     /**
      * Optional list of attached non-image files (e.g. uploaded Excel/CSV).
      * Rendered as removable chips above the input — mirrors the
@@ -253,12 +253,13 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     };
 
     const attachButton = showAttachButton ? (
-        <Tooltip title={attachTooltip ?? t('dataLoading.attachTooltip')} placement="top">
-            <IconButton size="small" onClick={() => fileInputRef.current?.click()}
-                disabled={inProgress || disabled}
-                sx={{ color: 'text.secondary' }}>
-                <AddIcon sx={{ fontSize: 20 }} />
-            </IconButton>
+        <Tooltip title={attachTooltip ?? 'Attach file'}>
+            <span>
+                <IconButton size="small" aria-label={attachTooltip ?? 'Attach file'}
+                    disabled={inProgress || disabled} onClick={() => fileInputRef.current?.click()}>
+                    <AttachFileIcon sx={{ fontSize: iconVar.lg }} />
+                </IconButton>
+            </span>
         </Tooltip>
     ) : null;
 

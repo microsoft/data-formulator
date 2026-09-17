@@ -40,7 +40,7 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(state)) {
         if (!EXCLUDED_FIELDS.has(key)) {
-            result[key] = key === 'dataLoadingChatMessages' || key === 'textTurns'
+            result[key] = key === 'textTurns'
                 ? stripConnectorPrefillFromEntries(value)
                 : value;
         }

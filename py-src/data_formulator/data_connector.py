@@ -2245,6 +2245,44 @@ def connector_search_catalog():
         classify_and_raise_connector_error(e, operation="catalog")
 
 
+@connectors_bp.route("/api/connectors/import-file", methods=["POST"])
+@connectors_bp.route("/api/connectors/preview-file", methods=["POST"])
+def connector_import_file():
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+    try:
+        from pathlib import Path
+        from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
+        from data_formulator.auth.identity import get_identity_id
+        from data_formulator.workspace_factory import get_workspace
+        from data_formulator.routes.workspace_files import _serialize
+
+        loader = source._require_loader()
+        if not isinstance(loader, LocalFolderDataLoader):
+            raise AppError(ErrorCode.INVALID_REQUEST, "This connector does not support file imports")
+        source_path = data.get("source_path")
+        if not isinstance(source_path, str) or not source_path:
+            raise AppError(ErrorCode.INVALID_REQUEST, "source_path is required")
+        if request.path.endswith("/preview-file"):
+            import io
+            import mimetypes
+            from flask import send_file
+            from data_formulator.datalake.workspace_file_content import MAX_FILE_BYTES
+
+            content = loader.read_file(source_path, max_bytes=MAX_FILE_BYTES)
+            return send_file(io.BytesIO(content), as_attachment=True,
+                             download_name=Path(source_path).name,
+                             mimetype=mimetypes.guess_type(source_path)[0] or "application/octet-stream")
+        workspace = get_workspace(get_identity_id())
+        content = loader.read_file(source_path)
+        workspace_file = workspace.save_workspace_file(content, Path(source_path).name)
+        return json_ok(_serialize(workspace_file))
+    except AppError:
+        raise
+    except Exception as exc:
+        classify_and_raise_connector_error(exc, operation="import")
+
+
 @connectors_bp.route("/api/connectors/import-data", methods=["POST"])
 def connector_import_data():
     data = request.get_json() or {}

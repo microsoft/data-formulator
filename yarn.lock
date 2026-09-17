@@ -207,7 +207,7 @@
   dependencies:
     css-tree "^3.0.0"
 
-"@codemirror/autocomplete@^6.0.0", "@codemirror/autocomplete@^6.7.1":
+"@codemirror/autocomplete@^6.0.0", "@codemirror/autocomplete@^6.3.2", "@codemirror/autocomplete@^6.7.1":
   version "6.20.3"
   resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@codemirror/autocomplete/-/autocomplete-6.20.3.tgz"
   integrity sha1-aWt0AxLGqWLhRWe0mjZhtZJLxa4=
@@ -253,9 +253,9 @@
     "@lezer/css" "^1.1.0"
     "@lezer/html" "^1.3.12"
 
-"@codemirror/lang-javascript@^6.0.0":
+"@codemirror/lang-javascript@^6.0.0", "@codemirror/lang-javascript@^6.2.5":
   version "6.2.5"
-  resolved "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@codemirror/lang-javascript/-/lang-javascript-6.2.5.tgz"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@codemirror/lang-javascript/-/lang-javascript-6.2.5.tgz#b9ea6b2f0383ed6895fae7888c0322541538f10a"
   integrity sha1-ueprLwOD7WiV+ueIjAMiVBU48Qo=
   dependencies:
     "@codemirror/autocomplete" "^6.0.0"
@@ -287,7 +287,43 @@
     "@lezer/common" "^1.2.1"
     "@lezer/markdown" "^1.0.0"
 
-"@codemirror/language@^6.0.0", "@codemirror/language@^6.3.0", "@codemirror/language@^6.4.0", "@codemirror/language@^6.6.0":
+"@codemirror/lang-python@^6.2.1":
+  version "6.2.1"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@codemirror/lang-python/-/lang-python-6.2.1.tgz#37c9930716110156865a95c548aa0eef5552863a"
+  integrity sha1-N8mTBxYRAVaGWpXFSKoO71VShjo=
+  dependencies:
+    "@codemirror/autocomplete" "^6.3.2"
+    "@codemirror/language" "^6.8.0"
+    "@codemirror/state" "^6.0.0"
+    "@lezer/common" "^1.2.1"
+    "@lezer/python" "^1.1.4"
+
+"@codemirror/lang-sql@^6.10.0":
+  version "6.10.0"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@codemirror/lang-sql/-/lang-sql-6.10.0.tgz#49bfbf6cf31516a99e674da9a399f4426101a95a"
+  integrity sha1-Sb+/bPMVFqmeZ02po5n0QmEBqVo=
+  dependencies:
+    "@codemirror/autocomplete" "^6.0.0"
+    "@codemirror/language" "^6.0.0"
+    "@codemirror/state" "^6.0.0"
+    "@lezer/common" "^1.2.0"
+    "@lezer/highlight" "^1.0.0"
+    "@lezer/lr" "^1.0.0"
+
+"@codemirror/lang-yaml@^6.1.3":
+  version "6.1.3"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@codemirror/lang-yaml/-/lang-yaml-6.1.3.tgz#4d4127e8339984639715d1e3f8edca1ea5bfabfb"
+  integrity sha1-TUEn6DOZhGOXFdHj+O3KHqW/q/s=
+  dependencies:
+    "@codemirror/autocomplete" "^6.0.0"
+    "@codemirror/language" "^6.0.0"
+    "@codemirror/state" "^6.0.0"
+    "@lezer/common" "^1.2.0"
+    "@lezer/highlight" "^1.2.0"
+    "@lezer/lr" "^1.0.0"
+    "@lezer/yaml" "^1.0.0"
+
+"@codemirror/language@^6.0.0", "@codemirror/language@^6.3.0", "@codemirror/language@^6.4.0", "@codemirror/language@^6.6.0", "@codemirror/language@^6.8.0":
   version "6.12.4"
   resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@codemirror/language/-/language-6.12.4.tgz"
   integrity sha1-AecP1ao6igZ/8d/sddW2OUzfoFg=
@@ -747,6 +783,11 @@
   resolved "https://registry.npmjs.org/@fontsource/roboto/-/roboto-4.5.8.tgz"
   integrity sha512-CnD7zLItIzt86q4Sj3kZUiLcBk1dSk81qcqgMGaZe7SQ1P8hFNxhMl5AZthK1zrDM5m74VVhaOpuMGIL4gagaA==
 
+"@fontsource/source-sans-pro@5.2.5":
+  version "5.2.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@fontsource/source-sans-pro/-/source-sans-pro-5.2.5.tgz#938c5fc438f9e9a7af5b7f6d92b91af70ecddd92"
+  integrity sha1-k4xfxDj56aevW39tkrka9w7N3ZI=
+
 "@humanfs/core@^0.19.2":
   version "0.19.2"
   resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@humanfs/core/-/core-0.19.2.tgz#a8272ca03b2acf492670222b2320b6c421bfde60"
@@ -812,6 +853,11 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
+"@js-preview/excel@1.7.14":
+  version "1.7.14"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@js-preview/excel/-/excel-1.7.14.tgz#f48494da5036d6cdaed5dfac4a052d7a8a9fc68f"
+  integrity sha512-7QHtuRalWQzWIKARc/IRN8+kj1S5eWV4+cAQipzZngE3mVxMPL1RHXKJt/ONmpcKZ410egYkaBuOOs9+LctBkA==
+
 "@kurkle/color@^0.3.0":
   version "0.3.4"
   resolved "https://registry.npmjs.org/@kurkle/color/-/color-0.3.4.tgz"
@@ -831,7 +877,7 @@
     "@lezer/highlight" "^1.0.0"
     "@lezer/lr" "^1.3.0"
 
-"@lezer/highlight@^1.0.0", "@lezer/highlight@^1.1.3":
+"@lezer/highlight@^1.0.0", "@lezer/highlight@^1.1.3", "@lezer/highlight@^1.2.0":
   version "1.2.3"
   resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@lezer/highlight/-/highlight-1.2.3.tgz"
   integrity sha1-og8yS3EUii6pum/0Lli7+uxwKFc=
@@ -865,7 +911,7 @@
     "@lezer/highlight" "^1.0.0"
     "@lezer/lr" "^1.0.0"
 
-"@lezer/lr@^1.0.0", "@lezer/lr@^1.3.0":
+"@lezer/lr@^1.0.0", "@lezer/lr@^1.3.0", "@lezer/lr@^1.4.0":
   version "1.4.10"
   resolved "https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@lezer/lr/-/lr-1.4.10.tgz"
   integrity sha1-s6zDblrQSbdN23cZWU5+dNkWH/U=
@@ -879,6 +925,24 @@
   dependencies:
     "@lezer/common" "^1.5.0"
     "@lezer/highlight" "^1.0.0"
+
+"@lezer/python@^1.1.4":
+  version "1.1.19"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@lezer/python/-/python-1.1.19.tgz#7843d44ff27c980439a82e87c18b28172e85c478"
+  integrity sha1-eEPUT/J8mAQ5qC6HwYsoFy6FxHg=
+  dependencies:
+    "@lezer/common" "^1.2.0"
+    "@lezer/highlight" "^1.0.0"
+    "@lezer/lr" "^1.0.0"
+
+"@lezer/yaml@^1.0.0":
+  version "1.0.4"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@lezer/yaml/-/yaml-1.0.4.tgz#66a622188f1984a71d34506759b5807699043589"
+  integrity sha1-ZqYiGI8ZhKcdNFBnWbWAdpkENYk=
+  dependencies:
+    "@lezer/common" "^1.2.0"
+    "@lezer/highlight" "^1.0.0"
+    "@lezer/lr" "^1.4.0"
 
 "@marijn/find-cluster-break@^1.0.0":
   version "1.0.3"

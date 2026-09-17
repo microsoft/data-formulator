@@ -20,7 +20,7 @@ export type AppDispatch = typeof store.dispatch
 const stripConnectorPrefill = createTransform(
     stripConnectorPrefillFromEntries,
     (outboundState: any) => outboundState,
-    { whitelist: ['dataLoadingChatMessages', 'textTurns'] },
+    { whitelist: ['textTurns'] },
 );
 
 const persistConfig = {

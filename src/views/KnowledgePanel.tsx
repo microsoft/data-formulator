@@ -4,10 +4,7 @@
 /**
  * KnowledgePanel — panel for browsing and editing knowledge items.
  *
- * Shows two collapsible sections: Rules (flat) and Workflows (flat).
- * Items are tagged for organization; no subdirectory grouping.
- * Supports search, edit, and delete. Rules can be created directly by
- * the user via the "+" affordance; workflows are produced by the
+ * Shows workflows. Workflows are produced by the
  * agent's distillation flow (see SessionDistill).
  */
 
@@ -35,15 +32,11 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 
 import { useKnowledgeStore } from '../app/useKnowledgeStore';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import {
     deleteKnowledge,
-    readDataMemory,
-    rewriteDataMemory,
     type KnowledgeCategory,
 } from '../api/knowledgeApi';
 import type { KnowledgeItem } from '../api/knowledgeApi';
@@ -52,16 +45,6 @@ import { dfActions, dfSelectors, type DataFormulatorState } from '../app/dfSlice
 import { isLeafDerivedTable, buildLeafEvents } from './workflowContext';
 import { SessionDistillDialog, findSessionWorkflow } from './SessionDistill';
 import { iconVar, textVar } from '../app/layout';
-
-// Default file name and seed body for a brand-new rule. Rules are plain
-// Markdown — the user just edits the body; no front matter is required.
-const DEFAULT_RULE_FILENAME = 'agent.md';
-const RULE_TEMPLATE = `# Agent rules
-
-Describe the constraints or conventions the agent should follow.
-`;
-
-type EditorKind = KnowledgeCategory | 'memory';
 
 // ── Persistent action row (always visible at the top of each section) ────
 
@@ -125,16 +108,13 @@ export const KnowledgePanel: React.FC = () => {
 
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Editor dialog state — used both for editing existing entries and
-    // for creating new rules (in which case editorOriginalPath is empty).
     const [editorOpen, setEditorOpen] = useState(false);
-    const [editorCategory, setEditorCategory] = useState<EditorKind>('rules');
+    const [editorCategory, setEditorCategory] = useState<KnowledgeCategory>('workflows');
     const [editorPath, setEditorPath] = useState('');
     const [editorContent, setEditorContent] = useState('');
     const [editorOriginalPath, setEditorOriginalPath] = useState('');
     const [editorSaving, setEditorSaving] = useState(false);
     const [editorLoading, setEditorLoading] = useState(false);
-    const [memoryUnlocked, setMemoryUnlocked] = useState(false);
 
     // Delete confirmation
     const [deleteTarget, setDeleteTarget] = useState<{ category: KnowledgeCategory; path: string; title: string } | null>(null);
@@ -163,15 +143,6 @@ export const KnowledgePanel: React.FC = () => {
 
     // ── Editor ──────────────────────────────────────────────────────────
 
-    const openCreateDialog = useCallback((category: KnowledgeCategory) => {
-        setEditorCategory(category);
-        setEditorPath(category === 'rules' ? DEFAULT_RULE_FILENAME : '');
-        setEditorOriginalPath('');
-        setEditorContent(category === 'rules' ? RULE_TEMPLATE : '');
-        setEditorLoading(false);
-        setEditorOpen(true);
-    }, []);
-
     const openEditDialog = useCallback(async (category: KnowledgeCategory, item: KnowledgeItem) => {
         setEditorCategory(category);
         setEditorPath(item.path);
@@ -187,54 +158,9 @@ export const KnowledgePanel: React.FC = () => {
         setEditorLoading(false);
     }, [store]);
 
-    const openMemoryDialog = useCallback(async () => {
-        setEditorCategory('memory');
-        setMemoryUnlocked(false);
-        setEditorPath('data-memory.md');
-        setEditorOriginalPath('data-memory.md');
-        setEditorContent('');
-        setEditorOpen(true);
-        setEditorLoading(true);
-        try {
-            setEditorContent(await readDataMemory());
-        } catch {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'knowledge',
-                value: t('knowledge.failedToLoad'),
-            }));
-        } finally {
-            setEditorLoading(false);
-        }
-    }, [dispatch, t]);
-
     const handleSave = useCallback(async () => {
-        if (editorCategory !== 'memory' && (!editorPath.trim() || !editorContent.trim())) return;
+        if (!editorPath.trim() || !editorContent.trim()) return;
         setEditorSaving(true);
-
-        if (editorCategory === 'memory') {
-            try {
-                await rewriteDataMemory(editorContent);
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'knowledge',
-                    value: t('knowledge.saved'),
-                }));
-                setEditorOpen(false);
-            } catch {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'knowledge',
-                    value: t('knowledge.failedToSave'),
-                }));
-            } finally {
-                setEditorSaving(false);
-            }
-            return;
-        }
 
         const fileName = editorPath.endsWith('.md') ? editorPath : `${editorPath}.md`;
         const path = fileName;
@@ -246,7 +172,7 @@ export const KnowledgePanel: React.FC = () => {
         if (success) {
             setEditorOpen(false);
         }
-    }, [editorPath, editorOriginalPath, editorContent, editorCategory, store, dispatch, t]);
+    }, [editorPath, editorOriginalPath, editorContent, editorCategory, store]);
 
     const handleDelete = useCallback(async () => {
         if (!deleteTarget) return;
@@ -384,27 +310,11 @@ export const KnowledgePanel: React.FC = () => {
 
     const renderCategorySection = useCallback((
         category: KnowledgeCategory,
-        label: string,
         hint: string,
     ) => {
         const state = store.stateMap[category];
 
-        // Persistent action row at the top of the section. Rules: opens
-        // the create dialog. Workflows: opens the session distill
-        // dialog in create or update mode depending on whether the active
-        // workspace already has a distilled workflow.
-        // See design-docs/24-session-scoped-distillation.md.
         const renderActionRow = () => {
-            if (category === 'rules') {
-                return (
-                    <ActionRow
-                        icon={<AddIcon sx={{ fontSize: iconVar.lg }} />}
-                        label={t('knowledge.addNewRule', { defaultValue: 'Add new rule' })}
-                        onClick={() => openCreateDialog('rules')}
-                    />
-                );
-            }
-            // workflows
             if (!canDistillFromSession) {
                 // No active workspace, no model, or no distillable thread
                 // yet — show a passive hint instead of a dead action.
@@ -439,18 +349,7 @@ export const KnowledgePanel: React.FC = () => {
         };
 
         return (
-            <Box key={category} sx={{ pb: 1, borderBottom: '1px solid rgba(0, 0, 0, 0.07)' }}>
-                <Box
-                    sx={{
-                        display: 'flex', alignItems: 'center',
-                        px: 1.5, pt: 1.25, pb: 0.75,
-                        backgroundColor: 'rgba(255, 255, 255, 0.46)',
-                    }}
-                >
-                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 700, color: 'rgba(0, 0, 0, 0.72)', letterSpacing: 0.6, textTransform: 'uppercase' }}>
-                        {label}
-                    </Typography>
-                </Box>
+            <Box key={category} sx={{ pt: 1.25, pb: 1 }}>
 
                 {/* Always-visible guidance for the section. */}
                 <Box
@@ -473,35 +372,15 @@ export const KnowledgePanel: React.FC = () => {
                 {state.items.map(item => renderItem(category, item))}
             </Box>
         );
-    }, [store.stateMap, renderItem, openCreateDialog, t, canDistillFromSession, sessionWorkflow, sessionDistilling, openSessionDistillDialog]);
+    }, [store.stateMap, renderItem, t, canDistillFromSession, sessionWorkflow, sessionDistilling, openSessionDistillDialog]);
 
     // ── Main render ─────────────────────────────────────────────────────
 
     return (
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Content area. Rules vs Workflows guidance is surfaced via an
-                info icon next to each section title (see renderCategorySection). */}
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
                 <Box>
-                    {renderCategorySection('rules', t('knowledge.rules'), t('knowledge.rulesHint'))}
-                    {renderCategorySection('workflows', t('knowledge.workflows'), t('knowledge.workflowsHint'))}
-                    <Box sx={{ pb: 1, borderBottom: '1px solid rgba(0, 0, 0, 0.07)' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1.25, pb: 0.75, backgroundColor: 'rgba(255, 255, 255, 0.46)' }}>
-                            <Typography sx={{ fontSize: textVar.xs, fontWeight: 700, color: 'rgba(0, 0, 0, 0.72)', letterSpacing: 0.6, textTransform: 'uppercase' }}>
-                                {t('knowledge.dataMemory', { defaultValue: 'Data Memory' })}
-                            </Typography>
-                        </Box>
-                        <Box sx={{ mx: 1.5, mb: 0.75, py: 0.25 }}>
-                            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.55 }}>
-                                {t('knowledge.dataMemoryHint', { defaultValue: 'User-wide notes about known data sources and relationships. This memory may be stale; agents verify live metadata before using it.' })}
-                            </Typography>
-                        </Box>
-                        <ActionRow
-                            icon={<DescriptionOutlinedIcon sx={{ fontSize: iconVar.lg }} />}
-                            label={t('knowledge.editDataMemory', { defaultValue: 'data-memory.md' })}
-                            onClick={openMemoryDialog}
-                        />
-                    </Box>
+                    {renderCategorySection('workflows', t('knowledge.workflowsHint'))}
                 </Box>
             </Box>
 
@@ -523,36 +402,11 @@ export const KnowledgePanel: React.FC = () => {
             >
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: textVar.xl, pb: 0.5 }}>
                     <Box sx={{ flex: 1 }}>
-                        {editorCategory === 'memory'
-                            ? t('knowledge.dataMemory', { defaultValue: 'Data Memory' })
-                            : t('knowledge.editTitle')}
+                        {t('knowledge.editTitle')}
                     </Box>
-                    {editorCategory === 'memory' && (
-                        <Tooltip title={memoryUnlocked
-                            ? t('knowledge.lockDataMemory', { defaultValue: 'Lock editing' })
-                            : t('knowledge.unlockDataMemory', { defaultValue: 'Unlock editing' })}
-                        >
-                            <IconButton
-                                size="small"
-                                aria-label={memoryUnlocked
-                                    ? t('knowledge.lockDataMemory', { defaultValue: 'Lock editing' })
-                                    : t('knowledge.unlockDataMemory', { defaultValue: 'Unlock editing' })}
-                                onClick={() => setMemoryUnlocked(unlocked => !unlocked)}
-                                color={memoryUnlocked ? 'primary' : 'default'}
-                            >
-                                {memoryUnlocked
-                                    ? <LockOpenOutlinedIcon sx={{ fontSize: iconVar.lg }} />
-                                    : <LockOutlinedIcon sx={{ fontSize: iconVar.lg }} />}
-                            </IconButton>
-                        </Tooltip>
-                    )}
                 </DialogTitle>
                 <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0, pt: '8px !important' }}>
-                    {editorCategory === 'memory' ? (
-                        <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>
-                            data-memory.md
-                        </Typography>
-                    ) : <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                    <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
                         <TextField
                             size="small"
                             label={t('knowledge.fileName')}
@@ -562,7 +416,7 @@ export const KnowledgePanel: React.FC = () => {
                             sx={{ flex: 1, minWidth: 150, '& .MuiInputBase-input': { fontSize: textVar.sm } }}
                             slotProps={{ inputLabel: { sx: { fontSize: textVar.sm } } }}
                         />
-                    </Box>}
+                    </Box>
 
                     {editorLoading ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -579,14 +433,12 @@ export const KnowledgePanel: React.FC = () => {
                             <MarkdownEditor
                                 value={editorContent}
                                 onChange={setEditorContent}
-                                placeholder="# Title\n\nWrite your knowledge content in Markdown..."
-                                readOnly={editorCategory === 'memory' && !memoryUnlocked}
+                                placeholder="# Title\n\nWrite your workflow in Markdown..."
                             />
                         </Box>
                     )}
                 </DialogContent>
                 <DialogActions>
-                    {editorCategory !== 'memory' && (
                         <Button
                             onClick={() => { setEditorOpen(false); setDeleteTarget({ category: editorCategory, path: editorOriginalPath, title: editorOriginalPath }); }}
                             color="error"
@@ -594,8 +446,6 @@ export const KnowledgePanel: React.FC = () => {
                         >
                             {t('app.delete')}
                         </Button>
-                    )}
-                    {editorCategory === 'memory' && <Box sx={{ mr: 'auto' }} />}
                     <Button
                         onClick={() => setEditorOpen(false)}
                         disabled={editorSaving}
@@ -607,9 +457,8 @@ export const KnowledgePanel: React.FC = () => {
                         onClick={handleSave}
                         disabled={
                             editorSaving
-                            || (editorCategory === 'memory' && !memoryUnlocked)
-                            || (editorCategory !== 'memory' && !editorContent.trim())
-                            || (editorCategory !== 'memory' && !editorPath.trim())
+                            || !editorContent.trim()
+                            || !editorPath.trim()
                         }
                         variant="contained"
                         sx={{ textTransform: 'none', fontSize: textVar.sm }}

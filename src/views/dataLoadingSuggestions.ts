@@ -1,8 +1,4 @@
-// Shared sample-task suggestions for the Data Loading Agent. Both the
-// upload-dialog entry point (`UnifiedDataUploadDialog`) and the in-session
-// chat panel (`DataLoadingChat`) render these via `AgentChatInput`'s
-// `focusSuggestions` dropdown. Keep this single source of truth so the
-// two surfaces stay in sync.
+// Shared sample-task suggestions for the landing and upload-menu agent inputs.
 
 import { TFunction } from 'i18next';
 import React from 'react';

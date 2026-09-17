@@ -22,7 +22,7 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError } from '../../../../src/app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError } from '../../../../src/app/workspaceService';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
 beforeEach(() => {
@@ -69,6 +69,15 @@ describe('ephemeral workspace recovery', () => {
 });
 
 describe('local workspace parity', () => {
+    it('lists durable workspace files without requesting scratch items', async () => {
+        const files = [{ name: 'summary.md', origin: 'agent' }, { name: 'source.txt', origin: null }];
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockResolvedValue({ data: { files } });
+
+        expect(await listWorkspaceFiles()).toEqual(files);
+        expect(requestSpy).toHaveBeenCalledExactlyOnceWith('/api/workspace/files');
+    });
+
     it('returns only the server workspace list without consulting recovery storage', async () => {
         mockState.serverConfig.WORKSPACE_BACKEND = 'local';
         vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest').mockResolvedValue({

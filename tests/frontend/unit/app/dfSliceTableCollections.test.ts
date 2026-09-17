@@ -6,7 +6,7 @@ import {
   dfSelectors,
   fetchFieldSemanticType,
 } from "../../../../src/app/dfSlice";
-import { ROOTLESS_THREAD_ID } from "../../../../src/components/ComponentType";
+const CONVERSATION_ROOT_ID = 'conversation-root:test';
 
 const sourceTable = {
   kind: "table" as const,
@@ -37,6 +37,40 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it("stores file results separately and updates revisions without moving the node", () => {
+    const file = { kind: "file" as const, id: "file-result", path: "scratch/cpi.parquet",
+      displayName: "CPI Summary", contentHash: "v1", parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 };
+    let state = dataFormulatorReducer(undefined, dfActions.upsertFileNode(file));
+    state = dataFormulatorReducer(state, dfActions.upsertFileNode({ ...file,
+      id: "revision", contentHash: "v2", displayName: "Updated CPI", parentNodeId: "later", createdAt: 2,
+    }));
+    expect(state.textTurns).toEqual([]);
+    expect(state.fileNodes).toEqual([{ ...file, contentHash: "v2", displayName: "Updated CPI" }]);
+  });
+
+  it("keeps file results after draft cleanup, parent removal, and reload", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTextTurn({
+      kind: "text", id: "request", displayId: "request", textKind: "explain",
+      content: "Create a summary", parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1,
+    }));
+    state = dataFormulatorReducer(state, dfActions.createDraftNode({
+      id: "draft", displayId: "draft", parentNodeId: "request",
+      parentTableId: CONVERSATION_ROOT_ID, source: [], interaction: [],
+    }));
+    state = dataFormulatorReducer(state, dfActions.upsertFileNode({
+      kind: "file", id: "file", path: "scratch/summary.md", displayName: "Summary",
+      contentHash: "hash", parentNodeId: "draft", createdAt: 2,
+    }));
+    state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft"));
+    expect(state.fileNodes[0].parentNodeId).toBe("request");
+    state = dataFormulatorReducer(state, dfActions.removeTextTurn("request"));
+    expect(state.fileNodes[0].parentNodeId).toBe(CONVERSATION_ROOT_ID);
+    const restored = dataFormulatorReducer(undefined, dfActions.loadState(state));
+    expect(restored.fileNodes).toEqual(state.fileNodes);
+    expect(restored.textTurns).toEqual([]);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState({})).fileNodes).toEqual([]);
+  });
+
   it("preserves generalized computation sources on derived tables", () => {
     const withMixedSources = {
       ...derivedTable,
@@ -703,7 +737,7 @@ describe("split table collections", () => {
     state = dataFormulatorReducer(state, dfActions.removeTableLocally("orders"));
 
     expect(state.derivedTables[0].derive?.source).toEqual([]);
-    expect(state.derivedTables[0].derive?.trigger.tableId).toBe(ROOTLESS_THREAD_ID);
+    expect(state.derivedTables[0].derive?.trigger.tableId).toBe('conversation-root:orders');
     expect(state.derivedTables[0].derive?.inputSources).toEqual([
       { id: "file:docx-v1:notes.docx", kind: "file", displayName: "notes.docx" },
     ]);
@@ -711,7 +745,7 @@ describe("split table collections", () => {
 });
 
 describe("text artifact canvas ownership", () => {
-  it.each(["explicit", "ancestry"])("keeps the chart for an ordinary long response with %s provenance", (provenance) => {
+  it.each(["explicit", "ancestry"])("preserves the chart for an ordinary explanation with %s provenance", (provenance) => {
     const state = {
       ...dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any)),
       focusedId: { type: "text", textId: "closing-answer" },
@@ -733,7 +767,7 @@ describe("text artifact canvas ownership", () => {
   it.each([
     ["form", { form: { kind: "connector", title: "Connect", connector: { sourceType: "kusto", status: "pending" } } }],
     ["data operation", { dataOperation: { id: "operation-1", plans: [] } }],
-  ])("keeps a parent %s open for a follow-up explanation", (_label, artifact) => {
+  ])("opens conversation when selecting an explanation after a %s", (_label, artifact) => {
     const state = {
       ...dataFormulatorReducer(undefined, { type: "test/init" }),
       focusedId: { type: "text", textId: "explanation-1" },

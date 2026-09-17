@@ -108,7 +108,6 @@ export const DataFormulatorFC = ({ }) => {
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
-    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
     const theme = useTheme();
 
@@ -344,16 +343,7 @@ export const DataFormulatorFC = ({ }) => {
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
-        // Compact mode: when opening the generic menu but a data-loading
-        // conversation is already in progress, land directly on the chat so
-        // the prior history (and any in-progress extractions / load plan) is
-        // visible instead of the empty menu hero. Explicit tab requests
-        // (connector, upload, paste, …) are respected as-is; the menu's
-        // connectors / direct-load options stay one back-arrow click away.
-        const resolvedTab = (tab === 'menu' && dataLoadingChatMessages.length > 0)
-            ? 'extract'
-            : tab;
-        setUploadDialogInitialTab(resolvedTab);
+        setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);
     };
 
@@ -378,23 +368,6 @@ export const DataFormulatorFC = ({ }) => {
             }
         }
         refreshPageConnectors();
-    };
-
-    // Seed the Data Loading chat through the single redux `pending` slot,
-    // then navigate to the extract tab. This is the one channel that
-    // carries text, images, AND file attachments as first-class fields —
-    // replacing the older `initialChatPrompt/Images` props that silently
-    // dropped file attachments (they had no dedicated field and only
-    // survived if their name was baked into the prompt text).
-    const startDataLoadingChat = (text: string, images: string[] = [], attachments: string[] = []) => {
-        if (text.trim().length > 0 || images.length > 0 || attachments.length > 0) {
-            // Preserve any prior conversation (Option A). `queueDataLoadingTask`
-            // drops a "new request" divider when a thread already exists, then
-            // enqueues the submission; the user resets explicitly via the
-            // header reset button when they want a blank slate.
-            dispatch(dfActions.queueDataLoadingTask({ text, images, attachments }));
-        }
-        openUploadDialog('extract');
     };
 
     // The landing box starts the unified analyst conversation — loading data is
@@ -703,7 +676,7 @@ export const DataFormulatorFC = ({ }) => {
                 onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
-                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                onAskAgent={(text) => startAnalystChat(text)}
             />
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
                 <Tabs
@@ -737,7 +710,7 @@ export const DataFormulatorFC = ({ }) => {
                 onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
-                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                onAskAgent={(text) => startAnalystChat(text)}
             />
             <Box ref={containerRef} className="outer-allotment" sx={{
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
@@ -951,9 +924,6 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
-                    onStartChat={(prompt, images, attachments) => startAnalystChat(prompt, images, attachments)}
-                    hasPriorConversation={dataLoadingChatMessages.length > 0}
-                    onResumeChat={() => openUploadDialog('extract')}
                     serverConfig={serverConfig}
                     connectors={pageConnectors}
                 />
@@ -1148,7 +1118,7 @@ export const DataFormulatorFC = ({ }) => {
                             onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                             connectorRefreshKey={connectorRefreshKey}
                             onConnectorsChanged={handleConnectorsChanged}
-                            onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                            onAskAgent={(text) => startAnalystChat(text)}
                         />
                         {dataUploadRequestBox}
                     </Box>
@@ -1156,6 +1126,7 @@ export const DataFormulatorFC = ({ }) => {
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
                     onClose={closeUploadDialog}
+                    onStartChat={startAnalystChat}
                     initialTab={uploadDialogInitialTab}
                     onConnectorsChanged={handleConnectorsChanged}
                 />

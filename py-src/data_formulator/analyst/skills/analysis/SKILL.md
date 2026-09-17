@@ -14,13 +14,16 @@ actions: []
   for analysis input tables. Prefer it for basic inspection.
 - `execute_python_script(code)` runs general-purpose sandboxed Python for data
   inspection, statistics, transformations, and assumption checks. Use `print()`
-  to surface output. Each call has a fresh namespace, so combine related work in
-  one script.
+  to surface output. The namespace persists within an inspection cycle; do not
+  depend on it across actions or runs. Visualization code must be standalone.
 
 The initial context already includes samples and statistics. When that evidence
 is sufficient, proceed without an extra inspection call.
 
-Python runs in the workspace data directory. Use exact paths from context and
+Follow the workspace data boundaries below. Use data tools for registered tables
+and file tools for durable documents or exports; computation alone does not create a workspace artifact.
+
+Python runs in the workspace root directory. Use exact paths from context and
 assign any resulting DataFrame to the requested output variable. pandas, numpy,
 duckdb, sklearn, scipy, math, datetime, json, statistics, collections, re,
 random, itertools, functools, operator, and time are available. File writes,

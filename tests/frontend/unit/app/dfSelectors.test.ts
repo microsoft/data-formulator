@@ -123,9 +123,7 @@ describe('dfSelectors.selectSessionEmpty', () => {
     textTurns: [],
     draftNodes: [],
     generatedReports: [],
-    dataLoadingChatMessages: [],
     analystChatPending: null,
-    dataLoadingChatPending: null,
     workspaceFileCount,
   } as unknown as DataFormulatorState);
 

@@ -345,6 +345,17 @@ export function buildDictTableFromWorkspace(
             };
         }, {}),
         rows: wsTable.sample_rows,
+        ...(wsTable.content_hash ? { contentHash: wsTable.content_hash } : {}),
+        ...(wsTable.origin === 'agent' ? { dataProvenance: {
+            origin: wsTable.origin,
+            role: wsTable.role || 'source',
+            editPolicy: wsTable.edit_policy || 'protected',
+            inputSources: (wsTable.input_sources || []).map((source: any) => ({
+                id: source.id, kind: source.kind, displayName: source.display_name || source.id,
+                contentHash: source.content_hash,
+            })),
+            stale: !!wsTable.stale,
+        } } : {}),
         virtual: {
             tableId: wsTable.name,
             rowCount: wsTable.row_count,

@@ -25,17 +25,28 @@ export const duplicateField = (field: FieldItem) => {
     } as FieldItem;
 }
 
-export const ROOTLESS_THREAD_ID = '__rootless_thread__';
+export const createConversationRootId = (id: string = crypto.randomUUID()) => `conversation-root:${id}`;
+export const isConversationRootId = (id: string | undefined): boolean =>
+    !!id?.startsWith('conversation-root:');
 
 export type ComputationInputSource = {
     id: string;
     kind: 'data' | 'file';
     displayName: string;
+    contentHash?: string;
 };
+
+export interface DataProvenance {
+    origin: string;
+    role: string;
+    editPolicy: string;
+    inputSources: ComputationInputSource[];
+    stale: boolean;
+}
 
 export interface Trigger {
     // On which table this action is triggered. A run started before any data
-    // exists has none, so it carries `ROOTLESS_THREAD_ID` instead.
+    // exists carries its conversation root ID instead.
     tableId: string,
 
     chart?: Chart, // what's the intented chart from the user when running formulation
@@ -83,6 +94,7 @@ export interface InteractionEntry {
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
+    executions?: TerminalExecution[];
     /** Names of files / images the user attached with this prompt, surfaced as
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
@@ -106,6 +118,17 @@ export interface LoadedTableNode {
     createdAt: number;
 }
 
+export interface FileNode {
+    kind: 'file';
+    id: string;
+    path: string;
+    displayName: string;
+    contentHash: string;
+    parentNodeId: string;
+    createdAt: number;
+    notes?: string;
+}
+
 export interface PendingClarification {
     trajectory: any[];
     completedStepCount: number;
@@ -119,6 +142,7 @@ export interface DraftNode {
     parentNodeId: string;
     derive: {
         source: string[];
+        inputSources?: ComputationInputSource[];
         trigger: Trigger;
         status: DeriveStatus;
         runningPlan?: string; // live agent thought text while running
@@ -131,7 +155,7 @@ export interface DraftNode {
     actionId?: string;
 }
 
-export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
+export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode;
 
 /**
  * A first-class interaction in the thread: either a clarify/explain turn or a
@@ -142,6 +166,16 @@ export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
  * Deleting either uses the same generic artifact path. Delegate is not a turn;
  * a hand-off is an agent action handled directly.
  */
+export interface TerminalExecution {
+    id: string;
+    argv: string[];
+    cwd: string;
+    purpose: string;
+    status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
+    commandText?: string;
+    result?: Record<string, unknown>;
+}
+
 export interface TextTurn {
     kind: 'text';
     id: string;
@@ -154,6 +188,7 @@ export interface TextTurn {
     /** The user message that triggered this turn (shown with the card so the
      *  exchange stays self-contained — the run produced no table to anchor it). */
     prompt?: string;
+    executions?: TerminalExecution[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */
@@ -218,58 +253,8 @@ export interface DataCleanBlock {
     dialogItem?: any; // Store the dialog item from the model response
 }
 
-// ── Conversational data loading chat types ────────────────────────────────
-
-export interface ChatAttachment {
-    type: 'image' | 'file' | 'text_file';
-    name: string;
-    url?: string;           // data URL or object URL for images
-    scratchPath?: string;   // path in workspace scratch folder (for large files)
-    preview?: string;       // first N lines for text files
-}
-
-export interface InlineTablePreview {
-    name: string;
-    columns: string[];
-    sampleRows: Record<string, any>[];  // first 5-10 rows
-    totalRows: number;
-    csvScratchPath?: string;
-}
-
-export interface CodeExecution {
-    code: string;
-    stdout?: string;
-    error?: string;
-    resultTable?: InlineTablePreview;
-}
-
-export interface PendingTableLoad {
-    name: string;
-    csvScratchPath: string;
-    preview: InlineTablePreview;
-    confirmed: boolean;
-}
-
-export interface LoadPlanCandidate {
-    sourceId: string;
-    tableKey: string;
-    displayName: string;
-    sourceTable: string;
-    sourceTableName?: string;
-    query?: LoadQuery;
-    /** Backend-detected reason this candidate cannot be loaded (unknown source_id, missing table_key, etc.). */
-    resolutionError?: string;
-}
-
-export interface LoadPlan {
-    response: string;
-    options: Array<{ label: string; tables: LoadPlanCandidate[] }>;
-    confirmed?: boolean;
-}
-
 /**
- * Agent-proposed inline connection form (design 38). Rendered as a card in the
- * data-loading chat so the user can enter credentials and connect without
+ * Agent-proposed connection form. The user can enter credentials and connect without
  * leaving the conversation. One prompt === one form card === one new connection.
  */
 export interface ConnectorFormPrompt {
@@ -295,23 +280,6 @@ export interface ConnectorFormArtifact {
 
 /** Canvas-owning form artifacts. Add future form kinds to this union. */
 export type FormArtifact = ConnectorFormArtifact;
-
-export interface ChatMessage {
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;                    // markdown text
-    attachments?: ChatAttachment[];     // images, files attached by user
-    tables?: InlineTablePreview[];      // tables to show inline (assistant only)
-    codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
-    pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
-    loadPlan?: LoadPlan;                // Agent-proposed data loading plan
-    dataOperation?: DataOperation;      // Immutable option-based loading proposal
-    connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
-    divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
-    hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
-    canContinue?: boolean;              // agent paused at the tool-call limit — show a "Continue" button to resume the task
-    timestamp: number;
-}
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';
@@ -410,12 +378,14 @@ export interface InputTable {
     description: string;
     sourceConfig?: DataSourceConfig;
     addedAt: number;
+    dataProvenance?: DataProvenance;
 }
 
 export interface DictTable {
     kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
     displayId: string; // display id of the table 
+    dataProvenance?: DataProvenance;
     
     names: string[]; // column names
     metadata: {[key: string]: {
