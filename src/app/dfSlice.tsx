@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
+import { shallowEqual } from 'react-redux';
 import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, PendingClarification, TextTurn, InputTable, TableSemanticsInfo, LoadedTableNode } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable, FileNode, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
@@ -68,6 +69,10 @@ export interface SSEMessage {
 
 // Add interface for app configuration
 export interface ServerConfig {
+    APP_NAME?: string;
+    APP_TAGLINE?: string;
+    MANAGED_MODE?: boolean;
+    CAN_CONFIGURE?: boolean;
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
@@ -104,6 +109,7 @@ export interface ServerConfig {
 
 export interface ModelConfig {
     id: string; // unique identifier for the model / client combination
+    display_name?: string;
     endpoint: string;
     model: string;
     api_key?: string;
@@ -2636,10 +2642,12 @@ export const dfSelectors = {
     ),
     /** All models visible in the UI: global (server-managed) first, then user-added. */
     getAllModels: (state: DataFormulatorState): ModelConfig[] => {
-        return [...(state.globalModels ?? []), ...state.models];
+        return state.serverConfig.DISABLE_CUSTOM_MODELS
+            ? (state.globalModels ?? []) : [...(state.globalModels ?? []), ...state.models];
     },
     getActiveModel: (state: DataFormulatorState): ModelConfig | undefined => {
-        const all = [...(state.globalModels ?? []), ...state.models];
+        const all = state.serverConfig.DISABLE_CUSTOM_MODELS
+            ? (state.globalModels ?? []) : [...(state.globalModels ?? []), ...state.models];
         return all.find(m => m.id == state.selectedModelId) ?? all[0];
     },
     getEffectiveTableId: (state: DataFormulatorState): string | undefined => {
@@ -2823,6 +2831,12 @@ export const dfSelectors = {
     },
     // Generated reports selectors
     getAllGeneratedReports: (state: DataFormulatorState) => state.generatedReports,
+    getThreadReports: createSelector(
+        [(state: DataFormulatorState) => state.generatedReports],
+        reports => reports.map(({ content, updatedAt, generatingPhase, ...report }) => ({ ...report, content: '' })),
+        { memoizeOptions: { resultEqualityCheck: (previous: GeneratedReport[], next: GeneratedReport[]) =>
+            previous.length === next.length && previous.every((report, index) => shallowEqual(report, next[index])) } },
+    ),
     getReportById: (state: DataFormulatorState, reportId: string) => 
         state.generatedReports.find(r => r.id === reportId),
 }

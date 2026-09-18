@@ -1149,7 +1149,8 @@ class AnalystAgent:
         try:
             from flask import current_app
             sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
-            max_display_rows = current_app.config['CLI_ARGS'].get('max_display_rows', 5000)
+            from data_formulator.configuration import effective_limit
+            max_display_rows = effective_limit('max_display_rows')
         except (ImportError, RuntimeError):
             sandbox_mode = 'local'
             max_display_rows = 5000

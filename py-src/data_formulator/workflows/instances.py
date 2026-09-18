@@ -10,6 +10,62 @@ import yaml
 from data_formulator.security.path_safety import ConfinedDir
 
 
+def resolve_setup(workflow: dict, setup: Any = None, *, require_values: bool = True) -> dict:
+    if setup is None:
+        setup = {}
+    if not isinstance(setup, dict) or set(setup) - {"parameters", "instructions"}:
+        raise ValueError("Setup must contain parameters and optional instructions.")
+    values = setup.get("parameters", {})
+    instructions = setup.get("instructions", "")
+    if not isinstance(values, dict) or not isinstance(instructions, str) or len(instructions) > 8000:
+        raise ValueError("Setup requires parameter values and instructions of at most 8,000 characters.")
+    parameters = workflow.get("parameters", [])
+    if not isinstance(parameters, list) or len(parameters) > 20:
+        raise ValueError("Provide at most 20 workflow parameters.")
+    names = set()
+    resolved = {}
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            raise ValueError("Each parameter must be a mapping.")
+        name = parameter.get("name")
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) or name in names:
+            raise ValueError("Parameter names must be unique identifiers of at most 64 characters.")
+        names.add(name)
+        if not isinstance(parameter.get("label"), str) or not parameter["label"].strip():
+            raise ValueError("Each parameter needs a label.")
+        kind = parameter.get("type", "text")
+        if kind not in ("text", "number", "boolean", "select"):
+            raise ValueError("Parameter type must be text, number, boolean, or select.")
+        for flag in ("required", "allow_custom"):
+            if flag in parameter and not isinstance(parameter[flag], bool):
+                raise ValueError(f"Parameter {flag} must be boolean.")
+        if "description" in parameter and not isinstance(parameter["description"], str):
+            raise ValueError("Parameter description must be text.")
+        options = parameter.get("options", [])
+        if kind == "select" and (not isinstance(options, list) or not 1 <= len(options) <= 50
+                or any(not isinstance(option, str) or not option.strip() for option in options)
+                or len(set(options)) != len(options)):
+            raise ValueError("Select parameters need 1-50 unique text options.")
+        value = values.get(name, parameter.get("default"))
+        if value is None or (isinstance(value, str) and not value.strip()):
+            if require_values and parameter.get("required"):
+                raise ValueError(f"Provide {parameter['label']}.")
+            continue
+        valid = (isinstance(value, bool) if kind == "boolean" else
+                 type(value) in (int, float) if kind == "number" else
+                 isinstance(value, str) and len(value) <= 4000)
+        if not valid or (kind == "select" and not parameter.get("allow_custom") and value not in options):
+            raise ValueError(f"Invalid value for {parameter['label']}.")
+        resolved[name] = value
+    if set(values) - names:
+        raise ValueError("Unknown workflow parameter.")
+    try:
+        json.dumps(resolved, allow_nan=False)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Parameter values must be finite JSON values.") from exc
+    return {"parameters": resolved, "instructions": instructions.strip()}
+
+
 def parse_workflow(content: str) -> dict[str, Any]:
     if len(content) > 48000:
         raise ValueError("Workflow exceeds 48,000 characters.")
@@ -31,6 +87,7 @@ def parse_workflow(content: str) -> dict[str, Any]:
             for source in sources
         ):
             raise ValueError("Workflow source must be nonempty text, a mapping, or a list of these.")
+    resolve_setup(workflow, require_values=False)
     deliverables = workflow.get("deliverables")
     if not isinstance(deliverables, list) or not deliverables or any(
         not isinstance(item, str) or not item.strip() for item in deliverables
@@ -80,13 +137,12 @@ class WorkflowStore:
         self.files = ConfinedDir(Path(user_home) / "workflows", mkdir=True)
 
     def read(self, name: str) -> str:
-        if isinstance(name, str) and name.startswith("demo/"):
-            filename = name.removeprefix("demo/")
-            self.validate_name(filename)
-            path = Path(__file__).with_name(filename)
-            if path.is_symlink():
-                raise ValueError("Workflow files cannot be symlinks.")
-            return path.read_text(encoding="utf-8")
+        if isinstance(name, str) and name.startswith(('demo/', 'server/')):
+            from data_formulator.configuration import resource_options, workflow_content
+            options = resource_options('workflows', name)
+            if not options.get('enabled', True):
+                raise ValueError('Workflow is not published.')
+            return workflow_content(name, options)
         self.validate_name(name)
         return self.files.read_text(name)
 
@@ -110,10 +166,17 @@ class WorkflowStore:
         items = []
         sources = [(path, path.name, "user") for path in sorted(self.files.rglob("*.yaml"))]
         sources.extend((path, f"demo/{path.name}", "demo") for path in sorted(Path(__file__).parent.glob("*.yaml")))
+        from data_formulator.configuration import read_configuration
+        configured = read_configuration()['overrides'].get('workflows', {})
+        sources.extend((Path(name), name, 'server') for name, options in configured.items()
+                       if name.startswith('server/') and ('content' in options or 'file' in options))
         for path, name, origin in sources:
+            if origin != 'user' and not configured.get(name, {}).get('enabled', True):
+                continue
             try:
                 workflow = parse_workflow(self.read(name))
-                items.append({"path": name, "name": workflow["name"], "overview": workflow["overview"], "origin": origin})
+                items.append({"path": name, "name": workflow["name"], "overview": workflow["overview"], "origin": origin,
+                              "parameters": workflow.get("parameters", [])})
             except (ValueError, OSError) as exc:
                 items.append({"path": name, "name": path.stem, "error": str(exc), "origin": origin})
         return items

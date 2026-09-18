@@ -20,8 +20,8 @@ from data_formulator.data_operations import (
 _PROBE_BUDGET_KEY = "workspace.probe_budget"
 _CONNECTORS_LISTED_KEY = "workspace.connectors_listed"
 _CONNECTORS_DISABLED_NOTE = (
-    "External data connectors are disabled in this deployment. Use file upload "
-    "or built-in sample datasets instead."
+    "User-created connections are disabled in this deployment. Use administrator-configured "
+    "sources, file upload, or built-in sample datasets instead."
 )
 
 
@@ -77,11 +77,8 @@ class WorkspaceDataLoading:
 
     @staticmethod
     def _connectors_disabled() -> bool:
-        try:
-            from flask import current_app
-            return bool(current_app.config.get("CLI_ARGS", {}).get("disable_data_connectors"))
-        except Exception:
-            return False
+        from data_formulator.configuration import user_connectors_disabled
+        return user_connectors_disabled()
 
     def _read_connector_form(self, ctx: SkillContext) -> dict[str, Any]:
         if self._connectors_disabled():

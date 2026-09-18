@@ -382,6 +382,16 @@ class TestConnectorList:
 
 class TestAuthRoutes:
 
+    def test_connect_does_not_wait_for_catalog(self, client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(MockLoader, "list_tables", side_effect=TimeoutError) as listing:
+            response = client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
+                "params": {"user": "test", "password": "test"},
+            })
+        assert response.get_json()["data"]["status"] == "connected"
+        listing.assert_not_called()
+
     def test_connect_success(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = client.post("/api/connectors/connect", json={
@@ -570,6 +580,25 @@ class TestAuthRoutes:
 # ==================================================================
 
 class TestCatalogRoutes:
+
+    def test_background_catalog_polls_without_reconnecting_and_caches_empty_result(self, connected_client, tmp_path):
+        with patch("data_formulator.datalake.workspace.get_user_home", return_value=tmp_path), \
+             patch("data_formulator.datalake.catalog_refresh._REFRESH_EXECUTOR.submit") as submit, \
+             patch.object(MockLoader, "list_tables", return_value=[]) as listing:
+            body = {"connector_id": "mock_db", "background": True}
+            response = connected_client.post("/api/connectors/get-catalog-tree", json=body)
+            assert response.get_json()["data"]["discovery"]["status"] == "running"
+            listing.assert_not_called()
+            with patch.object(DataConnector, "_require_loader", side_effect=AssertionError("Polling must not reconnect")):
+                response = connected_client.post("/api/connectors/get-catalog-tree", json={**body, "poll": True})
+                assert response.get_json()["data"]["discovery"]["status"] == "running"
+            submit.call_args.args[0]()
+            for _ in range(2):
+                response = connected_client.post("/api/connectors/get-catalog-tree", json={**body, "poll": True})
+                assert response.get_json()["data"]["discovery"]["status"] == "complete"
+                assert response.get_json()["data"]["tree"] == []
+            listing.assert_called_once()
+            submit.assert_called_once()
 
     def test_ls_root(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):

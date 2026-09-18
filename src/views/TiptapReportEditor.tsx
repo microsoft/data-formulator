@@ -240,75 +240,8 @@ const StreamingMarkdownLite: FC<{ text: string; caret?: React.ReactNode; resolve
     );
 };
 
-/**
- * Typewriter buffer: smoothly reveals `text` regardless of how bursty the
- * network deltas are. A rAF loop catches the displayed length up to the target,
- * revealing more per frame when the backlog is large so it never falls behind.
- */
 const StreamingText: FC<{ text: string; resolveChartImage?: ResolveChartImage }> = ({ text, resolveChartImage }) => {
     const { t } = useTranslation();
-    const textRef = useRef(text);
-    textRef.current = text;
-    const shownLenRef = useRef(0);
-    const [shown, setShown] = useStateReact('');
-
-    useEffect(() => {
-        let raf = 0;
-        let lastTime = performance.now();
-        let lastTargetLen = 0;
-        let lastChunkTime = lastTime;
-        let fraction = 0;            // sub-character reveal accumulator
-
-        // Reveal rate in chars/ms, smoothed across chunks. Each time a chunk
-        // arrives we estimate the natural rate as (chunk size / time since the
-        // previous chunk), so the chunk is spread out over roughly the gap until
-        // the next one is expected — that feels like natural typing rather than
-        // dumping. Clamped to a sane min/max and floored so it never stalls.
-        const MIN_RATE = 0.012;     // ~12 chars/sec — slowest "typing" we allow
-        const MAX_RATE = 0.20;      // ~200 chars/sec — cap so big bursts don't blur
-        let rate = 0.03;            // initial guess until the first interval is known
-
-        const tick = () => {
-            const now = performance.now();
-            const dt = Math.min(now - lastTime, 100); // clamp tab-switch gaps
-            lastTime = now;
-
-            const target = textRef.current;
-            let len = shownLenRef.current;
-            if (len > target.length) { len = 0; fraction = 0; } // report cleared/restarted
-
-            // On each new chunk, re-estimate the natural typing rate from this
-            // chunk's size and the interval since the previous chunk arrived.
-            const arrived = target.length - lastTargetLen;
-            if (arrived > 0) {
-                const interval = Math.max(now - lastChunkTime, 1);
-                lastChunkTime = now;
-                lastTargetLen = target.length;
-                const chunkRate = arrived / interval;
-                rate = rate * 0.7 + chunkRate * 0.3; // EMA smoothing across chunks
-            }
-
-            const backlog = target.length - len;
-            if (backlog > 0) {
-                // Pace at the smoothed rate, but never below the min typing speed,
-                // and lift slightly when the backlog is large so we don't drift
-                // permanently behind a fast stream.
-                const catchUp = backlog > 240 ? 1.6 : backlog > 80 ? 1.25 : 1;
-                const effRate = Math.min(MAX_RATE, Math.max(MIN_RATE, rate) * catchUp);
-                fraction += effRate * dt;
-                const whole = Math.floor(fraction);
-                if (whole >= 1) {
-                    fraction -= whole;
-                    len = Math.min(target.length, len + whole);
-                    shownLenRef.current = len;
-                    setShown(target.slice(0, len));
-                }
-            }
-            raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
-    }, []);
 
     return (
         <Box sx={{
@@ -316,15 +249,8 @@ const StreamingText: FC<{ text: string; resolveChartImage?: ResolveChartImage }>
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
             fontSize: '0.95rem', lineHeight: 1.7, color: 'rgb(55, 53, 47)',
         }}>
-            <StreamingMarkdownLite text={shown} resolveChartImage={resolveChartImage} caret={
-                <Box component="span" sx={{
-                    display: 'inline-block', width: '2px', height: '1.1em',
-                    ml: '1px', verticalAlign: 'text-bottom', backgroundColor: 'text.primary',
-                    animation: 'stream-caret 1s step-end infinite',
-                    '@keyframes stream-caret': { '50%': { opacity: 0 } },
-                }} />
-            } />
-            <Box sx={{ mt: shown.length === 0 ? 1 : 2 }}>
+            <StreamingMarkdownLite text={text} resolveChartImage={resolveChartImage} />
+            <Box sx={{ mt: text.length === 0 ? 1 : 2 }}>
                 <WritingIndicator label={t('editor.writingReport')} fontSize="0.85rem" />
             </Box>
         </Box>

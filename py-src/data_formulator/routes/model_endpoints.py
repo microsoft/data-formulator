@@ -33,6 +33,22 @@ from data_formulator.errors import AppError, ErrorCode
 
 model_endpoints_bp = Blueprint("model_endpoints", __name__, url_prefix="/api/model-endpoints")
 
+
+@model_endpoints_bp.before_request
+def enforce_user_model_creation_policy():
+    from data_formulator.configuration import user_models_disabled
+    if request.endpoint in {
+        'model_endpoints.remember_model_endpoint',
+        'model_endpoints.start_copilot_connection',
+        'model_endpoints.poll_copilot_connection',
+        'model_endpoints.start_chatgpt_connection',
+        'model_endpoints.poll_chatgpt_connection',
+        'model_endpoints.start_openrouter_connection',
+        'model_endpoints.openrouter_connection_callback',
+    } and user_models_disabled():
+        raise AppError(ErrorCode.ACCESS_DENIED, 'Custom models are disabled. Select a server-configured model.')
+
+
 _FILENAME = "model_endpoints.json"
 _MAX_ENTRIES = 20
 _MAX_FIELD_LENGTH = 2048

@@ -213,6 +213,13 @@ def get_client(model_config, trusted=False):
         model_config = resolved
         trusted = True
 
+    from data_formulator.configuration import user_models_disabled
+    if user_models_disabled() and not trusted:
+        raise AppError(
+            ErrorCode.ACCESS_DENIED,
+            "Custom models are disabled. Select a server-configured model.",
+        )
+
     # Copy before normalising: a registry config is shared server-wide and must
     # not be mutated in place by the strip below.
     model_config = dict(model_config)
@@ -245,6 +252,8 @@ def get_client(model_config, trusted=False):
         model_config.get("api_version") or None,
         api_type=model_config.get("api_type"),
         chatgpt_account_id=model_config.get("chatgpt_account_id"),
+          **({'managed_identity': True, 'managed_identity_client_id': model_config.get('managed_identity_client_id')}
+              if model_config.get('auth_mode') == 'managed_identity' else {}),
     )
 
     return client
@@ -801,7 +810,8 @@ def refresh_derived_data():
         workspace = get_workspace(identity_id)
 
         cli_args = current_app.config.get('CLI_ARGS', {})
-        max_display_rows = cli_args.get('max_display_rows', 5000)
+        from data_formulator.configuration import effective_limit
+        max_display_rows = effective_limit('max_display_rows')
 
         sandbox = create_sandbox(cli_args.get('sandbox', 'local'))
 

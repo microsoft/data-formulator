@@ -1,7 +1,22 @@
 version: 1
-name: Monthly Household Cost Review
+name: Grocery Price Changes
 overview: Rebuild a monthly cost briefing from example data, revealing price trends, the biggest movers, and a grocery basket one chart at a time.
+parameters:
+  - name: time_range
+    label: Price trend period
+    type: select
+    options: [Latest 24 months, Latest 12 months, Latest 36 months]
+    default: Latest 24 months
+    allow_custom: true
+    description: Relative to the latest month in the sample.
+  - name: basket
+    label: Grocery basket preferences
+    type: text
+    description: Optional items or quantities; only items available in the data can be used.
 prompt: >-
+  Apply the confirmed time_range to trend and basket charts; 24 months is
+  the default only. Use basket preferences when supplied, checking available
+  items and units first. Retain earlier observations needed for year-over-year comparisons.
   Use Data Formulator's Consumer Price Index example dataset for a repeatable
   household-cost review. This is a historical average-price sample, not a live
   feed and not an official CPI calculation. Anchor the review to the latest month

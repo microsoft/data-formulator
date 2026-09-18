@@ -8,7 +8,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { apiRequest } from '../app/apiClient';
-import { CONNECTOR_ACTION_URLS } from '../app/utils';
+import { CONNECTOR_ACTION_URLS, fetchConnectorCatalog } from '../app/utils';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { importConnectorFile, previewConnectorFile } from '../app/workspaceService';
 import { WorkspaceFileCanvas } from '../views/WorkspaceFileCanvas';
@@ -20,6 +20,7 @@ import { ColumnMeta, ConnectorTablePreview } from './ConnectorTablePreview';
 import { iconVar, textVar } from '../app/layout';
 
 const CATALOG_PREVIEW_ROW_LIMIT = 50;
+const MANUAL_PREVIEW_BYTES = 50 * 1024 * 1024;
 
 export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ connectorId }) => {
     const { t } = useTranslation();
@@ -33,9 +34,11 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     const [refresh, setRefresh] = useState(0);
     const [selected, setSelected] = useState<CatalogTreeNode | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
+    const [catalogProgress, setCatalogProgress] = useState('');
     const [preview, setPreview] = useState<{ columns: ColumnMeta[]; rows: Record<string, any>[]; count: number | null } | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState('');
+    const [previewDeferred, setPreviewDeferred] = useState(false);
     const [importing, setImporting] = useState(false);
     const [importedFiles, setImportedFiles] = useState<Record<string, string>>({});
     const [sourceFile, setSourceFile] = useState<File | null>(null);
@@ -43,12 +46,32 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     useEffect(() => setImportedFiles({}), [connectorId, workspaceId]);
     const [activeTab, setActiveTab] = useState<'data' | 'columns' | 'overview'>('data');
     const [catalogScrollParent, setCatalogScrollParent] = useState<HTMLDivElement | null>(null);
+    useEffect(() => {
+        if (catalogScrollParent) catalogScrollParent.scrollTop = 0;
+    }, [catalogScrollParent, connectorId, query]);
     const [browserElement, setBrowserElement] = useState<HTMLDivElement | null>(null);
     const [splitView, setSplitView] = useState(false);
     const previewRequest = useRef<AbortController | null>(null);
     const sourceRef = (node: CatalogTreeNode) => {
         const name = node.metadata?._source_name || node.metadata?._catalogName || node.name;
         return { id: node.metadata?.dataset_id != null ? String(node.metadata.dataset_id) : name, name };
+    };
+    const previewWarning = (node: CatalogTreeNode) => {
+        const azureBlob = sourceRef(node).name.startsWith('az://') || node.path.some(part => part.startsWith('az://'));
+        const file = node.metadata?.artifact_kind === 'file';
+        if (!azureBlob && !file) return '';
+        const rawSize = node.metadata?.size_bytes ?? node.metadata?.file_size ?? node.metadata?.original_size_bytes;
+        const bytes = rawSize == null || rawSize === '' ? NaN : Number(rawSize);
+        if (azureBlob && (!Number.isFinite(bytes) || bytes < 0)) return t('chatConnector.unknownBlobPreview', {
+            defaultValue: 'Azure Blob file size is unknown. Preview reads the full file and may be slow.',
+        });
+        if (bytes < MANUAL_PREVIEW_BYTES || !Number.isFinite(bytes)) return '';
+        const size = (bytes / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 });
+        return azureBlob ? t('chatConnector.largeBlobPreview', {
+            size, defaultValue: 'This Azure Blob file is {{size}} MiB. Preview reads the full file and may be slow.',
+        }) : t('chatConnector.largeFilePreview', {
+            size, defaultValue: 'This file is {{size}} MiB. Preview downloads the file and may be slow.',
+        });
     };
 
     useEffect(() => {
@@ -63,6 +86,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true);
+        setCatalogProgress('');
         setError('');
         setSelected(null);
         setDetailOpen(false);
@@ -70,10 +94,11 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
         setSourceFile(null);
         setPreviewError('');
         setPreviewLoading(false);
+        setPreviewDeferred(false);
         previewRequest.current?.abort();
-        apiRequest<{ tree: CatalogTreeNode[] }>(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connector_id: connectorId }), signal: controller.signal,
+        fetchConnectorCatalog<{ tree: CatalogTreeNode[] }>(connectorId, {
+            signal: controller.signal,
+            onProgress: setCatalogProgress,
         }).then(({ data }) => {
             if (controller.signal.aborted) return;
             setTree(data.tree || []);
@@ -85,7 +110,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
         return () => { controller.abort(); previewRequest.current?.abort(); };
     }, [connectorId, refresh]);
 
-    const previewTable = async (node: CatalogTreeNode) => {
+    const previewTable = async (node: CatalogTreeNode, confirmed = false) => {
         if (node.node_type !== 'table' || importing) return;
         previewRequest.current?.abort();
         const controller = new AbortController();
@@ -95,6 +120,13 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
         setPreview(null);
         setSourceFile(null);
         setPreviewError('');
+        setPreviewLoading(false);
+        const defer = !confirmed && Boolean(previewWarning(node));
+        setPreviewDeferred(defer);
+        if (defer) {
+            setActiveTab('data');
+            return;
+        }
         if (node.metadata?.artifact_kind === 'file') {
             setPreviewLoading(true);
             try {
@@ -156,14 +188,23 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     const isFile = selected?.metadata?.artifact_kind === 'file';
     const importedFile = selected ? importedFiles[selected.path.join('/')] : undefined;
     const containsFiles = collectTables(tree).some(node => node.metadata?.artifact_kind === 'file');
+    const previewPrompt = selected && <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 120, gap: 1, p: 2 }}>
+        <Button variant="contained" size="small" disabled={importing}
+            onClick={() => void previewTable(selected, true)} sx={{ textTransform: 'none' }}>
+            {t('chatConnector.viewPreview', { defaultValue: 'View preview' })}
+        </Button>
+        <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 360, textAlign: 'center', overflowWrap: 'anywhere' }}>
+            {previewWarning(selected)}
+        </Typography>
+    </Box>;
 
     return <Box ref={setBrowserElement} sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ display: 'grid', gridTemplateColumns: splitView ? 'minmax(220px, 30%) minmax(0, 1fr)' : 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', flex: 1, minHeight: 0 }}>
         <Box component="nav" aria-label={t('chatConnector.tables', { defaultValue: 'Tables' })}
             aria-hidden={detailOpen && !splitView}
-            sx={{ gridArea: '1 / 1', visibility: detailOpen && !splitView ? 'hidden' : 'visible', display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, pt: 2,
-                pr: splitView ? 2 : 0, borderRight: splitView ? '1px solid' : 'none', borderColor: 'divider' }}>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5 }}>
+            sx={{ gridArea: '1 / 1', visibility: detailOpen && !splitView ? 'hidden' : 'visible', display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, pt: 1,
+                borderRight: splitView ? '1px solid' : 'none', borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', mb: 0.75, pr: splitView ? 1 : 0, flexShrink: 0 }}>
                 <TextField fullWidth size="small" placeholder={containsFiles ? t('upload.searchFilesAndTables', { defaultValue: 'Search files and tables' }) : t('chatConnector.searchTables', { defaultValue: 'Search tables' })}
                     slotProps={{ htmlInput: { 'aria-label': containsFiles ? t('upload.searchFilesAndTables', { defaultValue: 'Search files and tables' }) : t('chatConnector.searchTables', { defaultValue: 'Search tables' }) },
                         input: {
@@ -174,7 +215,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                                 </Tooltip>
                             </InputAdornment> : undefined,
                         } }}
-                    sx={{ minWidth: 0, '& .MuiInputBase-root': { fontSize: `var(--df-control-font-size, ${textVar.md})` } }} value={query} onChange={event => setQuery(event.target.value)} />
+                    sx={{ minWidth: 0, '& .MuiInputBase-root': { fontSize: '0.8125rem', height: 30, borderRadius: 1, px: 1 }, '& .MuiInputBase-input': { py: 0.5 }, '& .MuiInputAdornment-positionStart': { mr: 0.75 } }} value={query} onChange={event => setQuery(event.target.value)} />
                 <Tooltip title={t('chatConnector.refreshCatalog', { defaultValue: 'Refresh catalog' })}><span>
                     <IconButton size="small" disabled={loading || importing} onClick={() => setRefresh(current => current + 1)}
                         aria-label={t('chatConnector.refreshCatalog', { defaultValue: 'Refresh catalog' })}><RefreshIcon sx={{ fontSize: iconVar.md }} /></IconButton>
@@ -183,14 +224,14 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
             {query.trim() && !loading && !error && <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
                 {containsFiles ? t('upload.matchingItems', { defaultValue: '{{count}} matching items', count: countTables(filtered) }) : t('chatConnector.catalogMatches', { defaultValue: '{{count}} matching tables', count: countTables(filtered) })}
             </Typography>}
-            <Box ref={setCatalogScrollParent} sx={{ flex: 1, minHeight: 0, overflow: 'auto', pb: 1 }}>
+            <Box ref={setCatalogScrollParent} sx={{ flex: 1, minHeight: 0, overflow: 'auto', pr: 0.5, scrollbarGutter: 'stable' }}>
                 {loading ? <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
-                    <CircularProgress size={16} /><Typography variant="body2">{t('chatConnector.loadingCatalog', { defaultValue: 'Loading source catalog...' })}</Typography>
+                    <CircularProgress size={16} /><Typography variant="body2" sx={{ overflowWrap: 'anywhere', minWidth: 0 }}>{catalogProgress || t('chatConnector.loadingCatalog', { defaultValue: 'Loading source catalog...' })}</Typography>
                 </Box> : error ? <Typography variant="body2" color="error" role="alert" sx={{ overflowWrap: 'anywhere' }}>{error}</Typography> :
                     filtered.length ? <VirtualizedCatalogTree nodes={filtered} loadedMap={loadedMap}
                         expandedIds={query.trim() ? collectNamespaceIds(filtered) : expanded} onExpandedChange={setExpanded}
                         onItemClick={node => void previewTable(node)} selectedItemId={selected?.path.join('/')}
-                        loadingItemId={previewLoading ? selected?.path.join('/') : null} maxHeight="none" rowHeight={32} scrollParent={catalogScrollParent} />
+                        loadingItemId={previewLoading ? selected?.path.join('/') : null} maxHeight="none" scrollParent={catalogScrollParent} />
                     : <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>{containsFiles ? t('upload.noMatchingItems', { defaultValue: 'No matching files or tables found.' }) : t('chatConnector.noTables', { defaultValue: 'No matching tables found.' })}</Typography>}
             </Box>
         </Box>
@@ -212,7 +253,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                         '& .MuiTypography-root': { fontSize: textVar.sm, fontWeight: 400, lineHeight: 1.5 } }}>
                         {isFile ? <Typography variant="caption">{selected.metadata?.file_type?.toUpperCase()} · {Number(selected.metadata?.file_size || 0).toLocaleString()} bytes</Typography> : <>
                         {rowCount != null && <Typography variant="caption">{t('chatConnector.rowCount', { defaultValue: '{{count}} rows', count: Number(rowCount).toLocaleString() })}</Typography>}
-                        <Typography variant="caption">{t('chatConnector.columnCount', { defaultValue: '{{count}} columns', count: selectedColumns.length })}</Typography>
+                        {(preview || selected.metadata?.columns) && <Typography variant="caption">{t('chatConnector.columnCount', { defaultValue: '{{count}} columns', count: selectedColumns.length })}</Typography>}
                         </>}
                         {loadedMap[selected.path.join('/')] && <Typography variant="caption">{t('connectorPreview.loaded', { defaultValue: 'Loaded' })}</Typography>}
                     </Box>
@@ -252,7 +293,8 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
             </Box>
             {isFile ? <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 {importedFile ? <WorkspaceFileCanvas fileName={importedFile} /> : <>
-                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+                    {previewDeferred && previewPrompt}
                     {previewLoading && <CircularProgress size={24} />}
                     {sourceFile && <WorkspaceFileCanvas key={selected.path.join('/')} fileName={sourceFile.name} sourceFile={sourceFile} />}
                 </Box>
@@ -290,7 +332,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                 <Typography color="error" role="alert" sx={{ overflowWrap: 'anywhere', minWidth: 0 }}>{previewError}</Typography>
                 <Tooltip title={t('chatConnector.retryPreview', { defaultValue: 'Retry preview' })}>
                     <IconButton aria-label={t('chatConnector.retryPreview', { defaultValue: 'Retry preview' })}
-                        onClick={() => void previewTable(selected)}><RefreshIcon /></IconButton>
+                        onClick={() => void previewTable(selected, true)}><RefreshIcon /></IconButton>
                 </Tooltip>
             </Box>}
             <Box role="tabpanel" id="source-panel-overview" aria-labelledby="source-tab-overview" hidden={activeTab !== 'overview'} sx={{ overflow: 'auto', py: 2 }}>
@@ -319,7 +361,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
             </Box>
             <Box role="tabpanel" id="source-panel-data" aria-labelledby="source-tab-data" hidden={activeTab !== 'data'}
                 sx={{ display: activeTab === 'data' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', pt: 1.5 }}>
-            <ConnectorTablePreview key={`${connectorId}:${selected.path.join('/')}`} connectorId={connectorId} sourceTable={sourceRef(selected)} displayName={selected.name}
+            {previewDeferred ? previewPrompt : <ConnectorTablePreview key={`${connectorId}:${selected.path.join('/')}`} connectorId={connectorId} sourceTable={sourceRef(selected)} displayName={selected.name}
                 hideHeader
                 dockActions
                 previewRowLimit={CATALOG_PREVIEW_ROW_LIMIT}
@@ -338,7 +380,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                         })).unwrap();
                     } catch (caught) { setPreviewError(caught instanceof Error ? caught.message : String(caught)); }
                     finally { setImporting(false); }
-                }} />
+                }} />}
             </Box>
             </>}
         </>}

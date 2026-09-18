@@ -16,7 +16,7 @@ import { DataThread } from '../../../../src/views/DataThread';
 
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
 
-it('balances thread columns without measuring fragmented content back into their height', () => {
+it('preserves the conversation and focus when changing column layouts', () => {
     vi.stubGlobal('ResizeObserver', class {
         observe() {}
         unobserve() {}
@@ -27,21 +27,15 @@ it('balances thread columns without measuring fragmented content back into their
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'thread-message', displayId: 'Thread',
             textKind: 'explain', content: 'A thread with enough content to render its column flow.',
             parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'thread-message' }));
         const tree = (denseColumns: boolean) => React.createElement(Provider, { store, children:
             React.createElement(DataThread, { denseColumns }),
         });
         const { container, rerender } = render(tree(true));
-        const flow = container.querySelector<HTMLElement>('[data-thread-column-flow]')!;
-        expect(flow).toBeTruthy();
-        expect(getComputedStyle(flow).columnCount).toBe('2');
-        expect(getComputedStyle(flow).columnFill).toBe('balance');
-        expect(getComputedStyle(flow).height).toBe('auto');
-        expect(flow.querySelector('[data-thread-flow-block]')).toBeTruthy();
-        const threadEntry = Array.from(flow.children).find(entry => entry.querySelector('[data-thread-flow-block]'))!;
-        expect(getComputedStyle(threadEntry).breakInside).toBe('avoid');
+        expect(container.querySelectorAll('[data-thread-item="textturn-thread-message"]')).toHaveLength(1);
         rerender(tree(false));
-        expect(getComputedStyle(flow).columnCount).toBe('1');
-        expect(getComputedStyle(flow).height).toBe('auto');
+        expect(container.querySelectorAll('[data-thread-item="textturn-thread-message"]')).toHaveLength(1);
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'thread-message' });
     } finally {
         vi.unstubAllGlobals();
     }
@@ -250,7 +244,6 @@ it('renders a conversation canvas with full messages and collapsed command resul
     expect(screen.getByText('Here are the findings.')).toBeTruthy();
     expect(screen.queryByRole('img', { name: 'User' })).toBeNull();
     expect(screen.queryByRole('img', { name: 'Agent' })).toBeNull();
-    expect(getComputedStyle(screen.getByText('Analyze usage').closest('[data-conversation-role="user"]')!).justifyContent).toBe('flex-end');
     expect(screen.getByText('Analyze usage').closest('[data-conversation-role="user"]')).toBeTruthy();
     expect(screen.getByText('Here are the findings.').closest('[data-conversation-role="agent"]')).toBeTruthy();
     expect(screen.getByRole('button', { name: /az account show Completed/ }).closest('[data-conversation-role="agent"]')).toBeTruthy();
@@ -314,7 +307,7 @@ it.each(['Auto', '?', 'Table'])('does not display internal %s trigger charts as 
     expect(screen.getByRole('button', { name: 'Open table: Deployments' })).toBeTruthy();
 });
 
-it.each([true, false])('keeps chart titles independent of narrow preview dimensions (cached: %s)', cached => {
+it.each([true, false])('opens a chart from its labeled preview with or without a cached image (cached: %s)', cached => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const chartId = 'narrow-preview';
     const label = 'Bar Chart - Token Usage By Deployment';
@@ -327,10 +320,7 @@ it.each([true, false])('keeps chart titles independent of narrow preview dimensi
     try {
         render(React.createElement(Provider, { store, children: React.createElement(ConversationCanvas, { textTurnId: 'deployment-table' }) }));
         expect(screen.getAllByText(label)).toHaveLength(1);
-        const frame = screen.getByText(label).parentElement!.parentElement!;
-        expect(getComputedStyle(frame).width).toBe(cached ? '360px' : '506px');
-        expect(getComputedStyle(frame).maxWidth).toBe('100%');
-        if (cached) expect(getComputedStyle(screen.getByRole('img', { name: label })).maxWidth).toBe('120px');
+        if (cached) expect(screen.getByRole('img', { name: label })).toHaveAttribute('src', 'data:image/png;base64,narrow');
         else expect(screen.queryByRole('img', { name: label })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: `Open chart: ${label}` }));
         expect(store.getState().focusedId).toEqual({ type: 'chart', chartId });

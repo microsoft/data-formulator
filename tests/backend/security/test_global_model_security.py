@@ -32,6 +32,42 @@ class TestGetClientGlobalResolution:
     """get_client() must resolve real credentials from model_registry
     when the model config has is_global=True."""
 
+    @pytest.mark.parametrize("managed", [False, True])
+    @pytest.mark.parametrize("is_global", [False, True])
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_managed_deployment_model_policy(self, managed, is_global):
+        from flask import Flask
+        from data_formulator.routes.agents import get_client
+
+        app = Flask(__name__)
+        app.config["CLI_ARGS"] = {"disable_custom_models": managed, "disable_data_connectors": False}
+        registry = ModelRegistry()
+        with app.app_context(), patch("data_formulator.routes.agents.model_registry", registry):
+            config = {
+                "id": "global-openai-gpt-4o",
+                "endpoint": "openai",
+                "model": "gpt-4o",
+                "is_global": is_global,
+                "api_key": "caller-key",
+                "api_base": "https://api.openai.com/v1",
+            }
+            if managed and not is_global:
+                with patch("data_formulator.routes.model_endpoints.resolve_model_connection") as resolve:
+                    with pytest.raises(AppError, match="Custom models are disabled") as exc:
+                        get_client(config)
+                    assert exc.value.get_http_status() == 403
+                    resolve.assert_not_called()
+            else:
+                assert get_client(config).params["api_key"] == (SAMPLE_ENV["OPENAI_API_KEY"] if is_global else "caller-key")
+
+    @patch.dict(os.environ, {**SAMPLE_ENV, "DISABLE_CUSTOM_MODELS": "true"}, clear=True)
+    def test_managed_policy_outside_app_context(self):
+        from data_formulator.routes.agents import get_client
+
+        with pytest.raises(AppError, match="Custom models are disabled"):
+            get_client({"endpoint": "openai", "model": "gpt-4o", "api_key": "caller-key"})
+        assert get_client(ModelRegistry().get_config("global-openai-gpt-4o"), trusted=True).params["api_key"] == SAMPLE_ENV["OPENAI_API_KEY"]
+
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_global_model_gets_real_api_key(self):
         """A global model config (no api_key from frontend) should be

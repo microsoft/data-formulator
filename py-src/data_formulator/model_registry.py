@@ -80,16 +80,27 @@ class ModelRegistry:
                     "provider_display": provider,
                 }
 
-    def get_config(self, model_id: str) -> Optional[dict]:
+    def get_config(self, model_id: str, *, configured: bool = True) -> Optional[dict]:
         """Return the full config (including credentials) for a global model."""
+        from data_formulator.configuration import resource_enabled
+        if configured and not resource_enabled('models', model_id):
+            return None
+        if isinstance(model_id, str) and model_id.startswith('installation-'):
+            from data_formulator.configuration import connection_definitions
+            definition = connection_definitions('models').get(model_id)
+            return {**definition, 'id': model_id} if definition else None
         return self._models.get(model_id)
 
-    def list_public(self) -> list:
+    def list_public(self, configured: bool = True) -> list:
         """
         Return public info for all globally configured models.
         Sensitive fields (api_key) are intentionally excluded.
         """
-        return [
+        from data_formulator.configuration import connection_definitions
+        definitions = {**self._models, **{identifier: {**definition, 'id': identifier, 'api_base': definition.get('api_base', ''),
+                   'api_version': definition.get('api_version', ''), 'api_key': definition.get('api_key', '')}
+                   for identifier, definition in connection_definitions('models').items()}}
+        models = [
             {
                 "id": m["id"],
                 "endpoint": m["endpoint"],
@@ -103,11 +114,21 @@ class ModelRegistry:
                 ),
                 "is_global": True,
             }
-            for m in self._models.values()
+            for m in definitions.values()
         ]
+        if not configured:
+            return models
+        from data_formulator.configuration import read_configuration
+        overrides = read_configuration()['overrides']
+        options = overrides.get('models', {})
+        models = [{**model, **({'display_name': options[model['id']]['display_name']}
+                   if options.get(model['id'], {}).get('display_name') else {})}
+                  for model in models if options.get(model['id'], {}).get('enabled', True)]
+        default = overrides.get('default_model')
+        return sorted(models, key=lambda model: model['id'] != default)
 
     def is_global(self, model_id: str) -> bool:
-        return model_id in self._models
+        return self.get_config(model_id) is not None
 
 
 model_registry = ModelRegistry()

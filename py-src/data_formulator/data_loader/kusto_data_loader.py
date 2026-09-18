@@ -604,20 +604,15 @@ class KustoDataLoader(ExternalDataLoader):
         return parts
 
     def _resolve_source_table(self, source_table: str) -> tuple[str | None, str]:
-        """Parse a source_table identifier into ``(database, table)``.
+        """Preserve literal table names in a pinned database.
 
-        Cross-database catalog entries are ``"database.table"`` and must be
-        split even when a database is pinned — otherwise the whole identifier
-        gets bracket-quoted (``['db.table']``) and Kusto reads it as a single
-        table literally named with a dot. A bare identifier uses the pinned
-        database when available. Returns ``(database_or_None, table)``; when
-        *database* is ``None`` the caller should use the connect-time database.
+        Only legacy unpinned catalogs use database-qualified source names.
         """
-        parts = source_table.split(".")
-        if len(parts) >= 2:
-            return parts[0], ".".join(parts[1:])
         if self.kusto_database:
             return self.kusto_database, source_table
+        if "." in source_table:
+            database, table = source_table.split(".", 1)
+            return database, table
         return None, source_table
 
     @classmethod

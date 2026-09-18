@@ -48,6 +48,46 @@ def test_query_converts_floating_point_result_types(column_type: str) -> None:
     assert frame["label"].tolist() == ["finite", "null", "nan", "positive", "negative"]
 
 
+@pytest.mark.parametrize("database,source,expected", [
+    ("Athens-prod", "PlayfabDataConnectionMetadata_custom.ObjectiveLog",
+     ("Athens-prod", "PlayfabDataConnectionMetadata_custom.ObjectiveLog")),
+    ("Athens-prod", "Athens-prod.ObjectiveLog", ("Athens-prod", "Athens-prod.ObjectiveLog")),
+    ("Athens-prod", "ObjectiveLog", ("Athens-prod", "ObjectiveLog")),
+    (None, "Athens-prod.PlayfabDataConnectionMetadata_custom.ObjectiveLog",
+     ("Athens-prod", "PlayfabDataConnectionMetadata_custom.ObjectiveLog")),
+    (None, "ObjectiveLog", (None, "ObjectiveLog")),
+])
+def test_resolve_source_table_preserves_dots_in_pinned_database(database, source, expected) -> None:
+    loader = _loader()
+    loader.kusto_database = database
+
+    assert loader._resolve_source_table(source) == expected
+
+
+@pytest.mark.parametrize("operation", ["fetch", "probe"])
+def test_dotted_table_queries_use_configured_database(operation) -> None:
+    loader = _loader()
+    loader.kusto_database = "Athens-prod"
+    table = "PlayfabDataConnectionMetadata_custom.ObjectiveLog"
+    loader.client.execute.return_value = Mock(primary_results=[KustoResultTable({
+        "Columns": [{"ColumnName": "count", "ColumnType": "long"}],
+        "Rows": [[1]],
+    })])
+
+    if operation == "fetch":
+        result = loader.fetch_data_as_arrow(table, {"size": 10})
+        assert result.num_rows == 1
+    else:
+        result = loader.probe([table], {"limit": 10})
+        assert "error" not in result
+
+    loader.client.execute.assert_called_once()
+    database, kql = loader.client.execute.call_args.args[:2]
+    assert database == "Athens-prod"
+    assert kql.startswith(f"['{table}']\n| ")
+    assert loader.kusto_database == "Athens-prod"
+
+
 def test_connection_uses_direct_sdk_probe() -> None:
     loader = _loader()
     loader.query = Mock(side_effect=AssertionError("query conversion must not run"))

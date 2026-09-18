@@ -1,7 +1,7 @@
 import { ShimmerText, WorkflowGears } from '../components/FunComponents';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useSelector } from 'react-redux';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+import { Alert, Autocomplete, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem,
     IconButton, TextField, Tooltip, Typography, useTheme } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -17,7 +17,14 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
+import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
+import { getCachedChart } from '../app/chartCache';
 import { ApiRequestError, apiRequest, streamRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
 import { getUrls, resolveRecommendedChart } from '../app/utils';
@@ -34,9 +41,16 @@ import { parseDataOperation } from '../dataOperations/models';
 import { ClarificationPanel, FailedDraftPanel } from './AgentPausePanel';
 import { formatClarificationResponses, normalizeClarifyEvent } from '../app/clarification';
 
-interface Instance { path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' }
+interface WorkflowParameter {
+    name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
+    required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean;
+}
+interface WorkflowSetup { parameters: Record<string, string | number | boolean>; instructions: string }
+interface Instance { path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' | 'server'; parameters?: WorkflowParameter[] }
 export interface Run {
+    setup?: WorkflowSetup;
     activity?: string;
+    active_tool?: NonNullable<TextTurn['workflow']>['activeTool'];
     step_elapsed_seconds?: Record<string, number>;
     revision?: number;
     plan_revision?: number;
@@ -50,7 +64,7 @@ export interface Run {
     name?: string; instance?: { name: string; steps?: { id: string; description?: string; instructions: string; next?: string;
         checkers?: { id: string; condition?: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[] }; report?: string; calls?: number; tool_calls?: number;
     checks?: Record<string, { status: string; explanation: string; evidence_ids: string[] }>;
-    evidence?: Record<string, { tool: string; text: string; call?: number; step_id?: string; plan_revision?: number }>;
+    evidence?: Record<string, { tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string> }>;
     transitions?: { from: string; to: string; reason: string; plan_revision?: number }[];
     artifacts?: string[];
     terminal_request?: TerminalProposal;
@@ -58,7 +72,7 @@ export interface Run {
         kind: string; title: string; connector?: { source_type: string; prefilled?: Record<string, string> };
     } };
     visited?: string[];
-    outputs?: { id: string; version?: string; type: string; tool?: string; stdout?: string; content?: any; input_sources?: { id: string; kind: 'data' | 'file'; display_name?: string }[] }[];
+    outputs?: { id: string; version?: string; type: string; step_id?: string; plan_revision?: number; tool?: string; stdout?: string; content?: any; input_sources?: { id: string; kind: 'data' | 'file'; display_name?: string }[] }[];
 }
 
 async function post<T>(route: string, body: object = {}, signal?: AbortSignal): Promise<T> {
@@ -83,6 +97,55 @@ function workflowOutputIds(run: Run): string[] {
 }
 
 const deletedWorkflowRuns = new Set<string>();
+
+function workflowArtifacts(run: Run): NonNullable<NonNullable<TextTurn['workflow']>['artifacts']> {
+    return (run.outputs || []).flatMap(output => {
+        const evidence = run.evidence?.[output.id] || (output.type === 'report'
+            ? Object.values(run.evidence || {}).filter(entry => entry.tool === 'write_report').at(-1) : undefined);
+        return workflowOutputIds({ ...run, outputs: [output] }).map(nodeId => ({ nodeId,
+            chartId: output.type === 'result' ? output.content.result.chart_id as string : undefined,
+            stepId: output.step_id || evidence?.step_id,
+            planRevision: output.plan_revision ?? evidence?.plan_revision ?? 0,
+        }));
+    }).filter((artifact, index, all) => all.findLastIndex(item => item.nodeId === artifact.nodeId) === index);
+}
+
+const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn['workflow']>['artifacts']> }> = ({ artifacts }) => {
+    const state = useSyncExternalStore(store.subscribe, store.getState);
+    return <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 1, my: 1 }}>
+        {artifacts.map(artifact => {
+            const chart = artifact.chartId ? dfSelectors.getAllCharts(state).find(item => item.id === artifact.chartId) : undefined;
+            const loaded = state.loadedTableNodes.find(item => item.id === artifact.nodeId);
+            const table = dfSelectors.getAllTables(state).find(item => item.id === (loaded?.tableId || artifact.nodeId));
+            const file = state.fileNodes.find(item => item.id === artifact.nodeId);
+            const report = state.generatedReports.find(item => item.id === artifact.nodeId);
+            if (!chart && !table && !file && !report) return null;
+            const title = chart?.title || table?.displayId || table?.id || file?.displayName || report?.title || artifact.nodeId;
+            const cached = chart ? getCachedChart(chart.id) : undefined;
+            const image = chart ? cached?.fullPngDataUrl || dfSelectors.getChartThumbnail(chart.id)(state) || cached?.thumbnailDataUrl : undefined;
+            const Icon = chart ? BarChartOutlinedIcon : table ? TableChartOutlinedIcon : file ? InsertDriveFileOutlinedIcon : ArticleOutlinedIcon;
+            return <ButtonBase key={artifact.nodeId} aria-label={`Open ${title}`} data-workflow-artifact={artifact.nodeId}
+                onClick={() => {
+                    if (chart) store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+                    else if (loaded || file) store.dispatch(dfActions.setFocused({ type: 'reference', referenceId: artifact.nodeId }));
+                    else if (table) store.dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
+                    else if (report) store.dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+                }} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left',
+                    maxWidth: '100%', width: chart ? 280 : undefined, p: 0.75, borderRadius: 0.5,
+                    '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                {image && <Box component="img" src={image} alt={title} sx={{ width: '100%', height: 160, objectFit: 'contain', mb: 0.75 }} />}
+                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, fontSize: textVar.sm }}>
+                    <Icon sx={{ fontSize: 16, flexShrink: 0, color: 'text.secondary' }} />
+                    <Box component="span" sx={{ overflowWrap: 'anywhere', minWidth: 0 }}>{title}</Box>
+                </Box>
+                {table && !chart && <Typography component="span" sx={{ pl: 2.75, fontSize: textVar.xs, color: 'text.secondary' }}>
+                    {(table.virtual?.rowCount ?? table.rows.length).toLocaleString()} rows · {table.names.length} columns
+                </Typography>}
+                {report?.status === 'generating' && <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Composing...</Typography>}
+            </ButtonBase>;
+        })}
+    </Box>;
+};
 
 function workflowSteps(run: Pick<Run, 'instance' | 'checks' | 'step_progress' | 'step_id' | 'status' | 'visited' | 'plan_review_pending' | 'revision' | 'step_elapsed_seconds'>): NonNullable<TextTurn['workflow']>['steps'] {
     return (run.instance?.steps || []).map(step => {
@@ -129,8 +192,12 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
                     prefilled: run.interaction.form.connector.prefilled, status: 'pending' } } : undefined,
         workflow: { runId: run.id, status: run.status, stepId: run.step_id, calls: run.calls || 0, outputVersions: { ...outputVersions },
             toolCalls: run.tool_calls,
+            artifacts: [...workflowArtifacts(run), ...(existing?.workflow?.artifacts || []).filter(artifact =>
+                !outputIds.includes(artifact.nodeId) && store.getState().generatedReports.some(report =>
+                    report.id === artifact.nodeId && report.status === 'generating'))],
             planRevision: run.plan_revision || 0, planReviewPending: run.plan_review_pending || false,
             activity: run.activity,
+            activeTool: run.active_tool,
             planHistory: (run.plan_revisions || []).map((previous, index) => ({ revision: previous.plan_revision ?? index,
                 reason: previous.reason, steps: workflowSteps({ instance: { name: '', steps: previous.previous_steps },
                     checks: previous.previous_checks, visited: previous.previous_visited, step_progress: previous.previous_progress,
@@ -303,6 +370,7 @@ export async function sendWorkflowMessage(turn: TextTurn, text: string, messageI
 
 interface WorkflowRequest {
     path?: string; run_id?: string; reply?: string;
+    setup?: WorkflowSetup;
     terminal_response?: { request_id: string; decision: 'approve' | 'reject' };
     interaction_response?: { operation_id: string; plan_id: string };
 }
@@ -321,6 +389,16 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
     let latest: Run | undefined;
     let streamingReportId: string | undefined;
     let reportContent = '';
+    let reportTimer: ReturnType<typeof setTimeout> | undefined;
+    const flushReport = () => {
+        if (reportTimer) clearTimeout(reportTimer);
+        reportTimer = undefined;
+        const state = store.getState();
+        const report = state.generatedReports.find(item => item.id === streamingReportId);
+        if (state.activeWorkspace?.id === workspaceId && report?.status === 'generating' && report.content !== reportContent) {
+            store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id, content: reportContent }));
+        }
+    };
     let monitoring = true;
     let healthTimer: ReturnType<typeof setTimeout> | undefined;
     const checkExecution = async () => {
@@ -350,8 +428,9 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
         for await (const event of streamRequest('/api/workflows/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...body, model }) }, controller.signal)) {
             if (controller.signal.aborted || store.getState().activeWorkspace?.id !== workspaceId) { controller.abort(); break; }
-            const result = event as typeof event & { run?: Run; tool?: string; action?: string; channel?: string; content?: string };
+            const result = event as typeof event & { run?: Run; tool?: string; action?: string; channel?: string; content?: string; active_tool?: Run['active_tool'] };
             if (result.type === 'action' && result.action === 'write_report' && latest) {
+                flushReport();
                 streamingReportId = `workflow-report-${latest.id}`;
                 reportContent = '';
                 const state = store.getState();
@@ -362,12 +441,16 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
                     createdAt: previous?.createdAt || Date.now(),
                     parentNodeId: previous?.parentNodeId || turn?.outputIds?.filter(id => id !== streamingReportId).at(-1) || turn?.id,
                     selectedChartIds: (latest.outputs || []).filter(output => output.type === 'result').map(output => output.content.result.chart_id) }));
+                if (turn?.workflow) store.dispatch(dfActions.updateTextTurn({ id: turn.id, workflow: { ...turn.workflow,
+                    artifacts: [...(turn.workflow.artifacts || []).filter(artifact => artifact.nodeId !== streamingReportId),
+                        { nodeId: streamingReportId, stepId: latest.step_id, planRevision: latest.plan_revision || 0 }] } }));
                 store.dispatch(dfActions.setFocused({ type: 'report', reportId: streamingReportId }));
                 store.dispatch(dfActions.setViewMode('report'));
             } else if (result.type === 'text_delta' && result.channel === 'report' && streamingReportId) {
                 reportContent += result.content || '';
-                store.dispatch(dfActions.updateGeneratedReportContent({ id: streamingReportId, content: reportContent }));
+                if (!reportTimer) reportTimer = setTimeout(flushReport, 100);
             } else if (result.type === 'workflow_state' && result.run) {
+                flushReport();
                 latest = result.run;
                 await publishWorkflowRun(latest, workspaceId);
                 onAccepted?.();
@@ -375,13 +458,14 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
             } else if (result.type === 'activity' && latest) {
                 const turn = store.getState().textTurns.find(item => item.workflow?.runId === latest?.id);
                 if (turn?.workflow) store.dispatch(dfActions.updateTextTurn({ id: turn.id,
-                    workflow: { ...turn.workflow, activity: result.message || result.tool?.replaceAll('_', ' ') } }));
+                    workflow: { ...turn.workflow, activity: result.message || result.tool?.replaceAll('_', ' '), activeTool: result.active_tool } }));
             } else if (result.type === 'error') {
                 if (event.error) throw new ApiRequestError(event.error, 200);
                 throw new Error(event.message || 'Workflow execution failed');
             }
         }
     } finally {
+        flushReport();
         if (streamingReportId && store.getState().activeWorkspace?.id === workspaceId
             && store.getState().generatedReports.find(report => report.id === streamingReportId)?.status === 'generating') {
             store.dispatch(dfActions.updateGeneratedReportContent({ id: streamingReportId, content: reportContent, status: 'error' }));
@@ -416,6 +500,14 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const [submitting, setSubmitting] = useState(false);
     const submittingRef = useRef(false);
     const workflow = turn.workflow;
+    const [liveElapsed, setLiveElapsed] = useState(0);
+    useEffect(() => {
+        setLiveElapsed(0);
+        if (workflow?.status !== 'running' || workflow.planReviewPending || interactionOnly) return;
+        const started = Date.now();
+        const timer = setInterval(() => setLiveElapsed((Date.now() - started) / 1000), 1000);
+        return () => clearInterval(timer);
+    }, [workflow?.runId, workflow?.status, workflow?.stepId, workflow?.steps, workflow?.planReviewPending, interactionOnly]);
     const questionKey = workflow ? `${workflow.runId}:${workflow.interactionId || workflow.calls}` : '';
     const questions = workflow?.interactionId ? workflow.questions || [] : [];
     useEffect(() => { setQuestionAnswers({}); }, [questionKey]);
@@ -438,9 +530,10 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     };
     useEffect(() => {
         const needsOutputOrder = turn.outputIds === undefined && savedLog === undefined;
+        const needsArtifacts = workflow?.artifacts === undefined && savedPlan === undefined;
         const needsPlan = workflow?.steps.some(step => step.checkers === undefined)
             || workflow?.planHistory?.some(plan => plan.steps.some(step => step.checkers === undefined));
-        if (!canvas || !workflow || historyUnavailable || (!needsOutputOrder && (workflow.log !== undefined || savedLog !== undefined)
+        if (!canvas || !workflow || historyUnavailable || (!needsArtifacts && !needsOutputOrder && (workflow.log !== undefined || savedLog !== undefined)
             && (!needsPlan || savedPlan !== undefined))) return;
         const workspaceId = store.getState().activeWorkspace?.id;
         if (!workspaceId) return;
@@ -486,12 +579,25 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     if (!workflow) return null;
     const statusColor = workflow.status === 'completed' ? 'success.main'
         : workflow.status === 'running' ? 'text.primary' : workflow.status === 'paused' ? 'warning.main' : 'error.main';
+    const sectionContentSx = { ml: 1, pl: 1.75, my: 0.5, borderLeft: 1, borderColor: 'divider', minWidth: 0 };
+    const activeTool = workflow.status === 'running' ? workflow.activeTool : undefined;
+    const toolTitle = (details?: Record<string, string>) => details?.title || details?.purpose || details?.display_name || details?.table_name || details?.filename;
+    const renderToolDetails = (details?: Record<string, string>) => details && <Box component="dl" sx={{ m: 0, display: 'grid',
+        gridTemplateColumns: 'max-content minmax(0, 1fr)', columnGap: 1, fontSize: textVar.xs, color: 'text.secondary' }}>
+        {Object.entries(details).filter(([, value]) => value).map(([name, value]) => <React.Fragment key={name}>
+            <Box component="dt" sx={{ textTransform: 'capitalize' }}>{name.replaceAll('_', ' ')}</Box>
+            <Box component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }}>{value}</Box>
+        </React.Fragment>)}
+    </Box>;
     const allLog = workflow.log || savedLog || [];
+    const artifacts = workflow.artifacts || (savedPlan ? workflowArtifacts(savedPlan) : []);
+    const unassignedArtifacts = artifacts.filter(artifact => !artifact.stepId);
     const log = allLog.filter(entry => (entry.plan_revision || 0) === (workflow.planRevision || 0));
     const unassignedLog = log.filter(entry => !workflow.steps.some(step => step.id === entry.step_id));
     const unassignedChecks = (workflow.checks || []).filter(check => !workflow.steps.some(step => step.checkIds?.includes(check.id)));
     const isActiveStep = (id: string) => workflow.status === 'running' && !workflow.planReviewPending && workflow.stepId === id;
-    const stepDuration = (elapsed?: number) => {
+    const stepDuration = (elapsed?: number, active = false) => {
+        if (active) elapsed = (elapsed || 0) + liveElapsed;
         if (elapsed === undefined || !Number.isFinite(elapsed)) return null;
         const seconds = Math.max(0, Math.ceil(elapsed));
         return <Tooltip title="Active time including actions and checks"><Box component="span" sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -516,13 +622,16 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         try { parsed = JSON.parse(entry.text); } catch {}
         const fields = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
             ? Object.entries(parsed).filter(([, value]) => value !== null && ['string', 'number', 'boolean'].includes(typeof value)) : [];
-        return <Box component="details" key={entry.id} data-workflow-call={entry.id} sx={{ borderTop: 1, borderColor: 'divider' }}>
-            <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        return <Box component="details" key={entry.id} data-workflow-call={entry.id}>
+            <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, '&&': { py: 0.25 } }}>
                 <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, flexShrink: 0 }} />
                 <TerminalIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
-                <Box component="span">{entry.call !== undefined ? `Call ${entry.call}: ` : ''}{entry.tool.replaceAll('_', ' ')}</Box>
+                <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{entry.call !== undefined ? `Call ${entry.call}: ` : ''}{entry.tool.replaceAll('_', ' ')}
+                    {toolTitle(entry.details) && <Box component="span" sx={{ color: 'text.secondary' }}> · {toolTitle(entry.details)}</Box>}
+                </Box>
             </Box>
             <Box sx={{ pl: { xs: 1, sm: 4 }, pb: 1.5 }}>
+                {renderToolDetails(entry.details)}
                 {fields.length > 0 ? <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'minmax(80px, 140px) minmax(0, 1fr)', gap: 1 }}>
                     {fields.map(([name, value]) => <React.Fragment key={name}>
                         <Box component="dt" sx={{ color: 'text.secondary', overflowWrap: 'anywhere' }}>{name.replaceAll('_', ' ')}</Box>
@@ -544,6 +653,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             sx={{ listStyle: 'none', m: 0, p: 0 }}>
             {steps.map((step, index) => {
                 const entries = allLog.filter(entry => (entry.plan_revision || 0) === revision && entry.step_id === step.id);
+                const stepArtifacts = artifacts.filter(artifact => artifact.planRevision === revision && artifact.stepId === step.id);
                 const results = checks.filter(check => step.checkIds?.includes(check.id));
                 const transitions = (workflow.transitions || []).filter(transition => (transition.plan_revision || 0) === revision && transition.from === step.id);
                 const savedSteps = revision === (savedPlan?.plan_revision || 0) ? savedPlan?.instance?.steps
@@ -551,6 +661,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 const definition = savedSteps?.find(item => item.id === step.id);
                 const checkers = step.checkers || definition?.checkers || (step.checkIds || []).map(id => ({ id, condition: undefined, when: undefined, on_fail: undefined }));
                 const active = !archived && isActiveStep(step.id);
+                const runningTool = active && activeTool?.step_id === step.id ? activeTool : undefined;
                 const activeIndex = workflow.status === 'completed' ? steps.length - 1 : steps.findIndex(item => item.id === workflow.stepId);
                 const reached = !archived && !workflow.planReviewPending && index <= activeIndex;
                 const finished = step.status === 'passed' || step.status === 'completed';
@@ -575,27 +686,31 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                             <Typography component="h3" sx={{ m: 0, fontSize: textVar.sm, fontWeight: reached ? 700 : 500,
                                 color: reached ? progressColor : 'text.secondary', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{step.id}</Typography>
                             <Typography component="span" sx={{ fontSize: textVar.xs, fontWeight: reached ? 600 : 400,
-                                color: reached ? progressColor : 'text.secondary' }}>{step.status}{stepDuration(step.elapsedSeconds)}</Typography>
+                                color: reached ? progressColor : 'text.secondary' }}>{step.status}{stepDuration(step.elapsedSeconds, active)}</Typography>
                         </Box>
                         {(step.description || definition?.description) && <Typography sx={{ mt: 0.5, fontSize: textVar.sm, lineHeight: 1.6 }}>
                             {step.description || definition?.description}
                         </Typography>}
-                        <Box sx={{ mt: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 1.5 }}>
+                        <Box sx={{ mt: 0.5, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 0.25 }}>
                             <Box component="section" aria-label={`${step.id} action`} sx={{ minWidth: 0 }}>
-                                <Typography component="h4" sx={{ m: 0, mb: 0.5, fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary' }}>Action</Typography>
-                                <Box component="details" data-workflow-action={step.id}
-                                    sx={{ '&[open] .workflow-step-preview': { WebkitLineClamp: 'unset', display: 'block' } }}>
+                                <Box component="details" data-workflow-action={step.id}>
                                     <Box component="summary" sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75, '&&': { py: 0.25 } }}>
                                         <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, mt: 0.25, flexShrink: 0 }} />
-                                        <Typography className="workflow-step-preview" sx={{ fontSize: textVar.sm, lineHeight: 1.65,
-                                            display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3,
-                                            overflow: 'hidden', overflowWrap: 'anywhere', minWidth: 0 }}>{step.instructions}</Typography>
+                                        <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Action</Typography>
+                                    </Box>
+                                    <Box data-workflow-section-content sx={sectionContentSx}>
+                                    <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.65, overflowWrap: 'anywhere' }}>{step.instructions}</Typography>
+                                    {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ mt: 0.5, fontSize: textVar.xs, color: 'text.secondary' }}>Next: {step.next}</Typography>}
                                     </Box>
                                 </Box>
-                                {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ mt: 0.5, fontSize: textVar.xs, color: 'text.secondary' }}>Next: {step.next}</Typography>}
                             </Box>
                             <Box component="section" aria-label={`${step.id} checks`} sx={{ minWidth: 0 }}>
-                                <Typography component="h4" sx={{ m: 0, mb: 0.5, fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary' }}>Checks</Typography>
+                                <Box component="details" data-workflow-checks={step.id}>
+                                <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, '&&': { py: 0.25 } }}>
+                                    <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, flexShrink: 0 }} />
+                                    <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Checks · {results.filter(result => result.status === 'passed').length}/{checkers.length} passed</Typography>
+                                </Box>
+                                <Box data-workflow-section-content sx={sectionContentSx}>
                                 {!checkers.length && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>No checks specified.</Typography>}
                                 <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }}>
                                 {checkers.map(check => {
@@ -622,43 +737,71 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                                     </Box>;
                                 })}
                                 </Box>
+                                </Box>
+                                </Box>
                             </Box>
-                        </Box>
-                        {(entries.length > 0 || transitions.length > 0 || step.assessment) && <Box component="details"
-                            key={`${revision}-${step.id}-activity`} data-workflow-activity={step.id} sx={{ mt: 0.75 }}>
-                            <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', '&&': { py: 0.5 } }}>
+                        {(entries.length > 0 || transitions.length > 0 || step.assessment || runningTool) && <Box component="details" open
+                            key={`${revision}-${step.id}-activity`} data-workflow-activity={step.id}>
+                            <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary', '&&': { py: 0.25 } }}>
                                 <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16 }} />
-                                <Box component="span" sx={{ fontSize: textVar.xs }}>Activity{entries.length ? ` · ${entries.length} calls` : ''}</Box>
+                                <Box component="span" sx={{ fontSize: textVar.xs }}>Activities · {entries.length} calls</Box>
                             </Box>
+                            <Box data-workflow-section-content sx={sectionContentSx}>
                             {step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', my: 1 }}>
                                 Progress assessment: {step.assessment.status} · {step.assessment.explanation}
                                 {step.assessment.evidence_ids.length ? ` · Evidence: ${step.assessment.evidence_ids.join(', ')}` : ''}
                             </Typography>}
                             {entries.map(renderCall)}
+                            {runningTool && <Box data-workflow-running-tool={runningTool.id} sx={{ py: 0.5 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5, color: 'primary.main', fontSize: textVar.sm }}>
+                                    <CircularProgress size={12} sx={{ flexShrink: 0 }} />
+                                    <Box component="span">Running {runningTool.tool.replaceAll('_', ' ')}</Box>
+                                </Box>
+                                <Box sx={{ pl: 2.25 }}>{renderToolDetails(runningTool.details)}</Box>
+                            </Box>}
                             {transitions.map((transition, transitionIndex) => <Typography key={transitionIndex} sx={{ mt: 1, fontSize: textVar.sm, color: 'text.secondary' }}>{transition.from} → {transition.to}: {transition.reason}</Typography>)}
+                            </Box>
                         </Box>}
+                        {stepArtifacts.length > 0 && <Box component="details" open data-workflow-artifacts={step.id}>
+                            <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary', '&&': { py: 0.25 } }}>
+                                <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16 }} />
+                                <Box component="span" sx={{ fontSize: textVar.xs }}>Artifacts · {stepArtifacts.length}</Box>
+                            </Box>
+                            <Box data-workflow-section-content sx={sectionContentSx}>
+                                <WorkflowArtifacts artifacts={stepArtifacts} />
+                            </Box>
+                            </Box>}
+                        </Box>
                     </Box>
                 </Box>;
             })}
         </Box>
     );
     const statusAction = (label: string, icon: React.ReactNode, onClick: () => void, disabled = false) => canvas || interactionOnly
-        ? <Tooltip title={label}><span><IconButton size="small" aria-label={label} disabled={disabled} onClick={onClick}>{icon}</IconButton></span></Tooltip>
-        : <Button size="small" startIcon={icon} disabled={disabled} onClick={onClick}>{label}</Button>;
+        ? <Tooltip title={label}><span><IconButton size="small" color={workflow.status === 'paused' ? 'warning' : 'primary'} aria-label={label} disabled={disabled} onClick={onClick}>{icon}</IconButton></span></Tooltip>
+        : <Button size="small" color={workflow.status === 'paused' ? 'warning' : 'primary'} startIcon={icon} disabled={disabled} onClick={onClick}>{label}</Button>;
     const pauseWorkflow = () => { void pauseWorkflowRun(workflow.runId); };
     const summary = (
         <Box component="span" sx={{ flex: 1, minWidth: 0 }}>
-            <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere', mb: 0.75 }}>
+            <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere', mb: 0.75, pr: canvas ? 0 : 3.5 }}>
                 <Box component="span"
                     sx={{ fontWeight: 600, color: statusColor, textTransform: 'capitalize' }}>
                     {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit" fontWeight={600}>{workflow.planReviewPending ? 'Reviewing plan' : workflow.status}</ShimmerText> : workflow.status}
-                </Box> · {workflow.toolCalls ?? workflow.log?.length ?? 0} tool calls{workflow.status === 'running' && workflow.activity ? ` · ${workflow.activity}` : ''}
+                </Box> · {workflow.toolCalls ?? workflow.log?.length ?? 0} tool calls
             </Typography>
+            {workflow.status === 'running' && workflow.activity && <Box component="span" data-workflow-current-action
+                sx={{ display: 'block', px: 1, py: 0.75, mb: 0.75, bgcolor: 'action.hover', borderRadius: 0.5,
+                    fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere' }}>
+                {workflow.activity}
+                {!canvas && toolTitle(activeTool?.details) && toolTitle(activeTool?.details) !== workflow.activity && <Box component="span" sx={{ display: 'block', mt: 0.25 }}>
+                    {toolTitle(activeTool?.details)}
+                </Box>}
+            </Box>}
             {!canvas && <Box component="span" sx={{ display: 'block' }}>
             {workflow.steps.map(step => <Box key={step.id} component="span" aria-busy={isActiveStep(step.id)}
                 data-workflow-step={step.id} sx={{ display: 'flex', gap: 0.75, alignItems: 'center', py: 0.25 }}>
             {stepIcon(step.status, isActiveStep(step.id))}
-            <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere' }}>{step.id} · {step.status}{stepDuration(step.elapsedSeconds)}</Typography>
+            <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere' }}>{step.id} · {step.status}{stepDuration(step.elapsedSeconds, isActiveStep(step.id))}</Typography>
         </Box>)}
         </Box>}
         </Box>
@@ -670,7 +813,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             p: { xs: 2, sm: 3 } } : { display: 'contents' }}>
         {!interactionOnly && <>
         {canvas && <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, overflowWrap: 'anywhere' }}>{turn.prompt?.replace(/^Run workflow: /, '') || 'Workflow'}</Typography>}
-        {canvas ? summary : <ThreadArtifactCard artifactType="workflow" title="Open workflow response and analysis log" selected={selected} onClick={() => {
+        {canvas ? summary : <ThreadArtifactCard artifactType="workflow" warning={workflow.status === 'paused'} title="Open workflow response and analysis log" selected={selected} onClick={() => {
             store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
             store.dispatch(dfActions.setViewMode('editor'));
         }} actions={<ArtifactDeleteButton label="Delete workflow node" disabled={deleting} onClick={async () => {
@@ -706,6 +849,10 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             </Box>}
             <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, mb: 1 }}>Steps{workflow.planRevision ? ` · Plan ${workflow.planRevision + 1}` : ''}</Typography>
             {renderTimeline(workflow.steps, workflow.checks || [], workflow.planRevision || 0)}
+            {!!unassignedArtifacts.length && <Box component="section" aria-label="Unassigned artifacts" sx={{ mt: 2 }}>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Unassigned artifacts</Typography>
+                <WorkflowArtifacts artifacts={unassignedArtifacts} />
+            </Box>}
             {loadingLog && <CircularProgress size={16} aria-label="Loading analysis log" />}
             {historyUnavailable && <Typography sx={{ mt: 1, fontSize: textVar.sm, color: 'text.secondary' }}>
                 Additional run history is unavailable in this session. Saved outputs are still available.
@@ -783,11 +930,13 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     </Box>;
 };
 
-export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void }> = ({ onCreateSession }) => {
+export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; headerActions?: React.ReactNode }> = ({ onCreateSession, headerActions }) => {
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const [items, setItems] = useState<Instance[]>([]);
+    const [expandedDescriptions, setExpandedDescriptions] = useState<string[]>([]);
+    const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
     const [runs, setRuns] = useState<Run[]>([]);
     const busy = useSelector((state: DataFormulatorState) => state.textTurns.some(turn => turn.workflow?.status === 'running'));
     const [loading, setLoading] = useState(false);
@@ -796,9 +945,21 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void }
     const [deleteTarget, setDeleteTarget] = useState<Instance | null>(null);
     const [deletingInstance, setDeletingInstance] = useState(false);
     const [runTarget, setRunTarget] = useState<Instance | null>(null);
+    const [setupValues, setSetupValues] = useState<Record<string, string | number | boolean>>({});
+    const [setupInstructions, setSetupInstructions] = useState('');
     const [starting, setStarting] = useState(false);
-    const [pendingRun, setPendingRun] = useState<{ path: string; previousWorkspaceId?: string } | null>(null);
+    const [pendingRun, setPendingRun] = useState<{ path: string; setup: WorkflowSetup; previousWorkspaceId?: string } | null>(null);
     const generation = useRef(0);
+
+    const relativeRunTime = (timestamp: string) => {
+        const seconds = (new Date(timestamp).getTime() - Date.now()) / 1000;
+        if (!Number.isFinite(seconds)) return timestamp;
+        const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+        if (Math.abs(seconds) < 60) return formatter.format(Math.round(seconds), 'second');
+        if (Math.abs(seconds) < 3600) return formatter.format(Math.round(seconds / 60), 'minute');
+        if (Math.abs(seconds) < 86400) return formatter.format(Math.round(seconds / 3600), 'hour');
+        return formatter.format(Math.round(seconds / 86400), 'day');
+    };
 
     const refresh = async () => {
         const current = generation.current;
@@ -825,8 +986,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void }
             const result = await post<{ content: string }>('read', { path: item.path });
             if (current !== generation.current) return;
             let path = item.path;
-            if (item.origin === 'demo') {
-                const stem = item.path.replace(/^demo\//, '').replace(/\.yaml$/, '');
+            if (item.origin === 'demo' || item.origin === 'server') {
+                const stem = item.path.replace(/^(demo|server)\//, '').replace(/\.yaml$/, '');
                 path = `${stem}-copy.yaml`;
                 let suffix = 2;
                 while (items.some(existing => existing.path === path)) path = `${stem}-copy-${suffix++}.yaml`;
@@ -836,12 +997,15 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void }
         catch (reason) { handleApiError(reason, 'Read workflow'); }
     };
 
-    const execute = async (path?: string, runId?: string) => {
+    const execute = async (path: string, setup: WorkflowSetup) => {
         if (!model || busy) return;
         const current = generation.current;
         setStarting(true);
         try {
-            await executeWorkflow({ path, run_id: runId }, () => store.dispatch(dfActions.setDataSourceSidebarOpen(false)));
+            await executeWorkflow({ path, setup }, () => {
+                setRunTarget(null);
+                store.dispatch(dfActions.setDataSourceSidebarOpen(false));
+            });
         } catch (reason) { if (current === generation.current) handleApiError(reason, 'Workflow execution'); }
         finally {
             setStarting(false);
@@ -849,10 +1013,9 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void }
         }
     };
 
-    const startNewSession = (item: Instance) => {
-        setRunTarget(null);
+    const startNewSession = (item: Instance, setup: WorkflowSetup) => {
         setStarting(true);
-        setPendingRun({ path: item.path, previousWorkspaceId: workspaceId });
+        setPendingRun({ path: item.path, setup, previousWorkspaceId: workspaceId });
         try { onCreateSession(item.name); }
         catch (reason) {
             setPendingRun(null); setStarting(false);
@@ -863,35 +1026,76 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void }
     useEffect(() => {
         if (workspaceId && pendingRun && workspaceId !== pendingRun.previousWorkspaceId) {
             setPendingRun(null);
-            void execute(pendingRun.path);
+            void execute(pendingRun.path, pendingRun.setup);
         }
     }, [workspaceId, pendingRun]);
 
-    return <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, overflow: 'auto' }}>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', px: 1.5, py: 1 }}>
-            <Tooltip title="Refresh workflows"><span><IconButton aria-label="Refresh workflows" size="small" disabled={loading} onClick={refresh}><RefreshIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
-            {loading && <CircularProgress size={16} />}
+    return <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '0 1 auto', overflow: 'hidden' }}>
+        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
+            flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)' }}>
+            <Typography sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1 }}>Workflows</Typography>
+            <Tooltip title="Refresh workflows"><span><IconButton aria-label="Refresh workflows" size="small" disabled={loading} onClick={refresh}
+                sx={{ width: 24, height: 24, p: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } }}>
+                {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: iconVar.md }} />}
+            </IconButton></span></Tooltip>
+            {headerActions}
         </Box>
+        <Box sx={{ overflowY: 'auto', minHeight: 0, pb: 1 }}>
         {!model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>Select a model to run a workflow.</Alert>}
-        {(['user', 'demo'] as const).map(origin => {
+        {(['user', 'server', 'demo'] as const).map(origin => {
             const group = items.filter(item => (item.origin || 'user') === origin);
-            return group.length > 0 && <Box component="section" aria-label={origin === 'demo' ? 'Demo workflows' : 'Your workflows'} key={origin}>
-            <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, px: 1.5, pt: 1, pb: 0.5 }}>{origin === 'demo' ? 'Demos' : 'Your workflows'}</Typography>
-        {group.map(item => <Box key={item.path} sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', gap: 0.5, alignItems: 'flex-start' }}>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, overflowWrap: 'anywhere' }}>{item.name}</Typography>
-                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere' }}>{item.path}</Typography>
-                <Typography sx={{ fontSize: textVar.xs, color: item.error ? 'error.main' : 'text.secondary', overflowWrap: 'anywhere' }}>{item.error || item.overview}</Typography>
-            </Box>
-            <Tooltip title={origin === 'demo' ? 'Customize a copy' : 'Edit instance'}><span><IconButton aria-label={`${origin === 'demo' ? 'Customize' : 'Edit'} ${item.name}`} size="small" disabled={busy} onClick={() => edit(item)}>
-                {origin === 'demo' ? <ContentCopyIcon sx={{ fontSize: iconVar.md }} /> : <EditOutlinedIcon sx={{ fontSize: iconVar.md }} />}</IconButton></span></Tooltip>
-            {origin !== 'demo' && <Tooltip title="Delete workflow"><span><IconButton aria-label={`Delete ${item.path}`} size="small" disabled={busy || deletingInstance}
+            if (origin === 'server' && !group.length) return null;
+            const expanded = !collapsedGroups.includes(origin);
+            const label = origin === 'demo' ? 'Demo workflows' : origin === 'server' ? 'Server workflows' : 'My workflows';
+            return <Box component="section" aria-label={label} key={origin}>
+            <ButtonBase aria-label={label} aria-expanded={expanded} aria-controls={`workflow-group-${origin}`}
+                onClick={() => setCollapsedGroups(previous => expanded ? [...previous, origin] : previous.filter(group => group !== origin))}
+                sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 0.75, py: 0.75, textAlign: 'left',
+                    '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
+                <ChevronRightIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', transform: expanded ? 'rotate(90deg)' : 'none' }} />
+                {expanded ? <FolderOpenIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
+                    : <FolderOutlinedIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
+                <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, flex: 1 }}>{label}</Typography>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{group.length}</Typography>
+            </ButtonBase>
+            <Box id={`workflow-group-${origin}`} hidden={!expanded} sx={{ mx: 0.75 }}>
+            {!group.length && <Typography sx={{ px: 1, pt: 0.25, pb: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
+                {loading ? 'Loading workflows...' : origin === 'user' ? 'No saved workflows' : 'No demo workflows available'}
+            </Typography>}
+        {group.map(item => <Box key={item.path} sx={{ px: 0.75, py: 0.5, borderRadius: 0.5, '&:hover, &:focus-within': { bgcolor: 'action.hover' } }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', columnGap: 0.5 }}>
+            <ButtonBase aria-label={`Description for ${item.name}`}
+                    aria-expanded={expandedDescriptions.includes(item.path)}
+                    onClick={() => setExpandedDescriptions(previous => previous.includes(item.path)
+                        ? previous.filter(path => path !== item.path) : [...previous, item.path])}
+                    sx={{ display: 'block', width: '100%', minWidth: 0, textAlign: 'left', py: 0.25,
+                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</Typography>
+                <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
+                    color: item.error ? 'error.main' : 'text.secondary', overflowWrap: 'anywhere',
+                    ...(!expandedDescriptions.includes(item.path) && !item.error ? {
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    } : {}) }}>{item.error || item.overview}</Typography>
+            </ButtonBase>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, '& .MuiIconButton-root': { width: 24, height: 24, p: 0.25 } }}>
+            <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" color="primary" disabled={busy || starting || !!item.error}
+                onClick={() => {
+                    setSetupValues(Object.fromEntries((item.parameters || []).map(parameter => [parameter.name,
+                        parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
+                    setSetupInstructions('');
+                    setRunTarget(item);
+                }}><PlayArrowIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
+            <Tooltip title={origin !== 'user' ? 'Customize a copy' : 'Edit instance'}><span><IconButton aria-label={`${origin !== 'user' ? 'Customize' : 'Edit'} ${item.name}`} size="small" disabled={busy} onClick={() => edit(item)}>
+                {origin !== 'user' ? <ContentCopyIcon sx={{ fontSize: iconVar.md }} /> : <EditOutlinedIcon sx={{ fontSize: iconVar.md }} />}</IconButton></span></Tooltip>
+            {origin === 'user' && <Tooltip title="Delete workflow"><span><IconButton aria-label={`Delete ${item.path}`} size="small" disabled={busy || deletingInstance}
                 onClick={() => setDeleteTarget(item)}><DeleteOutlineIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>}
-            <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" color="primary" disabled={busy || starting || !model || !!item.error}
-                onClick={() => workspaceId ? setRunTarget(item) : startNewSession(item)}><PlayArrowIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
-        </Box>)}</Box>;
+            </Box>
+            {expandedDescriptions.includes(item.path) && <Typography sx={{ gridColumn: '1 / -1', mb: 0.25, fontSize: textVar.xs,
+                color: 'text.secondary', overflowWrap: 'anywhere' }}>{item.path}</Typography>}
+            </Box>
+        </Box>)}</Box></Box>;
         })}
-        <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, px: 1.5, pt: 2, pb: 0.5 }}>Recent runs</Typography>
+        {runs.length > 0 && <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, px: 1.5, pt: 1.5, pb: 0.5 }}>Recent runs</Typography>}
         {runs.map(item => <Button key={item.id} disabled={busy} onClick={async () => {
             try {
                 const { run } = await post<{ run: Run }>('run-state', { run_id: item.id });
@@ -904,25 +1108,63 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void }
             } catch (reason) { handleApiError(reason, 'Open workflow run'); }
         }} sx={{ justifyContent: 'flex-start', display: 'block', textAlign: 'left', px: 1.5, textTransform: 'none', borderRadius: 0 }}>
             <Typography sx={{ fontSize: textVar.sm, overflowWrap: 'anywhere' }}>{item.name}</Typography>
-            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{item.status} · {new Date(item.started_at).toLocaleString()}</Typography>
+            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{item.status} · <Box component="time" dateTime={item.started_at}
+                title={new Date(item.started_at).toLocaleString()}>{relativeRunTime(item.started_at)}</Box></Typography>
         </Button>)}
+        </Box>
 
-        <Dialog open={!!runTarget} onClose={() => setRunTarget(null)} maxWidth="xs" fullWidth>
-            <DialogTitle>Run workflow</DialogTitle>
-            <DialogContent>
-                <Typography sx={{ overflowWrap: 'anywhere', mb: 1 }}>{runTarget?.name}</Typography>
-                <Typography variant="body2">Start a new session or use the current session?</Typography>
-            </DialogContent>
-            <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-                <Button onClick={() => setRunTarget(null)}>Cancel</Button>
-                <Button disabled={busy || starting} onClick={() => {
-                    if (!runTarget) return;
-                    const path = runTarget.path;
-                    setRunTarget(null);
-                    void execute(path);
-                }}>Current session</Button>
-                <Button variant="contained" autoFocus disabled={busy || starting} onClick={() => runTarget && startNewSession(runTarget)}>New session</Button>
-            </DialogActions>
+        <Dialog open={!!runTarget} onClose={() => !starting && setRunTarget(null)} maxWidth="sm" fullWidth aria-labelledby="workflow-setup-title">
+            <Box component="form" onSubmit={event => {
+                event.preventDefault();
+                if (!runTarget || busy || starting || !model) return;
+                const parameters = Object.fromEntries((runTarget.parameters || []).flatMap(parameter => {
+                    const value = setupValues[parameter.name];
+                    if (value === undefined) return [];
+                    return [[parameter.name, parameter.type === 'number' && value !== '' ? Number(value) : value]];
+                }));
+                const setup = { parameters, instructions: setupInstructions.trim() };
+                const target = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+                if (target?.value === 'current' && workspaceId) void execute(runTarget.path, setup);
+                else startNewSession(runTarget, setup);
+            }}>
+                <DialogTitle id="workflow-setup-title">Workflow setup</DialogTitle>
+                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {!model && <Alert severity="info">Select a model to run a workflow.</Alert>}
+                    <Box>
+                        <Typography sx={{ overflowWrap: 'anywhere', fontWeight: 500 }}>{runTarget?.name}</Typography>
+                        {runTarget?.overview && <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere', mt: 0.5 }}>{runTarget.overview}</Typography>}
+                    </Box>
+                    {(runTarget?.parameters || []).map(parameter => {
+                        const value = setupValues[parameter.name] ?? '';
+                        const updateValue = (value: string | boolean) => setSetupValues(previous => ({ ...previous, [parameter.name]: value }));
+                        if (parameter.type === 'boolean') return <Box key={parameter.name}>
+                            <FormControlLabel label={parameter.label} control={<Checkbox size="small" checked={value === true}
+                                disabled={starting} onChange={(_, checked) => updateValue(checked)} />} />
+                            {parameter.description && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{parameter.description}</Typography>}
+                        </Box>;
+                        if (parameter.type === 'select' && parameter.allow_custom) return <Autocomplete key={parameter.name}
+                            freeSolo forcePopupIcon openOnFocus options={parameter.options || []} value={String(value) || null} inputValue={String(value)} disabled={starting}
+                            onInputChange={(_, value) => updateValue(value)}
+                            renderInput={params => <TextField {...params} size="small" label={parameter.label} required={parameter.required}
+                                helperText={parameter.description} slotProps={{ htmlInput: { ...params.inputProps, maxLength: 4000 } }} />} />;
+                        return <TextField key={parameter.name} size="small" fullWidth label={parameter.label} required={parameter.required}
+                            disabled={starting} helperText={parameter.description} value={value} onChange={event => updateValue(event.target.value)}
+                            select={parameter.type === 'select'} type={parameter.type === 'number' ? 'number' : 'text'}
+                            slotProps={{ htmlInput: { maxLength: 4000, step: 'any' } }}>
+                            {parameter.type === 'select' && !parameter.required && <MenuItem value="">Not specified</MenuItem>}
+                            {parameter.type === 'select' && parameter.options?.map(option => <MenuItem key={option} value={option}>{option}</MenuItem>)}
+                        </TextField>;
+                    })}
+                    <TextField label="Additional instructions" size="small" multiline minRows={3} fullWidth disabled={starting}
+                        value={setupInstructions} onChange={event => setSetupInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
+                </DialogContent>
+                <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                    <Button disabled={starting} onClick={() => setRunTarget(null)}>Cancel</Button>
+                    {workspaceId && <Button type="submit" value="current" disabled={busy || starting || !model}>Current session</Button>}
+                    <Button type="submit" value="new" variant="contained" startIcon={starting ? <CircularProgress size={16} /> : <PlayArrowIcon />}
+                        disabled={busy || starting || !model}>New session</Button>
+                </DialogActions>
+            </Box>
         </Dialog>
 
         <Dialog open={!!deleteTarget} onClose={() => !deletingInstance && setDeleteTarget(null)} maxWidth="xs" fullWidth>

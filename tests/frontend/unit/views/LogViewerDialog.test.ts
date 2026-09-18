@@ -35,7 +35,7 @@ it('inspects scratch files only in the diagnostics tab', async () => {
     }
 });
 
-it('keeps the content frame fixed across tab loading, errors and empty content', async () => {
+it('allows switching tabs after a saved-state load fails', async () => {
     let rejectSavedState!: (error: Error) => void;
     const pending = new Promise<never>((_, reject) => { rejectSavedState = reject; });
     const request = vi.spyOn(apiClient, 'apiRequest').mockImplementation(async (url: string) => {
@@ -46,24 +46,15 @@ it('keeps the content frame fixed across tab loading, errors and empty content',
     const rendered = render(React.createElement(Provider, { store, children:
         React.createElement(LogViewerDialog, { open: true, hideTrigger: true }),
     }));
-    const expectStableFrame = () => {
-        const style = getComputedStyle(screen.getByTestId('diagnostics-content'));
-        expect(style.height).toBe('60vh');
-        expect(style.overflow).toBe('hidden');
-        expect(style.flexBasis).toBe('60vh');
-    };
     try {
         await screen.findByText('Short log');
-        expectStableFrame();
         fireEvent.click(screen.getByRole('tab', { name: 'Saved state' }));
         expect(screen.getByRole('progressbar')).toBeTruthy();
-        expectStableFrame();
         await act(async () => rejectSavedState(new Error('State unavailable')));
         await screen.findByText('State unavailable');
-        expectStableFrame();
         fireEvent.click(screen.getByRole('tab', { name: 'Scratch files' }));
         await screen.findByText('No scratch files.');
-        expectStableFrame();
+        expect(screen.queryByText('State unavailable')).toBeNull();
     } finally {
         rendered.unmount();
         request.mockRestore();

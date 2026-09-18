@@ -42,7 +42,7 @@ import { AnvilLoader } from '../components/AnvilLoader';
 
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-import { toolName } from '../app/App';
+import { getToolName } from '../app/App';
 import { DataThread } from './DataThread';
 import { MAX_THREAD_COLUMNS } from './threadLayout';
 import {
@@ -74,7 +74,7 @@ import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import { ArtifactDeleteButton } from './DataThreadCards';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -108,6 +108,8 @@ export const DataFormulatorFC = ({ }) => {
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const appName = getToolName(serverConfig.APP_NAME);
+    const headingSize = Math.max(32, Math.min(76, 76 * Math.sqrt(15 / appName.length)));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
     const theme = useTheme();
@@ -428,8 +430,6 @@ export const DataFormulatorFC = ({ }) => {
     };
 
     useEffect(() => {
-        document.title = toolName;
-        
         // Preload imported images (public images are preloaded in index.html)
         const imagesToPreload = [
             { src: dfLogo, type: 'image/svg+xml' },
@@ -793,18 +793,19 @@ export const DataFormulatorFC = ({ }) => {
             {/* Hero — fills the viewport so title + input own the first screen;
                 Demos/Sessions live below the fold and just peek up. */}
             <Box sx={{ minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <Box sx={{ mx: 'auto' }}>
-                <Typography sx={{
-                    fontSize: { xs: 28, sm: 76 },
+            <Box sx={{ mx: 'auto', width: '100%', minWidth: 0 }}>
+                <Typography component="h1" sx={{
+                    fontSize: { xs: 28, sm: headingSize },
                     lineHeight: 1.05,
-                    letterSpacing: '0.04em',
-                    whiteSpace: 'nowrap',
+                    letterSpacing: 0,
+                    overflowWrap: 'anywhere',
+                    textWrap: 'balance',
                 }}>
-                    {toolName}
+                    {appName}
                 </Typography>
             </Box>
             <Box sx={{
-                display: { xs: 'none', sm: 'flex' },
+                display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 1,
@@ -817,19 +818,22 @@ export const DataFormulatorFC = ({ }) => {
                     sx={{ width: 25, height: 23, flexShrink: 0, display: 'block', transform: 'translateY(-2px)' }}
                 />
                 <Typography sx={{
-                    fontSize: 21,
+                    fontSize: { xs: 16, sm: 21 },
                     color: alpha(theme.palette.text.primary, 0.7),
                     lineHeight: 1.4,
                     textAlign: 'center',
+                    minWidth: 0,
+                    overflowWrap: 'anywhere',
+                    whiteSpace: 'pre-line',
                 }}>
-                    {t('landing.tagline')}
+                    {serverConfig.APP_TAGLINE || t('landing.tagline')}
                 </Typography>
             </Box>
 
             {/* Hosted-demo notice — borderless strip (it's prose, not a
                 button) placed before the Import Data section. The rocket
                 gets a quiet lift to add a touch of life. */}
-            {serverConfig.DISABLE_DATA_CONNECTORS && (
+            {serverConfig.WORKSPACE_BACKEND === 'ephemeral' && (
                 <Box
                     sx={{
                         mt: 2,
@@ -921,8 +925,8 @@ export const DataFormulatorFC = ({ }) => {
                         }
                     }}
                     onUpload={() => openUploadDialog('upload')}
-                    onConnect={() => openUploadDialog('add-connection')}
-                    onLinkFolder={serverConfig?.IS_LOCAL_MODE ? () => openUploadDialog('local-folder') : undefined}
+                    onConnect={serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection')}
+                    onLinkFolder={serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined}
                     readOnly={activeWorkspace?.readOnly}
                     onSelectConnector={(conn) => {
                         // Already-authed connector → open the data-source
@@ -1013,7 +1017,8 @@ export const DataFormulatorFC = ({ }) => {
                             position: 'relative', textAlign: 'left',
                             cursor: isRenaming ? 'default' : 'pointer',
                             '&:hover': isRenaming ? {} : { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
-                            '&:hover .ws-actions': { opacity: 1 },
+                            '&:hover .ws-actions, &:focus-within .ws-actions': { opacity: 1 },
+                            '@media (hover: none)': { '& .ws-actions': { opacity: 1 } },
                         }}>
                             <CardContent sx={{ py: 1.5, px: 2 }}>
                                 {isRenaming ? (
@@ -1037,7 +1042,7 @@ export const DataFormulatorFC = ({ }) => {
                                         slotProps={{ input: { sx: { fontSize: textVar.lg, fontWeight: 500 } } }}
                                     />
                                 ) : (
-                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary', pr: 8 }}>
                                         {w.display_name}
                                     </Typography>
                                 )}
@@ -1048,30 +1053,25 @@ export const DataFormulatorFC = ({ }) => {
                                 )}
                             </CardContent>
                             <Box className="ws-actions" sx={{
-                                position: 'absolute', top: 4, right: 4,
+                                position: 'absolute', top: 2, right: 2,
                                 display: isRenaming ? 'none' : 'flex',
-                                gap: 0.25,
+                                alignItems: 'center',
                                 opacity: 0,
                                 transition: 'opacity 0.15s',
                             }}>
                                 <Tooltip title={t('workspace.rename')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                    <IconButton size="small" aria-label={t('workspace.rename')} sx={{ p: 0.5, color: 'text.secondary' }}
                                         onClick={(e) => { e.stopPropagation(); startRenameWorkspace(w.id, w.display_name); }}>
-                                        <EditOutlinedIcon fontSize="small" />
+                                        <EditOutlinedIcon sx={{ fontSize: iconVar.md }} />
                                     </IconButton>
                                 </Tooltip>
                                 <Tooltip title={t('workspace.export')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                    <IconButton size="small" aria-label={t('workspace.export')} sx={{ p: 0.5, color: 'text.secondary' }}
                                         onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
-                                        <DownloadIcon fontSize="small" />
+                                        <DownloadIcon sx={{ fontSize: iconVar.md }} />
                                     </IconButton>
                                 </Tooltip>
-                                <Tooltip title={t('workspace.delete')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
-                                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
-                                        <DeleteOutlineIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
+                                <ArtifactDeleteButton label={t('workspace.delete')} onClick={() => setConfirmDeleteWs(w.id)} />
                             </Box>
                         </Card>
                         );
@@ -1181,15 +1181,15 @@ export const DataFormulatorFC = ({ }) => {
                         flexDirection: 'column',
                         zIndex: 1000,
                     }}>
-                        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
+                        <Box sx={{margin:'auto', pb: '5%', px: 2, maxWidth: '100%', boxSizing: 'border-box', display: "flex", flexDirection: "column", textAlign: "center"}}>
                             <Box component="img" sx={{  width: 196, margin: "auto" }} alt="Data Formulator logo" src={dfLogo} fetchPriority="high" />
-                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
-                                {toolName}
+                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: 0, fontSize: { xs: 28, sm: Math.min(48, headingSize) }, overflowWrap: 'anywhere'}}>
+                                {appName}
                             </Typography>
                             <Typography variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
                                 {t('landing.firstSelectModelPrefix')} <ModelSelectionButton appearance="inline" />
                             </Typography>
-                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>{t('landing.modelTip')}</Typography>
+                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600, maxWidth: '100%'}}>{t('landing.modelTip')}</Typography>
                         </Box>
                         {footer}
                     </Box>

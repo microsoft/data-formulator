@@ -283,21 +283,22 @@ def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConne
     previously-persisted user connectors on disk are hidden so the sidebar
     stays clean and consistent with the disabled-add-connector UI.
     """
-    from flask import current_app
+    from data_formulator.configuration import user_connectors_disabled
 
-    try:
-        disabled = bool(current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors'))
-    except RuntimeError:
-        # Outside an app context (e.g. unit tests) — fall back to enabled.
-        disabled = False
+    disabled = user_connectors_disabled()
 
     if identity and not disabled:
         load_connectors(identity)
 
     result = []
     user_prefix = f"{_USER_CONNECTOR_PREFIX}{identity}::" if identity else None
+    from data_formulator.configuration import read_configuration
+    _sync_installation_connectors()
+    configured_connectors = read_configuration()['overrides'].get('connectors', {})
     for key, connector in DATA_CONNECTORS.items():
         if key in _ADMIN_CONNECTOR_IDS:
+            if not configured_connectors.get(key, {}).get('enabled', True):
+                continue
             result.append((key, connector, True))
         elif disabled:
             # Skip user / legacy connectors entirely when disabled.
@@ -326,11 +327,21 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
     # specs into the in-process registry. Without this, a fresh server
     # process can fail with "Connector not found" on the first import/preview
     # call when the frontend hasn't yet fetched the connector list.
-    load_connectors(identity)
+    from data_formulator.configuration import user_connectors_disabled
+
+    if not user_connectors_disabled():
+        load_connectors(identity)
 
     # Admin/global connector IDs are public registry keys.
+    _sync_installation_connectors()
     if connector_id in _ADMIN_CONNECTOR_IDS and connector_id in DATA_CONNECTORS:
+        from data_formulator.configuration import resource_enabled
+        if not resource_enabled('connectors', connector_id):
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
         return connector_id, DATA_CONNECTORS[connector_id]
+
+    if user_connectors_disabled():
+        raise AppError(ErrorCode.ACCESS_DENIED, 'Only administrator-configured connectors are allowed.')
 
     user_key = _user_connector_key(identity, connector_id)
     if user_key in DATA_CONNECTORS:
@@ -377,6 +388,7 @@ class DataConnector:
         # Per-identity loader instances: identity_id → ExternalDataLoader
         # In-process cache; cleared on disconnect.
         self._loaders: dict[str, ExternalDataLoader] = {}
+        self._loaders_configured_only = False
 
     # -- Factory -----------------------------------------------------------
 
@@ -420,6 +432,11 @@ class DataConnector:
         "description": "Filter table by keywords (e.g. 'sales')",
     }
 
+    def _uses_configured_params(self) -> bool:
+        from data_formulator.configuration import user_connectors_disabled
+        return bool(getattr(self, '_installation_reference', None) or (
+            self._source_id in _ADMIN_CONNECTOR_IDS and user_connectors_disabled()))
+
     def get_frontend_config(self, include_pinned_in_form: bool = False) -> dict[str, Any]:
         """Build the frontend payload describing this connector's form.
 
@@ -432,11 +449,14 @@ class DataConnector:
                 params are hidden from the form and only their value
                 is surfaced via ``pinned_params`` for display.
         """
+        shared = self._uses_configured_params()
         all_params = self._loader_class.list_params()
         form_fields: list[dict] = []
         pinned_params: dict[str, Any] = {}
 
         for param in all_params:
+            if shared:
+                continue
             name = param["name"]
             if name in self._default_params:
                 # Surface non-sensitive values (incl. usernames in the auth
@@ -466,13 +486,18 @@ class DataConnector:
             "icon": self._icon,
             "params_form": form_fields,
             "pinned_params": pinned_params,
-            "connection_identity": self._loader_class.connection_identity(self._default_params),
+            "configured_params": {
+                param['name']: ('********' if _is_sensitive_or_auth_param(self._loader_class, param['name'], include_auth_tier=False)
+                                else self._default_params[param['name']])
+                for param in all_params if param['name'] in self._default_params
+            } if shared else None,
+            "connection_identity": '' if shared else self._loader_class.connection_identity(self._default_params),
             "hierarchy": _hierarchy_dicts(full_hierarchy),
             "effective_hierarchy": _hierarchy_dicts(effective),
-            "auth_instructions": self._loader_class.auth_instructions(),
-            "auth_mode": self._loader_class.auth_mode(),
-            "auth_paths": self._loader_class.auth_paths(),
-            "delegated_login": self._resolve_delegated_login(),
+            "auth_instructions": '' if shared else self._loader_class.auth_instructions(),
+            "auth_mode": 'connection' if shared else self._loader_class.auth_mode(),
+            "auth_paths": [] if shared else self._loader_class.auth_paths(),
+            "delegated_login": None if shared else self._resolve_delegated_login(),
         }
 
     def _resolve_delegated_login(self) -> dict[str, Any] | None:
@@ -559,6 +584,10 @@ class DataConnector:
 
     def _get_loader(self, identity: str | None = None) -> ExternalDataLoader | None:
         identity = identity or self._get_identity()
+        configured_only = self._uses_configured_params()
+        if configured_only and not self._loaders_configured_only:
+            self._loaders.clear()
+        self._loaders_configured_only = configured_only
         return self._loaders.get(identity)
 
     def _connect(self, user_params: dict[str, Any], persist: bool = True) -> ExternalDataLoader:
@@ -568,7 +597,9 @@ class DataConnector:
         Vault persistence is handled separately by the caller after
         connection verification succeeds.
         """
-        merged = {**self._default_params, **user_params}
+        identity = self._get_identity()
+        self._get_loader(identity)
+        merged = dict(self._default_params) if self._uses_configured_params() else {**self._default_params, **user_params}
         self._inject_credentials(merged)
 
         # Pre-validate: skip auth-tier params when tokens are present (SSO flow)
@@ -576,7 +607,6 @@ class DataConnector:
         self._loader_class.validate_params(merged, skip_auth_tier=has_token)
 
         loader = self._loader_class(merged)
-        identity = self._get_identity()
         self._loaders[identity] = loader
         return loader
 
@@ -609,7 +639,7 @@ class DataConnector:
             if attempt:
                 time.sleep(_RECONNECT_BACKOFF_BASE * (2 ** (attempt - 1)))
             try:
-                merged = {**self._default_params, **stored_params}
+                merged = dict(self._default_params) if self._uses_configured_params() else {**self._default_params, **stored_params}
                 self._inject_credentials(merged)
                 loader = self._loader_class(merged)
                 if loader.test_connection():
@@ -761,12 +791,16 @@ class DataConnector:
         return None
 
     def _require_loader(self) -> ExternalDataLoader:
+        from data_formulator.configuration import resource_enabled
+        from data_formulator.errors import AppError, ErrorCode
+        if self._source_id in _ADMIN_CONNECTOR_IDS and not resource_enabled('connectors', self._source_id):
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
         identity = self._get_identity()
         from data_formulator.datalake.connector_preferences import connector_is_enabled
         from data_formulator.datalake.workspace import get_user_home
         if not connector_is_enabled(get_user_home(identity), self._source_id):
             raise ValueError("Connector is disconnected. Please connect first.")
-        loader = self._loaders.get(identity)
+        loader = self._get_loader(identity)
         if loader is not None:
             return loader
         # Enabled no-auth connectors need no setup, so lazily instantiate and
@@ -823,6 +857,10 @@ def resolve_catalog_refresh_target(
 ) -> "tuple[type[ExternalDataLoader], ExternalDataLoader | None]":
     """Resolve policy and an existing loader without reconnecting credentials."""
     if source_id in _ADMIN_CONNECTOR_IDS and source_id in DATA_CONNECTORS:
+        from data_formulator.configuration import resource_enabled
+        from data_formulator.errors import AppError, ErrorCode
+        if not resource_enabled('connectors', source_id):
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
         connector = DATA_CONNECTORS[source_id]
     else:
         _, connector = _resolve_connector_with_key({"connector_id": source_id})
@@ -1070,8 +1108,11 @@ def list_data_loaders():
 def discover_data_loader_options():
     """Discover values for one loader parameter after an explicit UI action."""
     from data_formulator.data_loader import DATA_LOADERS
+    from data_formulator.configuration import user_connectors_disabled
 
     data = request.get_json() or {}
+    if user_connectors_disabled() and not data.get('connector_id'):
+        raise AppError(ErrorCode.ACCESS_DENIED, 'Only administrator-configured connectors are allowed.')
     loader_type = str(data.get("loader_type") or "").strip()
     param_name = str(data.get("param_name") or "").strip()
     loader_class = DATA_LOADERS.get(loader_type)
@@ -1089,7 +1130,7 @@ def discover_data_loader_options():
         identity = source._get_identity()
         stored = source._vault_retrieve(identity) or {}
         supplied = {k: v for k, v in params.items() if v not in (None, "")}
-        params = {**source._default_params, **stored, **supplied}
+        params = dict(source._default_params) if source._uses_configured_params() else {**source._default_params, **stored, **supplied}
 
     try:
         options = loader_class.discover_param_options(param_name, params)
@@ -1351,19 +1392,23 @@ def list_connectors():
         )
         cfg = connector.get_frontend_config(include_pinned_in_form=not is_admin)
         public_id = _public_connector_id(registry_key, connector)
+        from data_formulator.configuration import resource_options
+        options = resource_options('connectors', public_id) if is_admin else {}
         result.append({
             "id": public_id,
             "source": "admin" if is_admin else "user",
             "deletable": not is_admin,
             "source_type": connector._loader_class.__name__,
             "type_name": connector._loader_class.DISPLAY_NAME or connector._icon,
-            "display_name": connector._display_name,
+            "display_name": options.get('display_name') or connector._display_name,
+            "description": options.get('description', ''),
             "icon": connector._icon,
             "connected": connected,
             "has_stored_credentials": has_stored,
             "sso_auto_connect": sso_auto,
             "params_form": cfg["params_form"],
             "pinned_params": cfg["pinned_params"],
+            "configured_params": cfg.get("configured_params"),
             "connection_identity": cfg["connection_identity"],
             "hierarchy": cfg["hierarchy"],
             "effective_hierarchy": cfg["effective_hierarchy"],
@@ -1392,6 +1437,10 @@ def create_connector():
     Persists to ``DATA_FORMULATOR_HOME/users/<identity>/connectors/<source_id>.json``.
     """
     from data_formulator.data_loader import DATA_LOADERS
+    from data_formulator.configuration import user_connectors_disabled
+
+    if user_connectors_disabled():
+        raise AppError(ErrorCode.ACCESS_DENIED, 'Creating user connectors is disabled by the administrator.')
 
     data = request.get_json() or {}
     loader_type = data.get("loader_type")
@@ -1643,9 +1692,11 @@ def delete_connector(connector_id: str):
     # Clean up catalog cache
     try:
         from data_formulator.datalake.catalog_cache import delete_catalog
+        from data_formulator.datalake.catalog_refresh import cancel_catalog_discovery
         from data_formulator.auth.identity import get_identity_id
         from data_formulator.datalake.workspace import get_user_home
         user_home = get_user_home(get_identity_id())
+        cancel_catalog_discovery(user_home, connector_id)
         delete_catalog(user_home, connector_id)
     except Exception:
         logger.debug("Failed to delete catalog cache for '%s'", connector_id, exc_info=True)
@@ -1738,47 +1789,6 @@ def connector_connect():
             source._vault_delete(identity)
 
         safe = loader.get_safe_params()
-
-        # Best-effort: seed a lightweight catalog for agent search.
-        # Do not overwrite a richer sync-catalog-metadata snapshot, EXCEPT
-        # for local-folder sources: filesystem scans are cheap, and the
-        # cached snapshot otherwise goes stale whenever the user adds/renames
-        # files in the connected directory — which causes agent search to
-        # miss files that are clearly visible on disk.
-        try:
-            from data_formulator.datalake.catalog_cache import save_catalog
-            from data_formulator.datalake.workspace import get_user_home
-            from data_formulator.data_loader.local_folder_data_loader import (
-                LocalFolderDataLoader,
-            )
-            identity_for_cache = source._get_identity()
-            user_home = get_user_home(identity_for_cache)
-            # Attach a progress sink so slow listings (e.g. Kusto enumerating
-            # databases) can report which source they're querying — polled by
-            # the connect dialog via /api/connectors/get-catalog-progress.
-            progress_key = data.get("connector_id") or source._source_id
-            loader.progress_callback = (
-                lambda msg: _set_catalog_progress(progress_key, msg))
-            try:
-                flat_tables = loader.list_tables()
-            finally:
-                loader.progress_callback = None
-            loader.ensure_table_keys(flat_tables)
-            cache_mode = (
-                "replace"
-                if isinstance(loader, LocalFolderDataLoader)
-                else "seed_if_missing"
-            )
-            save_catalog(
-                user_home, source._source_id, flat_tables,
-                mode=cache_mode,
-                refresh_kind="listing",
-            )
-        except Exception:
-            logger.debug("Failed to save catalog cache on connect for '%s'",
-                         source._source_id, exc_info=True)
-        finally:
-            _clear_catalog_progress(data.get("connector_id") or source._source_id)
 
         result = {
             "status": "connected",
@@ -1994,6 +2004,37 @@ def connector_get_catalog_tree():
     progress_key = data.get("connector_id") or source._source_id
 
     try:
+        if data.get("background"):
+            from data_formulator.datalake.catalog_refresh import catalog_discovery_status, start_catalog_discovery
+            from data_formulator.datalake.catalog_cache import _load_catalog_raw
+            from data_formulator.datalake.workspace import get_user_home
+            from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
+
+            user_home = get_user_home(source._get_identity())
+            discovery = catalog_discovery_status(user_home, source._source_id)
+            raw = _load_catalog_raw(user_home, source._source_id)
+            if discovery["status"] == "running":
+                return json_ok({"discovery": discovery})
+            if discovery["status"] in ("failed", "interrupted") and not data.get("retry"):
+                return json_ok({"discovery": discovery})
+            loader = source._require_loader()
+            if raw is None or (
+                not data.get("poll") and (
+                    isinstance(loader, LocalFolderDataLoader)
+                    or discovery["status"] in ("failed", "interrupted")
+                )
+            ):
+                discovery = start_catalog_discovery(user_home, source._source_id, loader)
+                return json_ok({"discovery": discovery})
+            flat_tables = _filter_catalog_tables(raw.get("tables", []), data.get("filter"))
+            flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
+            return json_ok({
+                "discovery": {"status": "complete"},
+                "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
+                "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
+                "tree": _catalog_tree_payload(loader, flat_tables),
+            })
+
         loader = source._require_loader()
         name_filter = data.get("filter")
 
@@ -2709,6 +2750,29 @@ def _load_user_specs(identity: str) -> list[SourceSpec]:
 # Track which connector IDs came from admin config (immutable by users).
 _ADMIN_CONNECTOR_IDS: set[str] = set()
 
+
+def _sync_installation_connectors():
+    from data_formulator.configuration import connection_definitions, read_configuration
+    overrides = read_configuration()['overrides']
+    references = overrides.get('connections', {}).get('connectors', {})
+    for identifier in list(_ADMIN_CONNECTOR_IDS):
+        if identifier.startswith('installation-') and identifier not in references:
+            DATA_CONNECTORS.pop(identifier, None)
+            _ADMIN_CONNECTOR_IDS.discard(identifier)
+    if all(getattr(DATA_CONNECTORS.get(identifier), '_installation_reference', None) == reference
+           for identifier, reference in references.items()):
+        return
+    from data_formulator.data_loader import DATA_LOADERS
+    for identifier, definition in connection_definitions('connectors', overrides).items():
+        if getattr(DATA_CONNECTORS.get(identifier), '_installation_reference', None) == references[identifier]:
+            continue
+        connector = DataConnector.from_loader(DATA_LOADERS[definition['type']], identifier,
+                                              display_name=definition['display_name'], default_params=definition['params'],
+                                              icon=definition['type'])
+        connector._installation_reference = references[identifier]
+        DATA_CONNECTORS[identifier] = connector
+        _ADMIN_CONNECTOR_IDS.add(identifier)
+
 # Track identities whose user connectors have been loaded.
 _LOADED_USER_IDENTITIES: set[str] = set()
 
@@ -2767,11 +2831,7 @@ def register_data_connectors(app: Flask) -> None:
     # 1. Register the global management blueprint
     app.register_blueprint(connectors_bp)
 
-    # 2. Load admin connectors from YAML/env (skipped when external connectors
-    #    are disabled — but the blueprint and built-in sample_datasets
-    #    connector below remain available so users can still load demo data).
-    disabled = bool(app.config.get('CLI_ARGS', {}).get('disable_data_connectors'))
-    admin_specs = [] if disabled else _load_admin_specs()
+    admin_specs = _load_admin_specs()
 
     for spec in admin_specs:
         loader_class = DATA_LOADERS.get(spec.loader_type)

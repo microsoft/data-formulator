@@ -21,7 +21,7 @@ export const WorkspaceFileMenu = ({ onUpload, onCreated, disabled = false, busy 
     const [name, setName] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
-    const invalidName = !name.trim() || /[\\/\x00-\x1f]/.test(name) || name === '.' || name === '..';
+    const invalidName = !name.trim() || /[\\/]/.test(name) || Array.from(name).some(character => character.charCodeAt(0) < 32) || name === '.' || name === '..';
     const create = async () => {
         if (invalidName || saving || workspace?.readOnly) return;
         setSaving(true);

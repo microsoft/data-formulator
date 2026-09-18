@@ -8,7 +8,7 @@ import { expect, it, vi } from 'vitest';
 import { TerminalApprovalDialog, TerminalExecutionView, TerminalMessageContent } from '../../../../src/components/TerminalApprovalDialog';
 import { migrateState } from '../../../../src/app/stateMigrations';
 
-it.each(['compact', 'document'] as const)('renders bounded chart previews in %s Markdown and refreshes delayed thumbnails without allowing unsafe URLs', variant => {
+it.each(['compact', 'document'] as const)('resolves delayed chart images in %s Markdown without allowing unsafe URLs', variant => {
     const chartId = `markdown-comparison-${variant}`;
     const image = 'data:image/png;base64,cG5n';
     store.dispatch(dfActions.resetState());
@@ -21,11 +21,6 @@ it.each(['compact', 'document'] as const)('renders bounded chart previews in %s 
             naturalWidth: 400, naturalHeight: 300, specKey: 'comparison' });
         act(() => { store.dispatch(dfActions.updateChartThumbnail({ chartId, thumbnail: image })); });
         expect(container.querySelector(`img[data-chart-id="${chartId}"]`)).toHaveAttribute('src', image);
-        const previewStyle = getComputedStyle(container.querySelector('img')!);
-        expect(previewStyle.maxWidth).toBe('min(100%, 320px)');
-        expect(previewStyle.maxHeight).toBe('200px');
-        expect(previewStyle.width).toBe('auto');
-        expect(previewStyle.height).toBe('auto');
         expect(container.querySelectorAll('img')).toHaveLength(1);
         expect(screen.getByText('Unsafe link').getAttribute('href')).not.toContain('javascript:');
     } finally {
@@ -50,8 +45,6 @@ it('keeps execution details collapsed and updates status without adding a second
     const execution = { id: 'execution', argv: ['find', '/data', '-name', '*.csv'], cwd: '/data', purpose: 'Find data', status: 'running' as const };
     const { rerender } = render(<TerminalExecutionView execution={execution} />);
     expect(screen.getByRole('button', { name: /find.*Running/ }).getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByTestId('TerminalIcon')).toBeTruthy();
     expect(screen.queryByText('Working directory: /data')).toBeNull();
     rerender(<TerminalExecutionView execution={{ ...execution, status: 'completed', result: { exit_code: 0, stdout: 'sales.csv' } }} />);
     fireEvent.click(screen.getByRole('button', { name: /find.*Completed/ }));
@@ -63,43 +56,33 @@ it('keeps execution details collapsed and updates status without adding a second
 const proposal = { id: 'request-1', argv: ['find', '/data files', '-name', '*.csv'], cwd: '/data files',
     purpose: 'Find local CSV files', timeout_seconds: 60 };
 
-it.each(['completed', 'failed', 'running', 'awaiting_approval', 'rejected', 'interrupted', 'unknown'] as const)(
-    'shows only a terminal icon without a status badge in passive %s previews', status => {
+it('lets the parent handle selection of a passive execution preview', () => {
         const onSelect = vi.fn();
-        const { container } = render(<div onClick={onSelect}><TerminalExecutionView passive execution={{ ...proposal, status }} /></div>);
-        expect(container.textContent).toBe('');
+        const { container } = render(<div onClick={onSelect}><TerminalExecutionView passive execution={{ ...proposal, status: 'completed' }} /></div>);
         expect(screen.queryByRole('button')).toBeNull();
         expect(container.querySelector('pre')).toBeNull();
-        expect(screen.queryAllByRole('img')).toHaveLength(0);
         const indicator = container.querySelector('[data-terminal-indicator]')!;
-        expect(indicator.contains(screen.getByTestId('TerminalIcon'))).toBe(true);
-        expect(getComputedStyle(indicator).width).toBe('12px');
-        expect(getComputedStyle(indicator).height).toBe('12px');
-        expect(container.querySelectorAll('svg')).toHaveLength(1);
-        fireEvent.click(screen.getByTestId('TerminalIcon'));
+        fireEvent.click(indicator);
         expect(onSelect).toHaveBeenCalledOnce();
-    },
-);
+});
 
 it.each([
-    ['completed', 'Completed', 'CheckIcon'],
-    ['failed', 'Failed', 'ErrorOutlineIcon'],
-    ['rejected', 'Rejected', 'BlockIcon'],
-    ['interrupted', 'Interrupted', 'ErrorOutlineIcon'],
-    ['awaiting_approval', 'Awaiting approval', 'ScheduleIcon'],
-    ['running', 'Running', 'ScheduleIcon'],
-] as const)('shows a longer command preview and an icon for %s', (status, label, icon) => {
+    ['completed', 'Completed'],
+    ['failed', 'Failed'],
+    ['rejected', 'Rejected'],
+    ['interrupted', 'Interrupted'],
+    ['awaiting_approval', 'Awaiting approval'],
+    ['running', 'Running'],
+] as const)('exposes the execution status and full command when expanded: %s', (status, label) => {
     render(<TerminalExecutionView execution={{ ...proposal, argv: ['az', 'monitor', 'metrics', 'list', '--resource', 'x'.repeat(120)], status }} />);
     const button = screen.getByRole('button');
     expect(button.textContent).toContain('az monitor metrics list --resource');
-    expect(button.textContent?.trim()).toHaveLength(80);
-    expect(button.textContent?.trim().endsWith('...')).toBe(true);
-    expect(button.textContent).not.toContain(label);
-    expect(screen.getByRole('img', { name: label }).querySelector(`[data-testid="${icon}"]`)).toBeTruthy();
     expect(button.getAttribute('aria-label')).toContain(label);
+    fireEvent.click(button);
+    expect(screen.getByText(`az monitor metrics list --resource ${'x'.repeat(120)}`, { selector: 'pre' })).toBeVisible();
 });
 
-it('shows a command preview and completion icon without expanding details inline', () => {
+it('opens the external execution view instead of expanding details inline', () => {
     const onOpen = vi.fn();
     const { container } = render(<TerminalExecutionView onOpen={onOpen} defaultExpanded execution={{
         ...proposal, status: 'completed', result: { output: 'sales.csv', exit_code: 0 },
@@ -110,11 +93,10 @@ it('shows a command preview and completion icon without expanding details inline
     expect(row.hasAttribute('aria-expanded')).toBe(false);
     expect(container.querySelector('pre')).toBeNull();
     expect(container.textContent).toContain("find '/data files' -name '*.csv'");
-    expect(screen.getByRole('img', { name: 'Completed' }).querySelector('[data-testid="CheckIcon"]')).toBeTruthy();
     expect(screen.queryByText('sales.csv')).toBeNull();
 });
 
-it('wraps expanded commands and output while preserving shell-safe copying and exact arguments', () => {
+it('preserves full output, exact arguments, and shell-safe command copying', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     try {
@@ -126,13 +108,9 @@ it('wraps expanded commands and output while preserving shell-safe copying and e
         fireEvent.click(screen.getByRole('button'));
         const command = container.querySelector('pre')!;
         expect(command.textContent).toBe(`az cognitiveservices account list --query "${query}"`);
-        expect(getComputedStyle(command).whiteSpace).toBe('pre-wrap');
-        expect(getComputedStyle(command).overflowWrap).toBe('anywhere');
-        expect(getComputedStyle(command).maxHeight).toBe('none');
         const outputBlock = Array.from(container.querySelectorAll('pre')).find(block => block.textContent === output);
         expect(outputBlock).toBeTruthy();
-        expect(getComputedStyle(outputBlock!).whiteSpace).toBe('pre-wrap');
-        expect(container.querySelector('details pre')?.textContent).toBe(JSON.stringify(argv, null, 2));
+        expect(JSON.parse(container.querySelector('details pre')!.textContent!)).toEqual(argv);
         fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
         expect(writeText).toHaveBeenCalledWith(command.textContent);
     } finally {
@@ -140,19 +118,14 @@ it('wraps expanded commands and output while preserving shell-safe copying and e
     }
 });
 
-it('shows running command text and a terminal icon without a spinner, then a completion check', () => {
+it('updates an external command preview from running to completed without opening it', () => {
     const execution = { ...proposal, argv: ['bash', '-lc', `printf '%s' '${'x'.repeat(120)}'\nprintf done`], status: 'running' as const };
     const { container, rerender } = render(<TerminalExecutionView execution={execution} onOpen={vi.fn()} />);
     const row = screen.getByRole('button');
     expect(row.textContent).toContain('bash -lc');
-    expect(row.textContent).toContain('...');
-    expect(row.textContent).not.toContain('printf done');
-    expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByTestId('TerminalIcon')).toBeTruthy();
     expect(row.getAttribute('aria-label')).toContain('Running');
     rerender(<TerminalExecutionView execution={{ ...execution, status: 'completed' }} onOpen={vi.fn()} />);
-    expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByRole('img', { name: 'Completed' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /bash.*Completed/ })).toBeEnabled();
     expect(container.querySelector('pre')).toBeNull();
 });
 

@@ -120,6 +120,58 @@ export const CONNECTOR_ACTION_URLS = {
     COLUMN_VALUES: '/api/connectors/column-values',
 } as const;
 
+export async function fetchConnectorCatalog<T = any>(
+    connectorId: string,
+    options: { signal?: AbortSignal; onProgress?: (message: string) => void } = {},
+): Promise<{ data: T }> {
+    const { apiRequest } = await import('./apiClient');
+    const deadline = Date.now() + 5 * 60_000;
+    let poll = false;
+    let failures = 0;
+    while (!options.signal?.aborted && Date.now() < deadline) {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        options.signal?.addEventListener('abort', abort, { once: true });
+        const timeout = setTimeout(abort, 10_000);
+        try {
+            const result = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId, background: true, poll, retry: !poll }),
+                signal: controller.signal,
+            });
+            failures = 0;
+            const discovery = result.data.discovery;
+            if (!discovery || discovery.status === 'complete') return result;
+            if (discovery.status !== 'running') {
+                throw new Error(discovery.message || 'Discovery incomplete. The connection is preserved; retry discovery.');
+            }
+            options.onProgress?.(discovery.message || 'Discovering tables and files...');
+        } catch (error: any) {
+            if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+            const transient = error?.name === 'AbortError' || error instanceof TypeError
+                || [408, 429, 502, 503, 504].includes(error?.httpStatus);
+            if (!transient || ++failures > 3) throw error;
+            options.onProgress?.('Discovery is continuing. Reconnecting to check progress...');
+        } finally {
+            clearTimeout(timeout);
+            options.signal?.removeEventListener('abort', abort);
+        }
+        poll = true;
+        await new Promise<void>((resolve) => {
+            const finish = () => {
+                clearTimeout(timer);
+                options.signal?.removeEventListener('abort', finish);
+                resolve();
+            };
+            const timer = setTimeout(finish, 1000 * 2 ** failures);
+            options.signal?.addEventListener('abort', finish, { once: true });
+            if (options.signal?.aborted) finish();
+        });
+    }
+    if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    throw new Error('Discovery is taking longer than expected. The connection is preserved; retry to check progress.');
+}
+
 /** Global connector management URLs. */
 export const CONNECTOR_URLS = {
     DATA_LOADERS: '/api/data-loaders',

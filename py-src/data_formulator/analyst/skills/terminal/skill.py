@@ -23,7 +23,8 @@ def require_local_terminal_request() -> None:
 
     if not has_request_context() or not is_local_mode() or os.name != "posix":
         raise ValueError("Terminal is available only in single-user local mode on macOS or Linux.")
-    if current_app.config.get("CLI_ARGS", {}).get("disable_data_connectors"):
+    from data_formulator.configuration import user_connectors_disabled
+    if user_connectors_disabled():
         raise ValueError("Terminal data access is disabled in this deployment.")
     origin = request.headers.get("Origin", "")
     host = urlsplit(request.host_url)

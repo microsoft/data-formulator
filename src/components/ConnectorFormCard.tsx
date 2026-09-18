@@ -213,6 +213,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                 display_name: displayName,
                 icon: sourceType,
                 params,
+                connect_params: {},
                 persist: true,
             }),
         });

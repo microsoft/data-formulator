@@ -224,7 +224,7 @@ class Client(object):
     Supports OpenAI, Azure, Ollama, OrcaRouter, and other providers via LiteLLM.
     """
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None,
-                 *, api_type=None, chatgpt_account_id=None):
+                 *, api_type=None, chatgpt_account_id=None, managed_identity=False, managed_identity_client_id=None):
         
         self.endpoint = endpoint
         self.model = model
@@ -280,7 +280,13 @@ class Client(object):
                 raise ValueError("Azure API base URL is required")
             self.params["api_base"] = api_base.rstrip("/")
             if api_key is None or api_key == "":
-                if os.environ.get("DATA_FORMULATOR_DESKTOP") == "1":
+                if managed_identity:
+                    from azure.identity import ManagedIdentityCredential
+                    token_provider = get_bearer_token_provider(
+                        ManagedIdentityCredential(client_id=managed_identity_client_id),
+                        "https://cognitiveservices.azure.com/.default",
+                    )
+                elif os.environ.get("DATA_FORMULATOR_DESKTOP") == "1":
                     token_provider = get_desktop_azure_token_provider()
                 else:
                     token_provider = get_bearer_token_provider(
@@ -402,6 +408,8 @@ class Client(object):
             model_config.get("api_version"),
             api_type=model_config.get("api_type"),
             chatgpt_account_id=model_config.get("chatgpt_account_id"),
+                **({'managed_identity': True, 'managed_identity_client_id': model_config.get('managed_identity_client_id')}
+                    if model_config.get('auth_mode') == 'managed_identity' else {}),
         )
 
     def ping(self, timeout: int = 10):

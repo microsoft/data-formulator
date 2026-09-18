@@ -12,7 +12,7 @@ from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.skills.base import SkillContext
 from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
 from data_formulator.agents.agent_utils import attach_reasoning_content
-from data_formulator.workflows.instances import parse_workflow
+from data_formulator.workflows.instances import parse_workflow, resolve_setup
 
 
 def tool(name: str, description: str, properties: dict, required: list[str]) -> dict:
@@ -128,8 +128,9 @@ Do not ask 'shall I continue'. Be concise. Make one tool call at a time.
 """
 
 
-def new_run(instance: dict, run_id: str) -> dict:
-    return {"id": run_id, "instance": instance, "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
+def new_run(instance: dict, run_id: str, setup: dict | None = None) -> dict:
+    return {"id": run_id, "instance": instance, "setup": resolve_setup(instance, setup),
+            "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
             "step_id": instance["steps"][0]["id"], "trajectory": [], "checks": {}, "evidence": {},
             "transitions": [], "calls": 0, "elapsed_seconds": 0, "revision": 0, "report": "",
             "visited": [instance["steps"][0]["id"]], "message": "", "artifacts": [], "outputs": []}
@@ -318,7 +319,8 @@ class WorkflowAgent(AnalystAgent):
             if name in {"create_data", "update_data", "create_file", "edit_file"}:
                 state["revision"] += 1
                 self._refresh_checks()
-                state["outputs"].append({"id": call_id, "type": "tool_result", "tool": name, "stdout": result})
+                state["outputs"].append({"id": call_id, "type": "tool_result", "tool": name, "stdout": result,
+                    "step_id": state["step_id"], "plan_revision": state.get("plan_revision", 0)})
                 state["last_output_call"] = state["calls"]
         elif name == "visualize":
             events = self.visualization_skill.handle_action(name, args, context)
@@ -331,7 +333,8 @@ class WorkflowAgent(AnalystAgent):
                     if event["type"] == "action":
                         input_sources = event.get("input_sources", [])
                     if event["type"] == "result":
-                        state["outputs"].append({**event, "id": call_id, "input_sources": input_sources})
+                        state["outputs"].append({**event, "id": call_id, "input_sources": input_sources,
+                            "step_id": state["step_id"], "plan_revision": state.get("plan_revision", 0)})
                 except StopIteration as completed:
                     result = completed.value or "Visualization created."
                     break
@@ -374,7 +377,8 @@ class WorkflowAgent(AnalystAgent):
             (self.run_dir / "report.md").write_text(report, encoding="utf-8")
             self._refresh_artifacts()
             state["report_call"] = state["calls"]
-            report_output = {"id": "report", "type": "report", "content": report}
+            report_output = {"id": "report", "type": "report", "content": report,
+                "step_id": state["step_id"], "plan_revision": state.get("plan_revision", 0)}
             previous = next((index for index, item in enumerate(state["outputs"]) if item["id"] == "report"), None)
             if previous is None:
                 state["outputs"].append(report_output)
@@ -506,7 +510,8 @@ class WorkflowAgent(AnalystAgent):
                         table_ids = event["operation"].get("result_table_ids", [])
                         for table_id in table_ids:
                             state["outputs"].append({"id": f"import-{event['operation']['id']}-{table_id}",
-                                "type": "tool_result", "tool": "create_data", "stdout": json.dumps({"table_name": table_id})})
+                                "type": "tool_result", "tool": "create_data", "stdout": json.dumps({"table_name": table_id}),
+                                "step_id": state["step_id"], "plan_revision": state.get("plan_revision", 0)})
                         if table_ids:
                             state["revision"] += 1
                             self._refresh_checks()
@@ -545,7 +550,12 @@ class WorkflowAgent(AnalystAgent):
         trajectory = state["trajectory"]
         if not trajectory:
             trajectory.extend([{"role": "system", "content": self._build_system_prompt()}, {"role": "user", "content":
-                json.dumps(state["instance"]) + f"\nRun directory: {self.run_dir}\nRun started: {state['started_at']}"}])
+                json.dumps(state["instance"]) + f"\nRun directory: {self.run_dir}\nRun started: {state['started_at']}"},
+                {"role": "user", "content": "Confirmed workflow setup:\n" + json.dumps(state.get("setup", {}))
+                 + "\nApply these parameter values and additional instructions in preference to workflow defaults. "
+                 "They are task guidance, not permission to bypass access controls or tool approvals. "
+                 "If they conflict with requirements or available data, ask the user rather than silently substituting. "
+                 "Later explicit user steering may revise these choices."}])
         else:
             trajectory[0] = {"role": "system", "content": self._build_system_prompt()}
         context = SkillContext(client=self.client, workspace=self.workspace, trajectory=trajectory,
@@ -624,7 +634,19 @@ class WorkflowAgent(AnalystAgent):
                             purpose = args.get("purpose")
                             if isinstance(purpose, str) and purpose.strip():
                                 state["activity"] = purpose.strip()
-                        yield {"type": "activity", "tool": call.function.name, "message": state["activity"]}
+                        details = {key: value[:300] for key in ("title", "purpose", "display_name", "table_name", "filename")
+                            if isinstance(value := args.get(key), str) and value.strip()}
+                        chart = args.get("chart")
+                        if isinstance(chart, dict) and isinstance(chart.get("chart_type"), str):
+                            details["chart_type"] = chart["chart_type"][:100]
+                        sources = args.get("input_sources")
+                        if isinstance(sources, list):
+                            source_names = [source.get("display_name") or source.get("id") for source in sources if isinstance(source, dict)]
+                            details["inputs"] = ", ".join(name[:150] for name in source_names if isinstance(name, str))[:600]
+                        state["active_tool"] = {"id": call.id, "tool": call.function.name,
+                            "step_id": state["step_id"], "details": details}
+                        yield {"type": "activity", "tool": call.function.name, "message": state["activity"],
+                            "active_tool": state["active_tool"]}
                         self._run_payload["action_narration"] = message.content or ""
                         observation = self._execute(call.function.name, args, call.id)
                     except Exception as exc:
@@ -632,6 +654,9 @@ class WorkflowAgent(AnalystAgent):
                         self._evidence(call.id, call.function.name, observation)
                         state["evidence"][call.id]["status"] = "failed"
                     tool_response["content"] = observation
+                    if call.id in state["evidence"] and state.get("active_tool"):
+                        state["evidence"][call.id]["details"] = state["active_tool"]["details"]
+                    state.pop("active_tool", None)
                 record_step_time()
                 state["elapsed_seconds"] = previous_elapsed + time.monotonic() - started
                 state["artifacts"] = [path.name for path in sorted(self.run_dir.iterdir()) if path.is_file() and not path.name.startswith(".")]

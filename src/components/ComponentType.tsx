@@ -198,6 +198,7 @@ export interface TextTurn {
         calls: number;
         toolCalls?: number;
         activity?: string;
+        activeTool?: { id: string; tool: string; step_id: string; details: Record<string, string> };
         appliedMessageIds?: string[];
         planRevision?: number;
         planReviewPending?: boolean;
@@ -212,9 +213,10 @@ export interface TextTurn {
             next?: string; checkers?: { id: string; condition?: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[];
             assessment?: { status: string; explanation: string; evidence_ids: string[] } }[];
         outputVersions: Record<string, string>;
+        artifacts?: { nodeId: string; chartId?: string; stepId?: string; planRevision: number }[];
         checks?: { id: string; status: string; explanation: string }[];
         transitions?: { from: string; to: string; reason: string; plan_revision?: number }[];
-        log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number }[];
+        log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string> }[];
     };
     executions?: TerminalExecution[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
@@ -689,6 +691,7 @@ export interface ConnectorInstance {
     deletable?: boolean;
     params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;
+    configured_params?: Record<string, string | number | boolean> | null;
     /** Which instance this connector points at (cluster, host, bucket…), resolved by the loader. */
     connection_identity?: string;
     hierarchy: Array<{key: string; label: string}>;

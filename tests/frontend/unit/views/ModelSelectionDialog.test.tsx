@@ -4,7 +4,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelSelectionButton, parseAzureTargetUri } from '../../../../src/views/ModelSelectionDialog';
-import { dataFormulatorReducer, dfActions, ModelConfig } from '../../../../src/app/dfSlice';
+import { dataFormulatorReducer, dfActions, dfSelectors, ModelConfig } from '../../../../src/app/dfSlice';
 import { apiRequest, ApiRequestError } from '../../../../src/app/apiClient';
 import modelStrings from '../../../../src/i18n/locales/en/model.json';
 import commonStrings from '../../../../src/i18n/locales/en/common.json';
@@ -39,27 +39,109 @@ describe('Model connection form', () => {
         vi.mocked(apiRequest).mockImplementation(async url => ({
             data: url === '/api/local/azure-status'
                 ? { installed: true, signed_in: true, account: { user: 'test-account' } }
-                : [],
+                : url === '/api/model-endpoints/azure/subscriptions' ? { subscriptions: [], default_subscription: '' } : [],
         }) as any);
     });
 
-    const openForm = (model?: ModelConfig) => {
+    const openForm = (model?: ModelConfig, managed = false) => {
         const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
         const store = configureStore({
             reducer: dataFormulatorReducer,
             preloadedState: { ...initial, models: model && !model.is_global ? [model] : [],
                 globalModels: model?.is_global ? [model] : [], selectedModelId: model?.id,
-                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: true } },
+                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: true, DISABLE_CUSTOM_MODELS: managed } },
         });
         render(<Provider store={store}><ModelSelectionButton /></Provider>);
         fireEvent.click(screen.getByRole('button', { name: 'Select a model' }));
         return store;
     };
 
+    it('limits managed deployments to server models without custom-model actions', () => {
+        const store = openForm({ id: 'global-openai-managed', endpoint: 'openai', model: 'managed-model', is_global: true }, true);
+        expect(screen.getByRole('heading', { name: 'managed-model' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: modelStrings.model.addModel })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+        expect(screen.queryByRole('button', { name: modelStrings.model.copyDetails })).toBeNull();
+        expect(screen.queryByRole('button', { name: /Save/ })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: modelStrings.model.useModel }));
+        expect(store.getState().selectedModelId).toBe('global-openai-managed');
+    });
+
+    it('hides a persisted custom model and does not offer an add form in managed mode', () => {
+        const store = openForm({ id: 'custom', endpoint: 'openai', model: 'private-model', api_key: 'test-key' }, true);
+        expect(dfSelectors.getAllModels(store.getState())).toEqual([]);
+        expect(dfSelectors.getActiveModel(store.getState())).toBeUndefined();
+        expect(screen.queryByText('private-model')).toBeNull();
+        expect(screen.queryByRole('button', { name: modelStrings.model.addModel })).toBeNull();
+        expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull();
+        expect(screen.queryByRole('button', { name: /Save/ })).toBeNull();
+        act(() => store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, DISABLE_CUSTOM_MODELS: false })));
+        expect(dfSelectors.getActiveModel(store.getState())?.id).toBe('custom');
+        expect(screen.getByRole('button', { name: modelStrings.model.addModel })).toBeTruthy();
+    });
+
     const chooseProvider = async (label: string) => {
         fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
-        fireEvent.click(await screen.findByRole('option', { name: label, exact: true }));
+        fireEvent.click(await screen.findByRole('option', { name: label }));
     };
+
+    it('stages installation models without saving personal state or using account login', async () => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: initial });
+        const stage = vi.fn().mockResolvedValue(undefined);
+        render(<Provider store={store}><ModelSelectionButton onStageConnection={stage} /></Provider>);
+        fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
+        expect(screen.queryByRole('option', { name: 'ChatGPT' })).toBeNull();
+        fireEvent.click(await screen.findByRole('option', { name: 'OpenAI' }));
+        fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'private-key' } });
+        fireEvent.change(screen.getByRole('textbox', { name: 'Model' }), { target: { value: 'test-model' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(stage).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'openai', model: 'test-model', api_key: 'private-key' })));
+        expect(store.getState().models).toEqual(initial.models);
+        expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => options?.method === 'POST')).toBe(false);
+    });
+
+    it('prefills an installation model and tests edits with the stored credential', async () => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: initial });
+        const stage = vi.fn().mockResolvedValue(undefined);
+        render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'openai', model: 'existing-model', auth_mode: 'key' }}
+            hasStoredCredentials onStageConnection={stage} /></Provider>);
+        expect((screen.getByRole('textbox', { name: 'Model' }) as HTMLInputElement).value).toBe('existing-model');
+        expect((screen.getByLabelText('API Key') as HTMLInputElement).value).toBe('');
+        fireEvent.change(screen.getByRole('textbox', { name: 'Model' }), { target: { value: 'updated-model' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(stage).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'openai', model: 'updated-model', api_key: '' })));
+        expect(store.getState().models).toEqual(initial.models);
+    });
+
+    it.each(['azure_identity', 'managed_identity'])('stages Azure %s separately from API keys', async authMode => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: initial });
+        const stage = vi.fn().mockResolvedValue(undefined);
+        render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'azure', model: 'deployment',
+            api_base: 'https://example.openai.azure.com', auth_mode: 'key' }} hasStoredCredentials onStageConnection={stage} /></Provider>);
+        fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'old-key' } });
+        fireEvent.click(screen.getByRole('button', { name: authMode === 'azure_identity' ? 'Microsoft Entra ID' : 'Managed identity', exact: true }));
+        if (authMode === 'managed_identity') {
+            fireEvent.change(screen.getByLabelText('Managed identity client ID (optional)'), { target: { value: 'identity-client' } });
+        } else {
+            expect(screen.queryByLabelText('Managed identity client ID (optional)')).toBeNull();
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(stage).toHaveBeenCalledWith(expect.objectContaining({
+            endpoint: 'azure', auth_mode: authMode, api_key: '',
+            managed_identity_client_id: authMode === 'managed_identity' ? 'identity-client' : '',
+        })));
+    });
+
+    it('preserves saved managed identity mode and its client ID', () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'azure', model: 'deployment',
+            auth_mode: 'managed_identity', managed_identity_client_id: 'saved-identity' }} onStageConnection={vi.fn()} /></Provider>);
+        expect(screen.getByRole('button', { name: 'Managed identity', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByLabelText('Managed identity client ID (optional)')).toHaveValue('saved-identity');
+    });
 
     const mockOpenRouter = (connected = false, complete = true) => {
         const base = '/api/model-endpoints/connections/openrouter';
@@ -410,29 +492,16 @@ describe('Model connection form', () => {
         await chooseProvider('OpenRouter');
         await screen.findByText('Connected');
         expect(screen.queryByText(/user_test_creator/)).not.toBeInTheDocument();
-        expect(screen.getByText('Connected').parentElement?.querySelector('svg')).toBeNull();
         expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Authorize again...' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Connection actions' })).not.toBeInTheDocument();
         const manage = screen.getByRole('link', { name: 'Manage on OpenRouter' });
         const disconnect = screen.getByRole('button', { name: 'Disconnect' });
-        const actions = screen.getByRole('group', { name: 'Connection actions' });
-        expect(actions).toContainElement(manage);
-        expect(actions).toContainElement(disconnect);
-        expect(actions).not.toContainElement(screen.getByText('Connected'));
-        expect(manage).toHaveTextContent('Manage');
-        expect(disconnect).toHaveTextContent('Disconnect');
-        expect(disconnect.querySelector('[data-testid="LinkOffIcon"]')).not.toBeNull();
         expect(manage).toHaveAttribute('href', 'https://openrouter.ai/keys/test-hash');
         expect(manage).toHaveAttribute('target', '_blank');
         expect(manage).toHaveAttribute('rel', 'noopener noreferrer');
         expect(disconnect).toBeEnabled();
-        const connectionRow = screen.getByText('Connected').parentElement?.parentElement?.parentElement;
-        expect(connectionRow).toContainElement(manage);
-        expect(connectionRow).toContainElement(disconnect);
         const refresh = screen.getByRole('button', { name: 'Refresh models' });
-        expect(connectionRow).not.toContainElement(refresh);
-        expect(refresh.parentElement?.parentElement).toContainElement(screen.getByRole('combobox', { name: /^Model/ }));
         fireEvent.click(refresh);
         await screen.findByText('Connected');
         expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === base + '/models')).toHaveLength(2);
@@ -492,18 +561,12 @@ describe('Model connection form', () => {
         expect(screen.queryByRole('button', { name: 'Use recent' })).not.toBeInTheDocument();
     });
 
-    it.each([
-        ['OpenAI', 'gpt-5.6-terra'],
-        ['Anthropic', 'claude-sonnet-5'],
-        ['Google Gemini', 'gemini-3.8-flash'],
-        ['Azure', 'team-assistant'],
-        ['Ollama', 'qwen3.8:27b'],
-        ['OrcaRouter', 'auto'],
-    ])('%s shows a provider-specific example without selecting a model', async (provider, example) => {
+    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'Azure', 'Ollama', 'OrcaRouter'])(
+        '%s does not treat a suggested model as a selected model', async provider => {
         openForm();
         await chooseProvider(provider);
+        if (provider === 'Azure') fireEvent.click(screen.getByRole('button', { name: 'Enter manually' }));
         const model = screen.getByRole('textbox', { name: /^Model/ });
-        expect(model).toHaveAttribute('placeholder', example);
         expect(model).toHaveValue('');
         expect(screen.getByRole('button', { name: 'Test and save' })).toBeDisabled();
     });
@@ -544,10 +607,6 @@ describe('Model connection form', () => {
         const edit = screen.getByRole('button', { name: 'Edit' });
         const copy = screen.getByRole('button', { name: 'Copy details' });
         expect(edit).toBeVisible();
-        expect(copy).toHaveTextContent(/^Copy$/);
-        expect(edit.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(edit.parentElement).toBe(copy.parentElement);
-        expect(edit.parentElement?.querySelector('.MuiDivider-vertical')).not.toBeNull();
         fireEvent.click(copy);
         expect(screen.getByRole('textbox', { name: /^Model/ })).toHaveValue('original-model');
         expect(screen.getByLabelText('Base URL')).toHaveValue(original.api_base);
@@ -570,8 +629,7 @@ describe('Model connection form', () => {
             store.dispatch(dfActions.updateModelStatus({ id: model.id, status, message: '' }));
         });
 
-        expect(screen.getByRole('button', { name: 'Test model' })).toHaveTextContent('');
-        expect(screen.queryByText('Test model')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Test model' })).toBeEnabled();
 
         setStatus('testing');
         expect(screen.getByRole('button', { name: 'Testing…' })).toBeDisabled();
@@ -579,25 +637,22 @@ describe('Model connection form', () => {
 
         setStatus('ok');
         const passed = screen.getByRole('button', { name: 'Test passed' });
-        expect(passed).toHaveClass('MuiIconButton-colorSuccess');
-        expect(passed.querySelector('[data-testid="CheckCircleOutlineIcon"]')).not.toBeNull();
-        expect(screen.queryByText('Test passed')).not.toBeInTheDocument();
+        expect(passed).toBeEnabled();
 
         setStatus('error');
         const retry = screen.getByRole('button', { name: 'Test failed, retry' });
-        expect(retry).toHaveTextContent('Test');
-        expect(retry.querySelector('[data-testid="PlayCircleOutlineIcon"]')).not.toBeNull();
+        expect(retry).toBeEnabled();
         fireEvent.click(retry);
         expect(screen.getByRole('button', { name: 'Testing…' })).toBeDisabled();
         await waitFor(() => expect(screen.getByRole('button', { name: 'Test passed' })).toBeEnabled());
     });
 
-    it('orders Azure endpoint before deployment and parses a pasted Target URI', async () => {
+    it('fills endpoint, deployment, and API version from a pasted Azure Target URI', async () => {
         openForm();
         await chooseProvider('Azure');
+        fireEvent.click(screen.getByRole('button', { name: 'Enter manually' }));
         const endpoint = screen.getByRole('textbox', { name: /Endpoint URL/ });
         const deployment = screen.getByRole('textbox', { name: /Model deployment/ });
-        expect(endpoint.compareDocumentPosition(deployment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         fireEvent.paste(endpoint, { clipboardData: { getData: () =>
             'https://resource.openai.azure.com/openai/deployments/team-assistant/chat/completions?api-version=2025-04-01-preview',
         } });

@@ -116,23 +116,25 @@ export let buildChartCards = (
         </Box>);
 }
 
-export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, children }: {
+export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, warning = false, children }: {
     title: string;
     selected: boolean;
     onClick: () => void;
     notes?: string;
     actions?: React.ReactNode;
     artifactType: 'table' | 'file' | 'report' | 'workflow';
+    warning?: boolean;
     children?: React.ReactNode;
 }) => {
     const tone = artifactType === 'report' ? 'secondary' : 'primary';
     return <Card
     className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
-    sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center',
+    sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', position: 'relative',
         ...ComponentBorderStyle, borderRadius: '6px',
         backgroundColor: theme => artifactType === 'file' || artifactType === 'workflow' ? theme.palette.background.paper
             : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
-        '--artifact-selection-color': theme => theme.palette[tone].light,
+        '--artifact-selection-color': theme => warning ? theme.palette.warning.main : theme.palette[tone].light,
+        ...(warning ? { borderColor: 'warning.main', boxShadow: '0 0 0 1px var(--artifact-selection-color)' } : {}),
         '& .artifact-actions': { opacity: 0, transition: 'opacity 0.15s' },
         '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
         '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } },
@@ -146,7 +148,9 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
         {notes && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs,
             color: 'text.secondary', overflowWrap: 'anywhere' }}>{notes}</Typography>}
     </ButtonBase>
-    {actions && <Box className="artifact-actions" sx={{ display: 'flex', flexShrink: 0, pr: 0.25 }}>{actions}</Box>}
+    {actions && <Box className="artifact-actions" sx={{ display: 'flex', flexShrink: 0, pr: 0.25,
+        ...(artifactType === 'workflow' ? { position: 'absolute', top: 2, right: 2 } : {}),
+    }}>{actions}</Box>}
 </Card>;
 };
 

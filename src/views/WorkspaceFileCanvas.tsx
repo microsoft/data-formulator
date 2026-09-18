@@ -71,7 +71,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [renaming, setRenaming] = useState(false);
     const [renameError, setRenameError] = useState('');
     const trimmedName = newName.trim();
-    const invalidName = !trimmedName || /[\\/\x00-\x1f]/.test(trimmedName) || trimmedName === '.' || trimmedName === '..';
+    const invalidName = !trimmedName || /[\\/]/.test(trimmedName) || Array.from(trimmedName).some(character => character.charCodeAt(0) < 32) || trimmedName === '.' || trimmedName === '..';
     const [saveError, setSaveError] = useState('');
     const isMarkdown = /\.(md|markdown)$/i.test(fileName);
     const dirty = textFile !== null && textFile.content !== textFile.savedContent;

@@ -223,6 +223,8 @@ def run_instance():
         execution_operation = None
         resolved_interaction = None
         if body.get("run_id"):
+            if "setup" in body:
+                raise ValueError("Setup is only accepted for new runs. Use steering to revise an existing run.")
             if not path.exists():
                 raise ValueError("Run not found in this session.")
             state = json.loads(path.read_text())
@@ -283,7 +285,7 @@ def run_instance():
         else:
             if body.get("terminal_response") is not None or body.get("interaction_response") is not None:
                 raise ValueError("An interaction response requires an existing workflow run.")
-            state = new_run(parse_workflow(store.read(body.get("path"))), UUID(identifier).hex)
+            state = new_run(parse_workflow(store.read(body.get("path"))), UUID(identifier).hex, body.get("setup"))
         from data_formulator.routes.agents import get_client
 
         client = get_client(body["model"])

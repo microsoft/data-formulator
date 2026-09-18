@@ -664,7 +664,7 @@ let SingleThreadGroupView: FC<{
     let textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     const loadedTableNodes = useSelector((state: DataFormulatorState) => state.loadedTableNodes);
     const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
-    const generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
+    const generatedReports = useSelector(dfSelectors.getThreadReports);
 
     // Thread is highlighted only if it ends at the focused thread's leaf,
     // or (for a source-artifact thread) it hosts the focused source table's artifacts.
@@ -1461,7 +1461,7 @@ let SingleThreadGroupView: FC<{
     };
 
     // Push reports whose authored parent is this table, plus unmigrated legacy
-    // reports. Generating reports stay in the active draft block.
+    // reports. Only reports owned by an active draft render in that draft block.
     const pushReportItems = (
         tableId: string,
         highlighted: boolean,
@@ -1472,7 +1472,8 @@ let SingleThreadGroupView: FC<{
             ...(reportsByTriggerTable.get(tableId) || []),
         ].filter((report, index, all) => all.findIndex(item => item.id === report.id) === index);
         for (const report of reports) {
-            if (report.status === 'generating') continue;
+            if (report.status === 'generating' && report.triggerTableId
+                && runningAgentTableIds.has(report.triggerTableId)) continue;
             timelineItems.push(buildReportTimelineItem(report, highlighted));
         }
         pushFileItems(tableId, highlighted);
@@ -1531,7 +1532,8 @@ let SingleThreadGroupView: FC<{
         const iconColor = focusedId?.type === 'conversation' ? theme.palette.text.secondary
             : rowHL ? theme.palette.primary.main : 'rgba(0,0,0,0.15)';
         const gutterIcon = workflow
-            ? <WorkflowGears running={workflow.status === 'running'} color={rowHL ? theme.palette.primary.main : theme.palette.text.secondary} />
+            ? <WorkflowGears running={workflow.status === 'running'} color={workflow.status === 'paused'
+                ? theme.palette.warning.main : rowHL ? theme.palette.primary.main : theme.palette.text.secondary} />
             : turn.form
             ? <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />
             : getEntryGutterIcon(
@@ -2940,7 +2942,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let charts = useSelector(dfSelectors.getAllCharts);
 
-    let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
+    let generatedReports = useSelector(dfSelectors.getThreadReports);
     const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
     const loadedTableNodes = useSelector((state: DataFormulatorState) => state.loadedTableNodes);
 
@@ -3420,23 +3422,16 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // Track which leaf tables are promoted (split) vs real leaves
     const extraLeafIds = new Set(extraLeaves.map(t => t.id));
 
-    // Numbering counter shared by source-artifact threads and derived threads:
-    // every numbered thread, whatever roots it, takes the next index.
-    let realThreadIdx = 0;
-
     // The shelf is not a thread, but it occupies the top of the first column,
     // so it packs alongside the threads as slot 0.
     if (inputTables.length > 0 || workspaceFiles.length > 0) {
         allThreadEntries.push({ key: 'source-shelf', isShelf: true });
     }
 
-    // The question-rooted thread leads: everything else grew out of it.
     for (const conversationRootId of conversationRootIds) {
-        realThreadIdx++;
         allThreadEntries.push({
             key: conversationRootId,
             conversationRootId,
-            threadLabel: t('dataThread.threadIndex', { index: String(realThreadIdx) }),
         });
     }
 
@@ -3496,34 +3491,63 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             || fileNodes.some(node => node.parentNodeId === st.id)
             || draftNodes.some(d => draftHostOf(d) === st.id);
         if (!hasArtifacts) continue;
-        realThreadIdx++;
         allThreadEntries.push({
             key: `source-thread-${st.id}`,
             originTableId: st.id,
-            threadLabel: t('dataThread.threadIndex', { index: String(realThreadIdx) }),
         });
     }
 
-    // Numbering: only the *first* segment of each group bumps the counter and
-    // gets a visible label.  Continuation segments are unlabelled — they rely
-    // on the "↑ continued" header chip + parent chip for visual continuity.
-    // (`realThreadIdx` continues from the source-artifact threads above.)
     threadedTables.forEach((lt, i) => {
         const groupSegs = segmentsByGroup.get(groupIdOf(lt))!;
         const posInGroup = groupSegs.indexOf(lt.id);
         const isFirst = posInGroup === 0;
         const isLast = posInGroup === groupSegs.length - 1;
-        if (isFirst) realThreadIdx++;
-
         allThreadEntries.push({
             key: `thread-${lt.id}-${i}`,
             leafTable: lt,
             originTableId: originOfHead.get(lt.id),
-            threadLabel: isFirst ? t('dataThread.threadIndex', { index: String(realThreadIdx) }) : undefined,
             isSplitThread: !isFirst,             // continuation → parent chip + header, no label
             hasContinuationBelow: !isLast,       // not the tail → "↓ continues below" footer
         });
     });
+
+    const firstTurnByRoot = new Map<string, TextTurn>();
+    const turnOrder = new Map(textTurnsForHome.map((turn, index) => [turn.id, index]));
+    for (const turn of textTurnsForHome) {
+        const rootId = textTurnRootByTurn.get(turn.id)!;
+        const first = firstTurnByRoot.get(rootId);
+        if (!first || turn.createdAt < first.createdAt) firstTurnByRoot.set(rootId, turn);
+    }
+    const threadGroups = new Map<string, { entries: ThreadEntry[]; firstTurn?: TextTurn }>();
+    for (const entry of allThreadEntries) {
+        if (entry.isShelf) continue;
+        const groupId = entry.leafTable ? `table:${groupIdOf(entry.leafTable)}` : entry.key;
+        const existing = threadGroups.get(groupId);
+        if (existing) {
+            existing.entries.push(entry);
+            continue;
+        }
+        const triggers = entry.leafTable ? getCachedTriggers(entry.leafTable) : [];
+        const firstTable = tableById.get(triggers[0]?.resultTableId) || entry.leafTable;
+        const leadUpTurns = firstTable
+            ? getThreadLeadUpTurns(firstTable, tables, textTurnsForHome, loadedTableNodes, fileNodes, generatedReports)
+            : [];
+        const rootId = entry.conversationRootId || entry.originTableId || triggers[0]?.tableId;
+        threadGroups.set(groupId, {
+            entries: [entry],
+            firstTurn: leadUpTurns[0] || (rootId ? firstTurnByRoot.get(rootId) : undefined),
+        });
+    }
+    const orderedGroups = [...threadGroups.values()].sort((first, second) =>
+        (first.firstTurn?.createdAt ?? 0) - (second.firstTurn?.createdAt ?? 0)
+        || (turnOrder.get(first.firstTurn?.id ?? '') ?? 0) - (turnOrder.get(second.firstTurn?.id ?? '') ?? 0));
+    allThreadEntries = [
+        ...allThreadEntries.filter(entry => entry.isShelf),
+        ...orderedGroups.flatMap((group, index) => {
+            group.entries[0].threadLabel = t('dataThread.threadIndex', { index: String(index + 1) });
+            return group.entries;
+        }),
+    ];
 
     // Ownership + height, in one pass over the entries in layout order.
     // `accumulated` is the single source of truth: the FIRST entry to mention a

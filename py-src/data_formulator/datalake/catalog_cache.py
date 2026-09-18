@@ -256,13 +256,8 @@ def load_catalog(workspace_root: Path | str, source_id: str) -> list[dict[str, A
     In disabled-connectors mode, only admin source_ids (e.g.
     ``sample_datasets``) are readable — user catalogs on disk are hidden.
     """
-    try:
-        from flask import current_app
-        disabled = bool(
-            current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors')
-        )
-    except RuntimeError:
-        disabled = False
+    from data_formulator.configuration import user_connectors_disabled
+    disabled = user_connectors_disabled()
     if disabled:
         try:
             from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
@@ -364,13 +359,8 @@ def list_cached_sources(workspace_root: Path | str) -> list[str]:
         sources.append(original or path.stem)
 
     # Filter to admin-only sources when external connectors are disabled.
-    try:
-        from flask import current_app
-        disabled = bool(
-            current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors')
-        )
-    except RuntimeError:
-        disabled = False
+    from data_formulator.configuration import user_connectors_disabled
+    disabled = user_connectors_disabled()
     if disabled:
         try:
             from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS

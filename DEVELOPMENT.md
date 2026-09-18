@@ -9,6 +9,31 @@ How to set up your local machine.
 
 ## Backend (Python)
 
+### Connector Timeouts
+
+Connection validation and catalog discovery are separate requests. The connection
+form creates a definition with `connect_params: {}` before validating it, avoiding
+duplicate connection tests. Transport timeouts and retryable errors retain the
+connector and trigger a status check; confirmed authentication failures retain
+the existing cleanup behavior.
+
+The catalog UI uses `get-catalog-tree` with `background: true`. Discovery runs on
+the catalog-refresh executor; subsequent requests use `poll: true`. Progress and
+completion state are stored in the user's `catalog_discovery` directory. A file
+lock prevents duplicate discovery across workers sharing that directory. Empty
+catalogs are cached too. Failed scans preserve the previous cache; `retry: true`
+starts another attempt. Legacy callers without `background` remain synchronous.
+
+UI polling has a 10-second per-request limit, up to three retries with backoff for
+transient transport errors, and a five-minute waiting window. Ending that window
+does not cancel the server scan; retrying checks the existing job. Worker restarts
+interrupt jobs and require retry. This is not a distributed durable job queue:
+multiple instances need a shared data directory for status and locking.
+
+Azure Blob SDK requests use a five-second connection timeout, ten-second read
+timeout, and two retries with backoff. These are per-request limits, not an overall
+deadline for identity acquisition, pagination, or PyArrow file reads.
+
 ### Option 1: With uv (recommended)
 
 uv is faster and provides reproducible builds via lockfile.
@@ -155,7 +180,7 @@ origin, set `MODEL_CONNECTION_ALLOWED_ORIGINS` to the exact public frontend orig
 state expires after ten minutes and is bound to the initiating Data Formulator
 identity, so callbacks also work when opened in an external browser.
 
-The credential vault must be available; it is currently disabled when data
+The credential vault must be available, including when user-created data
 connectors are disabled. Persist `DATA_FORMULATOR_HOME` and its vault key across
 restarts. If `DF_ALLOWED_API_BASES` is configured, include
 `https://openrouter.ai/api/v1` to permit inference through this connection.
@@ -609,7 +634,101 @@ data-formulator/                          ← container
 
 ## Deployment Profiles
 
-Data Formulator supports three deployment configurations. **All defaults are optimized for Profile 1 (single-user local)** — you only need to set flags when deploying as multi-user.
+Data Formulator runs in default mode unless administrator-managed operation is
+enabled. The deployment profiles below describe authentication and storage choices,
+not separate product editions.
+
+### Managed Mode
+
+Start with `data_formulator --managed` or set `DF_MANAGED=true` to enable
+administrator-managed resources and policies. Managed mode is off by default.
+It does not change authentication, workspace storage, or the execution sandbox.
+It can be used locally for setup as well as on a hosted installation.
+
+Authorized administrators see **Admin** alongside **About** and **App**
+(or in the compact navigation menu). The page remains at `/configurations` for
+existing links. Ordinary users do not see it, and the backend denies configuration
+access unless both managed mode and administrator authorization are present.
+Personal Settings remains separate from installation administration.
+
+In **Administration > Appearance**, set an optional **App name** (up to 80
+characters) and **Tagline** (up to 300 characters), then **Save changes**. A custom
+name replaces `Data Formulator` in the landing heading, navigation,
+and browser title. Long headings use smaller text and wrap. Clearing a field
+restores its default; the default tagline follows the selected UI language.
+These plain-text values are saved in installation configuration, not environment
+variables, and are visible to all users. Other open clients pick up changes on
+reload. About retains the original Data Formulator identity.
+
+In single-user localhost identity mode, the local owner is the administrator.
+For hosted installations, configure an authentication provider and list verified
+identities in `DF_ADMIN_IDENTITIES`, for example `user:<verified-subject>` (comma
+separated). Anonymous browser identities cannot administer the installation.
+An anonymous demo can be provisioned locally before hosting, or use authenticated
+administrators alongside anonymous visitors. Remote shared-connection saves
+also require `CREDENTIAL_VAULT_KEY`.
+
+For Azure App Service, configure administrators by full sign-in address at deployment:
+
+```env
+DF_MANAGED=true
+AUTH_PROVIDER=azure_easyauth
+ALLOW_ANONYMOUS=false
+DF_ADMIN_EMAILS=alice@example.com,bob@example.com
+```
+
+At runtime, the backend compares the trusted `X-MS-CLIENT-PRINCIPAL-NAME`
+provided by EasyAuth against this comma-separated allowlist, ignoring case and
+surrounding whitespace. Use the actual sign-in address, which can differ from a
+mailbox alias or a guest user's home address. Missing addresses, short aliases,
+display names, and wildcard patterns do not grant access. No directory lookup,
+Graph permissions, or synchronization with Azure owners/roles is involved.
+Email authorization currently supports Azure EasyAuth only; other providers keep
+using `DF_ADMIN_IDENTITIES`. Workspace and credential identity remain based on
+the verified object ID, not email. Admin access follows the address if reassigned,
+so maintain the list when users leave or change addresses.
+
+Alternatively, `DF_ADMIN_IDENTITIES=user:<principal-id>` matches the trusted
+`X-MS-CLIENT-PRINCIPAL-ID` (the user's object ID for Entra). If both lists are
+configured, matching either grants access; remove old ID entries when switching
+to email-only administration. Azure subscription/resource ownership does not
+automatically grant application administrator access. Without an allowlisted
+authenticated identity or sign-in address, no hosted user is an application administrator.
+Enable App Service Authentication and prevent direct access that bypasses its
+trusted-header boundary. Do not expose a deployment in single-user localhost
+identity mode through an unauthenticated proxy.
+
+`DISABLE_DATA_CONNECTORS=true` / `--disable-data-connectors` force shared-only
+connector access. `DISABLE_CUSTOM_MODELS=true` / `--disable-custom-models` force
+shared-only model access. These deployment settings override saved configuration,
+including previously saved `false` values. Administration disables the policy
+controls, and the configuration API rejects attempts to set the corresponding
+restriction to `false`, including JSON edits. Administrators can still manage
+shared resources; changing a deployment lock requires changing the deployment
+environment or startup flags and restarting the server.
+
+Disabling an individual shared model or connector also blocks subsequent API and
+agent lookups by ID, including cached connector loaders. Administration retains
+access to inspect, test, and re-enable disabled resources. Already-running calls
+are not cancelled by a configuration change.
+
+Managed-mode startup checks warn about missing administrator access, unsupported
+email authentication, and detectable hosted use of local-owner identity. They do
+not replace correct proxy/authentication configuration. Successful configuration
+saves log the verified actor ID, revision, and changed top-level sections without
+configuration values or credentials; retain these logs under your audit policy.
+
+A fresh managed installation defaults to administrator-provided models and
+connections. These are editable defaults: Administration can permit user-created
+resources or restrict model endpoints. Explicit deployment restrictions remain
+locked. Existing saved configurations keep their policies when managed mode is
+enabled or disabled; turning it off hides administration, not policy enforcement.
+Legacy configurations trigger a startup notice explaining how to enable access.
+
+`--disable-database` / `DISABLE_DATABASE=true` is deprecated. It still selects
+managed mode plus its legacy demo restrictions and ephemeral workspace behavior.
+For new deployments, use `--managed` with explicit authentication, storage, and
+policy settings.
 
 ### Profile 1: Single-User Local (default)
 
@@ -643,17 +762,19 @@ A shared server (e.g., for demos, workshops, public access). No login, short-liv
 
 ```bash
 data_formulator \
+  --managed \
   --workspace-backend ephemeral \
   --disable-data-connectors \
   --disable-custom-models \
   --disable-display-keys
 ```
 
-> **Shortcut:** `--disable-database` (or `DISABLE_DATABASE=true`) bundles all of the above into a single flag.
+> **Legacy shortcut:** `--disable-database` (or `DISABLE_DATABASE=true`) retains this preset but is deprecated.
 
 Or via environment variables:
 
 ```env
+DF_MANAGED=true
 WORKSPACE_BACKEND=ephemeral
 # Ephemeral retention only; local mode is durable and ignores these settings.
 EPHEMERAL_WORKSPACE_TTL_HOURS=24
@@ -672,27 +793,30 @@ OPENAI_MODELS=gpt-4.1
 |---------|-------|-----|
 | `AUTH_PROVIDER` | *(unset)* | Anonymous access for demos |
 | `WORKSPACE_BACKEND` | `ephemeral` | Temporary server-local workspaces with TTL/LRU cleanup |
-| `DISABLE_DATA_CONNECTORS` | `true` | **Critical** — prevents DB credential exposure via identity spoofing |
+| `DISABLE_DATA_CONNECTORS` | `true` | **Critical** — allows only administrator-configured sources; blocks personal connectors |
 | `DISABLE_CUSTOM_MODELS` | `true` | Prevents users from adding arbitrary LLM endpoints (SSRF risk) |
 | `DISABLE_DISPLAY_KEYS` | `true` | Hides server-configured API keys from UI |
-| Credential vault | N/A | No connectors → no credentials to store |
+| Credential vault | Available | Protects administrator-configured connection credentials |
 | Identity | anonymous (`browser:<uuid>`) | Isolates temporary workspaces by browser identity |
 
 **Retention notes:** Ephemeral workspaces may disappear after inactivity or when the configured byte cap is reached. The browser keeps only a row-free recovery snapshot for read-only viewing. Use `WORKSPACE_BACKEND=local` for durable workspaces; ephemeral TTL/LRU cleanup never scans or deletes local-mode workspaces.
 
-**Security notes:** Keep data connectors and custom models disabled for anonymous deployments. Browser identities are client-provided and are suitable for isolating disposable demo workspaces, not for protecting durable credentials or sensitive server-side state.
+**Security notes:** Disable user-created connectors and custom models for anonymous deployments. Administrator-configured sources remain available, so publish only sources whose data may be shared with every app user. Browser identities are client-provided and are suitable for isolating disposable demo workspaces, not for protecting durable credentials or sensitive server-side state.
 
-### Profile 3: Multi-User Authenticated (enterprise / team)
+### Profile 3: Multi-User Authenticated (team)
 
 A shared server with SSO login. Full features, proper identity isolation.
 
 ```bash
 data_formulator \
+  --managed \
   --workspace-backend azure_blob \
   --disable-display-keys
 ```
 
 ```env
+DF_MANAGED=true
+DF_ADMIN_IDENTITIES=user:<verified-admin-subject>
 AUTH_PROVIDER=oidc
 OIDC_ISSUER_URL=https://your-idp.example.com/realms/main
 OIDC_CLIENT_ID=data-formulator
@@ -709,7 +833,7 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 | `AUTH_PROVIDER` | `oidc` / `github` / `azure_easyauth` | Verified identity from SSO |
 | `ALLOW_ANONYMOUS` | `false` | Login required — no anonymous fallback |
 | `WORKSPACE_BACKEND` | `azure_blob` or `local` | Persistent per-user workspaces |
-| `DISABLE_DATA_CONNECTORS` | `false` | Safe — identity comes from auth provider, not spoofable |
+| `DISABLE_DATA_CONNECTORS` | `false` | Not deployment-locked; Administration controls whether user-created connections are permitted |
 | `DISABLE_CUSTOM_MODELS` | `true` | Users only use server-configured models |
 | `DISABLE_DISPLAY_KEYS` | `true` | Hide server keys; users add their own |
 | `FLASK_SECRET_KEY` | set explicitly | Required for stable sessions across server restarts |
@@ -720,24 +844,27 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 
 ### Profile Comparison
 
-| Feature | Profile 1 (Local) | Profile 2 (Demo) | Profile 3 (Enterprise) |
+| Feature | Profile 1 (Local) | Profile 2 (Demo) | Profile 3 (Team) |
 |---------|:-:|:-:|:-:|
 | Login required | No | No | Yes |
-| Data connectors (DB) | Yes | **No** | Yes |
+| Data connectors (DB) | Yes | Administrator-configured only | Administrator policy |
 | Custom LLM endpoints | Yes | **No** | Operator choice |
-| Credential vault | Yes | N/A | Yes |
-| Workspace persistence | Local disk | Browser only | Cloud / disk |
+| Credential vault | Yes | Yes (configured sources/models) | Yes |
+| Workspace persistence | Local disk | Ephemeral server storage | Cloud / disk |
 | Identity | `local:<os_user>` (fixed) | `browser:<uuid>` (client) | `user:<sub>` (SSO) |
 
 ### CLI Flags Reference (complete)
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
+| `--managed` | `DF_MANAGED` | `false` | Enable managed resources and administrator-only Administration page; independent of auth, storage, and sandbox |
+| — | `DF_ADMIN_IDENTITIES` | *(unset)* | Comma-separated verified `user:<subject>` identities allowed to administer a managed installation |
+| — | `DF_ADMIN_EMAILS` | *(unset)* | Comma-separated full EasyAuth sign-in addresses allowed to administer a managed installation; case-insensitive exact matches |
 | `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local`, `azure_blob`, or `ephemeral` |
 | `--sandbox` | `SANDBOX` | `local` | Code execution backend: `local` or `docker` |
-| `--disable-database` | `DISABLE_DATABASE` | `false` | **Multi-user anonymous preset**: bundles ephemeral + no connectors + no custom models + hide keys |
+| `--disable-database` | `DISABLE_DATABASE` | `false` | **Deprecated demo preset**: managed mode + ephemeral + configured connectors only + no custom models + hide keys |
 | `--disable-display-keys` | `DISABLE_DISPLAY_KEYS` | `false` | Hide API keys in frontend UI |
-| `--disable-data-connectors` | `DISABLE_DATA_CONNECTORS` | `false` | Disable external DB connectors |
+| `--disable-data-connectors` | `DISABLE_DATA_CONNECTORS` | `false` | Allow configured sources only; block personal connector creation and use |
 | `--disable-custom-models` | `DISABLE_CUSTOM_MODELS` | `false` | Prevent users from adding custom LLM endpoints |
 | `--max-display-rows` | `MAX_DISPLAY_ROWS` | `10000` | Max rows sent to frontend |
 | `--data-dir` | `DATA_FORMULATOR_HOME` | `~/.data_formulator` | Data directory |
@@ -752,6 +879,135 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 | `--azure-blob-account-url` | `AZURE_BLOB_ACCOUNT_URL` | — | Azure Blob account URL for Entra ID auth |
 | `--azure-blob-container` | `AZURE_BLOB_CONTAINER` | `data-formulator` | Azure Blob container name |
 
+
+### Configured-Only Models
+
+In **Administration > Models**, enable **Disable user-created models**
+and save. This persists `disable_user_models` and restricts users to administrator-
+configured models, including blocking use of previously saved personal models and
+creation of personal account connections. Administrator model setup remains available.
+`DISABLE_CUSTOM_MODELS=true` (also included in `DISABLE_DATABASE`) enforces this
+restriction and locks the checkbox. Turning off the saved setting restores personal
+models unless a deployment flag still restricts them. The endpoint URL allowlist is
+independent and continues to apply when personal models are permitted.
+
+### Configured-Only Data Sources
+
+In **Administration > Data Sources**, enable **Disable user-created
+connections** and save. This persists `disable_user_connectors` in the installation
+configuration. Users can still connect to and browse administrator sources from
+the configuration page, `connectors.yaml`, or `DF_SOURCES__*`; personal connections
+(including previously saved ones) cannot be created or used. Disabling the setting
+restores access to personal definitions without deleting them.
+
+`DISABLE_DATA_CONNECTORS=true` / `--disable-data-connectors` enforces the same policy
+and locks the checkbox. `DISABLE_DATABASE` includes this restriction as part of its
+existing deployment preset. These flags no longer disable configured sources or
+the credential vault. Administrator connection testing and saving remain available.
+
+In restricted mode, configure complete connection parameters on the server;
+user-supplied parameters cannot replace the configured host, URL, path, or credentials.
+Discovery requires a configured connector ID. Agent connection-creation tools and
+local terminal access are also disabled. This is a connector policy, not a network
+sandbox: uploads, other application capabilities, and database permissions need
+their own controls. Configure read-only database credentials where appropriate.
+Configured sources are shared with app users, so do not publish data that those
+users must not access.
+
+### Shared Connection Settings
+
+Application Configuration stores model and connector settings inline under
+`overrides.connections.models` and `overrides.connections.connectors`. Model
+entries contain the provider, model name, endpoint URL, and authentication mode;
+connector entries contain the loader type, display name, and non-sensitive
+parameters. These settings are not stored in separate workflow-style files.
+
+Each entry has an internal `credential_ref` linking it to encrypted credentials.
+The referenced permanent vault record contains secrets, not the full connection
+definition. API keys, passwords, and loader-declared sensitive parameters are
+never written to configuration JSON. Connection tests use temporary encrypted
+staging records; saving promotes their credentials and writes the readable
+settings. API changes to connection settings require a fresh connection test.
+Environment-provided connections remain managed by the deployment.
+
+Legacy bare vault references still load. The configuration view expands them
+into readable settings; the next save persists the inline form and migrates
+credentials without changing them. The installation's credential vault and
+encryption key are still needed when moving or restoring the configuration.
+
+### Shared Workflow Files
+
+Custom workflows saved through Application Configuration are stored as separate
+YAML files in `workflows/` next to `configuration.json` in the installation data
+directory. Configuration holds references, for example:
+
+```json
+{
+  "workflows": {
+    "server/team-review.yaml": {
+      "file": "workflows/team-review.yaml",
+      "enabled": true
+    }
+  }
+}
+```
+
+This is the `workflows` section inside `overrides`. Administrators can place YAML
+files in that directory and reference them directly. Only simple `.yaml`
+filenames are accepted; absolute paths, traversal, and symlinks are rejected.
+Bundled defaults retain their `demo/<filename>.yaml` IDs and use
+`"file": "builtin:<filename>.yaml"` when saved without content changes. Editing a
+built-in creates a separate custom file without modifying the bundled original.
+
+The editor continues to load and edit YAML. Saving edited content creates a new
+uniquely named file and updates the reference, preserving the previous file if
+the configuration save fails. Removing a reference or resetting an override does
+not delete files. Old unreferenced versions can be removed manually. Existing
+inline `content` remains readable and migrates to file references on the next
+configuration save. Personal workspace workflow storage is unchanged.
+
+### Workflow Setup
+
+Workflows can declare optional top-level `parameters`. Clicking Run opens a setup
+form before creating a session or calling the agent. Every workflow also accepts
+optional additional instructions, including workflows without parameters.
+
+```yaml
+parameters:
+  - name: symbol
+    label: Stock symbol
+    type: text
+    default: MSFT
+    required: true
+  - name: period
+    label: Review period
+    type: select
+    options: [Latest month, Latest year]
+    default: Latest month
+    allow_custom: true
+    description: Relative to the latest available data.
+```
+
+Supported types are `text` (the default), `number`, `boolean`, and `select`.
+Names must be unique identifiers; labels are required. `description`, `default`,
+and `required` are optional. Select fields require unique string `options`;
+`allow_custom: true` permits a typed alternative. An unchecked boolean is a valid
+`false` value, including for required fields. There are at most 20 parameters,
+50 options per select, 4,000 characters per text value, and 8,000 characters of
+additional instructions. Avoid requesting passwords or other secrets in setup.
+
+New-run requests accept `setup: {parameters: {...}, instructions: "..."}`. The
+server validates values against the current workflow, resolves missing defaults,
+and saves the confirmed setup separately from the workflow snapshot. The agent
+receives it as user guidance, with precedence over workflow defaults, not as code
+substitution or additional authorization. Workflow instructions should explain
+how each parameter affects the task and label fallback values as defaults.
+Source constraints, data verification, and tool approvals still apply.
+
+Setup is immutable on resume; later changes use normal workflow steering. Saved
+run state includes the initial setup. No setup agent call is made: a future
+assisted setup step can supply the same validated payload without changing the
+execution contract.
 
 ## Security Considerations for Production Deployment
 
@@ -795,14 +1051,30 @@ When migrating Data Formulator to a new server (or rebuilding a Docker container
 | `DF_CODE_SIGNING_SECRET` | `.env` (env var, optional) | If set, overrides Flask-derived signing key. Must match the old value or all code signatures break. |
 | `CREDENTIAL_VAULT_KEY` | `.env` (env var, optional) | If set, overrides `.vault_key` file. Must match or vault data is unreadable. |
 | `users/` & `workspaces/` | `DATA_FORMULATOR_HOME/` | User workspace data (parquet files, session metadata). |
+| `configuration.json` | `DATA_FORMULATOR_HOME/configuration.json` | Installation policies, enabled resources, defaults, and shared-connection vault references. |
+| `workflows/` | `DATA_FORMULATOR_HOME/workflows/` | Administrator-published workflow YAML referenced by installation configuration. |
 
 **Minimum migration steps:**
+
+Stop all application workers before taking the backup, and restore before any
+worker starts. Keep installation configuration, workflow files, credential vault,
+and encryption keys from the same backup. Blob workspace storage does not back
+up this installation state. If `--data-dir` is set, use that directory for
+installation configuration and workflows. Preserve deployment environment
+settings too, including admin allowlists and immutable policy flags; securely
+export these through your deployment platform if they are not stored in `.env`.
 
 ```bash
 # On the OLD server — back up secrets + data
 cp .env                             /backup/.env
 cp $DATA_FORMULATOR_HOME/.vault_key /backup/.vault_key
 cp $DATA_FORMULATOR_HOME/credentials.db /backup/credentials.db
+if [[ -f "$DATA_FORMULATOR_HOME/configuration.json" ]]; then
+  cp "$DATA_FORMULATOR_HOME/configuration.json" /backup/configuration.json
+fi
+if [[ -d "$DATA_FORMULATOR_HOME/workflows" ]]; then
+  cp -R "$DATA_FORMULATOR_HOME/workflows" /backup/workflows
+fi
 # Copy workspace data if using local backend
 cp -r $DATA_FORMULATOR_HOME/users   /backup/users
 cp -r $DATA_FORMULATOR_HOME/workspaces /backup/workspaces
@@ -811,6 +1083,12 @@ cp -r $DATA_FORMULATOR_HOME/workspaces /backup/workspaces
 cp /backup/.env .env
 cp /backup/.vault_key $DATA_FORMULATOR_HOME/.vault_key
 cp /backup/credentials.db $DATA_FORMULATOR_HOME/credentials.db
+if [[ -f /backup/configuration.json ]]; then
+  cp /backup/configuration.json "$DATA_FORMULATOR_HOME/configuration.json"
+fi
+if [[ -d /backup/workflows ]]; then
+  cp -R /backup/workflows "$DATA_FORMULATOR_HOME/workflows"
+fi
 cp -r /backup/users $DATA_FORMULATOR_HOME/users
 cp -r /backup/workspaces $DATA_FORMULATOR_HOME/workspaces
 ```

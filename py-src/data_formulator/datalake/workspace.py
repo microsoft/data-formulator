@@ -134,7 +134,8 @@ def _configured_scratch_max_bytes() -> int:
     try:
         from flask import current_app, has_app_context
         if has_app_context():
-            return int(current_app.config.get('CLI_ARGS', {}).get('scratch_max_bytes', SCRATCH_MAX_BYTES))
+            from data_formulator.configuration import effective_limit
+            return effective_limit('scratch_max_bytes')
     except Exception:
         pass
     return SCRATCH_MAX_BYTES

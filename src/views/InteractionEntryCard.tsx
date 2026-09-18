@@ -36,7 +36,7 @@ export const workspaceFileFromHref = (href: string): string | null => {
     if (!prefix) return null;
     try {
         const path = decodeURIComponent(href.slice(prefix.length).split(/[?#]/)[0]);
-        if (!path || path.split('/').some(part => !part || part === '.' || part === '..') || /[\\\x00-\x1f]/.test(path)) return null;
+        if (!path || path.split('/').some(part => !part || part === '.' || part === '..') || path.includes('\\') || Array.from(path).some(character => character.charCodeAt(0) < 32)) return null;
         return prefix === '/api/workspace/files/' ? path : `scratch/${path}`;
     } catch {
         return null;

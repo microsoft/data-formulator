@@ -12,7 +12,7 @@ import yaml
 
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workflows.agent import TOOLS, WorkflowAgent, new_run, public_run
-from data_formulator.workflows.instances import WorkflowStore, parse_workflow
+from data_formulator.workflows.instances import WorkflowStore, parse_workflow, resolve_setup
 
 pytestmark = [pytest.mark.backend]
 
@@ -30,6 +30,64 @@ def agent(tmp_path, instance):
     workspace = Workspace("workflow-test", root_dir=tmp_path)
     state = new_run(instance, "test")
     return WorkflowAgent(MagicMock(), workspace, state, lambda value: None, Event(), "")
+
+
+def test_workflow_setup_defaults_overrides_and_snapshot(instance):
+    instance["parameters"] = [
+        {"name": "symbol", "label": "Stock symbol", "required": True},
+        {"name": "period", "label": "Period", "type": "select", "options": ["Month", "Year"], "default": "Month"},
+        {"name": "days", "label": "Days", "type": "number", "default": 30},
+        {"name": "details", "label": "Include details", "type": "boolean", "default": False},
+    ]
+    parsed = parse_workflow(yaml.safe_dump(instance))
+    state = new_run(parsed, "setup", {"parameters": {"symbol": "AAPL", "days": 90}, "instructions": " Focus on volatility. "})
+    assert state["setup"] == {"parameters": {"symbol": "AAPL", "period": "Month", "days": 90, "details": False},
+                              "instructions": "Focus on volatility."}
+    assert public_run(state)["setup"] == state["setup"]
+    assert parsed == instance
+    with pytest.raises(ValueError, match="Stock symbol"):
+        new_run(parsed, "missing")
+
+
+@pytest.mark.parametrize("setup", [[], {"parameters": []}, {"instructions": 42}, {"instructions": "x" * 8001},
+    {"parameters": {"unknown": "value"}}, {"parameters": {"period": "Other"}},
+    {"parameters": {"days": True}}, {"parameters": {"days": float("inf")}}, {"parameters": {"details": "yes"}}])
+def test_workflow_setup_rejects_invalid_values(instance, setup):
+    instance["parameters"] = [
+        {"name": "period", "label": "Period", "type": "select", "options": ["Month"]},
+        {"name": "days", "label": "Days", "type": "number"},
+        {"name": "details", "label": "Details", "type": "boolean"},
+    ]
+    with pytest.raises(ValueError):
+        resolve_setup(instance, setup)
+
+
+@pytest.mark.parametrize("parameters", [None, {}, [None], [{"name": "bad-name", "label": "Bad"}],
+    [{"name": "choice", "label": "Choice", "type": "select", "options": []}],
+    [{"name": "choice", "label": "Choice", "type": "select", "options": ["One"], "default": "Two"}],
+    [{"name": "days", "label": "Days", "type": "number", "default": "many"}],
+    [{"name": "same", "label": "Same"}] * 2])
+def test_workflow_parameter_definitions_are_validated(instance, parameters):
+    instance["parameters"] = parameters
+    with pytest.raises(ValueError):
+        parse_workflow(yaml.safe_dump(instance))
+
+
+def test_workflow_setup_allows_custom_choices(instance):
+    instance["parameters"] = [{"name": "period", "label": "Period", "type": "select",
+                              "options": ["Month"], "allow_custom": True}]
+    assert resolve_setup(instance, {"parameters": {"period": "Last quarter"}})["parameters"]["period"] == "Last quarter"
+
+
+def test_workflow_setup_reaches_agent_as_user_guidance(agent):
+    agent.state["setup"] = {"parameters": {"symbol": "AAPL"}, "instructions": "Focus on volatility."}
+    agent.cancel.set()
+    list(agent.run_workflow())
+    setup_message = next(message for message in agent.state["trajectory"] if "Confirmed workflow setup:" in message.get("content", ""))
+    assert setup_message["role"] == "user"
+    assert '"symbol": "AAPL"' in setup_message["content"]
+    assert "Focus on volatility." in setup_message["content"]
+    assert "not permission to bypass" in setup_message["content"]
 
 
 def test_public_run_counts_tool_invocations_not_model_turns(instance):
@@ -125,6 +183,8 @@ def test_workflow_automatically_loads_and_publishes_the_recommended_plan(agent, 
     assert agent.state["status"] == "running"
     assert "interaction" not in agent.state
     assert agent.state["outputs"][0]["tool"] == "create_data"
+    assert agent.state["outputs"][0]["step_id"] == agent.state["step_id"]
+    assert agent.state["outputs"][0]["plan_revision"] == 0
     assert json.loads(agent.state["outputs"][0]["stdout"])["table_name"] in agent.workspace.list_tables()
     assert agent._run_payload["workspace_inputs"].inputs
     assert not agent.state["checks"]
@@ -331,6 +391,28 @@ def test_household_demo_uses_catalog_sample_and_progressive_chart_steps():
     assert "chart's derived table" in instance["deliverables"][2]
 
 
+@pytest.mark.parametrize("filename,dataset,columns", [
+    ("gas-price-review.yaml", "Weekly Gas Price", {"date", "fuel", "grade", "formulation", "price"}),
+    ("movie-performance-review.yaml", "Movies", {"Production Budget", "Worldwide Gross", "Major Genre", "IMDB Rating"}),
+])
+def test_enhanced_demo_workflows_are_discoverable_and_use_available_samples(tmp_path, filename, dataset, columns):
+    from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
+
+    store = WorkflowStore(tmp_path)
+    path = f"demo/{filename}"
+    workflow = parse_workflow(store.read(path))
+    assert any(item["path"] == path and item["origin"] == "demo" and "error" not in item for item in store.list_all())
+    table = next(table for table in SampleDatasetsLoader().list_tables(dataset) if table["name"] == dataset)
+    assert columns <= {column["name"] for column in table["metadata"]["columns"]}
+    assert dataset in workflow["source"]
+    assert "user_review_needed false" in workflow["source"]
+    assert len(workflow["deliverables"]) == 4
+    assert len(workflow["steps"]) == 5
+    assert all(step.get("description") and step.get("checkers") for step in workflow["steps"])
+    assert "independent verification script" in workflow["steps"][-1]["instructions"]
+    assert "historical" in workflow["prompt"]
+
+
 def test_formal_sources_are_agent_guidance(instance, agent):
     instance["source"] = [{"id": "guide", "type": "instruction", "instruction": "Read the methodology."},
         {"id": "prices", "type": "retrieval", "request": {"method": "POST", "url": "https://example.com/prices",
@@ -523,6 +605,8 @@ def test_native_data_file_and_report_outputs(agent):
     agent._execute("write_report", {"report": "# Values\nVerified 2"}, "report-2")
     assert len([output for output in agent.state["outputs"] if output["type"] == "report"]) == 1
     assert agent.state["outputs"][-1]["content"] == "# Values\nVerified 2"
+    assert all(output["step_id"] == agent.state["step_id"] for output in agent.state["outputs"])
+    assert all(output["plan_revision"] == 0 for output in agent.state["outputs"])
     assert agent.state["evidence"]["data"]["revision"] < agent.state["revision"]
 
 
@@ -541,6 +625,8 @@ def test_native_visualization_output(agent, monkeypatch):
     assert agent.state["checks"]["coverage"]["status"] == "passed"
     output = agent.state["outputs"][0]
     assert output["type"] == "result"
+    assert output["step_id"] == agent.state["step_id"]
+    assert output["plan_revision"] == 0
     assert output["content"]["result"]["chart_id"] == "chart-workflow"
     assert output["content"]["result"]["code_signature"]
     assert output["content"]["result"]["refined_goal"]["display_name"] == "Category Values"
@@ -641,6 +727,8 @@ def test_plain_text_does_not_finish_and_pause_resumes(agent, monkeypatch):
     ("execute_python_script", {"code": "print('checked')", "purpose": "Verify the basket totals."}, None, "Verify the basket totals."),
     ("execute_python_script", {"code": "print('checked')", "purpose": "Verify the basket totals."}, "Checking all four items.", "Checking all four items."),
     ("execute_python_script", {"code": "print('checked')", "purpose": ""}, None, "Running execute python script."),
+    ("visualize", {"title": "Weekly prices", "chart": {"chart_type": "Line Chart"},
+        "input_sources": [{"id": "data:prices", "display_name": "Prices"}], "code": "private code"}, None, "Running visualize."),
 ])
 def test_disconnect_before_tool_preserves_resumable_trajectory(agent, monkeypatch, tool_name, arguments, narration, expected_activity):
     def stream(*args):
@@ -651,7 +739,13 @@ def test_disconnect_before_tool_preserves_resumable_trajectory(agent, monkeypatc
 
     monkeypatch.setattr(agent, "_stream_llm", stream)
     events = agent.run_workflow()
-    assert next(events) == {"type": "activity", "tool": tool_name, "message": expected_activity}
+    event = next(events)
+    assert event == {"type": "activity", "tool": tool_name, "message": expected_activity,
+        "active_tool": agent.state["active_tool"]}
+    assert event["active_tool"]["step_id"] == agent.state["step_id"]
+    assert "code" not in event["active_tool"]["details"]
+    if tool_name == "visualize":
+        assert event["active_tool"]["details"] == {"title": "Weekly prices", "chart_type": "Line Chart", "inputs": "Prices"}
     assert agent.state["activity"] == expected_activity
     events.close()
     assert agent.state["status"] == "paused"
@@ -739,7 +833,7 @@ def test_server_demos_are_read_only_and_do_not_shadow_user_workflows(workflow_cl
     demo_path = "demo/household-cost-review.yaml"
     demo = client.post("/api/workflows/read", json={"path": demo_path})
     assert demo.status_code == 200
-    assert parse_workflow(demo.json["data"]["content"])["name"] == "Monthly Household Cost Review"
+    assert parse_workflow(demo.json["data"]["content"])["name"] == "Grocery Price Changes"
     content = yaml.safe_dump(instance)
     assert client.post("/api/workflows/save", json={"path": demo_path, "content": content}).status_code == 400
     assert client.post("/api/workflows/delete", json={"path": demo_path}).status_code == 400
@@ -876,13 +970,17 @@ def test_run_checkpoint_is_session_scoped(workflow_client, monkeypatch, instance
             yield {"type": "workflow_state", "run": workflows.public_run(self.state)}
 
     monkeypatch.setattr(workflows, "WorkflowAgent", Runner)
-    response = client.post("/api/workflows/run", json={"path": workflow_path, "model": {}}, headers={"X-Workspace-Id": "first"})
+    setup = {"parameters": {}, "instructions": "Focus on recent changes."}
+    response = client.post("/api/workflows/run", json={"path": workflow_path, "model": {}, "setup": setup}, headers={"X-Workspace-Id": "first"})
     events = [json.loads(line) for line in response.data.decode().splitlines()]
     identifier = events[-1]["run"]["id"]
     assert events[-1]["run"]["status"] == "completed"
+    assert events[-1]["run"]["setup"]["instructions"] == setup["instructions"]
     if workflow_path.startswith("demo/"):
-        assert events[-1]["run"]["instance"]["name"] == "Monthly Household Cost Review"
+        assert events[-1]["run"]["instance"]["name"] == "Grocery Price Changes"
     assert "trajectory" not in events[-1]["run"]
+    saved = client.post("/api/workflows/run-state", json={"run_id": identifier}, headers={"X-Workspace-Id": "first"})
+    assert saved.json["data"]["run"]["setup"] == events[-1]["run"]["setup"]
     assert client.post("/api/workflows/run-state", json={"run_id": identifier}, headers={"X-Workspace-Id": "first"}).status_code == 200
     assert client.post("/api/workflows/run-state", json={"run_id": identifier}, headers={"X-Workspace-Id": "second"}).status_code == 400
     assert client.post("/api/workflows/run", json={"run_id": identifier, "model": {}}, headers={"X-Workspace-Id": "first"}).status_code == 400

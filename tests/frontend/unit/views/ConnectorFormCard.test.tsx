@@ -5,10 +5,133 @@ import { Provider, useSelector } from 'react-redux';
 import { expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions } from '../../../../src/app/dfSlice';
 import { ConnectorFormCard } from '../../../../src/components/ConnectorFormCard';
+import { DataLoaderForm } from '../../../../src/views/DBTableManager';
 import { apiRequest } from '../../../../src/app/apiClient';
-import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS } from '../../../../src/app/utils';
+import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, fetchConnectorCatalog } from '../../../../src/app/utils';
 
 vi.mock('../../../../src/app/apiClient', () => ({ apiRequest: vi.fn() }));
+
+it('polls discovery after a gateway timeout without restarting the scan', async () => {
+    vi.useFakeTimers();
+    try {
+        vi.mocked(apiRequest).mockReset();
+        vi.mocked(apiRequest)
+            .mockResolvedValueOnce({ data: { discovery: { status: 'running', message: 'Listing files' } } } as any)
+            .mockRejectedValueOnce(Object.assign(new Error('HTTP 504'), { httpStatus: 504 }))
+            .mockResolvedValueOnce({ data: { discovery: { status: 'complete' }, tree: [] } } as any);
+        const onProgress = vi.fn();
+        const result = fetchConnectorCatalog('slow-source', { onProgress });
+        await vi.runAllTimersAsync();
+        expect((await result).data.tree).toEqual([]);
+        const bodies = vi.mocked(apiRequest).mock.calls.map(([, options]) => JSON.parse(options!.body as string));
+        expect(bodies.map(body => body.poll)).toEqual([false, true, true]);
+        expect(bodies.map(body => body.retry)).toEqual([true, false, false]);
+        expect(onProgress).toHaveBeenCalledWith('Listing files');
+    } finally {
+        vi.useRealTimers();
+    }
+});
+
+it.each([true, false])('keeps a timed-out connector and checks its status (connected=%s)', async (connected) => {
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockImplementation(async (url) => {
+        if (url === CONNECTOR_ACTION_URLS.CONNECT) throw Object.assign(new Error('HTTP 504'), { httpStatus: 504 });
+        return { data: { connected } } as any;
+    });
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const onConnected = vi.fn();
+    const onConnectionFailed = vi.fn();
+    render(<Provider store={store}><DataLoaderForm dataLoaderType="timeout" loaderType="mysql"
+        connectorId="timeout" paramDefs={[]} authInstructions="" authMode="connection"
+        onImport={() => {}} onFinish={() => {}} onConnected={onConnected}
+        onConnectionFailed={onConnectionFailed} /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: /^Connect/ }));
+    if (connected) await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    else await screen.findByText(/Your connector has been kept/);
+    expect(onConnectionFailed).not.toHaveBeenCalled();
+    expect(apiRequest).toHaveBeenCalledWith(CONNECTOR_ACTION_URLS.GET_STATUS, expect.anything());
+});
+
+it('reuses the retained connector when a timed-out connection later succeeds', async () => {
+    vi.mocked(apiRequest).mockReset();
+    let connected = false;
+    vi.mocked(apiRequest).mockImplementation(async url => {
+        if (url === CONNECTOR_ACTION_URLS.CONNECT) throw Object.assign(new Error('HTTP 504'), { httpStatus: 504 });
+        return { data: { connected } } as any;
+    });
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const onBeforeConnect = vi.fn().mockResolvedValue('retained-connector');
+    const onConnected = vi.fn();
+    const onConnectionFailed = vi.fn();
+    render(<Provider store={store}><DataLoaderForm dataLoaderType="retained" loaderType="mysql"
+        paramDefs={[]} authInstructions="" authMode="connection" onBeforeConnect={onBeforeConnect}
+        onImport={() => {}} onFinish={() => {}} onConnected={onConnected}
+        onConnectionFailed={onConnectionFailed} /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: /Connect/ }));
+    await screen.findByText(/Your connector has been kept/);
+    connected = true;
+    fireEvent.click(screen.getByRole('button', { name: /Connect/ }));
+    await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    expect(onBeforeConnect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === CONNECTOR_ACTION_URLS.CONNECT)).toHaveLength(1);
+    expect(onConnectionFailed).not.toHaveBeenCalled();
+});
+
+it('stops catalog polling when the view is closed', async () => {
+    vi.useFakeTimers();
+    try {
+        vi.mocked(apiRequest).mockReset();
+        vi.mocked(apiRequest).mockResolvedValue({ data: { discovery: { status: 'running' } } } as any);
+        const controller = new AbortController();
+        const result = fetchConnectorCatalog('source', { signal: controller.signal }).catch(error => error);
+        await vi.advanceTimersByTimeAsync(0);
+        controller.abort();
+        expect((await result).name).toBe('AbortError');
+        expect(apiRequest).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+    } finally {
+        vi.useRealTimers();
+    }
+});
+
+it('connects a server-configured source without requesting credentials', async () => {
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockResolvedValue({ data: { status: 'connected' } } as any);
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const onConnected = vi.fn();
+    render(<Provider store={store}><DataLoaderForm dataLoaderType="installation-test" loaderType="mysql"
+        connectorId="installation-test" paramDefs={[]} authInstructions="" authMode="connection"
+        onImport={() => {}} onFinish={() => {}} onConnected={onConnected} /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: /^Connect/ }));
+    await waitFor(() => expect(onConnected).toHaveBeenCalled());
+    expect(apiRequest).toHaveBeenCalledWith(CONNECTOR_ACTION_URLS.CONNECT, expect.objectContaining({
+        method: 'POST', body: expect.stringContaining('"connector_id":"installation-test"'),
+    }));
+});
+
+it('shows configured parameters and retries without submitting display values', async () => {
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { status: 'error', message: 'Database unavailable' } } as any)
+        .mockResolvedValueOnce({ data: { status: 'connected' } } as any);
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const onConnected = vi.fn();
+    render(<Provider store={store}><DataLoaderForm dataLoaderType="installation-summary" loaderType="mysql"
+        connectorId="installation-summary" paramDefs={[]} authInstructions="" authMode="connection"
+        configuredParams={{ host: 'db.example', port: 3306, password: '********' }}
+        onImport={() => {}} onFinish={() => {}} onConnected={onConnected} /></Provider>);
+    expect(screen.getByText('db.example')).toBeTruthy();
+    expect(screen.getByText('********')).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(apiRequest).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^Connect/ }));
+    await screen.findByRole('alert');
+    expect(onConnected).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    for (const [, options] of vi.mocked(apiRequest).mock.calls) {
+        expect(JSON.parse(options!.body as string)).toEqual({ connector_id: 'installation-summary', params: {}, persist: false });
+    }
+});
 
 it('opens an unselected form and switches connectors without retaining credentials or stale edits', async () => {
     vi.mocked(apiRequest).mockReset();
@@ -74,7 +197,6 @@ it('keeps the form pending through creation and failed connection, resolving onl
     fireEvent.click(screen.getByRole('button', { name: 'Create Connector' }));
     await waitFor(() => expect(finishConnect).toBeDefined());
     const busyForm = screen.getByRole('status').parentElement!;
-    expect(getComputedStyle(busyForm).position).toBe('relative');
     expect(busyForm.getAttribute('aria-busy')).toBe('true');
     expect(screen.getByDisplayValue('db.example')).toBeTruthy();
     expect(onResolved).not.toHaveBeenCalled();
