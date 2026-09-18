@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import threading
 from typing import Any
 
 import mssql_python
@@ -160,10 +161,10 @@ class MSSQLDataLoader(ExternalDataLoader):
         self.database = params.get("database", "") or ""
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
-        self.port = params.get("port", "1433")
-        self.encrypt = params.get("encrypt", "yes")
-        self.trust_server_certificate = params.get("trust_server_certificate", "no")
-        self.connection_timeout = params.get("connection_timeout", "30")
+        self.port = params.get("port") or "1433"
+        self.encrypt = params.get("encrypt") or "yes"
+        self.trust_server_certificate = params.get("trust_server_certificate") or "no"
+        self.connection_timeout = params.get("connection_timeout") or "30"
 
         self.auth_path = params.get("_auth_path") or self.infer_auth_path(params)
 
@@ -193,6 +194,9 @@ class MSSQLDataLoader(ExternalDataLoader):
 
         try:
             self._conn = mssql_python.connect(conn_str, timeout=connection_timeout)
+            # mssql-python does not support MARS, so the connection permits only
+            # one active statement; concurrent requests must take turns.
+            self._lock = threading.RLock()
             log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
             log.error(f"Failed to connect to SQL Server: {e}")
@@ -234,19 +238,20 @@ class MSSQLDataLoader(ExternalDataLoader):
 
     def _read_sql(self, query: str) -> pa.Table:
         """Execute a query and return results as a PyArrow Table (no pandas)."""
-        cur = self._conn.cursor()
-        try:
-            cur.execute(query)
-            if cur.description is None:
-                return pa.table({})
-            columns = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-            if not rows:
-                return pa.table({col: pa.array([], type=pa.null()) for col in columns})
-            col_data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
-            return pa.table(col_data)
-        finally:
-            cur.close()
+        with self._lock:
+            cur = self._conn.cursor()
+            try:
+                cur.execute(query)
+                if cur.description is None:
+                    return pa.table({})
+                columns = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+                if not rows:
+                    return pa.table({col: pa.array([], type=pa.null()) for col in columns})
+                col_data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
+                return pa.table(col_data)
+            finally:
+                cur.close()
 
     def _execute_query_raw(self, query: str) -> pa.Table:
         """Execute a query (no error wrapping)."""
