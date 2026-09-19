@@ -31,7 +31,8 @@ vi.mock('../../../../src/components/VirtualizedCatalogTree', () => ({
         <button key={node.name} onClick={() => onItemClick(node)}>{node.name}</button>)}</div>,
 }));
 vi.mock('../../../../src/components/ConnectorTablePreview', () => ({
-    ConnectorTablePreview: ({ sampleRows, rowCount }: any) => <div>Preview: {sampleRows.length} / {rowCount}</div>,
+    ConnectorTablePreview: ({ sampleRows, rowCount, onLoad, loading, loadLabel }: any) => <div>Preview: {sampleRows.length} / {rowCount}
+        <button disabled={loading} onClick={() => onLoad?.({})}>{loadLabel || 'Load Table'}</button></div>,
 }));
 vi.mock('../../../../src/views/WorkspaceFileCanvas', () => ({
     WorkspaceFileCanvas: ({ fileName, sourceFile }: { fileName: string; sourceFile?: File }) => <div>{sourceFile ? 'Source artifact viewer' : 'File viewer'}: {fileName}</div>,
@@ -61,6 +62,31 @@ it.each(['notes.md', 'workbook.xlsx'])('loads %s as a file and opens the workspa
     expect(JSON.parse(String(request[1]?.body))).toEqual({ connector_id: 'folder', source_path: `documents/${name}` });
     expect(store.getState().focusedId).toEqual({ type: 'file', fileName: `imported-${name}` });
     expect(store.getState().inputTables).toEqual([]);
+});
+
+it('adds a large table as a session reference without uploading files or importing rows', async () => {
+    const onReferenceAdded = vi.fn();
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockImplementation(async url => {
+        if (url === CONNECTOR_ACTION_URLS.GET_CATALOG_TREE) return { data: { tree: [
+            { name: 'events', node_type: 'table', path: ['db', 'events'], metadata: { table_key: 'canonical-events', row_count: '19521849', original_size_bytes: 18 * 1024 ** 3 } },
+        ] } } as any;
+        if (url === CONNECTOR_ACTION_URLS.PREVIEW_DATA) return { data: { columns: [{ name: 'timestamp', type: 'datetime' }], rows: [], total_row_count: 19521849 } } as any;
+        throw new Error(`Unexpected request: ${url}`);
+    });
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    render(<Provider store={store}><ConnectedSourceOverview connectorId="adx" onReferenceAdded={onReferenceAdded} /></Provider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'events' }));
+    await screen.findByText('Preview: 0 / 19521849');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add table reference' })); });
+    expect(store.getState().externalTableReferences).toEqual([expect.objectContaining({
+        kind: 'external-table-reference', connectorId: 'adx', tableKey: 'canonical-events',
+        summary: expect.objectContaining({ rowCount: 19521849, columns: [{ name: 'timestamp', type: 'datetime' }] }),
+    })]);
+    expect(onReferenceAdded).toHaveBeenCalledOnce();
+    expect(store.getState().inputTables).toEqual([]);
+    expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: 'external:adx:canonical-events' });
+    expect(vi.mocked(apiRequest).mock.calls.every(([url]) => url === CONNECTOR_ACTION_URLS.GET_CATALOG_TREE || url === CONNECTOR_ACTION_URLS.PREVIEW_DATA)).toBe(true);
 });
 
 it.each([923098710, undefined])('requires explicit preview for a large or unknown-size Azure blob (%s)', async size => {

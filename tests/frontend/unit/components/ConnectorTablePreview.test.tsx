@@ -102,4 +102,12 @@ describe('ConnectorTablePreview source metadata', () => {
         expect(screen.queryByText('(订单编号)')).toBeNull();
         expect(screen.queryByText('SUM(line_items.amount)')).toBeNull();
     });
+
+    it('shows progress and disables the load action while loading', () => {
+        render(<ConnectorTablePreview {...baseProps} loading />);
+
+        const loadButton = screen.getByRole('button', { name: 'Loading...' });
+        expect(loadButton.hasAttribute('disabled')).toBe(true);
+        expect(screen.getByRole('progressbar')).toBeDefined();
+    });
 });

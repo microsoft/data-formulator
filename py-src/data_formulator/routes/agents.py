@@ -7,6 +7,9 @@ import sys
 import os
 import mimetypes
 import re
+from contextvars import copy_context
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
@@ -448,6 +451,58 @@ def derive_starter_questions_request():
         logger.error("Error in derive-starter-questions", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
 
+def _cancellable_agent_stream(events):
+    from data_formulator.data_loader.query_runtime import QueryCancelled, cancellation
+    from data_formulator.error_handler import stream_error_event
+
+    signal = Event()
+    messages = Queue(maxsize=32)
+    finished = object()
+    context = copy_context()
+
+    def publish(message):
+        while not signal.is_set():
+            try:
+                messages.put(message, timeout=0.1)
+                return
+            except Full:
+                continue
+
+    def produce():
+        token = cancellation.set(signal)
+        try:
+            for event in events:
+                if signal.is_set():
+                    break
+                publish(event)
+        except QueryCancelled:
+            pass
+        except Exception as exc:
+            publish(stream_error_event(classify_and_wrap_llm_error(exc)))
+        finally:
+            try:
+                events.close()
+            finally:
+                cancellation.reset(token)
+                publish(finished)
+
+    worker = Thread(target=context.run, args=(produce,), daemon=True)
+    worker.start()
+    try:
+        while True:
+            try:
+                message = messages.get(timeout=0.5)
+            except Empty:
+                yield json.dumps({"type": "heartbeat"}) + '\n'
+                continue
+            if message is finished:
+                break
+            yield message
+    finally:
+        signal.set()
+        worker.join(timeout=3)
+
+
 @agent_bp.route('/analyst-streaming', methods=['GET', 'POST'])
 def analyst_streaming():
     """Unified AnalystAgent streaming endpoint (design-docs/35 + /36).
@@ -603,7 +658,9 @@ def analyst_streaming():
                     DataOperationStatus,
                     OperationError,
                 )
+                from data_formulator.data_loader.query_runtime import QueryCancelled
 
+                load_started = False
                 try:
                     if execution_operation.status in {
                         DataOperationStatus.LOADED,
@@ -612,6 +669,11 @@ def analyst_streaming():
                     }:
                         completed_operation = execution_operation
                     else:
+                        load_started = True
+                        yield json.dumps({"type": "tool_start", "tool": "load_data", "args": {
+                            "tables": [step.source_table_name for plan in execution_operation.plans
+                                       if plan.id == execution_operation.selected_plan_id for step in plan.steps],
+                        }}) + '\n'
                         execution_result = DataOperationExecutor(workspace).execute(
                             execution_operation
                         )
@@ -620,6 +682,11 @@ def analyst_streaming():
                             execution_result.result_table_ids,
                             execution_result.failed_steps,
                         )
+                except QueryCancelled:
+                    operation_repository.fail(execution_operation.id, OperationError(
+                        code="CANCELLED", message="Loading cancelled.",
+                    ))
+                    raise
                 except Exception as exc:
                     logger.error(
                         "Data operation execution failed: %s",
@@ -637,6 +704,10 @@ def analyst_streaming():
                             message=app_error.message,
                         ),
                     )
+                if load_started:
+                    yield json.dumps({"type": "tool_result", "tool": "load_data",
+                                      "status": "ok" if completed_operation.result_table_ids
+                                      and not completed_operation.failed_steps else "error"}) + '\n'
                 yield json.dumps({
                     "type": "data_operation_result",
                     "operation": completed_operation.to_public_dict(),
@@ -681,6 +752,8 @@ def analyst_streaming():
                 charts=charts,
                 scratch_files=scratch_files,
                 focused_file=content.get("focused_file"),
+                external_references=content.get("external_references"),
+                focused_external_reference=content.get("focused_external_reference"),
                 conversation_id=conversation_id,
                 connector_form=content.get("connector_form"),
             ):
@@ -696,7 +769,7 @@ def analyst_streaming():
         logger.setLevel(logging.WARNING)
 
     return Response(
-        stream_with_context(_with_warnings(generate())),
+        stream_with_context(_cancellable_agent_stream(_with_warnings(generate()))),
         mimetype='application/x-ndjson',
     )
 

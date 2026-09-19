@@ -115,6 +115,7 @@ class DataDiscoveryService:
         snapshots: dict[str, Any],
     ) -> list[dict[str, Any]]:
         from data_formulator.datalake.catalog_cache import list_sources_summary
+        from data_formulator.data_connector import get_query_capabilities
 
         try:
             sources = list_sources_summary(user_home)
@@ -141,6 +142,7 @@ class DataDiscoveryService:
         ]
         for source in sources:
             source_id = source.get("source_id")
+            source["query_capabilities"] = get_query_capabilities(source_id)
             snapshot = snapshots.get(source_id)
             if snapshot and (
                 snapshot.listing_freshness != "fresh"
@@ -207,6 +209,8 @@ class DataDiscoveryService:
                 limit=args.get("limit") or 100,
                 start_after=args.get("start_after"),
             )
+            from data_formulator.data_connector import get_query_capabilities
+            result["query_capabilities"] = get_query_capabilities(source_id)
             if source_id in snapshots:
                 result["freshness"] = _freshness_payload(snapshots[source_id])
             return result
@@ -247,6 +251,7 @@ class DataDiscoveryService:
                 summary["catalog_status"] = source["catalog_status"]
             if source.get("freshness"):
                 summary["freshness"] = source["freshness"]
+            summary["query_capabilities"] = source["query_capabilities"]
             sources.append(summary)
         return {"sources": sources}
 
@@ -378,8 +383,13 @@ class DataDiscoveryService:
             }
 
         truncated = workspace_truncated or catalog_truncated or len(results) > limit
+        from data_formulator.data_connector import get_query_capabilities
         return {
             "results": results[:limit],
+            "source_query_capabilities": {
+                source: get_query_capabilities(source)
+                for source in sorted({hit["source_id"] for hit in results[:limit] if hit.get("source_id")})
+            },
             "query": query,
             "source_id": source_id or None,
             "path": path,
@@ -393,6 +403,7 @@ class DataDiscoveryService:
 
     def describe_data(self, args: dict[str, Any]) -> dict[str, Any]:
         from data_formulator.agents.context import handle_read_catalog_metadata
+        from data_formulator.data_connector import get_query_capabilities
 
         source_id = args.get("source_id", "")
         table_key = args.get("table_key", "")
@@ -402,6 +413,7 @@ class DataDiscoveryService:
             if not connector_is_enabled(user_home, source_id) or not _source_is_discoverable(source_id):
                 return {"error": f"Source '{source_id}' is disconnected."}
         return {
+            "query_capabilities": get_query_capabilities(source_id),
             "result": handle_read_catalog_metadata(
                 source_id,
                 table_key,
@@ -503,7 +515,8 @@ class DataDiscoveryService:
 
         budget.consume()
         try:
-            result = loader.probe(path, query)
+            from data_formulator.data_loader.query_runtime import execute_source_query
+            result = execute_source_query(loader, "probe", path, query)
         except Exception as exc:
             logger.debug("probe_data failed", exc_info=True)
             return {"error": f"probe failed: {exc}"}

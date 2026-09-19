@@ -22,13 +22,49 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError } from '../../../../src/app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, createExternalTableReference } from '../../../../src/app/workspaceService';
+import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
 beforeEach(() => {
     vi.restoreAllMocks();
     mockState.serverConfig.WORKSPACE_BACKEND = 'ephemeral';
     mockState.activeWorkspace = { id: 'workspace-1', displayName: 'Temporary session' };
+});
+
+describe('external table reference artifacts', () => {
+    it.each([
+        [null, false], [{}, false], [{ row_count: 1_000_000 }, false],
+        [{ row_count: '1000001' }, true], [{ size_bytes: '19327352832' }, true],
+        [{ file_size: 18 * 1024 ** 3 }, true], [{ original_size_bytes: 0, size_bytes: 18 * 1024 ** 3 }, true],
+    ])('detects large source metadata %j', (metadata, expected) => {
+        expect(isLargeConnectorTable(metadata)).toBe(expected);
+    });
+
+    it('keeps references in session state without files or table imports', async () => {
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockResolvedValue({ data: {} });
+        const reference = createExternalTableReference({
+            kind: 'external-table-reference',
+            connectorId: 'adx', tableKey: 'events-key', sourceTable: { id: 'events', name: 'events' },
+            displayName: 'Events', capturedAt: '2026-09-18T00:00:00Z',
+            summary: { columns: [{ name: 'timestamp', type: 'datetime' }], rowCount: 19_521_849 },
+        });
+        let state = dataFormulatorReducer(undefined, dfActions.upsertExternalTableReference(reference));
+        state = dataFormulatorReducer(state, dfActions.upsertExternalTableReference(reference));
+        expect(state.externalTableReferences).toEqual([reference]);
+        expect(dfSelectors.selectSessionEmpty(state)).toBe(false);
+        expect(state.inputTables).toEqual([]);
+        expect(state.fileNodes).toEqual([]);
+        state = dataFormulatorReducer(state, dfActions.loadState(JSON.parse(JSON.stringify(state))));
+        expect(state.externalTableReferences).toEqual([reference]);
+        state = dataFormulatorReducer(state, dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+        state = dataFormulatorReducer(state, dfActions.removeExternalTableReference(reference.id));
+        expect(state.externalTableReferences).toEqual([]);
+        expect(state.focusedId).toBeUndefined();
+        expect(dataFormulatorReducer(state, dfActions.resetState()).externalTableReferences).toEqual([]);
+        expect(requestSpy).not.toHaveBeenCalled();
+    });
 });
 
 describe('ephemeral workspace recovery', () => {

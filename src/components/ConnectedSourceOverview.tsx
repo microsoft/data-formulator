@@ -10,7 +10,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS, fetchConnectorCatalog } from '../app/utils';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
-import { importConnectorFile, previewConnectorFile } from '../app/workspaceService';
+import { importConnectorFile, previewConnectorFile, isLargeConnectorTable, createExternalTableReference } from '../app/workspaceService';
 import { WorkspaceFileCanvas } from '../views/WorkspaceFileCanvas';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
@@ -22,7 +22,13 @@ import { iconVar, textVar } from '../app/layout';
 const CATALOG_PREVIEW_ROW_LIMIT = 50;
 const MANUAL_PREVIEW_BYTES = 50 * 1024 * 1024;
 
-export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ connectorId }) => {
+export interface ConnectedSourceOverviewProps {
+    connectorId: string;
+    connectorName?: string;
+    onReferenceAdded?: () => void;
+}
+
+export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = ({ connectorId, connectorName, onReferenceAdded }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state));
@@ -43,6 +49,7 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     const [importedFiles, setImportedFiles] = useState<Record<string, string>>({});
     const [sourceFile, setSourceFile] = useState<File | null>(null);
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
+    const readOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly);
     useEffect(() => setImportedFiles({}), [connectorId, workspaceId]);
     const [activeTab, setActiveTab] = useState<'data' | 'columns' | 'overview'>('data');
     const [catalogScrollParent, setCatalogScrollParent] = useState<HTMLDivElement | null>(null);
@@ -55,6 +62,40 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     const sourceRef = (node: CatalogTreeNode) => {
         const name = node.metadata?._source_name || node.metadata?._catalogName || node.name;
         return { id: node.metadata?.dataset_id != null ? String(node.metadata.dataset_id) : name, name };
+    };
+    const tableSize = (node: CatalogTreeNode) => {
+        const metadata = node.metadata || {};
+        const rawRows = metadata.row_count;
+        const rawBytes = metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size;
+        const rows = rawRows == null || rawRows === '' ? NaN : Number(rawRows);
+        const bytes = rawBytes == null || rawBytes === '' ? NaN : Number(rawBytes);
+        return { rows, bytes };
+    };
+    const isTableTooLarge = (node: CatalogTreeNode) => isLargeConnectorTable(node.metadata);
+    const loadReference = async (node: CatalogTreeNode, importOptions: Record<string, any> = {}) => {
+        if (importing || readOnly) return;
+        setImporting(true);
+        setPreviewError('');
+        try {
+            const { rows, bytes } = tableSize(node);
+            const reference = createExternalTableReference({
+                kind: 'external-table-reference',
+                connectorId, connectorName, tableKey: node.metadata?.table_key || node.path.join('/'), sourceTable: sourceRef(node),
+                displayName: node.name, capturedAt: new Date().toISOString(),
+                summary: {
+                    description: node.metadata?.description || node.metadata?.source_description,
+                    columns: preview?.columns || node.metadata?.columns || [],
+                    rowCount: Number.isFinite(rows) ? rows : preview?.count ?? undefined,
+                    sizeBytes: Number.isFinite(bytes) ? bytes : undefined,
+                },
+                queryIntent: importOptions,
+            });
+            dispatch(dfActions.upsertExternalTableReference(reference));
+            dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+            onReferenceAdded?.();
+        } catch (caught) {
+            setPreviewError(caught instanceof Error ? caught.message : String(caught));
+        } finally { setImporting(false); }
     };
     const previewWarning = (node: CatalogTreeNode) => {
         const azureBlob = sourceRef(node).name.startsWith('az://') || node.path.some(part => part.startsWith('az://'));
@@ -189,6 +230,11 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
     const importedFile = selected ? importedFiles[selected.path.join('/')] : undefined;
     const containsFiles = collectTables(tree).some(node => node.metadata?.artifact_kind === 'file');
     const previewPrompt = selected && <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 120, gap: 1, p: 2 }}>
+        {!isFile && isTableTooLarge(selected) && <Button variant="contained" size="small" disabled={importing || readOnly}
+            startIcon={importing ? <CircularProgress size={14} /> : undefined}
+            onClick={() => void loadReference(selected)} sx={{ textTransform: 'none' }}>
+            {t('connectorPreview.addReference', { defaultValue: 'Add table reference' })}
+        </Button>}
         <Button variant="contained" size="small" disabled={importing}
             onClick={() => void previewTable(selected, true)} sx={{ textTransform: 'none' }}>
             {t('chatConnector.viewPreview', { defaultValue: 'View preview' })}
@@ -365,11 +411,16 @@ export const ConnectedSourceOverview: React.FC<{ connectorId: string }> = ({ con
                 hideHeader
                 dockActions
                 previewRowLimit={CATALOG_PREVIEW_ROW_LIMIT}
+                loadLabel={isTableTooLarge(selected) ? t('connectorPreview.addReference', { defaultValue: 'Add table reference' }) : undefined}
                 columns={preview?.columns || []} sampleRows={preview?.rows || []} rowCount={preview?.count ?? null}
                 loading={previewLoading || importing} alreadyLoaded={Boolean(loadedMap[selected.path.join('/')])}
                 hideLoadActions={!preview || !!previewError}
                 onRefreshPreview={(rows, columns, count) => setPreview({ rows, columns, count })}
                 onLoad={async importOptions => {
+                    if (isTableTooLarge(selected)) {
+                        await loadReference(selected, importOptions);
+                        return;
+                    }
                     setImporting(true);
                     setPreviewError('');
                     try {

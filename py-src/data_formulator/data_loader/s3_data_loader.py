@@ -62,6 +62,7 @@ class S3DataLoader(ExternalDataLoader):
         return "default_credentials"
 
     AUTH_GUIDE = "s3.md"
+    QUERY_EXECUTION = "remote_file_scan"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

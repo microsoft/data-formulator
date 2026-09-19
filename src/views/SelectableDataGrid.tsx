@@ -65,6 +65,7 @@ interface SelectableDataGridProps {
     // Hide the in-grid footer widget (row count / random / download). The
     // focused-table canvas surfaces these actions in its bottom toolbar.
     hideFooter?: boolean;
+    previewOnly?: boolean;
     // Bumping this number triggers a "random rows" refetch (virtual tables).
     randomizeToken?: number;
     // Bumping this number restores the natural (#rowId head) order after a
@@ -339,7 +340,7 @@ const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement>((props, ref)
 const PAGE_SIZE = 500;
 
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(({ 
-    tableId, rows, tableName, columnDefs, rowCount, virtual, searchText, hideFooter, randomizeToken, resetOrderToken, onStateReport }) => {
+    tableId, rows, tableName, columnDefs, rowCount, virtual, searchText, hideFooter, previewOnly, randomizeToken, resetOrderToken, onStateReport }) => {
 
     const { t } = useTranslation();
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
@@ -706,6 +707,17 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                                                         {columnDef.label}
                                                     </Typography>
                                                 </Box>
+                                            ) : previewOnly ? (
+                                                <Tooltip title={columnDef.description || columnDef.dataType} placement="top">
+                                                    <Box className="data-view-header-container" sx={{
+                                                        display: 'flex', alignItems: 'center', gap: 0.5,
+                                                        bgcolor: theme => theme.palette.primary?.bgcolor || alpha(theme.palette.primary?.main || '#0288d1', 0.1),
+                                                        borderBottom: '2px solid', borderBottomColor: 'primary.main',
+                                                    }}>
+                                                        <Box component="span" sx={{ display: 'inline-flex' }}>{getIconFromType(columnDef.dataType)}</Box>
+                                                        <Typography sx={{ fontSize: textVar.sm, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{columnDef.label}</Typography>
+                                                    </Box>
+                                                </Tooltip>
                                             ) : (
                                                 <DraggableHeader
                                                     columnDef={columnDef}
@@ -760,7 +772,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                     <CircularProgress size={16} sx={{ color: 'text.secondary' }} />
                 </Box>
             )}
-            {!hideFooter && <Paper variant="outlined"
+            {!hideFooter && !previewOnly && <Paper variant="outlined"
                 sx={{ display: 'flex', flexDirection: 'row', position: 'absolute', bottom: 4, right: 20, zIndex: 5 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: textVar.sm}}>

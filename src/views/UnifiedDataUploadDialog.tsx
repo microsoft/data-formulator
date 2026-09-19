@@ -1970,8 +1970,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <Typography variant="subtitle2" sx={{ px: 2.5, py: 0.75, fontSize: '0.8125rem', fontWeight: 600, display: { xs: 'none', sm: 'block' } }}>
                             {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
                         </Typography>
-                        {connectorListLoading && <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CircularProgress size={16} />
+                        {connectorListLoading && <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, px: { xs: 0, sm: 2.5 }, py: 0.75 }}>
+                            <CircularProgress size={16} sx={{ flexShrink: 0 }} />
                             <Typography sx={{ fontSize: textVar.sm }}>{t('common.loading', { defaultValue: 'Loading...' })}</Typography>
                         </Box>}
                         {connectorListError && <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}
@@ -2016,7 +2016,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, px: 2, pb: 2, display: 'flex', flexDirection: 'column' }}>
                         {browseConnector?.connected
-                            ? <ConnectedSourceOverview key={browseConnector.id} connectorId={browseConnector.id} />
+                            ? <ConnectedSourceOverview
+                                key={browseConnector.id}
+                                connectorId={browseConnector.id}
+                                connectorName={browseConnector.display_name}
+                                onReferenceAdded={handleClose}
+                            />
                             : browseConnector ? <ScrollFadeContainer sx={{ p: 2, boxSizing: 'border-box' }} resetKey={browseConnector.id}>
                                 <DataLoaderForm
                                     key={browseConnector.id}

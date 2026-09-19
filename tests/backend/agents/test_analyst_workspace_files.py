@@ -19,6 +19,7 @@ from data_formulator.analyst.workspace_inputs import (
     build_workspace_input_manifest,
     build_workspace_input_preview,
     render_workspace_input_context,
+    render_external_reference_context,
 )
 from data_formulator.datalake.file_manager import save_uploaded_file
 from data_formulator.datalake.workspace import Workspace
@@ -418,7 +419,8 @@ def test_workspace_input_preview_is_bounded_and_rendered_with_data(tmp_path: Pat
     assert preview.selected[0].content == "abcd"
     assert preview.selected[0].truncated is True
     assert "[WORKSPACE INPUTS]" in rendered
-    assert "complete current input inventory" in rendered
+    assert "current locally readable input inventory" in rendered
+    assert "additional user-selected workspace sources" in rendered
     assert "do not call list_workspace_items before reading or searching" in rendered
     assert f"- {manifest.data[0].id}: orders" in rendered
     assert "\n\nTABLE_CTX" in rendered
@@ -439,6 +441,107 @@ def test_unsupported_file_stays_visible_without_preview(tmp_path: Path) -> None:
     assert preview.omitted_input_ids == (manifest.files[0].id,)
     assert "archive.bin" in rendered
     assert "1 file input(s) omitted from eager preview." in rendered
+
+
+def test_external_table_reference_is_session_context_not_file_or_computation_data(tmp_path: Path) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    reference = {
+        "kind": "external-table-reference", "id": "external:adx:events-key",
+        "connectorId": "adx", "tableKey": "events-key",
+        "sourceTable": {"id": "events", "name": "events"},
+        "displayName": "Events", "capturedAt": "2026-09-18T12:00:00Z",
+        "summary": {"rowCount": 19521849, "columns": [{"name": "timestamp", "type": "datetime"}],
+                "sampleRows": [{"timestamp": "2026-09-18"}], "sampleTruncated": False},
+    }
+    manifest = build_workspace_input_manifest([], workspace.list_workspace_files(), workspace)
+    rendered = render_external_reference_context([reference], reference["id"])
+
+    assert not manifest.data
+    assert not manifest.files
+    assert "events-key" in rendered
+    assert "timestamp" in rendered
+    assert "equally available workspace data" in rendered
+    assert "A reference-only workspace has data to analyze" in rendered
+    assert "not only when loaded tables are insufficient" in rendered
+    assert "using its actual table ID and path" in rendered
+    assert "Do not silently limit population questions to a sample" in rendered
+    assert "not the full population or a random sample" in rendered
+    assert json.loads(rendered.splitlines()[-1])["references"][0]["summary"]["sampleRows"] == reference["summary"]["sampleRows"]
+    assert "not files, imported tables, or local DataFrames" in rendered
+    assert "connectorId to source_id" in rendered
+    assert "propose_data_operation" in rendered
+    assert "before Python analysis" in rendered
+    assert "Do not import the entire large source" in rendered
+    assert json.loads(rendered.splitlines()[-1])["focused_reference"] == reference["id"]
+    empty = render_external_reference_context([], reference["id"])
+    assert json.loads(empty.splitlines()[-1]) == {"focused_reference": None, "references": []}
+    assert "supersedes earlier" in empty
+    assert json.loads(render_external_reference_context([None, {}]).splitlines()[-1])["references"] == []
+    context = SkillContext(client=None, workspace=workspace, payload={"external_references": [reference]})
+    skill = WorkspaceSkill()
+    listed = json.loads(skill.handle_tool("list_workspace_items", {"scope": "input"}, context).text)
+    assert listed["count"] == 1
+    assert listed["items"][0]["source_id"] == "adx"
+    assert listed["items"][0]["table_key"] == "events-key"
+    assert "path" not in listed["items"][0]
+    assert "python" not in listed["items"][0]["capabilities"]
+    data_items = json.loads(skill.handle_tool("list_workspace_items", {"kinds": ["data"]}, context).text)["items"]
+    assert data_items == listed["items"]
+    assert json.loads(skill.handle_tool("list_workspace_items", {"kinds": ["file"]}, context).text)["count"] == 0
+    assert json.loads(skill.handle_tool("list_workspace_items", {"kinds": ["external-table-reference"]}, context).text)["count"] == 1
+    assert json.loads(skill.handle_tool("list_workspace_items", {"query": "missing"}, context).text)["count"] == 0
+    read = json.loads(skill.handle_tool("read_workspace_item", {"item_id": reference["id"]}, context).text)
+    assert read["reference"]["summary"] == reference["summary"]
+    assert "user_review_needed=false" in rendered
+    assert "NOT by propose_data_operation" in rendered
+
+    workspace.save_workspace_file(b"timestamp notes", "notes.txt", "text/plain")
+    for selection in ({}, {"kinds": ["data"]}, {"kinds": ["external-table-reference"]},
+                      {"item_ids": [reference["id"]]}):
+        searched = json.loads(skill.handle_tool("search_workspace_items", {
+            "query": "TIMESTAMP", **selection,
+        }, context).text)
+        reference_matches = [match for match in searched["matches"] if match["input_id"] == reference["id"]]
+        assert len(reference_matches) == 1
+        assert reference_matches[0]["match_type"] == "metadata"
+        assert reference_matches[0]["table_key"] == "events-key"
+        assert "not remote rows" in searched["note"]
+        assert searched["count"] == (1 if selection else 2)
+    missing = json.loads(skill.handle_tool("search_workspace_items", {
+        "query": "unknown value", "item_ids": [reference["id"]],
+    }, context).text)
+    assert missing["matches"] == []
+    assert missing["metadata_only_sources"][0]["input_id"] == reference["id"]
+    assert "probe_data" in missing["note"]
+    files = json.loads(skill.handle_tool("search_workspace_items", {
+        "query": "timestamp", "kinds": ["file"],
+    }, context).text)
+    assert files["count"] == 1
+    assert "metadata_only_sources" not in files
+    bounded = json.loads(skill.handle_tool("search_workspace_items", {
+        "query": "timestamp", "max_results": 1,
+    }, context).text)
+    assert bounded["count"] == 1
+    assert bounded["metadata_only_sources"][0]["input_id"] == reference["id"]
+    with pytest.raises(ValueError, match="Input not found"):
+        skill.handle_tool("search_workspace_items", {
+            "query": "timestamp", "item_ids": ["external:missing"],
+        }, context)
+
+
+def test_external_reference_agent_context_bounds_large_ui_samples() -> None:
+    reference = {
+        "kind": "external-table-reference", "id": "external:test:reviews",
+        "connectorId": "test", "tableKey": "reviews", "displayName": "Reviews",
+        "summary": {"columns": [{"name": "review", "type": "string"}],
+                    "sampleRows": [{"review": f"review {index}"} for index in range(50)]},
+    }
+    rendered = render_external_reference_context([reference])
+    normalized = json.loads(rendered.splitlines()[-1])["references"]
+    assert len(normalized[0]["summary"]["sampleRows"]) == 5
+    assert normalized[0]["summary"]["cachedSampleRowCount"] == 50
+    assert len(reference["summary"]["sampleRows"]) == 50
+    assert json.loads(render_external_reference_context(normalized).splitlines()[-1])["references"] == normalized
 
 
 def test_file_only_workspace_is_an_analysis_input(tmp_path: Path) -> None:

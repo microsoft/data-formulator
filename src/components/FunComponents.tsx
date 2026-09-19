@@ -2,8 +2,28 @@
 // Licensed under the MIT License.
 
 import React from 'react';
-import { Box, Typography, SxProps, Tooltip } from "@mui/material";
+import { Box, LinearProgress, Typography, SxProps, Tooltip, type Theme } from "@mui/material";
 import { textVar } from '../app/layout';
+
+export const LoadingStatus: React.FC<{ label: string; sx?: SxProps<Theme> }> = ({ label, sx }) => (
+    <Box role="status" sx={[
+        { minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 1.5, color: 'text.secondary' },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+    ]}>
+        <Typography sx={{ fontSize: textVar.sm, textAlign: 'center', overflowWrap: 'anywhere', maxWidth: '100%' }}>
+            {label}
+        </Typography>
+        <LinearProgress aria-label={label}
+            sx={{ width: 160, maxWidth: '100%', height: 3, flexShrink: 0, borderRadius: 1, bgcolor: 'action.selected',
+                '& .MuiLinearProgress-bar': { bgcolor: 'text.disabled' },
+                '@media (prefers-reduced-motion: reduce)': {
+                    '& .MuiLinearProgress-bar': { animation: 'none', transform: 'none', left: 0, width: '40%' },
+                    '& .MuiLinearProgress-bar2Indeterminate': { display: 'none' },
+                },
+            }} />
+    </Box>
+);
 
 export const WorkflowGears: React.FC<{ running: boolean; color?: string; label?: string; size?: number; showTooltip?: boolean }> = ({ running, color = 'currentColor', label = running ? 'Workflow running' : 'Workflow', size = 22, showTooltip = true }) => {
     const outline = Array.from({ length: 32 }, (_, index) => {

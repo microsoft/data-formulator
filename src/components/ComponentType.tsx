@@ -45,6 +45,7 @@ export interface DataProvenance {
 }
 
 export interface Trigger {
+    externalReferenceId?: string;
     // On which table this action is triggered. A run started before any data
     // exists carries its conversation root ID instead.
     tableId: string,
@@ -129,6 +130,27 @@ export interface FileNode {
     notes?: string;
 }
 
+export interface ExternalTableReference {
+    kind: 'external-table-reference';
+    id: string;
+    connectorId: string;
+    connectorName?: string;
+    sourceLocation?: { address: string; database?: string };
+    tableKey: string;
+    sourceTable: { id: string; name: string };
+    displayName: string;
+    capturedAt: string;
+    summary: {
+        description?: string;
+        columns: { name: string; type: string; source_type?: string; description?: string }[];
+        rowCount?: number;
+        sizeBytes?: number;
+        sampleRows?: Record<string, unknown>[];
+        sampleTruncated?: boolean;
+    };
+    queryIntent?: Record<string, unknown>;
+}
+
 export interface PendingClarification {
     trajectory: any[];
     completedStepCount: number;
@@ -177,6 +199,7 @@ export interface TerminalExecution {
 }
 
 export interface TextTurn {
+    externalReferenceId?: string;
     workflowCardFor?: string;
     workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply'; afterOutputIds?: string[] };
     kind: 'text';

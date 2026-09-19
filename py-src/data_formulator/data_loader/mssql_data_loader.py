@@ -150,6 +150,7 @@ class MSSQLDataLoader(ExternalDataLoader):
         return "entra_id"
 
     AUTH_GUIDE = "mssql.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         from data_formulator.security.log_sanitizer import sanitize_params

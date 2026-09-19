@@ -36,7 +36,7 @@ import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
 import { WorkflowGears } from '../components/FunComponents';
-import { deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
+import { createExternalTableReference, isLargeConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import dfLogo from '../assets/df-logo.svg';
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -1136,7 +1136,7 @@ let SingleThreadGroupView: FC<{
                         type: 'merge',
                         highlighted,
                         element: (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '6px', rowGap: 0, pl: 0.5, color: mergeColor, fontSize: textVar.xs, lineHeight: 1.4 }}>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', minWidth: 0, maxWidth: '100%', columnGap: '6px', rowGap: 0, pl: 0.5, color: mergeColor, fontSize: textVar.xs, lineHeight: 1.4 }}>
                                 <Typography component="span" sx={{ fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' }}>
                                     {t(transition === 'switch' ? 'dataThread.switchingSources' : 'dataThread.usingSources')}
                                 </Typography>
@@ -1145,10 +1145,12 @@ let SingleThreadGroupView: FC<{
                                         key={`${source.id}-${idx}`}
                                         component="button"
                                         type="button"
+                                        title={source.displayName}
                                         disabled={source.kind === 'data' && !sourceTableOf(source)}
                                         onClick={() => focusComputationSource(source)}
                                         sx={{
-                                            display: 'inline-flex', alignItems: 'center', columnGap: '3px',
+                                            display: 'inline-flex', alignItems: 'center', columnGap: '3px', minWidth: 0, maxWidth: '100%',
+                                            '& .MuiSvgIcon-root': { flexShrink: 0 },
                                             m: 0, p: 0, border: 0, bgcolor: 'transparent',
                                             color: provenanceColor, font: 'inherit', lineHeight: 'inherit', textAlign: 'left',
                                             cursor: 'pointer',
@@ -1159,7 +1161,7 @@ let SingleThreadGroupView: FC<{
                                         {source.kind === 'file'
                                             ? <InsertDriveFileOutlinedIcon sx={{ fontSize: textVar.xs, color: 'inherit' }} />
                                             : <TableIcon sx={{ fontSize: textVar.xs, color: 'inherit' }} />}
-                                        <Typography component="span" sx={{ fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' }}>
+                                        <Typography component="span" noWrap sx={{ minWidth: 0, fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' }}>
                                             {source.displayName}
                                         </Typography>
                                     </Box>
@@ -2908,6 +2910,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const dispatch = useDispatch<AppDispatch>();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
+    const externalReferenceCount = useSelector((state: DataFormulatorState) => state.externalTableReferences?.length ?? 0);
+    const pendingTableCount = useSelector((state: DataFormulatorState) => state.pendingTableLoads.reduce((count, load) => count + load.names.length, 0));
 
     useEffect(() => {
         let cancelled = false;
@@ -3121,6 +3125,27 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 return;
             }
 
+            if (isLargeConnectorTable(item.metadata)) {
+                const metadata = item.metadata || {};
+                const rows = Number(metadata.row_count);
+                const bytes = Number(metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size);
+                const reference = createExternalTableReference({
+                    kind: 'external-table-reference', connectorId: item.connectorId,
+                    tableKey: metadata.table_key || item.tablePath.join('/'),
+                    sourceTable: { id: item.tableId || item.tableName, name: item.tableName },
+                    displayName: item.tableName, capturedAt: new Date().toISOString(),
+                    summary: {
+                        description: metadata.source_description || metadata.description,
+                        columns: metadata.columns || [],
+                        rowCount: Number.isFinite(rows) ? rows : undefined,
+                        sizeBytes: Number.isFinite(bytes) ? bytes : undefined,
+                    },
+                });
+                dispatch(dfActions.upsertExternalTableReference(reference));
+                dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+                return;
+            }
+
             const tableObj: DictTable = {
                 kind: 'table' as const,
                 id: item.tableName,
@@ -3237,8 +3262,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         : fittableThreadColumnsFor(containerWidth, threadTokens);
 
     const segmentHeight = threadPanelHeight * 1.5;
-    const shelfHeight = inputTables.length || workspaceFiles.length
-        ? measuredShelfHeight ?? estimateThreadHeight(inputTables.length + workspaceFiles.length, 1, 0)
+    const shelfHeight = inputTables.length || workspaceFiles.length || externalReferenceCount || pendingTableCount
+        ? measuredShelfHeight ?? estimateThreadHeight(inputTables.length + workspaceFiles.length + externalReferenceCount + pendingTableCount, 1, 0)
         : 0;
     const triggerHeights = new Map([...triggerHeightsRef.current].filter(([id]) => tableById.has(id)));
     const triggerHeight = (trigger: Trigger): number => {
@@ -3386,7 +3411,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     ]);
     const hasRootlessContent = conversationRootIds.size > 0;
 
-    const hasWorkspaceContent = tables.length > 0 || workspaceFiles.length > 0;
+    const hasWorkspaceContent = tables.length > 0 || workspaceFiles.length > 0 || externalReferenceCount > 0 || pendingTableCount > 0;
     let hasContent = leafTables.length > 0 || hasWorkspaceContent || hasRootlessContent;
 
     // Collect all tables (including derived ones) for the workspace panel.
@@ -3424,7 +3449,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
 
     // The shelf is not a thread, but it occupies the top of the first column,
     // so it packs alongside the threads as slot 0.
-    if (inputTables.length > 0 || workspaceFiles.length > 0) {
+    if (inputTables.length > 0 || workspaceFiles.length > 0 || externalReferenceCount > 0 || pendingTableCount > 0) {
         allThreadEntries.push({ key: 'source-shelf', isShelf: true });
     }
 

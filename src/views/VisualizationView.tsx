@@ -100,6 +100,7 @@ import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
 import { LocalFolderPanel } from './UnifiedDataUploadDialog';
 import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
+import { ExternalTableReferenceCanvas } from './ExternalTableReferenceCanvas';
 import { ExplanationCanvas } from './ExplanationCanvas';
 
 export interface VisPanelProps { }
@@ -1809,6 +1810,9 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
 
+    if (focusedId?.type === 'external-table') {
+        return <ExternalTableReferenceCanvas key={focusedId.referenceId} referenceId={focusedId.referenceId} />;
+    }
     if (focusedId?.type === 'file') {
         return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
     }

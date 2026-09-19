@@ -164,6 +164,7 @@ class KustoDataLoader(ExternalDataLoader):
         }
 
     AUTH_GUIDE = "kusto.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -398,6 +399,9 @@ class KustoDataLoader(ExternalDataLoader):
             segments.append(f"top {size} by {order_expr}")
         else:
             segments.append(f"take {size}")
+
+        if opts.get("columns"):
+            segments.append("project " + ", ".join(self._kql_ident(column) for column in opts["columns"]))
 
         kql_query = "\n| ".join(segments)
 

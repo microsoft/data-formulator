@@ -40,6 +40,7 @@ const toolLabelKeys: Record<string, string> = {
     find_data: 'dataLoading.toolLabels.searchingData',
     describe_data: 'dataLoading.toolLabels.describingData',
     probe_data: 'dataLoading.toolLabels.probingData',
+    load_data: 'dataLoading.toolLabels.loadingData',
     list_connectors: 'dataThread.listingConnectors',
     describe_connector: 'dataThread.readingConnector',
 };
@@ -69,8 +70,13 @@ export const formatAnalystToolProgress = (
             detail = [shortSourceId(values.source_id), values.table_key].filter(Boolean).join('/');
             break;
         case 'probe_data':
-            detail = [values.table_key, summarizeProbeQuery(values.query)]
+            detail = [String(values.table_key || '').split('/').pop(), summarizeProbeQuery(values.query)]
                 .filter(Boolean).join(' · ');
+            break;
+        case 'load_data':
+            detail = Array.isArray(values.tables)
+                ? values.tables.map((table: unknown) => String(table).split('/').pop()).join(', ')
+                : '';
             break;
         case 'describe_connector':
             detail = values.source_type || '';
@@ -79,7 +85,7 @@ export const formatAnalystToolProgress = (
 
     const labelKey = toolLabelKeys[tool];
     const label = labelKey
-        ? t(labelKey)
+        ? t(labelKey, tool === 'load_data' ? { defaultValue: 'Loading data' } : undefined)
         : tool.replaceAll('_', ' ');
     return detail ? `${label}: ${truncateDetail(String(detail))}` : label;
 };

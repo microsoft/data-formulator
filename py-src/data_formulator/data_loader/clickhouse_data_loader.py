@@ -166,6 +166,7 @@ class ClickHouseDataLoader(ExternalDataLoader):
         ]
 
     AUTH_GUIDE = "clickhouse.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = dict(params)

@@ -5,7 +5,7 @@ import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@r
 import { shallowEqual } from 'react-redux';
 import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, PendingClarification, TextTurn, InputTable, TableSemanticsInfo, LoadedTableNode } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
-import { DictTable, FileNode, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
+import { DictTable, FileNode, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
@@ -130,6 +130,7 @@ export type FocusedId =
     | { type: 'chart'; chartId: string }
     | { type: 'report'; reportId: string }
     | { type: 'file'; fileName: string }
+    | { type: 'external-table'; referenceId: string }
     | { type: 'explanation'; content: string; sourceTableId?: string; timestamps?: number[]; executions?: TextTurn['executions'] }
     | { type: 'text'; textId: string }
     | { type: 'draft'; draftId: string }
@@ -198,6 +199,7 @@ export interface DataFormulatorState {
     derivedTables: DictTable[];
     loadedTableNodes: LoadedTableNode[];
     fileNodes: FileNode[];
+    externalTableReferences: ExternalTableReference[];
     tableSemantics: TableSemanticsInfo[];
     draftNodes: DraftNode[];
     charts: Chart[];
@@ -218,6 +220,7 @@ export interface DataFormulatorState {
 
     /** Table loads awaiting their first row; drives "loading" vs "empty" copy. */
     tableLoadsInFlight: number;
+    pendingTableLoads: { id: string; names: string[] }[];
 
     /**
      * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
@@ -320,6 +323,7 @@ const initialState: DataFormulatorState = {
     derivedTables: [],
     loadedTableNodes: [],
     fileNodes: [],
+    externalTableReferences: [],
     tableSemantics: [],
     draftNodes: [],
     charts: [],
@@ -336,6 +340,7 @@ const initialState: DataFormulatorState = {
 
     chartSynthesisInProgress: [],
     tableLoadsInFlight: 0,
+    pendingTableLoads: [],
     chartThumbnails: {},
     displayRowsTick: 0,
 
@@ -890,6 +895,7 @@ export const dataFormulatorSlice = createSlice({
             state.derivedTables = [];
             state.loadedTableNodes = [];
             state.fileNodes = [];
+            state.externalTableReferences = [];
             state.tableSemantics = [];
             state.draftNodes = [];
             state.charts = [];
@@ -933,6 +939,25 @@ export const dataFormulatorSlice = createSlice({
         },
         setWorkspaceFileCount: (state, action: PayloadAction<number>) => {
             state.workspaceFileCount = Math.max(0, action.payload);
+        },
+        upsertExternalTableReference: (state, action: PayloadAction<ExternalTableReference>) => {
+            if (state.activeWorkspace?.readOnly) return;
+            const reference = action.payload;
+            const existing = state.externalTableReferences.find(item => item.connectorId === reference.connectorId && item.tableKey === reference.tableKey);
+            if (existing) Object.assign(existing, reference, { id: existing.id });
+            else state.externalTableReferences.push(reference);
+        },
+        startTableLoad: (state, action: PayloadAction<{ id: string; names: string[] }>) => {
+            state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.payload.id);
+            state.pendingTableLoads.push(action.payload);
+        },
+        finishTableLoad: (state, action: PayloadAction<string>) => {
+            state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.payload);
+        },
+        removeExternalTableReference: (state, action: PayloadAction<string>) => {
+            if (state.activeWorkspace?.readOnly) return;
+            state.externalTableReferences = state.externalTableReferences.filter(item => item.id !== action.payload);
+            if (state.focusedId?.type === 'external-table' && state.focusedId.referenceId === action.payload) state.focusedId = undefined;
         },
         resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
             // Fresh session data, but preserve user settings / server config / identity / view mode
@@ -1029,6 +1054,7 @@ export const dataFormulatorSlice = createSlice({
                 }),
                 loadedTableNodes: saved.loadedTableNodes || [],
                 fileNodes: saved.fileNodes || [],
+                externalTableReferences: saved.externalTableReferences || [],
                 tableSemantics: saved.tableSemantics || [],
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
@@ -1079,6 +1105,7 @@ export const dataFormulatorSlice = createSlice({
                 viewMode: saved.viewMode || 'editor',
                 chartSynthesisInProgress: [],
                 tableLoadsInFlight: 0,
+                pendingTableLoads: [],
                 cleanInProgress: false,
                 connectorRefreshRequest: 0,
                 agentHandoffRequest: null,
@@ -1747,7 +1774,7 @@ export const dataFormulatorSlice = createSlice({
             state.derivedTables = [...state.derivedTables, withDerivedParent(action.payload)];
         },
         // ?? Draft node reducers ??????????????????????????????????
-        createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentNodeId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string }>) => {
+        createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentNodeId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string; externalReferenceId?: string }>) => {
             const { id, displayId, parentNodeId, parentTableId, source, interaction, chart, actionId } = action.payload;
             const replacedDraftIds = new Set(state.draftNodes
                 .filter(existing => existing.parentNodeId === parentNodeId
@@ -1762,6 +1789,7 @@ export const dataFormulatorSlice = createSlice({
                     source,
                     trigger: {
                         tableId: parentTableId,
+                        externalReferenceId: action.payload.externalReferenceId,
                         resultTableId: id,
                         chart,
                         interaction,
@@ -2337,6 +2365,7 @@ export const dataFormulatorSlice = createSlice({
             // persisted blob (chartSynthesisInProgress is already blacklisted
             // in store.ts).
             incoming.cleanInProgress = false;
+            incoming.pendingTableLoads = [];
             delete incoming.dataLoadingChatMessages;
             delete incoming.dataLoadingChatPending;
             delete incoming.dataLoadingChatInProgress;
@@ -2511,12 +2540,19 @@ export const dataFormulatorSlice = createSlice({
         // would close an import cycle (tableThunks already imports this slice).
         .addMatcher(
             (action: any) => action.type === 'dataFormulator/loadTable/pending',
-            (state) => { state.tableLoadsInFlight += 1; },
+            (state, action: any) => {
+                state.tableLoadsInFlight += 1;
+                const table = action.meta.arg.table;
+                state.pendingTableLoads.push({ id: action.meta.requestId, names: [table.displayId || table.id] });
+            },
         )
         .addMatcher(
             (action: any) => action.type === 'dataFormulator/loadTable/fulfilled'
                 || action.type === 'dataFormulator/loadTable/rejected',
-            (state) => { state.tableLoadsInFlight = Math.max(0, state.tableLoadsInFlight - 1); },
+            (state, action: any) => {
+                state.tableLoadsInFlight = Math.max(0, state.tableLoadsInFlight - 1);
+                state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.meta.requestId);
+            },
         )
     },
 })
@@ -2634,6 +2670,7 @@ export const dfSelectors = {
         // every table from its snapshot just to answer "are there any?".
         (state.inputTables?.length ?? 0) === 0
         && (state.workspaceFileCount ?? 0) === 0
+        && (state.externalTableReferences?.length ?? 0) === 0
         && (state.derivedTables?.length ?? 0) === 0
         && (state.textTurns?.length ?? 0) === 0
         && (state.draftNodes?.length ?? 0) === 0

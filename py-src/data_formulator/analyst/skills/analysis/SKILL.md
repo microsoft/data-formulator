@@ -10,6 +10,13 @@ actions: []
 
 # Analysis
 
+Loaded tables and external references are both workspace data for planning.
+For references, use the workspace connector tools to inspect or query the source;
+load the relevant rows before Python or visualization needs a local table. Use
+the actual returned table ID and path, never the reference ID as a Python input.
+Continue to the requested result after resolving access, including when no table
+was loaded at the start of the run.
+
 - `inspect_source_data(table_names)` returns schema, statistics, and sample rows
   for analysis input tables. Prefer it for basic inspection.
 - `execute_python_script(code)` runs general-purpose sandboxed Python for data

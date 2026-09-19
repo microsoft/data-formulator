@@ -88,6 +88,7 @@ export interface ConnectorTablePreviewProps {
     hideHeader?: boolean;
     dockActions?: boolean;
     previewRowLimit?: number;
+    loadLabel?: string;
 
     onLoad?: (importOptions: Record<string, any>) => void;
     /** Optional: load the table into a brand-new workspace session. When
@@ -167,6 +168,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     hideHeader = false,
     dockActions = false,
     previewRowLimit = 10,
+    loadLabel,
     onLoad,
     onLoadInNewSession,
     onUnload,
@@ -720,9 +722,12 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             variant="contained" size="small"
                             disabled={isLoading}
                             onClick={handleLoad}
+                            startIcon={isLoading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{ textTransform: 'none', fontSize: textVar.sm, px: 3, height: 30, flexShrink: 0 }}
                         >
-                            {t('connectorPreview.loadTable', { defaultValue: 'Load Table' })}
+                            {isLoading
+                                ? t('common.loading', { defaultValue: 'Loading...' })
+                                : loadLabel || t('connectorPreview.loadTable', { defaultValue: 'Load Table' })}
                         </Button>
                     </Box>
                 )}

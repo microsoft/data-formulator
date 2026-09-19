@@ -739,8 +739,12 @@ class TestCatalogRoutes:
 
 class TestDataRoutes:
 
-    def test_preview(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+    @pytest.mark.parametrize("cluster", [None, "https://user:secret@help.kusto.windows.net/?token=secret#fragment"])
+    def test_preview(self, connected_client, cluster, caplog):
+        caplog.set_level("INFO", logger="data_formulator.data_connector")
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(MockLoader, "kusto_cluster", cluster, create=True), \
+             patch.object(MockLoader, "kusto_database", "Samples", create=True):
             resp = connected_client.post("/api/connectors/preview-data", json={
                 "connector_id": "mock_db",
                 "source_table": "public.users",
@@ -750,15 +754,51 @@ class TestDataRoutes:
         assert resp.status_code == 200
         assert data["status"] == "success"
         assert data["data"]["row_count"] <= 3
+        events = [record.getMessage() for record in caplog.records if "[ConnectorPreview]" in record.getMessage()]
+        assert len(events) == 2
+        assert events[0].startswith("[ConnectorPreview] start request_id=")
+        request_id = events[0].split("request_id=", 1)[1]
+        assert events[1].startswith(f"[ConnectorPreview] success request_id={request_id} duration_s=")
+        assert f"rows={data['data']['row_count']} columns={len(data['data']['columns'])}" in events[1]
+        assert "secret" not in " ".join(events)
         col_names = {c["name"] for c in data["data"]["columns"]}
         assert "id" in col_names
         assert "name" in col_names
+        if cluster:
+            assert data["data"]["source_location"] == {
+                "address": "https://help.kusto.windows.net", "database": "Samples",
+            }
+        else:
+            assert "source_location" not in data["data"]
 
-    def test_preview_missing_source_table(self, connected_client):
+    def test_preview_missing_source_table(self, connected_client, caplog):
+        caplog.set_level("INFO", logger="data_formulator.data_connector")
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/preview-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
+        events = [record.getMessage() for record in caplog.records if "[ConnectorPreview]" in record.getMessage()]
+        assert len(events) == 2
+        assert "start request_id=" in events[0]
+        assert "failure request_id=" in events[1]
+        assert "error_code=INVALID_REQUEST" in events[1]
+
+    def test_preview_logs_before_connector_resolution_and_on_unexpected_failure(self, connected_client, caplog):
+        caplog.set_level("INFO", logger="data_formulator.data_connector")
+
+        def fail_resolution(data):
+            assert "[ConnectorPreview] start request_id=" in caplog.text
+            raise RuntimeError("secret-connection-detail")
+
+        with patch("data_formulator.data_connector._resolve_connector", side_effect=fail_resolution):
+            response = connected_client.post("/api/connectors/preview-data", json={"connector_id": "mock_db"})
+        assert response.get_json()["status"] == "error"
+        events = [record.getMessage() for record in caplog.records if "[ConnectorPreview]" in record.getMessage()]
+        assert len(events) == 2
+        request_id = events[0].split("request_id=", 1)[1]
+        assert events[1].startswith(f"[ConnectorPreview] failure request_id={request_id} duration_s=")
+        assert "error_type=RuntimeError" in events[1]
+        assert "secret-connection-detail" not in " ".join(events)
 
     def test_import_requires_source_table(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):

@@ -28,8 +28,9 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from flask import Blueprint, Flask, request
+from flask import Blueprint, Flask, g, request
 
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
@@ -835,6 +836,15 @@ def _resolve_connector(data: dict[str, Any]) -> DataConnector:
     """
     _, connector = _resolve_connector_with_key(data)
     return connector
+
+
+def get_query_capabilities(source_id: str) -> dict[str, str]:
+    try:
+        _, connector = _resolve_connector_with_key({"connector_id": source_id})
+        return connector._loader_class.query_capabilities()
+    except Exception:
+        logger.debug("Query capabilities unavailable for %s", source_id, exc_info=True)
+        return ExternalDataLoader.query_capabilities()
 
 
 def resolve_live_loader(source_id: str) -> "ExternalDataLoader":
@@ -2414,10 +2424,12 @@ def connector_refresh_data():
 
 @connectors_bp.route("/api/connectors/preview-data", methods=["POST"])
 def connector_preview_data():
-    data = request.get_json() or {}
-    source = _resolve_connector(data)
-
+    request_id = getattr(g, "request_id", None) or str(uuid4())
+    started_at = time.monotonic()
+    logger.info("[ConnectorPreview] start request_id=%s", request_id)
     try:
+        data = request.get_json() or {}
+        source = _resolve_connector(data)
         loader = source._require_loader()
         raw_source = data.get("source_table")
         if not raw_source:
@@ -2458,10 +2470,34 @@ def connector_preview_data():
             "row_count": len(rows),
             "total_row_count": total_row_count,
         }
-        return json_ok(result)
-    except AppError:
+        cluster = getattr(loader, "kusto_cluster", None)
+        database = getattr(loader, "kusto_database", None)
+        if isinstance(cluster, str) and cluster:
+            from urllib.parse import urlsplit
+
+            address = urlsplit(cluster if "://" in cluster else f"https://{cluster}")
+            if address.scheme in {"http", "https"} and address.hostname:
+                result["source_location"] = {
+                    "address": f"{address.scheme}://{address.hostname}" + (f":{address.port}" if address.port else ""),
+                    "database": database if isinstance(database, str) else "",
+                }
+        response = json_ok(result)
+        logger.info(
+            "[ConnectorPreview] success request_id=%s duration_s=%.3f rows=%d columns=%d",
+            request_id, time.monotonic() - started_at, len(rows), len(columns),
+        )
+        return response
+    except AppError as error:
+        logger.warning(
+            "[ConnectorPreview] failure request_id=%s duration_s=%.3f error_code=%s",
+            request_id, time.monotonic() - started_at, error.code,
+        )
         raise
     except Exception as e:
+        logger.warning(
+            "[ConnectorPreview] failure request_id=%s duration_s=%.3f error_type=%s",
+            request_id, time.monotonic() - started_at, type(e).__name__,
+        )
         classify_and_raise_connector_error(e, operation="preview")
 
 

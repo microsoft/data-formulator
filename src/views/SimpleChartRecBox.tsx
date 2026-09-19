@@ -204,6 +204,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const tables = useSelector(dfSelectors.getAllTables);
     const inputTables = useSelector((state: DataFormulatorState) => state.inputTables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const hasFocusedExternalReference = useSelector((state: DataFormulatorState) => {
+        const focus = state.focusedId;
+        return focus?.type === 'external-table'
+            && state.externalTableReferences.some(reference => reference.id === focus.referenceId);
+    });
     const charts = useSelector(dfSelectors.getAllCharts);
     const starterQuestions = useSelector((state: DataFormulatorState) => state.starterQuestions);
     const starterQuestionsStatus = useSelector((state: DataFormulatorState) => state.starterQuestionsStatus);    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -824,11 +829,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...files.map(file => file.scratchPath),
             ...(!explicitAttachments ? attachedImages.map(image => image.scratchPath) : []),
         ];
-        // A session can start without a table: a durable workspace file may be
-        // enough source material for the agent to produce the first derived table.
-        const hasNoAnalysisInputs = inputTables.length === 0;
-        const hasExplicitParent = !!clarificationContext?.parentNodeId;
-        if ((!focusedTableId && !hasNoAnalysisInputs && !hasExplicitParent) || (!clarificationContext && prompt.trim() === "" && images.length === 0 && files.length === 0)) return;
+        if (!clarificationContext && prompt.trim() === "" && images.length === 0 && files.length === 0) return;
 
         // Non-image attachments live in the workspace scratch/ folder; we pass
         // their paths to the agent (see requestBody.scratch_files) rather than
@@ -853,7 +854,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 ...priorityIds.filter(id => inputTableIds.includes(id)),
                 ...inputTableIds.filter(id => !priorityIds.includes(id)),
             ];
-        if (selectedTableIds.length === 0 && !hasNoAnalysisInputs && !hasExplicitParent) return;
 
         // A real resume replays a trajectory; answering a clarify WITHOUT a
         // trajectory token is a fresh turn that still threads the conversation.
@@ -969,9 +969,31 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             const input = inputTableById.get(id);
             return input ? workspaceTableIdOf(input) : id.replace(/\.[^/.]+$/, "");
         });
+        const externalReferences = (currentStore.getState() as DataFormulatorState).externalTableReferences || [];
+        const externalReferenceId = (() => {
+            const exists = (id: string | undefined) => externalReferences.some(reference => reference.id === id);
+            if (focusedId?.type === 'external-table') return exists(focusedId.referenceId) ? focusedId.referenceId : undefined;
+            let nodeId: string | undefined = clarificationContext?.parentNodeId
+                || (focusedId?.type === 'draft' ? focusedId.draftId : askedFromNode);
+            const seen = new Set<string>();
+            while (nodeId && !seen.has(nodeId)) {
+                seen.add(nodeId);
+                const turn = textTurns.find(item => item.id === nodeId);
+                const table = tables.find(item => item.id === nodeId);
+                const draft = draftNodes.find(item => item.id === nodeId);
+                const referenceId = turn?.externalReferenceId || table?.derive?.trigger.externalReferenceId
+                    || draft?.derive.trigger.externalReferenceId;
+                if (exists(referenceId)) return referenceId;
+                nodeId = turn?.parentNodeId || table?.parentNodeId || draft?.parentNodeId
+                    || [...loadedTableNodes, ...fileNodes].find(item => item.id === nodeId)?.parentNodeId;
+            }
+            return undefined;
+        })();
         const requestBody: any = {
             conversation_id: actionId,
             input_tables: actionTables.map(toAnalystTableRef),
+            external_references: externalReferences,
+            focused_external_reference: externalReferenceId,
             primary_tables: primaryTableNames,
             ...(images.length > 0 ? { attached_images: images } : {}),
             ...(scratchPaths.length > 0 ? { scratch_files: scratchPaths } : {}),
@@ -1049,6 +1071,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         const controller = new AbortController();
         agentAbortRef.current = controller;
+        const pendingLoadId = `agent-load-${actionId}`;
+        const clearPendingLoad = () => dispatch(dfActions.finishTableLoad(pendingLoadId));
+        controller.signal.addEventListener('abort', clearPendingLoad, { once: true });
         let timedOut = false;
         const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 6 * 1000);
 
@@ -1074,6 +1099,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 source: selectedTableIds,
                 interaction: initialInteraction,
                 actionId,
+                externalReferenceId,
             }));
             currentDraftId = draftId;
             currentDraftParentTableId = parentTableId;
@@ -1216,6 +1242,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 const firstEntry = currentDraftInteraction[0];
                 dispatch(dfActions.addTextTurn({
                     kind: 'text', id: turnId, displayId: turnId, textKind: 'explain',
+                    externalReferenceId,
                     content: proposal.purpose,
                     executions: [{
                         id: proposal.id, argv: proposal.argv, cwd: proposal.cwd, purpose: proposal.purpose,
@@ -1268,6 +1295,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 dispatch(dfActions.addTextTurn({
                     kind: 'text',
                     id: turnId,
+                    externalReferenceId,
                     displayId: turnId,
                     textKind: 'explain',
                     content: String(result.form.response || result.form.title || `Connect to ${sourceType}`),
@@ -1369,6 +1397,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         value: operation.error?.message || t('chartRec.explorationFailed', { message: '' }),
                     }));
                 }
+                clearPendingLoad();
                 return;
             }
 
@@ -1433,6 +1462,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
             // ── tool_start: agent is calling a tool (explore/inspect) ──
             if (result.type === "tool_start") {
+                if (result.tool === 'load_data' && !controller.signal.aborted) {
+                    const names = (Array.isArray(result.args?.tables) ? result.args.tables : [])
+                        .filter((name: unknown): name is string => typeof name === 'string')
+                        .map((name: string) => name.split(/[\\/]/).filter(Boolean).pop() || name);
+                    dispatch(dfActions.startTableLoad({ id: pendingLoadId,
+                        names: names.length ? names : [t('dataLoading.toolLabels.loadingData', { defaultValue: 'Loading data' })] }));
+                }
                 // Show pending thought as a visible step before the tool step
                 if (pendingThought) {
                     thinkingSteps.push(pendingThought);
@@ -1474,6 +1510,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // ── tool_result: mark the last tool step as done ──
             if (result.type === "tool_result") {
                 const isError = result.status === "error" || !!result.error;
+                if (result.tool === 'load_data' && isError) clearPendingLoad();
                 if (['create_data', 'update_data'].includes(result.tool) && !isError) {
                     const output = JSON.parse(result.stdout || '{}');
                     if (typeof output.table_name === 'string') {
@@ -1597,6 +1634,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
+                        externalReferenceId,
                         resultTableId: candidateTableId,
                         chart: undefined,
                         interaction: [
@@ -1778,6 +1816,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         dispatch(dfActions.addTextTurn({
                             kind: 'text',
                             id: turnId,
+                            externalReferenceId,
                             displayId: turnId,
                             textKind: isExplainEvent ? 'explain' : 'clarify',
                             ...(formOwner && !dataOperation && !lastCreatedTableId && !reportId ? { sourceFormId: formOwner.id } : {}),
@@ -1841,6 +1880,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     dispatch(dfActions.addTextTurn({
                         kind: 'text',
                         id: turnId,
+                        externalReferenceId,
                         displayId: turnId,
                         textKind: 'explain',
                         content: summary,
@@ -2021,10 +2061,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         }));
                     }
                 }
+                clearPendingLoad();
+                controller.signal.removeEventListener('abort', clearPendingLoad);
                 notifyWorkspaceFilesChanged();
             }
         })();
-    }, [routeWorkflowPrompt, focusedId, focusedTableId, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, generatedReports, focusedReference, dispatch, t, attachedImages, attachedFiles, attachmentUploads, canvasTarget, textTurns, connectorParams]);
+    }, [routeWorkflowPrompt, focusedId, focusedTableId, hasFocusedExternalReference, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, generatedReports, focusedReference, loadedTableNodes, fileNodes, dispatch, t, attachedImages, attachedFiles, attachmentUploads, canvasTarget, textTurns, connectorParams]);
 
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').
@@ -2202,11 +2244,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const canSend = React.useMemo(() => {
         if (workspaceReadOnly || attachmentUploads > 0) return false;
         if (chatWorkflow) return !sendingWorkflowMessage && (chatPrompt.trim().length > 0 || attachedImages.length > 0 || attachedFiles.length > 0);
-        // No tables yet: the first ask is how data gets here.
-        const hasFocusedTurn = focusedId?.type === 'text' && textTurns.some(turn => turn.id === focusedId.textId);
-        if (!focusedTableId && inputTables.length > 0 && !hasFocusedTurn) return false;
         return chatPrompt.trim().length > 0 || attachedImages.length > 0 || attachedFiles.length > 0;
-    }, [chatWorkflow, sendingWorkflowMessage, chatPrompt, focusedTableId, focusedId, textTurns, inputTables.length, workspaceReadOnly, attachmentUploads, attachedImages.length, attachedFiles.length]);
+    }, [chatWorkflow, sendingWorkflowMessage, chatPrompt, workspaceReadOnly, attachmentUploads, attachedImages.length, attachedFiles.length]);
 
     // A prompt seeded from the landing box: send it once the chat is idle.
     // The ref makes this one-shot even if the effect is double-invoked before
@@ -2737,7 +2776,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
                     if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
                         event.preventDefault();
-                        setChatPrompt(t(inputTables.length === 0
+                        setChatPrompt(t(inputTables.length === 0 && !hasFocusedExternalReference
                             ? 'chartRec.emptyAnalysisInputsPrompt'
                             : 'chartRec.threadExplorePrompt'));
                     }
@@ -2772,9 +2811,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     chatWorkflow ? 'Message workflow...'
                     : pendingClarification
                         ? t('chartRec.replyPlaceholder')
-                        : inputTables.length === 0
+                        : inputTables.length === 0 && !hasFocusedExternalReference
                             ? t('chartRec.emptyAnalysisInputsPlaceholder')
-                            : t(inputTables.length === 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
+                            : t(hasFocusedExternalReference || inputTables.length === 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
                 }
                 fullWidth
                 multiline
@@ -2812,7 +2851,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.text.secondary }}
                                     aria-label={t('chartRec.generateReport')}
-                                    disabled={!!chatWorkflow || !focusedTableId || isChatFormulating || !!pendingClarification}
+                                    disabled={workspaceReadOnly || !!chatWorkflow || (!focusedTableId && !hasFocusedExternalReference) || isChatFormulating || !!pendingClarification}
                                     onClick={() => submitChat(t('chartRec.reportPrompt'), undefined, t('chartRec.askedForReport'))}
                                 >
                                     <EditOutlinedIcon sx={{ fontSize: iconVar.lg }} />
@@ -2825,7 +2864,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.primary.main }}
                                     aria-label={t('chartRec.getIdeaSuggestions')}
-                                    disabled={!!chatWorkflow || !focusedTableId || isChatFormulating || !!pendingClarification}
+                                    disabled={workspaceReadOnly || !!chatWorkflow || (!focusedTableId && !hasFocusedExternalReference) || isChatFormulating || !!pendingClarification}
                                     onClick={() => submitChat(t('chartRec.exploreIdeasPrompt'), undefined, t('chartRec.askedForRecommendations'))}
                                 >
                                     <TipsAndUpdatesIcon sx={{ fontSize: iconVar.lg }} />

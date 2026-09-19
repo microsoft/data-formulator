@@ -215,6 +215,27 @@ describe('DataSourceSidebar', () => {
             url === '/api/connectors/get-catalog-tree')).toHaveLength(attempts + 1));
     });
 
+    it('shows a waiting message before expanded connector discovery returns', async () => {
+        let finishCatalog!: (value: any) => void;
+        const pendingCatalog = new Promise<any>(resolve => { finishCatalog = resolve; });
+        vi.mocked(apiRequest).mockImplementation(async (url: string) => {
+            if (url === '/api/connectors') return { data: { connectors: [
+                { id: 'warehouse', display_name: 'Warehouse', source_type: 'KustoDataLoader', connected: true },
+                { id: 'other', display_name: 'Other', source_type: 'PostgreSQLDataLoader', connected: false },
+            ] } } as any;
+            if (url === '/api/connectors/get-catalog-tree') return pendingCatalog;
+            return { data: {} } as any;
+        });
+        render(<DataSourceSidebar />);
+        fireEvent.click(await screen.findByText('Warehouse'));
+        try {
+            expect(await screen.findByRole('status')).toHaveTextContent('Loading tables...');
+        } finally {
+            await act(async () => { finishCatalog({ data: { tree: [] } }); });
+        }
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    });
+
     it('opens the populated connector form from Connect when disconnected', async () => {
         const onOpenUploadDialog = vi.fn();
         vi.mocked(apiRequest).mockResolvedValue({

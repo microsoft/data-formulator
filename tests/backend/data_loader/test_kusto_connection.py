@@ -88,6 +88,23 @@ def test_dotted_table_queries_use_configured_database(operation) -> None:
     assert loader.kusto_database == "Athens-prod"
 
 
+@pytest.mark.parametrize("ordered", [False, True])
+def test_fetch_projects_columns_remotely_after_filtering_and_limiting(ordered) -> None:
+    loader = _loader()
+    loader.query = Mock(return_value=pd.DataFrame({"review text": ["sample"]}))
+    options = {"size": 10, "columns": ["review text"],
+               "source_filters": [{"column": "game", "operator": "EQ", "value": "target"}]}
+    if ordered:
+        options.update({"sort_columns": ["score"], "sort_order": "desc"})
+    result = loader.fetch_data_as_arrow("Reviews", options)
+    loader.query.assert_called_once()
+    query = loader.query.call_args.args[0]
+    assert "where" in query
+    assert query.index("where") < query.index("top 10" if ordered else "take 10")
+    assert query.endswith("| project ['review text']")
+    assert result.column_names == ["review text"]
+
+
 def test_connection_uses_direct_sdk_probe() -> None:
     loader = _loader()
     loader.query = Mock(side_effect=AssertionError("query conversion must not run"))

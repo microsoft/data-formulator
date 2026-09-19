@@ -13,6 +13,7 @@ from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.analyst.input_provenance import normalize_input_sources
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputEngine,
+    normalize_external_references,
     workspace_memory_is_fresh,
 )
 from .data_loading import WorkspaceDataLoading
@@ -208,14 +209,25 @@ class WorkspaceSkill:
             scope = args.get("scope", "input")
             query = str(args.get("query", "")).casefold().strip()
             if scope == "input":
+                kinds = args.get("kinds")
+                local_kinds = [kind for kind in kinds if kind != "external-table-reference"] if kinds else None
                 result = json.loads(input_engine.list_items(
-                    kinds=args.get("kinds"),
+                    kinds=local_kinds,
                     query=args.get("query", ""),
-                ))
+                )) if local_kinds or not kinds else {"inputs": [], "count": 0}
+                if not kinds or "data" in kinds or "external-table-reference" in kinds:
+                    result["inputs"].extend({
+                        "id": reference["id"], "kind": "external-table-reference",
+                        "display_name": reference["displayName"],
+                        "source_id": reference["connectorId"], "table_key": reference["tableKey"],
+                        "summary": reference.get("summary", {}),
+                        "capabilities": ["describe_data", "probe_data", "propose_data_operation"],
+                    } for reference in normalize_external_references(ctx.payload.get("external_references"))
+                        if not query or query in json.dumps(reference, ensure_ascii=False).casefold())
                 return ToolResult(text=json.dumps({
                     "scope": scope,
                     "items": result["inputs"],
-                    "count": result["count"],
+                    "count": len(result["inputs"]),
                 }, ensure_ascii=False))
             if args.get("kinds"):
                 raise ValueError("kinds is only supported for input scope")
@@ -264,6 +276,14 @@ class WorkspaceSkill:
                 "count": len(items),
             }, ensure_ascii=False))
         if name == "read_workspace_item" and input_engine is not None:
+            reference = next((reference for reference in normalize_external_references(ctx.payload.get("external_references"))
+                              if reference["id"] == args.get("item_id")), None)
+            if reference is not None:
+                return ToolResult(text=json.dumps({
+                    "reference": reference, "source_id": reference["connectorId"], "table_key": reference["tableKey"],
+                    "note": "Cached metadata only, not rows. Use describe_data for missing schema, probe_data for bounded evidence, "
+                            "or propose_data_operation to load a filtered subset for analysis. This reference is not a Python input.",
+                }, ensure_ascii=False))
             return ToolResult(text=input_engine.read_item(
                 args.get("item_id", ""),
                 locator=args.get("locator"),
@@ -277,6 +297,7 @@ class WorkspaceSkill:
                 kinds=args.get("kinds"),
                 options=args.get("options"),
                 max_results=args.get("max_results", 20),
+                external_references=ctx.payload.get("external_references"),
             ))
         return ToolResult(text=f"workspace has no tool '{name}'.")
 

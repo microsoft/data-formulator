@@ -71,6 +71,8 @@ from data_formulator.analyst.workspace_inputs import (
     build_workspace_input_manifest,
     build_workspace_input_preview,
     render_workspace_input_context,
+    render_external_reference_context,
+    normalize_external_references,
 )
 
 logger = logging.getLogger(__name__)
@@ -390,6 +392,8 @@ class AnalystAgent:
         conversation_id: str = "",
         connector_form: dict[str, Any] | None = None,
         focused_file: str | None = None,
+        external_references: list[dict[str, Any]] | None = None,
+        focused_external_reference: str | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -428,6 +432,7 @@ class AnalystAgent:
         self._loaded_skills = self._initial_loaded_skills(workspace_inputs)
         self._run_payload = {
             "input_tables": input_tables,
+            "external_references": normalize_external_references(external_references),
             "workspace_inputs": workspace_inputs,
             "scratch_files": self.workspace.list_scratch_files(),
             "charts": charts or [],
@@ -493,6 +498,9 @@ class AnalystAgent:
                 self._rehydrate_loaded_skills(trajectory)
 
             trajectory.append({"role": "user", "content": self._build_file_selection_context(focused_file)})
+            trajectory.append({"role": "user", "content": render_external_reference_context(
+                external_references, focused_external_reference,
+            )})
 
             action_budget = self.max_iterations  # hard ceiling on committing actions
             actions_committed = completed_step_count  # resume-aware count

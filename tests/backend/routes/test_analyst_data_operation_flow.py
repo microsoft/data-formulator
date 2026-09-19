@@ -186,15 +186,16 @@ def test_selected_operation_executes_without_model_turn(
                     "plan_id": plan.id,
                 },
             },
+            buffered=True,
         )
 
     events = [
         json.loads(line)
         for line in response.data.decode("utf-8").splitlines()
     ]
-    assert [event["type"] for event in events] == ["data_operation_result"]
-    assert events[0]["operation"]["status"] == "loaded"
-    assert events[0]["operation"]["result_table_ids"] == ["recent_orders"]
+    assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result"]
+    assert events[-1]["operation"]["status"] == "loaded"
+    assert events[-1]["operation"]["result_table_ids"] == ["recent_orders"]
     get_client.assert_not_called()
     analyst_agent.assert_not_called()
 

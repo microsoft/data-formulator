@@ -40,6 +40,125 @@ describe('Analyst landing attachment handoff', () => {
         vi.mocked(streamRequest).mock.calls[index][1].body as string,
     );
 
+    it('keeps agent loading cards until the published table is registered', async () => {
+        let finishLoad!: () => void;
+        const loading = new Promise<void>(resolve => { finishLoad = resolve; });
+        let publish!: (value: any) => void;
+        const listing = new Promise<any>(resolve => { publish = resolve; });
+        vi.mocked(apiRequest).mockImplementation(async url => String(url).includes('list-tables')
+            ? listing : { data: { result: [], statistics: {} } } as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'load_data', args: { tables: ['folder/orders.csv'] } };
+            await loading;
+            yield { type: 'tool_result', tool: 'load_data', status: 'ok' };
+            yield { type: 'data_operation_result', operation: {
+                schema_version: 1, id: 'operation', status: 'loaded', reason: 'Load orders',
+                plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Orders', summary: '',
+                    steps: [{ kind: 'connector_query', display_name: 'Orders' }] }],
+                result_table_ids: ['orders'],
+            } };
+        });
+        const { store } = mountTask({ text: 'Load orders', images: [], attachments: [] });
+        try {
+            await waitFor(() => expect(store.getState().pendingTableLoads[0]?.names).toEqual(['orders.csv']));
+            await act(async () => { finishLoad(); });
+            await waitFor(() => expect(apiRequest).toHaveBeenCalled());
+            expect(store.getState().pendingTableLoads).toHaveLength(1);
+            expect(store.getState().inputTables).toHaveLength(0);
+        } finally {
+            await act(async () => { finishLoad(); publish({ data: { tables: [{ name: 'orders', columns: [], row_count: 5, sample_rows: [] }] } }); });
+        }
+        await waitFor(() => expect(store.getState().inputTables).toHaveLength(1));
+        expect(store.getState().pendingTableLoads).toEqual([]);
+    });
+
+    it.each(['cancel', 'error', 'disconnect'])('clears pending agent loads on %s', async outcome => {
+        let finishRun!: () => void;
+        const running = new Promise<void>(resolve => { finishRun = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'load_data', args: { tables: ['Orders'] } };
+            await running;
+            if (outcome === 'error') yield { type: 'tool_result', tool: 'load_data', status: 'error' };
+        });
+        const { store } = mountTask({ text: 'Load orders', images: [], attachments: [] });
+        try {
+            await waitFor(() => expect(store.getState().pendingTableLoads).toHaveLength(1));
+            if (outcome === 'cancel') {
+                fireEvent.click(screen.getByTestId('StopIcon').closest('button')!);
+                expect(store.getState().pendingTableLoads).toEqual([]);
+            }
+        } finally {
+            await act(async () => { finishRun(); });
+        }
+        await waitFor(() => expect(store.getState().pendingTableLoads).toEqual([]));
+    });
+
+    it.each([['button', true], ['enter', true], ['button', false], ['enter', false]])(
+        'submits a query from a focused reference via %s with loaded tables: %s', async (method, hasLoadedTables) => {
+        vi.mocked(streamRequest).mockImplementation(async function* () {
+            yield { type: 'result', status: 'success', content: { result: {
+                status: 'ok', content: { rows: [{ count: 10 }], virtual: { table_name: 'event_totals', row_count: 1 } },
+                refined_goal: { output_variable: 'result', display_name: 'Event Totals' },
+            } } };
+            yield { type: 'completion', status: 'success', content: { summary: 'Review the event sources.' } };
+        });
+        const { store } = mountTask();
+        const reference = {
+            kind: 'external-table-reference' as const, id: 'external:adx:events',
+            connectorId: 'adx', tableKey: 'events', sourceTable: { id: 'events', name: 'events' },
+            displayName: 'Events', capturedAt: '2026-01-01T00:00:00Z',
+            summary: { columns: [{ name: 'timestamp', type: 'datetime' }], rowCount: 20_000_000 },
+        };
+        act(() => {
+            if (hasLoadedTables) store.dispatch(dfActions.loadState({ ...store.getState(), inputTables: [{
+                kind: 'input-table', id: 'local', displayId: 'Local', description: '', addedAt: 1,
+                source: { type: 'file' }, snapshot: { columns: [], rowCount: 0, capturedAt: 1 },
+            }] }));
+            store.dispatch(dfActions.upsertExternalTableReference(reference));
+            store.dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+        });
+        expect(screen.getByRole('button', { name: 'Get idea suggestions' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Generate a report' })).toBeEnabled();
+        const input = screen.getByRole('textbox');
+        fireEvent.change(input, { target: { value: 'Count events by region' } });
+        expect(screen.getByRole('button', { name: 'Explore', exact: true })).toBeEnabled();
+        if (method === 'enter') fireEvent.keyDown(input, { key: 'Enter' });
+        else fireEvent.click(screen.getByRole('button', { name: 'Explore', exact: true }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().external_references).toEqual([reference]);
+        expect(requestBody().focused_external_reference).toBe(reference.id);
+        expect(requestBody().input_tables).toHaveLength(hasLoadedTables ? 1 : 0);
+        expect(requestBody().input_tables.some((table: { id: string }) => table.id === reference.id)).toBe(false);
+        expect(requestBody().focused_file).toBeUndefined();
+        expect(store.getState().fileNodes).toEqual([]);
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
+        const reply = store.getState().textTurns[0];
+        expect(reply.externalReferenceId).toBe(reference.id);
+        const derived = store.getState().derivedTables[0];
+        expect(derived.derive?.trigger.externalReferenceId).toBe(reference.id);
+        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: reply.id })));
+        fireEvent.change(input, { target: { value: 'Show the ten most recent events' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(requestBody(1).focused_external_reference).toBe(reference.id);
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
+        act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: derived.id })));
+        fireEvent.change(input, { target: { value: 'Show the source events for this result' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(3));
+        expect(requestBody(2).focused_external_reference).toBe(reference.id);
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(3));
+        act(() => {
+            store.dispatch(dfActions.removeExternalTableReference(reference.id));
+            store.dispatch(dfActions.setFocused({ type: 'table', tableId: derived.id }));
+        });
+        fireEvent.change(input, { target: { value: 'Describe the existing result' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(4));
+        expect(requestBody(3).focused_external_reference).toBeUndefined();
+        expect(requestBody(3).external_references).toEqual([]);
+    });
+
     it('registers agent data and refreshes it under the same table and reference IDs', async () => {
         let value = 1;
         let finishRun!: () => void;

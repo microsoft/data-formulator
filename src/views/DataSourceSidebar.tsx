@@ -87,7 +87,7 @@ import { ResizeHandle } from '../components/ResizeHandle';
 import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
 import { formatBytes } from './ViewUtils';
-import { importConnectorFile } from '../app/workspaceService';
+import { importConnectorFile, isLargeConnectorTable, createExternalTableReference } from '../app/workspaceService';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -98,22 +98,6 @@ const MAX_PANEL_WIDTH = REFERENCE.sidebar.max;
 
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 const SIDEBAR_PINNED_KEY = 'df-sidebar-pinned';
-
-// Above this many rows or this much uncompressed data, importing a table
-// wholesale is slow/unwieldy (and can hit backend result-size limits). Tables
-// past these thresholds are handed off to the conversational data-loading chat
-// instead, where the user can filter, sample, or aggregate before loading.
-const RECOMMENDED_MAX_IMPORT_ROWS = 1_000_000;
-const RECOMMENDED_MAX_IMPORT_BYTES = 512 * 1024 * 1024; // 512 MB uncompressed
-
-// Whether a catalog table is large enough that a direct full import is
-// discouraged in favor of the conversational loader.
-function isTableTooLarge(node: CatalogTreeNode): boolean {
-    const rows = node.metadata?.row_count;
-    const bytes = node.metadata?.original_size_bytes;
-    return (typeof rows === 'number' && rows > RECOMMENDED_MAX_IMPORT_ROWS)
-        || (typeof bytes === 'number' && bytes > RECOMMENDED_MAX_IMPORT_BYTES);
-}
 
 // Compact relative time for sidebar rows: "2m", "3h", "yesterday",
 // "May 5", "May 5, 24". Designed to stay <= ~10 chars so it fits in
@@ -1345,6 +1329,26 @@ const DataSourceSidebarPanel: React.FC<{
         }
         const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
+        if (isLargeConnectorTable(node.metadata)) {
+            const metadata = node.metadata || {};
+            const rows = Number(metadata.row_count);
+            const bytes = Number(metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size);
+            const reference = createExternalTableReference({
+                kind: 'external-table-reference', connectorId,
+                tableKey: metadata.table_key || pathKey, sourceTable: ref, displayName: node.name,
+                capturedAt: new Date().toISOString(),
+                summary: {
+                    description: metadata.source_description || metadata.description,
+                    columns: metadata.columns || [],
+                    rowCount: Number.isFinite(rows) ? rows : undefined,
+                    sizeBytes: Number.isFinite(bytes) ? bytes : undefined,
+                },
+                queryIntent: importOptions,
+            });
+            dispatch(dfActions.upsertExternalTableReference(reference));
+            dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+            return Promise.resolve({ truncated: false });
+        }
         const tableObj: DictTable = {
             kind: 'table' as const,
             id: node.name,
@@ -1408,41 +1412,6 @@ const DataSourceSidebarPanel: React.FC<{
     ) => {
         const tables = nodes.filter(n => n.node_type === 'table');
         if (tables.length === 0) return;
-
-        // Tables past the recommended size are impractical to import wholesale
-        // (slow, memory-heavy, and can exceed backend result limits). When the
-        // selection contains any such table, hand the whole selection off to
-        // the conversational data-loading chat so the user can filter, sample,
-        // or aggregate before loading — instead of a direct bulk import.
-        const oversized = tables.filter(isTableTooLarge);
-        if (oversized.length > 0 && onAskAgent) {
-            const connector = connectors.find(c => c.id === connectorId);
-            const connectorName = connector?.display_name || connectorId;
-            const describe = (n: CatalogTreeNode) => {
-                const rows = n.metadata?.row_count;
-                const bytes = n.metadata?.original_size_bytes;
-                const parts = [
-                    typeof rows === 'number' ? `${Number(rows).toLocaleString()} rows` : null,
-                    formatBytes(typeof bytes === 'number' ? bytes : null) || null,
-                ].filter(Boolean);
-                return parts.length > 0 ? `${n.name} (${parts.join(', ')})` : n.name;
-            };
-            const allNames = tables.map(n => n.name).join(', ');
-            const largeList = oversized.map(describe).join('; ');
-            const promptText = t('sidebar.largeTableChatPrompt', {
-                connector: connectorName,
-                tables: allNames,
-                large: largeList,
-                defaultValue:
-                    `I want to load the following table(s) from "${connectorName}": ${allNames}. ` +
-                    `These are too large to import in full: ${largeList}. ` +
-                    `Help me load a filtered, sampled, or aggregated subset instead of the entire table.`,
-            });
-            clearSelection();
-            closePreview();
-            onAskAgent(promptText);
-            return;
-        }
 
         if (opts?.newSession || !activeWorkspace) {
             createNewSession(t('sidebar.batchSessionName', { count: tables.length, defaultValue: `${tables.length} tables` }));
@@ -1824,7 +1793,7 @@ const DataSourceSidebarPanel: React.FC<{
                     // The catalog body shows its own spinner while the initial
                     // catalog loads (expanded, no cache yet). Suppress the inline
                     // refresh spinner in that case so we don't render two.
-                    const bodySpinnerVisible = connector.connected && isExpanded && !displayCache && isLoading;
+                    const bodySpinnerVisible = connector.connected && isExpanded && isLoading;
                     const expanded = treeExpanded[connector.id] || [];
 
                     return (
@@ -2006,18 +1975,16 @@ const DataSourceSidebarPanel: React.FC<{
                                             </IconButton>
                                         </Tooltip>
                                     </Box>}
-                                    {!displayCache && isLoading && (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, py: 1.5 }}>
-                                            <CircularProgress size={16} />
-                                            {catalogProgress[connector.id] && (
+                                    {isLoading && (
+                                        <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 1.5 }}>
+                                            <CircularProgress size={16} color="inherit" sx={{ flexShrink: 0, color: 'text.secondary' }} />
                                                 <Typography
                                                     variant="caption"
                                                     color="text.secondary"
-                                                    sx={{ fontSize: textVar.xs, textAlign: 'center', px: 1, wordBreak: 'break-word' }}
+                                                    sx={{ fontSize: textVar.xs, minWidth: 0, overflowWrap: 'anywhere' }}
                                                 >
-                                                    {catalogProgress[connector.id]}
+                                                    {catalogProgress[connector.id] || t('sidebar.loadingTables', { defaultValue: 'Loading tables...' })}
                                                 </Typography>
-                                            )}
                                         </Box>
                                     )}
                                     {displayCache && displayCache.tree.length > 0 && (
@@ -2066,6 +2033,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                     tableId: dsId != null ? String(dsId) : sourceName,
                                                     tablePath: node.path,
                                                     sourceType: connector.source_type,
+                                                    metadata: node.metadata ?? undefined,
                                                 };
                                                 event.dataTransfer.setData('application/json', JSON.stringify(item));
                                                 event.dataTransfer.effectAllowed = 'copy';

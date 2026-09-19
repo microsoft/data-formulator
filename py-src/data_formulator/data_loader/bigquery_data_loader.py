@@ -53,6 +53,7 @@ class BigQueryDataLoader(ExternalDataLoader):
         return "service_account_file" if params.get("credentials_path") else "default_credentials"
 
     AUTH_GUIDE = "bigquery.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

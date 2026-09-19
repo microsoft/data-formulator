@@ -284,7 +284,7 @@ class WorkspaceDataLoading:
         ctx: SkillContext,
     ) -> Generator[Event, None, str | None]:
         try:
-            user_review_needed = spec.get("user_review_needed", True)
+            user_review_needed = spec.get("user_review_needed", False)
             if not isinstance(user_review_needed, bool):
                 raise ValueError("user_review_needed must be a boolean")
             raw_plans = spec.get("options")
@@ -314,7 +314,9 @@ class WorkspaceDataLoading:
                     steps.append(ConnectorQueryStep(
                         source_id=source_id,
                         table_key=table_key,
-                        display_name=str(resolved["display_name"]),
+                        display_name=(str(raw_step.get("display_name") or "").strip()
+                                      or (str(raw_plan["label"]).strip() if raw_step.get("query") and len(raw_steps) == 1
+                                          else str(resolved["display_name"]))),
                         source_table=str(resolved["source_table"]),
                         source_table_name=(
                             str(resolved["source_table_name"])
@@ -373,10 +375,17 @@ class WorkspaceDataLoading:
             return message
 
         if not user_review_needed:
+            from data_formulator.data_loader.query_runtime import QueryCancelled
             selected = repository.select(operation.id, operation.plans[0].id)
+            yield {"type": "tool_start", "tool": "load_data", "args": {
+                "tables": [step.source_table_name for step in operation.plans[0].steps],
+            }}
             try:
                 result = DataOperationExecutor(ctx.workspace).execute(selected)
                 completed = repository.finish(operation.id, result.result_table_ids, result.failed_steps)
+            except QueryCancelled:
+                repository.fail(operation.id, OperationError(code="CANCELLED", message="Loading cancelled."))
+                raise
             except Exception as exc:
                 completed = repository.fail(operation.id, OperationError(code="IMPORT_FAILED", message=str(exc)))
             input_tables = ctx.payload.setdefault("input_tables", [])
@@ -384,6 +393,8 @@ class WorkspaceDataLoading:
             input_tables.extend({"name": name, "rows": [], "virtual": True}
                                 for name in completed.result_table_ids if name not in existing_names)
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
+            yield {"type": "tool_result", "tool": "load_data",
+                   "status": "ok" if completed.result_table_ids and not completed.failed_steps else "error"}
             yield {"type": "data_operation_result", "operation": completed.to_public_dict()}
             return "Connected-data loading finished. Inspect the actual result before continuing:\n" + json.dumps(completed.to_public_dict())
 

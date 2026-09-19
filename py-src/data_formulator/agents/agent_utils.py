@@ -569,7 +569,10 @@ def _format_import_options(opts: dict | None) -> str:
     parts: list[str] = []
     sf = opts.get("source_filters")
     if sf and isinstance(sf, list) and len(sf) > 0:
-        parts.append(f"{len(sf)} filter(s)")
+        parts.append("filters " + json.dumps(sf, ensure_ascii=False, default=str))
+    columns = opts.get("columns")
+    if isinstance(columns, list) and columns:
+        parts.append("selected columns " + json.dumps(columns, ensure_ascii=False, default=str))
     sc = opts.get("sort_columns")
     so = opts.get("sort_order", "asc")
     if sc and isinstance(sc, list) and len(sc) > 0:
@@ -646,7 +649,8 @@ def generate_data_summary(
         workspace,
     )
     col_meta_cache: dict[str, dict[str, dict]] = {}
-    table_desc_cache.update(catalog_table_descs)
+    for table_name, description in catalog_table_descs.items():
+        table_desc_cache.setdefault(table_name, description)
     for tname, col_descs in catalog_col_descs.items():
         col_desc_cache.setdefault(tname, {}).update(col_descs)
     table_extra_cache.update(catalog_extras)

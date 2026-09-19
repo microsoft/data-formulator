@@ -217,7 +217,8 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
     assert "Search results are not loaded data" in specs["find_data"]["description"]
     assert "instead of ending with a promise" in specs["propose_data_operation"]["description"]
     assert "user_review_needed=false" in specs["propose_data_operation"]["description"]
-    assert "user_review_needed" in specs["propose_data_operation"]["parameters"]["required"]
+    assert "user_review_needed" not in specs["propose_data_operation"]["parameters"]["required"]
+    assert "user_review_needed" not in agent.registry.action_required_fields("propose_data_operation")
 
 
 def test_tool_progress_args_are_useful_and_credential_safe() -> None:
@@ -310,9 +311,17 @@ def test_resume_preserves_existing_instructions_and_conversation(tmp_path: Path,
         yield {"type": "agent_action", "final_text": "Ready"}
 
     agent._get_next_action = next_action
-    events = list(agent.run([], "Please find available data first", trajectory=trajectory))
+    reference = {"kind": "external-table-reference", "id": "external:warehouse:reviews",
+                 "connectorId": "warehouse", "tableKey": "reviews", "displayName": "Reviews",
+                 "summary": {"columns": []}}
+    events = list(agent.run([], "Please find available data first", trajectory=trajectory,
+                           external_references=[reference], focused_external_reference=reference["id"]))
     assert events[-1]["type"] == "completion"
-    assert observed[:-1] == original_trajectory
+    assert observed[:-2] == original_trajectory
+    assert observed[-2]["content"].startswith("[CURRENT WORKSPACE FILE CONTEXT]")
+    assert observed[-1]["content"].startswith("[EXTERNAL TABLE REFERENCES]")
+    assert json.loads(observed[-1]["content"].splitlines()[-1])["focused_reference"] == reference["id"]
+    assert agent._run_payload["external_references"] == [reference]
     agent._build_system_prompt.assert_not_called()
     assert agent._loaded_skills == {"meta", "report"}
     assert "find_data" in agent._loaded_skill_tool_map()
@@ -327,6 +336,7 @@ def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path
     events = list(skill.handle_action(
         "propose_data_operation",
         {
+            "user_review_needed": True,
             "response": "I found a bounded recent-orders dataset that matches the demand analysis request.",
             "options": [{
                 "label": "Recent orders",
@@ -370,7 +380,10 @@ def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path
 
 
 @pytest.mark.parametrize("through_agent", [False, True])
-def test_unambiguous_load_executes_without_review_or_narration(tmp_path: Path, through_agent: bool) -> None:
+@pytest.mark.parametrize("include_review_flag", [False, True])
+def test_unambiguous_load_executes_without_review_or_narration(
+    tmp_path: Path, through_agent: bool, include_review_flag: bool,
+) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     _save_orders_catalog(workspace.user_home)
     loader = MagicMock()
@@ -379,13 +392,15 @@ def test_unambiguous_load_executes_without_review_or_narration(tmp_path: Path, t
     skill = build_registry().get_skill("workspace")
     spec = {"user_review_needed": False,
             "options": [{"label": "Recent orders", "tables": [{"source_id": "warehouse", "table_key": "public.orders"}]}]}
+    if not include_review_flag:
+        spec.pop("user_review_needed")
     with patch("data_formulator.data_connector.resolve_live_loader", return_value=loader):
         if through_agent:
             from data_formulator.analyst.agent import AnalystAgent
             analyst = AnalystAgent(client=None, workspace=workspace)
             analyst._run_payload = {"input_tables": [], "conversation_id": "conversation-1"}
             generator = analyst._dispatch_skill_action("workspace", "propose_data_operation", spec, [], 1, [])
-            events = [next(generator)]
+            events = [next(generator) for _ in range(3)]
             with pytest.raises(StopIteration) as stopped:
                 next(generator)
             assert stopped.value.value
@@ -393,22 +408,24 @@ def test_unambiguous_load_executes_without_review_or_narration(tmp_path: Path, t
             assert analyst._run_payload["workspace_inputs"].inputs
         else:
             events = list(skill.handle_action("propose_data_operation", spec, _context(workspace)))
-    assert [event["type"] for event in events] == ["data_operation_result"]
-    operation = events[0]["operation"]
+    assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result"]
+    operation = events[-1]["operation"]
     assert operation["status"] == "loaded"
     assert operation["result_table_ids"]
     assert workspace.list_tables()
     loader.fetch_data_as_arrow.assert_called_once()
 
 
-def test_multiple_load_options_still_require_review(tmp_path: Path) -> None:
+@pytest.mark.parametrize("include_review_flag", [False, True])
+def test_multiple_load_options_still_require_review(tmp_path: Path, include_review_flag: bool) -> None:
     _save_orders_catalog(tmp_path)
     skill = build_registry().get_skill("workspace")
     option = {"label": "Recent orders", "tables": [{"source_id": "warehouse", "table_key": "public.orders"}]}
+    spec = {"response": "Which scope should I use?", "options": [option, option]}
+    if include_review_flag:
+        spec["user_review_needed"] = False
     with patch("data_formulator.data_connector.resolve_live_loader") as loader:
-        events = list(skill.handle_action("propose_data_operation", {
-            "user_review_needed": False, "response": "Which scope should I use?", "options": [option, option],
-        }, _context(_Workspace(tmp_path))))
+        events = list(skill.handle_action("propose_data_operation", spec, _context(_Workspace(tmp_path))))
     assert events[0]["type"] == "interact"
     loader.assert_not_called()
 
@@ -429,6 +446,7 @@ def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:
     events = list(skill.handle_action(
         "propose_data_operation",
         {
+            "user_review_needed": True,
             "response": "terse fallback",
             "options": [{
                 "label": "Recent orders",
@@ -464,6 +482,7 @@ def test_proposal_does_not_require_plan_descriptions(tmp_path: Path) -> None:
     events = list(skill.handle_action(
         "propose_data_operation",
         {
+            "user_review_needed": True,
             "response": "I found recent orders that can support the requested analysis.",
             "options": [{
                 "label": "Recent orders",
@@ -495,6 +514,7 @@ def test_minimal_proposal_resolves_table_fields_from_catalog(tmp_path: Path) -> 
     events = list(skill.handle_action(
         "propose_data_operation",
         {
+            "user_review_needed": True,
             "response": "I found the orders table needed for this analysis.",
             "options": [{
                 "label": "Load orders",
@@ -517,7 +537,7 @@ def test_minimal_proposal_resolves_table_fields_from_catalog(tmp_path: Path) -> 
     )
     assert stored is not None
     step = stored.plans[0].steps[0]
-    assert step.display_name == "Orders"
+    assert step.display_name == "Load orders"
     assert step.source_table == "public.orders"
     assert step.query.limit == 500
 
@@ -530,6 +550,7 @@ def test_canonical_proposal_does_not_add_canvas_prose(tmp_path: Path) -> None:
     events = list(skill.handle_action(
         "propose_data_operation",
         {
+            "user_review_needed": True,
             "response": "I found recent orders that match the request.",
             "options": [{
                 "label": "Recent orders",

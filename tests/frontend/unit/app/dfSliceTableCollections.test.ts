@@ -37,6 +37,29 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it("tracks concurrent pending table loads and clears only the settled request", () => {
+    const pending = (requestId: string) => ({ type: 'dataFormulator/loadTable/pending',
+      meta: { requestId, arg: { table: sourceTable } } });
+    let state = dataFormulatorReducer(undefined, pending('first'));
+    state = dataFormulatorReducer(state, pending('second'));
+    expect(state.pendingTableLoads).toEqual([
+      { id: 'first', names: ['Orders'] }, { id: 'second', names: ['Orders'] },
+    ]);
+    state = dataFormulatorReducer(state, { type: 'dataFormulator/loadTable/rejected', meta: { requestId: 'first' } });
+    expect(state.pendingTableLoads).toEqual([{ id: 'second', names: ['Orders'] }]);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState(state)).pendingTableLoads).toEqual([]);
+    state = dataFormulatorReducer(state, { type: 'dataFormulator/loadTable/fulfilled', meta: { requestId: 'second' } });
+    expect(state.pendingTableLoads).toEqual([]);
+  });
+
+  it("cleans up agent loading entries independently", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.startTableLoad({ id: 'agent', names: ['Reviews'] }));
+    state = dataFormulatorReducer(state, dfActions.startTableLoad({ id: 'agent', names: ['Scoped reviews'] }));
+    expect(state.pendingTableLoads).toEqual([{ id: 'agent', names: ['Scoped reviews'] }]);
+    state = dataFormulatorReducer(state, dfActions.finishTableLoad('agent'));
+    expect(state.pendingTableLoads).toEqual([]);
+  });
+
   it("stores file results separately and updates revisions without moving the node", () => {
     const file = { kind: "file" as const, id: "file-result", path: "scratch/cpi.parquet",
       displayName: "CPI Summary", contentHash: "v1", parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 };

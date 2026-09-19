@@ -69,6 +69,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         ]
 
     AUTH_GUIDE = "local_folder.md"
+    QUERY_EXECUTION = "local_file_scan"
 
     @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:
