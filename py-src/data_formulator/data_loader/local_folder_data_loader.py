@@ -117,6 +117,9 @@ class LocalFolderDataLoader(ExternalDataLoader):
         path=[] → list top-level folders and files.
         path=["subfolder"] → list contents of subfolder.
         """
+        if self._jail is None:
+            self._jail = ConfinedDir(self.root_dir, mkdir=False)
+
         path = path or []
         eff = self.effective_hierarchy()
         if len(path) >= len(eff):
@@ -173,6 +176,9 @@ class LocalFolderDataLoader(ExternalDataLoader):
 
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         """Get detailed metadata for a single file, including sample rows."""
+        if self._jail is None:
+            self._jail = ConfinedDir(self.root_dir, mkdir=False)
+
         if not path:
             return {}
         try:
