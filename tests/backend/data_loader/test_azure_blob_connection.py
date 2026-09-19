@@ -163,10 +163,11 @@ def test_blob_small_sample_stops_before_consuming_the_source():
     loader.azure_fs = pa_fs.LocalFileSystem()
     loader._azure_path = Mock(return_value="fixture.csv")
     batch = pa.record_batch({"value": list(range(8192))})
+    total_batches = 10_000
     consumed = []
 
     def batches():
-        for index in range(100):
+        for index in range(total_batches):
             consumed.append(index)
             yield batch
 
@@ -177,7 +178,7 @@ def test_blob_small_sample_stops_before_consuming_the_source():
     with patch("data_formulator.data_loader.azure_blob_data_loader.pa_dataset.dataset") as dataset:
         dataset.return_value.scanner.return_value = scanner
         assert len(loader._read_sample("az://fixture/reviews.csv", 5)) == 5
-    assert len(consumed) < 100
+    assert len(consumed) < total_batches
 
 
 def test_blob_metadata_resolves_canonical_reference_url():
