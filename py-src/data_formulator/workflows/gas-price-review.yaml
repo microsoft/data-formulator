@@ -1,0 +1,144 @@
+version: 1
+name: Fuel Price Trends
+overview: Explore historical fuel-price swings, the premium-grade surcharge, and recurring seasonal patterns with three verified charts.
+parameters:
+  - name: time_range
+    label: Time range
+    type: select
+    options: [Latest five complete years, Latest three complete years, All available years]
+    default: Latest five complete years
+    allow_custom: true
+    description: Historical dates within the sample, not live prices.
+prompt: >-
+  Apply the confirmed time_range to the analysis and seasonal comparisons;
+  the five-year window below is the default only.
+  Turn the Weekly Gas Price example into a historical US fuel-price briefing.
+  Default to the latest five complete calendar years in the sample, using the
+  latest available weekly observation separately for the headline snapshot.
+  Honor an explicitly requested time range after checking coverage. Anchor all
+  dates to the data, not today. This is a historical sample, not live pump prices,
+  a forecast, or a regional comparison. Build three native charts progressively
+  and a concise report. Use visualize directly on raw inputs; its derived tables
+  should retain the supporting calculations. Do not stage chart inputs with
+  separate create_data calls. Preserve raw data and previous runs' outputs.
+  This is a ready-to-run demo bound to the named sample below. Use its supplied
+  source context and defaults without asking the user to confirm units,
+  provenance, date choices, or permission to continue. Still inspect actual data
+  and pause for inaccessible inputs, missing required fields, conflicting data,
+  or insufficient coverage. Do not apply these conventions to a substituted dataset.
+source: >-
+  Discover the built-in Sample Datasets source and Weekly Gas Price dataset.
+  Import its full Weekly Gas Price table (often named weekly_gas_prices after
+  loading) with one grounded proposal and
+  user_review_needed false, or inspect and reuse the same raw workspace input.
+  Expected fields are date, fuel, grade, formulation, and price; verify actual
+  names and category values. Curated source context for this exact sample:
+  TidyTuesday's 2025-07-01 Weekly US Gas Prices dataset, sourced from the U.S.
+  Energy Information Administration (EIA). The price field is the average US
+  retail price per gallon in US dollars; use nominal, not inflation-adjusted,
+  dollars. These are national series, not regional observations. Diesel's
+  formulation is inapplicable and is encoded as NA or null. Reference:
+  https://github.com/rfordatascience/tidytuesday/blob/main/data/2025/2025-07-01/readme.md
+  and original series source https://www.eia.gov/petroleum/gasdiesel/.
+  Cite these references in the report without claiming to have fetched them
+  during this run. Missing units or provenance in the catalog's short description
+  is not a blocker: use this supplied context. No separate metadata lookup or
+  user confirmation is required unless observed metadata contradicts it.
+  Public sample access may require network availability but no
+  credentials or terminal commands. If unavailable, request the exact sample
+  rather than inventing observations or loading a saved derived demo table.
+deliverables:
+  - A native Line Chart comparing regular gasoline and diesel prices over the review window.
+  - A native Line Chart of premium-minus-regular gasoline price per gallon, retaining matched prices and percentage premiums in its derived table.
+  - A native Line Chart of monthly seasonal indices by fuel, retaining year-level indices and observation counts in its derived table.
+  - A concise report embedding all three returned chart IDs with dated findings, exclusions, and source limitations.
+steps:
+  - id: prepare
+    description: Choose comparable fuel series and a well-covered historical window.
+    instructions: >-
+      Inspect the full sample's dates, units, nulls, fuel/grade/formulation values,
+      and duplicate date-fuel-grade-formulation keys. Select gasoline regular and
+      premium with formulation all, plus diesel grade all. Diesel formulation
+      is NA in the sample and may parse as null; it is an inapplicable category,
+      not a missing price. Inspect and retain it explicitly rather than dropping
+      diesel during grouping. Never average aggregate categories with their
+      constituents. Use the supplied EIA/TidyTuesday context to establish nominal
+      US dollars per gallon; record that context alongside observed schema and
+      coverage evidence. Do not ask for unit confirmation merely because catalog
+      metadata omits it. Pause if the loaded source contradicts this context.
+      Exclude nonpositive or missing
+      prices and disclose counts. A complete review year must have at least 48
+      distinct observed weeks and every calendar month represented for all three
+      series. Use the latest five such years; if fewer exist, use those available
+      and state the count. Stop for conflicting duplicates or fewer than two
+      eligible years. Keep gaps missing and record the latest common date for the
+      separate snapshot. List excluded years and dates.
+    checkers:
+      - id: comparable_inputs
+        condition: Selected categories are nonoverlapping, units and unique keys are verified, coverage and exclusions are reported, and at least two eligible years exist.
+        on_fail: prepare
+    next: trends
+  - id: trends
+    description: Compare fuel-price swings without mixing overlapping categories.
+    instructions: >-
+      Use visualize to publish a Line Chart of observed weekly regular gasoline
+      and diesel prices over the selected years, date on x, dollars per gallon on
+      y, fuel as color. Keep missing weeks as gaps; no imputation. Name the chart
+      with its historical window. Independently calculate each series' minimum,
+      maximum, peak date, and latest common-date price from raw observations.
+      Distinguish the snapshot date from the complete-year analysis window.
+    checkers:
+      - id: fuel_trend_math
+        condition: Chart values match the two selected raw series, peaks and dates reconcile, and no grade or formulation averages create duplicate weighting.
+        on_fail: trends
+    next: premium
+  - id: premium
+    description: Measure how much more premium gasoline costs on matched dates.
+    instructions: >-
+      Join premium and regular gasoline one-to-one on date with formulation all.
+      Compute premium_gap = premium_price - regular_price and percentage_premium
+      = 100 * premium_gap / regular_price. Publish a Line Chart of the dollar gap
+      through the review window. Retain both raw prices, units, full-precision
+      gaps, and percentages in the chart's derived table. Report the latest
+      common-date gap separately and the review-window median and maximum gap.
+      Do not treat the surcharge as evidence of fuel economy, quality benefits,
+      or a recommendation to switch grades. Disclose unmatched dates.
+    checkers:
+      - id: premium_math
+        condition: Every difference uses same-date same-formulation observations with positive regular-price denominators, and reported gap statistics independently reconcile.
+        on_fail: premium
+    next: seasonality
+  - id: seasonality
+    description: Look for recurring seasonal patterns while separating annual price levels.
+    instructions: >-
+      For regular gasoline and diesel in each eligible year, compute each month's
+      arithmetic mean of observed weekly prices. Compute that year's baseline as
+      the equal-weight mean of its twelve monthly means, then monthly_index =
+      100 * monthly_mean / annual_baseline. Average each calendar month's index
+      equally across eligible years. Publish a Line Chart with months ordered
+      January through December and fuel as color. Retain monthly prices, weekly
+      counts, year-level indices, annual baselines, and contributing year counts
+      in the derived table. These are descriptive sample patterns, not forecasts
+      or inflation-adjusted prices. Do not claim a causal seasonal mechanism.
+    checkers:
+      - id: seasonal_math
+        condition: Each eligible fuel-year has twelve months, its mean monthly index is 100, years receive equal weight, month ordering is correct, and chart means reconcile independently.
+        on_fail: seasonality
+    next: brief
+  - id: brief
+    description: Deliver a short fuel-price briefing with reproducible findings.
+    instructions: >-
+      Write a report embedding the three actual chart IDs. Give the sample's
+      as-of date, analysis years, latest comparable prices and premium gap,
+      peak observations, and strongest descriptive seasonal differences. State
+      all category filters, units, missing-data exclusions, and the difference
+      between historical observations and current prices. After publishing the
+      report, run an independent verification script against raw inputs and all
+      final derived tables; verify headline numbers and embedded chart IDs.
+      Preserve still-valid earlier checks; rerun only invalidated checks. Record
+      the final checker using post-publication evidence and complete_workflow
+      only after accounting for all four deliverables.
+    checkers:
+      - id: fuel_final_delivery
+        condition: Three distinct native charts and their supporting data exist, report references and numerical claims match final outputs, and successful independent verification ran after the report.
+        on_fail: brief

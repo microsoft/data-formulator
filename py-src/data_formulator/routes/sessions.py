@@ -126,6 +126,7 @@ def list_sessions():
             entry["table_count"] = w["table_count"]
         if w.get("chart_count") is not None:
             entry["chart_count"] = w["chart_count"]
+        entry["source_ids"] = w.get("source_ids", [])
         sessions.append(entry)
     return json_ok({"sessions": sessions})
 

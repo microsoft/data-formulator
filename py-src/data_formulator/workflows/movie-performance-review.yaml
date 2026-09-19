@@ -1,0 +1,159 @@
+version: 1
+name: Movie Budgets, Revenue, and Ratings
+overview: Investigate movie economics and audience reception through budget comparisons, genre distributions, and critic-versus-audience ratings.
+parameters:
+  - name: release_years
+    label: Release years
+    type: text
+    default: All available years
+    description: A year or range within the historical sample.
+  - name: focus
+    label: Report focus
+    type: select
+    options: [Balanced overview, Budgets and box office, Critic and audience ratings]
+    default: Balanced overview
+    allow_custom: true
+prompt: >-
+  Apply the confirmed release_years after checking coverage. Use the selected
+  focus to guide the report emphasis while retaining all three chart deliverables.
+  Rework the Movies example into an exploratory briefing about budgets, box
+  office, and reception. Use the historical sample as supplied, not current
+  releases or a representative census of movies. Default to all observed release
+  years; honor a requested genre or date range only after checking coverage.
+  Publish three complementary native charts progressively and a concise report.
+  Gross revenue is not studio revenue or profit. Production budgets omit
+  marketing, distribution, financing, and revenue sharing. Never label a gross
+  multiple ROI, profit, or break-even. Relationships are observational, not causal.
+  Use visualize directly on raw inputs and retain supporting fields in its
+  derived tables, without separate create_data staging. Keep raw data and prior
+  outputs unchanged. Do not inflation-adjust nominal dollars without a verified
+  compatible price index; disclose cross-year comparability limitations instead.
+  This is a ready-to-run demo bound to the named Vega sample below. Use the
+  supplied demo conventions and default full-sample scope without asking for
+  routine confirmation of currency, score scales, dates, or permission to
+  continue. Missing descriptive metadata and documented date anomalies are
+  caveats, not blockers. Pause for unavailable data, missing required fields,
+  conflicting source definitions, or insufficient eligible observations.
+source: >-
+  Discover the built-in Sample Datasets source and Movies dataset (the Vega
+  movies sample, not Netflix). Import the full table with one grounded proposal
+  and user_review_needed false, or inspect and reuse its raw workspace table.
+  Expected fields include Title, Production Budget, Worldwide Gross, Release
+  Date, Major Genre, Rotten Tomatoes Rating, IMDB Rating, and IMDB Votes. Verify
+  actual schema. The exact sample is distributed by Vega Datasets at
+  https://github.com/vega/vega-datasets/blob/main/data/movies.json.
+  For this demo, interpret Production Budget, US Gross, and Worldwide Gross as
+  nominal US dollar amounts as supplied, Rotten Tomatoes Rating on 0-100, and
+  IMDB Rating on 0-10. Worldwide Gross includes US Gross; it is not profit.
+  These conventions belong to this specific demo, not arbitrary replacement
+  data. Use them when the catalog description lacks currency or score units;
+  do not request routine confirmation. Cite Vega Datasets as the sample
+  distributor, without inventing collection dates, original collection methods,
+  or a claim that the reference was fetched during the run. If observed source
+  definitions conflict with these conventions, ask rather than overriding them.
+  The public sample needs no credentials
+  or terminal commands. If unavailable, request the exact sample rather than
+  fabricating observations or using the saved demo's derived tables.
+deliverables:
+  - A native Scatter Plot of production budget versus worldwide gross with movie titles, release years, genres, and gross multiples in its derived table.
+  - A native Boxplot comparing worldwide-gross-to-budget multiples across sufficiently represented genres, retaining movie-level data and sample counts.
+  - A native Scatter Plot comparing critic and audience ratings on a common 0-100 display scale, retaining original scores and vote counts.
+  - A concise report embedding all three returned chart IDs with numerical findings, sample sizes, exclusions, and economic limitations.
+steps:
+  - id: prepare
+    description: Establish valid movie cohorts and document missing or ambiguous records.
+    instructions: >-
+      Inspect full row counts and field types, apply the supplied demo currency
+      and score conventions, and inspect release-date
+      range, genre labels, score ranges, and missingness. Parse dates explicitly;
+      exclude unparseable dates when applying a requested period and report them.
+      Flag implausible release dates, including dates after the run date, as
+      ambiguous; the sample contains possible century errors. Do not silently
+      subtract 100 years or use ambiguous dates as the report's as-of date.
+      Keep otherwise valid observations in undated economics/ratings analyses,
+      but exclude them from date-filtered cohorts and list the affected titles.
+      Treat non-string or empty titles as missing. Remove exact duplicate rows
+      only, reporting counts; do not collapse remakes or distinct rows sharing a
+      title. Define the economics cohort using positive observed Production
+      Budget and Worldwide Gross, and the ratings cohort using observed Rotten
+      Tomatoes scores in 0-100 and IMDB scores in 0-10. Reject out-of-range scores;
+      preserve missing values rather than replacing them with zero. Use separate
+      cohorts so missing budgets do not remove otherwise valid ratings. Report
+      exclusion counts separately for each criterion and cohort. Ask for help if
+      fewer than 20 eligible movies remain in either analysis cohort.
+    checkers:
+      - id: movie_cohorts
+        condition: Field units and score ranges are established, duplicate handling and exclusion counts are explicit, and economics and ratings cohorts have valid denominators and sufficient observations.
+        on_fail: prepare
+    next: economics
+  - id: economics
+    description: Compare budgets and box office without mistaking revenue for profit.
+    instructions: >-
+      Publish a Scatter Plot of Production Budget on x and Worldwide Gross on y,
+      both labeled nominal dollars; use logarithmic scales if supported by the
+      chart configuration and clearly label them, otherwise use linear scales
+      and describe skew. Color by Major Genre, retaining unknown genres as
+      Unknown, and keep Title and release year available for inspection. Retain
+      worldwide_gross / production_budget as gross_multiple. Do not add US Gross
+      to Worldwide Gross because domestic receipts are already included. Identify
+      the highest worldwide grosses and highest multiples separately. Retain
+      outliers and describe their influence; do not silently clip or winsorize.
+    checkers:
+      - id: movie_economics_math
+        condition: Each plotted point maps to an eligible movie, gross multiples use positive budgets, domestic revenue is not double-counted, and cited outliers reconcile to source rows.
+        on_fail: economics
+    next: genres
+  - id: genres
+    description: Compare genre distributions rather than ranking a few blockbuster averages.
+    instructions: >-
+      Using movie-level economics data, include known genres with at least 20
+      eligible movies. Publish a Boxplot of gross_multiple by genre, ordered by
+      median where supported, with outliers retained. Compute genre sample size,
+      median, 25th and 75th percentiles, and share with worldwide gross exceeding
+      production budget. Label that share literally, never profitable share.
+      Retain the movie-level values and group counts in the derived table. State
+      the percentile method and list excluded small-sample genres and Unknown.
+      If fewer than two eligible genres exist, ask whether to broaden scope
+      rather than quietly lowering the threshold. Explain selection bias and
+      nominal-dollar comparisons across release years.
+    checkers:
+      - id: movie_genre_math
+        condition: Every displayed genre has at least 20 valid movies, boxplot distributions and medians reconcile to movie-level ratios, and threshold shares are not described as profitability.
+        on_fail: genres
+    next: reception
+  - id: reception
+    description: Examine where critics and audiences agree or diverge in this sample.
+    instructions: >-
+      Publish a Scatter Plot with Rotten Tomatoes Rating on x and 10 times IMDB
+      Rating on y, both displayed on 0-100 scales. Retain original ratings, title,
+      release year, genre, and IMDB Votes. A shared display scale does not make
+      the rating systems equivalent. Compute paired sample size and Spearman
+      correlation using observed pairs. List five largest absolute display-scale
+      gaps only among movies with at least 1000 observed IMDB votes, reporting
+      both original ratings and vote counts. If fewer than five qualify, report
+      those available. Do not invent critic vote counts or infer that ratings
+      cause commercial performance. Report an undefined correlation honestly if
+      either score has no variation.
+    checkers:
+      - id: movie_rating_math
+        condition: Rescaling is exactly ten times IMDB, correlation uses complete observed pairs, highlighted gaps satisfy the vote filter, and original score meanings remain explicit.
+        on_fail: reception
+    next: brief
+  - id: brief
+    description: Summarize defensible findings and what the movie sample cannot establish.
+    instructions: >-
+      Write a concise report embedding all three returned chart IDs. Include
+      observed release years, cohort and genre counts, budget/gross outliers,
+      genre median differences, and critic/audience association. Explain missing
+      budgets, sample selection, unadjusted nominal dollars, rating-system
+      differences, and why gross multiples are not profitability. After writing
+      the report, run an independent verification script against raw rows and
+      all final derived tables, checking cohorts, ratios, quartiles, ratings,
+      headline numbers, and chart references. Preserve still-valid earlier
+      checks; rerun invalidated checks only. Record the final checker with
+      post-publication evidence and account for every deliverable before
+      complete_workflow.
+    checkers:
+      - id: movie_final_delivery
+        condition: Three distinct native charts and a report exist, all references and headline calculations reconcile to final outputs, limitations are explicit, and independent verification ran after the report.
+        on_fail: brief

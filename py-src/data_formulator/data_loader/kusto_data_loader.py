@@ -20,7 +20,7 @@ from data_formulator.data_loader.external_data_loader import ExternalDataLoader,
 from data_formulator.data_loader import probe_utils
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRequestProperties
-from azure.kusto.data.helpers import dataframe_from_result_table
+from azure.kusto.data.helpers import dataframe_from_result_table, parse_float
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +117,12 @@ class KustoDataLoader(ExternalDataLoader):
                 "required_fields": [],
                 "kind": "ambient",
                 "default": not microsoft_sign_in,
+                "cli_login": {
+                    "provider": "azure",
+                    "label": "Sign in with Azure CLI",
+                    "status_url": "/api/local/azure-status",
+                    "login_url": "/api/local/azure-login",
+                },
             },
             {
                 "id": "service_principal",
@@ -158,6 +164,7 @@ class KustoDataLoader(ExternalDataLoader):
         }
 
     AUTH_GUIDE = "kusto.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -320,7 +327,10 @@ class KustoDataLoader(ExternalDataLoader):
             properties.set_option("notruncation", True)
         result = self.client.execute(self.kusto_database, kql, properties)
         logger.info(f"Query executed successfully, returning results.")
-        df = dataframe_from_result_table(result.primary_results[0])
+        df = dataframe_from_result_table(
+            result.primary_results[0],
+            converters_by_type={"float": lambda column, frame: parse_float(frame, column)},
+        )
         
         # Convert datetime columns properly
         df = self._convert_kusto_datetime_columns(df)
@@ -389,6 +399,9 @@ class KustoDataLoader(ExternalDataLoader):
             segments.append(f"top {size} by {order_expr}")
         else:
             segments.append(f"take {size}")
+
+        if opts.get("columns"):
+            segments.append("project " + ", ".join(self._kql_ident(column) for column in opts["columns"]))
 
         kql_query = "\n| ".join(segments)
 
@@ -595,20 +608,15 @@ class KustoDataLoader(ExternalDataLoader):
         return parts
 
     def _resolve_source_table(self, source_table: str) -> tuple[str | None, str]:
-        """Parse a source_table identifier into ``(database, table)``.
+        """Preserve literal table names in a pinned database.
 
-        Cross-database catalog entries are ``"database.table"`` and must be
-        split even when a database is pinned — otherwise the whole identifier
-        gets bracket-quoted (``['db.table']``) and Kusto reads it as a single
-        table literally named with a dot. A bare identifier uses the pinned
-        database when available. Returns ``(database_or_None, table)``; when
-        *database* is ``None`` the caller should use the connect-time database.
+        Only legacy unpinned catalogs use database-qualified source names.
         """
-        parts = source_table.split(".")
-        if len(parts) >= 2:
-            return parts[0], ".".join(parts[1:])
         if self.kusto_database:
             return self.kusto_database, source_table
+        if "." in source_table:
+            database, table = source_table.split(".", 1)
+            return database, table
         return None, source_table
 
     @classmethod

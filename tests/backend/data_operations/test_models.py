@@ -125,6 +125,12 @@ def test_load_query_rejects_multiple_order_clauses() -> None:
         ))
 
 
+@pytest.mark.parametrize("field", ["group_by", "aggregates", "sql"])
+def test_load_query_rejects_unsupported_fields_instead_of_loading_wrong_data(field):
+    with pytest.raises(ValueError, match="use probe_data"):
+        LoadQuery.from_dict({field: [], "limit": 10})
+
+
 def test_nested_filter_values_cannot_change_after_hashing() -> None:
     source_value = {"regions": ["west", "east"]}
     step = ConnectorQueryStep(

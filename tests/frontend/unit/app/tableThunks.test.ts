@@ -38,6 +38,22 @@ describe('buildDictTableFromWorkspace', () => {
         source_type: 'data_loader',
     };
 
+    it.each(['agent', 'user', undefined])('uses the table name as its generic display fallback (%s)', origin => {
+        const result = buildDictTableFromWorkspace({ ...baseTable, origin, original_name: 'Weekly Orders' }, undefined);
+        expect(result.displayId).toBe('orders');
+        expect(result.id).toBe('orders');
+        expect(result.virtual?.tableId).toBe('orders');
+        expect(buildDictTableFromWorkspace({ ...baseTable, origin }, undefined).displayId).toBe('orders');
+    });
+
+    it('keeps an uploaded filename separate from the table display title', () => {
+        const result = buildDictTableFromWorkspace({ ...baseTable, source_type: 'upload',
+            source_filename: 'orders-export.xlsx', original_name: 'Weekly Orders' }, undefined);
+        expect(result.displayId).toBe('orders');
+        expect(result.source?.fileName).toBe('orders-export.xlsx');
+        expect(result.virtual?.tableId).toBe('orders');
+    });
+
     it('preserves column descriptions in metadata', () => {
         const result = buildDictTableFromWorkspace(baseTable, undefined);
         expect(result.metadata['order_id'].description).toBe('Primary key');

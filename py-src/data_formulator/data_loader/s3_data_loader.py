@@ -20,6 +20,8 @@ class S3DataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Amazon S3"
     DESCRIPTION = "Load CSV, JSON, or Parquet files from an Amazon S3 bucket."
 
+    IDENTITY_PARAMS = ("bucket",)
+
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
@@ -60,6 +62,7 @@ class S3DataLoader(ExternalDataLoader):
         return "default_credentials"
 
     AUTH_GUIDE = "s3.md"
+    QUERY_EXECUTION = "remote_file_scan"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

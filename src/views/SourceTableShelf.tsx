@@ -26,6 +26,7 @@ import {
     Popper,
     Switch,
     TextField,
+    Tooltip,
     Typography,
     SxProps,
     useTheme,
@@ -33,7 +34,7 @@ import {
 import { alpha } from '@mui/material/styles';
 
 import AddIcon from '@mui/icons-material/Add';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -47,11 +48,15 @@ import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { DictTable } from '../components/ComponentType';
-import { deleteWorkspace } from '../app/workspaceService';
+import {
+    deleteWorkspace,
+    deleteWorkspaceFile,
+    type WorkspaceFile,
+} from '../app/workspaceService';
 import { useDataRefresh } from '../app/useDataRefresh';
 import { ViewBorderStyle } from '../app/tokens';
 import { StreamIcon, TableIcon } from '../icons';
-import { buildTableCard } from './DataThreadCards';
+import { ArtifactMenuButton, buildTableCard, ThreadArtifactCard } from './DataThreadCards';
 import { RefreshDataDialog } from './RefreshDataDialog';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { iconVar, textVar } from '../app/layout';
@@ -381,11 +386,13 @@ const RenameTablePopup = memo<{
 export const SourceTableShelf: FC<{
     /** The workspace input tables, in display order, materialized for the cards. */
     inputTables: DictTable[];
+    /** Persisted uploads that were not converted into tables. */
+    workspaceFiles: WorkspaceFile[];
     /** Tables highlighted by the current focus (computed once in DataThread). */
     highlightedTableIds: string[];
     focusedTableId?: string;
     sx?: SxProps;
-}> = function ({ inputTables, highlightedTableIds, focusedTableId, sx }) {
+}> = function ({ inputTables, workspaceFiles, highlightedTableIds, focusedTableId, sx }) {
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -393,8 +400,10 @@ export const SourceTableShelf: FC<{
     const { manualRefresh } = useDataRefresh();
 
     const tables = useSelector(dfSelectors.getAllTables);
-    const inferredTableNames = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
+    const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
 
     const [sectionExpanded, setSectionExpanded] = useState(true);
     const [expanded, setExpanded] = useState(false);
@@ -408,6 +417,12 @@ export const SourceTableShelf: FC<{
     // Table menu state
     const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
     const [selectedTableForMenu, setSelectedTableForMenu] = useState<DictTable | null>(null);
+    const [fileMenuAnchorEl, setFileMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [selectedArtifactForMenu, setSelectedArtifactForMenu] = useState<{
+        remove: () => void;
+        removeLabel: string;
+    } | null>(null);
+    const [deletingFileName, setDeletingFileName] = useState<string | null>(null);
 
     // Refresh data dialog state
     const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
@@ -465,6 +480,31 @@ export const SourceTableShelf: FC<{
     const handleCloseTableMenu = () => {
         setTableMenuAnchorEl(null);
         setSelectedTableForMenu(null);
+    };
+
+    const handleCloseFileMenu = () => {
+        setFileMenuAnchorEl(null);
+        setSelectedArtifactForMenu(null);
+    };
+
+    const handleDeleteFile = async (workspaceFile: WorkspaceFile) => {
+        setDeletingFileName(workspaceFile.name);
+        try {
+            await deleteWorkspaceFile(workspaceFile.name);
+            dispatch(dfActions.removeFileNodes(workspaceFile.name));
+        } catch (error) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: t('dataThread.workspace', { defaultValue: 'Workspace' }),
+                value: t('dataThread.failedDeleteFile', {
+                    name: workspaceFile.name,
+                    defaultValue: `Failed to delete ${workspaceFile.name}`,
+                }),
+            }));
+        } finally {
+            setDeletingFileName(null);
+        }
     };
 
     const handleOpenRefreshDialog = (table: DictTable) => {
@@ -649,7 +689,6 @@ export const SourceTableShelf: FC<{
                 {buildTableCard({
                     tableId: tbl.id,
                     tables,
-                    inferredDisplayName: inferredTableNames.find(info => info.tableId === tbl.id)?.displayName,
                     // The shelf never shows artifacts — charts live in the thread
                     // started from the table.
                     chartElements: [],
@@ -662,20 +701,112 @@ export const SourceTableShelf: FC<{
                     collapsed: false,
                     dispatch,
                     handleOpenTableMenu,
-                    primaryBgColor: theme.palette.primary.bgcolor,
                     t,
                     showOriginalName: true,
                 })}
             </Box>
         </Box>;
-    }), [visibleTables, tables, inferredTableNames, highlightedTableIds, focusedTableId, theme, t]);
+    }), [visibleTables, tables, highlightedTableIds, focusedTableId, theme, t]);
 
-    return <Box sx={{
+    const workspaceArtifacts = [...workspaceFiles.map(workspaceFile => {
+        const fileName = workspaceFile.temporary ? workspaceFile.name.replace(/^scratch\//, '') : workspaceFile.name;
+        return {
+            key: `workspace-file-${workspaceFile.name}`,
+            artifactType: 'file' as const,
+            title: workspaceFile.display_name || fileName,
+            notes: workspaceFile.display_name && workspaceFile.display_name !== fileName ? fileName : undefined,
+            selected: focusedId?.type === 'file' && focusedId.fileName === workspaceFile.name,
+            deleting: deletingFileName === workspaceFile.name,
+            open: () => dispatch(dfActions.setFocused({ type: 'file', fileName: workspaceFile.name })),
+            remove: () => { void handleDeleteFile(workspaceFile); },
+            removeLabel: t('dataThread.deleteFile', { defaultValue: 'Delete file' }),
+        };
+    }), ...(externalReferences || []).map(reference => {
+        let title = reference.displayName || reference.sourceTable.name;
+        if (title === reference.sourceTable.name) {
+            try { title = new URL(title).pathname || title; } catch {}
+            title = title.split(/[\\/]/).filter(Boolean).pop() || reference.sourceTable.name;
+        }
+        return {
+            key: reference.id,
+            artifactType: 'table' as const,
+            title,
+            notes: reference.sourceTable.name !== title ? reference.sourceTable.name : undefined,
+            selected: focusedId?.type === 'external-table' && focusedId.referenceId === reference.id,
+            deleting: false,
+            open: () => dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id })),
+            remove: () => { dispatch(dfActions.removeExternalTableReference(reference.id)); },
+            removeLabel: t('externalReference.remove', { defaultValue: 'Remove reference' }),
+        };
+    })];
+
+    const artifactCards = workspaceArtifacts.map(artifact => {
+        return (
+        <Box key={artifact.key} sx={{ display: 'flex', flexDirection: 'row' }}>
+            <Box sx={{
+                width: GUTTER_WIDTH, flexShrink: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+            }}>
+                <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                <Box sx={{ flexShrink: 0, zIndex: 1, bgcolor: 'white', display: 'flex' }}>
+                    {artifact.artifactType === 'table'
+                        ? <TableIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.15)' }} />
+                        : <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.35)' }} />}
+                </Box>
+                <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: GUTTER_GAP, pr: CARD_INSET_RIGHT }}>
+                <Box sx={{ width: '100%', minWidth: 0,
+                    ...(artifact.deleting ? {
+                        opacity: 0.55, '& .artifact-actions': { opacity: 1 },
+                    } : {}),
+                }}>
+                <ThreadArtifactCard
+                    artifactType={artifact.artifactType}
+                    title={artifact.title}
+                    notes={artifact.artifactType === 'table' ? undefined : artifact.notes}
+                    selected={artifact.selected}
+                    onClick={artifact.open}
+                    actions={artifact.deleting ? (
+                        <Box sx={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <CircularProgress size={16} />
+                        </Box>
+                    ) : (
+                        <ArtifactMenuButton
+                            tooltip={t('dataThread.moreOptions')}
+                            label={t('dataThread.fileActions', {
+                                name: artifact.title,
+                                defaultValue: `Actions for ${artifact.title}`,
+                            })}
+                            onClick={anchorEl => {
+                                setSelectedArtifactForMenu(artifact);
+                                setFileMenuAnchorEl(anchorEl);
+                            }}
+                        />
+                    )}>
+                    {artifact.artifactType === 'table' ? <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.sm, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{artifact.title}</Typography>
+                        <Tooltip title={artifact.notes || artifact.title}>
+                            <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', opacity: 0.75, fontWeight: 400, flexShrink: 0 }}>{t('externalReference.virtualNote', { defaultValue: '(virtual)' })}</Typography>
+                        </Tooltip>
+                    </Box> : undefined}
+                </ThreadArtifactCard>
+                </Box>
+            </Box>
+        </Box>
+    );
+    });
+
+    return <Box data-thread-shelf sx={{
         ...sx,
         '& .selected-card': {
             boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
             borderColor: 'transparent',
             margin: '1px 0',
+        },
+        '& .selected-artifact-card': {
+            boxShadow: '0 0 0 2px var(--artifact-selection-color)',
+            borderColor: 'transparent',
         },
         padding: '6px',
     }}>
@@ -690,7 +821,7 @@ export const SourceTableShelf: FC<{
                     textTransform: 'uppercase', letterSpacing: '0.02em',
                     color: 'rgba(0,0,0,0.55)',
                 }}>
-                    {t('dataThread.dataSources', { defaultValue: 'Data sources' })}
+                    {t('dataThread.workspace', { defaultValue: 'Workspace' })}
                 </Typography>
                 <IconButton
                     size="small"
@@ -717,6 +848,28 @@ export const SourceTableShelf: FC<{
                         `cards` memo), so the rail is punctuated exactly like a thread's
                         timeline rather than running as one long stroke. */}
                     {cards}
+                    {artifactCards}
+                    {pendingTableLoads.flatMap(load => load.names.map((name, index) => (
+                        <Box key={`${load.id}-${index}`} role="status" aria-label={t('dataThread.loadingTable', { name, defaultValue: 'Loading {{name}}' })}
+                            sx={{ display: 'flex', flexDirection: 'row' }}>
+                            <Box aria-hidden sx={{ width: GUTTER_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                                <Box sx={{ flexShrink: 0, zIndex: 1, bgcolor: 'white', display: 'flex' }}>
+                                    <TableIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.15)' }} />
+                                </Box>
+                                <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: GUTTER_GAP, pr: CARD_INSET_RIGHT }}>
+                                <Box sx={{ px: 1, py: 0.75, border: 1, borderColor: 'divider', borderRadius: '6px', color: 'text.secondary' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                                        <CircularProgress size={12} color="inherit" sx={{ flexShrink: 0, '@media (prefers-reduced-motion: reduce)': { animation: 'none', '& circle': { animation: 'none' } } }} />
+                                        <Typography title={name} sx={{ fontSize: textVar.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Typography>
+                                    </Box>
+                                    <Typography sx={{ fontSize: textVar.xs, mt: 0.25 }}>{t('common.loading', { defaultValue: 'Loading...' })}</Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+                    )))}
 
                     {collapsible && (
                         <Box sx={{ pl: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, pr: CARD_INSET_RIGHT }}>
@@ -850,6 +1003,25 @@ export const SourceTableShelf: FC<{
 
         {/* Source table actions menu */}
         <Menu
+            anchorEl={fileMenuAnchorEl}
+            open={Boolean(fileMenuAnchorEl)}
+            onClose={handleCloseFileMenu}
+            onClick={(event) => event.stopPropagation()}
+        >
+            <MenuItem
+                disabled={activeWorkspace?.readOnly}
+                onClick={() => {
+                    selectedArtifactForMenu?.remove();
+                    handleCloseFileMenu();
+                }}
+                sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
+            >
+                <DeleteIcon sx={{ fontSize: iconVar.md }} color="warning" />
+                {selectedArtifactForMenu?.removeLabel}
+            </MenuItem>
+        </Menu>
+
+        <Menu
             anchorEl={tableMenuAnchorEl}
             open={Boolean(tableMenuAnchorEl)}
             onClose={handleCloseTableMenu}
@@ -880,7 +1052,7 @@ export const SourceTableShelf: FC<{
                     }}
                     sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
                 >
-                    <AttachFileIcon sx={{
+                    <InsertDriveFileOutlinedIcon sx={{
                         fontSize: textVar.xl,
                         color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
                     }} />

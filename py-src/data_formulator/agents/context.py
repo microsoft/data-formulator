@@ -8,6 +8,7 @@ can construct tiered context (primary/other tables, focused thread,
 peripheral threads) from the same code.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -68,6 +69,8 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
             lines.append(f"  Analyst: {step['agent_response']}")
         if step.get("user_answer"):
             lines.append(f"  User reply: {step['user_answer']}")
+        if step.get("workflow"):
+            lines.append("  Workflow status and outputs: " + json.dumps(step["workflow"], ensure_ascii=False))
         operation = step.get("data_operation")
         if operation:
             options = ", ".join(operation.get("options") or [])
@@ -159,7 +162,7 @@ def build_lightweight_table_context(
     """Build compact table context with schema, metadata, value samples, and rows.
 
     When ``primary_tables`` is provided, tables are grouped into
-    [PRIMARY TABLE(S)] and [OTHER AVAILABLE TABLES] sections.
+    [PRIMARY ANALYSIS INPUTS] and [OTHER ANALYSIS INPUTS] sections.
     """
     table_desc_cache, col_desc_cache, import_opts_cache = _get_workspace_metadata_lookups(workspace)
     table_extra_cache: dict[str, list[str]] = {}
@@ -263,7 +266,7 @@ def build_lightweight_table_context(
             return _client_schema_section(table, label)
 
     load_hint = (
-        "\nThe tables above are the data already loaded into this workspace, and the "
+        "\nThe analysis input tables above are already materialized and are the "
         "only data you can read directly. Anything not listed here has not been loaded "
         "yet: find it in a connected source and propose loading it before relying on it.\n"
         "To load a table in code: pd.read_parquet('file.parquet') or "
@@ -278,12 +281,11 @@ def build_lightweight_table_context(
 
         sections = []
         if primary_tables_list:
-            header = "[PRIMARY TABLE]" if len(primary_tables_list) == 1 else "[PRIMARY TABLES]"
             primary_parts = [_table_section(t) for t in primary_tables_list]
-            sections.append(header + "\n\n" + "\n\n".join(primary_parts))
+            sections.append("[PRIMARY ANALYSIS INPUTS]\n\n" + "\n\n".join(primary_parts))
         if other_tables_list:
             other_parts = [_table_section(t) for t in other_tables_list]
-            sections.append("[OTHER AVAILABLE TABLES]\n\n" + "\n\n".join(other_parts))
+            sections.append("[OTHER ANALYSIS INPUTS]\n\n" + "\n\n".join(other_parts))
         return "\n\n".join(sections) + "\n" + load_hint
 
     sections = [_table_section(table) for table in input_tables]
@@ -374,6 +376,10 @@ def handle_read_catalog_metadata(
     user_home = getattr(workspace, "user_home", None) if workspace else None
     if not user_home:
         return "Cannot read catalog metadata: user home not available."
+
+    from data_formulator.datalake.connector_preferences import connector_is_enabled
+    if not connector_is_enabled(user_home, source_id):
+        return f"Source '{source_id}' is disconnected."
 
     # Surface zero-config admin connectors (e.g. sample_datasets) on first use.
     ensure_no_auth_catalogs_cached(user_home)

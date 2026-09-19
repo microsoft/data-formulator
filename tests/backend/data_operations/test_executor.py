@@ -90,6 +90,9 @@ def test_executor_materializes_bounded_table_with_provenance(tmp_path: Path) -> 
     assert metadata.row_count == 2
     assert metadata.source_table == "public.orders"
     assert metadata.loader_params == {"host": "example.test"}
+    assert '"filters": [{"column": "region", "operator": "IN", "value": ["west", "east"]}]' in metadata.description
+    assert '"requested_limit": 2' in metadata.description
+    assert '"loaded_row_count": 2' in metadata.description
     assert workspace.read_data_as_df("recent_orders")["id"].tolist() == [1, 2]
     assert result.failed_steps == ()
 
@@ -114,7 +117,8 @@ def test_executor_publishes_source_descriptions(tmp_path: Path) -> None:
 
     metadata = workspace.get_table_metadata("orders")
     assert metadata is not None
-    assert metadata.description == "Customer orders"
+    assert metadata.description.startswith("Customer orders\n\nWorkspace table: Orders.")
+    assert '"table_key": "public.orders"' in metadata.description
     assert [column.description for column in metadata.columns] == ["Order id"]
 
 
@@ -167,3 +171,56 @@ def test_executor_recovers_published_tables_without_refetching(tmp_path: Path) -
 
     assert retry_result == first_result
     assert retry_loader.calls == []
+
+
+@pytest.mark.parametrize(("label", "expected"), [
+    ("Last of Us Part II Reviews", "games_reviews_last_of_us_part_ii_reviews"),
+    ("games_reviews.csv", "games_reviews_id_eq_42"),
+    ("az://account/container/games_reviews.csv", "games_reviews_id_eq_42"),
+])
+def test_executor_names_file_subsets_and_persists_scope(tmp_path: Path, label: str, expected: str) -> None:
+    from data_formulator.agents.agent_utils import generate_data_summary
+
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    source = "az://account/container/games_reviews.csv"
+    step = ConnectorQueryStep(
+        source_id="blob",
+        table_key=source,
+        source_table=source,
+        source_table_name=source,
+        display_name=label,
+        query=LoadQuery(filters=(OperationFilter("id", "EQ", 42),), columns=("id",)),
+    )
+    loader = _Loader(pa.table({"id": [42]}), source_meta={"description": "All game reviews"})
+
+    result = DataOperationExecutor(workspace, lambda _source_id: loader).execute(_operation(step))
+
+    assert result.result_table_ids == (expected,)
+    reopened = Workspace("test-user", root_dir=tmp_path)
+    metadata = reopened.get_table_metadata(expected)
+    assert metadata.source_table == source
+    assert metadata.import_options["source_filters"] == [{"column": "id", "operator": "EQ", "value": 42}]
+    summary = generate_data_summary([{"name": expected}], workspace=reopened)
+    assert '"value": 42' in summary
+    assert 'selected columns ["id"]' in summary
+    assert "All game reviews" in summary
+
+
+def test_executor_bounds_long_file_names_and_preserves_scope_label() -> None:
+    source = "az://account/container/" + "long_source_" * 10 + ".csv"
+    step = ConnectorQueryStep(
+        source_id="blob", table_key=source, source_table=source,
+        display_name="West region " + "orders " * 30,
+    )
+    requested = DataOperationExecutor._requested_table_name(step)
+    name = DataOperationExecutor._allocate_table_name(requested, set())
+    assert len(name) <= 80
+    assert "west_region" in name
+    assert "account" not in name
+    assert DataOperationExecutor._allocate_table_name(requested, set()) == name
+    distinct = DataOperationExecutor._allocate_table_name(requested + "east", set())
+    assert distinct != name
+    collision = DataOperationExecutor._allocate_table_name(requested, {name})
+    assert len(collision) <= 80
+    assert collision != name
+    assert collision.endswith("_2")

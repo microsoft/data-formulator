@@ -1,0 +1,136 @@
+version: 1
+name: Grocery Price Changes
+overview: Rebuild a monthly cost briefing from example data, revealing price trends, the biggest movers, and a grocery basket one chart at a time.
+parameters:
+  - name: time_range
+    label: Price trend period
+    type: select
+    options: [Latest 24 months, Latest 12 months, Latest 36 months]
+    default: Latest 24 months
+    allow_custom: true
+    description: Relative to the latest month in the sample.
+  - name: basket
+    label: Grocery basket preferences
+    type: text
+    description: Optional items or quantities; only items available in the data can be used.
+prompt: >-
+  Apply the confirmed time_range to trend and basket charts; 24 months is
+  the default only. Use basket preferences when supplied, checking available
+  items and units first. Retain earlier observations needed for year-over-year comparisons.
+  Use Data Formulator's Consumer Price Index example dataset for a repeatable
+  household-cost review. This is a historical average-price sample, not a live
+  feed and not an official CPI calculation. Anchor the review to the latest month
+  in the data, never today's date. Create three separate native visualizations
+  progressively in the named steps, so each answers the next question. Finish
+  with a short report embedding all three charts. On a rerun, reuse suitable raw
+  workspace data, recalculate the period and comparisons, and create a new dated
+  review without overwriting earlier outputs. The same snapshot should reproduce
+  the same numbers; a refreshed compatible input should advance the review.
+source: >-
+  Find the built-in Sample Datasets source and its Consumer Price Index table
+  using the normal discovery tools. Import the full table, not the catalog's
+  preview rows, with one grounded proposal and user_review_needed false. No
+  credentials, terminal commands, Yahoo Finance, or direct API setup are needed.
+  If this exact dataset is already loaded, inspect and reuse it. The Month column
+  contains monthly dates; the other columns are average prices with the item and
+  unit in their names. Read the actual schema rather than guessing identifiers.
+  The first import needs access to the public sample file. If unavailable, ask
+  for the example to be loaded rather than substituting fabricated observations.
+deliverables:
+  - A native Line Chart of the latest 24 months of selected grocery prices, indexed to 100 at a shared baseline month.
+  - A native Bar Chart ranking available items by latest-month year-over-year percentage price change, retaining each item's original unit in the supporting data.
+  - A native Line Chart of an illustrative fixed grocery basket's monthly cost over the same review window, with monthly component costs and totals retained in the chart's derived table.
+  - A concise Data Formulator report embedding all three chart IDs, documenting the as-of date, basket quantities, numerical findings, and sample limitations.
+steps:
+  - id: prepare
+    description: Prepare the price data and household basket for a consistent cost comparison.
+    instructions: >-
+      Discover and load or reuse the full Consumer Price Index sample. Inspect
+      Month, row count, date range, item columns, units, nulls, and positive prices.
+      Use eggs per dozen, milk per gallon, bread per pound, and bananas per pound
+      as the four grocery items. Confirm their exact column names. Set the as-of
+      month to the latest month with observed positive prices for all four items
+      and with observations for those items exactly 12 calendar months earlier.
+      Use the 24-month window ending at that as-of month. Preserve missing values;
+      do not impute. Record any excluded newer months and why. If the required
+      items or comparison month are unavailable, ask for help rather than quietly
+      changing the basket. Keep the raw input unchanged.
+    checkers:
+      - id: input_coverage
+        condition: The full sample is loaded, monthly keys are unique, the four grocery columns and their units are identified, and the as-of month and exact prior-year month have positive observed prices for all four items.
+        on_fail: prepare
+    next: trends
+  - id: trends
+    description: See how selected grocery prices have diverged over the last two years.
+    instructions: >-
+      Answer "Which everyday prices have been pulling away?" Reshape the four
+      grocery items into month, item, unit, and price rows for the review window.
+      Choose the earliest month in that window with all four prices as the shared
+      baseline. Compute indexed_price = 100 * price / that item's baseline price,
+      keeping later missing values as gaps and using only dates on or after the
+      baseline. Create the first native Line Chart with month on x, indexed price
+      on y, and item as color. Give its derived table and chart clear names and
+      include the baseline and as-of month in the title or subtitle. Publish this
+      chart before moving to the next step; do not generate all charts together.
+    checkers:
+      - id: trend_math
+        condition: All four series start at 100 on the same stated baseline month, indexed values reconcile to raw prices, and missing prices are not turned into zero or connected as fabricated observations.
+        on_fail: trends
+    next: movers
+  - id: movers
+    description: Identify which consumer prices have changed most over the past year.
+    instructions: >-
+      Answer "What deserves attention this month?" For every price column with
+      positive observed prices in both the as-of month and exactly 12 calendar
+      months earlier, compute 100 * (current_price / prior_year_price - 1).
+      Exclude and list items missing either observation; do not use a row-offset
+      approximation for a calendar-year comparison. Create the second native Bar
+      Chart, with items on y and year-over-year percentage change on x, sorted
+      from largest increase to largest decrease with a zero baseline. Retain the
+      two dates, original prices, units, and full-precision changes in the derived
+      table. Do not compare dollar price levels across incompatible units.
+    checkers:
+      - id: mover_math
+        condition: Each displayed change uses the same as-of month and exact prior-year month, has a positive denominator, and reconciles to the raw item prices; exclusions and ranking are correct.
+        on_fail: movers
+    next: basket
+  - id: basket
+    description: Track how the monthly cost of a fixed grocery basket has changed.
+    instructions: >-
+      Answer "What does that mean for a regular grocery purchase?" Define an
+      illustrative fixed basket of 2 dozen eggs, 2 gallons of milk, 2 pounds of
+      bread, and 3 pounds of bananas. For each month in the review window with
+      all four observed prices, compute cost as the sum of quantity times price.
+      Leave incomplete months missing rather than summing a partial basket.
+      Use visualize to transform the raw price input directly into the third
+      native Line Chart of monthly basket cost in dollars. Retain the monthly
+      component costs and total in its derived table with a clear dated display
+      name; this table is published by visualize, not a separate create_data call.
+      Include the basket quantities in its subtitle or
+      supporting description. Calculate the latest cost, prior-year cost, dollar
+      change, and percentage change from the same fixed quantities. Call this
+      an illustrative grocery basket, not an average household budget or CPI.
+    checkers:
+      - id: basket_math
+        condition: Every basket total contains all four quantity-weighted components with consistent units; latest and prior-year totals and their dollar and percentage differences independently reconcile to raw prices.
+        on_fail: basket
+    next: brief
+  - id: brief
+    description: Bring the findings together in a verified household-cost review.
+    instructions: >-
+      Write a compact dated monthly briefing: as-of date, the three native charts
+      embedded using their returned chart IDs, the largest increase and decrease
+      (or explicitly no decreases), and the basket's latest cost and year-over-year
+      change. State quantities, baseline, missing-data exclusions, source snapshot
+      dates, and that the figures are historical sample prices, not current quotes
+      or an official inflation index. Avoid causal claims unsupported by this data.
+      After publishing the report, run an independent verification script against
+      the raw inputs and final published chart data, including the basket chart's
+      derived table. Re-record
+      every required checker against current evidence after the final output;
+      earlier checks may have been invalidated by later publications. Verify all
+      three chart references and every headline number before complete_workflow.
+    checkers:
+      - id: final_delivery
+        condition: Three distinct native charts exist with monthly component costs and totals in the basket chart's derived table, the report embeds the correct chart IDs, all stated dates and headline numbers agree with final outputs and raw data, and all required checks have fresh post-publication evidence.
+        on_fail: brief

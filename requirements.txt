@@ -5,9 +5,9 @@ flask-cors
 flask-limiter
 openai
 python-dotenv
-# litellm 1.92+ is Rust/maturin (manylinux-only wheels) — hangs on Windows/macOS
-# without a Rust toolchain. Pin below it; >=1.84.0 keeps the CVE fix.
-litellm>=1.84.0,<1.92
+# litellm 1.92 switched to native Rust/maturin packaging. Keep the last
+# universal pure-Python release line pending dedicated compatibility coverage.
+litellm>=1.91.5,<1.92
 duckdb
 numpy
 vl-convert-python

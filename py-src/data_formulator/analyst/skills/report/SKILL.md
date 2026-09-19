@@ -5,9 +5,10 @@ description: >-
   report — note, blog post, executive summary, KPI dashboard, slide brief, or
   multi-section analytical report, with embedded charts.
 when_to_use: >-
-  The user asks to write up / summarize / report on what they explored, or
-  wants a shareable narrative document built from the charts and findings in
-  the data thread. Not for producing a single new chart (use visualize).
+  The user requests a report deliverable or a shareable narrative document
+  built from charts and findings in the data thread. Not for an ordinary
+  answer or summary, even if it needs expansion (follow the meta response rules),
+  or for producing a single new chart (use visualize).
 always_on: false
 tools:
   - inspect_chart
@@ -26,19 +27,20 @@ what the user actually asks for; do not force a fixed template.
 ## Emitting the report (the `write_report` action)
 
 First inspect whatever charts and data you need (see below), then write the
-entire report and commit it by **calling the `write_report` tool** — it is the
-committing action that ends this turn. Its `report` argument carries the
+entire report and deliver it by **calling the `write_report` tool**.
+Its `report` argument carries the
 **full Markdown** of the finished report:
 
 - `report` — the complete report in Markdown: headings, prose, tables, and
   embedded charts via `![caption](chart://chart_id)`.
 
 Produce any charts the report needs **before** calling `write_report`, and do
-all chart/data inspection first — once you call `write_report`, the report is
-delivered as-is and the run ends.
+all chart/data inspection first. A successful call delivers the report as-is
+and returns an observation; it does not end the run. Follow the baseline
+completion rules.
 
 ## Context available to you
-- **[PRIMARY TABLE(S)]** / **[OTHER AVAILABLE TABLES]**: Lightweight schema of datasets.
+- **[PRIMARY ANALYSIS INPUTS]** / **[OTHER ANALYSIS INPUTS]**: Lightweight schema of materialized input datasets.
 - **[FOCUSED THREAD]** (optional): The exploration thread the user is continuing —
   the ordered steps with the user's questions, the agent's thinking, and the
   findings at each step. This is the spine of the story you are telling.

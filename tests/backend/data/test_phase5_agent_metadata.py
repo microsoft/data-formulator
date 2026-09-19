@@ -110,7 +110,7 @@ class TestCatalogCache:
             assert load_catalog(tmp, "src1") is None
 
     def test_search_catalog_cache(self):
-        from data_formulator.datalake.catalog_cache import save_catalog, search_catalog_cache
+        from data_formulator.datalake.catalog_cache import find_catalog_cache, save_catalog
         with tempfile.TemporaryDirectory() as tmp:
             save_catalog(tmp, "pg", [
                 {"name": "users", "metadata": {"description": "User accounts", "columns": [
@@ -120,18 +120,20 @@ class TestCatalogCache:
                     {"name": "order_id"},
                 ]}},
             ])
-            results = search_catalog_cache(tmp, "email")
+            results, _ = find_catalog_cache(tmp, "email", filter_by="table")
             assert len(results) == 1
             assert results[0]["name"] == "users"
             assert "email" in results[0]["matched_columns"]
 
     def test_search_excludes_imported_tables(self):
-        from data_formulator.datalake.catalog_cache import save_catalog, search_catalog_cache
+        from data_formulator.datalake.catalog_cache import find_catalog_cache, save_catalog
         with tempfile.TemporaryDirectory() as tmp:
             save_catalog(tmp, "pg", [
                 {"name": "orders", "metadata": {"description": "order data", "columns": []}},
             ])
-            results = search_catalog_cache(tmp, "order", exclude_tables={"orders"})
+            results, _ = find_catalog_cache(
+                tmp, "order", filter_by="table", exclude_tables={"orders"},
+            )
             assert len(results) == 0
 
 

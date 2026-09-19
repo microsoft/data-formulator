@@ -1,6 +1,7 @@
 // TableManager.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import Portal from '@mui/material/Portal';
 import {
   Typography,
   Button,
@@ -24,6 +25,8 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { getConnectorIcon } from '../icons';
 import { AgentToyIcon } from './AgentToyIcon';
 
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
@@ -39,6 +42,15 @@ import { iconVar, textVar } from '../app/layout';
 import { ConnectorAuthPath } from '../components/ComponentType';
 
 const KUSTO_HELP_CLUSTER = 'https://help.kusto.windows.net';
+
+interface KustoClusterOption {
+    id: string;
+    name: string;
+    uri: string;
+    region: string;
+    resource_group: string;
+    state: string;
+}
 
 /** Extract a user-visible error message from a connector data payload. */
 function extractConnectError(body: any, fallback: string): string {
@@ -99,12 +111,21 @@ export const DataLoaderForm: React.FC<{
     authMode?: string,
     authPaths?: ConnectorAuthPath[],
     formTitle?: React.ReactNode,
+    formFieldsBefore?: React.ReactNode,
     onImport: () => void,
     onFinish: (status: "success" | "error" | "warning", message: string, importedTables?: string[]) => void,
     onConnected?: () => void,
+    onStageConnection?: (params: Record<string, any>) => Promise<void>,
+    actionContainer?: HTMLElement | null,
+    initialConnectionParams?: Record<string, string>,
+    configuredParams?: Record<string, string | number | boolean> | null,
+    onBusyChange?: (busy: boolean) => void,
     /** Called before the connect step. Returns the effective connectorId to use.
      *  Used by AddConnectionPanel to create the connector before connecting. */
     onBeforeConnect?: (params: Record<string, any>) => Promise<string>,
+    /** Called when a connection attempt fails. Create-on-connect hosts use this
+     *  to remove a connector that has never connected successfully. */
+    onConnectionFailed?: () => Promise<void> | void,
     /** When true, sensitive fields render with a ••••• placeholder so the
      *  user knows credentials are stored on the server (and sees the field
      *  is intentionally empty for security, not a missing config). */
@@ -123,9 +144,19 @@ export const DataLoaderForm: React.FC<{
     /** Hands the user to the data agent chat with a seeded question when they
      *  get stuck on setup. Omitted inside the chat card itself. */
     onAskAgent?: (prompt: string) => void,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBeforeConnect, hasStoredCredentials, compact = false, comfortableSpacing = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, formFieldsBefore, onImport, onFinish, onConnected, onStageConnection, actionContainer, initialConnectionParams, configuredParams, onBusyChange, onBeforeConnect, onConnectionFailed, hasStoredCredentials, compact = false, comfortableSpacing = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
     const { t } = useTranslation();
-    const dispatch = useDispatch<AppDispatch>();
+    const reduxDispatch = useDispatch<AppDispatch>();
+    const [installationParams, setInstallationParams] = useState<Record<string, string>>(initialConnectionParams || {});
+    const dispatch = useCallback((action: ReturnType<typeof dfActions.updateDataLoaderConnectParam> | ReturnType<typeof dfActions.updateDataLoaderConnectParams>) => {
+        if (!onStageConnection) return reduxDispatch(action);
+        if (dfActions.updateDataLoaderConnectParam.match(action)) {
+            setInstallationParams(previous => ({ ...previous, [action.payload.paramName]: action.payload.paramValue }));
+        } else if (dfActions.updateDataLoaderConnectParams.match(action)) {
+            setInstallationParams(action.payload.params);
+        }
+        return action;
+    }, [!!onStageConnection, reduxDispatch]);
     const loaderTypeKey = loaderType || dataLoaderType;
     const getParamPlaceholder = (paramDef: {name: string; default?: string | number | boolean; description?: string}) => {
         // Sensitive fields whose stored credentials we have on the server
@@ -133,7 +164,7 @@ export const DataLoaderForm: React.FC<{
         // blank to keep, type to replace."
         if (
             hasStoredCredentials
-            && paramDefs.find(p => p.name === paramDef.name)?.tier === 'auth'
+            && (onStageConnection || paramDefs.find(p => p.name === paramDef.name)?.tier === 'auth')
             && (paramDefs.find(p => p.name === paramDef.name)?.sensitive
                 || paramDefs.find(p => p.name === paramDef.name)?.type === 'password')
         ) {
@@ -175,8 +206,10 @@ export const DataLoaderForm: React.FC<{
     // Effective connectorId — may be updated by onBeforeConnect (e.g. AddConnectionPanel)
     const connectorIdRef = useRef(connectorId);
     useEffect(() => { connectorIdRef.current = connectorId; }, [connectorId]);
-    const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
-    const isLocalMode = useSelector((state: DataFormulatorState) => !!state.serverConfig?.IS_LOCAL_MODE);
+    const savedParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
+    const params = onStageConnection ? installationParams : savedParams;
+    const localMode = useSelector((state: DataFormulatorState) => !!state.serverConfig?.IS_LOCAL_MODE);
+    const isLocalMode = !onStageConnection && localMode;
 
     // Materialize declared defaults and the default authentication path as
     // actual form values rather than placeholders. Existing user-entered or
@@ -202,12 +235,22 @@ export const DataLoaderForm: React.FC<{
     }, [authPaths, dataLoaderType, dispatch, paramDefs, params]);
 
     let [isConnecting, setIsConnecting] = useState(false);
+    const [connectionError, setConnectionError] = useState('');
+    useEffect(() => { onBusyChange?.(isConnecting); }, [isConnecting, onBusyChange]);
     const [persistCredentials, setPersistCredentials] = useState(true);
     // High-level progress shown while connecting (e.g. Kusto reporting which
     // database it's currently listing). Polled from the backend during the
     // connect request; cleared when it resolves.
     const [connectProgress, setConnectProgress] = useState('');
     const [databaseOptions, setDatabaseOptions] = useState<string[]>([]);
+    const databaseRequestRef = useRef<AbortController | null>(null);
+    const invalidateDatabaseDiscovery = () => {
+        databaseRequestRef.current?.abort();
+        setIsLoadingDatabases(false);
+        setDatabaseOptions([]);
+        setDatabaseDiscoveryError('');
+    };
+    useEffect(() => () => { databaseRequestRef.current?.abort(); }, []);
     const [isLoadingDatabases, setIsLoadingDatabases] = useState(false);
     const [databaseDiscoveryError, setDatabaseDiscoveryError] = useState('');
     const [databaseMenuOpen, setDatabaseMenuOpen] = useState(false);
@@ -216,6 +259,10 @@ export const DataLoaderForm: React.FC<{
 
     // CLI sign-in status (local mode only), e.g. `az login` for Entra ID.
     const [cliLoginStatus, setCliLoginStatus] = useState<{ installed: boolean; signed_in: boolean; account: { user?: string } | null } | null>(null);
+    const [cliStatusLoading, setCliStatusLoading] = useState(false);
+    const [cliLoginPending, setCliLoginPending] = useState(false);
+    const [cliLoginError, setCliLoginError] = useState('');
+    const cliRequestRef = useRef(0);
 
     // The auth path the user has currently selected (also computed in the
     // render body; duplicated here so effects/handlers can react to it).
@@ -224,11 +271,67 @@ export const DataLoaderForm: React.FC<{
         || authPaths[0];
     const cliLogin = (isLocalMode && activeAuthPath?.cli_login) ? activeAuthPath.cli_login : undefined;
     const cliStatusUrl = cliLogin?.status_url;
+    const canBrowseKusto = loaderTypeKey === 'kusto' && !!cliLogin && !!cliLoginStatus?.signed_in;
+    const [kustoManualEntry, setKustoManualEntry] = useState(Boolean(params.kusto_cluster));
+    const [azureSubscriptions, setAzureSubscriptions] = useState<{ id: string; name: string }[]>([]);
+    const [azureSubscription, setAzureSubscription] = useState('');
+    const [kustoClusters, setKustoClusters] = useState<KustoClusterOption[]>([]);
+    const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+    const [clustersLoading, setClustersLoading] = useState(false);
+    const [subscriptionError, setSubscriptionError] = useState('');
+    const [subscriptionRefresh, setSubscriptionRefresh] = useState(0);
+    const [clusterDiscoveryError, setClusterDiscoveryError] = useState('');
+    const [clusterRefresh, setClusterRefresh] = useState(0);
+    const browseKusto = canBrowseKusto && !kustoManualEntry;
+
+    useEffect(() => {
+        const controller = new AbortController();
+        setAzureSubscriptions([]);
+        setAzureSubscription('');
+        setSubscriptionError('');
+        setSubscriptionsLoading(browseKusto);
+        if (!browseKusto) return;
+        apiRequest<{ subscriptions: { id: string; name: string }[]; default_subscription: string }>(
+            '/api/model-endpoints/azure/subscriptions', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Model-Connection': '1' },
+                body: '{}', signal: controller.signal,
+            },
+        ).then(({ data }) => {
+            if (controller.signal.aborted) return;
+            setAzureSubscriptions([...data.subscriptions].sort((first, second) =>
+                Number(second.id === data.default_subscription) - Number(first.id === data.default_subscription)
+                    || first.name.localeCompare(second.name)));
+        }).catch(error => {
+            if (!controller.signal.aborted) setSubscriptionError(error instanceof Error ? error.message : String(error));
+        }).finally(() => { if (!controller.signal.aborted) setSubscriptionsLoading(false); });
+        return () => controller.abort();
+    }, [browseKusto, subscriptionRefresh, cliLoginStatus?.account?.user]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        setKustoClusters([]);
+        setClusterDiscoveryError('');
+        setClustersLoading(browseKusto && Boolean(azureSubscription));
+        if (!browseKusto || !azureSubscription) return;
+        apiRequest<{ clusters: KustoClusterOption[] }>('/api/model-endpoints/azure/kusto-clusters', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Model-Connection': '1' },
+            body: JSON.stringify({ subscription_id: azureSubscription }), signal: controller.signal,
+        }).then(({ data }) => {
+            if (!controller.signal.aborted) setKustoClusters(data.clusters);
+        }).catch(error => {
+            if (!controller.signal.aborted) setClusterDiscoveryError(error instanceof Error ? error.message : String(error));
+        }).finally(() => { if (!controller.signal.aborted) setClustersLoading(false); });
+        return () => controller.abort();
+    }, [browseKusto, azureSubscription, clusterRefresh]);
 
     // Fetch current CLI sign-in status when a CLI-login auth path is selected.
     useEffect(() => {
-        if (!cliStatusUrl) { setCliLoginStatus(null); return; }
-        let cancelled = false;
+        const requestId = ++cliRequestRef.current;
+        setCliLoginStatus(null);
+        setCliLoginError('');
+        setCliLoginPending(false);
+        setCliStatusLoading(Boolean(cliStatusUrl));
+        if (!cliStatusUrl) return;
         (async () => {
             try {
                 const { data } = await apiRequest<any>(cliStatusUrl, {
@@ -236,13 +339,35 @@ export const DataLoaderForm: React.FC<{
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({}),
                 });
-                if (!cancelled) setCliLoginStatus(data);
+                if (cliRequestRef.current === requestId) setCliLoginStatus(data);
             } catch {
-                if (!cancelled) setCliLoginStatus(null);
+                if (cliRequestRef.current === requestId) setCliLoginError(t('db.cliStatusFailed', { defaultValue: 'Could not check Azure CLI sign-in. Try signing in below.' }));
+            } finally {
+                if (cliRequestRef.current === requestId) setCliStatusLoading(false);
             }
         })();
-        return () => { cancelled = true; };
+        return () => { cliRequestRef.current += 1; };
     }, [cliStatusUrl]);
+
+    const handleCliLogin = async () => {
+        if (!cliLogin?.login_url || cliLoginPending) return;
+        const requestId = ++cliRequestRef.current;
+        setCliLoginPending(true);
+        setCliStatusLoading(false);
+        setCliLoginError('');
+        try {
+            const { data } = await apiRequest<{ signed_in: boolean; account: { user?: string } | null }>(cliLogin.login_url, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+            });
+            if (cliRequestRef.current !== requestId) return;
+            setCliLoginStatus({ installed: true, ...data });
+            if (!data.signed_in) setCliLoginError(t('db.cliSignInIncomplete', { defaultValue: 'Azure CLI sign-in did not complete. Please try again.' }));
+        } catch (error) {
+            if (cliRequestRef.current === requestId) setCliLoginError(error instanceof Error ? error.message : t('db.cliSignInFailed', { defaultValue: 'Azure CLI sign-in failed. Please try again.' }));
+        } finally {
+            if (cliRequestRef.current === requestId) setCliLoginPending(false);
+        }
+    };
 
     // Sensitive params (passwords, tokens, secrets) live in component state only —
     // never persisted to Redux / localStorage.
@@ -287,8 +412,12 @@ export const DataLoaderForm: React.FC<{
     );
     const updateParamDraft = useCallback((name: string, value: string) => {
         draftParamsRef.current[name] = value;
-    }, []);
+        if (dataLoaderType.startsWith('connector-form:') && !sensitiveParamNames.has(name)) {
+            dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: name, paramValue: value }));
+        }
+    }, [dataLoaderType, dispatch, sensitiveParamNames]);
     const commitParamDraft = useCallback((name: string, value: string) => {
+        if (dataLoaderType.startsWith('connector-form:')) delete draftParamsRef.current[name];
         if (sensitiveParamNames.has(name)) {
             setSensitiveParams(previous => ({ ...previous, [name]: value }));
         } else {
@@ -335,6 +464,10 @@ export const DataLoaderForm: React.FC<{
     const selectAuthPath = useCallback((pathId: string) => {
         const selectedPath = authPaths.find(path => path.id === pathId);
         if (!selectedPath) return;
+        databaseRequestRef.current?.abort();
+        setIsLoadingDatabases(false);
+        setDatabaseOptions([]);
+        setDatabaseDiscoveryError('');
         const selectedFields = new Set(selectedPath.fields);
         const authFieldNames = paramDefs
             .filter(paramDef => paramDef.tier === 'auth')
@@ -352,7 +485,10 @@ export const DataLoaderForm: React.FC<{
 
     const loadKustoDatabases = useCallback(async (paramOverrides?: Record<string, any>) => {
         const discoveryParams = { ...getCurrentParams(), ...paramOverrides };
-        if (!String(discoveryParams.kusto_cluster || '').trim() || isLoadingDatabases) return;
+        if (!String(discoveryParams.kusto_cluster || '').trim()) return;
+        databaseRequestRef.current?.abort();
+        const controller = new AbortController();
+        databaseRequestRef.current = controller;
         setDatabaseMenuOpen(true);
         setIsLoadingDatabases(true);
         setDatabaseDiscoveryError('');
@@ -360,6 +496,7 @@ export const DataLoaderForm: React.FC<{
         try {
             const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.DISCOVER_OPTIONS, {
                 method: 'POST',
+                signal: controller.signal,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     loader_type: loaderTypeKey,
@@ -368,78 +505,116 @@ export const DataLoaderForm: React.FC<{
                     params: discoveryParams,
                 }),
             });
-            setDatabaseOptions(data.options || []);
+            if (!controller.signal.aborted) setDatabaseOptions(data.options || []);
         } catch (error: any) {
-            setDatabaseDiscoveryError(
+            if (!controller.signal.aborted) setDatabaseDiscoveryError(
                 error?.apiError?.message
                 || error?.message
                 || t('db.loadDatabasesFailed', { defaultValue: 'Could not load databases; enter the name manually.' }),
             );
         } finally {
-            setIsLoadingDatabases(false);
+            if (!controller.signal.aborted) setIsLoadingDatabases(false);
         }
-    }, [getCurrentParams, isLoadingDatabases, loaderTypeKey, t]);
+    }, [getCurrentParams, loaderTypeKey, t]);
 
     // Connection timeout in milliseconds (30 seconds)
     const CONNECTION_TIMEOUT_MS = 30_000;
+
+    const reportConnectionFailure = useCallback(async (message: string) => {
+        setConnectionError(message);
+        try {
+            await onConnectionFailed?.();
+        } finally {
+            onFinish('error', message);
+        }
+    }, [onConnectionFailed, onFinish]);
+
+    const connectionUncertain = useRef(false);
+    const checkConnectionStatus = useCallback(async () => {
+        if (!connectorIdRef.current) return false;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+        try {
+            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_STATUS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorIdRef.current }),
+                signal: controller.signal,
+            });
+            return data.connected === true;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }, []);
+
+    const handleConnectionError = useCallback(async (error: any) => {
+        const uncertain = error?.name === 'AbortError' || error instanceof TypeError
+            || error?.apiError?.retry === true || [408, 429, 502, 503, 504].includes(error?.httpStatus);
+        if (!uncertain) {
+            await reportConnectionFailure(error.message || 'Failed to connect');
+            return;
+        }
+        connectionUncertain.current = true;
+        setConnectProgress(t('db.checkingConnection', { defaultValue: 'Checking connection status...' }));
+        try {
+            if (await checkConnectionStatus()) {
+                connectionUncertain.current = false;
+                onConnected?.();
+                return;
+            }
+        } catch {}
+        setConnectionError(t('db.connectionUnconfirmed', {
+            defaultValue: 'Connection status could not be confirmed. Your connector has been kept. Retry to check again.',
+        }));
+    }, [checkConnectionStatus, onConnected, reportConnectionFailure, t]);
 
     // Helper: connect via data connector. Catalog browsing happens in the
     // data-source sidebar after the dialog closes; this form only validates
     // the connection and hands off via onConnected.
     const connectAndListTables = useCallback(async () => {
         setIsConnecting(true);
+        setConnectionError('');
         setConnectProgress('');
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS);
-        // Poll for high-level listing progress (e.g. which Kusto database is
-        // being queried) so the spinner isn't silent on slow multi-database
-        // sources. Best-effort: any failure is ignored.
-        let cancelledPoll = false;
-        const pollProgress = async () => {
-            const cid = connectorIdRef.current;
-            if (cancelledPoll || !cid) return;
-            try {
-                const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG_PROGRESS, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ connector_id: cid }),
-                });
-                if (!cancelledPoll && data?.message) setConnectProgress(data.message);
-            } catch { /* progress is best-effort */ }
-        };
-        const progressTimer = setInterval(pollProgress, 700);
         try {
+            if (connectionUncertain.current && await checkConnectionStatus()) {
+                connectionUncertain.current = false;
+                onConnected?.();
+                return;
+            }
             // Strip table_filter from params sent to connect (it's a catalog-side filter)
             const { table_filter: _tf, ...connectParams } = getCurrentParams() as Record<string, any>;
             // If onBeforeConnect is provided (e.g. AddConnectionPanel), create the connector first
+            if (onStageConnection) {
+                const { _auth_path, ...definition } = connectParams;
+                await onStageConnection(definition);
+                return;
+            }
             if (onBeforeConnect) {
                 connectorIdRef.current = await onBeforeConnect(connectParams);
             }
             const { data: connectData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorIdRef.current, params: connectParams, persist: persistCredentials }),
+                body: JSON.stringify({ connector_id: connectorIdRef.current, params: configuredParams ? {} : connectParams, persist: configuredParams ? false : persistCredentials }),
                 signal: controller.signal,
             });
             clearTimeout(timeoutId);
             if (connectData.status !== 'connected') {
                 throw new Error(extractConnectError(connectData, 'Connection failed'));
             }
+            connectionUncertain.current = false;
             onConnected?.();
         } catch (error: any) {
             clearTimeout(timeoutId);
-            if (error.name === 'AbortError') {
-                onFinish("error", t('db.connectionTimeout'));
-            } else {
-                onFinish("error", error.message || 'Failed to connect');
-            }
+            await handleConnectionError(error);
         } finally {
-            cancelledPoll = true;
-            clearInterval(progressTimer);
+            clearTimeout(timeoutId);
             setConnectProgress('');
             setIsConnecting(false);
         }
-    }, [getCurrentParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+    }, [getCurrentParams, persistCredentials, configuredParams, onConnected, onBeforeConnect, onStageConnection, checkConnectionStatus, handleConnectionError]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -456,7 +631,7 @@ export const DataLoaderForm: React.FC<{
             }
             if (!connectorIdRef.current) return;
         } catch (err: any) {
-            onFinish('error', err.message || 'Failed to create connector');
+            await handleConnectionError(err);
             setIsConnecting(false);
             return;
         }
@@ -486,7 +661,7 @@ export const DataLoaderForm: React.FC<{
         );
 
         if (!popup) {
-            onFinish("error", t('db.popupBlocked') || 'Popup was blocked. Please allow popups and try again.');
+            await reportConnectionFailure(t('db.popupBlocked') || 'Popup was blocked. Please allow popups and try again.');
             setIsConnecting(false);
             return;
         }
@@ -499,7 +674,7 @@ export const DataLoaderForm: React.FC<{
 
             const { access_token, refresh_token, expires_in, user, error } = event.data;
             if (error) {
-                onFinish("error", error);
+                await reportConnectionFailure(error);
                 setIsConnecting(false);
                 return;
             }
@@ -538,8 +713,10 @@ export const DataLoaderForm: React.FC<{
                     }
                     onConnected?.();
                 } catch (err: any) {
-                    onFinish("error", err.message || 'Login failed');
+                    await handleConnectionError(err);
                 }
+            } else {
+                await reportConnectionFailure('Login failed');
             }
             setIsConnecting(false);
         };
@@ -551,9 +728,10 @@ export const DataLoaderForm: React.FC<{
                 if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
                 window.removeEventListener('message', handler);
                 setIsConnecting(false);
+                void reportConnectionFailure('Login was cancelled');
             }
         }, 1000);
-    }, [delegatedLogin, getCurrentParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
+    }, [delegatedLogin, getCurrentParams, persistCredentials, onConnected, onBeforeConnect, reportConnectionFailure, handleConnectionError, t]);
 
 
     // Auto-connect on mount from vault credentials or SSO token passthrough.
@@ -607,12 +785,17 @@ export const DataLoaderForm: React.FC<{
         lineHeight: 1.4,
         mb: compact && !comfortableSpacing ? 0.25 : 0.5,
     };
-    const fieldGap = compact ? (comfortableSpacing ? 1.75 : 1) : 1.5;
-    const sectionGap = compact ? (comfortableSpacing ? 2.25 : 1.25) : 2;
+    const fieldGap = comfortableSpacing ? 2 : compact ? 1 : 1.5;
+    const sectionGap = comfortableSpacing ? 2 : compact ? 1.25 : 2;
+    const fieldLabelProps = (paramDef: typeof paramDefs[number]) => comfortableSpacing ? {
+        label: paramDef.name.replace(/_/g, ' ').replace(/^./, first => first.toUpperCase()),
+        required: paramDef.required,
+    } : {};
     // Inputs otherwise keep MUI's 14px, which is the one size that breaks the scale.
     const fieldSx = {
-        '& .MuiInputBase-root': { fontSize: bodyFontSize },
-        ...(compact ? {
+        '& .MuiInputBase-root': { fontSize: comfortableSpacing ? '0.875rem' : bodyFontSize },
+        ...(comfortableSpacing ? { '& .MuiInputLabel-root': { fontSize: '0.875rem' } } : {}),
+        ...(compact && !comfortableSpacing ? {
             '& .MuiOutlinedInput-root': { height: 32 },
             '& .MuiOutlinedInput-input': { paddingTop: '5.5px', paddingBottom: '5.5px' },
             '& .MuiAutocomplete-inputRoot': {
@@ -629,8 +812,17 @@ export const DataLoaderForm: React.FC<{
     const actionButtonSx = {
         textTransform: 'none' as const,
         fontSize: bodyFontSize,
-        ...(compact ? { py: 0.25, minHeight: 0 } : {}),
+        ...(comfortableSpacing ? { py: 0.5, px: 1.5, minHeight: 32 } : compact ? { py: 0.25, minHeight: 0 } : {}),
     };
+    const disclosureSx = comfortableSpacing ? {
+        backgroundColor: 'transparent', borderRadius: 0, overflow: 'visible',
+        '& .MuiAccordionSummary-root': {
+            minHeight: 32, px: 0, width: 'fit-content', maxWidth: '100%',
+            flexDirection: 'row-reverse', gap: 0.5, color: 'text.secondary',
+        },
+        '& .MuiAccordionSummary-content': { my: 0 },
+        '& .MuiAccordionDetails-root': { px: 0, pt: 1.5, pb: 0 },
+    } : {};
 
     const setupGuideBody = setupDetailsContent ? (
         <Box sx={(theme) => ({
@@ -718,12 +910,31 @@ export const DataLoaderForm: React.FC<{
         </Button>
     ) : null;
 
+    if (configuredParams) return <Box aria-busy={isConnecting} sx={{ maxWidth: 560, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
+            {t('db.connectionDetails', { defaultValue: 'Connection details' })}
+        </Typography>
+        <Box component="dl" sx={{ m: 0, width: '100%', display: 'grid', gridTemplateColumns: 'minmax(90px, 1fr) minmax(0, 3fr)', '& > dt, & > dd': { py: 0.75, borderBottom: 1, borderColor: 'divider' } }}>
+            {Object.entries(configuredParams).map(([name, value]) => <React.Fragment key={name}>
+                <Typography component="dt" variant="body2" color="text.secondary" sx={{ pr: 2, overflowWrap: 'anywhere' }}>{name.replaceAll('_', ' ')}</Typography>
+                <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere' }}>{String(value) || '-'}</Typography>
+            </React.Fragment>)}
+        </Box>
+        {connectionError && <Typography role="alert" color="error" variant="body2" sx={{ overflowWrap: 'anywhere', width: '100%' }}>{connectionError}</Typography>}
+        <Button variant="contained" size="small" sx={{ ...actionButtonSx, borderRadius: 1 }} disabled={isConnecting} onClick={() => connectAndListTables()}
+            startIcon={isConnecting ? <CircularProgress size={18} color="inherit" /> : getConnectorIcon(loaderTypeKey)}>
+            {connectionError ? t('model.retryConnection', { defaultValue: 'Retry connection' }) : t('db.connect', { suffix: '' })}
+        </Button>
+        {isConnecting && <Typography role="status" variant="body2" color="text.secondary">{connectProgress || t('db.connecting', { defaultValue: 'Connecting...' })}</Typography>}
+    </Box>;
+
     return (
-        <Box sx={{p: 0, pb: compact ? 0.5 : 2, display: 'flex', flexDirection: 'column' }}>
-            {isConnecting && <Box sx={{
+        <Box aria-busy={isConnecting} sx={{position: 'relative', p: 0, pb: compact ? 0.5 : 2, display: 'flex', flexDirection: 'column' }}>
+            {connectionError && <Typography role="alert" color="error" variant="body2" sx={{ overflowWrap: 'anywhere', mb: 1 }}>{connectionError}</Typography>}
+            {isConnecting && <Box role="status" sx={{
                 position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, zIndex: 1000,
-                backgroundColor: "rgba(255, 255, 255, 0.85)"
+                backgroundColor: "rgba(255, 255, 255, 0.25)"
             }}>
                 <CircularProgress size={20} />
                 {connectProgress && (
@@ -754,6 +965,7 @@ export const DataLoaderForm: React.FC<{
                 boxSizing: 'border-box',
             }}>
                 <Box sx={{ minWidth: 0 }}>
+                {formFieldsBefore && <Box sx={{ mb: fieldGap }}>{formFieldsBefore}</Box>}
                 {formTitle && (
                     <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5, mb: 1.5 }}>
                         {formTitle}
@@ -773,11 +985,12 @@ export const DataLoaderForm: React.FC<{
                                 <Box sx={fieldStackSx}>
                                     {paramDefs.map((paramDef) => (
                                         <Box key={paramDef.name} sx={{ minWidth: 0 }}>
-                                            <Typography variant="body2" sx={labelSx}>
+                                            {(!comfortableSpacing || paramDef.type === 'boolean' || paramDef.type === 'bool') && <Typography variant="body2" sx={labelSx}>
                                                 {paramDef.name}{paramDef.required ? ' *' : ''}
-                                            </Typography>
+                                            </Typography>}
                                             {paramDef.type === 'boolean' || paramDef.type === 'bool' ? renderBooleanParam(paramDef) : <DraftTextField
                                                 size="small" fullWidth
+                                                {...fieldLabelProps(paramDef)}
                                                 sx={fieldSx}
                                                 type={paramDef.type === 'password' ? 'password' : 'text'}
                                                 value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
@@ -787,6 +1000,10 @@ export const DataLoaderForm: React.FC<{
                                             />}
                                         </Box>
                                     ))}
+                                    <Portal container={actionContainer} disablePortal={!actionContainer}><Button variant="contained" size="small" disabled={isConnecting}
+                                        sx={actionContainer ? { minHeight: 28, fontSize: textVar.md } : { ...actionButtonSx, justifySelf: 'start' }} onClick={() => connectAndListTables()}>
+                                        {onStageConnection ? 'Test and save' : t('db.connect', { suffix: '' })}
+                                    </Button></Portal>
                                 </Box>
                             );
                         }
@@ -802,9 +1019,9 @@ export const DataLoaderForm: React.FC<{
                                 loaderTypeKey === 'kusto' && name === 'kusto_database';
                             const renderFieldRow = (paramDef: typeof tierParams[number], input: React.ReactNode, action?: React.ReactNode) => (
                                 <Box key={paramDef.name} sx={{ minWidth: 0 }}>
-                                    <Typography variant="body2" sx={labelSx}>
+                                    {(!comfortableSpacing || paramDef.type === 'boolean' || paramDef.type === 'bool') && <Typography variant="body2" sx={labelSx}>
                                         {paramDef.name}{paramDef.required ? ' *' : ''}
-                                    </Typography>
+                                    </Typography>}
                                     <Box sx={{
                                         display: 'grid',
                                         gridTemplateColumns: action ? 'minmax(0, 1fr) 32px' : 'minmax(0, 1fr)',
@@ -829,22 +1046,38 @@ export const DataLoaderForm: React.FC<{
                                         <Autocomplete
                                             sx={{ width: '100%', minWidth: 0 }}
                                             freeSolo
-                                            options={[KUSTO_HELP_CLUSTER]}
+                                            forcePopupIcon={browseKusto}
+                                            openOnFocus={browseKusto}
+                                            options={browseKusto ? [...new Set(kustoClusters.map(cluster => cluster.uri))] : [KUSTO_HELP_CLUSTER]}
+                                            loading={browseKusto && clustersLoading}
+                                            renderOption={(props, uri) => {
+                                                const cluster = kustoClusters.find(item => item.uri === uri);
+                                                return <Box component="li" {...props} key={uri}
+                                                    sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start !important', overflowWrap: 'anywhere' }}>
+                                                    <Typography variant="body2">{cluster?.name || uri}</Typography>
+                                                    {cluster && <Typography variant="caption" color="text.secondary">
+                                                        {[cluster.resource_group, cluster.region, cluster.state].filter(Boolean).join(' / ')}
+                                                    </Typography>}
+                                                </Box>;
+                                            }}
                                             slotProps={{ listbox: { sx: { fontSize: bodyFontSize } } }}
                                             value={params[paramDef.name] ?? ''}
                                             onChange={(_event, value) => {
+                                                invalidateDatabaseDiscovery();
+                                                dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_database', paramValue: '' }));
                                                 dispatch(dfActions.updateDataLoaderConnectParam({
                                                     dataLoaderType,
                                                     paramName: paramDef.name,
                                                     paramValue: value ?? '',
                                                 }));
-                                                if (value === KUSTO_HELP_CLUSTER) {
+                                                if (value && (value === KUSTO_HELP_CLUSTER || kustoClusters.some(cluster => cluster.uri === value))) {
                                                     void loadKustoDatabases({ kusto_cluster: value });
                                                 }
                                             }}
                                             onInputChange={(_event, value, reason) => {
                                                 if (reason === 'input') {
-                                                    setDatabaseOptions([]);
+                                                    invalidateDatabaseDiscovery();
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_database', paramValue: '' }));
                                                     dispatch(dfActions.updateDataLoaderConnectParam({
                                                         dataLoaderType,
                                                         paramName: paramDef.name,
@@ -856,6 +1089,7 @@ export const DataLoaderForm: React.FC<{
                                                 <TextField
                                                     {...inputParams}
                                                     size="small" fullWidth
+                                                    {...fieldLabelProps(paramDef)}
                                                     sx={fieldSx}
                                                     placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
                                                 />
@@ -914,6 +1148,7 @@ export const DataLoaderForm: React.FC<{
                                                 <TextField
                                                     {...inputParams}
                                                     size="small" fullWidth
+                                                    {...fieldLabelProps(paramDef)}
                                                     sx={fieldSx}
                                                     placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
                                                     error={!!databaseDiscoveryError}
@@ -951,6 +1186,7 @@ export const DataLoaderForm: React.FC<{
                                                 <TextField
                                                     {...inputParams}
                                                     size="small" fullWidth
+                                                    {...fieldLabelProps(paramDef)}
                                                     sx={fieldSx}
                                                     placeholder={getParamHelp(paramDef) || getParamPlaceholder(paramDef)}
                                                 />
@@ -961,6 +1197,7 @@ export const DataLoaderForm: React.FC<{
                                     renderFieldRow(paramDef,
                                     <DraftTextField
                                         size="small" fullWidth
+                                        {...fieldLabelProps(paramDef)}
                                         sx={fieldSx}
                                         type={paramDef.type === 'password' ? 'password' : 'text'}
                                         value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
@@ -986,52 +1223,100 @@ export const DataLoaderForm: React.FC<{
                         const selectedAuthParams = authParams.filter(p => selectedAuthFieldNames.has(p.name));
                         const hasDelegated = !!delegatedLogin?.login_url
                             && (!selectedAuthPath || selectedAuthPath.kind === 'delegated_login');
-                        const connectLabel = onBeforeConnect
+                        const connectLabel = onStageConnection ? 'Test and save' : onBeforeConnect && !comfortableSpacing
                             ? t('db.createConnector', { defaultValue: 'Create Connector' })
                             : t('db.connect', { suffix: (params.table_filter || '').trim() ? t('db.withFilter') : '' });
-                        const showConnectAction = !hasDelegated || selectedAuthParams.length > 0;
+                        const hasGuidedSubscription = Boolean(azureSubscription) && !clustersLoading && kustoClusters.length > 0;
+                        const hasGuidedCluster = hasGuidedSubscription && Boolean(String(params.kusto_cluster || '').trim());
+                        const hasGuidedDatabase = hasGuidedCluster && Boolean(String(params.kusto_database || '').trim());
+                        const visibleConnectionParams = browseKusto ? connectionParams.filter(param =>
+                            param.name === 'kusto_cluster' ? hasGuidedSubscription
+                                : param.name === 'kusto_database' ? hasGuidedCluster : true
+                        ) : connectionParams;
+                        const showConnectAction = (!hasDelegated || selectedAuthParams.length > 0)
+                            && (!browseKusto || hasGuidedDatabase);
+
+                        const advancedSettings = advancedConnectionParams.length > 0 && (
+                            <Accordion disableGutters elevation={0} expanded={showAdvancedConnection}
+                                onChange={() => setShowAdvancedConnection(value => !value)}
+                                sx={theme => ({
+                                    backgroundColor: alpha(theme.palette.text.primary, 0.04), borderRadius: 1, overflow: 'hidden',
+                                    '&:before': { display: 'none' },
+                                    '& .MuiAccordionSummary-root': { minHeight: compact ? 30 : 40, px: compact ? 1 : 1.5 },
+                                    '& .MuiAccordionSummary-content': { my: compact ? 0.5 : 1 },
+                                    '& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root': { fontSize: compact ? 18 : 24 },
+                                    '& .MuiAccordionDetails-root': { px: compact ? 1 : 1.5, pt: 0.5, pb: compact ? 1 : 1.5 },
+                                    ...disclosureSx,
+                                })}>
+                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                    <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
+                                        {t('db.advancedSettings', { defaultValue: 'Advanced settings' })}
+                                    </Typography>
+                                </AccordionSummary>
+                                <AccordionDetails>{renderParamGrid(advancedConnectionParams)}</AccordionDetails>
+                            </Accordion>
+                        );
 
                         return (
                             <Box sx={{ display: 'grid', gap: sectionGap, width: '100%' }}>
-                                {connectionParams.length > 0 && (
-                                    <Box sx={{ display: 'grid', gap: sectionGap }}>
-                                        {renderParamGrid(connectionParams)}
-                                        {advancedConnectionParams.length > 0 && (
-                                                <Accordion
-                                                    disableGutters
-                                                    elevation={0}
-                                                    expanded={showAdvancedConnection}
-                                                    onChange={() => setShowAdvancedConnection(value => !value)}
-                                                    sx={(theme) => ({
-                                                        // Shaded rather than outlined — an outline would read
-                                                        // as another input box.
-                                                        backgroundColor: alpha(theme.palette.text.primary, 0.04),
-                                                        borderRadius: 1,
-                                                        overflow: 'hidden',
-                                                        '&:before': { display: 'none' },
-                                                        '& .MuiAccordionSummary-root': { minHeight: compact ? 30 : 40, px: compact ? 1 : 1.5 },
-                                                        '& .MuiAccordionSummary-content': { my: compact ? 0.5 : 1 },
-                                                        '& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root': { fontSize: compact ? 18 : 24 },
-                                                        '& .MuiAccordionDetails-root': { px: compact ? 1 : 1.5, pt: 0.5, pb: compact ? 1 : 1.5 },
-                                                    })}
-                                                >
-                                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                                        <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
-                                                            {t('db.advancedSettings', { defaultValue: 'Advanced settings' })}
-                                                        </Typography>
-                                                    </AccordionSummary>
-                                                    <AccordionDetails>
-                                                        {renderParamGrid(advancedConnectionParams)}
-                                                    </AccordionDetails>
-                                                </Accordion>
-                                        )}
+                                {browseKusto && <Box sx={{ display: 'grid', gap: 1, ...(comfortableSpacing ? { order: 1 } : {}) }}>
+                                    {browseKusto && <>
+                                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                            <Autocomplete fullWidth size="small" options={azureSubscriptions}
+                                                sx={{ minWidth: 0, flex: 1 }}
+                                                value={azureSubscriptions.find(item => item.id === azureSubscription) || null}
+                                                getOptionLabel={item => item.name}
+                                                isOptionEqualToValue={(option, value) => option.id === value.id}
+                                                loading={subscriptionsLoading} disabled={isConnecting}
+                                                onChange={(_event, value) => {
+                                                    setAzureSubscription(value?.id || '');
+                                                    setKustoClusters([]);
+                                                    setClusterDiscoveryError('');
+                                                    invalidateDatabaseDiscovery();
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_cluster', paramValue: '' }));
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_database', paramValue: '' }));
+                                                }}
+                                                renderInput={inputParams => <TextField {...inputParams} label={t('model.azureSubscription')} sx={fieldSx} />}
+                                            />
+                                            <Tooltip title={t('db.refreshClusters', { defaultValue: 'Refresh Azure clusters' })}><span>
+                                                <IconButton size="small" aria-label={t('db.refreshClusters', { defaultValue: 'Refresh Azure clusters' })}
+                                                    disabled={subscriptionsLoading || clustersLoading || isConnecting}
+                                                    onClick={() => {
+                                                        invalidateDatabaseDiscovery();
+                                                        dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_cluster', paramValue: '' }));
+                                                        dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_database', paramValue: '' }));
+                                                        if (azureSubscription) setClusterRefresh(current => current + 1);
+                                                        else setSubscriptionRefresh(current => current + 1);
+                                                    }}><RefreshIcon fontSize="small" /></IconButton>
+                                            </span></Tooltip>
+                                        </Box>
+                                        {(subscriptionsLoading || clustersLoading) && <Box role="status" sx={{ display: 'flex', gap: 0.75, alignItems: 'center', color: 'text.secondary' }}>
+                                            <CircularProgress size={12} color="inherit" />
+                                            <Typography variant="caption">{subscriptionsLoading
+                                                ? t('db.loadingSubscriptions', { defaultValue: 'Loading Azure subscriptions...' })
+                                                : t('db.loadingClusters', { defaultValue: 'Loading Azure clusters...' })}</Typography>
+                                        </Box>}
+                                        {subscriptionError && <Typography variant="caption" color="error" role="alert">{subscriptionError}</Typography>}
+                                        {clusterDiscoveryError && <Typography variant="caption" color="error" role="alert">{clusterDiscoveryError}</Typography>}
+                                        {!subscriptionsLoading && !subscriptionError && !azureSubscriptions.length && <Typography variant="caption" color="text.secondary">
+                                            {t('db.noAzureSubscriptions', { defaultValue: 'No subscriptions available. You can enter a cluster URL manually.' })}
+                                        </Typography>}
+                                        {azureSubscription && !clustersLoading && !clusterDiscoveryError && !kustoClusters.length && <Typography variant="caption" color="text.secondary">
+                                            {t('db.noAzureClustersInSubscription', { defaultValue: 'No clusters found in this subscription. Select another subscription or enter a cluster URL manually.' })}
+                                        </Typography>}
+                                    </>}
+                                </Box>}
+                                {visibleConnectionParams.length > 0 && (
+                                    <Box sx={{ display: 'grid', gap: sectionGap, ...(comfortableSpacing ? { order: 1 } : {}) }}>
+                                        {renderParamGrid(visibleConnectionParams)}
+                                        {advancedSettings}
                                     </Box>
                                 )}
 
-                                {filterParams.length > 0 && renderParamGrid(filterParams)}
+                                {filterParams.length > 0 && (!browseKusto || hasGuidedDatabase) && <Box sx={comfortableSpacing ? { order: 2 } : undefined}>{renderParamGrid(filterParams)}</Box>}
 
                                 {/* Auth path selection reveals only the selected path's credential fields. */}
-                                <Box sx={{ display: 'grid', gap: sectionGap }}>
+                                <Box sx={{ display: 'grid', gap: sectionGap, ...(comfortableSpacing ? { order: 0 } : {}) }}>
                                     {authPaths.length > 1 && (
                                         <ToggleButtonGroup
                                             exclusive
@@ -1049,6 +1334,7 @@ export const DataLoaderForm: React.FC<{
                                                     color: 'text.secondary',
                                                     borderColor: 'divider',
                                                     ...(compact ? { fontSize: '0.7rem', py: 0.375, px: 1, lineHeight: 1.3 } : {}),
+                                                    ...(comfortableSpacing ? { fontSize: '0.875rem', minHeight: 40, py: 1, px: 1.5, minWidth: 0, overflowWrap: 'anywhere' } : {}),
                                                     '&:hover': { backgroundColor: 'action.hover' },
                                                     '&.Mui-selected': {
                                                         color: 'primary.dark',
@@ -1085,9 +1371,21 @@ export const DataLoaderForm: React.FC<{
 
                                     {isLocalMode && selectedAuthPath?.cli_login && (
                                         <Box sx={{ display: 'grid', gap: 0.75 }}>
+                                            {cliStatusLoading && <Typography variant="caption" color="text.secondary" role="status">
+                                                {t('db.cliStatusChecking', { defaultValue: 'Checking Azure CLI sign-in...' })}
+                                            </Typography>}
+                                            {cliLoginError && <Typography variant="caption" color="error" role="alert" sx={{ overflowWrap: 'anywhere' }}>
+                                                {cliLoginError}
+                                            </Typography>}
                                             {cliLoginStatus?.signed_in ? (
-                                                <Box sx={(theme) => ({
+                                                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 0.75 }}>
+                                                {comfortableSpacing ? <Typography variant="caption" color="success.main" sx={{ overflowWrap: 'anywhere', flex: '1 1 200px', minWidth: 0 }}>
+                                                    {t('model.azureAccount', {
+                                                        user: cliLoginStatus.account?.user || t('db.cliLoginCurrentAccount', { defaultValue: 'your current account' }),
+                                                    })}
+                                                </Typography> : <Box sx={(theme) => ({
                                                     display: 'flex', alignItems: 'center', gap: 1,
+                                                    flex: '1 1 200px', minWidth: 0, overflowWrap: 'anywhere',
                                                     px: compact ? 1 : 1.5, py: compact ? 0.625 : 1,
                                                     color: 'success.dark',
                                                     backgroundColor: alpha(theme.palette.success.main, 0.08),
@@ -1099,16 +1397,32 @@ export const DataLoaderForm: React.FC<{
                                                             defaultValue: 'Signed in as {{user}}. You are ready to connect.',
                                                         })}
                                                     </Typography>
+                                                </Box>}
+                                                {canBrowseKusto && <Button size="small" sx={{ ml: 'auto', textTransform: 'none', p: 0, minWidth: 0 }}
+                                                    disabled={isConnecting} onClick={() => {
+                                                        if (!browseKusto) {
+                                                            invalidateDatabaseDiscovery();
+                                                            dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_cluster', paramValue: '' }));
+                                                            dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_database', paramValue: '' }));
+                                                        }
+                                                        setKustoManualEntry(current => !current);
+                                                    }}>
+                                                    {browseKusto ? t('db.enterClusterDetailsManually', { defaultValue: 'Enter cluster details manually' }) : t('db.browseClusters', { defaultValue: 'Browse Azure clusters' })}
+                                                </Button>}
                                                 </Box>
-                                            ) : cliLoginStatus?.installed ? (
-                                                <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
-                                                    {t('db.cliLoginRequired', { defaultValue: 'Sign in with Azure CLI before connecting. Run `az login` in a terminal, then reopen this form.' })}
-                                                </Typography>
-                                            ) : cliLoginStatus && !cliLoginStatus.installed ? (
+                                            ) : cliLoginStatus?.installed === false ? (
                                                 <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
                                                     {t('db.cliNotInstalled', { defaultValue: 'Azure CLI not found. Install it and run `az login` in a terminal before connecting.' })}
                                                 </Typography>
-                                            ) : null}
+                                            ) : <Button variant="outlined" size="small"
+                                                sx={{ ...actionButtonSx, justifySelf: 'start' }}
+                                                disabled={cliStatusLoading || cliLoginPending || isConnecting}
+                                                onClick={handleCliLogin}
+                                                startIcon={cliLoginPending ? <CircularProgress size={14} color="inherit" /> : undefined}>
+                                                {cliLoginPending
+                                                    ? t('db.cliSignInPending', { defaultValue: 'Waiting for Azure CLI sign-in...' })
+                                                    : t('db.cliLogin', { defaultValue: 'Sign in with Azure CLI' })}
+                                            </Button>}
                                         </Box>
                                     )}
 
@@ -1152,15 +1466,16 @@ export const DataLoaderForm: React.FC<{
                                         gap: compact ? 1 : 1.5,
                                         width: '100%',
                                         mt: compact ? 0 : 1,
+                                        ...(comfortableSpacing ? { order: 3 } : {}),
                                     }}>
-                                        <Button
+                                        <Portal container={actionContainer} disablePortal={!actionContainer}><Button
                                             variant="contained" color="primary" size="small"
                                             disabled={isConnecting}
-                                            sx={actionButtonSx}
+                                            sx={actionContainer ? { minHeight: 28, fontSize: textVar.md } : actionButtonSx}
                                             onClick={() => connectAndListTables()}>
                                             {connectLabel}
-                                        </Button>
-                                        {paramDefs.length > 0 && (
+                                        </Button></Portal>
+                                        {!onStageConnection && paramDefs.length > 0 && (
                                             <FormControlLabel
                                                 sx={{ m: 0, ml: 'auto', flexShrink: 0 }}
                                                 control={(
@@ -1172,7 +1487,7 @@ export const DataLoaderForm: React.FC<{
                                                     />
                                                 )}
                                                 label={(
-                                                    <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
+                                                    <Typography variant="body2" sx={{ fontSize: bodyFontSize, ...(comfortableSpacing ? { color: 'text.secondary' } : {}) }}>
                                                         {t('db.rememberCredentials')}
                                                     </Typography>
                                                 )}
@@ -1184,13 +1499,21 @@ export const DataLoaderForm: React.FC<{
                         );
                     })()}
                     {!showSideGuide && setupDetailsContent && (
-                        <Box sx={{ mt: compact ? 1.5 : 3 }}>
+                        <Box sx={{ mt: comfortableSpacing ? 0 : compact ? 1.5 : 3 }}>
                             {askAgentButton && (
                                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
                                     {askAgentButton}
                                 </Box>
                             )}
-                        <Accordion
+                        {comfortableSpacing ? <Box sx={{
+                            mt: 2, p: 2, borderRadius: 1,
+                            bgcolor: 'action.hover',
+                        }}>
+                            <Typography variant="body2" sx={{ fontSize: bodyFontSize, fontWeight: 500, color: 'text.secondary', mb: 0.75 }}>
+                                {t('db.setupDetails', { defaultValue: 'Setup details' })}
+                            </Typography>
+                            {setupGuideBody}
+                        </Box> : <Accordion
                             disableGutters
                             elevation={0}
                             expanded={instructionsExpanded}
@@ -1204,6 +1527,7 @@ export const DataLoaderForm: React.FC<{
                                 '& .MuiAccordionSummary-content': { my: compact ? 0.5 : 1.5 },
                                 '& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root': { fontSize: compact ? 18 : 24 },
                                 '& .MuiAccordionDetails-root': { px: compact ? 1 : 2, pt: 0.5, pb: compact ? 1 : 2 },
+                                ...disclosureSx,
                             })}
                         >
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -1214,7 +1538,7 @@ export const DataLoaderForm: React.FC<{
                             <AccordionDetails>
                                 {setupGuideBody}
                             </AccordionDetails>
-                        </Accordion>
+                        </Accordion>}
                         </Box>
                     )}
                 </Box>

@@ -42,7 +42,7 @@ import { AnvilLoader } from '../components/AnvilLoader';
 
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-import { toolName } from '../app/App';
+import { getToolName } from '../app/App';
 import { DataThread } from './DataThread';
 import { MAX_THREAD_COLUMNS } from './threadLayout';
 import {
@@ -57,7 +57,8 @@ import { useContainerSize, useLayout } from '../app/LayoutProvider';
 import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
+import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
+import { LandingDataEntry } from './LandingDataEntry';
 import { ReportView } from './ReportView';
 import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -66,14 +67,14 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { AppDispatch, store } from '../app/store';
 import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import { ArtifactDeleteButton } from './DataThreadCards';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -107,8 +108,9 @@ export const DataFormulatorFC = ({ }) => {
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const appName = getToolName(serverConfig.APP_NAME);
+    const headingSize = Math.max(32, Math.min(76, 76 * Math.sqrt(15 / appName.length)));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
-    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
     const theme = useTheme();
 
@@ -344,16 +346,7 @@ export const DataFormulatorFC = ({ }) => {
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
-        // Compact mode: when opening the generic menu but a data-loading
-        // conversation is already in progress, land directly on the chat so
-        // the prior history (and any in-progress extractions / load plan) is
-        // visible instead of the empty menu hero. Explicit tab requests
-        // (connector, upload, paste, …) are respected as-is; the menu's
-        // connectors / direct-load options stay one back-arrow click away.
-        const resolvedTab = (tab === 'menu' && dataLoadingChatMessages.length > 0)
-            ? 'extract'
-            : tab;
-        setUploadDialogInitialTab(resolvedTab);
+        setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);
     };
 
@@ -361,21 +354,23 @@ export const DataFormulatorFC = ({ }) => {
     // not entering a session: stay on the landing page until data lands.
     const provisionalSession = uploadDialogOpen && sessionEmpty;
 
-    // Seed the Data Loading chat through the single redux `pending` slot,
-    // then navigate to the extract tab. This is the one channel that
-    // carries text, images, AND file attachments as first-class fields —
-    // replacing the older `initialChatPrompt/Images` props that silently
-    // dropped file attachments (they had no dedicated field and only
-    // survived if their name was baked into the prompt text).
-    const startDataLoadingChat = (text: string, images: string[] = [], attachments: string[] = []) => {
-        if (text.trim().length > 0 || images.length > 0 || attachments.length > 0) {
-            // Preserve any prior conversation (Option A). `queueDataLoadingTask`
-            // drops a "new request" divider when a thread already exists, then
-            // enqueues the submission; the user resets explicitly via the
-            // header reset button when they want a blank slate.
-            dispatch(dfActions.queueDataLoadingTask({ text, images, attachments }));
+    const closeUploadDialog = async () => {
+        setUploadDialogOpen(false);
+        const state = store.getState();
+        const workspaceId = state.activeWorkspace?.id;
+        if (workspaceId && dfSelectors.selectSessionEmpty(state)) {
+            try {
+                const files = await listWorkspaceFiles();
+                dispatch(dfActions.setWorkspaceFileCount(files.length));
+                const currentWorkspaceId = store.getState().activeWorkspace?.id;
+                if (files.length === 0 && currentWorkspaceId === workspaceId) {
+                    dispatch(dfActions.setActiveWorkspace(null));
+                }
+            } catch {
+                // Preserve the workspace when its backend contents cannot be checked.
+            }
         }
-        openUploadDialog('extract');
+        refreshPageConnectors();
     };
 
     // The landing box starts the unified analyst conversation — loading data is
@@ -435,8 +430,6 @@ export const DataFormulatorFC = ({ }) => {
     };
 
     useEffect(() => {
-        document.title = toolName;
-        
         // Preload imported images (public images are preloaded in index.html)
         const imagesToPreload = [
             { src: dfLogo, type: 'image/svg+xml' },
@@ -684,7 +677,7 @@ export const DataFormulatorFC = ({ }) => {
                 onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
-                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                onAskAgent={(text) => startAnalystChat(text)}
             />
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
                 <Tabs
@@ -718,7 +711,7 @@ export const DataFormulatorFC = ({ }) => {
                 onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
-                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                onAskAgent={(text) => startAnalystChat(text)}
             />
             <Box ref={containerRef} className="outer-allotment" sx={{
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
@@ -749,7 +742,7 @@ export const DataFormulatorFC = ({ }) => {
                     onDragEnd={(sizes) => { setSashDragging(false); snapToColumns(sizes); }}
                     proportionalLayout={false}
                 >
-                    <Allotment.Pane minSize={paneWidth(1)} 
+                    <Allotment.Pane key="thread" minSize={paneWidth(1)} 
                             preferredSize={paneWidth(preferredColumns)} 
                             // Uncapped with the canvas away, so the thread can take
                             // the whole surface. Must be an explicit Infinity:
@@ -757,9 +750,11 @@ export const DataFormulatorFC = ({ }) => {
                             maxSize={canvasOpen ? paneWidth(columnCap) : Number.POSITIVE_INFINITY} snap={false}>
                         {threadPanel}
                     </Allotment.Pane>
-                    <Allotment.Pane minSize={tokens.canvas.min} visible={canvasOpen}>
-                        {canvasPanel}
-                    </Allotment.Pane>
+                    {canvasTarget && (
+                        <Allotment.Pane key="canvas" minSize={tokens.canvas.min} visible={canvasOpen}>
+                            {canvasPanel}
+                        </Allotment.Pane>
+                    )}
                 </Allotment>
             </Box>
         </Box>
@@ -797,33 +792,48 @@ export const DataFormulatorFC = ({ }) => {
         <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             {/* Hero — fills the viewport so title + input own the first screen;
                 Demos/Sessions live below the fold and just peek up. */}
-            <Box sx={{ minHeight: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 1.25 }, mx: 'auto' }}>
+            <Box sx={{ minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Box sx={{ mx: 'auto', width: '100%', minWidth: 0 }}>
+                <Typography component="h1" sx={{
+                    fontSize: { xs: 28, sm: headingSize },
+                    lineHeight: 1.05,
+                    letterSpacing: 0,
+                    overflowWrap: 'anywhere',
+                    textWrap: 'balance',
+                }}>
+                    {appName}
+                </Typography>
+            </Box>
+            <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1,
+                mt: 1.25,
+            }}>
                 <Box
                     component="img"
                     src={dfLogo}
                     alt=""
-                    sx={{ width: { xs: 28, sm: 60 }, height: { xs: 26, sm: 55 }, flexShrink: 0 }}
+                    sx={{ width: 25, height: 23, flexShrink: 0, display: 'block', transform: 'translateY(-2px)' }}
                 />
                 <Typography sx={{
-                    fontSize: { xs: 28, sm: 60 },
-                    lineHeight: 1.05,
-                    letterSpacing: '0.03em',
+                    fontSize: { xs: 16, sm: 21 },
+                    color: alpha(theme.palette.text.primary, 0.7),
+                    lineHeight: 1.4,
+                    textAlign: 'center',
+                    minWidth: 0,
+                    overflowWrap: 'anywhere',
+                    whiteSpace: 'pre-line',
                 }}>
-                    {toolName}
+                    {serverConfig.APP_TAGLINE || t('landing.tagline')}
                 </Typography>
             </Box>
-            <Typography sx={{ 
-                fontSize: { xs: 18, sm: 21 }, color: alpha(theme.palette.text.primary, 0.7),
-                display: { xs: 'none', sm: 'block' },
-                lineHeight: 1.4, textAlign: 'center', mt: 1.25, mb: 0}}>
-                {t('landing.tagline')}
-            </Typography>
 
             {/* Hosted-demo notice — borderless strip (it's prose, not a
                 button) placed before the Import Data section. The rocket
                 gets a quiet lift to add a touch of life. */}
-            {serverConfig.DISABLE_DATA_CONNECTORS && (
+            {serverConfig.WORKSPACE_BACKEND === 'ephemeral' && (
                 <Box
                     sx={{
                         mt: 2,
@@ -906,9 +916,18 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             )}
 
-            <Box sx={{ mt: 3.5 }}>
-                <DataLoadMenu 
-                    onSelectTab={(tab) => openUploadDialog(tab)}
+            <Box sx={{ mt: 5 }}>
+                <LandingDataEntry
+                    onStartChat={startAnalystChat}
+                    ensureActiveWorkspace={() => {
+                        if (!store.getState().activeWorkspace) {
+                            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
+                        }
+                    }}
+                    onUpload={() => openUploadDialog('upload')}
+                    onConnect={serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection')}
+                    onLinkFolder={serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined}
+                    readOnly={activeWorkspace?.readOnly}
                     onSelectConnector={(conn) => {
                         // Already-authed connector → open the data-source
                         // sidebar focused on it. Otherwise open the upload
@@ -919,10 +938,6 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
-                    onStartChat={(prompt, images, attachments) => startAnalystChat(prompt, images, attachments)}
-                    hasPriorConversation={dataLoadingChatMessages.length > 0}
-                    onResumeChat={() => openUploadDialog('extract')}
-                    serverConfig={serverConfig}
                     connectors={pageConnectors}
                 />
             </Box>
@@ -932,7 +947,7 @@ export const DataFormulatorFC = ({ }) => {
                 demo, since first-time visitors won't have any sessions
                 yet and demos are the most engaging entry point. */}
             <Box sx={{mt: 3}}>
-                <Typography sx={{ color: alpha(theme.palette.text.primary, 0.76), fontSize: textVar.md, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
+                <Typography sx={{ color: alpha(theme.palette.text.primary, 0.56), fontSize: textVar.sm, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
                     {t('landing.demos')}
                 </Typography>
                 <Box sx={{
@@ -952,10 +967,8 @@ export const DataFormulatorFC = ({ }) => {
 
             {/* ── Saved workspaces section ──────────────────────────── */}
             <Box sx={{mt: 8}}>
-                {/* Section header — left-aligned label with the sort control
-                    on the right, aligned to the card grid. */}
                 <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography sx={{ color: 'text.secondary', fontSize: textVar.md, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    <Typography sx={{ color: alpha(theme.palette.text.primary, 0.56), fontSize: textVar.sm, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                         {t('workspace.yourSessions')}
                     </Typography>
                     <Select
@@ -1004,7 +1017,8 @@ export const DataFormulatorFC = ({ }) => {
                             position: 'relative', textAlign: 'left',
                             cursor: isRenaming ? 'default' : 'pointer',
                             '&:hover': isRenaming ? {} : { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
-                            '&:hover .ws-actions': { opacity: 1 },
+                            '&:hover .ws-actions, &:focus-within .ws-actions': { opacity: 1 },
+                            '@media (hover: none)': { '& .ws-actions': { opacity: 1 } },
                         }}>
                             <CardContent sx={{ py: 1.5, px: 2 }}>
                                 {isRenaming ? (
@@ -1028,7 +1042,7 @@ export const DataFormulatorFC = ({ }) => {
                                         slotProps={{ input: { sx: { fontSize: textVar.lg, fontWeight: 500 } } }}
                                     />
                                 ) : (
-                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary', pr: 8 }}>
                                         {w.display_name}
                                     </Typography>
                                 )}
@@ -1039,30 +1053,25 @@ export const DataFormulatorFC = ({ }) => {
                                 )}
                             </CardContent>
                             <Box className="ws-actions" sx={{
-                                position: 'absolute', top: 4, right: 4,
+                                position: 'absolute', top: 2, right: 2,
                                 display: isRenaming ? 'none' : 'flex',
-                                gap: 0.25,
+                                alignItems: 'center',
                                 opacity: 0,
                                 transition: 'opacity 0.15s',
                             }}>
                                 <Tooltip title={t('workspace.rename')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                    <IconButton size="small" aria-label={t('workspace.rename')} sx={{ p: 0.5, color: 'text.secondary' }}
                                         onClick={(e) => { e.stopPropagation(); startRenameWorkspace(w.id, w.display_name); }}>
-                                        <EditOutlinedIcon fontSize="small" />
+                                        <EditOutlinedIcon sx={{ fontSize: iconVar.md }} />
                                     </IconButton>
                                 </Tooltip>
                                 <Tooltip title={t('workspace.export')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                    <IconButton size="small" aria-label={t('workspace.export')} sx={{ p: 0.5, color: 'text.secondary' }}
                                         onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
-                                        <DownloadIcon fontSize="small" />
+                                        <DownloadIcon sx={{ fontSize: iconVar.md }} />
                                     </IconButton>
                                 </Tooltip>
-                                <Tooltip title={t('workspace.delete')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
-                                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
-                                        <DeleteOutlineIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
+                                <ArtifactDeleteButton label={t('workspace.delete')} onClick={() => setConfirmDeleteWs(w.id)} />
                             </Box>
                         </Card>
                         );
@@ -1118,25 +1127,15 @@ export const DataFormulatorFC = ({ }) => {
                             onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
                             connectorRefreshKey={connectorRefreshKey}
                             onConnectorsChanged={handleConnectorsChanged}
-                            onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                            onAskAgent={(text) => startAnalystChat(text)}
                         />
                         {dataUploadRequestBox}
                     </Box>
                 )}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
-                    onClose={() => {
-                        setUploadDialogOpen(false);
-                        // Nothing was added, so the workspace minted to open the
-                        // dialog is discarded rather than left as a stub session.
-                        // Read live state: a table loaded immediately before close
-                        // lands in the same batch, leaving the rendered flag stale
-                        // and orphaning the data under a discarded workspace.
-                        if (dfSelectors.selectSessionEmpty(store.getState())) {
-                            dispatch(dfActions.setActiveWorkspace(null));
-                        }
-                        refreshPageConnectors();
-                    }}
+                    onClose={closeUploadDialog}
+                    onStartChat={startAnalystChat}
                     initialTab={uploadDialogInitialTab}
                     onConnectorsChanged={handleConnectorsChanged}
                 />
@@ -1182,15 +1181,15 @@ export const DataFormulatorFC = ({ }) => {
                         flexDirection: 'column',
                         zIndex: 1000,
                     }}>
-                        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
+                        <Box sx={{margin:'auto', pb: '5%', px: 2, maxWidth: '100%', boxSizing: 'border-box', display: "flex", flexDirection: "column", textAlign: "center"}}>
                             <Box component="img" sx={{  width: 196, margin: "auto" }} alt="Data Formulator logo" src={dfLogo} fetchPriority="high" />
-                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
-                                {toolName}
+                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: 0, fontSize: { xs: 28, sm: Math.min(48, headingSize) }, overflowWrap: 'anywhere'}}>
+                                {appName}
                             </Typography>
                             <Typography variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
                                 {t('landing.firstSelectModelPrefix')} <ModelSelectionButton appearance="inline" />
                             </Typography>
-                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>{t('landing.modelTip')}</Typography>
+                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600, maxWidth: '100%'}}>{t('landing.modelTip')}</Typography>
                         </Box>
                         {footer}
                     </Box>

@@ -48,14 +48,16 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
+import { WorkflowProgress } from './WorkflowPanel';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
+import { ConversationCanvas } from './ConversationCanvas';
 
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
@@ -97,6 +99,9 @@ import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
 import { LocalFolderPanel } from './UnifiedDataUploadDialog';
+import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
+import { ExternalTableReferenceCanvas } from './ExternalTableReferenceCanvas';
+import { ExplanationCanvas } from './ExplanationCanvas';
 
 export interface VisPanelProps { }
 
@@ -106,14 +111,25 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-interface OperationPreviewTable {
+interface OperationPreviewResponse {
     display_name: string;
     source_id?: string;
     table_description?: string;
     error?: string;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+}
+
+interface OperationPreviewTable extends OperationPreviewResponse {
     columns: string[];
     rows: Record<string, unknown>[];
 }
+
+export const normalizeOperationPreview = (preview: OperationPreviewResponse): OperationPreviewTable => ({
+    ...preview,
+    columns: Array.isArray(preview.columns) ? preview.columns : [],
+    rows: Array.isArray(preview.rows) ? preview.rows : [],
+});
 
 // Wide tables scroll horizontally; past this the row count makes the DOM the
 // bottleneck, so the remainder collapses into the trailing marker column.
@@ -159,12 +175,15 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
         setFailedPlans(new Set());
         const previewPlanIds = new Set(previewGroups.map(({ plan }) => plan.id));
         operation.plans.filter(plan => previewPlanIds.has(plan.id)).forEach(plan => {
-            apiRequest<{ previews: OperationPreviewTable[] }>('/api/agent/data-operation-preview', {
+            apiRequest<{ previews?: OperationPreviewResponse[] }>('/api/agent/data-operation-preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ operation_id: operation.id, plan_id: plan.id }),
             }).then(({ data }) => {
-                if (active) setPreviews(current => ({ ...current, [plan.id]: data.previews }));
+                if (active) setPreviews(current => ({
+                    ...current,
+                    [plan.id]: (data.previews ?? []).map(normalizeOperationPreview),
+                }));
             }).catch(() => {
                 if (active) setFailedPlans(current => new Set(current).add(plan.id));
             });
@@ -178,10 +197,6 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                 <Box sx={{ mb: 1.75 }}>
                     <Typography sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
                         {operation.canvasTitle || t('dataLoading.operation.previewHeading', { defaultValue: 'Tables to load' })}
-                    </Typography>
-                    <Typography sx={{ mt: 0.25, fontSize: textVar.xs, color: 'text.secondary' }}>
-                        {operation.canvasSummary
-                            || t('dataLoading.operation.previewGuide', { defaultValue: 'A preview of each table before it is added to your workspace.' })}
                     </Typography>
                 </Box>
                 {previewGroups.map(({ plan, tables }) => (
@@ -238,7 +253,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                                 </Typography>
                                             )}
                                         </Box>
-                                        {preview && (
+                                        {preview && !preview.error && (
                                             <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0 }}>
                                                 {t('dataLoading.operation.previewColumns', {
                                                     count: preview.columns.length,
@@ -261,7 +276,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                             ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
                                             : 'none',
                                     }}>
-                                        {failed ? (
+                                        {failed || preview?.error ? (
                                             <Typography sx={{ px: 1.5, py: 1.25, fontSize: textVar.xs, color: 'error.main' }}>
                                                 {t('dataLoading.operation.previewUnavailable', { defaultValue: 'Preview unavailable' })}
                                             </Typography>
@@ -303,7 +318,7 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
 
     switch (form.kind) {
         case 'connector':
-            if (form.connector.sourceType === 'local_folder') {
+            if (form.connector.sourceType === 'local_folder' && form.connector.status !== 'connected') {
                 return (
                     <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
                         <Box sx={{ width: '100%', maxWidth: 624, height: '100%', mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, boxSizing: 'border-box' }}>
@@ -332,17 +347,12 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                 );
             }
             return (
-                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
-                    <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
-                            {getConnectorIcon(form.connector.sourceType, {
-                                sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 },
-                            })}
-                            <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, lineHeight: 1.35 }}>
-                                {form.title}
-                            </Typography>
-                        </Box>
+                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: form.connector.status === 'connected' ? 'hidden' : 'auto', bgcolor: 'background.default' }}>
+                    <Box sx={{ width: '100%', maxWidth: form.connector.status === 'connected' ? 'none' : 624,
+                        height: form.connector.status === 'connected' ? '100%' : 'auto', mx: 'auto',
+                        px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
                         <ConnectorFormCard
+                            key={turn.id}
                             messageId={turn.id}
                             prompt={form.connector}
                             variant="bare"
@@ -354,6 +364,7 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                                     form: {
                                         kind: 'connector',
                                         title: form.title,
+                                        draft: form.draft,
                                         connector: {
                                             sourceType: form.connector.sourceType,
                                             status: resolution.status,
@@ -1770,15 +1781,21 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const focusedOperationTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.dataOperation)
         : undefined;
+    const focusedWorkflowTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflow)
+        : undefined;
     const focusedFormTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
+        : undefined;
+    const focusedExplanationTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain' && turn.presentation === 'long_response' && !turn.form && !turn.dataOperation)
         : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = (focusedId as { type: 'chart'; chartId: string }).chartId;
-        const chart = allCharts.find(c => c.id === chartId);
+        if (focusedId.type !== 'chart') return undefined;
+        const chart = allCharts.find(c => c.id === focusedId.chartId);
         return chart?.tableRef;
     }, [focusedId, allCharts]);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
@@ -1793,6 +1810,27 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
 
+    if (focusedId?.type === 'external-table') {
+        return <ExternalTableReferenceCanvas key={focusedId.referenceId} referenceId={focusedId.referenceId} />;
+    }
+    if (focusedId?.type === 'file') {
+        return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
+    }
+    if (focusedId?.type === 'conversation') {
+        return <ConversationCanvas textTurnId={focusedId.tableId} entryIndex={focusedId.entryIndex} nodeIds={focusedId.nodeIds} />;
+    }
+    if (focusedId?.type === 'explanation') {
+        return <ExplanationCanvas {...focusedId} />;
+    }
+    if (focusedWorkflowTurn) {
+        if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {
+            return <DataOperationCanvas operation={focusedWorkflowTurn.workflow.dataOperation} />;
+        }
+        return <WorkflowProgress key={focusedWorkflowTurn.id} turn={focusedWorkflowTurn} canvas />;
+    }
+    if (focusedExplanationTurn) {
+        return <ExplanationCanvas content={explanationContent(focusedExplanationTurn.content)} textTurnId={focusedExplanationTurn.id} executions={focusedExplanationTurn.executions} />;
+    }
     if (focusedOperationTurn?.dataOperation) {
         return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;
     }

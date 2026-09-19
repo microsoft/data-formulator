@@ -9,6 +9,8 @@ the SensitiveDataFilter safety net, and edge cases.
 
 import logging
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -21,6 +23,40 @@ from data_formulator.security.log_sanitizer import (
 )
 
 pytestmark = [pytest.mark.backend]
+
+
+def test_wsgi_import_initializes_sanitized_file_logging(tmp_path):
+    script = """
+import logging
+from pathlib import Path
+from data_formulator.app import app, configure_logging
+
+path = Path(app.config['LOG_FILE_PATH'])
+logger = logging.getLogger('data_formulator')
+logger.info('wsgi-initial password=synthetic-secret')
+assert 'wsgi-initial' in path.read_text()
+assert 'synthetic-secret' not in path.read_text()
+configure_logging()
+configure_logging()
+logger.info('wsgi-reconfigured')
+assert path.read_text().count('wsgi-reconfigured') == 1
+"""
+    subprocess.run(
+        [sys.executable, '-c', script],
+        env={
+            **os.environ,
+            'DATA_FORMULATOR_HOME': str(tmp_path),
+            'WORKSPACE_BACKEND': 'local',
+            'DISABLE_DATABASE': 'false',
+            'DISABLE_DATA_CONNECTORS': 'true',
+            'LOG_LEVEL': 'INFO',
+            'LOG_SANITIZE': 'true',
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
 
 
 # ── sanitize_url ──────────────────────────────────────────────────────────

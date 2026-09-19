@@ -13,30 +13,32 @@ import { ColumnTable } from './table';
  * Read a File as text, trying UTF-8 first and falling back to GBK.
  * Handles CSV/TSV files saved by Chinese-locale Excel (GBK) and similar cases.
  */
-export const readFileText = async (file: File): Promise<string> => {
-    const buffer = await file.arrayBuffer();
+export const readFileText = async (file: File, maxBytes?: number): Promise<string> => {
+    const partial = maxBytes !== undefined && file.size > maxBytes;
+    const buffer = await (partial ? file.slice(0, maxBytes).arrayBuffer() : file.arrayBuffer());
     try {
-        return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+        return new TextDecoder('utf-8', { fatal: true }).decode(buffer, { stream: partial });
     } catch {
         return new TextDecoder('gbk').decode(buffer);
     }
 };
 
-export const loadTextDataWrapper = (title: string, text: string, fileType: string): DictTable | undefined => {
+export const loadTextDataWrapper = (title: string, text: string, fileType: string, maxRows?: number): DictTable | undefined => {
     
     let tableName = title;
     //let tableName = title.replace(/\.[^/.]+$/ , "");
 
     let table = undefined;
     if (fileType == "text/csv" || fileType == "text/tab-separated-values") {
-        table = createTableFromText(tableName, text);
+        table = createTableFromText(tableName, text, maxRows);
     } else if (fileType == "application/json") {
-        table = createTableFromFromObjectArray(tableName, JSON.parse(text));
+        const values = JSON.parse(text);
+        table = createTableFromFromObjectArray(tableName, maxRows === undefined ? values : values.slice(0, maxRows));
     } 
     return table;
 };
 
-export const createTableFromText = (title: string, text: string): DictTable | undefined => {
+export const createTableFromText = (title: string, text: string, maxRows?: number): DictTable | undefined => {
     // Check for empty strings, bad data, anything else?
     if (!text || text.trim() === '') {
         console.log('Invalid text provided for data. Could not load.');
@@ -80,7 +82,7 @@ export const createTableFromText = (title: string, text: string): DictTable | un
         }
     }
 
-    let values = rows.slice(1);
+    let values = rows.slice(1, maxRows === undefined ? undefined : maxRows + 1);
     let records = values.map(row => {
         let record: any = {};
         for (let i = 0; i < colNames.length; i++) {
@@ -256,7 +258,7 @@ export const resolveExcelCellValue = (value: any): string | number | boolean | n
     return value;
 };
 
-export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuffer): Promise<DictTable[]> => {
+export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuffer, maxRows?: number): Promise<DictTable[]> => {
     try {
         // Read the Excel file
         const workbook = new ExcelJS.Workbook();
@@ -283,6 +285,7 @@ export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuf
                 // Process data rows (skip header row)
                 worksheet.eachRow((row, rowNumber) => {
                     if (rowNumber === 1) return; // Skip header row
+                    if (maxRows !== undefined && jsonData.length >= maxRows) return;
 
                     const rowData: any = {};
                     row.eachCell((cell, colNumber) => {

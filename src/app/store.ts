@@ -20,7 +20,7 @@ export type AppDispatch = typeof store.dispatch
 const stripConnectorPrefill = createTransform(
     stripConnectorPrefillFromEntries,
     (outboundState: any) => outboundState,
-    { whitelist: ['dataLoadingChatMessages', 'textTurns'] },
+    { whitelist: ['textTurns'] },
 );
 
 const persistConfig = {
@@ -30,7 +30,7 @@ const persistConfig = {
     // globalModels are always fetched fresh from the server on each app start,
     // so there is no need (and it would cause stale-data issues) to persist them.
     // In-progress flags are transient and should not survive page refreshes.
-    blacklist: ['serverConfig', 'globalModels', 'chartSynthesisInProgress', 'starterQuestionsStatus'],
+    blacklist: ['serverConfig', 'globalModels', 'chartSynthesisInProgress', 'starterQuestionsStatus', 'pendingTableLoads'],
     transforms: [stripConnectorPrefill],
     migrate: async (state: any): Promise<any> => migrateState(state),
 }

@@ -158,9 +158,39 @@ class TestLocalFolderDataLoader:
         assert "events.jsonl" in names
         assert os.path.join("reports", "q1.csv") in names
 
-        # Should exclude hidden files and unsupported types
         assert ".hidden.csv" not in names
-        assert "readme.md" not in names
+        assert "readme.md" in names
+        assert next(table for table in tables if table["name"] == "readme.md")["metadata"]["artifact_kind"] == "file"
+
+    def test_read_workspace_files(self, data_dir: Path) -> None:
+        workbook = b"excel bytes preserved without table conversion"
+        (data_dir / "book.xlsx").write_bytes(workbook)
+        loader = LocalFolderDataLoader({"root_dir": str(data_dir)})
+        assert loader.test_connection()
+        assert loader.read_file("readme.md") == b"# Hello"
+        assert loader.read_file("book.xlsx") == workbook
+        assert loader.get_metadata(["book.xlsx"])["artifact_kind"] == "file"
+        assert "sample_rows" not in loader.get_metadata(["book.xlsx"])
+        assert next(node for node in loader.ls() if node.name == "book.xlsx").metadata["artifact_kind"] == "file"
+        with pytest.raises(ValueError, match="size limit"):
+            loader.read_file("readme.md", max_bytes=2)
+        with pytest.raises(ValueError):
+            loader.read_file("../outside.md")
+        with pytest.raises(ValueError, match="Hidden"):
+            loader.read_file(".hidden.csv")
+
+    def test_file_catalog_excludes_symlink_escape(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        outside = tmp_path / "outside.md"
+        outside.write_text("private")
+        (root / "escape.md").symlink_to(outside)
+        loader = LocalFolderDataLoader({"root_dir": str(root)})
+        assert loader.test_connection()
+        assert loader.list_tables() == []
+        assert loader.ls() == []
+        with pytest.raises(ValueError):
+            loader.read_file("escape.md")
 
     def test_list_tables_non_recursive(self, data_dir: Path) -> None:
         loader = LocalFolderDataLoader({
@@ -233,6 +263,43 @@ class TestLocalFolderDataLoader:
         loader.test_connection()
         table = loader.fetch_data_as_arrow("events.jsonl")
         assert table.num_rows == 2
+
+    def test_fetch_json_array(self, data_dir: Path) -> None:
+        loader = LocalFolderDataLoader({"root_dir": str(data_dir)})
+        assert loader.fetch_data_as_arrow("config.json").to_pylist() == [{"key": "val"}]
+
+    @pytest.mark.parametrize("records", [
+        {"key": "value", "nested": {"count": 1}},
+        [{"key": "first"}, {"key": "second", "extra": "value"}],
+    ])
+    def test_fetch_pretty_json(self, tmp_path: Path, records) -> None:
+        (tmp_path / "pretty.json").write_text("\n  " + json.dumps(records, indent=2))
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        table = loader.fetch_data_as_arrow("pretty.json", {"size": 1})
+        if isinstance(records, dict):
+            assert table.to_pylist() == [records]
+            assert loader._last_total_rows == 1
+        else:
+            assert table.to_pylist() == [{"key": "first", "extra": None}]
+            assert loader._last_total_rows == 2
+
+    @pytest.mark.parametrize("extension", [".json", ".jsonl"])
+    def test_fetch_malformed_json_rejected(self, tmp_path: Path, extension: str) -> None:
+        filename = "broken" + extension
+        (tmp_path / filename).write_text('{"value": invalid}')
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        with pytest.raises(pa.ArrowInvalid, match="JSON parse error"):
+            loader.fetch_data_as_arrow(filename)
+
+    @pytest.mark.parametrize("extension", [".json", ".jsonl"])
+    def test_fetch_json_large_record(self, tmp_path: Path, extension: str) -> None:
+        rows = [{"value": "x" * (3 * 1024 * 1024)}, {"value": "small"}]
+        filename = "large" + extension
+        (tmp_path / filename).write_text("\n".join(json.dumps(row) for row in rows))
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        assert loader.fetch_data_as_arrow(filename, {"size": 1}).to_pylist() == rows[:1]
+        assert loader._last_total_rows == 2
+        assert loader.fetch_data_as_arrow(filename).to_pylist() == rows
 
     def test_fetch_subdirectory_file(self, data_dir: Path) -> None:
         loader = LocalFolderDataLoader({"root_dir": str(data_dir)})

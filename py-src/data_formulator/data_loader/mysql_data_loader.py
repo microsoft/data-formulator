@@ -49,6 +49,7 @@ class MySQLDataLoader(ExternalDataLoader):
         }]
 
     AUTH_GUIDE = "mysql.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

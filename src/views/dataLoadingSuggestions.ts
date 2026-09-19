@@ -1,8 +1,4 @@
-// Shared sample-task suggestions for the Data Loading Agent. Both the
-// upload-dialog entry point (`UnifiedDataUploadDialog`) and the in-session
-// chat panel (`DataLoadingChat`) render these via `AgentChatInput`'s
-// `focusSuggestions` dropdown. Keep this single source of truth so the
-// two surfaces stay in sync.
+// Shared sample-task suggestions for the landing and upload-menu agent inputs.
 
 import { TFunction } from 'i18next';
 import React from 'react';
@@ -181,10 +177,10 @@ export function buildDataLoadingQuickActions(
     { t, setInput, setImages, setAttachments, requestAutoSend }: BuildSuggestionsArgs,
 ): DataLoadingQuickAction[] {
     const connectLabel = t('upload.agentChatQuickAction.connect', {
-        defaultValue: 'Help me connect to my data source',
+        defaultValue: 'Guide me to connect a data source',
     });
     const askLabel = t('upload.agentChatQuickAction.askConnected', {
-        defaultValue: 'What data do we have from connected sources?',
+        defaultValue: 'List tables from my connected sources',
     });
 
     const fillAndSend = (text: string) => {

@@ -2,6 +2,7 @@ from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
+from azure.kusto.data._models import KustoResultTable
 
 from data_formulator.data_loader.kusto_data_loader import (
     KustoDataLoader,
@@ -17,6 +18,91 @@ def _loader() -> KustoDataLoader:
     loader.kusto_cluster = "https://example.kusto.windows.net"
     loader.kusto_database = "analytics"
     return loader
+
+
+@pytest.mark.parametrize("column_type", ["float", "real", "double"])
+def test_query_converts_floating_point_result_types(column_type: str) -> None:
+    loader = _loader()
+    loader.client.execute.return_value = Mock(primary_results=[KustoResultTable({
+        "Columns": [
+            {"ColumnName": "metric", "ColumnType": column_type},
+            {"ColumnName": "label", "ColumnType": "string"},
+        ],
+        "Rows": [
+            [1.25, "finite"],
+            [None, "null"],
+            ["NaN", "nan"],
+            ["Infinity", "positive"],
+            ["-Infinity", "negative"],
+        ],
+    })])
+
+    frame = loader.query("Metrics | take 10")
+
+    assert str(frame["metric"].dtype) == "Float64"
+    assert frame["metric"].iloc[0] == 1.25
+    assert pd.isna(frame["metric"].iloc[1])
+    assert pd.isna(frame["metric"].iloc[2])
+    assert frame["metric"].iloc[3] == float("inf")
+    assert frame["metric"].iloc[4] == float("-inf")
+    assert frame["label"].tolist() == ["finite", "null", "nan", "positive", "negative"]
+
+
+@pytest.mark.parametrize("database,source,expected", [
+    ("Athens-prod", "PlayfabDataConnectionMetadata_custom.ObjectiveLog",
+     ("Athens-prod", "PlayfabDataConnectionMetadata_custom.ObjectiveLog")),
+    ("Athens-prod", "Athens-prod.ObjectiveLog", ("Athens-prod", "Athens-prod.ObjectiveLog")),
+    ("Athens-prod", "ObjectiveLog", ("Athens-prod", "ObjectiveLog")),
+    (None, "Athens-prod.PlayfabDataConnectionMetadata_custom.ObjectiveLog",
+     ("Athens-prod", "PlayfabDataConnectionMetadata_custom.ObjectiveLog")),
+    (None, "ObjectiveLog", (None, "ObjectiveLog")),
+])
+def test_resolve_source_table_preserves_dots_in_pinned_database(database, source, expected) -> None:
+    loader = _loader()
+    loader.kusto_database = database
+
+    assert loader._resolve_source_table(source) == expected
+
+
+@pytest.mark.parametrize("operation", ["fetch", "probe"])
+def test_dotted_table_queries_use_configured_database(operation) -> None:
+    loader = _loader()
+    loader.kusto_database = "Athens-prod"
+    table = "PlayfabDataConnectionMetadata_custom.ObjectiveLog"
+    loader.client.execute.return_value = Mock(primary_results=[KustoResultTable({
+        "Columns": [{"ColumnName": "count", "ColumnType": "long"}],
+        "Rows": [[1]],
+    })])
+
+    if operation == "fetch":
+        result = loader.fetch_data_as_arrow(table, {"size": 10})
+        assert result.num_rows == 1
+    else:
+        result = loader.probe([table], {"limit": 10})
+        assert "error" not in result
+
+    loader.client.execute.assert_called_once()
+    database, kql = loader.client.execute.call_args.args[:2]
+    assert database == "Athens-prod"
+    assert kql.startswith(f"['{table}']\n| ")
+    assert loader.kusto_database == "Athens-prod"
+
+
+@pytest.mark.parametrize("ordered", [False, True])
+def test_fetch_projects_columns_remotely_after_filtering_and_limiting(ordered) -> None:
+    loader = _loader()
+    loader.query = Mock(return_value=pd.DataFrame({"review text": ["sample"]}))
+    options = {"size": 10, "columns": ["review text"],
+               "source_filters": [{"column": "game", "operator": "EQ", "value": "target"}]}
+    if ordered:
+        options.update({"sort_columns": ["score"], "sort_order": "desc"})
+    result = loader.fetch_data_as_arrow("Reviews", options)
+    loader.query.assert_called_once()
+    query = loader.query.call_args.args[0]
+    assert "where" in query
+    assert query.index("where") < query.index("top 10" if ordered else "take 10")
+    assert query.endswith("| project ['review text']")
+    assert result.column_names == ["review text"]
 
 
 def test_connection_uses_direct_sdk_probe() -> None:

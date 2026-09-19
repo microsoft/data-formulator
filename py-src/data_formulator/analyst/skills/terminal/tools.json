@@ -1,0 +1,19 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "run_terminal",
+      "description": "Propose one local command to find data or diagnose a connection. Exact-command approval is required. OS enforcement confines filesystem writes to the workspace scratch directory, available as DF_SCRATCH_DIR in the command environment. cwd does not grant write access. Results return automatically; do not resubmit. No interactive stdin or background services. Commands may still read local files and access the network.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "argv": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Executable followed by exact arguments, without implicit shell interpretation."},
+          "cwd": {"type": "string", "description": "Absolute working directory, or ~ for the user's home directory."},
+          "purpose": {"type": "string", "description": "Data discovery or connection goal and expected scratch writes or network transfers. Setup requiring writes outside scratch must be performed by the user."}
+        },
+        "required": ["argv", "cwd", "purpose"],
+        "additionalProperties": false
+      }
+    }
+  }
+]

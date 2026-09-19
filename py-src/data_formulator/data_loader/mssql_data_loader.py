@@ -1,14 +1,20 @@
 import json
 import logging
 import math
+import threading
 from typing import Any
 
 import mssql_python
 import pyarrow as pa
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name, _esc_str
 from data_formulator.data_loader import probe_utils
 from data_formulator.datalake.parquet_utils import df_to_safe_records
+
+
+def _quote_mssql(name: str) -> str:
+    """Bracket-quote a T-SQL identifier."""
+    return probe_utils.quote_ident(name, probe_utils.MSSQL)
 
 log = logging.getLogger(__name__)
 
@@ -144,6 +150,7 @@ class MSSQLDataLoader(ExternalDataLoader):
         return "entra_id"
 
     AUTH_GUIDE = "mssql.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         from data_formulator.security.log_sanitizer import sanitize_params
@@ -155,10 +162,10 @@ class MSSQLDataLoader(ExternalDataLoader):
         self.database = params.get("database", "") or ""
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
-        self.port = params.get("port", "1433")
-        self.encrypt = params.get("encrypt", "yes")
-        self.trust_server_certificate = params.get("trust_server_certificate", "no")
-        self.connection_timeout = params.get("connection_timeout", "30")
+        self.port = params.get("port") or "1433"
+        self.encrypt = params.get("encrypt") or "yes"
+        self.trust_server_certificate = params.get("trust_server_certificate") or "no"
+        self.connection_timeout = params.get("connection_timeout") or "30"
 
         self.auth_path = params.get("_auth_path") or self.infer_auth_path(params)
 
@@ -188,6 +195,9 @@ class MSSQLDataLoader(ExternalDataLoader):
 
         try:
             self._conn = mssql_python.connect(conn_str, timeout=connection_timeout)
+            # mssql-python does not support MARS, so the connection permits only
+            # one active statement; concurrent requests must take turns.
+            self._lock = threading.RLock()
             log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
             log.error(f"Failed to connect to SQL Server: {e}")
@@ -206,7 +216,7 @@ class MSSQLDataLoader(ExternalDataLoader):
             columns_query = f"""
                 SELECT COLUMN_NAME, DATA_TYPE
                 FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
+                WHERE TABLE_SCHEMA = '{_esc_str(schema)}' AND TABLE_NAME = '{_esc_str(table_name)}'
                 ORDER BY ORDINAL_POSITION
             """
             cols_df = self._execute_query_raw(columns_query).to_pandas()
@@ -216,31 +226,33 @@ class MSSQLDataLoader(ExternalDataLoader):
             parts = []
             for _, r in cols_df.iterrows():
                 col, dtype = r['COLUMN_NAME'], r['DATA_TYPE'].lower()
+                qcol = _quote_mssql(str(col))
                 if dtype in self._CX_SPATIAL_TYPES:
-                    parts.append(f"[{col}].STAsText() AS [{col}]")
+                    parts.append(f"{qcol}.STAsText() AS {qcol}")
                 elif dtype in self._CX_OTHER_UNSUPPORTED:
-                    parts.append(f"CAST([{col}] AS NVARCHAR(MAX)) AS [{col}]")
+                    parts.append(f"CAST({qcol} AS NVARCHAR(MAX)) AS {qcol}")
                 else:
-                    parts.append(f"[{col}]")
+                    parts.append(qcol)
             return ', '.join(parts)
         except Exception:
             return "*"
 
     def _read_sql(self, query: str) -> pa.Table:
         """Execute a query and return results as a PyArrow Table (no pandas)."""
-        cur = self._conn.cursor()
-        try:
-            cur.execute(query)
-            if cur.description is None:
-                return pa.table({})
-            columns = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-            if not rows:
-                return pa.table({col: pa.array([], type=pa.null()) for col in columns})
-            col_data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
-            return pa.table(col_data)
-        finally:
-            cur.close()
+        with self._lock:
+            cur = self._conn.cursor()
+            try:
+                cur.execute(query)
+                if cur.description is None:
+                    return pa.table({})
+                columns = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+                if not rows:
+                    return pa.table({col: pa.array([], type=pa.null()) for col in columns})
+                col_data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
+                return pa.table(col_data)
+            finally:
+                cur.close()
 
     def _execute_query_raw(self, query: str) -> pa.Table:
         """Execute a query (no error wrapping)."""
@@ -277,14 +289,18 @@ class MSSQLDataLoader(ExternalDataLoader):
             schema = "dbo"
             table = source_table
         
-        col_list = self._safe_select_list(schema.strip('[]'), table.strip('[]'))
-        base_query = f"SELECT TOP {int(size)} {col_list} FROM [{schema}].[{table}]"
+        schema = schema.strip('[]')
+        table = table.strip('[]')
+
+        col_list = self._safe_select_list(schema, table)
+        qualified = f"{_quote_mssql(schema)}.{_quote_mssql(table)}"
+        base_query = f"SELECT TOP {int(size)} {col_list} FROM {qualified}"
         
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'[{col}] {order_direction}' for col in sort_columns]
+            sanitized_cols = [f'{_quote_mssql(str(col))} {order_direction}' for col in sort_columns]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
         query = f"{base_query}{order_by_clause}"

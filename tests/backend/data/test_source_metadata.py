@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from data_formulator.datalake.workspace_metadata import (
     ColumnInfo,
     TableMetadata,
+    WorkspaceFileMetadata,
     WorkspaceMetadata,
 )
 from data_formulator.data_loader.external_data_loader import (
@@ -24,6 +25,36 @@ from data_formulator.data_loader.external_data_loader import (
 )
 
 pytestmark = [pytest.mark.backend]
+
+
+class TestWorkspaceFileMetadata:
+    def test_workspace_metadata_roundtrip(self):
+        now = datetime.now(timezone.utc)
+        metadata = WorkspaceMetadata.create_new()
+        metadata.add_file(WorkspaceFileMetadata(
+            name="README.md",
+            filename="README.md",
+            created_at=now,
+            content_hash="abc123",
+            file_size=42,
+            media_type="text/markdown",
+        ))
+
+        restored = WorkspaceMetadata.from_dict(metadata.to_dict())
+
+        assert restored.files["README.md"].filename == "README.md"
+        assert restored.files["README.md"].media_type == "text/markdown"
+
+    def test_legacy_metadata_defaults_to_no_files(self):
+        now = datetime.now(timezone.utc).isoformat()
+        restored = WorkspaceMetadata.from_dict({
+            "version": "1.1",
+            "created_at": now,
+            "updated_at": now,
+            "tables": {},
+        })
+
+        assert restored.files == {}
 
 
 # ── ColumnInfo backward-compat ────────────────────────────────────────

@@ -27,6 +27,36 @@ def manager(tmp_path) -> WorkspaceManager:
 
 
 class TestWorkspaceLifecycle:
+    def test_lazy_creation_opens_workspace_created_by_another_request(self, manager, monkeypatch):
+        from flask import Flask
+        from data_formulator import workspace_factory
+
+        create_workspace = manager.create_workspace
+
+        def concurrent_create(workspace_id):
+            create_workspace(workspace_id)
+            return create_workspace(workspace_id)
+
+        monkeypatch.setattr(manager, "create_workspace", concurrent_create)
+        monkeypatch.setattr(workspace_factory, "get_workspace_manager", lambda identity: manager)
+        with Flask(__name__).test_request_context(headers={"X-Workspace-Id": "racing-session"}):
+            workspace = workspace_factory.get_workspace("test-user")
+        assert workspace is not None
+        assert manager.workspace_exists("racing-session")
+
+    def test_lazy_creation_preserves_real_creation_errors(self, manager, monkeypatch):
+        from flask import Flask
+        from data_formulator import workspace_factory
+
+        def fail_create(workspace_id):
+            raise ValueError("Cannot create workspace")
+
+        monkeypatch.setattr(manager, "create_workspace", fail_create)
+        monkeypatch.setattr(workspace_factory, "get_workspace_manager", lambda identity: manager)
+        with Flask(__name__).test_request_context(headers={"X-Workspace-Id": "failed-session"}):
+            with pytest.raises(ValueError, match="Cannot create workspace"):
+                workspace_factory.get_workspace("test-user")
+
     def test_list_empty(self, manager):
         assert manager.list_workspaces() == []
 
@@ -140,6 +170,10 @@ class TestSessionState:
         manager.create_workspace("ws")
         manager.save_session_state("ws", {
             "tables": [],
+            "inputTables": [{
+                "id": "sales",
+                "source": {"kind": "connector", "connectorId": "warehouse"},
+            }],
             "activeWorkspace": {"id": "ws", "displayName": "Old Name"},
         })
 
@@ -150,6 +184,7 @@ class TestSessionState:
             .read_text(encoding="utf-8")
         )
         assert meta["displayName"] == "New Name"
+        assert meta["sourceIds"] == ["warehouse"]
 
         state = manager.load_session_state("ws")
         assert state["activeWorkspace"]["displayName"] == "New Name"
@@ -179,6 +214,47 @@ class TestSessionState:
 
         loaded = manager.load_session_state("test")
         assert loaded["version"] == 2
+
+    def test_session_list_summarizes_data_sources(self, manager):
+        manager.create_workspace("sources")
+        manager.save_session_state("sources", {
+            "inputTables": [
+                {
+                    "id": "sales",
+                    "source": {
+                        "kind": "connector",
+                        "connectorId": "warehouse",
+                    },
+                },
+                {
+                    "id": "customers",
+                    "sourceConfig": {
+                        "type": "database",
+                        "connectorId": "warehouse",
+                    },
+                },
+                {
+                    "id": "forecast",
+                    "sourceConfig": {"type": "file"},
+                },
+                {
+                    "id": "legacy-kusto",
+                    "sourceConfig": {
+                        "type": "database",
+                        "connector_id": "kusto-prod",
+                    },
+                },
+                {
+                    "id": "unidentified-database",
+                    "sourceConfig": {"type": "database"},
+                },
+            ],
+        })
+
+        summary = manager.list_workspaces()[0]
+
+        assert summary["table_count"] == 5
+        assert summary["source_ids"] == ["kusto-prod", "upload", "warehouse"]
 
 
 class TestOpenWorkspace:

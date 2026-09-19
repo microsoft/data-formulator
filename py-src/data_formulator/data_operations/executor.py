@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import logging
+import json
+import hashlib
+from pathlib import PurePosixPath
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from typing import Callable
 
 import pyarrow as pa
+from data_formulator.data_loader.query_runtime import check_cancelled, execute_source_query
 
 from data_formulator.datalake.parquet_utils import sanitize_table_name
 from data_formulator.data_loader.external_data_loader import (
@@ -58,10 +63,11 @@ class DataOperationExecutor:
         result_table_ids: list[str] = []
         failed_steps: list[FailedOperationStep] = []
         for step_index, step in enumerate(plan.steps):
+            check_cancelled()
             if step_index in published:
                 result_table_ids.append(published[step_index])
                 continue
-            table_name = self._allocate_table_name(step.display_name, used_names)
+            table_name = self._allocate_table_name(self._requested_table_name(step), used_names)
             used_names.add(table_name)
             try:
                 result_table_ids.append(self._publish_connector_query(
@@ -102,7 +108,8 @@ class DataOperationExecutor:
     ) -> str:
         loader = self._loader_resolver(step.source_id)
         import_options = self._build_import_options(step)
-        table = loader.fetch_data_as_arrow(
+        table = execute_source_query(
+            loader, "fetch_data_as_arrow",
             source_table=step.source_table,
             import_options=import_options,
         )
@@ -112,6 +119,7 @@ class DataOperationExecutor:
         if step.query.limit is not None and table.num_rows > step.query.limit:
             table = table.slice(0, step.query.limit)
 
+        check_cancelled()
         metadata = self._workspace.write_parquet_from_arrow(
             table,
             table_name,
@@ -140,6 +148,22 @@ class DataOperationExecutor:
                 self._workspace.add_table_metadata(metadata)
         except Exception:
             logger.debug("Metadata enrichment skipped for %s", table_name, exc_info=True)
+        scope = {
+            "source_id": step.source_id,
+            "table_key": step.table_key,
+            "filters": import_options.get("source_filters", []),
+            "columns": import_options.get("columns", "all"),
+            "order_by": [{"column": item.column, "direction": item.direction} for item in step.query.order_by],
+            "requested_limit": step.query.limit,
+            "loaded_row_count": table.num_rows,
+        }
+        scope_description = (
+            f"Workspace table: {step.display_name}. Import scope: "
+            + json.dumps(scope, ensure_ascii=False, default=str)
+            + ". Coverage is subject to connector limits; loaded row count is not a source total."
+        )
+        metadata.description = "\n\n".join(part for part in (metadata.description, scope_description) if part)
+        self._workspace.add_table_metadata(metadata)
         return metadata.name
 
     def _find_published_results(
@@ -180,12 +204,46 @@ class DataOperationExecutor:
         return options
 
     @staticmethod
+    def _requested_table_name(step: ConnectorQueryStep) -> str:
+        source = step.source_table_name or step.source_table
+        path = PurePosixPath(urlsplit(source).path if "://" in source else source)
+        file_source = path.suffix.lower() in {".csv", ".tsv", ".parquet", ".json", ".jsonl", ".xlsx"}
+        basename = path.stem if file_source else path.name
+        label = step.display_name.strip()
+        if not file_source and "/" not in source:
+            return label
+        generic_names = {sanitize_table_name(value) for value in (source, step.source_table, basename, path.name)}
+        if sanitize_table_name(label) in generic_names:
+            hints = []
+            for predicate in step.query.filters[:2]:
+                value = predicate.to_dict()
+                hints.append("_".join(str(part) for part in (
+                    value["column"], value["operator"],
+                    json.dumps(value.get("value"), ensure_ascii=False, default=str),
+                )))
+            if step.query.limit is not None:
+                hints.append(f"first_{step.query.limit}")
+            if hints:
+                label = "_".join(hints)
+            else:
+                return basename
+        basename = sanitize_table_name(basename)
+        if len(basename) > 32:
+            digest = hashlib.sha256(basename.encode("utf-8")).hexdigest()[:6]
+            basename = f"{basename[:25].rstrip('_')}_{digest}"
+        return f"{basename}__{label}"
+
+    @staticmethod
     def _allocate_table_name(requested_name: str, used: set[str]) -> str:
         base = sanitize_table_name(requested_name)
+        if len(base) > 80:
+            digest = hashlib.sha256(requested_name.encode("utf-8")).hexdigest()[:8]
+            base = f"{base[:71].rstrip('_')}_{digest}"
         candidate = base
         suffix = 2
         while candidate in used:
-            candidate = f"{base}_{suffix}"
+            ending = f"_{suffix}"
+            candidate = f"{base[:80 - len(ending)]}{ending}"
             suffix += 1
         return candidate
 

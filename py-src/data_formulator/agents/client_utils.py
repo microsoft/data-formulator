@@ -3,7 +3,9 @@ import litellm
 import os
 from types import SimpleNamespace
 
-from azure.identity import AzureCliCredential, DefaultAzureCredential, get_bearer_token_provider
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+from data_formulator.auth.azure_cli import get_desktop_azure_token_provider
 
 
 def _synthesize_stream(response):
@@ -219,13 +221,19 @@ def _salvage_tool_calls_from_content(response, tools):
 class Client(object):
     """
     Returns a LiteLLM client configured for the specified endpoint and model.
-    Supports OpenAI, Azure, Ollama, and other providers via LiteLLM.
+    Supports OpenAI, Azure, Ollama, OrcaRouter, and other providers via LiteLLM.
     """
-    def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None):
+    def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None,
+                 *, api_type=None, chatgpt_account_id=None, managed_identity=False, managed_identity_client_id=None):
         
         self.endpoint = endpoint
         self.model = model
         self.params = {}
+        if api_type not in (None, "chat_completions", "responses"):
+            raise ValueError("Unsupported model API type")
+        if api_type == "responses" and endpoint not in ("openai", "azure", "github_copilot", "chatgpt"):
+            raise ValueError("Unsupported Responses provider")
+        self.api_type = api_type
 
         if api_key is not None and api_key != "":
             self.params["api_key"] = api_key
@@ -237,6 +245,26 @@ class Client(object):
         if self.endpoint == "openai":
             if not model.startswith("openai/"):
                 self.model = f"openai/{model}"
+        elif self.endpoint == "openrouter":
+            self.model = model if model.startswith("openrouter/") else f"openrouter/{model}"
+            self.params["api_base"] = (api_base or "https://openrouter.ai/api/v1").rstrip("/")
+        elif self.endpoint == "github_copilot":
+            from litellm.llms.github_copilot.common_utils import get_copilot_default_headers
+
+            if not api_key or not api_base:
+                raise ValueError("GitHub Copilot requires a resolved account connection")
+            self.model = model.removeprefix("github_copilot/")
+            self.params["custom_llm_provider"] = "openai"
+            self.params["extra_headers"] = {**get_copilot_default_headers(api_key), "X-Initiator": "agent"}
+        elif self.endpoint == "chatgpt":
+            from data_formulator.agents.chatgpt_transport import install_chatgpt_transport
+
+            if not api_key or not chatgpt_account_id or api_base or api_version:
+                raise ValueError("ChatGPT requires a resolved account connection")
+            install_chatgpt_transport()
+            self.model = "chatgpt/" + model.removeprefix("chatgpt/")
+            self.api_type = "responses"
+            self.params["extra_headers"] = {"ChatGPT-Account-Id": chatgpt_account_id}
         elif self.endpoint == "gemini":
             if model.startswith("gemini/"):
                 self.model = model
@@ -252,14 +280,18 @@ class Client(object):
                 raise ValueError("Azure API base URL is required")
             self.params["api_base"] = api_base.rstrip("/")
             if api_key is None or api_key == "":
-                credential = (
-                    AzureCliCredential()
-                    if os.environ.get("DATA_FORMULATOR_DESKTOP") == "1"
-                    else DefaultAzureCredential()
-                )
-                token_provider = get_bearer_token_provider(
-                    credential, "https://cognitiveservices.azure.com/.default"
-                )
+                if managed_identity:
+                    from azure.identity import ManagedIdentityCredential
+                    token_provider = get_bearer_token_provider(
+                        ManagedIdentityCredential(client_id=managed_identity_client_id),
+                        "https://cognitiveservices.azure.com/.default",
+                    )
+                elif os.environ.get("DATA_FORMULATOR_DESKTOP") == "1":
+                    token_provider = get_desktop_azure_token_provider()
+                else:
+                    token_provider = get_bearer_token_provider(
+                        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+                    )
                 self.params["azure_ad_token_provider"] = token_provider
             self.params["custom_llm_provider"] = "azure"
         elif self.endpoint == "ollama":
@@ -274,6 +306,16 @@ class Client(object):
                 self.model = model
             else:
                 self.model = f"ollama/{model}"
+        elif self.endpoint == "orcarouter":
+            # OrcaRouter exposes an OpenAI-compatible API, so route the model
+            # through LiteLLM's openai provider against the OrcaRouter base URL.
+            # The ``orcarouter/`` prefix is preserved by LiteLLM (unlike
+            # ``openai/``, which it strips), which is how OrcaRouter's gateway
+            # addresses its model routers.
+            self.params["api_base"] = (api_base or "https://api.orcarouter.ai/v1").rstrip("/")
+            self.params["custom_llm_provider"] = "openai"
+            if "/" not in model:
+                self.model = f"orcarouter/{model}"
 
     def _strip_image_blocks(self, content):
         """Remove image_url blocks from multimodal content arrays."""
@@ -363,7 +405,11 @@ class Client(object):
             model_config["model"],
             model_config.get("api_key"),
             model_config.get("api_base"),
-            model_config.get("api_version")
+            model_config.get("api_version"),
+            api_type=model_config.get("api_type"),
+            chatgpt_account_id=model_config.get("chatgpt_account_id"),
+                **({'managed_identity': True, 'managed_identity_client_id': model_config.get('managed_identity_client_id')}
+                    if model_config.get('auth_mode') == 'managed_identity' else {}),
         )
 
     def ping(self, timeout: int = 10):
@@ -372,10 +418,32 @@ class Client(object):
         messages = [{"role": "user", "content": "Reply only 'ok'."}]
         params = self.params.copy()
         params["timeout"] = timeout
-        litellm.completion(
-            model=self.model, messages=messages,
-            max_tokens=3, drop_params=True, _skip_mcp_handler=True, **params,
-        )
+        self._dispatch(messages=messages, stream=False, params=params, extra={"max_tokens": 3})
+
+    def _dispatch_responses(self, call_kwargs):
+        """Adapt the chat contract through LiteLLM's Responses bridge without storing server-side history."""
+        request = dict(call_kwargs)
+        if self.endpoint == "chatgpt":
+            request["model"] = "responses/" + self.model.removeprefix("chatgpt/")
+            request["custom_llm_provider"] = "chatgpt"
+            return litellm.completion(**request)
+        model = self.model.removeprefix("openai/").removeprefix("azure/")
+        request["model"] = model if model.startswith("responses/") else "responses/" + model
+        request["custom_llm_provider"] = "azure" if self.endpoint == "azure" else "openai"
+        if request.get("stream"):
+            request["stream_options"] = {**(request.get("stream_options") or {}), "include_usage": True}
+        body = dict(request.get("extra_body") or {})
+        body["store"] = False
+        body["include"] = list(dict.fromkeys([*(body.get("include") or []), "reasoning.encrypted_content"]))
+        request["extra_body"] = body
+        request.pop("store", None)
+        return litellm.completion(**request)
+
+    def _dispatch_chat_completions(self, call_kwargs):
+        """Use the existing chat transport; explicit chat routing disables LiteLLM's automatic bridge."""
+        if self.api_type == "chat_completions":
+            call_kwargs = {**call_kwargs, "_skip_responses_api_bridge": True}
+        return litellm.completion(**call_kwargs)
 
     def _dispatch(self, *, messages, stream, params, tools=None, extra=None):
         """Issue the LiteLLM call, transparently handling Ollama streaming.
@@ -396,7 +464,8 @@ class Client(object):
                            **params, **(extra or {}))
         if tools is not None:
             call_kwargs["tools"] = tools
-        resp = litellm.completion(**call_kwargs)
+        resp = (self._dispatch_responses(call_kwargs) if self.api_type == "responses"
+            else self._dispatch_chat_completions(call_kwargs))
         if is_ollama and tools:
             resp = _salvage_tool_calls_from_content(resp, tools)
         if is_ollama and stream:

@@ -33,6 +33,31 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _concise_identity(value: str) -> str:
+    """Reduce a connection param to the part a human recognises.
+
+    URLs collapse to their host (``https://x.kusto.windows.net/`` -> ``x.kusto.windows.net``)
+    and home directories to ``~`` so identities stay short and screenshot-safe.
+    """
+    trimmed = value.strip().rstrip("/\\")
+    if not trimmed:
+        return ""
+    if "://" in trimmed:
+        from urllib.parse import urlparse
+        host = urlparse(trimmed).netloc
+        if host:
+            return host
+    if trimmed.startswith(("/", "~")) or (len(trimmed) > 2 and trimmed[1] == ":"):
+        from pathlib import Path
+        try:
+            home = str(Path.home())
+            if trimmed.startswith(home):
+                return "~" + trimmed[len(home):]
+        except Exception:
+            pass
+    return trimmed
+
+
 @dataclass(frozen=True)
 class CatalogCachePolicy:
     listing_ttl_seconds: int | None = 21_600
@@ -708,6 +733,74 @@ class ExternalDataLoader(ABC):
     #: reason about which source a user means.  When ``None``, callers fall
     #: back to ``DISPLAY_NAME``.  This is NOT the verbose ``auth_instructions``.
     DESCRIPTION: str | None = None
+
+    QUERY_EXECUTION: str = "unknown"
+
+    @classmethod
+    def query_capabilities(cls) -> dict[str, str]:
+        guidance = {
+            "remote_file_scan": (
+                "Queries read remote files into the application; filters and aggregates are not "
+                "executed by a database at the source. CSV/JSON filtering, aggregation, and sorting "
+                "may transfer and scan the entire file even with a small result limit. "
+                "Parquet may reduce reads, but do not assume predicate or limit pushdown. "
+                "Reuse cached schema and samples and relevant loaded data before probing. "
+                "When the needed raw-row scope is known, load it once and compute locally instead "
+                "of probing then loading the same source. Probe only when its result is needed; "
+                "a bounded result is not a bounded scan."
+            ),
+            "server_query": (
+                "Structured queries execute on the source engine, which can apply filters and "
+                "aggregations before returning rows. Query cost still depends on coverage, "
+                "indexes, and the source engine; a result limit does not guarantee a cheap query."
+            ),
+            "local_file_scan": (
+                "Queries scan files in the application rather than a source database. "
+                "Reuse cached metadata and loaded data; small result limits do not bound scan cost."
+            ),
+        }
+        return {
+            "execution_model": cls.QUERY_EXECUTION,
+            "guidance": guidance.get(cls.QUERY_EXECUTION,
+                "Query execution cost is unknown. Do not assume server-side pushdown or a cheap probe."),
+        }
+
+    #: Params naming *which* instance of this source a connector points at
+    #: (cluster, host, bucket…), most significant first.  When ``None`` the
+    #: identity is derived from the required, non-advanced connection params,
+    #: which is right for most loaders; override where that picks up routing
+    #: detail rather than identity (Databricks' ``http_path``, S3's region).
+    IDENTITY_PARAMS: tuple[str, ...] | None = None
+
+    @classmethod
+    def identity_params(cls) -> list[str]:
+        """Return the param names that identify this connector's instance."""
+        if cls.IDENTITY_PARAMS is not None:
+            return list(cls.IDENTITY_PARAMS)
+        return [
+            p["name"] for p in cls.list_params()
+            if p.get("tier") == "connection"
+            and p.get("required")
+            and not p.get("advanced")
+            and not p.get("sensitive")
+        ][:2]
+
+    @classmethod
+    def connection_identity(cls, params: dict[str, Any]) -> str:
+        """Render the connection's identity, e.g. ``"mycluster.kusto.windows.net · sales"``.
+
+        Returns an empty string when no identifying param has a value, which
+        is the normal case for loaders that take no connection params at all.
+        """
+        parts: list[str] = []
+        for name in cls.identity_params():
+            value = params.get(name)
+            if value is None:
+                continue
+            concise = _concise_identity(str(value))
+            if concise and concise not in parts:
+                parts.append(concise)
+        return " · ".join(parts)
 
     @staticmethod
     def delegated_login_config() -> dict[str, Any] | None:

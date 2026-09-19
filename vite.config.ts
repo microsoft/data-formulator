@@ -17,8 +17,8 @@ export default defineConfig({
         ? { 'flint-chart': path.resolve(__dirname, process.env.FLINT_CHART_LOCAL) }
         : {}),
     },
-    // Keep a single copy of Flint's (optional) peer deps when aliased to local source.
-    dedupe: ['vega', 'vega-lite', 'echarts', 'chart.js'],
+    // Keep a single copy of React and Flint's (optional) peer deps.
+    dedupe: ['react', 'react-dom', 'vega', 'vega-lite', 'echarts', 'chart.js'],
   },
   build: {
     outDir: path.join(__dirname, 'py-src', 'data_formulator', "dist"),
@@ -44,6 +44,14 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api/workflows': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
+      '/api/agent/analyst-streaming': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,

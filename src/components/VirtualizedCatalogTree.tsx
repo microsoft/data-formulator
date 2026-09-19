@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
 import { Virtuoso } from 'react-virtuoso';
 import { Box, CircularProgress, Tooltip, Typography, useTheme } from '@mui/material';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
@@ -211,9 +212,6 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
     const groupLoaded = isGroup ? loadedMap[itemId] : undefined;
     const childCount = isNamespace ? (node.children?.length ?? 0) : 0;
     const tableCount = isGroup ? (node.metadata?.tables?.length ?? 0) : 0;
-    const nodeDescription = (isTable || isGroup)
-        ? (node.metadata?.description || node.metadata?.source_description || '')
-        : '';
     const metaStatus = node.metadata?.source_metadata_status;
     const isSelected = selectedItemId === itemId;
     const isPreviewLoading = loadingItemId === itemId;
@@ -267,10 +265,9 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
     return (
         <div style={style} {...dragProps}>
             <Tooltip
-                title={hoverCard ?? nodeDescription}
+                title={hoverCard ?? ''}
                 placement="right"
                 enterDelay={hoverCard ? 450 : 400}
-                disableHoverListener={hoverCard ? false : !nodeDescription}
                 slotProps={hoverCard ? {
                     tooltip: {
                         sx: {
@@ -333,7 +330,9 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                                 : isGroup
                                     ? <DashboardOutlinedIcon sx={{ fontSize: iconVar.md, color: groupLoaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
                                     : isTable
-                                        ? <TableIcon sx={{ fontSize: iconVar.md, color: loaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
+                                        ? node.metadata?.artifact_kind === 'file'
+                                            ? <InsertDriveFileOutlinedIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
+                                            : <TableIcon sx={{ fontSize: iconVar.md, color: loaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
                                         : null}
                         </Box>
                         {rowSelectable && (

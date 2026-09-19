@@ -6,6 +6,7 @@ import {
   dfSelectors,
   fetchFieldSemanticType,
 } from "../../../../src/app/dfSlice";
+const CONVERSATION_ROOT_ID = 'conversation-root:test';
 
 const sourceTable = {
   kind: "table" as const,
@@ -36,6 +37,84 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it("tracks concurrent pending table loads and clears only the settled request", () => {
+    const pending = (requestId: string) => ({ type: 'dataFormulator/loadTable/pending',
+      meta: { requestId, arg: { table: sourceTable } } });
+    let state = dataFormulatorReducer(undefined, pending('first'));
+    state = dataFormulatorReducer(state, pending('second'));
+    expect(state.pendingTableLoads).toEqual([
+      { id: 'first', names: ['Orders'] }, { id: 'second', names: ['Orders'] },
+    ]);
+    state = dataFormulatorReducer(state, { type: 'dataFormulator/loadTable/rejected', meta: { requestId: 'first' } });
+    expect(state.pendingTableLoads).toEqual([{ id: 'second', names: ['Orders'] }]);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState(state)).pendingTableLoads).toEqual([]);
+    state = dataFormulatorReducer(state, { type: 'dataFormulator/loadTable/fulfilled', meta: { requestId: 'second' } });
+    expect(state.pendingTableLoads).toEqual([]);
+  });
+
+  it("cleans up agent loading entries independently", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.startTableLoad({ id: 'agent', names: ['Reviews'] }));
+    state = dataFormulatorReducer(state, dfActions.startTableLoad({ id: 'agent', names: ['Scoped reviews'] }));
+    expect(state.pendingTableLoads).toEqual([{ id: 'agent', names: ['Scoped reviews'] }]);
+    state = dataFormulatorReducer(state, dfActions.finishTableLoad('agent'));
+    expect(state.pendingTableLoads).toEqual([]);
+  });
+
+  it("stores file results separately and updates revisions without moving the node", () => {
+    const file = { kind: "file" as const, id: "file-result", path: "scratch/cpi.parquet",
+      displayName: "CPI Summary", contentHash: "v1", parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 };
+    let state = dataFormulatorReducer(undefined, dfActions.upsertFileNode(file));
+    state = dataFormulatorReducer(state, dfActions.upsertFileNode({ ...file,
+      id: "revision", contentHash: "v2", displayName: "Updated CPI", parentNodeId: "later", createdAt: 2,
+    }));
+    expect(state.textTurns).toEqual([]);
+    expect(state.fileNodes).toEqual([{ ...file, contentHash: "v2", displayName: "Updated CPI" }]);
+  });
+
+  it("keeps file results after draft cleanup, parent removal, and reload", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTextTurn({
+      kind: "text", id: "request", displayId: "request", textKind: "explain",
+      content: "Create a summary", parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1,
+    }));
+    state = dataFormulatorReducer(state, dfActions.createDraftNode({
+      id: "draft", displayId: "draft", parentNodeId: "request",
+      parentTableId: CONVERSATION_ROOT_ID, source: [], interaction: [],
+    }));
+    state = dataFormulatorReducer(state, dfActions.upsertFileNode({
+      kind: "file", id: "file", path: "scratch/summary.md", displayName: "Summary",
+      contentHash: "hash", parentNodeId: "draft", createdAt: 2,
+    }));
+    state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft"));
+    expect(state.fileNodes[0].parentNodeId).toBe("request");
+    state = dataFormulatorReducer(state, dfActions.removeTextTurn("request"));
+    expect(state.fileNodes[0].parentNodeId).toBe(CONVERSATION_ROOT_ID);
+    const restored = dataFormulatorReducer(undefined, dfActions.loadState(state));
+    expect(restored.fileNodes).toEqual(state.fileNodes);
+    expect(restored.textTurns).toEqual([]);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState({})).fileNodes).toEqual([]);
+  });
+
+  it("preserves generalized computation sources on derived tables", () => {
+    const withMixedSources = {
+      ...derivedTable,
+      derive: {
+        ...derivedTable.derive,
+        inputSources: [
+          { id: "data:hash:orders", kind: "data", displayName: "Orders" },
+          { id: "file:hash:notes.docx", kind: "file", displayName: "Notes" },
+        ],
+      },
+    };
+
+    const state = dataFormulatorReducer(
+      undefined,
+      dfActions.insertDerivedTables(withMixedSources as any),
+    );
+
+    expect(state.derivedTables[0].derive?.inputSources).toEqual(withMixedSources.derive.inputSources);
+    expect(state.derivedTables[0].derive?.source).toEqual(["orders"]);
+  });
+
   it("stores a Flint theme and returns an active custom variant to the base chart", () => {
     let state = dataFormulatorReducer(
       undefined,
@@ -96,7 +175,6 @@ describe("split table collections", () => {
     expect(state.tableSemantics).toEqual([
       {
         tableId: "orders",
-        displayName: "Orders by customer",
         fields: {
           order_id: {
             semanticType: "identifier",
@@ -107,12 +185,35 @@ describe("split table collections", () => {
         },
       },
     ]);
+    expect(state.inputTables[0].displayId).toBe("Orders by customer");
 
     state = dataFormulatorReducer(
       state,
       dfActions.removeTableLocally("orders")
     );
     expect(state.tableSemantics).toEqual([]);
+  });
+
+  it("does not replace a manually renamed table with a late inferred name", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateTableDisplayId({ tableId: "orders", displayId: "My orders" })
+    );
+    state = dataFormulatorReducer(
+      state,
+      fetchFieldSemanticType.fulfilled(
+        { result: [{ fields: {}, suggested_table_name: "Suggested orders" }] },
+        "request-id",
+        sourceTable as any
+      )
+    );
+
+    expect(state.inputTables[0].displayId).toBe("My orders");
+    expect(state.tableSemantics).toEqual([{ tableId: "orders", fields: {} }]);
   });
 
   it("automatically migrates legacy tables when state is loaded", () => {
@@ -262,6 +363,193 @@ describe("split table collections", () => {
         trigger: { tableId: "orders" },
       },
     });
+  });
+
+  it("replaces failed drafts under the same parent and transfers focus", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateDeriveStatus({ nodeId: "draft-failed", status: "error" })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.setFocused({ type: "draft", draftId: "draft-failed" })
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-retry",
+        displayId: "Retry",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+
+    expect(state.draftNodes.map(draft => draft.id)).toEqual(["draft-retry"]);
+    expect(state.focusedId).toEqual({ type: "draft", draftId: "draft-retry" });
+  });
+
+  it("retains the Analyst-selected sources on a failed draft", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders", "customers"],
+        interaction: [],
+      })
+    );
+
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateDraftSources({ draftId: "draft-failed", source: ["orders"] })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.updateDeriveStatus({ nodeId: "draft-failed", status: "error" })
+    );
+
+    expect(state.draftNodes[0].derive.source).toEqual(["orders"]);
+  });
+
+  it("clears an orphaned continuation answer when its failed draft is deleted", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-answer",
+        displayId: "Answer",
+        textKind: "explain",
+        content: "Previous explanation",
+        parentNodeId: "orders",
+        answered: true,
+        answer: "visualize conversation turns",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft-failed"));
+
+    expect(state.textTurns[0].answered).toBe(false);
+    expect(state.textTurns[0]).not.toHaveProperty("answer");
+  });
+
+  it("keeps a continuation answer when another child artifact remains", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-answer",
+        displayId: "Answer",
+        textKind: "explain",
+        content: "Previous explanation",
+        parentNodeId: "orders",
+        answered: true,
+        answer: "visualize conversation turns",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-child",
+        displayId: "Child",
+        textKind: "explain",
+        content: "Another response",
+        parentNodeId: "textTurn-answer",
+        createdAt: 2,
+      })
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft-failed"));
+
+    expect(state.textTurns[0].answered).toBe(true);
+    expect(state.textTurns[0].answer).toBe("visualize conversation turns");
+  });
+
+  it("resolves focused draft canvas context through its parent turn", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text",
+        id: "textTurn-answer",
+        displayId: "Answer",
+        textKind: "explain",
+        content: "Previous explanation",
+        parentNodeId: "orders",
+        createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.createDraftNode({
+        id: "draft-failed",
+        displayId: "Failed",
+        parentNodeId: "textTurn-answer",
+        parentTableId: "orders",
+        source: ["orders"],
+        interaction: [],
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.setFocused({ type: "draft", draftId: "draft-failed" })
+    );
+
+    expect(dfSelectors.getEffectiveTableId(state)).toBe("orders");
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "table", tableId: "orders" });
+  });
+
+  it("passes workspace file focus through to the canvas without a table context", () => {
+    const state = dataFormulatorReducer(
+      undefined,
+      dfActions.setFocused({ type: "file", fileName: "notes.docx" })
+    );
+
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "file", fileName: "notes.docx" });
+    expect(dfSelectors.getEffectiveTableId(state)).toBeUndefined();
   });
 
   it("repairs authored child edges when a text turn is removed", () => {
@@ -437,14 +725,72 @@ describe("split table collections", () => {
     expect(state.textTurns[0].parentNodeId).toBe("orders");
     expect(state.draftNodes[0].parentNodeId).toBe("orders");
     expect(state.draftNodes[0].derive.trigger.tableId).toBe("orders");
+    expect(state.draftNodes[0].derive.source).toEqual([]);
+  });
+
+  it("removes deleted data provenance while retaining file provenance", () => {
+    let state = dataFormulatorReducer(
+      undefined,
+      dfActions.addTableToStore(sourceTable as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.insertDerivedTables({
+        ...derivedTable,
+        derive: {
+          ...derivedTable.derive,
+          inputSources: [
+            { id: "data:orders-v1:orders_workspace", kind: "data", displayName: "orders_workspace" },
+            { id: "file:docx-v1:notes.docx", kind: "file", displayName: "notes.docx" },
+          ],
+        },
+      } as any)
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addChart({
+        id: "chart-summary",
+        chartType: "Bar Chart",
+        tableRef: "summary",
+        source: "user",
+        encodingMap: {},
+      } as any)
+    );
+
+    state = dataFormulatorReducer(state, dfActions.removeTableLocally("orders"));
+
+    expect(state.derivedTables[0].derive?.source).toEqual([]);
+    expect(state.derivedTables[0].derive?.trigger.tableId).toBe('conversation-root:orders');
+    expect(state.derivedTables[0].derive?.inputSources).toEqual([
+      { id: "file:docx-v1:notes.docx", kind: "file", displayName: "notes.docx" },
+    ]);
   });
 });
 
 describe("text artifact canvas ownership", () => {
+  it.each(["explicit", "ancestry"])("preserves the chart for an ordinary explanation with %s provenance", (provenance) => {
+    const state = {
+      ...dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any)),
+      focusedId: { type: "text", textId: "closing-answer" },
+      charts: [{ id: "chart-1", chartType: "Bar Chart", tableRef: "orders", source: "user", encodingMap: {} }],
+      textTurns: [
+        { kind: "text", id: "previous-answer", displayId: "previous-answer", textKind: "explain",
+          content: "Previous iteration", parentNodeId: "orders", createdAt: 1 },
+        { kind: "text", id: "closing-answer", displayId: "closing-answer", textKind: "explain",
+          content: "Detailed chart findings.\n".repeat(200), parentNodeId: "previous-answer", createdAt: 2,
+          ...(provenance === "explicit" ? { sourceChartId: "chart-1" } : {}) },
+      ],
+    };
+    expect(dfSelectors.selectCanvasTarget(state as any)).toEqual({ type: "chart", chartId: "chart-1" });
+    const expandedState = { ...state, textTurns: state.textTurns.map(turn =>
+      turn.id === "closing-answer" ? { ...turn, presentation: "long_response" } : turn) };
+    expect(dfSelectors.selectCanvasTarget(expandedState as any)).toEqual({ type: "text", textId: "closing-answer" });
+  });
+
   it.each([
     ["form", { form: { kind: "connector", title: "Connect", connector: { sourceType: "kusto", status: "pending" } } }],
     ["data operation", { dataOperation: { id: "operation-1", plans: [] } }],
-  ])("keeps a parent %s open for a follow-up explanation", (_label, artifact) => {
+  ])("opens conversation when selecting an explanation after a %s", (_label, artifact) => {
     const state = {
       ...dataFormulatorReducer(undefined, { type: "test/init" }),
       focusedId: { type: "text", textId: "explanation-1" },

@@ -487,6 +487,12 @@ def list_tables():
                     "source_type": meta.source_type,
                     "source_filename": meta.filename,
                     "original_name": meta.original_name,
+                    "content_hash": meta.content_hash,
+                    "origin": meta.origin,
+                    "role": meta.role,
+                    "edit_policy": meta.edit_policy or "protected",
+                    "input_sources": meta.input_sources,
+                    "stale": meta.stale,
                 }
                 if meta.description is not None:
                     table_entry["description"] = meta.description
@@ -617,6 +623,11 @@ def sample_table():
         filters = data.get('filters') or None
         search = data.get('search') or None
 
+        if isinstance(sample_size, bool) or not isinstance(sample_size, int) or sample_size < 0:
+            raise AppError(ErrorCode.INVALID_REQUEST, "size must be a non-negative integer")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise AppError(ErrorCode.INVALID_REQUEST, "offset must be a non-negative integer")
+
         workspace = _get_workspace()
         if _should_use_duckdb(workspace, table_id):
             schema_info = workspace.get_parquet_schema(table_id)
@@ -655,6 +666,8 @@ def sample_table():
             "rows": rows_json,
             "total_row_count": total_row_count,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 

@@ -141,6 +141,12 @@ class LoadQuery:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any] | None) -> LoadQuery:
         raw = value or {}
+        unsupported = set(raw) - {"filters", "columns", "order_by", "limit"}
+        if unsupported:
+            raise ValueError(
+                f"Unsupported load query fields: {sorted(unsupported)}. "
+                "Loads support raw rows only; use probe_data for aggregate queries."
+            )
         return cls(
             filters=tuple(
                 OperationFilter.from_dict(item)

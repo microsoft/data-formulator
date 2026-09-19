@@ -1,10 +1,12 @@
 import json
 import logging
+from urllib.parse import urlsplit
 import pandas as pd
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pyarrow.csv as pa_csv
-from azure.storage.blob import BlobServiceClient
+import pyarrow.parquet as pq
+import pyarrow.dataset as pa_dataset
+from azure.storage.blob import BlobServiceClient, ExponentialRetry
 from azure.identity import DefaultAzureCredential
 from pyarrow import fs as pa_fs
 
@@ -28,7 +30,7 @@ class AzureBlobDataLoader(ExternalDataLoader):
             {"name": "credential_chain", "type": "string", "required": False, "default": "cli;managed_identity;env", "tier": "auth", "description": "Ordered list of Azure credential providers (cli;managed_identity;env)"},
             {"name": "account_key", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure storage account key"},
             {"name": "sas_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure SAS token"},
-            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "tier": "connection", "advanced": True, "description": "Azure endpoint override"}
+            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "tier": "connection", "advanced": True, "description": "Blob endpoint suffix or full HTTPS account URL"}
         ]
         return params_list
 
@@ -78,6 +80,7 @@ class AzureBlobDataLoader(ExternalDataLoader):
         return "azure_identity"
     
     AUTH_GUIDE = "azure_blob.md"
+    QUERY_EXECUTION = "remote_file_scan"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -90,25 +93,52 @@ class AzureBlobDataLoader(ExternalDataLoader):
         self.account_key = params.get("account_key", "")
         self.sas_token = params.get("sas_token", "")
         self.endpoint = params.get("endpoint", "blob.core.windows.net")
+        endpoint = str(self.endpoint or "blob.core.windows.net").strip() or "blob.core.windows.net"
+        parsed = urlsplit(endpoint if "://" in endpoint else f"https://{endpoint}")
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.path not in ("", "/") or parsed.query or parsed.fragment
+                or parsed.port is not None or any(character.isspace() for character in parsed.netloc)):
+            raise ValueError("Blob endpoint must be a host suffix or HTTPS account URL without a path, credentials, or query.")
+        host = parsed.hostname
+        if "://" not in endpoint and not host.startswith(f"{self.account_name}."):
+            host = f"{self.account_name}.{host}"
+        self.account_url = f"https://{host}"
+        self.blob_host = host
+        blob_authority = host[len(self.account_name):] if host.startswith(f"{self.account_name}.") else host
+        filesystem_endpoints = {"blob_storage_authority": blob_authority,
+                    "dfs_storage_authority": blob_authority.replace(".blob.", ".dfs.", 1)}
         
         # Setup PyArrow Azure filesystem
         if self.account_key:
             self.azure_fs = pa_fs.AzureFileSystem(
                 account_name=self.account_name,
-                account_key=self.account_key
+                account_key=self.account_key,
+                **filesystem_endpoints,
             )
         elif self.sas_token:
             self.azure_fs = pa_fs.AzureFileSystem(
                 account_name=self.account_name,
                 sas_token=self.sas_token,
+                **filesystem_endpoints,
             )
         elif self.connection_string:
             self.azure_fs = pa_fs.AzureFileSystem.from_connection_string(self.connection_string)
         else:
             # Use default credential chain
-            self.azure_fs = pa_fs.AzureFileSystem(account_name=self.account_name)
+            self.azure_fs = pa_fs.AzureFileSystem(account_name=self.account_name, **filesystem_endpoints)
         
         logger.info(f"Initialized PyArrow Azure filesystem for account: {self.account_name}")
+
+    def _blob_service_client(self):
+        options = {
+            "connection_timeout": 5,
+            "read_timeout": 10,
+            "retry_policy": ExponentialRetry(initial_backoff=1, increment_base=2, retry_total=2, random_jitter_range=1),
+        }
+        if self.connection_string:
+            return BlobServiceClient.from_connection_string(self.connection_string, **options)
+        credential = self.account_key or self.sas_token or DefaultAzureCredential()
+        return BlobServiceClient(account_url=self.account_url, credential=credential, **options)
 
     def _azure_path(self, azure_url: str) -> str:
         """Convert Azure URL to path for PyArrow (container/blob)."""
@@ -118,99 +148,64 @@ class AzureBlobDataLoader(ExternalDataLoader):
         return f"{self.container_name}/{azure_url}"
 
     def _read_sample(self, azure_url: str, limit: int) -> pd.DataFrame:
-        """Read sample rows from an Azure blob using PyArrow. Returns a pandas DataFrame."""
-        azure_path = self._azure_path(azure_url)
-        if azure_url.lower().endswith('.parquet'):
-            table = pq.read_table(azure_path, filesystem=self.azure_fs)
-        elif azure_url.lower().endswith('.csv'):
-            with self.azure_fs.open_input_file(azure_path) as f:
-                table = pa_csv.read_csv(f)
-        elif azure_url.lower().endswith('.json') or azure_url.lower().endswith('.jsonl'):
-            import pyarrow.json as pa_json
-            with self.azure_fs.open_input_file(azure_path) as f:
-                table = pa_json.read_json(f)
-        else:
-            raise ValueError(f"Unsupported file type: {azure_url}")
-        if table.num_rows > limit:
-            table = table.slice(0, limit)
-        return table.to_pandas()
+        return self.fetch_data_as_arrow(azure_url, {"size": limit}).to_pandas()
+
+    def _query_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        import duckdb
+
+        extension = source_table.lower().rsplit('.', 1)[-1]
+        formats = {"parquet": "parquet", "csv": "csv", "json": "json", "jsonl": "json"}
+        if extension not in formats:
+            raise ValueError(f"Unsupported file type: {source_table}")
+        file_format = (
+            pa_dataset.CsvFileFormat(parse_options=pa_csv.ParseOptions(newlines_in_values=True))
+            if extension == "csv" else formats[extension]
+        )
+        dataset = pa_dataset.dataset(
+            self._azure_path(source_table), filesystem=self.azure_fs, format=file_format,
+        )
+        scanner = dataset.scanner(batch_size=8192, batch_readahead=1, fragment_readahead=1, use_threads=True)
+        sql = probe_utils.compile_probe_sql(query, limit, dialect=probe_utils.DUCKDB)
+        with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
+            connection.register("t", scanner)
+            return connection.execute(sql).fetch_arrow_table()
 
     def fetch_data_as_arrow(
         self,
         source_table: str,
         import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
-        """
-        Fetch data from Azure Blob as a PyArrow Table.
-        
-        For files (parquet, csv), reads directly using PyArrow's Azure filesystem.
-        """
         opts = import_options or {}
         size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
-        sort_columns = opts.get("sort_columns")
-        sort_order = opts.get("sort_order", "asc")
-
         if not source_table:
             raise ValueError("source_table (Azure blob URL) must be provided")
-        
-        azure_url = source_table
-        azure_path = self._azure_path(azure_url)
-
-        logger.info("Reading Azure blob via PyArrow: %s", azure_url)
-        
-        if azure_url.lower().endswith('.parquet'):
-            arrow_table = pq.read_table(azure_path, filesystem=self.azure_fs)
-        elif azure_url.lower().endswith('.csv'):
-            with self.azure_fs.open_input_file(azure_path) as f:
-                arrow_table = pa_csv.read_csv(f)
-        elif azure_url.lower().endswith('.json') or azure_url.lower().endswith('.jsonl'):
-            import pyarrow.json as pa_json
-            with self.azure_fs.open_input_file(azure_path) as f:
-                arrow_table = pa_json.read_json(f)
-        else:
-            raise ValueError(f"Unsupported file type: {azure_url}")
-        
-        # Apply sorting if specified
-        if sort_columns and len(sort_columns) > 0:
-            df = arrow_table.to_pandas()
-            ascending = sort_order != 'desc'
-            df = df.sort_values(by=sort_columns, ascending=ascending)
-            arrow_table = pa.Table.from_pandas(df, preserve_index=False)
-        
-        # Apply size limit
-        if arrow_table.num_rows > size:
-            arrow_table = arrow_table.slice(0, size)
-        
-        logger.info(f"Fetched {arrow_table.num_rows} rows from Azure Blob [Arrow-native]")
-        
-        return arrow_table
+        source_filters = opts.get("source_filters") or []
+        normalized_filters = probe_utils.probe_filters_to_source_filters(source_filters)
+        if len(normalized_filters) != len(source_filters):
+            raise ValueError("Unsupported source filter operator")
+        filters = [{"column": item["column"], "op": item["operator"], "value": item.get("value")}
+               for item in normalized_filters]
+        return self._query_arrow(source_table, {
+            "filters": filters, "columns": opts.get("columns") or [],
+            "order_by": [{"column": column, "dir": opts.get("sort_order", "asc")}
+                         for column in opts.get("sort_columns") or []],
+        }, size)
 
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
-        """Read the blob into DuckDB and compute the SPJQ there."""
-        return probe_utils.run_probe_on_duckdb(self, path, query, scan_size=MAX_IMPORT_ROWS)
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        source_table = path[-1] if path[-1].startswith("az://") else f"az://{self.blob_host}/{self.container_name}/{'/'.join(path)}"
+        limit = probe_utils.clamp_probe_limit(query.get("limit"))
+        try:
+            result = self._query_arrow(source_table, query, limit)
+            return probe_utils.shape_probe_payload(result, limit, exact=True,
+                extra_note="Computed over the source, not a sample. Filters, sorting, and aggregates may scan the blob.")
+        except Exception as exc:
+            return {"error": f"probe failed: {exc}"}
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        # Create blob service client based on authentication method
-        if self.connection_string:
-            blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
-        elif self.account_key:
-            blob_service_client = BlobServiceClient(
-                account_url=f"https://{self.account_name}.{self.endpoint}",
-                credential=self.account_key
-            )
-        elif self.sas_token:
-            blob_service_client = BlobServiceClient(
-                account_url=f"https://{self.account_name}.{self.endpoint}",
-                credential=self.sas_token
-            )
-        else:
-            # Use default credential chain
-            from azure.identity import DefaultAzureCredential
-            credential = DefaultAzureCredential()
-            blob_service_client = BlobServiceClient(
-                account_url=f"https://{self.account_name}.{self.endpoint}",
-                credential=credential
-            )
+        """List supported blobs without downloading contents or inferring schemas."""
+        blob_service_client = self._blob_service_client()
         
         container_client = blob_service_client.get_container_client(self.container_name)
         
@@ -230,33 +225,13 @@ class AzureBlobDataLoader(ExternalDataLoader):
                 continue
             
             # Create Azure blob URL
-            azure_url = f"az://{self.account_name}.{self.endpoint}/{self.container_name}/{blob_name}"
+            azure_url = f"az://{self.blob_host}/{self.container_name}/{blob_name}"
             
-            try:
-                sample_df = self._read_sample(azure_url, 10)
-
-                columns = [{
-                    'name': col,
-                    'type': str(sample_df[col].dtype)
-                } for col in sample_df.columns]
-
-                sample_rows = df_to_safe_records(sample_df)
-                row_count = self._estimate_row_count(azure_url, blob)
-
-                table_metadata = {
-                    "row_count": row_count,
-                    "columns": columns,
-                    "sample_rows": sample_rows
-                }
-
-                results.append({
-                    "name": azure_url,
-                    "path": [azure_url],
-                    "metadata": table_metadata
-                })
-            except Exception as e:
-                logger.warning("Error reading %s: %s", azure_url, e)
-                continue
+            results.append({
+                "name": azure_url,
+                "path": [azure_url],
+                "metadata": {"size_bytes": blob.size},
+            })
         
         return results
     
@@ -347,14 +322,7 @@ class AzureBlobDataLoader(ExternalDataLoader):
             return [CatalogNode(name=self.container_name, node_type="namespace", path=path + [self.container_name])]
 
         if level_key == "table":
-            from azure.storage.blob import BlobServiceClient as _BSC
-            if self.connection_string:
-                bsc = _BSC.from_connection_string(self.connection_string)
-            elif self.account_key:
-                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=self.account_key)
-            else:
-                from azure.identity import DefaultAzureCredential
-                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=DefaultAzureCredential())
+            bsc = self._blob_service_client()
             container_client = bsc.get_container_client(self.container_name)
             nodes = []
             for blob in container_client.list_blobs():
@@ -374,29 +342,23 @@ class AzureBlobDataLoader(ExternalDataLoader):
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         if not path:
             return {}
-        blob_name = path[-1]
-        azure_url = f"az://{self.account_name}.{self.endpoint}/{self.container_name}/{blob_name}"
+        blob_name = '/'.join(path)
+        azure_url = path[-1] if path[-1].startswith("az://") else f"az://{self.blob_host}/{self.container_name}/{blob_name}"
         try:
             sample_df = self._read_sample(azure_url, 5)
             columns = [{"name": c, "type": str(sample_df[c].dtype)} for c in sample_df.columns]
             sample_rows = df_to_safe_records(sample_df)
-            row_count = self._estimate_row_count(azure_url)
-            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+            metadata = {"columns": columns, "sample_rows": sample_rows}
+            if azure_url.lower().endswith('.parquet'):
+                metadata["row_count"] = pq.ParquetFile(
+                    self._azure_path(azure_url), filesystem=self.azure_fs,
+                ).metadata.num_rows
+            return metadata
         except Exception as e:
             logger.warning(f"get_metadata failed for {path}: {e}")
             return {}
 
     def test_connection(self) -> bool:
-        try:
-            from azure.storage.blob import BlobServiceClient as _BSC
-            if self.connection_string:
-                bsc = _BSC.from_connection_string(self.connection_string)
-            elif self.account_key:
-                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=self.account_key)
-            else:
-                from azure.identity import DefaultAzureCredential
-                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=DefaultAzureCredential())
-            bsc.get_container_client(self.container_name).get_container_properties()
-            return True
-        except Exception:
-            return False
+        bsc = self._blob_service_client()
+        bsc.get_container_client(self.container_name).get_container_properties()
+        return True

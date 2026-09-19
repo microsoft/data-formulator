@@ -2,8 +2,10 @@ import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ClarificationPanel } from '../../../../src/views/AgentPausePanel';
+import { ClarificationPanel, ExplanationPanel } from '../../../../src/views/AgentPausePanel';
 import { parseDataOperation } from '../../../../src/dataOperations/models';
+import type { ClarificationResponse } from '../../../../src/components/ComponentType';
+import { migrateState } from '../../../../src/app/stateMigrations';
 
 vi.mock('react-i18next', () => ({
   // The panel now lives in `AgentPausePanel.tsx` which transitively pulls
@@ -13,6 +15,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, any>) => {
       const labels: Record<string, string> = {
+        'chartRec.skipAnswer': 'Skip',
         'chartRec.clarificationTitle': 'Agent needs clarification',
         'chartRec.clarificationQuestionLabel': `${params?.index}.`,
         'chartRec.optionalClarification': '(optional)',
@@ -31,6 +34,97 @@ vi.mock('react-i18next', () => ({
 }));
 
 describe('ClarificationPanel', () => {
+  it('opens commands collapsed and allows expansion inside the panel', () => {
+    const executions = [{
+      id: 'check', argv: ['az', 'account', 'show'], cwd: '/workspace', purpose: 'Check account access.',
+      status: 'completed' as const, result: { exit_code: 0, output: 'Reader access confirmed' },
+    }, {
+      id: 'list', argv: ['az', 'account', 'list'], cwd: '/workspace', purpose: 'List accounts.',
+      status: 'completed' as const, result: { exit_code: 0, output: 'Other account output' },
+    }];
+    const panel = <ExplanationPanel content="Check account access."
+      executions={executions} onClose={vi.fn()} onDelete={vi.fn()} />;
+    const view = render(panel);
+    expect(screen.getByText('Check account access.')).toBeInTheDocument();
+    expect(screen.queryByText('Reader access confirmed')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { expanded: false })[0]);
+    expect(screen.getByText('Reader access confirmed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument();
+    expect(screen.queryByText('Other account output')).not.toBeInTheDocument();
+    view.unmount();
+    render(panel);
+    expect(screen.queryByText('Reader access confirmed')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(2);
+  });
+
+  it('shows legacy terminal JSON through the collapsed execution display', () => {
+    const legacy = [
+      'Check Azure access.',
+      '',
+      '```json',
+      JSON.stringify({ argv: ['bash', '-lc', 'set -euo pipefail\nprintf "done\\n"'], cwd: '/workspace' }, null, 2),
+      '```',
+    ].join('\n');
+
+    const migrated = migrateState({ __stateVersion: 6, textTurns: [{ id: 'legacy', content: legacy }] }).textTurns[0];
+    const { container } = render(
+      <ExplanationPanel content={migrated.content} executions={migrated.executions} onClose={vi.fn()} onDelete={vi.fn()} />,
+    );
+    expect(container.querySelector('pre')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    const commandBlock = container.querySelector('pre');
+    expect(commandBlock).not.toBeNull();
+    expect(commandBlock?.textContent).toContain('set -euo pipefail');
+    expect(container.textContent).toContain('terminal.directory: /workspace');
+    expect(container.textContent).not.toContain('"argv"');
+  });
+
+  it('allows skipping, editing, and submitting a free-text answer alongside a choice', () => {
+    const onSubmit = vi.fn();
+    const questions = [
+      { text: 'Anything else?', responseType: 'free_text' as const },
+      { text: 'Which metric?', responseType: 'single_choice' as const, options: [{ label: 'Revenue' }] },
+    ];
+    const Harness = () => {
+      const [answers, setAnswers] = React.useState<Record<number, ClarificationResponse>>({});
+      return <ClarificationPanel questions={questions} onSubmit={onSubmit} onClose={() => {}}
+        {...{
+          selectedAnswers: answers,
+          onSelectAnswer: (index: number, response: ClarificationResponse, autoSubmit = true) => {
+            expect(autoSubmit).toBe(false);
+            setAnswers(previous => ({ ...previous, [index]: response }));
+          },
+          onClearAnswer: (index: number) => setAnswers(previous => {
+            const next = { ...previous }; delete next[index]; return next;
+          }),
+        }} />;
+    };
+    render(<Harness />);
+    const skip = screen.getByRole('button', { name: 'Skip' });
+    const submit = screen.getByRole('button', { name: 'chartRec.submitClarification' });
+    fireEvent.click(skip);
+    expect(skip).toHaveAttribute('aria-pressed', 'true');
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Revenue' }));
+    expect(submit).toBeEnabled();
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(skip);
+    expect(submit).toBeDisabled();
+    const input = screen.getByPlaceholderText('Type your answer...');
+    fireEvent.change(input, { target: { value: 'Draft answer' } });
+    fireEvent.click(skip);
+    expect(input).toHaveValue('');
+    fireEvent.change(input, { target: { value: 'Revised answer' } });
+    expect(skip).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(skip);
+    fireEvent.click(submit);
+    expect(onSubmit).toHaveBeenCalledWith([
+      { question_index: 0, source: 'skip', answer: 'Skip' },
+      { question_index: 1, source: 'option', answer: 'Revenue' },
+    ]);
+  });
+
   const operation = parseDataOperation({
     schema_version: 1,
     id: 'operation-1',

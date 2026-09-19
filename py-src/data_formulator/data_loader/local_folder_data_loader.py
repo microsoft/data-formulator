@@ -69,6 +69,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         ]
 
     AUTH_GUIDE = "local_folder.md"
+    QUERY_EXECUTION = "local_file_scan"
 
     @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:
@@ -152,7 +153,11 @@ class LocalFolderDataLoader(ExternalDataLoader):
                     node_type="namespace",
                     path=rel_parts,
                 ))
-            elif child.is_file() and child.suffix.lower() in SUPPORTED_EXTENSIONS:
+            elif child.is_file():
+                try:
+                    self._jail / "/".join(rel_parts)
+                except ValueError:
+                    continue
                 if self.file_pattern and not child.match(self.file_pattern):
                     continue
                 if filter and filter.lower() not in child.name.lower():
@@ -178,6 +183,8 @@ class LocalFolderDataLoader(ExternalDataLoader):
             return {}
 
         meta = self._file_metadata(resolved)
+        if meta.get("artifact_kind") == "file":
+            return meta
 
         # Read a small sample for preview
         try:
@@ -195,7 +202,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         return meta
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """Return data files as 'tables', with subdirectories as namespaces."""
+        """Return catalog entries with file artifacts identified in metadata."""
         if self._jail is None:
             self._jail = ConfinedDir(self.root_dir, mkdir=False)
 
@@ -210,13 +217,14 @@ class LocalFolderDataLoader(ExternalDataLoader):
         for filepath in sorted(candidates):
             if not filepath.is_file():
                 continue
-            if filepath.suffix.lower() not in SUPPORTED_EXTENSIONS:
-                continue
-            if filepath.name.startswith("."):
-                continue
-
             rel = filepath.relative_to(self.root_dir)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
             name = str(rel)
+            try:
+                self._jail / name
+            except ValueError:
+                continue
 
             if table_filter and table_filter.lower() not in name.lower():
                 continue
@@ -229,6 +237,20 @@ class LocalFolderDataLoader(ExternalDataLoader):
             })
 
         return results
+
+    def read_file(self, source_path: str, max_bytes: int = 128 * 1024 * 1024) -> bytes:
+        if self._jail is None:
+            self._jail = ConfinedDir(self.root_dir, mkdir=False)
+        resolved = self._jail / source_path
+        if any(part.startswith(".") for part in Path(source_path).parts):
+            raise ValueError("Hidden files are not available")
+        if not resolved.is_file():
+            raise ValueError("Source is not a file")
+        with resolved.open("rb") as source:
+            content = source.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise ValueError("File exceeds the workspace file size limit")
+        return content
 
     def fetch_data_as_arrow(
         self,
@@ -256,7 +278,32 @@ class LocalFolderDataLoader(ExternalDataLoader):
             table = pa_csv.read_csv(str(resolved), parse_options=parse_options)
         elif ext in (".json", ".jsonl"):
             import pyarrow.json as pa_json
-            table = pa_json.read_json(str(resolved))
+            with resolved.open(encoding="utf-8-sig") as source:
+                first_character = source.read(1)
+                while first_character and first_character.isspace():
+                    first_character = source.read(1)
+                is_array = first_character == "[" and ext == ".json"
+                if is_array:
+                    source.seek(0)
+                    records = json.load(source)
+                    if not all(isinstance(record, dict) for record in records):
+                        raise ValueError("JSON arrays must contain row objects")
+                    table = pa.Table.from_pandas(pd.DataFrame(records), preserve_index=False)
+            if not is_array:
+                block_size = pa_json.ReadOptions().block_size
+                file_size = resolved.stat().st_size
+                while True:
+                    try:
+                        table = pa_json.read_json(
+                            str(resolved),
+                            read_options=pa_json.ReadOptions(block_size=block_size),
+                            parse_options=pa_json.ParseOptions(newlines_in_values=ext == ".json"),
+                        )
+                        break
+                    except pa.ArrowInvalid as exc:
+                        if "straddling object straddles two block boundaries" not in str(exc) or block_size >= file_size:
+                            raise
+                        block_size = min(block_size * 2, file_size)
         elif ext in (".xlsx", ".xls"):
             df = pd.read_excel(str(resolved))
             table = pa.Table.from_pandas(df)
@@ -290,6 +337,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
             return {}
 
         meta: dict[str, Any] = {
+            "artifact_kind": "table" if ext in SUPPORTED_EXTENSIONS - {".xlsx", ".xls"} else "file",
             "file_size": stat.st_size,
             "modified": stat.st_mtime,
             "file_type": ext.lstrip("."),
