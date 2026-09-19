@@ -1034,14 +1034,12 @@ const DataSourceSidebarPanel: React.FC<{
         setPreviewLoading(null);
         setPreview(null);
         setPreviewAnchor(null);
-        setExpandedConnectorId(prev => {
-            if (prev === connectorId) return null;
-            if (!catalogCacheRef.current[connectorId]) {
-                fetchCatalogTree(connectorId);
-            }
-            return connectorId;
-        });
-    }, [fetchCatalogTree]);
+        const opening = expandedConnectorId !== connectorId;
+        if (opening && !catalogCacheRef.current[connectorId]) {
+            void fetchCatalogTree(connectorId);
+        }
+        setExpandedConnectorId(opening ? connectorId : null);
+    }, [expandedConnectorId, fetchCatalogTree]);
 
     // Auto-expand only when there's a single available connector — for a
     // fresh user that's just the built-in sample_datasets, so the sidebar
@@ -1786,7 +1784,8 @@ const DataSourceSidebarPanel: React.FC<{
                         : expandedConnectorId === connector.id;
                     const isLoading = serverSearchActive
                         ? (searchingCatalog[connector.id] ?? false)
-                        : catalogState?.status === 'loading';
+                        : catalogState?.status === 'loading'
+                            || (connector.connected && isExpanded && !catalogState);
                     const catalogError = !serverSearchActive && catalogState?.status === 'error'
                         ? catalogState.error
                         : undefined;
@@ -2063,11 +2062,6 @@ const DataSourceSidebarPanel: React.FC<{
                                     {displayCache && displayCache.tree.length === 0 && !isLoading && !catalogError && (
                                         <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
                                             {t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
-                                        </Typography>
-                                    )}
-                                    {!displayCache && !isLoading && !catalogError && (
-                                        <Typography sx={{ fontSize: textVar.xs, color: catalogError ? 'error.main' : 'text.disabled', pl: 1, fontStyle: 'italic' }}>
-                                            {catalogError || t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
                                         </Typography>
                                     )}
                                 </Box>
