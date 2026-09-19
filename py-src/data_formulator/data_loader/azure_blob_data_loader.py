@@ -166,8 +166,8 @@ class AzureBlobDataLoader(ExternalDataLoader):
         )
         scanner = dataset.scanner(batch_size=8192, batch_readahead=1, fragment_readahead=1, use_threads=True)
         sql = probe_utils.compile_probe_sql(query, limit, dialect=probe_utils.DUCKDB)
-        with scanner.to_reader() as reader, duckdb.connect(config={"memory_limit": "512MB"}) as connection:
-            connection.register("t", reader)
+        with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
+            connection.register("t", scanner)
             return connection.execute(sql).fetch_arrow_table()
 
     def fetch_data_as_arrow(

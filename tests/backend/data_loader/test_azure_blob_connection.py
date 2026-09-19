@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pyarrow as pa
 import pyarrow.csv as pa_csv
+import pyarrow.dataset as pa_dataset
 import pyarrow.parquet as pq
 from pyarrow import fs as pa_fs
 import pytest
@@ -169,9 +170,12 @@ def test_blob_small_sample_stops_before_consuming_the_source():
             consumed.append(index)
             yield batch
 
-    reader = pa.RecordBatchReader.from_batches(batch.schema, batches())
+    scanner = pa_dataset.Scanner.from_batches(
+        batches(), schema=batch.schema, batch_size=8192,
+        batch_readahead=1, fragment_readahead=1, use_threads=True,
+    )
     with patch("data_formulator.data_loader.azure_blob_data_loader.pa_dataset.dataset") as dataset:
-        dataset.return_value.scanner.return_value.to_reader.return_value = reader
+        dataset.return_value.scanner.return_value = scanner
         assert len(loader._read_sample("az://fixture/reviews.csv", 5)) == 5
     assert len(consumed) < 100
 
