@@ -34,6 +34,54 @@ Azure Blob SDK requests use a five-second connection timeout, ten-second read
 timeout, and two retries with backoff. These are per-request limits, not an overall
 deadline for identity acquisition, pagination, or PyArrow file reads.
 
+Kusto ambient authentication keeps one access token in memory per credential
+instance, reusing it only for matching scopes and token options while more than
+five minutes of validity remain. Refresh is serialized across concurrent calls;
+changed scopes, tenant, claims, or CAE options require another acquisition.
+Unknown options bypass and clear the cache. This avoids repeated Azure CLI token
+lookups during connection checks and catalog requests, but does not eliminate
+initial authentication. Tokens are not shared across loader instances or written
+to disk. Delegated and service-principal authentication paths are unchanged.
+
+### Agent Query Workers
+
+Agent streaming runs lazily start a dedicated subprocess for remote file queries
+and reuse it until that run ends. Each query creates a fresh loader and connection;
+workers are not shared across runs or users. Other connector methods retain direct
+execution. Calls without an agent cancellation context are also unchanged.
+
+`DF_QUERY_MAX_WORKERS` bounds live query workers per backend server process
+(default `2`). Additional runs wait for capacity, checking cancellation while
+queued. A worker keeps its slot between queries until the run finishes. With
+multiple server processes or replicas, multiply this limit by their count when
+budgeting memory; this is not an instance-wide or distributed quota. DuckDB's
+query memory limit is not a cap on the entire worker process.
+
+`DF_QUERY_QUEUE_TIMEOUT_SECONDS` limits waiting for capacity (default `300`).
+`DF_QUERY_TIMEOUT_SECONDS` limits worker startup and query response time after
+capacity is acquired (default `300`). Cancellation, disconnect, or a query timeout
+terminates the worker; normal run completion also releases it. Ordinary query
+errors leave it reusable. A worker crash fails the current query without taking
+down the backend, and a subsequent query starts a replacement without replaying
+the failed query. Worker processes are daemons and are terminated during normal
+backend shutdown; runs are not durable across server restarts.
+
+### Starter Questions for External References
+
+`/api/agent/derive-starter-questions` accepts `input_tables` and optional
+`external_references`. `primary_table` identifies either a loaded table name or
+an external reference ID. Focusing a reference uses the existing starter-question
+chips, even when no tables have been loaded. Cached questions are invalidated when
+the reference metadata or preview changes.
+
+The starter agent uses cached schema, descriptions, row counts, inspection limits,
+query intent, and at most five bounded sample rows through the shared reference
+normalizer. It does not query connectors or materialize data during automatic
+suggestion generation. The prompt distinguishes preview evidence from verified
+source coverage and avoids assuming recent dates or complete category coverage.
+Selecting a question sends the reference and its focus to the normal analyst
+flow, where connector inspection and scoped queries can run as needed.
+
 ### Option 1: With uv (recommended)
 
 uv is faster and provides reproducible builds via lockfile.

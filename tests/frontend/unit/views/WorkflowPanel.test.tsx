@@ -246,6 +246,41 @@ describe('Workflow session publication', () => {
         expectThreadOrder();
     });
 
+    it('keeps a new analyst thread after older threads before and after completion', async () => {
+        await publishWorkflowRun({ ...run(), status: 'completed' }, 'session');
+        const startedAt = Date.now();
+        store.dispatch(dfActions.createDraftNode({ id: 'new-draft', displayId: 'New question',
+            parentNodeId: 'conversation-root:new-question', parentTableId: 'conversation-root:new-question',
+            source: [], interaction: [{ from: 'user', to: 'data-agent', role: 'prompt',
+                content: 'Compare recent days by hour', timestamp: startedAt }] }));
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'later-answer', displayId: 'Later answer',
+            textKind: 'explain', prompt: 'A later request', content: 'A faster answer',
+            parentNodeId: 'conversation-root:later-question', createdAt: startedAt + 10 }));
+        let view = renderThread();
+        const expectThreadOrder = () => {
+            const content = view.container.textContent!;
+            expect(content.indexOf('Run workflow: Native review')).toBeGreaterThan(-1);
+            expect(content.indexOf('Compare recent days by hour')).toBeGreaterThan(content.indexOf('Run workflow: Native review'));
+            expect(content.indexOf('A later request')).toBeGreaterThan(content.indexOf('Compare recent days by hour'));
+            expect(screen.getAllByText(/^thread\s*-\s*\d+$/i).map(heading => heading.textContent))
+                .toEqual([1, 2, 3].map(index => expect.stringMatching(new RegExp(`^thread\\s*-\\s*${index}$`, 'i'))));
+        };
+        expectThreadOrder();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'new-answer', displayId: 'New answer',
+                textKind: 'explain', prompt: 'Compare recent days by hour', content: 'The summary only covers 2011.',
+                parentNodeId: 'conversation-root:new-question', createdAt: startedAt + 20 }));
+            store.dispatch(dfActions.removeDraftNode('new-draft'));
+        });
+        expectThreadOrder();
+        expect(store.getState().textTurns.find(turn => turn.id === 'new-answer')?.startedAt).toBe(startedAt);
+        view.unmount();
+        store.dispatch(dfActions.loadState(store.getState()));
+        view = renderThread();
+        expectThreadOrder();
+        view.unmount();
+    });
+
     it('appends after the persisted output tail across resume, updates, and focus changes', async () => {
         const snapshot = run();
         await publishWorkflowRun(snapshot, 'session');

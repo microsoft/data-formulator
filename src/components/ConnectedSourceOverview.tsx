@@ -18,6 +18,7 @@ import { CatalogTreeNode, collectNamespaceIds } from './CatalogTree';
 import { VirtualizedCatalogTree } from './VirtualizedCatalogTree';
 import { ColumnMeta, ConnectorTablePreview } from './ConnectorTablePreview';
 import { iconVar, textVar } from '../app/layout';
+import { InlineLoadingStatus, LoadingStatus } from './FunComponents';
 
 const CATALOG_PREVIEW_ROW_LIMIT = 50;
 const MANUAL_PREVIEW_BYTES = 50 * 1024 * 1024;
@@ -32,6 +33,7 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state));
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const [tree, setTree] = useState<CatalogTreeNode[]>([]);
     const [expanded, setExpanded] = useState<string[]>([]);
     const [query, setQuery] = useState('');
@@ -71,7 +73,7 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
         const bytes = rawBytes == null || rawBytes === '' ? NaN : Number(rawBytes);
         return { rows, bytes };
     };
-    const isTableTooLarge = (node: CatalogTreeNode) => isLargeConnectorTable(node.metadata);
+    const isTableTooLarge = (node: CatalogTreeNode) => isLargeConnectorTable(node.metadata, serverConfig);
     const loadReference = async (node: CatalogTreeNode, importOptions: Record<string, any> = {}) => {
         if (importing || readOnly) return;
         setImporting(true);
@@ -271,9 +273,9 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                 {containsFiles ? t('upload.matchingItems', { defaultValue: '{{count}} matching items', count: countTables(filtered) }) : t('chatConnector.catalogMatches', { defaultValue: '{{count}} matching tables', count: countTables(filtered) })}
             </Typography>}
             <Box ref={setCatalogScrollParent} sx={{ flex: 1, minHeight: 0, overflow: 'auto', pr: 0.5, scrollbarGutter: 'stable' }}>
-                {loading ? <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
-                    <CircularProgress size={16} /><Typography variant="body2" sx={{ overflowWrap: 'anywhere', minWidth: 0 }}>{catalogProgress || t('chatConnector.loadingCatalog', { defaultValue: 'Loading source catalog...' })}</Typography>
-                </Box> : error ? <Typography variant="body2" color="error" role="alert" sx={{ overflowWrap: 'anywhere' }}>{error}</Typography> :
+                {loading ? <InlineLoadingStatus size="standard" sx={{ py: 2 }}
+                    label={catalogProgress || t('chatConnector.loadingCatalog', { defaultValue: 'Loading source catalog...' })} />
+                : error ? <Typography variant="body2" color="error" role="alert" sx={{ overflowWrap: 'anywhere' }}>{error}</Typography> :
                     filtered.length ? <VirtualizedCatalogTree nodes={filtered} loadedMap={loadedMap}
                         expandedIds={query.trim() ? collectNamespaceIds(filtered) : expanded} onExpandedChange={setExpanded}
                         onItemClick={node => void previewTable(node)} selectedItemId={selected?.path.join('/')}
@@ -341,7 +343,8 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                 {importedFile ? <WorkspaceFileCanvas fileName={importedFile} /> : <>
                 <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
                     {previewDeferred && previewPrompt}
-                    {previewLoading && <CircularProgress size={24} />}
+                    {previewLoading && <LoadingStatus label={t('connectorPreview.loadingPreview', { defaultValue: 'Loading preview...' })}
+                        sx={{ flex: 1, minHeight: 160, p: 2 }} />}
                     {sourceFile && <WorkspaceFileCanvas key={selected.path.join('/')} fileName={sourceFile.name} sourceFile={sourceFile} />}
                 </Box>
                 <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', flexShrink: 0 }}>

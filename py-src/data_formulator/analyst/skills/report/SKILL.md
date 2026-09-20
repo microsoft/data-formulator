@@ -78,7 +78,7 @@ To embed a chart image, use markdown image syntax with a `chart://` URL:
 
 Example: `![Monthly trade balance trend](chart://chart-123)`
 
-The chart_id must match one from [AVAILABLE CHARTS]. Place each chart embed on
+The chart_id must come from [AVAILABLE CHARTS] or a successful `visualize` result. Place each chart embed on
 its own line (it renders as a block). You can embed the same chart at most
 once. Captions are short — one line describing what the chart shows.
 

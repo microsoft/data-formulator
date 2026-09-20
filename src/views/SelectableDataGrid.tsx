@@ -24,6 +24,7 @@ import { IconButton, TableSortLabel, Typography } from '@mui/material';
 import _ from 'lodash';
 import * as d3 from 'd3-dsv';
 import { FieldSource, FieldItem } from '../components/ComponentType';
+import { InlineLoadingStatus, LoadingStatus } from '../components/FunComponents';
 
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { TableIcon } from '../icons';
@@ -629,39 +630,22 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         : rowsToDisplay;
 
     return (
-        <Box className="table-container table-container-small"
+        <Box className="table-container table-container-small" aria-busy={isLoading || isLoadingMore}
             sx={{
                 width: '100%',
                 height: '100%',
                 position: 'relative',
+            display: 'flex', flexDirection: 'column', minHeight: 0,
                 "& .MuiTableCell-root": {
                     fontSize: textVar.sm, maxWidth: "120px", py: '2px', cursor: "default",
                     overflow: "clip", textOverflow: "ellipsis", whiteSpace: "nowrap"
                 }
             }}>
-            {/* Loading Overlay */}
-            {isLoading && (
-                <Box sx={{ 
-                    position: 'absolute', 
-                    top: 0, 
-                    left: 0, 
-                    right: 0,
-                    zIndex: 10, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                    padding: '8px',
-                    height: '100%',
-                    borderTopLeftRadius: '4px',
-                    borderTopRightRadius: '4px'
-                }}>
-                    <CircularProgress size={24} sx={{ mr: 1, color: 'lightgray' }} />
-                    <Typography variant="body2" color="text.secondary">{t('dataGrid.loading')}</Typography>
-                </Box>
-            )}
-            <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}}>
-                <Box sx={{ flex: '1 1', display: 'flex', flexDirection: 'column' }}>
+            {isLoading && (rowsToDisplay.length === 0
+                ? <LoadingStatus label={t('dataGrid.loading')} sx={{ position: 'absolute', inset: 0, zIndex: 10, p: 2, bgcolor: 'background.paper' }} />
+                : <InlineLoadingStatus label={t('dataGrid.refreshing', { defaultValue: 'Refreshing rows...' })} sx={{ px: 1, py: 0.75, flexShrink: 0 }} />)}
+            <Fade in={!isLoading || rowsToDisplay.length > 0} timeout={{appear: 300, enter: 300, exit: 2000}}>
+                <Box sx={{ flex: '1 1', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <TableVirtuoso
                             style={{ flex: '1 1', paddingBottom: 32 }}
                             data={visibleRows}
@@ -765,12 +749,10 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             </Fade>
             {/* Loading-more indicator at the bottom of the scroll area */}
             {isLoadingMore && (
-                <Box sx={{
+                <InlineLoadingStatus label={t('dataGrid.loadingMore', { defaultValue: 'Loading more rows...' })} sx={{
                     position: 'absolute', bottom: 32, left: 0, right: 0, zIndex: 6,
-                    display: 'flex', justifyContent: 'center', py: 0.5,
-                }}>
-                    <CircularProgress size={16} sx={{ color: 'text.secondary' }} />
-                </Box>
+                    justifyContent: 'center', py: 0.5, bgcolor: 'background.paper',
+                }} />
             )}
             {!hideFooter && !previewOnly && <Paper variant="outlined"
                 sx={{ display: 'flex', flexDirection: 'row', position: 'absolute', bottom: 4, right: 20, zIndex: 5 }}>

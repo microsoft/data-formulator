@@ -8,7 +8,7 @@ import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import type { ExternalTableReference } from '../components/ComponentType';
-import { LoadingStatus } from '../components/FunComponents';
+import { InlineLoadingStatus, LoadingStatus } from '../components/FunComponents';
 import { formatBytes, formatCellValue, getColumnAlign } from './ViewUtils';
 import { SelectableDataGrid, type ColumnDef } from './SelectableDataGrid';
 import { Type } from '../data/types';
@@ -17,7 +17,6 @@ import '../scss/DataView.scss';
 
 const SAMPLE_ROW_LIMIT = 50;
 const PREVIEW_TIMEOUT_MS = 120_000;
-const SLOW_PREVIEW_SECONDS = 15;
 
 export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = ({ referenceId }) => {
     const { t } = useTranslation();
@@ -28,7 +27,6 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
     const [busy, setBusy] = useState<'refresh' | 'sample' | null>(null);
     const [error, setError] = useState('');
     const [stopped, setStopped] = useState(false);
-    const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [refreshVersion, setRefreshVersion] = useState(0);
     const sample = reference?.summary.sampleRows;
     const availableReferenceId = reference?.id;
@@ -40,7 +38,8 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
     const rows = (sample || []).map((row, index) => ({ ...row, '#rowId': index + 1 }));
     const columns: ColumnDef[] = [
         { id: '#rowId', label: '#', dataType: Type.Integer, source: 'original', width: 56, minWidth: 56 },
-        ...(reference?.summary.columns || []).map(column => {
+        ...(reference?.summary.columns || []).filter(column => !reference?.summary.sampleColumns
+            || reference.summary.sampleColumns.includes(column.name)).map(column => {
             const dataType = Object.values(Type).includes(column.type as Type) ? column.type as Type : Type.String;
             const lengths = (sample || []).map(row => String(row[column.name] ?? '').length);
             const averageLength = lengths.reduce((sum, length) => sum + length, 0) / Math.max(1, lengths.length);
@@ -61,14 +60,10 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
         setBusy(null);
         setError('');
         setStopped(false);
-        setElapsedSeconds(0);
         if (!source || readOnly || (refreshVersion === 0 && source.summary.sampleRows !== undefined)) return;
         const controller = new AbortController();
-        const startedAt = Date.now();
-        const interval = window.setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
         const timeout = window.setTimeout(() => {
             controller.abort();
-            window.clearInterval(interval);
             setBusy(null);
             setStopped(true);
         }, PREVIEW_TIMEOUT_MS);
@@ -78,6 +73,7 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                 const { data } = await apiRequest<{
                     columns: { name: string; type?: string }[];
                     rows: Record<string, unknown>[];
+                    inspection?: ExternalTableReference['summary']['inspection'];
                     source_location?: ExternalTableReference['sourceLocation'];
                 }>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -86,25 +82,30 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                 });
                 const current = store.getState().externalTableReferences.find(item => item.id === source.id);
                 if (!current || controller.signal.aborted) return;
-                let sampleTruncated = false;
+                let sampleTruncated = data.inspection?.values_truncated || false;
                 const sampleRows = (data.rows || []).slice(0, SAMPLE_ROW_LIMIT).map(row => Object.fromEntries(Object.entries(row).map(([name, value]) => {
                     const text = typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
                     if (text.length <= 1000) return [name, value];
                     sampleTruncated = true;
                     return [name, `${text.slice(0, 1000)}...`];
                 })));
-                const columns = (data.columns || []).map(column => {
+                const sampledColumns = (data.columns || []).map(column => {
                     const cached = current.summary.columns.find(item => item.name === column.name);
                     return { ...cached, name: column.name, type: column.type || cached?.type || 'string' };
                 });
+                const partialSchema = !!data.inspection?.columns_omitted || data.inspection?.schema_complete === false;
+                const columns = partialSchema
+                    ? current.summary.columns.map(column => sampledColumns.find(item => item.name === column.name) || column)
+                    : [...sampledColumns];
+                columns.push(...sampledColumns.filter(column => !columns.some(item => item.name === column.name)));
                 const updated: ExternalTableReference = { ...current, capturedAt: new Date().toISOString(),
                     sourceLocation: data.source_location || current.sourceLocation,
-                    summary: { ...current.summary, columns, sampleRows, sampleTruncated } };
+                    summary: { ...current.summary, columns, sampleRows, sampleTruncated,
+                        sampleColumns: sampledColumns.map(column => column.name), inspection: data.inspection } };
                 dispatch(dfActions.upsertExternalTableReference(updated));
             } catch (reason) {
                 if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
             } finally {
-                window.clearInterval(interval);
                 window.clearTimeout(timeout);
                 if (!controller.signal.aborted) setBusy(null);
             }
@@ -112,7 +113,6 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
         void loadSample();
         return () => {
             controller.abort();
-            window.clearInterval(interval);
             window.clearTimeout(timeout);
         };
     }, [availableReferenceId, readOnly, refreshVersion, store, dispatch]);
@@ -120,9 +120,7 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
     const initialLoading = !!reference && sample === undefined && !error && !stopped && !readOnly;
     const columnCount = reference && (reference.summary.columns.length > 0 || sample !== undefined)
         ? t('dataGrid.columnCount', { count: reference.summary.columns.length }) : null;
-    const loadingLabel = elapsedSeconds >= SLOW_PREVIEW_SECONDS
-        ? t('externalReference.waitingForSource', { defaultValue: 'Still waiting for the source...' })
-        : t('externalReference.loadingPreview', { name: title, defaultValue: 'Loading table preview: {{name}}...' });
+    const loadingLabel = t('externalReference.loadingPreview', { name: title, defaultValue: 'Loading table preview: {{name}}...' });
 
     return <Box id="vis-view-canvas" sx={{ width: '100%', flex: 1, minWidth: 0, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', px: { xs: 1.5, sm: 3 }, py: 2, boxSizing: 'border-box' }}>
         <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', py: 2, flexShrink: 0 }}>
@@ -159,10 +157,13 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                     {t('externalReference.retry', { defaultValue: 'Retry' })}
                 </Button>
             </Box>}
-            {busy && !initialLoading && <Box sx={{ mb: 1, color: 'text.secondary' }}>
-                <Typography role="status" sx={{ fontSize: textVar.sm }}>{loadingLabel}</Typography>
-            </Box>}
+            {busy && !initialLoading && <InlineLoadingStatus label={loadingLabel} sx={{ mb: 1 }} />}
             {reference && <>
+                {initialLoading && reference.summary.columns.length > 0 && <Typography color="text.secondary"
+                    sx={{ fontSize: textVar.xs, mb: 1, overflowWrap: 'anywhere' }}>
+                    {reference.summary.columns.slice(0, 8).map(column => `${column.name} (${column.source_type || column.type})`).join(', ')}
+                    {reference.summary.columns.length > 8 ? ', ...' : ''}
+                </Typography>}
                 <Box role="region" aria-label={t('chatConnector.sampleData', { defaultValue: 'Sample data' })}
                     sx={{ width: '100%', height: initialLoading ? 320 : Math.max(160, (sample?.length || 0) * 25 + 64), maxHeight: 'calc(100dvh - 280px)', minHeight: 160,
                         border: 1, borderColor: 'divider', borderRadius: '8px', overflow: 'hidden', bgcolor: 'action.hover' }}>
@@ -178,6 +179,19 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                             virtual={false} columnDefs={columns} previewOnly hideFooter />}
                 </Box>
                 {sample?.length === 0 && <Typography color="text.secondary" sx={{ py: 1, fontSize: textVar.sm }}>{t('externalReference.emptySample', { defaultValue: 'No sample rows returned.' })}</Typography>}
+                {sample !== undefined && <Typography color="text.secondary" sx={{ pt: 0.5, fontSize: textVar.xs, overflowWrap: 'anywhere' }}>
+                    {[
+                        reference.summary.inspection?.sample_method === 'source_head'
+                            ? t('externalReference.sourceHead', { defaultValue: 'Leading source rows; not a representative sample.' }) : null,
+                        reference.summary.inspection?.schema_source === 'inferred'
+                            ? t('externalReference.inferredSchema', { defaultValue: 'Inferred schema; later records may differ.' }) : null,
+                        reference.summary.inspection?.columns_omitted
+                            ? t('externalReference.omittedColumns', { count: reference.summary.inspection.columns_omitted,
+                                defaultValue: '{{count}} columns omitted from preview.' }) : null,
+                        reference.summary.sampleTruncated
+                            ? t('externalReference.shortenedValues', { defaultValue: 'Long or nested values shortened.' }) : null,
+                    ].filter(Boolean).join(' ')}
+                </Typography>}
             </>}
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mt: 1.5, width: '100%' }}>
             <Box sx={{ flex: 1, minWidth: 0, '& .MuiTypography-root': { fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere', lineHeight: 1.6 } }}>

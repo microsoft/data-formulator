@@ -138,12 +138,34 @@ def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
     assert "## Common Workflows" in prompt
     assert "## Data Boundaries" in prompt
     assert "files need no promotion or another upload to be read" in prompt
-    assert "call `propose_data_operation` in the same run" in prompt
-    assert "The user chooses an import option or clicks Connect" in prompt
+    assert prompt.count("## Data Access Paths") == 1
+    assert "Continue to the requested answer or chart\nin the same run" in prompt
+    assert "Clear single-option imports may execute automatically" in prompt
+    assert "coverage contains the request" in prompt
+    assert "Retaining useful columns\nor finer detail" in prompt
     assert "are the only data that can be read directly" not in prompt
     assert "propose_data_operation" in agent._legal_actions()
     assert "`summarize_data_sources({})` across connected sources" in prompt
     assert "Do not ask which source to inspect for a broad availability question" in prompt
+
+
+@pytest.mark.parametrize("has_charts", [False, True])
+def test_baseline_prioritizes_informative_charts_for_comparative_answers(tmp_path: Path, has_charts: bool) -> None:
+    from data_formulator.analyst.agent import AnalystAgent
+
+    agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
+    agent._loaded_skills = {"meta"}
+    prompt = " ".join(agent._build_system_prompt(has_charts=has_charts).split())
+
+    assert "use `visualize` by default for comparisons, rankings, trends, distributions, and relationships" in prompt
+    assert "call `visualize` before ending the run" in prompt
+    assert "do not merely offer to make a chart" in prompt
+    assert "Reuse an existing chart if it already answers the question" in prompt
+    assert "unique source-destination IP pairs can still be ranked by bytes transferred" in prompt
+    assert "Answer single-value lookups, definitions, and procedural questions directly" in prompt
+    assert "Respect an explicit text-only request" in prompt
+    assert "Do not invent values or infer full-population rankings from a preview sample" in prompt
+    assert "visualize" in agent._legal_actions()
 
 
 def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
@@ -151,7 +173,7 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
     agent._loaded_skills = {"meta"}
-    prompt = " ".join(agent._build_system_prompt().split())
+    prompt = " ".join(agent._build_system_prompt(has_charts=True).split())
     for rule in (
         "File and data tools also return results, but create or revise durable workspace outputs",
         "all sibling calls, including non-action tools, are discarded",
@@ -167,6 +189,13 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
     report = " ".join(agent.registry.load_body("report").split())
     assert "returns an observation; it does not end the run" in report
     assert "delivered as-is and the run ends" not in report
+    report_tool = next(spec["function"] for spec in agent.registry.action_tools_for(["report"])
+                       if spec["function"]["name"] == "write_report")
+    assert "return an observation" in report_tool["description"]
+    assert "end the run" not in report_tool["description"]
+    assert "An ordinary summary can be answered directly without report delivery" in prompt
+    assert "write up / summarize / report" not in prompt
+    assert "successful `visualize` result" in report
 
 
 def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_names(
@@ -204,9 +233,9 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
     prompt = agent._build_system_prompt()
     assert "search connected catalogs with `find_data` before asking the user" in prompt
     assert "need not block a bounded catalog search" in prompt
-    assert "call `propose_data_operation` in the same run" in prompt
-    assert "Set `user_review_needed: false` for one unambiguous recommended load" in prompt
-    assert "If the user asked only to find or describe available data" in prompt
+    assert "Use one option with `user_review_needed: false` for a clear load" in prompt
+    assert "multiple alternatives always require review" in prompt
+    assert "A discovery-only request does not require loading" in prompt
     assert "A statement of intended\nwork is not completion" in prompt
     assert "Prefer `ask_user`" in prompt
     assert "a preference, not a requirement" in prompt
@@ -215,7 +244,7 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
         for spec in agent.registry.tools_for(["meta"]) + agent.registry.action_tools_for(["meta"])
     }
     assert "Search results are not loaded data" in specs["find_data"]["description"]
-    assert "instead of ending with a promise" in specs["propose_data_operation"]["description"]
+    assert "workspace Data Access Paths" in specs["propose_data_operation"]["description"]
     assert "user_review_needed=false" in specs["propose_data_operation"]["description"]
     assert "user_review_needed" not in specs["propose_data_operation"]["parameters"]["required"]
     assert "user_review_needed" not in agent.registry.action_required_fields("propose_data_operation")
@@ -404,6 +433,11 @@ def test_unambiguous_load_executes_without_review_or_narration(
             with pytest.raises(StopIteration) as stopped:
                 next(generator)
             assert stopped.value.value
+            observation = json.loads(stopped.value.value.split("\n", 1)[1])
+            loaded_input = observation["workspace_inputs"][0]
+            assert loaded_input["path"].startswith("data/")
+            assert loaded_input["row_count"] == 2
+            assert loaded_input["columns"][0]["name"] == "amount"
             assert analyst._run_payload["input_tables"]
             assert analyst._run_payload["workspace_inputs"].inputs
         else:

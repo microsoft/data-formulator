@@ -431,8 +431,27 @@ def handle_read_catalog_metadata(
 
     for field in ("schema", "database", "row_count"):
         val = meta.get(field)
-        if val:
+        if val is not None:
             lines.append(f"{field}: {val}")
+
+    inspection = meta.get("inspection") or {}
+    if inspection:
+        details = {key: inspection[key] for key in (
+            "schema_source", "schema_complete", "row_count_status", "sample_status",
+            "sample_method", "filtered", "row_limit", "columns_omitted", "values_truncated",
+        ) if key in inspection}
+        lines.append("Inspection: " + json.dumps(details))
+        if inspection.get("row_count_status") == "unknown":
+            lines.append("Row count not collected; no full count scan was requested.")
+        if inspection.get("schema_source") == "inferred":
+            lines.append("Schema inferred from a bounded sample; later records may differ.")
+
+    sample = meta.get("sample_rows")
+    if sample is not None:
+        sample_text = json.dumps(sample[:TABLE_SAMPLE_MAX_ROWS], default=str, ensure_ascii=False)
+        shortened = len(sample_text) > TABLE_SAMPLE_CHAR_LIMIT
+        lines.append("Sample rows (not necessarily representative): " + sample_text[:TABLE_SAMPLE_CHAR_LIMIT]
+                     + ("... [sample text truncated]" if shortened else ""))
 
     table_desc = meta.get("description", "") or meta.get("source_description", "")
     if table_desc:

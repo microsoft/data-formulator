@@ -739,6 +739,15 @@ class TestCatalogRoutes:
 
 class TestDataRoutes:
 
+    @pytest.mark.parametrize("total", [None, 0, 100])
+    def test_preview_preserves_explicit_total(self, connected_client, total):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(MockLoader, "_last_total_rows", total, create=True):
+            response = connected_client.post("/api/connectors/preview-data", json={
+                "connector_id": "mock_db", "source_table": "public.users", "limit": 3,
+            })
+        assert response.get_json()["data"]["total_row_count"] == total
+
     @pytest.mark.parametrize("cluster", [None, "https://user:secret@help.kusto.windows.net/?token=secret#fragment"])
     def test_preview(self, connected_client, cluster, caplog):
         caplog.set_level("INFO", logger="data_formulator.data_connector")
@@ -754,6 +763,8 @@ class TestDataRoutes:
         assert resp.status_code == 200
         assert data["status"] == "success"
         assert data["data"]["row_count"] <= 3
+        assert data["data"]["inspection"]["sample_method"] == "source_head"
+        assert data["data"]["inspection"]["row_limit"] == 3
         events = [record.getMessage() for record in caplog.records if "[ConnectorPreview]" in record.getMessage()]
         assert len(events) == 2
         assert events[0].startswith("[ConnectorPreview] start request_id=")
@@ -833,6 +844,32 @@ class TestDataRoutes:
             resp = connected_client.post("/api/connectors/refresh-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
+
+    def test_refresh_preserves_materialized_aggregate_query(self, connected_client, tmp_path):
+        from data_formulator.datalake.workspace import Workspace
+
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        query = {"aggregates": [{"op": "sum", "column": "amount", "as": "total"}]}
+        workspace.write_parquet_from_arrow(pa.table({"total": [350.0]}), "totals", source_info={
+            "source_table": "public.orders", "import_options": {"structured_query": query},
+        })
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace", return_value=workspace),
+            patch.object(MockLoader, "query_data_as_arrow", return_value=pa.table({"total": [400.0]})) as aggregate,
+            patch.object(MockLoader, "fetch_data_as_arrow", side_effect=AssertionError("No raw-row refresh")),
+        ):
+            response = connected_client.post("/api/connectors/refresh-data", json={
+                "connector_id": "mock_db", "table_name": "totals",
+            })
+        assert response.status_code == 200
+        assert response.get_json()["status"] == "success", response.get_json()
+        assert aggregate.call_args.kwargs == {"source_table": "public.orders", "query": query, "limit": 10001}
+        from data_formulator.datalake.parquet_utils import compute_arrow_table_hash
+        assert compute_arrow_table_hash(pa.table({"total": [350.0]})) != compute_arrow_table_hash(pa.table({"total": [400.0]}))
+        assert response.get_json()["data"]["data_changed"] is True
+        assert workspace.read_data_as_df("totals")["total"].tolist() == [400.0]
 
     def test_column_values_success(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):

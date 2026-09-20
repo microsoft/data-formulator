@@ -147,6 +147,18 @@ export interface ExternalTableReference {
         sizeBytes?: number;
         sampleRows?: Record<string, unknown>[];
         sampleTruncated?: boolean;
+        sampleColumns?: string[];
+        inspection?: {
+            schema_source?: string;
+            schema_complete?: boolean;
+            row_count_status?: string;
+            sample_status?: string;
+            sample_method?: string;
+            filtered?: boolean;
+            row_limit?: number;
+            columns_omitted?: number;
+            values_truncated?: boolean;
+        };
     };
     queryIntent?: Record<string, unknown>;
 }
@@ -162,6 +174,7 @@ export interface DraftNode {
     id: string;
     displayId: string;
     parentNodeId: string;
+    createdAt?: number;
     derive: {
         source: string[];
         inputSources?: ComputationInputSource[];
@@ -277,6 +290,7 @@ export interface TextTurn {
         completedStepCount: number;
         operationId?: string;
     };
+    startedAt?: number;
     createdAt: number;
 }
 

@@ -20,6 +20,28 @@ def _loader() -> KustoDataLoader:
     return loader
 
 
+def test_materialized_aggregate_uses_native_query_without_probe_cap():
+    loader = _loader()
+    loader.query = Mock(return_value=pd.DataFrame({"users": [123]}))
+    result = loader.query_data_as_arrow("Events", {
+        "aggregates": [{"op": "count_distinct", "column": "user_id", "as": "users"}],
+    }, 10001)
+    assert result.to_pylist() == [{"users": 123}]
+    kql = loader.query.call_args.args[0]
+    assert "count_distinct(['user_id'])" in kql
+    assert "take 10001" in kql
+    assert loader.kusto_database == "analytics"
+
+
+def test_materialized_query_restores_database_on_error():
+    loader = _loader()
+    loader.kusto_database = None
+    loader.query = Mock(side_effect=RuntimeError("failed"))
+    with pytest.raises(RuntimeError, match="failed"):
+        loader.query_data_as_arrow("other.Events", {}, 10)
+    assert loader.kusto_database is None
+
+
 @pytest.mark.parametrize("column_type", ["float", "real", "double"])
 def test_query_converts_floating_point_result_types(column_type: str) -> None:
     loader = _loader()
@@ -198,6 +220,183 @@ def test_connector_manifest_preserves_root_oauth_url(monkeypatch) -> None:
         "label": "Sign in with Microsoft",
         "params": ["kusto_cluster"],
     }
+
+
+def test_ambient_credential_reuses_token_until_refresh_margin(monkeypatch):
+    from azure.core.credentials import AccessToken
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    clock = Mock(return_value=1000)
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", clock)
+    source = Mock()
+    source.get_token.side_effect = [AccessToken("first", 1600), AccessToken("refreshed", 2500)]
+    credential = _KustoCachedCredential(source)
+    assert credential.get_token("scope").token == "first"
+    clock.return_value = 1299
+    assert credential.get_token("scope").token == "first"
+    source.get_token.assert_called_once_with("scope")
+    clock.return_value = 1300
+    assert credential.get_token("scope").token == "refreshed"
+    assert source.get_token.call_count == 2
+
+
+@pytest.mark.parametrize("scopes,options", [
+    (("other-scope",), {}), (("scope", "second-scope"), {}),
+    (("scope",), {"tenant_id": "other-tenant"}),
+    (("scope",), {"claims": "challenge"}), (("scope",), {"enable_cae": True}),
+])
+def test_ambient_credential_separates_token_requests(monkeypatch, scopes, options):
+    from azure.core.credentials import AccessToken
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", lambda: 1000)
+    source = Mock()
+    source.get_token.side_effect = [AccessToken("first", 2000), AccessToken("second", 2000)]
+    credential = _KustoCachedCredential(source)
+    assert credential.get_token("scope").token == "first"
+    assert credential.get_token(*scopes, **options).token == "second"
+    assert credential.get_token(*scopes, **options).token == "second"
+    assert source.get_token.call_count == 2
+    source.get_token.assert_called_with(*scopes, **options)
+
+
+@pytest.mark.parametrize("expires_on", [900, 1000, 1300])
+def test_ambient_credential_does_not_retain_short_lived_tokens(monkeypatch, expires_on):
+    from azure.core.credentials import AccessToken
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", lambda: 1000)
+    source = Mock()
+    source.get_token.return_value = AccessToken("short-lived", expires_on)
+    credential = _KustoCachedCredential(source)
+    credential.get_token("scope")
+    credential.get_token("scope")
+    assert source.get_token.call_count == 2
+    assert credential._token is None
+
+
+def test_ambient_credential_refresh_failure_does_not_return_old_token(monkeypatch):
+    from azure.core.credentials import AccessToken
+    from azure.core.exceptions import ClientAuthenticationError
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    clock = Mock(return_value=1000)
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", clock)
+    source = Mock()
+    source.get_token.side_effect = [AccessToken("old", 1600), ClientAuthenticationError("Denied"),
+                                   AccessToken("new", 2500)]
+    credential = _KustoCachedCredential(source)
+    credential.get_token("scope")
+    clock.return_value = 1300
+    with pytest.raises(ClientAuthenticationError):
+        credential.get_token("scope")
+    assert credential._token is None
+    assert credential.get_token("scope").token == "new"
+
+
+def test_ambient_credential_does_not_share_cache_and_clears_on_close(monkeypatch):
+    from azure.core.credentials import AccessToken
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", lambda: 1000)
+    first_source, second_source = Mock(), Mock()
+    first_source.get_token.return_value = AccessToken("first-user", 2000)
+    second_source.get_token.return_value = AccessToken("second-user", 2000)
+    first, second = _KustoCachedCredential(first_source), _KustoCachedCredential(second_source)
+    assert first.get_token("scope").token == "first-user"
+    assert second.get_token("scope").token == "second-user"
+    first.close()
+    first.close()
+    assert first._token is None
+    first_source.close.assert_called_once()
+    with pytest.raises(RuntimeError, match="closed"):
+        first.get_token("scope")
+    assert second.get_token("scope").token == "second-user"
+    second_source.get_token.assert_called_once()
+    second_source.close.assert_not_called()
+
+
+def test_ambient_credential_unknown_options_bypass_and_clear_cache(monkeypatch):
+    from azure.core.credentials import AccessToken
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", lambda: 1000)
+    source = Mock()
+    source.get_token.return_value = AccessToken("fixture", 2000)
+    credential = _KustoCachedCredential(source)
+    credential.get_token("scope")
+    credential.get_token("scope", force_refresh=True)
+    credential.get_token("scope", force_refresh=True)
+    source.get_token.assert_called_with("scope", force_refresh=True)
+    assert credential._token is None
+    credential.get_token("scope")
+    assert source.get_token.call_count == 4
+
+
+def test_ambient_credential_concurrent_requests_acquire_once(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Event
+    from azure.core.credentials import AccessToken
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", lambda: 1000)
+    ready = Barrier(8)
+    acquiring, release = Event(), Event()
+
+    def acquire(*scopes):
+        acquiring.set()
+        assert release.wait(5)
+        return AccessToken("fixture", 2000)
+
+    source = Mock()
+    source.get_token.side_effect = acquire
+    credential = _KustoCachedCredential(source)
+
+    def request_token():
+        ready.wait(timeout=5)
+        return credential.get_token("scope")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(request_token) for index in range(8)]
+        try:
+            assert acquiring.wait(5)
+        finally:
+            release.set()
+        assert all(future.result(timeout=5).token == "fixture" for future in futures)
+    source.get_token.assert_called_once_with("scope")
+
+
+def test_ambient_loader_wraps_its_own_credential(monkeypatch):
+    from azure.core.credentials import AccessToken
+    from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential
+
+    monkeypatch.setattr("data_formulator.data_loader.kusto_data_loader.time.time", lambda: 1000)
+    module = "data_formulator.data_loader.kusto_data_loader"
+    source = Mock()
+    source.get_token.return_value = AccessToken("fixture", 2000)
+    with patch("azure.identity.DefaultAzureCredential", return_value=source), \
+         patch(f"{module}.KustoClient"), \
+         patch(f"{module}.KustoConnectionStringBuilder.with_azure_token_credential") as build:
+        KustoDataLoader({"kusto_cluster": "https://example.kusto.windows.net", "kusto_database": "analytics"})
+        credential = build.call_args.args[1]
+        assert isinstance(credential, _KustoCachedCredential)
+        credential.get_token("scope")
+        credential.get_token("scope")
+        source.get_token.assert_called_once_with("scope")
+
+
+@pytest.mark.parametrize("auth", [
+    {"access_token": "delegated"},
+    {"access_token": "delegated", "refresh_token": "refresh", "token_expires_at": 2000},
+    {"client_id": "client", "client_secret": "secret", "tenant_id": "tenant"},
+])
+def test_nonambient_auth_does_not_use_ambient_cache(auth):
+    module = "data_formulator.data_loader.kusto_data_loader"
+    with patch(f"{module}.KustoClient"), patch(f"{module}._KustoCachedCredential") as cache, \
+         patch("azure.identity.DefaultAzureCredential") as ambient:
+        KustoDataLoader({"kusto_cluster": "https://example.kusto.windows.net", "kusto_database": "analytics", **auth})
+        cache.assert_not_called()
+        ambient.assert_not_called()
 
 
 def test_delegated_credential_refreshes_expired_token(monkeypatch) -> None:

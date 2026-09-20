@@ -5,6 +5,7 @@ import * as React from 'react';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { borderColor, transition, radius } from '../app/tokens';
 import { dialogHeight, dialogWidth, iconVar, textVar } from '../app/layout';
+import { InlineLoadingStatus } from '../components/FunComponents';
 import {
     Alert,
     AlertTitle,
@@ -1970,10 +1971,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <Typography variant="subtitle2" sx={{ px: 2.5, py: 0.75, fontSize: '0.8125rem', fontWeight: 600, display: { xs: 'none', sm: 'block' } }}>
                             {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
                         </Typography>
-                        {connectorListLoading && <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, px: { xs: 0, sm: 2.5 }, py: 0.75 }}>
-                            <CircularProgress size={16} sx={{ flexShrink: 0 }} />
-                            <Typography sx={{ fontSize: textVar.sm }}>{t('common.loading', { defaultValue: 'Loading...' })}</Typography>
-                        </Box>}
+                        {connectorListLoading && <InlineLoadingStatus label={t('common.loading', { defaultValue: 'Loading...' })}
+                            sx={{ px: { xs: 0, sm: 2.5 }, py: 0.75 }} />}
                         {connectorListError && <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}
                             action={<Button size="small" onClick={refreshConnectors}>{t('common.retry', { defaultValue: 'Retry' })}</Button>}>
                             {connectorListError}

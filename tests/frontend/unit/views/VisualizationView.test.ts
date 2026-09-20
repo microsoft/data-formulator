@@ -50,6 +50,7 @@ it('renders scratch Parquet as a read-only table preview', async () => {
     try {
         const store = configureStore({ reducer: dataFormulatorReducer });
         render(React.createElement(Provider, { store, children: React.createElement(WorkspaceFileCanvas, { fileName: 'scratch/computed.parquet' }) }));
+        expect(screen.getByRole('progressbar', { name: 'Loading file preview...' })).toBeTruthy();
         expect(await screen.findByRole('table', { name: 'scratch/computed.parquet' })).toBeTruthy();
         expect(screen.getByRole('columnheader', { name: 'value' })).toBeTruthy();
         expect(screen.getByRole('cell', { name: '12' })).toBeTruthy();

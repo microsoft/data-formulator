@@ -12,6 +12,8 @@ from flask import current_app, has_app_context
 
 LIMITS = {
     'max_display_rows': ('MAX_DISPLAY_ROWS', 10000, 1, 1000000),
+    'external_table_max_rows': ('EXTERNAL_TABLE_MAX_ROWS', 1000000, 0, 1000000000),
+    'external_table_max_bytes': ('EXTERNAL_TABLE_MAX_SIZE_MB', 512 * 1024 * 1024, 0, 1024 ** 4),
     'scratch_max_bytes': ('SCRATCH_MAX_SIZE_MB', 1024 * 1024 * 1024, 1048576, 1024 ** 4),
     'scratch_max_file_bytes': ('SCRATCH_MAX_FILE_SIZE_MB', 20 * 1024 * 1024, 1048576, 1024 ** 3),
 }

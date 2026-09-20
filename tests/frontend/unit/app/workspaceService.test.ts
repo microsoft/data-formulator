@@ -33,6 +33,16 @@ beforeEach(() => {
 });
 
 describe('external table reference artifacts', () => {
+    it('uses configured thresholds with strict boundaries and preserves zero', () => {
+        const config = { EXTERNAL_TABLE_MAX_ROWS: 100, EXTERNAL_TABLE_MAX_BYTES: 1024 };
+        expect(isLargeConnectorTable({ row_count: 100, size_bytes: 1024 }, config)).toBe(false);
+        expect(isLargeConnectorTable({ row_count: 101 }, config)).toBe(true);
+        expect(isLargeConnectorTable({ file_size: 1025 }, config)).toBe(true);
+        expect(isLargeConnectorTable({ row_count: 1 }, { EXTERNAL_TABLE_MAX_ROWS: 0 })).toBe(true);
+        expect(isLargeConnectorTable({}, config)).toBe(false);
+        expect(isLargeConnectorTable({ row_count: 1000001 }, { EXTERNAL_TABLE_MAX_ROWS: 2000000 })).toBe(false);
+    });
+
     it.each([
         [null, false], [{}, false], [{ row_count: 1_000_000 }, false],
         [{ row_count: '1000001' }, true], [{ size_bytes: '19327352832' }, true],

@@ -1,13 +1,18 @@
 import json
 import logging
+import os
+import time
+from contextlib import ExitStack
 from urllib.parse import urlsplit
 import pandas as pd
 import pyarrow as pa
-import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
-import pyarrow.dataset as pa_dataset
 from azure.storage.blob import BlobServiceClient, ExponentialRetry
-from azure.identity import DefaultAzureCredential
+from azure.core.exceptions import ClientAuthenticationError
+from azure.identity import (
+    AzureCliCredential, ChainedTokenCredential, CredentialUnavailableError, DefaultAzureCredential,
+    EnvironmentCredential, ManagedIdentityCredential, WorkloadIdentityCredential,
+)
 from pyarrow import fs as pa_fs
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
@@ -19,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class AzureBlobDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Azure Blob"
-    DESCRIPTION = "Load CSV, JSON, or Parquet files from an Azure Blob Storage container."
+    DESCRIPTION = "Load CSV, TSV, JSON, JSONL, or Parquet files from an Azure Blob Storage container."
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -150,25 +155,78 @@ class AzureBlobDataLoader(ExternalDataLoader):
     def _read_sample(self, azure_url: str, limit: int) -> pd.DataFrame:
         return self.fetch_data_as_arrow(azure_url, {"size": limit}).to_pandas()
 
+    def _query_access_token(self) -> str:
+        providers = {
+            "cli": AzureCliCredential,
+            "managed_identity": ManagedIdentityCredential,
+            "env": EnvironmentCredential,
+            "workload_identity": WorkloadIdentityCredential,
+            "default": DefaultAzureCredential,
+        }
+        names = [name.strip() for name in self.credential_chain.split(";")]
+        if not names or any(name not in providers for name in names):
+            raise ValueError("Unsupported Azure credential provider in credential_chain")
+        with ExitStack() as stack:
+            credentials = []
+            for name in names:
+                if name == "workload_identity" and not all(os.environ.get(variable) for variable in (
+                    "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_FEDERATED_TOKEN_FILE",
+                )):
+                    continue
+                credentials.append(stack.enter_context(providers[name]()))
+            if not credentials:
+                raise CredentialUnavailableError("No configured Azure credential provider is available")
+            credential = ChainedTokenCredential(*credentials)
+            token = credential.get_token("https://storage.azure.com/.default")
+            if token.expires_on <= time.time() + 300:
+                raise ClientAuthenticationError(message="Azure Storage token expires too soon; refresh credentials and retry.")
+            return token.token
+
+    def _register_source(self, connection, source_table: str, *, preview: bool = False):
+        source_path = f"az://{self.blob_host}/{self._azure_path(source_table)}"
+        scope = f"az://{self.blob_host}/{self.container_name}/"
+        connection_string = self.connection_string
+        if self.account_key or self.sas_token:
+            credential = (
+                f"AccountKey={self.account_key}" if self.account_key
+                else f"SharedAccessSignature={self.sas_token.lstrip('?')}"
+            )
+            connection_string = f"BlobEndpoint={self.account_url};AccountName={self.account_name};{credential}"
+        if connection_string:
+            connection.execute(
+                "CREATE SECRET blob_source (TYPE azure, CONNECTION_STRING ?, SCOPE ?)",
+                [connection_string, scope],
+            )
+        else:
+            endpoint = self.blob_host.removeprefix(f"{self.account_name}.")
+            connection.execute(
+                "CREATE SECRET blob_source (TYPE azure, PROVIDER access_token, "
+                "ACCOUNT_NAME ?, ACCESS_TOKEN ?, ENDPOINT ?, SCOPE ?)",
+                [self.account_name, self._query_access_token(), endpoint, scope],
+            )
+        return probe_utils.register_file_scan(connection, source_path, preview=preview)
+
     def _query_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
         import duckdb
 
         extension = source_table.lower().rsplit('.', 1)[-1]
-        formats = {"parquet": "parquet", "csv": "csv", "json": "json", "jsonl": "json"}
-        if extension not in formats:
+        if extension not in ("parquet", "csv", "tsv", "json", "jsonl"):
             raise ValueError(f"Unsupported file type: {source_table}")
-        file_format = (
-            pa_dataset.CsvFileFormat(parse_options=pa_csv.ParseOptions(newlines_in_values=True))
-            if extension == "csv" else formats[extension]
-        )
-        dataset = pa_dataset.dataset(
-            self._azure_path(source_table), filesystem=self.azure_fs, format=file_format,
-        )
-        scanner = dataset.scanner(batch_size=8192, batch_readahead=1, fragment_readahead=1, use_threads=True)
-        sql = probe_utils.compile_probe_sql(query, limit, dialect=probe_utils.DUCKDB)
+        self._last_total_rows = None
         with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
-            connection.register("t", scanner)
+            relation = self._register_source(connection, source_table)
+            string_columns = tuple(name for name, datatype in zip(relation.columns, relation.types)
+                                   if str(datatype) == "VARCHAR")
+            sql = probe_utils.compile_probe_sql(query, limit, dialect=probe_utils.DUCKDB,
+                                                string_columns=string_columns)
             return connection.execute(sql).fetch_arrow_table()
+
+    def preview_data(self, source_table: str, import_options: dict[str, Any] | None = None,
+                     *, purpose: str = "ui") -> dict[str, Any]:
+        return probe_utils.preview_file(self._register_source, source_table, import_options, purpose=purpose)
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        return self._query_arrow(source_table, query, limit)
 
     def fetch_data_as_arrow(
         self,
@@ -179,17 +237,7 @@ class AzureBlobDataLoader(ExternalDataLoader):
         size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         if not source_table:
             raise ValueError("source_table (Azure blob URL) must be provided")
-        source_filters = opts.get("source_filters") or []
-        normalized_filters = probe_utils.probe_filters_to_source_filters(source_filters)
-        if len(normalized_filters) != len(source_filters):
-            raise ValueError("Unsupported source filter operator")
-        filters = [{"column": item["column"], "op": item["operator"], "value": item.get("value")}
-               for item in normalized_filters]
-        return self._query_arrow(source_table, {
-            "filters": filters, "columns": opts.get("columns") or [],
-            "order_by": [{"column": column, "dir": opts.get("sort_order", "asc")}
-                         for column in opts.get("sort_columns") or []],
-        }, size)
+        return self._query_arrow(source_table, probe_utils.query_from_import_options(opts), size)
 
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         if not path:
@@ -236,8 +284,8 @@ class AzureBlobDataLoader(ExternalDataLoader):
         return results
     
     def _is_supported_file(self, blob_name: str) -> bool:
-        """Check if the file type is supported (PyArrow can read it)."""
-        supported_extensions = ['.csv', '.parquet', '.json', '.jsonl']
+        """Check if the file type is supported."""
+        supported_extensions = ['.csv', '.tsv', '.parquet', '.json', '.jsonl']
         return any(blob_name.lower().endswith(ext) for ext in supported_extensions)
 
     def _estimate_row_count(self, azure_url: str, blob_properties=None) -> int:
@@ -339,21 +387,26 @@ class AzureBlobDataLoader(ExternalDataLoader):
 
         return []
 
+    def get_column_types(self, source_table: str) -> dict[str, Any]:
+        metadata = self.get_metadata([source_table])
+        return {"columns": metadata["columns"]} if "columns" in metadata else {}
+
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         if not path:
             return {}
         blob_name = '/'.join(path)
         azure_url = path[-1] if path[-1].startswith("az://") else f"az://{self.blob_host}/{self.container_name}/{blob_name}"
         try:
-            sample_df = self._read_sample(azure_url, 5)
-            columns = [{"name": c, "type": str(sample_df[c].dtype)} for c in sample_df.columns]
-            sample_rows = df_to_safe_records(sample_df)
-            metadata = {"columns": columns, "sample_rows": sample_rows}
             if azure_url.lower().endswith('.parquet'):
-                metadata["row_count"] = pq.ParquetFile(
-                    self._azure_path(azure_url), filesystem=self.azure_fs,
-                ).metadata.num_rows
-            return metadata
+                with pq.ParquetFile(self._azure_path(azure_url), filesystem=self.azure_fs) as source:
+                    return {
+                        "columns": [{"name": field.name, "type": str(field.type)} for field in source.schema_arrow],
+                        "row_count": source.metadata.num_rows,
+                        "inspection": {"schema_source": "footer", "row_count_status": "exact", "sample_status": "not_requested"},
+                    }
+            preview = self.preview_data(azure_url, purpose="agent")
+            return {"columns": preview["columns"], "sample_rows": preview["rows"],
+                    "inspection": preview["inspection"]}
         except Exception as e:
             logger.warning(f"get_metadata failed for {path}: {e}")
             return {}

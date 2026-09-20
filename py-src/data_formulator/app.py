@@ -416,6 +416,8 @@ def get_app_config():
         "DISABLE_DATA_CONNECTORS": user_connectors_disabled(),
         "DISABLE_CUSTOM_MODELS": user_models_disabled(),
         "MAX_DISPLAY_ROWS": effective_limit('max_display_rows'),
+        "EXTERNAL_TABLE_MAX_ROWS": effective_limit('external_table_max_rows'),
+        "EXTERNAL_TABLE_MAX_BYTES": effective_limit('external_table_max_bytes'),
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": workspace_backend,
     }

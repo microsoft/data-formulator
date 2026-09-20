@@ -645,7 +645,7 @@
     "type": "function",
     "function": {
       "name": "propose_data_operation",
-      "description": "Load connected data needed for the user's task. When suitable missing data is found, call this in the same run instead of ending with a promise to load it. Set user_review_needed=false with exactly one complete recommended option to load it automatically and continue from the actual result. Set true when the source, scope, or alternatives need the user's choice, including substitutions that change requested subjects, date coverage, or granularity. Multiple options always require review. Discovery must ground every source, table, filter, and sort field. Only successful execution means data is loaded.",
+      "description": "Load connected data into durable workspace tables using the workspace Data Access Paths. Ground source IDs, table keys, and query fields in discovery or reference context. One option with user_review_needed=false executes automatically; review-required proposals pause for user selection. Multiple options always require review. Successful loads return IDs, paths, schema, row counts, and scope for subsequent computation.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -687,8 +687,18 @@
                       },
                       "query": {
                         "type": "object",
-                        "description": "Optional raw-row subset. Omit to load the whole table subject to server limits.",
+                        "description": "Optional structured subset or aggregate query. Omit for raw rows subject to connector limits. Aggregate loading requires query_capabilities.aggregate_loading=supported and allows at most 10000 result rows. An explicit limit defines partial/top-N coverage, not a complete population.",
                         "properties": {
+                          "group_by": {"type": "array", "items": {"type": "string"}},
+                          "aggregates": {"type": "array", "items": {
+                            "type": "object",
+                            "properties": {
+                              "op": {"type": "string", "enum": ["count", "count_distinct", "sum", "avg", "min", "max"]},
+                              "column": {"type": "string"},
+                              "as": {"type": "string", "description": "Unique output column name, distinct from group keys."}
+                            },
+                            "required": ["op", "as"], "additionalProperties": false
+                          }},
                           "filters": {
                             "type": "array",
                             "items": {

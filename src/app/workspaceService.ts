@@ -15,14 +15,17 @@ import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inpu
 import { migrateState } from './stateMigrations';
 import { workspaceTableIdOf } from './tableResolution';
 import type { InputTable, ExternalTableReference } from '../components/ComponentType';
+import type { ServerConfig } from './dfSlice';
 
 export function createExternalTableReference(reference: Omit<ExternalTableReference, 'id'>): ExternalTableReference {
     return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };
 }
 
-export function isLargeConnectorTable(metadata?: Record<string, any> | null): boolean {
-    return Number(metadata?.row_count) > 1_000_000
-        || ['original_size_bytes', 'size_bytes', 'file_size'].some(key => Number(metadata?.[key]) > 512 * 1024 * 1024);
+export function isLargeConnectorTable(metadata?: Record<string, any> | null,
+    config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
+    return Number(metadata?.row_count) > (config?.EXTERNAL_TABLE_MAX_ROWS ?? 1_000_000)
+        || ['original_size_bytes', 'size_bytes', 'file_size'].some(key =>
+            Number(metadata?.[key]) > (config?.EXTERNAL_TABLE_MAX_BYTES ?? 512 * 1024 * 1024));
 }
 
 export interface WorkspaceSummary {

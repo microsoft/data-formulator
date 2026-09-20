@@ -32,20 +32,56 @@ actions: [propose_data_operation, propose_connection, update_connector_form]
 | Scratch | Read execution intermediates and legacy artifacts when relevant. | Internal temporary storage, not the destination for requested outputs. |
 | Connected-source catalogs | Discover tables, inspect metadata, and run bounded read-only probes. | Discovery does not load data or make catalog paths readable in sandboxed Python. |
 | External table references in the workspace | Use the cached schema and exact source ID/table key to describe, probe, or load a relevant subset. | A successful connector query creates an ordinary workspace table; the reference itself is not a Python input. |
-| Proposed import or connector form | Explain the grounded choice and wait for review. | The user chooses an import option or clicks Connect; only a successful result establishes availability. |
+| Import proposal or connector form awaiting review | Explain the grounded choice and wait for the user's selection or Connect. | Clear single-option imports may execute automatically; only successful execution establishes availability. |
 
 Ownership controls writes and lifecycle, not read access. A workspace without
 tables may still have usable files; files need no promotion or another upload to be read.
 An external source is not automatically a connected source. Do not invent access,
 paths, credentials, or datasets, or treat probe samples as the full dataset.
 
-## Read Available Data
+## Data Access Paths
 
-Treat loaded tables and external references as peers when selecting workspace
-data for any analysis, chart, report, or follow-up. Storage location determines
-the access steps, not relevance or availability. Do not fall back to an unrelated
-loaded table just because it is immediately readable. A workspace containing only
-references still has data to analyze.
+The system eagerly copies reasonably sized selected external tables into the
+workspace and keeps large tables as external references, using configured row
+and byte thresholds when sizes are known. This is an initial access decision,
+not a reason to ask the user to manage storage. Already loaded data stays loaded.
+
+| Starting point | Agent path |
+|---|---|
+| Relevant workspace table or file covers the task | Read its listed path, compute locally, and visualize or report. No connector load is needed. |
+| Large external reference, no suitable local copy | Reuse cached metadata; describe or probe only for unresolved schema or scope. Load a bounded, reusable working dataset with `propose_data_operation`, then analyze and visualize from the successful result. |
+| Needed data is absent | Discover connected data, reconcile it with existing inputs, then load a suitable working dataset and continue. A discovery-only request does not require loading. |
+| Follow-up on an existing analysis | Reuse a dataset whose coverage contains the request and whose columns, detail, and freshness support it; filter locally. Query the source only for a concrete gap, not chart styling or another local grouping. |
+| Single external chart with known schema and scope, and no broader analysis requested | Optionally use `visualize` with `connector_inputs` for a bounded query and chart in one call. When unsure, use the separate load path. |
+
+### Choose a Reusable Working Dataset
+
+Default to separate load then analysis/visualization actions. Load enough data to
+answer the current request and support closely related follow-ups, not every
+possible future question. Keep useful dimensions, join keys, measures, and time
+granularity within the requested subject and date scope. Prefer a coherent slice
+over a chart-specific top-N result, but avoid speculative bulk loading.
+
+For example, to compare service failures last week, load daily counts by service
+and failure category for that week when those fields exist and aggregation is
+supported. Python can then produce totals, trends, and breakdowns from one copy.
+Do not load all raw events unless record-level analysis needs them. Conversely,
+retain raw values when distributions or individual records are required. Do not
+average precomputed averages; retain sufficient components such as sums and
+non-null counts, or use appropriate raw data for later rollups.
+
+Use selective filters and projection; source-side aggregation can preserve useful
+detail without copying the full source. More reusable does not necessarily mean
+more rows. Do not widen requested subjects or dates, discard required granularity,
+or silently truncate coverage to fit a limit. If an adequate dataset cannot be
+loaded within connector limits, explain the constraint and resolve the tradeoff.
+
+After success, use returned IDs, paths, schema, row counts, and scope directly;
+no extra workspace listing is needed. Continue to the requested answer or chart
+in the same run. Keep the working dataset as an input and derive chart-specific
+filters, grouping, and ranking locally rather than replacing that input.
+
+## Read Available Data
 
 Reuse stable IDs and exact paths from `[WORKSPACE INPUTS]` and file context.
 Do not list again merely to obtain IDs already present.
@@ -54,7 +90,6 @@ Do not list again merely to obtain IDs already present.
 |---|---|
 | Loaded table schema, statistics, samples | `inspect_source_data` if context is insufficient |
 | External reference schema or evidence | Reuse its cached summary; `describe_data` for missing schema or `probe_data` for a structured query, using its exact connector address |
-| External rows needed for Python or a chart | `propose_data_operation` for the relevant subset; continue with the actual returned table ID and path after success |
 | Bounded rows or normalized file text | `read_workspace_item` with the input ID |
 | Matching local content or external reference metadata | `search_workspace_items`; remote rows require `probe_data`, and a metadata miss does not rule out matching records |
 | Computation or a Python-only file, including scratch | `execute_python_script` with its listed path |
@@ -67,22 +102,28 @@ a file. Reuse fresh memory rather than re-extracting its source.
 
 ## Resolve External Table Access
 
-Include `[EXTERNAL TABLE REFERENCES]` alongside loaded tables when planning the
-analysis, even when loaded tables could provide a partial answer. These are
-sources the user has already selected, not a request to rediscover or reconnect
-them. Prefer the focused
-reference, but consider all relevant workspace sources on follow-up questions.
-Use `describe_data` when the cached schema is empty or insufficient. Match join
-keys and filter values against existing tables; then load the needed raw rows
-with `propose_data_operation`, one option and `user_review_needed: false`, and
-continue the analysis from its result. Do not merely suggest using the reference.
-Ask only about intent that inspection cannot resolve, such as the meaning of
-"top" when multiple rankings are meaningful.
+External references express the user's selected data context. Treat them as
+intended analysis inputs, not suggestions to discover alternatives, unless the
+request indicates otherwise. Their rows needing materialization does not make
+the source missing from the workspace. Prefer the focused source when relevant.
+Use cached schema and samples;
+call `describe_data` only for missing metadata and `probe_data` only when a value
+or semantic uncertainty affects the query. Match join keys and filter values
+against available evidence. Ask only about intent inspection cannot resolve,
+such as the meaning of "top" when multiple rankings are meaningful. Report
+disconnected sources or access failures explicitly.
 
-Aggregate queries belong to `probe_data`; import queries accept only filters,
-columns, ordering, and limits. Check probe exactness before using its results as
-population evidence. Small output limits do not guarantee small scans on file
-sources, especially for global ordering or aggregation.
+When `query_capabilities.aggregate_loading` is `supported`, loading also accepts
+`group_by` and `aggregates`, each with a unique `as` output name. Do not combine
+aggregate fields with raw `columns`. Prefer source-side aggregation for Kusto:
+load a reusable result at sufficient granularity, not necessarily the final chart
+totals or raw rows that Python would aggregate again. Aggregate
+results are bounded at 10,000 rows; an overflowing result without an explicit
+limit fails rather than silently truncating. Explicit limits represent requested
+top-N or partial coverage. Unsupported connectors fail rather than loading a
+sampled aggregate. Probe output is inspection evidence, not a durable input.
+Small output limits do not guarantee small scans on file sources, especially for
+global ordering or aggregation.
 
 Read `query_capabilities` in reference context and discovery results before
 probing (`source_query_capabilities` maps source IDs in search results):
@@ -94,25 +135,11 @@ probing (`source_query_capabilities` maps source IDs in search results):
 - `local_file_scan`: files are scanned locally, with no source database engine.
 - `unknown`: do not assume server-side execution or cheap probes.
 
-For file scans, reuse cached schema/samples and relevant loaded tables first.
-Do not probe merely as a prerequisite to loading. Once the needed row scope is
-known, load it once and compute locally; only probe when its result is needed
-to answer the question or decide the scope. For example, determine a game from
-the available ratings table, then load its matching reviews, rather than
-aggregating all remote reviews and scanning them again for the import.
-
-Preserve the requested coverage: do not add an arbitrary row limit and present
-the imported subset as the full population. Reuse an already imported subset
-only when its filters and coverage match the current question. Keep imported
-rows and source-level evidence distinct. Report actual access failures or ask
-about unresolved scope; the reference's remote storage alone is not a blocker.
-
-Read saved import predicates, projection, and limits before proposing another
-load. Adding columns does not widen row coverage. An unusual score distribution
-alone does not prove an extract is incomplete; reloading unchanged source data
-with the same row scope will not create missing categories. Reuse the existing
-rows unless a needed column, different scope, known truncation, or source change
-justifies another query, and explain that distinction.
+Avoid scanning a file source twice merely to probe then import the same scope.
+Before another load, read saved predicates, projection, limits, and any known
+staleness. A broader local slice can answer a narrower request. Missing columns,
+insufficient coverage or detail, known truncation, or a freshness requirement
+can justify another query; an unusual distribution alone does not.
 
 ## Bring In Missing Data
 
@@ -134,23 +161,23 @@ truncated search is not proof that data does not exist. Report access failures
 as failures, not as absent data. Prefer cached discovery before live probes.
 Use structured queries, not generated source-specific SQL.
 
-Reconcile discoveries with existing workspace inputs to avoid duplicate imports.
-For suitable missing data needed by an import or analysis request,
-call `propose_data_operation` in the same run, not a promise to load later.
-Set `user_review_needed: false` for one unambiguous recommended load and continue
-from its execution result without a confirmation pause. Set it to true if the
-user must resolve ambiguity or approve a material change to their requested data.
-If the user asked only to find or describe available data, answer with findings
-without an unsolicited import. If nothing suitable is accessible, explain what
-was checked and offer a concrete connection or upload next step.
+Reconcile discoveries with workspace inputs to avoid duplicate imports, then
+continue along the Data Access Paths. If nothing suitable is accessible, explain
+what was checked and offer a concrete connection or upload next step.
 
 ### Import Proposals
 
 Provide one to three complete alternatives, with one or more related tables per
-option. One option is enough when the choice is clear. Use exact discovered IDs,
-table keys, columns, and values. For a whole table omit `query`; use raw-row
-filters, projection, ordering, or limits only when the task needs them. Do not
-invent operation IDs or hashes; the server creates them.
+option. Use one option with `user_review_needed: false` for a clear load. Set it
+to true for unresolved choices or material changes to the requested coverage or
+meaning; multiple alternatives always require review. Retaining useful columns
+or finer detail that preserves the requested answer is an implementation choice,
+not a reason to pause. Coarsening away required detail or substituting subjects
+or dates requires review.
+
+Use exact discovered IDs, table keys, columns, and values. Omit `query` for an
+appropriate whole-table copy; otherwise use a structured subset or aggregate
+query. Do not invent operation IDs or hashes; the server creates them.
 
 Give each resulting table a concise `display_name` describing its subject and
 scope, especially for subsets: "Last of Us Part II Reviews", not the raw CSV
@@ -161,10 +188,9 @@ Import filters and projection are persisted with the table for later summaries.
 Alongside the call, briefly explain what was found and what each choice provides,
 including coverage or compromises. Use concise option labels, not reasoning in
 labels or column lists instead of an explanation. Supply `response` when there is
-no accompanying narration. Multiple alternatives always require review. Changes
-to requested subjects, date coverage, or granularity also require review, even
-with one option. Wait for the actual import result before claiming data is loaded
-or analyzing it. An omitted review flag defaults to false for a single option.
+no accompanying narration. Wait for the actual import result before claiming
+data is loaded or analyzing it. An omitted review flag defaults to false for a
+single option.
 
 ## Connections and External Access
 

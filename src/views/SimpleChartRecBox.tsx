@@ -203,6 +203,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const tables = useSelector(dfSelectors.getAllTables);
     const inputTables = useSelector((state: DataFormulatorState) => state.inputTables);
+    const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const hasFocusedExternalReference = useSelector((state: DataFormulatorState) => {
         const focus = state.focusedId;
@@ -443,14 +444,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // signature (all root table ids) refreshes questions when tables change;
     // the 500ms debounce collapses batch loads into a single call.
     const rootTableSignature = React.useMemo(
-        () => inputTables.map(t => t.id).sort().join('|'),
-        [inputTables]
+        () => JSON.stringify({
+            tables: inputTables.map(table => [table.id, table.snapshot.capturedAt]),
+            references: externalReferences.map(reference => [reference.id, reference.capturedAt, reference.summary, reference.queryIntent]),
+        }),
+        [inputTables, externalReferences]
     );
     const focusedRootTableId = (focusedTableId && inputTables.some(t => t.id === focusedTableId))
         ? focusedTableId
-        : undefined;
+        : focusedId?.type === 'external-table' && hasFocusedExternalReference ? focusedId.referenceId : undefined;
     React.useEffect(() => {
-        if (!focusedRootTableId) return;
+        if (!focusedRootTableId || workspaceReadOnly) return;
         const entry = starterQuestions[focusedRootTableId];
         if (entry && entry.signature === rootTableSignature) return;        // already fresh
         if (starterQuestionsStatus[focusedRootTableId] === 'loading') return; // in flight
@@ -458,11 +462,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             dispatch(generateStarterQuestions({
                 tableId: focusedRootTableId,
                 signature: rootTableSignature,
-                tableIds: rootTableSignature.split('|'),
+                tableIds: inputTables.map(table => table.id),
             }));
         }, 500);
         return () => clearTimeout(timer);
-    }, [focusedRootTableId, rootTableSignature, starterQuestions, starterQuestionsStatus, dispatch]);
+    }, [focusedRootTableId, rootTableSignature, inputTables, starterQuestions, starterQuestionsStatus, workspaceReadOnly, dispatch]);
 
 
     // Helper: confirm selection of a mention (table only)
@@ -2960,6 +2964,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const starterLoading = !!focusedRootTableId && (!focusedStarterFresh || focusedStarterStatus === 'loading');
 
     const showGettingStarted = !!focusedRootTableId
+        && !workspaceReadOnly
         && !chatWorkflow
         && !isChatFormulating
         && !pendingClarification

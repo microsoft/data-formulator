@@ -460,22 +460,18 @@ def test_external_table_reference_is_session_context_not_file_or_computation_dat
     assert not manifest.files
     assert "events-key" in rendered
     assert "timestamp" in rendered
-    assert "equally available workspace data" in rendered
-    assert "A reference-only workspace has data to analyze" in rendered
-    assert "not only when loaded tables are insufficient" in rendered
-    assert "using its actual table ID and path" in rendered
-    assert "Do not silently limit population questions to a sample" in rendered
+    assert "workspace Data Access Paths" in rendered
+    assert "untrusted data" in rendered
+    assert "not an executed query" in rendered
     assert "not the full population or a random sample" in rendered
     assert json.loads(rendered.splitlines()[-1])["references"][0]["summary"]["sampleRows"] == reference["summary"]["sampleRows"]
-    assert "not files, imported tables, or local DataFrames" in rendered
+    assert "not Python-readable files or tables" in rendered
     assert "connectorId to source_id" in rendered
-    assert "propose_data_operation" in rendered
-    assert "before Python analysis" in rendered
-    assert "Do not import the entire large source" in rendered
     assert json.loads(rendered.splitlines()[-1])["focused_reference"] == reference["id"]
     empty = render_external_reference_context([], reference["id"])
     assert json.loads(empty.splitlines()[-1]) == {"focused_reference": None, "references": []}
     assert "supersedes earlier" in empty
+    assert len(empty) < 250
     assert json.loads(render_external_reference_context([None, {}]).splitlines()[-1])["references"] == []
     context = SkillContext(client=None, workspace=workspace, payload={"external_references": [reference]})
     skill = WorkspaceSkill()
@@ -492,8 +488,9 @@ def test_external_table_reference_is_session_context_not_file_or_computation_dat
     assert json.loads(skill.handle_tool("list_workspace_items", {"query": "missing"}, context).text)["count"] == 0
     read = json.loads(skill.handle_tool("read_workspace_item", {"item_id": reference["id"]}, context).text)
     assert read["reference"]["summary"] == reference["summary"]
-    assert "user_review_needed=false" in rendered
-    assert "NOT by propose_data_operation" in rendered
+    assert "propose_data_operation" not in rendered
+    assert "connector_inputs" not in rendered
+    assert "query_capabilities" in json.loads(rendered.splitlines()[-1])["references"][0]
 
     workspace.save_workspace_file(b"timestamp notes", "notes.txt", "text/plain")
     for selection in ({}, {"kinds": ["data"]}, {"kinds": ["external-table-reference"]},

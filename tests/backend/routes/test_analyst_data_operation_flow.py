@@ -34,10 +34,20 @@ class _Loader:
     def get_safe_params(self):
         return {}
 
+    def preview_data(self, source_table, import_options):
+        from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+        return ExternalDataLoader.format_preview(self.fetch_data_as_arrow(source_table, import_options), import_options)
 
+    def query_data_as_arrow(self, source_table, query, limit):
+        self.calls.append((source_table, {"query": query, "limit": limit}))
+        return pa.table({"total": [30.0]})
+
+
+@pytest.mark.parametrize("aggregate", [False, True])
 def test_operation_preview_is_bounded_and_display_only(
     agents_client,
     tmp_path: Path,
+    aggregate: bool,
 ) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     plan = DataOperationPlan(
@@ -49,7 +59,9 @@ def test_operation_preview_is_bounded_and_display_only(
             table_key="public.orders",
             display_name="Recent orders",
             source_table="public.orders",
-            query=LoadQuery(limit=100),
+            query=LoadQuery.from_dict({"limit": 100, **({"aggregates": [
+                {"op": "sum", "column": "amount", "as": "total"},
+            ]} if aggregate else {})}),
         ),),
     )
     operation = DataOperation(id="operation-1", reason="Choose orders", plans=(plan,))
@@ -75,14 +87,19 @@ def test_operation_preview_is_bounded_and_display_only(
         )
 
     assert response.status_code == 200
+    inspection = response.get_json()["data"]["previews"][0]["inspection"]
+    assert inspection["row_limit"] == 50
+    assert inspection["sample_method"] == ("aggregate" if aggregate else "source_head")
     assert response.get_json()["data"] == {"previews": [{
         "display_name": "Recent orders",
         "source_id": "warehouse",
         "table_description": "Customer orders from the warehouse",
-        "columns": ["id", "amount"],
-        "rows": [{"id": 1, "amount": 10.0}, {"id": 2, "amount": 20.0}],
+        "columns": ["total"] if aggregate else ["id", "amount"],
+        "rows": [{"total": 30.0}] if aggregate else [{"id": 1, "amount": 10.0}, {"id": 2, "amount": 20.0}],
+        "inspection": inspection,
     }]}
-    assert loader.calls == [("public.orders", {"size": 50})]
+    assert loader.calls == [("public.orders", {"query": plan.steps[0].query.to_dict(), "limit": 50}
+                            if aggregate else {"size": 50})]
 
 
 def test_operation_preview_failure_keeps_table_shape(

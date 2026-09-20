@@ -11,6 +11,54 @@ from data_formulator.datalake.table_names import sanitize_external_loader_table_
 MAX_IMPORT_ROWS = 2_000_000
 
 
+def bound_preview_rows(rows: list[dict[str, Any]], value_limit: int) -> tuple[list[dict[str, Any]], bool]:
+    truncated = False
+    remaining = value_limit
+
+    def bound(value: Any, depth: int = 0) -> Any:
+        nonlocal truncated, remaining
+        if isinstance(value, str):
+            available = max(0, remaining)
+            remaining -= len(value)
+            if len(value) > available:
+                truncated = True
+                return value[:available] + "..."
+            return value
+        if isinstance(value, (dict, list)):
+            if depth >= 3 or remaining <= 0:
+                truncated = True
+                return "..."
+            if isinstance(value, dict):
+                truncated |= len(value) > 20
+                result = {}
+                for key, item in list(value.items())[:20]:
+                    remaining -= len(str(key))
+                    if remaining <= 0:
+                        truncated = True
+                        break
+                    result[key] = bound(item, depth + 1)
+                return result
+            truncated |= len(value) > 10
+            items = []
+            for item in value[:10]:
+                if remaining <= 0:
+                    truncated = True
+                    break
+                items.append(bound(item, depth + 1))
+            return items
+        remaining -= len(str(value))
+        return value
+
+    bounded = []
+    for row in rows:
+        result = {}
+        for name, value in row.items():
+            remaining = value_limit
+            result[name] = bound(value)
+        bounded.append(result)
+    return bounded, truncated
+
+
 def apply_import_projection(
     table: pa.Table,
     import_options: dict[str, Any] | None,
@@ -483,8 +531,10 @@ class ExternalDataLoader(ABC):
         """
         Fetch data from the external source as a PyArrow Table.
         
-        This is the primary method for data fetching. Each loader must implement
-        this method to fetch data directly as Arrow format for optimal performance.
+        This is the primary method for data fetching. Arrow is the result format,
+        not a required scan engine: loaders may execute at the source, use native
+        DuckDB file scans, or read directly with Arrow. A full row import still
+        decodes and materializes data; it is not a byte-for-byte file copy.
         Only source_table is supported (no raw query strings) to avoid security
         and dialect diversity issues across loaders.
         
@@ -761,6 +811,7 @@ class ExternalDataLoader(ABC):
         }
         return {
             "execution_model": cls.QUERY_EXECUTION,
+            "aggregate_loading": "supported" if cls.query_data_as_arrow is not ExternalDataLoader.query_data_as_arrow else "unsupported",
             "guidance": guidance.get(cls.QUERY_EXECUTION,
                 "Query execution cost is unknown. Do not assume server-side pushdown or a cheap probe."),
         }
@@ -1010,10 +1061,50 @@ class ExternalDataLoader(ABC):
         """
         return {"options": [], "has_more": False}
 
+    def preview_data(self, source_table: str, import_options: dict[str, Any] | None = None,
+                     *, purpose: str = "ui") -> dict[str, Any]:
+        """Return bounded examples and optional inspection facts, without extra metadata queries.
+
+        File loaders override this to project before scanning. Other loaders keep
+        their native fetch semantics; output limits do not bound source I/O.
+        """
+        options = dict(import_options or {})
+        options["size"] = min(max(1, int(options.get("size") or 50)), 5 if purpose == "agent" else 50)
+        table = self.fetch_data_as_arrow(source_table, options)
+        table = apply_import_projection(table, options)
+        result = self.format_preview(table, options, purpose=purpose)
+        result["total_row_count"] = getattr(self, "_last_total_rows", None)
+        result["inspection"]["row_count_status"] = "exact" if result["total_row_count"] is not None else "unknown"
+        return result
+
+    @staticmethod
+    def format_preview(table: pa.Table, options: dict[str, Any], *, purpose: str = "ui",
+                       columns_omitted: int = 0, schema_source: str = "source") -> dict[str, Any]:
+        from data_formulator.datalake.parquet_utils import df_to_safe_records, normalize_dtype_to_app_type
+
+        row_limit = min(max(1, int(options.get("size") or 50)), 5 if purpose == "agent" else 50)
+        value_limit = 200 if purpose == "agent" else 1000
+        columns_omitted += max(0, table.num_columns - 20)
+        table = table.select(table.column_names[:20]).slice(0, row_limit)
+        frame = table.to_pandas()
+        rows, truncated = bound_preview_rows(df_to_safe_records(frame), value_limit)
+        return {
+            "columns": [{"name": name, "type": normalize_dtype_to_app_type(str(frame[name].dtype)),
+                         "source_type": str(table.schema.field(name).type)} for name in frame.columns],
+            "rows": rows, "row_count": len(rows), "total_row_count": None,
+            "inspection": {
+                "schema_source": schema_source, "row_count_status": "unknown", "sample_status": "loaded",
+                "sample_method": "ordered" if options.get("sort_columns") else "source_head",
+                "filtered": bool(options.get("source_filters")), "row_limit": row_limit,
+                "columns_omitted": columns_omitted, "values_truncated": truncated,
+            },
+        }
+
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         """Get detailed metadata for a single catalog node.
 
-        For a table: columns, types, row count, sample rows.
+        For a table: inexpensive columns/types and optional row count/sample rows.
+        Missing samples are not empty tables; missing counts are not zero.
         Default: finds the node via ``ls`` and returns its metadata dict.
         """
         if not path:
@@ -1049,6 +1140,10 @@ class ExternalDataLoader(ABC):
         except Exception:
             pass
         return {}
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Materialize a structured query without probe preview caps or sampled aggregation."""
+        raise NotImplementedError("Aggregate loading is not supported for this connector")
 
     # -- Agent probing (design 37) ---------------------------------------
 

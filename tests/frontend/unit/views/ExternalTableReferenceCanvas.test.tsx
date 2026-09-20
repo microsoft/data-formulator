@@ -10,6 +10,8 @@ import { apiRequest } from '../../../../src/app/apiClient';
 import { CONNECTOR_ACTION_URLS } from '../../../../src/app/utils';
 import type { ExternalTableReference } from '../../../../src/components/ComponentType';
 import { SelectableDataGrid } from '../../../../src/views/SelectableDataGrid';
+import { MultiTablePreview } from '../../../../src/views/MultiTablePreview';
+import { MessageSnackbar } from '../../../../src/views/MessageSnackbar';
 import { Type } from '../../../../src/data/types';
 
 vi.mock('../../../../src/app/apiClient', () => ({ apiRequest: vi.fn() }));
@@ -17,6 +19,52 @@ vi.mock('react-virtuoso', () => ({
     TableVirtuoso: ({ data, fixedHeaderContent, itemContent }: any) => <table><thead>{fixedHeaderContent()}</thead>
         <tbody>{data.map((row: any, index: number) => <tr key={index}>{itemContent(index, row)}</tr>)}</tbody></table>,
 }));
+
+it('keeps batch progress in system messages until the load finishes', async () => {
+    const scrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        store.dispatch(dfActions.startTableLoad({ id: 'batch', names: [], progress: { current: 1, total: 2, name: 'Orders' } }));
+        render(<Provider store={store}><MessageSnackbar /></Provider>);
+        expect(screen.getByRole('status', { name: 'Loading 1/2: Orders' })).toBeVisible();
+        expect(screen.getByRole('status', { name: 'Loading 1/2: Orders' })).toHaveStyle({ fontSize: 'var(--df-text-sm)' });
+        expect(screen.getByRole('status', { name: 'Loading 1/2: Orders' }).closest('.MuiPaper-root')).toHaveStyle({ backgroundColor: 'rgb(250, 250, 250)' });
+        act(() => store.dispatch(dfActions.startTableLoad({ id: 'batch', names: [], progress: { current: 2, total: 2, name: 'Customers' } })));
+        expect(screen.getByRole('status', { name: 'Loading 2/2: Customers' })).toBeVisible();
+        act(() => store.dispatch(dfActions.clearMessages()));
+        expect(screen.getByRole('status', { name: 'Loading 2/2: Customers' })).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'View system messages' }));
+        expect(screen.getByText('System messages (1)')).toBeVisible();
+        expect(screen.queryByText('No messages')).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getAllByRole('status', { name: 'Loading 2/2: Customers' })).toHaveLength(1));
+        act(() => store.dispatch(dfActions.finishTableLoad('batch')));
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    } finally {
+        if (scrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', scrollTo);
+        else delete (HTMLElement.prototype as any).scrollTo;
+    }
+});
+
+it.each(['success', 'info', 'warning', 'error'] as const)('uses compact neutral styling for %s system messages', type => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    render(<Provider store={store}><MessageSnackbar /></Provider>);
+    act(() => store.dispatch(dfActions.addMessages({ type, component: 'test', timestamp: Date.now(), value: 'Load finished' })));
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveStyle({ fontSize: 'var(--df-text-sm)', backgroundColor: 'rgb(250, 250, 250)' });
+    expect(alert.querySelector('.MuiAlert-icon')).toHaveStyle({ fontSize: '16px' });
+    expect(alert.querySelector('.MuiAlert-action .MuiSvgIcon-root')).toHaveStyle({ fontSize: '16px' });
+});
+
+it('uses shared initial and refresh states in multi-table previews', () => {
+    const view = render(<MultiTablePreview loading />);
+    expect(screen.getByRole('progressbar', { name: 'Loading preview...' })).toBeInTheDocument();
+    view.rerender(<MultiTablePreview loading table={{ kind: 'table', id: 'sample', displayId: 'Sample',
+        names: ['value'], metadata: {}, rows: [{ value: 'Retained row' }], description: '', virtual: { tableId: 'sample', rowCount: 1 } }} />);
+    expect(screen.getByText('Retained row')).toBeVisible();
+    expect(screen.getByRole('status', { name: 'Refreshing preview...' })).toBeVisible();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+});
 
 it('renders the normal grid in preview-only mode without field actions or data downloads', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
@@ -29,11 +77,54 @@ it('renders the normal grid in preview-only mode without field actions or data d
     expect(apiRequest).not.toHaveBeenCalled();
 });
 
+it('uses a centered track for empty grid requests and retains rows with inline refresh status', async () => {
+    let finishRequest!: (value: any) => void;
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(resolve => { finishRequest = resolve; }));
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const grid = (searchText: string) => <Provider store={store}><SelectableDataGrid tableId="grid:test" tableName="Preview" virtual
+        previewOnly rows={[]} rowCount={2} searchText={searchText}
+        columnDefs={[{ id: 'review', label: 'review', dataType: Type.String, source: 'original' }]} /></Provider>;
+    const view = render(grid(''));
+    view.rerender(grid('first'));
+    expect(screen.getByRole('progressbar')).toHaveClass('MuiLinearProgress-root');
+    await act(async () => finishRequest({ data: { rows: [{ review: 'Retained row' }], total_row_count: 1 } }));
+    view.rerender(grid('second'));
+    expect(screen.getByText('Retained row')).toBeVisible();
+    expect(screen.getByRole('status', { name: 'Refreshing rows...' })).toBeVisible();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    await act(async () => finishRequest({ data: { rows: [{ review: 'Updated row' }], total_row_count: 1 } }));
+    expect(screen.getByText('Updated row')).toBeVisible();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
+
+it('preserves the timeline rail beside both shelf expansion controls', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const tables = Array.from({ length: 7 }, (_, index) => ({ kind: 'table' as const,
+        id: `table-${index}`, displayId: `Table ${index}`, names: [], rows: [], metadata: {}, description: '' }));
+    render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    const showAll = screen.getByRole('button', { name: 'Show all 7' });
+    expect(showAll.parentElement?.querySelector('[aria-hidden="true"]')).toHaveStyle({
+        position: 'absolute', top: '0px', bottom: '0px', borderLeft: '2px solid rgba(0,0,0,0.1)',
+    });
+    fireEvent.click(showAll);
+    const showFewer = screen.getByRole('button', { name: 'Show fewer' });
+    expect(showFewer.parentElement?.querySelector('[aria-hidden="true"]')).toHaveStyle({
+        position: 'absolute', top: '0px', bottom: '0px', borderLeft: '2px solid rgba(0,0,0,0.1)',
+    });
+});
+
 it('shows pending loads in an empty workspace without creating selectable tables', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     store.dispatch(dfActions.startTableLoad({ id: 'request', names: ['Orders', 'Customers'] }));
     const view = render(<Provider store={store}><SourceTableShelf inputTables={[]} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
     expect(screen.getByRole('status', { name: 'Loading Orders' })).toBeVisible();
+    const spinner = screen.getByRole('status', { name: 'Loading Orders' }).querySelector('.MuiCircularProgress-root');
+    expect(spinner?.parentElement).toHaveTextContent('Loading...');
+    expect(spinner?.parentElement).not.toHaveTextContent('Orders');
+    expect(spinner).toHaveAttribute('aria-hidden', 'true');
+    expect(spinner).toHaveStyle({ width: '1em', height: '1em' });
+    expect(spinner?.parentElement).toHaveStyle({ fontSize: 'var(--df-text-xs)', gap: '4px' });
+    expect(spinner?.parentElement?.parentElement).toHaveStyle({ padding: '4px 6px' });
     expect(screen.getByRole('status', { name: 'Loading Orders' }).querySelector('.MuiSkeleton-root')).toBeNull();
     const loadingRail = screen.getByRole('status', { name: 'Loading Orders' }).firstElementChild;
     expect(loadingRail).toHaveAttribute('aria-hidden', 'true');
@@ -115,6 +206,34 @@ it.each([
     expect(apiRequest).not.toHaveBeenCalled();
 });
 
+it('appends new workspace items after existing ones and preserves order on reload', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    const table = { kind: 'table' as const, id: 'loaded-events', displayId: 'Loaded events', names: [],
+        metadata: {}, rows: [], description: '', virtual: { tableId: 'loaded-events', rowCount: 0 } };
+    const shelf = (tables: typeof table[]) => <Provider store={store}><SourceTableShelf inputTables={tables}
+        highlightedTableIds={[]} workspaceFiles={[]} /></Provider>;
+    const view = render(shelf([]));
+    act(() => { store.dispatch(dfActions.addTableToStore(table)); });
+    view.rerender(shelf([table]));
+    expect(screen.getByRole('button', { name: 'Events', exact: true }).compareDocumentPosition(
+        screen.getByRole('button', { name: 'Loaded events', exact: true })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    act(() => { store.dispatch(dfActions.upsertExternalTableReference({ ...reference, id: 'external:later',
+        tableKey: 'later', displayName: 'Later source' })); });
+    expect(screen.getByRole('button', { name: 'Loaded events', exact: true }).compareDocumentPosition(
+        screen.getByRole('button', { name: 'Later source', exact: true })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const order = store.getState().workspaceItemOrder;
+    expect(order).toEqual([reference.id, 'shelf-card-loaded-events', 'external:later']);
+    act(() => { store.dispatch(dfActions.upsertExternalTableReference({ ...reference, capturedAt: '2026-09-20T00:00:00Z' })); });
+    expect(store.getState().workspaceItemOrder).toEqual(order);
+    view.unmount();
+    act(() => { store.dispatch(dfActions.loadState(store.getState())); });
+    render(shelf([table]));
+    expect(store.getState().workspaceItemOrder).toEqual(order);
+    expect(screen.getByRole('button', { name: 'Events', exact: true }).compareDocumentPosition(
+        screen.getByRole('button', { name: 'Loaded events', exact: true })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it('automatically displays and caches a small sample when the preview opens', async () => {
     vi.mocked(apiRequest).mockResolvedValue({ data: { columns: [{ name: 'timestamp' }], rows: [{ timestamp: '2026-09-18' }] } });
     const store = showArtifact();
@@ -142,6 +261,22 @@ it('automatically displays and caches a small sample when the preview opens', as
     expect(store.getState().externalTableReferences[0].summary.sampleRows).toEqual([{ timestamp: '2026-09-18' }]);
     expect(store.getState().externalTableReferences[0].summary.columns).toEqual(reference.summary.columns);
     expect(screen.queryByRole('button', { name: 'Fetch sample' })).not.toBeInTheDocument();
+});
+
+it('preserves full metadata when only selected columns are sampled and shows limitations', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ data: {
+        columns: [{ name: 'review', type: 'string' }], rows: [{ review: 'shortened...' }],
+        inspection: { sample_method: 'source_head', schema_source: 'inferred', columns_omitted: 1, values_truncated: true },
+    } });
+    const store = showArtifact();
+    await screen.findByText('shortened...');
+    const summary = store.getState().externalTableReferences[0].summary;
+    expect(summary.columns.map(column => column.name)).toEqual(['timestamp', 'review']);
+    expect(summary.sampleColumns).toEqual(['review']);
+    expect(summary.sampleTruncated).toBe(true);
+    expect(screen.getByText(/1 columns omitted from preview/)).toHaveTextContent('Long or nested values shortened.');
+    expect(screen.getByText(/Inferred schema; later records may differ/)).toBeVisible();
+    expect(screen.queryByText('timestamp', { exact: true })).not.toBeInTheDocument();
 });
 
 it('limits initial loading to the table body with metadata visible and retains cached rows during refresh', async () => {
@@ -182,7 +317,7 @@ it('limits initial loading to the table body with metadata visible and retains c
     expect(screen.getByText('new date')).toBeVisible();
 });
 
-it('shows slow-source status without a timer, times out, and ignores the old response after a successful retry', async () => {
+it('keeps the loading status unchanged, times out, and ignores the old response after a successful retry', async () => {
     vi.useFakeTimers();
     const responses: ((response: any) => void)[] = [];
     vi.mocked(apiRequest).mockImplementation(() => new Promise(resolve => responses.push(resolve)));
@@ -192,7 +327,7 @@ it('shows slow-source status without a timer, times out, and ignores the old res
     expect(screen.queryByText(/\d+s elapsed/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel waiting' })).not.toBeInTheDocument();
     act(() => vi.advanceTimersByTime(15_000));
-    expect(screen.getByRole('status')).toHaveTextContent('Still waiting for the source...');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading table preview: Events...');
     expect(screen.queryByText(/\d+s elapsed/)).not.toBeInTheDocument();
     expect(firstSignal?.aborted).toBe(false);
     act(() => vi.advanceTimersByTime(105_000));
@@ -223,7 +358,7 @@ it('restarts a pending preview on refresh and ignores the superseded response', 
     vi.mocked(apiRequest).mockImplementation(() => new Promise(resolve => responses.push(resolve)));
     const store = showArtifact();
     act(() => vi.advanceTimersByTime(15_000));
-    expect(screen.getByRole('status')).toHaveTextContent('Still waiting for the source...');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading table preview: Events...');
     const firstSignal = vi.mocked(apiRequest).mock.calls[0][1]?.signal;
     fireEvent.click(screen.getByRole('button', { name: 'Refresh metadata' }));
     expect(apiRequest).toHaveBeenCalledTimes(2);

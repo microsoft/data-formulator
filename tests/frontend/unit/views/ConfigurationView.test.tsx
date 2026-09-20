@@ -28,6 +28,42 @@ const snapshot = { revision: 2, overrides: {}, catalogs: { models: [], workflows
 beforeEach(() => { vi.mocked(apiRequest).mockReset(); vi.mocked(apiRequest).mockResolvedValue({ data: snapshot }); });
 afterEach(cleanup);
 
+it('saves virtual table thresholds in rows and bytes and resets the draft', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, limits: {
+        external_table_max_rows: { value: 1000000, default: 1000000, locked: false, source: 'Default' },
+        external_table_max_bytes: { value: 512 * 1048576, default: 512 * 1048576, locked: false, source: 'Default' },
+    } } });
+    render(<ConfigurationView />);
+    const rows = await screen.findByRole('spinbutton', { name: 'Virtual table threshold (rows)' });
+    const size = screen.getByRole('spinbutton', { name: 'Virtual table threshold (MiB)' });
+    expect(rows).toHaveValue(1000000);
+    expect(size).toHaveValue(512);
+    fireEvent.change(rows, { target: { value: '250000' } });
+    fireEvent.change(size, { target: { value: '64' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset external_table_max_rows' }));
+    expect(rows).toHaveValue(1000000);
+    fireEvent.change(rows, { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/configurations', expect.objectContaining({
+        method: 'PUT', body: JSON.stringify({ revision: 2, overrides: { limits: {
+            external_table_max_bytes: 64 * 1048576, external_table_max_rows: 0,
+        } } }),
+    })));
+});
+
+it('locks virtual table thresholds supplied by the environment', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot,
+        overrides: { limits: { external_table_max_rows: 200 } }, limits: {
+            external_table_max_rows: { value: 50, default: 50, locked: true, source: 'Environment' },
+        },
+    } });
+    render(<ConfigurationView />);
+    const rows = await screen.findByRole('spinbutton', { name: 'Virtual table threshold (rows)' });
+    expect(rows).toHaveValue(50);
+    expect(rows).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset external_table_max_rows' })).toBeDisabled();
+});
+
 it('saves the custom name and tagline through the administration draft', async () => {
     render(<ConfigurationView />);
     fireEvent.change(await screen.findByRole('textbox', { name: 'App name' }), { target: { value: 'Team Analytics' } });

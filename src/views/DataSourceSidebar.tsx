@@ -44,7 +44,7 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { WorkflowGears } from '../components/FunComponents';
+import { InlineLoadingStatus, WorkflowGears } from '../components/FunComponents';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -394,6 +394,7 @@ const DataSourceSidebarPanel: React.FC<{
     const dispatch = useDispatch<AppDispatch>();
 
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector(
         (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
     );
@@ -456,15 +457,13 @@ const DataSourceSidebarPanel: React.FC<{
     // selection changes.
     const selectionRef = useRef(selection);
     selectionRef.current = selection;
-    // Sequential batch-load progress (current/total + table name), or null.
-    const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; name: string } | null>(null);
 
     // Preview popover state
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [previewLoading, setPreviewLoading] = useState<{ connectorId: string; itemId: string } | null>(null);
     const previewRequestIdRef = useRef(0);
-    const [importing, setImporting] = useState(false);
+    const importing = useSelector((state: DataFormulatorState) => state.pendingTableLoads.some(load => load.progress));
     // Cache of fetched sample previews, keyed by `${connectorId}:${pathKey}`,
     // so re-opening a table's preview is instant and costs no extra query.
     const previewCacheRef = useRef<Record<string, PreviewState>>({});
@@ -1327,7 +1326,7 @@ const DataSourceSidebarPanel: React.FC<{
         }
         const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
-        if (isLargeConnectorTable(node.metadata)) {
+        if (isLargeConnectorTable(node.metadata, serverConfig)) {
             const metadata = node.metadata || {};
             const rows = Number(metadata.row_count);
             const bytes = Number(metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size);
@@ -1370,7 +1369,7 @@ const DataSourceSidebarPanel: React.FC<{
             sourceTableRef: ref,
             importOptions: importOptions || {},
         })).unwrap();
-    }, [dispatch, buildSourceTableRef]);
+    }, [dispatch, buildSourceTableRef, serverConfig]);
 
     // ── Selection helpers (multi-select) ─────────────────────────────────────
 
@@ -1409,30 +1408,34 @@ const DataSourceSidebarPanel: React.FC<{
         opts?: { newSession?: boolean },
     ) => {
         const tables = nodes.filter(n => n.node_type === 'table');
-        if (tables.length === 0) return;
+        if (tables.length === 0 || importing) return;
 
         if (opts?.newSession || !activeWorkspace) {
             createNewSession(t('sidebar.batchSessionName', { count: tables.length, defaultValue: `${tables.length} tables` }));
         }
 
-        setImporting(true);
-        setBatchProgress({ current: 0, total: tables.length, name: '' });
+        const loadId = `batch-${generateUUID()}`;
+        closePreview();
+        clearSelection();
+        if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
         let ok = 0;
         let truncated = 0;
         const failed: string[] = [];
-        for (let i = 0; i < tables.length; i++) {
-            const node = tables[i];
-            setBatchProgress({ current: i + 1, total: tables.length, name: node.name });
-            try {
-                const result = await loadTableNode(connectorId, node);
-                ok++;
-                if (result?.truncated) truncated++;
-            } catch {
-                failed.push(node.name);
+        try {
+            for (const [index, node] of tables.entries()) {
+                dispatch(dfActions.startTableLoad({ id: loadId, names: [],
+                    progress: { current: index + 1, total: tables.length, name: node.name } }));
+                try {
+                    const result = await loadTableNode(connectorId, node);
+                    ok++;
+                    if (result?.truncated) truncated++;
+                } catch {
+                    failed.push(node.name);
+                }
             }
+        } finally {
+            dispatch(dfActions.finishTableLoad(loadId));
         }
-        setBatchProgress(null);
-        setImporting(false);
 
         if (ok > 0) {
             dispatch(dfActions.addMessages({
@@ -1458,9 +1461,7 @@ const DataSourceSidebarPanel: React.FC<{
                 }),
             }));
         }
-        closePreview();
-        clearSelection();
-    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, connectors, onAskAgent, t]);
+    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, importing, isPinned, t]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
@@ -1752,9 +1753,7 @@ const DataSourceSidebarPanel: React.FC<{
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }} ref={setConnectorScrollEl}>
 
                 {loadingConnectors && connectors.length === 0 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                        <CircularProgress size={20} />
-                    </Box>
+                    <InlineLoadingStatus label={t('sidebar.loadingSources', { defaultValue: 'Loading sources...' })} sx={{ px: 1.5, py: 3 }} />
                 )}
 
                 {sortedConnectors
@@ -1975,16 +1974,8 @@ const DataSourceSidebarPanel: React.FC<{
                                         </Tooltip>
                                     </Box>}
                                     {isLoading && (
-                                        <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 1.5 }}>
-                                            <CircularProgress size={16} color="inherit" sx={{ flexShrink: 0, color: 'text.secondary' }} />
-                                                <Typography
-                                                    variant="caption"
-                                                    color="text.secondary"
-                                                    sx={{ fontSize: textVar.xs, minWidth: 0, overflowWrap: 'anywhere' }}
-                                                >
-                                                    {catalogProgress[connector.id] || t('sidebar.loadingTables', { defaultValue: 'Loading tables...' })}
-                                                </Typography>
-                                        </Box>
+                                        <InlineLoadingStatus sx={{ px: 1, py: 1.5 }}
+                                            label={catalogProgress[connector.id] || t('sidebar.loadingTables', { defaultValue: 'Loading tables...' })} />
                                     )}
                                     {displayCache && displayCache.tree.length > 0 && (
                                         <VirtualizedCatalogTree
@@ -2077,20 +2068,6 @@ const DataSourceSidebarPanel: React.FC<{
                 Loads sequentially (Kusto's client isn't parallel-safe). */}
             {selection && Object.keys(selection.nodes).length > 0 && (
                 <Box sx={{ flexShrink: 0, borderTop: `1px solid ${borderColor.view}`, boxShadow: '0 -2px 8px -6px rgba(0,0,0,0.12)', px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 1, backgroundColor: 'background.paper' }}>
-                    {batchProgress ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CircularProgress size={14} thickness={5} />
-                            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {t('sidebar.batchLoading', {
-                                    current: batchProgress.current,
-                                    total: batchProgress.total,
-                                    name: batchProgress.name,
-                                    defaultValue: `Loading ${batchProgress.current}/${batchProgress.total}: ${batchProgress.name}`,
-                                })}
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <Typography sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 600 }}>
                                     {t('sidebar.selectedCount', {
@@ -2113,6 +2090,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 variant="contained"
                                 disableElevation
                                 fullWidth
+                                disabled={importing}
                                 onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
                                 sx={{ fontSize: textVar.md, fontWeight: 600, textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
                             >
@@ -2126,14 +2104,13 @@ const DataSourceSidebarPanel: React.FC<{
                                     size="small"
                                     variant="outlined"
                                     fullWidth
+                                    disabled={importing}
                                     onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes), { newSession: true })}
                                     sx={{ fontSize: textVar.sm, textTransform: 'none', py: 0.5, borderRadius: 1.5, color: 'text.secondary', borderColor: borderColor.view, '&:hover': { borderColor: 'primary.main', color: 'primary.main', backgroundColor: 'transparent' } }}
                                 >
                                     {t('sidebar.loadInNewSession', { defaultValue: 'Load in new session' })}
                                 </Button>
                             )}
-                        </>
-                    )}
                 </Box>
             )}
             </Box>

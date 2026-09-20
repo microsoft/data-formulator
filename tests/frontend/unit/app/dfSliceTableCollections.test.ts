@@ -37,6 +37,25 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it("preserves workspace item order and appends recreated items at the end", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
+    state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems([
+      'shelf-card-orders', 'workspace-file-notes.txt', 'external:orders', 'shelf-card-later',
+    ]));
+    state = dataFormulatorReducer(state, dfActions.removeTableLocally('orders'));
+    state = dataFormulatorReducer(state, dfActions.removeFileNodes('notes.txt'));
+    state = dataFormulatorReducer(state, dfActions.removeExternalTableReference('external:orders'));
+    expect(state.workspaceItemOrder).toEqual(['shelf-card-later']);
+    state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems([
+      'shelf-card-later', 'workspace-file-notes.txt', 'workspace-file-notes.txt', 'shelf-card-orders', 'external:orders',
+    ]));
+    expect(state.workspaceItemOrder).toEqual([
+      'shelf-card-later', 'workspace-file-notes.txt', 'shelf-card-orders', 'external:orders',
+    ]);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState(state)).workspaceItemOrder).toEqual(state.workspaceItemOrder);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState({})).workspaceItemOrder).toEqual([]);
+  });
+
   it("tracks concurrent pending table loads and clears only the settled request", () => {
     const pending = (requestId: string) => ({ type: 'dataFormulator/loadTable/pending',
       meta: { requestId, arg: { table: sourceTable } } });

@@ -10,12 +10,12 @@ import {
     IconButton,
     Typography,
     Tooltip,
-    LinearProgress,
     alpha,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { DictTable } from '../components/ComponentType';
 import { DataFrameTable } from './DataFrameTable';
+import { InlineLoadingStatus, LoadingStatus } from '../components/FunComponents';
 
 export interface MultiTablePreviewProps {
     /** Loading state indicator */
@@ -104,7 +104,9 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
                 minHeight: 120,
             }}
         >
-            {loading && <LinearProgress />}
+            {loading && (activeTable
+                ? <InlineLoadingStatus label={t('connectorPreview.refreshingPreview', { defaultValue: 'Refreshing preview...' })} />
+                : <LoadingStatus label={t('connectorPreview.loadingPreview', { defaultValue: 'Loading preview...' })} sx={{ minHeight: 120 }} />)}
 
             {error && (
                 <Typography variant="caption" color="error">

@@ -194,7 +194,11 @@ def compute_arrow_table_hash(table: pa.Table, sample_rows: int = 100) -> str:
                 + list(range(table.num_rows - n, table.num_rows))
             )
             sample = table.take(indices)
-        hash_parts.append(f"data:{sample.to_string()}")
+        sample = sample.combine_chunks().replace_schema_metadata(None)
+        with pa.BufferOutputStream() as sink:
+            with pa.ipc.new_stream(sink, sample.schema) as writer:
+                writer.write_table(sample)
+            hash_parts.append("data:" + hashlib.md5(sink.getvalue()).hexdigest())
 
     content = '|'.join(hash_parts)
     return hashlib.md5(content.encode()).hexdigest()

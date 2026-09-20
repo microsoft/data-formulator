@@ -48,6 +48,7 @@ import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { DictTable } from '../components/ComponentType';
+import { InlineLoadingStatus } from '../components/FunComponents';
 import {
     deleteWorkspace,
     deleteWorkspaceFile,
@@ -404,6 +405,7 @@ export const SourceTableShelf: FC<{
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
+    const workspaceItemOrder = useSelector((state: DataFormulatorState) => state.workspaceItemOrder);
 
     const [sectionExpanded, setSectionExpanded] = useState(true);
     const [expanded, setExpanded] = useState(false);
@@ -797,6 +799,21 @@ export const SourceTableShelf: FC<{
     );
     });
 
+    const currentItemKeys = [
+        ...(externalReferences || []).map(reference => reference.id),
+        ...workspaceFiles.map(file => `workspace-file-${file.name}`),
+        ...inputTables.map(table => `shelf-card-${table.id}`),
+    ];
+    const itemOrder = [...new Set([...workspaceItemOrder, ...currentItemKeys])];
+    const orderedCards = [...cards, ...artifactCards].sort((first, second) =>
+        itemOrder.indexOf(String(first.key)) - itemOrder.indexOf(String(second.key)));
+
+    useEffect(() => {
+        if (currentItemKeys.some(key => !workspaceItemOrder.includes(key))) {
+            dispatch(dfActions.appendWorkspaceItems(currentItemKeys));
+        }
+    }, [currentItemKeys, workspaceItemOrder, dispatch]);
+
     return <Box data-thread-shelf sx={{
         ...sx,
         '& .selected-card': {
@@ -847,8 +864,7 @@ export const SourceTableShelf: FC<{
                     {/* Each card carries its own gutter icon and rail segments (see the
                         `cards` memo), so the rail is punctuated exactly like a thread's
                         timeline rather than running as one long stroke. */}
-                    {cards}
-                    {artifactCards}
+                    {orderedCards}
                     {pendingTableLoads.flatMap(load => load.names.map((name, index) => (
                         <Box key={`${load.id}-${index}`} role="status" aria-label={t('dataThread.loadingTable', { name, defaultValue: 'Loading {{name}}' })}
                             sx={{ display: 'flex', flexDirection: 'row' }}>
@@ -860,19 +876,20 @@ export const SourceTableShelf: FC<{
                                 <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
                             </Box>
                             <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: GUTTER_GAP, pr: CARD_INSET_RIGHT }}>
-                                <Box sx={{ px: 1, py: 0.75, border: 1, borderColor: 'divider', borderRadius: '6px', color: 'text.secondary' }}>
+                                <Box sx={{ px: 0.75, py: 0.5, border: 1, borderColor: 'divider', borderRadius: '6px', color: 'text.secondary' }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                                        <CircularProgress size={12} color="inherit" sx={{ flexShrink: 0, '@media (prefers-reduced-motion: reduce)': { animation: 'none', '& circle': { animation: 'none' } } }} />
                                         <Typography title={name} sx={{ fontSize: textVar.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Typography>
                                     </Box>
-                                    <Typography sx={{ fontSize: textVar.xs, mt: 0.25 }}>{t('common.loading', { defaultValue: 'Loading...' })}</Typography>
+                                    <InlineLoadingStatus label={t('common.loading', { defaultValue: 'Loading...' })}
+                                        sx={{ fontSize: textVar.xs, gap: 0.5 }} />
                                 </Box>
                             </Box>
                         </Box>
                     )))}
 
                     {collapsible && (
-                        <Box sx={{ pl: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, pr: CARD_INSET_RIGHT }}>
+                        <Box sx={{ position: 'relative', pl: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, pr: CARD_INSET_RIGHT }}>
+                            <Box aria-hidden sx={{ position: 'absolute', left: RAIL_OFFSET, top: 0, bottom: 0, borderLeft: RAIL_LINE }} />
                             <Button
                                 size="small"
                                 onClick={() => setExpanded(!expanded)}

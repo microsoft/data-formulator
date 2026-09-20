@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Generator
 
 from data_formulator.agents.agent_utils import generate_data_summary
@@ -56,6 +57,12 @@ class VisualizationSkill:
                 action,
                 (ctx.payload or {}).get("workspace_inputs"),
             )
+            if action.get("connector_inputs"):
+                bindings = yield from self._load_connector_inputs(action["connector_inputs"], ctx)
+                code = "connector_inputs = " + repr({item["alias"]: item["path"] for item in bindings}) + "\n" + code
+                input_sources = normalize_input_sources({"input_sources": [
+                    *input_sources, *({"id": item["id"], "kind": "data"} for item in bindings),
+                ]}, ctx.payload["workspace_inputs"])
         except ValueError as exc:
             message = str(exc)
             yield {
@@ -94,6 +101,8 @@ class VisualizationSkill:
             observation = (
                 f"[OBSERVATION – Step {step_index} FAILED]\n\nError: {error_msg}"
             )
+            if action.get("connector_inputs"):
+                observation += "\nLoaded inputs remain available; retry Python/chart without reloading:\n" + json.dumps(bindings)
             yield {
                 "type": "error",
                 "message": error_msg,
@@ -125,6 +134,71 @@ class VisualizationSkill:
             chart_id=transform_result.get("chart_id"),
             workspace=ctx.workspace,
         )
+
+    @staticmethod
+    def _load_connector_inputs(raw_inputs, ctx: SkillContext):
+        from data_formulator.analyst.skills.workspace.data_loading import WorkspaceDataLoading, _source_is_available
+        from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
+        from data_formulator.data_operations import ConnectorQueryStep, DataDiscoveryService, LoadQuery
+
+        if not isinstance(raw_inputs, list) or not 1 <= len(raw_inputs) <= 8:
+            raise ValueError("connector_inputs must contain one to eight input queries")
+        discovery = DataDiscoveryService(ctx.workspace)
+        resolved_inputs = []
+        aliases = set()
+        for raw in raw_inputs:
+            if not isinstance(raw, dict) or set(raw) - {"alias", "source_id", "table_key", "query"}:
+                raise ValueError("Each connector input requires alias, source_id, table_key, and optional query")
+            alias = raw.get("alias")
+            if not isinstance(alias, str) or not alias.isidentifier() or alias in aliases:
+                raise ValueError("Connector input aliases must be unique Python identifiers")
+            aliases.add(alias)
+            source_id, table_key = raw.get("source_id"), raw.get("table_key")
+            if not isinstance(source_id, str) or not source_id or not isinstance(table_key, str) or not table_key:
+                raise ValueError("Connector inputs require source_id and table_key")
+            if not _source_is_available(source_id):
+                raise ValueError(f"Source {source_id!r} is not connected")
+            resolved = discovery.resolve_load_table(source_id, table_key)
+            if resolved is None:
+                raise ValueError(f"Unknown connector table: {table_key}")
+            query = raw.get("query")
+            if query is not None and not isinstance(query, dict):
+                raise ValueError("Connector input query must be an object")
+            step = ConnectorQueryStep(
+                source_id=source_id, table_key=table_key, display_name=alias,
+                source_table=str(resolved["source_table"]), query=LoadQuery.from_dict(query),
+            )
+            resolved_inputs.append((raw, step))
+
+        bindings = []
+        for raw, step in resolved_inputs:
+            existing = WorkspaceDataLoading._already_loaded_tables((step,), ctx.workspace, require_provenance=True)
+            if existing:
+                table_name = existing[0]
+                input_tables = ctx.payload.setdefault("input_tables", [])
+                if not any(item["name"] == table_name for item in input_tables):
+                    input_tables.append({"name": table_name, "rows": [], "virtual": True})
+                ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
+                item = next(item for item in ctx.payload["workspace_inputs"].data if item.display_name == table_name)
+                binding = {"id": item.id, "path": item.path, "display_name": item.display_name}
+            else:
+                ctx.payload.pop("last_data_operation_result", None)
+                observation = yield from WorkspaceDataLoading._propose_data_operation({
+                    "user_review_needed": False,
+                    "options": [{"label": step.display_name, "tables": [{
+                        "source_id": step.source_id, "table_key": step.table_key,
+                        "display_name": step.display_name, "query": step.query.to_dict(),
+                    }]}],
+                }, ctx)
+                result = ctx.payload.get("last_data_operation_result") or {}
+                loaded = result.get("workspace_inputs") or []
+                if not loaded or result.get("failed_steps"):
+                    raise ValueError("Connector load failed; visualization was not executed. " + str(observation))
+                binding = loaded[0]
+            if not binding.get("path"):
+                raise ValueError("Loaded connector input has no readable workspace path")
+            bindings.append({**binding, "alias": raw["alias"]})
+        return bindings
 
     @staticmethod
     def _format_observation(

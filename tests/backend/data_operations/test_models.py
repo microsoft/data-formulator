@@ -125,10 +125,27 @@ def test_load_query_rejects_multiple_order_clauses() -> None:
         ))
 
 
-@pytest.mark.parametrize("field", ["group_by", "aggregates", "sql"])
+@pytest.mark.parametrize("field", ["sql", "kql", "unknown"])
 def test_load_query_rejects_unsupported_fields_instead_of_loading_wrong_data(field):
-    with pytest.raises(ValueError, match="use probe_data"):
+    with pytest.raises(ValueError, match="structured query"):
         LoadQuery.from_dict({field: [], "limit": 10})
+
+
+def test_aggregate_load_query_round_trip_and_immutability():
+    raw = {"group_by": ["region"], "aggregates": [{"op": "sum", "column": "amount", "as": "total"}]}
+    query = LoadQuery.from_dict(raw)
+    assert LoadQuery.from_dict(query.to_dict()) == query
+    raw["aggregates"][0]["op"] = "max"
+    assert query.to_dict()["aggregates"][0]["op"] == "sum"
+
+
+@pytest.mark.parametrize("aggregate", [
+    {"op": "sql", "as": "total"}, {"op": "sum", "as": "total"},
+    {"op": "count"}, {"op": "count", "as": "region"},
+])
+def test_aggregate_load_rejects_invalid_contract(aggregate):
+    with pytest.raises(ValueError):
+        LoadQuery.from_dict({"group_by": ["region"], "aggregates": [aggregate]})
 
 
 def test_nested_filter_values_cannot_change_after_hashing() -> None:

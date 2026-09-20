@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { DataSourceSidebar } from '../../../../src/views/DataSourceSidebar';
 import { apiRequest } from '../../../../src/app/apiClient';
 import { listWorkspaces } from '../../../../src/app/workspaceService';
+import { loadTable } from '../../../../src/app/tableThunks';
 
 const { dispatch, mockState } = vi.hoisted(() => ({
     dispatch: vi.fn(),
@@ -15,6 +16,7 @@ const { dispatch, mockState } = vi.hoisted(() => ({
         identity: { type: 'browser', id: 'test-browser' },
         inputTables: [],
         derivedTables: [],
+        pendingTableLoads: [],
     },
 }));
 
@@ -45,6 +47,9 @@ vi.mock('../../../../src/app/dfSlice', () => ({
         loadState: (payload: any) => ({ type: 'state/load', payload }),
         setActiveWorkspace: (payload: any) => ({ type: 'workspace/setActive', payload }),
         resetState: () => ({ type: 'state/reset' }),
+        resetForNewWorkspace: (payload: any) => ({ type: 'workspace/reset', payload }),
+        startTableLoad: (payload: any) => ({ type: 'load/start', payload }),
+        finishTableLoad: (payload: any) => ({ type: 'load/finish', payload }),
     },
     dfSelectors: {
         getAllTables: (state: any) => [...(state.inputTables ?? []), ...(state.derivedTables ?? [])],
@@ -78,7 +83,8 @@ vi.mock('../../../../src/app/tableThunks', () => ({
     buildDictTableFromWorkspace: vi.fn(),
 }));
 
-vi.mock('../../../../src/app/workspaceService', () => ({
+vi.mock('../../../../src/app/workspaceService', async importOriginal => ({
+    ...(await importOriginal<typeof import('../../../../src/app/workspaceService')>()),
     listWorkspaces: vi.fn(() => Promise.resolve([])),
     loadWorkspace: vi.fn(),
     deleteWorkspace: vi.fn(),
@@ -86,10 +92,13 @@ vi.mock('../../../../src/app/workspaceService', () => ({
 }));
 
 vi.mock('../../../../src/components/VirtualizedCatalogTree', () => ({
-    VirtualizedCatalogTree: ({ nodes, onItemClick, selectedIds }: any) => <div data-testid="catalog-tree">
-        {nodes.filter((node: any) => node.node_type === 'table').map((node: any) => <button key={node.path.join('/')}
+    VirtualizedCatalogTree: ({ nodes, onItemClick, selectedIds, onToggleSelectTable }: any) => <div data-testid="catalog-tree">
+        {nodes.filter((node: any) => node.node_type === 'table').map((node: any) => <React.Fragment key={node.path.join('/')}>
+            <input type="checkbox" aria-label={`Select ${node.name}`} checked={selectedIds?.has(node.path.join('/')) ?? false}
+                onChange={event => onToggleSelectTable?.(node, event.target.checked)} />
+            <button
             aria-pressed={selectedIds?.has(node.path.join('/')) ?? false}
-            onClick={event => onItemClick(node, event)}>{node.name}</button>)}
+            onClick={event => onItemClick(node, event)}>{node.name}</button></React.Fragment>)}
     </div>,
 }));
 
@@ -107,7 +116,7 @@ vi.mock('../../../../src/views/WorkflowPanel', () => ({
 
 describe('DataSourceSidebar', () => {
     beforeEach(() => {
-        dispatch.mockClear();
+        dispatch.mockReset();
         mockState.dataSourceSidebarTab = 'sources';
         mockState.serverConfig.DISABLE_DATA_CONNECTORS = false;
         vi.stubGlobal('ResizeObserver', class {
@@ -119,6 +128,49 @@ describe('DataSourceSidebar', () => {
         vi.mocked(apiRequest).mockResolvedValue({ data: { connectors: [] } });
         vi.mocked(listWorkspaces).mockReset();
         vi.mocked(listWorkspaces).mockResolvedValue([]);
+    });
+
+    it.each([{ pinned: false, fails: false }, { pinned: true, fails: false }, { pinned: false, fails: true }])(
+        'publishes batch progress and respects pinning (pinned: $pinned, fails: $fails)', async ({ pinned, fails }) => {
+        localStorage.setItem('df-sidebar-pinned', String(pinned));
+        let finishLoad!: () => void;
+        const pendingLoad = new Promise<void>(resolve => { finishLoad = resolve; });
+        vi.mocked(loadTable).mockReturnValue({ type: 'test/load' } as any);
+        dispatch.mockImplementation(action => action.type === 'test/load' ? { unwrap: async () => {
+            await pendingLoad;
+            if (fails) throw new Error('Load failed');
+        } } : action);
+        vi.mocked(apiRequest).mockImplementation(async (url: string) => {
+            if (url === '/api/connectors') return { data: { connectors: [
+                { id: 'warehouse', display_name: 'Warehouse', source_type: 'PostgreSQLDataLoader', connected: true },
+            ] } } as any;
+            if (url === '/api/connectors/get-catalog-tree') return { data: { tree: [
+                { name: 'Orders', path: ['Orders'], node_type: 'table', metadata: {} },
+                { name: 'Customers', path: ['Customers'], node_type: 'table', metadata: {} },
+            ] } } as any;
+            return { data: {} } as any;
+        });
+        try {
+            const view = render(<DataSourceSidebar />);
+            fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Orders' }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Select Customers' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Load 2 tables', exact: true }));
+            expect(dispatch.mock.calls.some(([action]) => action.type === 'sidebar/setOpen' && action.payload === false)).toBe(!pinned);
+            expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'load/start', payload: expect.objectContaining({
+                names: [], progress: { current: 1, total: 2, name: 'Orders' },
+            }) }));
+            expect(screen.queryByRole('button', { name: 'Load 2 tables', exact: true })).not.toBeInTheDocument();
+            if (!pinned) view.unmount();
+            await act(async () => finishLoad());
+            expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'load/start', payload: expect.objectContaining({
+                progress: { current: 2, total: 2, name: 'Customers' },
+            }) }));
+            expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'load/finish' }));
+            expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'messages/add', payload: expect.objectContaining({ type: fails ? 'error' : 'success' }) }));
+        } finally {
+            finishLoad();
+            localStorage.removeItem('df-sidebar-pinned');
+        }
     });
 
     it('shows only the button tooltip when hovering the workflow icon', async () => {
@@ -231,7 +283,10 @@ describe('DataSourceSidebar', () => {
         expect(screen.queryByText('No tables found')).not.toBeInTheDocument();
         if (!autoExpand) fireEvent.click(source);
         try {
-            expect(await screen.findByRole('status')).toHaveTextContent('Loading tables...');
+            const loadingStatus = await screen.findByRole('status', { name: 'Loading tables...' });
+            expect(loadingStatus).toHaveStyle({ fontSize: '12px' });
+            expect(loadingStatus.querySelector('.MuiCircularProgress-root')).toHaveStyle({ width: '1em', height: '1em' });
+            expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
             expect(screen.queryByText('No tables found')).not.toBeInTheDocument();
         } finally {
             await act(async () => { finishCatalog({ data: { tree: [] } }); });

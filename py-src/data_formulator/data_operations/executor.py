@@ -24,13 +24,30 @@ from .models import (
     DataOperationStatus,
     FailedOperationStep,
     OperationError,
+    LoadQuery,
 )
 
 
 logger = logging.getLogger(__name__)
+MAX_AGGREGATE_ROWS = 10_000
 
 
 LoaderResolver = Callable[[str], ExternalDataLoader]
+
+
+def execute_aggregate_query(loader, source_table: str, query: LoadQuery) -> pa.Table:
+    if query.limit is not None and query.limit > MAX_AGGREGATE_ROWS:
+        raise ValueError(f"Aggregate result limit must not exceed {MAX_AGGREGATE_ROWS}")
+    result_limit = query.limit or MAX_AGGREGATE_ROWS
+    table = execute_source_query(
+        loader, "query_data_as_arrow", source_table=source_table,
+        query=query.to_dict(), limit=result_limit + 1,
+    )
+    if not isinstance(table, pa.Table):
+        raise TypeError("Connector query must return pyarrow.Table")
+    if table.num_rows > result_limit and query.limit is None:
+        raise ValueError("Aggregate result exceeds 10000 rows. Narrow the query or request an explicit ranked limit.")
+    return table.slice(0, result_limit)
 
 
 @dataclass(frozen=True)
@@ -77,7 +94,7 @@ class DataOperationExecutor:
                     plan_hash=plan.plan_hash,
                     step_index=step_index,
                 ))
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Data operation %s failed to load step %d (%s)",
                     operation.id,
@@ -89,7 +106,8 @@ class DataOperationExecutor:
                     display_name=step.display_name,
                     error=OperationError(
                         code="connector_error",
-                        message=f"{step.display_name} could not be loaded.",
+                        message=(str(exc) if isinstance(exc, (ValueError, NotImplementedError))
+                                 else f"{step.display_name} could not be loaded."),
                     ),
                 ))
         return DataOperationExecutionResult(
@@ -108,13 +126,17 @@ class DataOperationExecutor:
     ) -> str:
         loader = self._loader_resolver(step.source_id)
         import_options = self._build_import_options(step)
-        table = execute_source_query(
-            loader, "fetch_data_as_arrow",
-            source_table=step.source_table,
-            import_options=import_options,
-        )
+        aggregate_query = bool(step.query.group_by or step.query.aggregates)
+        if aggregate_query:
+            table = execute_aggregate_query(loader, step.source_table, step.query)
+        else:
+            table = execute_source_query(
+                loader, "fetch_data_as_arrow",
+                source_table=step.source_table,
+                import_options=import_options,
+            )
         if not isinstance(table, pa.Table):
-            raise TypeError("Connector fetch_data_as_arrow must return pyarrow.Table")
+            raise TypeError("Connector query must return pyarrow.Table")
         table = apply_import_projection(table, import_options)
         if step.query.limit is not None and table.num_rows > step.query.limit:
             table = table.slice(0, step.query.limit)
@@ -142,7 +164,7 @@ class DataOperationExecutor:
         # Parity with ExternalDataLoader.ingest_to_workspace: without this the
         # published table carries no source description or column descriptions.
         try:
-            source_meta = loader.get_column_types(step.source_table)
+            source_meta = {} if aggregate_query else loader.get_column_types(step.source_table)
             if source_meta:
                 _merge_source_metadata(metadata, source_meta)
                 self._workspace.add_table_metadata(metadata)
@@ -156,6 +178,8 @@ class DataOperationExecutor:
             "order_by": [{"column": item.column, "direction": item.direction} for item in step.query.order_by],
             "requested_limit": step.query.limit,
             "loaded_row_count": table.num_rows,
+                **({"query": step.query.to_dict(), "coverage": "requested_limit" if step.query.limit else "complete_aggregate_result"}
+                    if aggregate_query else {}),
         }
         scope_description = (
             f"Workspace table: {step.display_name}. Import scope: "
@@ -192,6 +216,8 @@ class DataOperationExecutor:
     @staticmethod
     def _build_import_options(step: ConnectorQueryStep) -> dict:
         options: dict = {}
+        if step.query.group_by or step.query.aggregates:
+            options["structured_query"] = step.query.to_dict()
         if step.query.limit is not None:
             options["size"] = step.query.limit
         if step.query.filters:

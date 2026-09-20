@@ -1,9 +1,44 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from data_formulator.agents.context import (
     build_focused_thread_context,
     build_lightweight_table_context,
+    handle_read_catalog_metadata,
 )
+
+
+def test_catalog_inspection_exposes_limits_and_bounded_examples(tmp_path):
+    metadata = {"columns": [{"name": "review", "type": "string"}],
+                "sample_rows": [{"review": "sample review " * 1000}],
+                "inspection": {"schema_source": "inferred", "row_count_status": "unknown",
+                               "sample_method": "source_head", "values_truncated": True}}
+    workspace = MagicMock(user_home=tmp_path)
+    with patch("data_formulator.agents.context.ensure_no_auth_catalogs_cached"), \
+         patch("data_formulator.datalake.connector_preferences.connector_is_enabled", return_value=True), \
+         patch("data_formulator.datalake.catalog_cache.load_catalog", return_value=[{
+             "name": "reviews", "table_key": "reviews", "metadata": metadata,
+         }]):
+        text = handle_read_catalog_metadata("source", "reviews", workspace)
+    assert "Row count not collected" in text
+    assert "later records may differ" in text
+    assert "not necessarily representative" in text
+    assert "sample text truncated" in text
+    assert len(text) < 2000
+
+
+def test_external_reference_agent_sample_bounds_values_without_mutation():
+    from data_formulator.analyst.workspace_inputs import normalize_external_references
+
+    reference = {"kind": "external-table-reference", "id": "ref", "connectorId": "source",
+                 "tableKey": "reviews", "displayName": "Reviews",
+                 "summary": {"sampleRows": [{"review": "x" * 1000, "nested": {"items": list(range(30))}}],
+                             "inspection": {"schema_source": "inferred", "columns_omitted": 2}}}
+    summary = normalize_external_references([reference])[0]["summary"]
+    assert summary["sampleRows"][0]["review"] == "x" * 200 + "..."
+    assert summary["sampleRows"][0]["nested"]["items"] == list(range(10))
+    assert summary["sampleTruncated"] is True
+    assert summary["inspection"]["columns_omitted"] == 2
+    assert len(reference["summary"]["sampleRows"][0]["review"]) == 1000
 
 
 def test_focused_context_includes_text_turn_and_loading_decision() -> None:

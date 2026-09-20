@@ -13,6 +13,22 @@ Use `visualize` to run Python that produces a DataFrame and render it as a
 chart. The result returns as an observation, so inspect it before deciding what
 to do next.
 
+Follow the workspace Data Access Paths to choose or load inputs. Compute
+chart-specific filters, grouping, and ranking from their listed paths. No
+separate `create_data` call is needed to prepare or publish chart data.
+
+For the optional one-off chart path, declare `connector_inputs` in this call.
+Each input has a unique `alias`, `source_id`,
+`table_key`, and optional structured `query`. The backend persists the query
+result and supplies `connector_inputs['alias']` as its actual Parquet path before
+running Python. Read it with `pd.read_parquet(connector_inputs['alias'])`.
+Do not guess a filename or connect to the source from sandboxed Python.
+
+Connector inputs are added to provenance automatically; `input_sources` lists
+other durable inputs used by the code. Use `[]` when there are no other inputs.
+Matching loaded queries are reused. If Python or rendering fails, the returned
+bindings remain available; retry with those paths instead of reloading.
+
 - `title`: concise, neutral analytical heading naming the subject, measure, and
   lens. Do not name the chart type, imply causality, or editorialize.
 - `subtitle`: supporting context not already clear from title or axes, at most

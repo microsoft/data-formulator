@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import time
+from threading import Lock
 from typing import Any
 import pandas as pd
 import pyarrow as pa
@@ -23,6 +24,44 @@ from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRe
 from azure.kusto.data.helpers import dataframe_from_result_table, parse_float
 
 logger = logging.getLogger(__name__)
+
+
+class _KustoCachedCredential:
+    """Keep one ambient token per credential instance, never across identities."""
+
+    def __init__(self, credential):
+        self._credential = credential
+        self._lock = Lock()
+        self._token: AccessToken | None = None
+        self._request = None
+        self._closed = False
+
+    def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Kusto credential is closed")
+            if kwargs.keys() - {"claims", "tenant_id", "enable_cae"}:
+                self._token = None
+                self._request = None
+                return self._credential.get_token(*scopes, **kwargs)
+            request = (scopes, tuple(sorted(kwargs.items())))
+            if self._request == request and self._token is not None and self._token.expires_on > time.time() + 300:
+                return self._token
+            self._token = None
+            self._request = None
+            token = self._credential.get_token(*scopes, **kwargs)
+            if token.expires_on > time.time() + 300:
+                self._token = token
+                self._request = request
+            return token
+
+    def close(self):
+        with self._lock:
+            self._token = None
+            self._request = None
+            if not self._closed:
+                self._closed = True
+                self._credential.close()
 
 
 class _KustoDelegatedCredential:
@@ -224,7 +263,7 @@ class KustoDataLoader(ExternalDataLoader):
 
         # 3. DefaultAzureCredential: az login, Managed Identity, VS Code, env vars, etc.
         from azure.identity import DefaultAzureCredential
-        credential = DefaultAzureCredential()
+        credential = _KustoCachedCredential(DefaultAzureCredential())
         logger.info(
             "Using DefaultAzureCredential for Kusto client "
             "(az login / Managed Identity / etc.).")
@@ -426,6 +465,17 @@ class KustoDataLoader(ExternalDataLoader):
         
         return arrow_table
 
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        database, table = self._resolve_source_table(source_table)
+        kql = self._compile_probe_kql(table, query, limit, exact_distinct=True)
+        previous_database = self.kusto_database
+        try:
+            if database:
+                self.kusto_database = database
+            return pa.Table.from_pandas(self.query(kql), preserve_index=False)
+        finally:
+            self.kusto_database = previous_database
+
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         """Compile the SPJQ to KQL and run ``summarize`` on the cluster.
 
@@ -496,7 +546,7 @@ class KustoDataLoader(ExternalDataLoader):
         return KustoDataLoader._kql_lit(value)
 
     def _compile_probe_kql(
-        self, table: str, query: dict[str, Any], out_limit: int,
+        self, table: str, query: dict[str, Any], out_limit: int, *, exact_distinct: bool = False,
     ) -> str:
         """Compile a probe SPJQ object into a KQL query pipeline.
 
@@ -531,7 +581,8 @@ class KustoDataLoader(ExternalDataLoader):
                 elif op == "count_distinct":
                     if not col:
                         raise ValueError("count_distinct requires a column")
-                    expr = f"dcount({ident(col)})"
+                    operation = "count_distinct" if exact_distinct else "dcount"
+                    expr = f"{operation}({ident(col)})"
                 elif op in ("sum", "avg", "min", "max"):
                     if not col:
                         raise ValueError(f"aggregate {op} requires a column")

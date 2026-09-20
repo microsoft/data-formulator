@@ -139,6 +139,8 @@ def test_configured_only_connectors_block_creation_and_personal_lookup(monkeypat
 @pytest.mark.parametrize('overrides', [
     {'api_key': 'secret'}, {'models': {'model': {'api_key': 'secret'}}},
     {'limits': {'max_display_rows': -1}}, {'limits': {'max_display_rows': True}},
+    {'limits': {'external_table_max_rows': -1}}, {'limits': {'external_table_max_rows': 1.5}},
+    {'limits': {'external_table_max_bytes': True}}, {'limits': {'external_table_max_bytes': 1024 ** 4 + 1}},
     {'models': {'model': {'enabled': 'false'}}}, {'disable_user_connectors': 'false'}, {'disable_user_models': 'false'},
     {'workflows': {'server/../../escape.yaml': {'content': 'invalid'}}},
 ])
@@ -148,15 +150,20 @@ def test_invalid_configuration_is_not_saved(overrides):
     assert read_configuration()['revision'] == 0
 
 
-def test_environment_limit_wins_and_reset_restores_default(monkeypatch):
-    monkeypatch.delenv('MAX_DISPLAY_ROWS', raising=False)
-    save_configuration({'limits': {'max_display_rows': 200}}, 0)
-    assert effective_limit('max_display_rows') == 200
-    monkeypatch.setenv('MAX_DISPLAY_ROWS', '50')
-    assert effective_limit('max_display_rows') == 50
-    monkeypatch.delenv('MAX_DISPLAY_ROWS')
+@pytest.mark.parametrize('name,environment,default,multiplier', [
+    ('max_display_rows', 'MAX_DISPLAY_ROWS', 10000, 1),
+    ('external_table_max_rows', 'EXTERNAL_TABLE_MAX_ROWS', 1000000, 1),
+    ('external_table_max_bytes', 'EXTERNAL_TABLE_MAX_SIZE_MB', 512 * 1048576, 1048576),
+])
+def test_environment_limit_wins_and_reset_restores_default(monkeypatch, name, environment, default, multiplier):
+    monkeypatch.delenv(environment, raising=False)
+    save_configuration({'limits': {name: 200}}, 0)
+    assert effective_limit(name) == 200
+    monkeypatch.setenv(environment, '50')
+    assert effective_limit(name) == 50 * multiplier
+    monkeypatch.delenv(environment)
     save_configuration({}, 1)
-    assert effective_limit('max_display_rows') == 10000
+    assert effective_limit(name) == default
 
 
 @pytest.mark.parametrize('identifier', ['configured', 'installation-' + 'a' * 32])
@@ -487,10 +494,15 @@ def test_managed_app_config_reports_mode_separately_from_admin_permission(monkey
         assert config['APP_TAGLINE'] == ''
         assert config['MANAGED_MODE'] is True
         assert config['CAN_CONFIGURE'] is False
-        save_configuration({'app_name': '  Team Analytics  ', 'app_tagline': '  Explore our data.  '}, 0)
+        assert config['EXTERNAL_TABLE_MAX_ROWS'] == 1000000
+        assert config['EXTERNAL_TABLE_MAX_BYTES'] == 512 * 1048576
+        save_configuration({'app_name': '  Team Analytics  ', 'app_tagline': '  Explore our data.  ',
+                    'limits': {'external_table_max_rows': 200, 'external_table_max_bytes': 64 * 1048576}}, 0)
         branded = application.app.make_response(application.get_app_config()).get_json()['data']
         assert branded['APP_NAME'] == 'Team Analytics'
         assert branded['APP_TAGLINE'] == 'Explore our data.'
+        assert branded['EXTERNAL_TABLE_MAX_ROWS'] == 200
+        assert branded['EXTERNAL_TABLE_MAX_BYTES'] == 64 * 1048576
         monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin')
         assert application.app.make_response(application.get_app_config()).get_json()['data']['CAN_CONFIGURE'] is True
         application.app.config['CLI_ARGS']['managed'] = False

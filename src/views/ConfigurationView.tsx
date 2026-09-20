@@ -472,11 +472,14 @@ export const ConfigurationView = () => {
                 </Box>
                 {tab === 'connectors' && !cardRows.length && <Typography variant="body2" color="text.secondary">No configured data sources.</Typography>}
                 {tab === 'limits' && Object.entries(saved.limits).map(([name, setting]) => {
-                    const divisor = name === 'max_display_rows' ? 1 : 1048576;
+                    const divisor = name.endsWith('_bytes') ? 1048576 : 1;
                     const labels: Record<string, string> = { max_display_rows: 'Maximum preview rows', scratch_max_bytes: 'Scratch storage per workspace (MiB)',
+                        external_table_max_rows: 'Virtual table threshold (rows)', external_table_max_bytes: 'Virtual table threshold (MiB)',
                         scratch_max_file_bytes: 'Maximum remote-fetch file size (MiB)' };
                     const descriptions: Record<string, string> = {
                         max_display_rows: 'Maximum rows shown in a table preview. Full tables remain on the server.',
+                        external_table_max_rows: 'Keep external tables virtual above this row count or the size threshold. Applies to new selections with known sizes.',
+                        external_table_max_bytes: 'Keep external tables virtual above this size or the row threshold. Existing workspace copies are unchanged.',
                         scratch_max_bytes: 'Temporary file storage per workspace. When exceeded, least-recently-used files are removed; saved datasets are kept.',
                         scratch_max_file_bytes: 'Maximum size per file downloaded from a URL. 1 MiB = 1,048,576 bytes.',
                     };

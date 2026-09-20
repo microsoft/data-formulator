@@ -2908,6 +2908,7 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
 export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: boolean}> = function ({ sx, centered = false, denseColumns = false }) {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
     const externalReferenceCount = useSelector((state: DataFormulatorState) => state.externalTableReferences?.length ?? 0);
@@ -3125,7 +3126,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 return;
             }
 
-            if (isLargeConnectorTable(item.metadata)) {
+            if (isLargeConnectorTable(item.metadata, serverConfig)) {
                 const metadata = item.metadata || {};
                 const rows = Number(metadata.row_count);
                 const bytes = Number(metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size);
@@ -3183,7 +3184,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                     }));
                 });
         } catch { /* ignore bad data */ }
-    }, [dispatch]);
+    }, [dispatch, serverConfig]);
     // Re-attach ResizeObserver when containerRef changes
     useEffect(() => {
         const el = containerRef.current;
@@ -3541,9 +3542,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     for (const turn of textTurnsForHome) {
         const rootId = textTurnRootByTurn.get(turn.id)!;
         const first = firstTurnByRoot.get(rootId);
-        if (!first || turn.createdAt < first.createdAt) firstTurnByRoot.set(rootId, turn);
+        if (!first || (turn.startedAt ?? turn.createdAt) < (first.startedAt ?? first.createdAt)) firstTurnByRoot.set(rootId, turn);
     }
-    const threadGroups = new Map<string, { entries: ThreadEntry[]; firstTurn?: TextTurn }>();
+    const threadGroups = new Map<string, { entries: ThreadEntry[]; firstTurn?: TextTurn; startedAt: number }>();
     for (const entry of allThreadEntries) {
         if (entry.isShelf) continue;
         const groupId = entry.leafTable ? `table:${groupIdOf(entry.leafTable)}` : entry.key;
@@ -3558,13 +3559,24 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             ? getThreadLeadUpTurns(firstTable, tables, textTurnsForHome, loadedTableNodes, fileNodes, generatedReports)
             : [];
         const rootId = entry.conversationRootId || entry.originTableId || triggers[0]?.tableId;
+        const firstTurn = leadUpTurns[0] || (rootId ? firstTurnByRoot.get(rootId) : undefined);
+        const draftStarts = draftNodes.filter(draft => draftHostOf(draft) === rootId)
+            .map(draft => draft.createdAt ?? draft.derive.trigger.interaction?.find(item => item.timestamp !== undefined)?.timestamp ?? Infinity);
+        const interactionStarts = triggers.flatMap(trigger => (trigger.interaction || [])
+            .flatMap(item => item.timestamp === undefined ? [] : [item.timestamp]));
         threadGroups.set(groupId, {
             entries: [entry],
-            firstTurn: leadUpTurns[0] || (rootId ? firstTurnByRoot.get(rootId) : undefined),
+            firstTurn,
+            startedAt: Math.min(
+                firstTurn?.startedAt ?? firstTurn?.createdAt ?? Infinity,
+                ...interactionStarts,
+                ...draftStarts,
+                ...(!firstTurn && !interactionStarts.length && !draftStarts.length ? [0] : []),
+            ),
         });
     }
     const orderedGroups = [...threadGroups.values()].sort((first, second) =>
-        (first.firstTurn?.createdAt ?? 0) - (second.firstTurn?.createdAt ?? 0)
+        first.startedAt - second.startedAt
         || (turnOrder.get(first.firstTurn?.id ?? '') ?? 0) - (turnOrder.get(second.firstTurn?.id ?? '') ?? 0));
     allThreadEntries = [
         ...allThreadEntries.filter(entry => entry.isShelf),

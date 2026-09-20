@@ -50,6 +50,16 @@ describe('ConnectorTablePreview source metadata', () => {
         onLoad: vi.fn(),
     };
 
+    it('uses a centered track for empty previews and an inline status over retained rows', () => {
+        const view = render(<ConnectorTablePreview {...baseProps} loading sampleRows={[]} />);
+        expect(screen.getByText('Loading preview...').closest('[role="status"]')?.querySelector('.MuiLinearProgress-root')).not.toBeNull();
+        expect(screen.getByRole('progressbar', { name: 'Loading preview...' })).toBeDefined();
+        view.rerender(<ConnectorTablePreview {...baseProps} loading />);
+        expect(screen.getByText('US')).toBeDefined();
+        expect(screen.getByRole('status', { name: 'Refreshing preview...' }).querySelector('.MuiCircularProgress-root')).not.toBeNull();
+        expect(screen.queryByRole('progressbar', { name: 'Loading preview...' })).toBeNull();
+    });
+
     it('shows the source table description directly', () => {
         render(
             <ConnectorTablePreview

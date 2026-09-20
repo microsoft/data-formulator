@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
@@ -257,7 +258,7 @@ class WorkspaceDataLoading:
         return None
 
     @staticmethod
-    def _already_loaded_tables(steps: tuple[ConnectorQueryStep, ...], workspace) -> list[str]:
+    def _already_loaded_tables(steps: tuple[ConnectorQueryStep, ...], workspace, *, require_provenance: bool = False) -> list[str]:
         metadata = workspace.get_metadata()
         if metadata is None:
             return []
@@ -269,11 +270,16 @@ class WorkspaceDataLoading:
                     continue
                 import_options = dict(table_metadata.import_options or {})
                 provenance = import_options.pop("data_operation", {})
-                same_source = not provenance or (
-                    provenance.get("source_id") in (None, step.source_id)
-                    and provenance.get("table_key") in (None, step.table_key)
+                same_source = (
+                    provenance.get("source_id") == step.source_id
+                    and provenance.get("table_key") == step.table_key
                 )
-                if same_source and import_options == expected_options:
+                if not require_provenance:
+                    same_source = not provenance or (
+                        provenance.get("source_id") in (None, step.source_id)
+                        and provenance.get("table_key") in (None, step.table_key)
+                    )
+                if same_source and not table_metadata.stale and import_options == expected_options:
                     loaded.append(table_name)
                     break
         return loaded
@@ -396,7 +402,21 @@ class WorkspaceDataLoading:
             yield {"type": "tool_result", "tool": "load_data",
                    "status": "ok" if completed.result_table_ids and not completed.failed_steps else "error"}
             yield {"type": "data_operation_result", "operation": completed.to_public_dict()}
-            return "Connected-data loading finished. Inspect the actual result before continuing:\n" + json.dumps(completed.to_public_dict())
+            result_payload = completed.to_public_dict()
+            result_payload["workspace_inputs"] = []
+            for item in ctx.payload["workspace_inputs"].data:
+                if item.display_name not in completed.result_table_ids:
+                    continue
+                metadata = ctx.workspace.get_table_metadata(item.display_name)
+                result_payload["workspace_inputs"].append({
+                    **asdict(item),
+                    "row_count": metadata.row_count,
+                    "columns": [column.to_dict() for column in metadata.columns or []],
+                    "scope": metadata.import_options or {},
+                    "description": metadata.description,
+                })
+            ctx.payload["last_data_operation_result"] = result_payload
+            return "Connected-data loading finished. Use the returned input IDs and paths directly:\n" + json.dumps(result_payload)
 
         yield {
             "type": "interact",

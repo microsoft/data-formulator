@@ -5,6 +5,7 @@ import WrapTextIcon from '@mui/icons-material/WrapText';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
+import { LoadingStatus } from '../components/FunComponents';
 import { dfActions, type DataFormulatorState } from '../app/dfSlice';
 import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
@@ -325,7 +326,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             </Dialog>
             {saveError && <Alert severity="error">{saveError}</Alert>}
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: '#fafafa' }}>
-                {!loading && workbookFile && <Suspense fallback={<CircularProgress size={28} />}>
+                {!loading && workbookFile && <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
                     <WorkspaceWorkbookPreview file={workbookFile} fileName={fileName} errorLabel={t('dataThread.previewUnavailable', {
                         defaultValue: 'A quick preview is not available for this file type.',
                     })} />
@@ -345,7 +346,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                         if (textDrafts.size > 0) window.addEventListener('beforeunload', warnUnsavedDrafts);
                         else window.removeEventListener('beforeunload', warnUnsavedDrafts);
                     }} />)}
-                {loading && <Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}><CircularProgress size={28} /></Box>}
+                {loading && <LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}
                 {!loading && error && (
                     <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', px: 3, textAlign: 'center' }}>
                         <Box>
@@ -383,7 +384,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     </Box>
                 )}
                 {!loading && pdfFile && (
-                    <Suspense fallback={<Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}><CircularProgress size={28} /></Box>}>
+                    <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
                         <WorkspacePdfPreview
                             file={pdfFile}
                             pageCount={pdfPageCount}

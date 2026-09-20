@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 
+import duckdb
 import pyarrow as pa
 import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
@@ -129,12 +130,56 @@ def data_dir(tmp_path: Path) -> Path:
 
 class TestLocalFolderDataLoader:
 
+    @pytest.mark.parametrize("extension", ["parquet", "csv"])
+    def test_import_filters_sorts_and_projects_before_limit(self, tmp_path, extension):
+        table = pa.table({"group": ["other", "target", "target"], "score": [100, 2, 9]})
+        path = tmp_path / f"reviews.{extension}"
+        (pq.write_table if extension == "parquet" else pa_csv.write_csv)(table, path)
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        result = loader.fetch_data_as_arrow(path.name, {
+            "size": 1, "columns": ["score"],
+            "source_filters": [{"column": "group", "operator": "EQ", "value": "target"}],
+            "sort_columns": ["score"], "sort_order": "desc",
+        })
+        assert result.to_pylist() == [{"score": 9}]
+
     def test_list_params(self) -> None:
         params = LocalFolderDataLoader.list_params()
         names = {p["name"] for p in params}
         assert "root_dir" in names
         assert "recursive" in names
         assert "file_pattern" in names
+
+    def test_parquet_probe_aggregates_whole_nested_source(self, tmp_path, monkeypatch):
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        pq.write_table(pa.table({"value": list(range(100))}), nested / "data.parquet", row_group_size=10)
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        monkeypatch.setattr("data_formulator.data_loader.local_folder_data_loader.MAX_IMPORT_ROWS", 2)
+        monkeypatch.setattr(pq, "read_table", lambda *args, **kwargs: pytest.fail("No full Arrow read"))
+        result = loader.probe(["nested", "data.parquet"], {
+            "aggregates": [{"op": "sum", "column": "value", "as": "total"}], "limit": 1,
+        })
+        assert result["rows"] == [{"total": 4950}]
+        assert result["exact"] is True
+
+    def test_native_query_rejects_symlink_escape_and_glob(self, tmp_path):
+        root = tmp_path / "root"
+        root.mkdir()
+        outside = tmp_path / "outside.parquet"
+        pq.write_table(pa.table({"value": [1]}), outside)
+        (root / "escape.parquet").symlink_to(outside)
+        loader = LocalFolderDataLoader({"root_dir": str(root)})
+        with pytest.raises(ValueError, match="escapes confined"):
+            loader.query_data_as_arrow("escape.parquet", {}, 5)
+        with pytest.raises(ValueError, match="Source is not a file"):
+            loader.query_data_as_arrow("*.parquet", {}, 5)
+
+    def test_native_query_treats_glob_characters_as_literal(self, tmp_path):
+        pq.write_table(pa.table({"value": [7]}), tmp_path / "[literal]*.parquet")
+        pq.write_table(pa.table({"value": [99]}), tmp_path / "literal.parquet")
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        assert loader.fetch_data_as_arrow("[literal]*.parquet").to_pylist() == [{"value": 7}]
 
     def test_test_connection_valid_dir(self, data_dir: Path) -> None:
         loader = LocalFolderDataLoader({"root_dir": str(data_dir)})
@@ -171,6 +216,10 @@ class TestLocalFolderDataLoader:
         assert loader.read_file("book.xlsx") == workbook
         assert loader.get_metadata(["book.xlsx"])["artifact_kind"] == "file"
         assert "sample_rows" not in loader.get_metadata(["book.xlsx"])
+        with pytest.raises(ValueError, match="File artifacts"):
+            loader.preview_data("book.xlsx")
+        with pytest.raises(ValueError, match="File artifacts"):
+            loader.fetch_data_as_arrow("book.xlsx")
         assert next(node for node in loader.ls() if node.name == "book.xlsx").metadata["artifact_kind"] == "file"
         with pytest.raises(ValueError, match="size limit"):
             loader.read_file("readme.md", max_bytes=2)
@@ -278,17 +327,16 @@ class TestLocalFolderDataLoader:
         table = loader.fetch_data_as_arrow("pretty.json", {"size": 1})
         if isinstance(records, dict):
             assert table.to_pylist() == [records]
-            assert loader._last_total_rows == 1
         else:
             assert table.to_pylist() == [{"key": "first", "extra": None}]
-            assert loader._last_total_rows == 2
+        assert loader._last_total_rows is None
 
     @pytest.mark.parametrize("extension", [".json", ".jsonl"])
     def test_fetch_malformed_json_rejected(self, tmp_path: Path, extension: str) -> None:
         filename = "broken" + extension
         (tmp_path / filename).write_text('{"value": invalid}')
         loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
-        with pytest.raises(pa.ArrowInvalid, match="JSON parse error"):
+        with pytest.raises(duckdb.InvalidInputException, match="Malformed JSON"):
             loader.fetch_data_as_arrow(filename)
 
     @pytest.mark.parametrize("extension", [".json", ".jsonl"])
@@ -298,7 +346,7 @@ class TestLocalFolderDataLoader:
         (tmp_path / filename).write_text("\n".join(json.dumps(row) for row in rows))
         loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
         assert loader.fetch_data_as_arrow(filename, {"size": 1}).to_pylist() == rows[:1]
-        assert loader._last_total_rows == 2
+        assert loader._last_total_rows is None
         assert loader.fetch_data_as_arrow(filename).to_pylist() == rows
 
     def test_fetch_subdirectory_file(self, data_dir: Path) -> None:
@@ -342,6 +390,10 @@ class TestLocalFolderDataLoader:
         assert len(tables) == 1
         meta = tables[0]["metadata"]
         assert meta["row_count"] is None
+        assert "columns" not in meta
+        meta = loader.get_metadata(["people.csv"])
+        assert meta["row_count"] is None
+        assert meta["inspection"]["schema_source"] == "inferred"
         col_names = [c["name"] for c in meta["columns"]]
         assert "name" in col_names
         assert "age" in col_names

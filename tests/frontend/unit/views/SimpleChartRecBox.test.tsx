@@ -159,6 +159,55 @@ describe('Analyst landing attachment handoff', () => {
         expect(requestBody(3).external_references).toEqual([]);
     });
 
+    it.each([false, true])('suggests questions for a reference without loading it (loaded context: %s)', async hasLoadedTables => {
+        vi.mocked(apiRequest).mockResolvedValue({ data: { result: ['Compare trips by vendor', 'Compare fares by vendor'] } } as any);
+        const { store } = mountTask();
+        const reference = {
+            kind: 'external-table-reference' as const, id: 'external:taxi:trips', connectorId: 'taxi',
+            tableKey: 'trips', sourceTable: { id: 'trips', name: 'trips' }, displayName: 'Trips',
+            capturedAt: '2026-09-19T00:00:00Z',
+            summary: { columns: [{ name: 'vendor', type: 'string' }, { name: 'fare', type: 'number' }],
+                description: 'Taxi trips', rowCount: 20_000_000, sampleRows: [{ vendor: 'A', fare: 12 }],
+                inspection: { sample_method: 'head', schema_complete: true } },
+        };
+        act(() => {
+            if (hasLoadedTables) store.dispatch(dfActions.loadState({ ...store.getState(), inputTables: [{
+                kind: 'input-table', id: 'local', displayId: 'Local', description: '', addedAt: 1,
+                source: { type: 'file' }, snapshot: { columns: [], rowCount: 0, capturedAt: 1 },
+            }] }));
+            store.dispatch(dfActions.upsertExternalTableReference(reference));
+            store.dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+        });
+        await screen.findByText('Compare trips by vendor', {}, { timeout: 2000 });
+        const calls = vi.mocked(apiRequest).mock.calls.filter(([url]) => String(url).includes('derive-starter-questions'));
+        expect(calls).toHaveLength(1);
+        const body = JSON.parse(calls[0][1]!.body as string);
+        expect(body.primary_table).toBe(reference.id);
+        expect(body.input_tables).toHaveLength(hasLoadedTables ? 1 : 0);
+        expect(body.external_references).toEqual([reference]);
+        expect(store.getState().inputTables).toHaveLength(hasLoadedTables ? 1 : 0);
+        expect(store.getState().derivedTables).toEqual([]);
+        const signature = store.getState().starterQuestions[reference.id].signature;
+        act(() => store.dispatch(dfActions.setFocused(undefined)));
+        act(() => store.dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id })));
+        expect(store.getState().starterQuestions[reference.id].signature).toBe(signature);
+        const refreshed = { ...reference, summary: { ...reference.summary, sampleRows: [{ vendor: 'B', fare: 20 }] } };
+        act(() => store.dispatch(dfActions.upsertExternalTableReference(refreshed)));
+        await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => String(url).includes('derive-starter-questions')))
+            .toHaveLength(2), { timeout: 2000 });
+        expect(store.getState().starterQuestions[reference.id].signature).not.toBe(signature);
+        fireEvent.click(await screen.findByText('Compare trips by vendor'));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().focused_external_reference).toBe(reference.id);
+        expect(requestBody().external_references).toEqual([refreshed]);
+        act(() => store.dispatch(dfActions.removeExternalTableReference(reference.id)));
+        expect(store.getState().starterQuestions[reference.id]).toBeUndefined();
+        expect(store.getState().starterQuestionsStatus[reference.id]).toBeUndefined();
+        act(() => store.dispatch(dfActions.setStarterQuestions({ tableId: reference.id,
+            signature, questions: ['Stale question'] })));
+        expect(store.getState().starterQuestions[reference.id]).toBeUndefined();
+    });
+
     it('registers agent data and refreshes it under the same table and reference IDs', async () => {
         let value = 1;
         let finishRun!: () => void;

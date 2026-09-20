@@ -21,6 +21,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import { iconVar, textVar } from '../app/layout';
 import { borderColor, radius, shadow } from '../app/tokens';
+import { InlineLoadingStatus } from '../components/FunComponents';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -111,11 +112,25 @@ const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnost
 export const MessageSnackbar = React.memo(function MessageSnackbar() {
   
     const messages = useSelector((state: DataFormulatorState) => state.messages);
+    const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
     const displayedMessageIdx = useSelector((state: DataFormulatorState) => state.displayedMessageIdx);
     
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const theme = useTheme();
+
+    const toastSx = {
+        minWidth: 0, minHeight: 36, boxSizing: 'border-box',
+        border: `1px solid ${borderColor.view}`, borderRadius: radius.md, boxShadow: shadow.xl,
+        bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.50',
+        color: 'text.primary', fontSize: textVar.sm, lineHeight: 1.5,
+    };
+
+    const activeLoads = pendingTableLoads.filter(load => load.progress);
+    const activeLoadMessages = activeLoads.map(load => <InlineLoadingStatus key={load.id}
+        label={t('sidebar.batchLoading', { ...load.progress,
+            defaultValue: `Loading ${load.progress!.current}/${load.progress!.total}: ${load.progress!.name}` })}
+        sx={{ fontSize: textVar.sm, color: 'text.primary', gap: 0.75, px: 1.25, py: 1 }} />);
 
     const [openLastMessage, setOpenLastMessage] = React.useState(false);
     const [latestMessage, setLatestMessage] = React.useState<Message | undefined>();
@@ -255,7 +270,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                     }}>
                         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3 }}>
-                                {t('messages.systemMessagesWithCount', { count: messages.length })}
+                                {t('messages.systemMessagesWithCount', { count: messages.length + activeLoads.length })}
                             </Typography>
                             {messages.length > MAX_DISPLAY_MESSAGES && (
                                 <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled', lineHeight: 1.3 }}>
@@ -290,6 +305,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                             <CloseIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Box>
+                    {activeLoadMessages}
                     <Box
                         ref={messagesScrollRef}
                         sx={{
@@ -298,7 +314,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                             minHeight: 120,
                         }}
                     >
-                        {messages.length === 0 && (
+                        {messages.length === 0 && activeLoads.length === 0 && (
                             <Box sx={{
                                 minHeight: 160, px: 3, py: 4,
                                 display: 'flex', flexDirection: 'column',
@@ -419,9 +435,16 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                 </Paper>
             </Snackbar>
             
+            <Snackbar open={activeLoads.length > 0 && !openMessages}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                sx={{ bottom: '54px !important', maxWidth: { xs: 'calc(100% - 32px)', sm: 420 } }}>
+                <Paper elevation={0} sx={toastSx}>
+                    {activeLoadMessages}
+                </Paper>
+            </Snackbar>
             {latestMessage != undefined ? (
                 <Snackbar
-                open={openLastMessage}
+                open={openLastMessage && !openMessages && activeLoads.length === 0}
                 autoHideDuration={latestMessage?.type == "error" ? 20000 : 10000}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
                 onClose={handleClose}
@@ -435,8 +458,13 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                     severity={latestMessage.type}
                     variant="standard"
                     sx={{
+                        ...toastSx, px: 1.25, py: 0.75, alignItems: 'center',
                         width: '100%', maxHeight: 'min(60vh, 560px)', overflow: 'auto',
-                        '& .MuiAlert-message': { width: '100%', minWidth: 0 },
+                        '& .MuiAlert-message': { width: '100%', minWidth: 0, py: 0 },
+                        '& .MuiAlert-icon': { fontSize: 16, mr: 0.75, py: 0 },
+                        '& .MuiAlert-action': { m: 0, p: 0, pl: 0.75, alignSelf: 'center' },
+                        '& .MuiAlert-action .MuiIconButton-root': { p: 0.5 },
+                        '& .MuiAlert-action .MuiSvgIcon-root': { fontSize: 16 },
                     }}
                 >
                     <Box sx={{ overflowWrap: 'anywhere' }}>

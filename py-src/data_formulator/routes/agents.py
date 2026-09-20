@@ -126,10 +126,15 @@ def preview_data_operation():
             requested = options.get("size")
             preview_size = min(requested, PREVIEW_ROW_LIMIT) if isinstance(requested, int) and requested > 0 else PREVIEW_ROW_LIMIT
             options["size"] = preview_size
-            table = loader.fetch_data_as_arrow(step.source_table, options)
-            from data_formulator.data_loader.external_data_loader import apply_import_projection
-            table = apply_import_projection(table, options)
-            table = table.slice(0, preview_size)
+            from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+            if step.query.group_by or step.query.aggregates:
+                from data_formulator.data_loader.query_runtime import execute_source_query
+                table = execute_source_query(loader, "query_data_as_arrow",
+                    source_table=step.source_table, query=step.query.to_dict(), limit=preview_size)
+                preview = ExternalDataLoader.format_preview(table, options)
+                preview["inspection"].update(sample_method="aggregate", may_scan_full_source=True)
+            else:
+                preview = loader.preview_data(step.source_table, options)
         except Exception as exc:
             logger.warning("Preview failed for %s", step.display_name, exc_info=True)
             previews.append({
@@ -145,8 +150,9 @@ def preview_data_operation():
             "display_name": step.display_name,
             "source_id": step.source_id,
             **({"table_description": str(table_description).strip()} if table_description else {}),
-            "columns": table.column_names,
-            "rows": make_json_safe(table.to_pylist()),
+            "columns": [column["name"] for column in preview["columns"]],
+            "rows": preview["rows"],
+            "inspection": preview["inspection"],
         })
     return json_ok({"previews": previews})
 
@@ -427,9 +433,9 @@ def sort_data_request():
 def derive_starter_questions_request():
     """Generate a few short, data-tailored starter exploration questions.
 
-    Called once when a workspace's set of root tables changes (e.g. after
-    data is loaded). Input: ``input_tables`` (list of {name, columns,
-    sample_rows, description}) and ``model``. Returns ``{"result": [..]}``.
+    Input: ``input_tables`` (name, columns, sample_rows, description), optional
+    cached ``external_references``, ``primary_table`` (table name or reference
+    ID), and ``model``. No source queries are executed. Returns ``{"result": [..]}``.
     """
     if not request.is_json:
         raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
@@ -443,7 +449,10 @@ def derive_starter_questions_request():
         n = content.get('n', 2)
         language_instruction = get_language_instruction(mode="compact")
         agent = StarterQuestionsAgent(client=client, language_instruction=language_instruction)
-        questions = agent.run(content.get('input_tables', []), primary_table=content.get('primary_table'), n=n)
+        questions = agent.run(
+            content.get('input_tables', []), primary_table=content.get('primary_table'), n=n,
+            external_references=content.get('external_references'),
+        )
 
         questions = questions if questions is not None else []
         return json_ok({"result": questions})
@@ -452,13 +461,14 @@ def derive_starter_questions_request():
         raise classify_and_wrap_llm_error(e) from e
 
 def _cancellable_agent_stream(events):
-    from data_formulator.data_loader.query_runtime import QueryCancelled, cancellation
+    from data_formulator.data_loader.query_runtime import QueryCancelled, QueryWorker, query_worker_scope
     from data_formulator.error_handler import stream_error_event
 
     signal = Event()
     messages = Queue(maxsize=32)
     finished = object()
     context = copy_context()
+    query_worker = QueryWorker()
 
     def publish(message):
         while not signal.is_set():
@@ -469,22 +479,21 @@ def _cancellable_agent_stream(events):
                 continue
 
     def produce():
-        token = cancellation.set(signal)
-        try:
-            for event in events:
-                if signal.is_set():
-                    break
-                publish(event)
-        except QueryCancelled:
-            pass
-        except Exception as exc:
-            publish(stream_error_event(classify_and_wrap_llm_error(exc)))
-        finally:
+        with query_worker_scope(signal, worker=query_worker):
             try:
-                events.close()
+                for event in events:
+                    if signal.is_set():
+                        break
+                    publish(event)
+            except QueryCancelled:
+                pass
+            except Exception as exc:
+                publish(stream_error_event(classify_and_wrap_llm_error(exc)))
             finally:
-                cancellation.reset(token)
-                publish(finished)
+                try:
+                    events.close()
+                finally:
+                    publish(finished)
 
     worker = Thread(target=context.run, args=(produce,), daemon=True)
     worker.start()
@@ -500,6 +509,7 @@ def _cancellable_agent_stream(events):
             yield message
     finally:
         signal.set()
+        query_worker.close()
         worker.join(timeout=3)
 
 

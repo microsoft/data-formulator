@@ -1,4 +1,6 @@
+import os
 from pathlib import Path
+from threading import BoundedSemaphore, Event, Thread
 
 import pyarrow as pa
 import pytest
@@ -14,6 +16,199 @@ from data_formulator.data_operations import (
     OperationFilter,
 )
 from data_formulator.datalake.workspace import Workspace
+from data_formulator.data_loader.query_runtime import execute_source_query, query_worker_scope
+from data_formulator.data_loader import query_runtime
+
+
+class _RemoteLoader:
+    QUERY_EXECUTION = "remote_file_scan"
+
+    def __init__(self, params=None):
+        self.params = params or {}
+        self.calls = 0
+
+    def query_data_as_arrow(self):
+        self.calls += 1
+        return pa.table({"pid": [os.getpid()], "calls": [self.calls], "owner": [self.params.get("owner", "test")]})
+
+    def fail(self):
+        raise ValueError("Fixture query failure")
+
+    def crash(self):
+        os._exit(7)
+
+    def block(self, marker):
+        Path(marker).touch()
+        Event().wait(60)
+
+
+def test_query_worker_reuses_process_with_fresh_loaders_and_owned_results():
+    with query_worker_scope(Event()) as worker:
+        assert worker._process is None
+        first = execute_source_query(_RemoteLoader({"owner": "first"}), "query_data_as_arrow")
+        second = execute_source_query(_RemoteLoader({"owner": "second"}), "query_data_as_arrow")
+        assert first.column("pid").to_pylist() == second.column("pid").to_pylist()
+        assert first.column("pid")[0].as_py() != os.getpid()
+        assert first.column("calls").to_pylist() == second.column("calls").to_pylist() == [1]
+    assert worker._process is None
+    assert first.column("owner").to_pylist() == ["first"]
+    assert second.column("owner").to_pylist() == ["second"]
+
+
+def test_query_worker_scopes_do_not_share_processes():
+    with query_worker_scope(Event()) as outer:
+        first = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        with query_worker_scope(Event()) as inner:
+            second = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+            assert first.column("pid").to_pylist() != second.column("pid").to_pylist()
+        assert inner._process is None
+        third = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        assert first.column("pid").to_pylist() == third.column("pid").to_pylist()
+    assert outer._process is None
+
+
+def test_query_worker_recovers_from_errors_and_native_exit():
+    with query_worker_scope(Event()) as worker:
+        first = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        with pytest.raises(RuntimeError, match="Fixture query failure"):
+            execute_source_query(_RemoteLoader(), "fail")
+        second = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        assert first.equals(second)
+        with pytest.raises(RuntimeError, match="worker exited"):
+            execute_source_query(_RemoteLoader(), "crash")
+        assert worker._process is None
+        third = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        assert first.column("pid").to_pylist() != third.column("pid").to_pylist()
+
+
+def test_query_worker_cancellation_kills_read_and_releases_capacity(tmp_path, monkeypatch):
+    slots = BoundedSemaphore(1)
+    monkeypatch.setattr(query_runtime, "_worker_slots", slots)
+    signal = Event()
+    marker = tmp_path / "started"
+    cancel_finished = Event()
+
+    def cancel_when_reading():
+        while not cancel_finished.wait(0.01):
+            if marker.exists():
+                signal.set()
+                return
+
+    with query_worker_scope(signal) as worker:
+        execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        watcher = Thread(target=cancel_when_reading)
+        watcher.start()
+        try:
+            with pytest.raises(query_runtime.QueryCancelled):
+                execute_source_query(_RemoteLoader(), "block", str(marker))
+            assert worker._process is None
+            assert slots.acquire(blocking=False)
+            slots.release()
+        finally:
+            cancel_finished.set()
+            watcher.join()
+
+
+def test_query_worker_deadline_kills_read_and_releases_capacity(tmp_path, monkeypatch):
+    slots = BoundedSemaphore(1)
+    monkeypatch.setattr(query_runtime, "_worker_slots", slots)
+    with query_worker_scope(Event()) as worker:
+        execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        monkeypatch.setattr(query_runtime, "_query_timeout", 0.2)
+        with pytest.raises(TimeoutError, match="execution deadline"):
+            execute_source_query(_RemoteLoader(), "block", str(tmp_path / "started"))
+        assert worker._process is None
+        assert slots.acquire(blocking=False)
+        slots.release()
+
+
+def test_query_worker_queue_is_bounded_and_cancellable(monkeypatch):
+    slots = BoundedSemaphore(1)
+    monkeypatch.setattr(query_runtime, "_worker_slots", slots)
+    monkeypatch.setattr(query_runtime, "_queue_timeout", 0.1)
+    slots.acquire()
+    signal = Event()
+    try:
+        with query_worker_scope(signal) as worker:
+            with pytest.raises(TimeoutError, match="waiting"):
+                execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+            assert worker._process is None
+            signal.set()
+            with pytest.raises(query_runtime.QueryCancelled):
+                execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+            assert not slots.acquire(blocking=False)
+    finally:
+        slots.release()
+
+
+def test_query_worker_is_lazy_for_non_remote_calls_and_restores_context():
+    loader = _RemoteLoader()
+    loader.QUERY_EXECUTION = "service"
+    with query_worker_scope(Event()) as worker:
+        result = execute_source_query(loader, "query_data_as_arrow")
+        assert result.column("pid").to_pylist() == [os.getpid()]
+        assert worker._process is None
+    assert query_runtime.cancellation.get() is None
+    assert query_runtime._run_worker.get() is None
+
+
+def test_query_worker_start_failure_releases_capacity(monkeypatch):
+    from unittest.mock import Mock
+
+    slots = BoundedSemaphore(1)
+    monkeypatch.setattr(query_runtime, "_worker_slots", slots)
+    context = Mock()
+    parent, child = Mock(), Mock()
+    context.Pipe.return_value = (parent, child)
+    context.Process.return_value.pid = None
+    context.Process.return_value.start.side_effect = RuntimeError("Spawn failed")
+    monkeypatch.setattr(query_runtime, "get_context", lambda method: context)
+    with query_worker_scope(Event()) as worker:
+        with pytest.raises(RuntimeError, match="Spawn failed"):
+            execute_source_query(_RemoteLoader(), "query_data_as_arrow")
+        assert worker._process is None
+        parent.close.assert_called_once()
+        child.close.assert_called_once()
+        assert slots.acquire(blocking=False)
+        slots.release()
+
+
+def test_stream_reuses_and_closes_query_worker_on_disconnect():
+    from data_formulator.routes.agents import _cancellable_agent_stream
+
+    thinking = Event()
+    release = Event()
+    finished = Event()
+    workers = []
+    results = []
+
+    def events():
+        try:
+            workers.append(query_runtime._run_worker.get())
+            results.append(execute_source_query(_RemoteLoader(), "query_data_as_arrow"))
+            yield "first"
+            results.append(execute_source_query(_RemoteLoader(), "query_data_as_arrow"))
+            yield "second"
+            thinking.set()
+            release.wait(30)
+            yield "discarded"
+        finally:
+            finished.set()
+
+    stream = _cancellable_agent_stream(events())
+    try:
+        while next(stream) != "first":
+            pass
+        while next(stream) != "second":
+            pass
+        assert thinking.wait(2)
+        assert results[0].equals(results[1])
+        stream.close()
+        assert workers[0]._process is None
+    finally:
+        release.set()
+        stream.close()
+        assert finished.wait(5)
 
 
 class _Loader:
@@ -36,6 +231,10 @@ class _Loader:
 
     def get_safe_params(self):
         return {"host": "example.test"}
+
+    def query_data_as_arrow(self, source_table, query, limit):
+        self.calls.append((source_table, {"query": query, "limit": limit}))
+        return self.table
 
 
 def _operation(*steps: ConnectorQueryStep) -> DataOperation:
@@ -95,6 +294,35 @@ def test_executor_materializes_bounded_table_with_provenance(tmp_path: Path) -> 
     assert '"loaded_row_count": 2' in metadata.description
     assert workspace.read_data_as_df("recent_orders")["id"].tolist() == [1, 2]
     assert result.failed_steps == ()
+
+
+@pytest.mark.parametrize("limit", [None, 1])
+def test_executor_materializes_aggregate_without_raw_fetch(tmp_path, limit):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"region": ["west", "east"], "total": [30, 20]}))
+    query = LoadQuery.from_dict({"group_by": ["region"],
+        "aggregates": [{"op": "sum", "column": "amount", "as": "total"}],
+        **({"limit": limit} if limit else {})})
+    step = ConnectorQueryStep(source_id="warehouse", table_key="orders", display_name="Totals",
+                              source_table="orders", query=query)
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert not result.failed_steps
+    assert loader.calls == [("orders", {"query": query.to_dict(), "limit": (limit or 10000) + 1})]
+    metadata = workspace.get_table_metadata(result.result_table_ids[0])
+    assert metadata.row_count == (limit or 2)
+    assert metadata.import_options["structured_query"] == query.to_dict()
+    assert [column.name for column in metadata.columns] == ["region", "total"]
+
+
+def test_executor_rejects_overflow_instead_of_publishing_partial_aggregate(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"region": list(range(10001))}))
+    step = ConnectorQueryStep(source_id="warehouse", table_key="orders", display_name="Regions",
+                              source_table="orders", query=LoadQuery(group_by=("region",)))
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert not result.result_table_ids
+    assert "exceeds 10000" in result.failed_steps[0].error.message
+    assert workspace.list_tables() == []
 
 
 def test_executor_publishes_source_descriptions(tmp_path: Path) -> None:

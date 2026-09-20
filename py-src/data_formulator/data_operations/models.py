@@ -107,18 +107,35 @@ class LoadQueryOrder:
 
 @dataclass(frozen=True)
 class LoadQuery:
-    """Raw-row subset of the shared SPJQ vocabulary used for loading."""
+    """Structured single-table query used for durable loading."""
 
     filters: tuple[OperationFilter, ...] = ()
     columns: tuple[str, ...] = ()
     order_by: tuple[LoadQueryOrder, ...] = ()
     limit: int | None = None
+    group_by: tuple[str, ...] = ()
+    aggregates: tuple[Mapping[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if self.limit is not None and self.limit < 1:
             raise ValueError("Load query limit must be positive")
         if len(self.order_by) > 1:
             raise ValueError("Load query supports at most one order_by clause")
+        if (self.group_by or self.aggregates) and self.columns:
+            raise ValueError("Aggregate queries use group_by and aggregate aliases, not columns")
+        aliases = set(self.group_by)
+        for aggregate in self.aggregates:
+            if set(aggregate) - {"op", "column", "as"}:
+                raise ValueError("Unknown aggregate fields")
+            if aggregate.get("op") not in {"count", "count_distinct", "sum", "avg", "min", "max"}:
+                raise ValueError("Unsupported aggregate operation")
+            if aggregate["op"] != "count" and not aggregate.get("column"):
+                raise ValueError("Aggregate requires a column")
+            alias = aggregate.get("as")
+            if not isinstance(alias, str) or not alias.strip() or alias in aliases:
+                raise ValueError("Aggregates require unique, non-empty aliases")
+            aliases.add(alias)
+        object.__setattr__(self, "aggregates", tuple(_freeze_json(item) for item in self.aggregates))
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
@@ -136,16 +153,20 @@ class LoadQuery:
             result["order_by"] = [item.to_dict() for item in self.order_by]
         if self.limit is not None:
             result["limit"] = self.limit
+        if self.group_by:
+            result["group_by"] = list(self.group_by)
+        if self.aggregates:
+            result["aggregates"] = [_thaw_json(item) for item in self.aggregates]
         return result
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any] | None) -> LoadQuery:
         raw = value or {}
-        unsupported = set(raw) - {"filters", "columns", "order_by", "limit"}
+        unsupported = set(raw) - {"filters", "columns", "order_by", "limit", "group_by", "aggregates"}
         if unsupported:
             raise ValueError(
                 f"Unsupported load query fields: {sorted(unsupported)}. "
-                "Loads support raw rows only; use probe_data for aggregate queries."
+                "Use structured query fields, not native query text."
             )
         return cls(
             filters=tuple(
@@ -158,6 +179,8 @@ class LoadQuery:
                 for item in raw.get("order_by", ())
             ),
             limit=(int(raw["limit"]) if raw.get("limit") is not None else None),
+            group_by=tuple(str(item) for item in raw.get("group_by", ())),
+            aggregates=tuple(raw.get("aggregates", ())),
         )
 
 

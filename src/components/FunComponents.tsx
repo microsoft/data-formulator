@@ -2,8 +2,21 @@
 // Licensed under the MIT License.
 
 import React from 'react';
-import { Box, LinearProgress, Typography, SxProps, Tooltip, type Theme } from "@mui/material";
+import { Box, CircularProgress, LinearProgress, Typography, SxProps, Tooltip, type Theme } from "@mui/material";
 import { textVar } from '../app/layout';
+
+export const InlineLoadingStatus: React.FC<{ label: string; size?: 'compact' | 'standard'; sx?: SxProps<Theme> }> = ({ label, size = 'compact', sx }) => (
+    <Box role="status" aria-label={label} sx={[
+        { display: 'flex', alignItems: 'center', gap: size === 'compact' ? 0.75 : 1, minWidth: 0,
+            fontSize: size === 'compact' ? 12 : 14, color: 'text.secondary' },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+    ]}>
+        <CircularProgress aria-hidden="true" size="1em" thickness={4} color="inherit" sx={{ flexShrink: 0,
+            '@media (prefers-reduced-motion: reduce)': { animation: 'none', '& circle': { animation: 'none' } },
+        }} />
+        <Typography component="span" sx={{ fontSize: 'inherit', lineHeight: 1.5, minWidth: 0, overflowWrap: 'anywhere' }}>{label}</Typography>
+    </Box>
+);
 
 export const LoadingStatus: React.FC<{ label: string; sx?: SxProps<Theme> }> = ({ label, sx }) => (
     <Box role="status" sx={[
@@ -11,7 +24,7 @@ export const LoadingStatus: React.FC<{ label: string; sx?: SxProps<Theme> }> = (
             gap: 1.5, color: 'text.secondary' },
         ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
     ]}>
-        <Typography sx={{ fontSize: textVar.sm, textAlign: 'center', overflowWrap: 'anywhere', maxWidth: '100%' }}>
+        <Typography sx={{ fontSize: 14, textAlign: 'center', overflowWrap: 'anywhere', maxWidth: '100%' }}>
             {label}
         </Typography>
         <LinearProgress aria-label={label}

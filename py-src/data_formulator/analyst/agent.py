@@ -1336,8 +1336,9 @@ class AnalystAgent:
                 "- **[AVAILABLE CHARTS]**: Charts the user already created (with their "
                 "ids, types, and encodings). These already exist — build on them or "
                 "reference them; do not re-create an equivalent chart. When asked to "
-                "write up / summarize / report on the exploration, load the `report` "
-                "skill and embed these by id rather than producing new visualizations."
+                "deliver a report or narrative document, load the `report` skill and "
+                "embed these by id rather than producing equivalent visualizations. "
+                "An ordinary summary can be answered directly without report delivery."
             )
         if has_attached_images:
             context_lines.append(

@@ -77,6 +77,8 @@ export interface ServerConfig {
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
     MAX_DISPLAY_ROWS: number;
+    EXTERNAL_TABLE_MAX_ROWS?: number;
+    EXTERNAL_TABLE_MAX_BYTES?: number;
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
     WORKSPACE_BACKEND: 'local' | 'azure_blob' | 'ephemeral';
@@ -200,6 +202,7 @@ export interface DataFormulatorState {
     loadedTableNodes: LoadedTableNode[];
     fileNodes: FileNode[];
     externalTableReferences: ExternalTableReference[];
+    workspaceItemOrder: string[];
     tableSemantics: TableSemanticsInfo[];
     draftNodes: DraftNode[];
     charts: Chart[];
@@ -220,7 +223,7 @@ export interface DataFormulatorState {
 
     /** Table loads awaiting their first row; drives "loading" vs "empty" copy. */
     tableLoadsInFlight: number;
-    pendingTableLoads: { id: string; names: string[] }[];
+    pendingTableLoads: { id: string; names: string[]; progress?: { current: number; total: number; name: string } }[];
 
     /**
      * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
@@ -324,6 +327,7 @@ const initialState: DataFormulatorState = {
     loadedTableNodes: [],
     fileNodes: [],
     externalTableReferences: [],
+    workspaceItemOrder: [],
     tableSemantics: [],
     draftNodes: [],
     charts: [],
@@ -349,6 +353,8 @@ const initialState: DataFormulatorState = {
         DISABLE_DATA_CONNECTORS: false,
         DISABLE_CUSTOM_MODELS: false,
         MAX_DISPLAY_ROWS: 10000,
+        EXTERNAL_TABLE_MAX_ROWS: 1_000_000,
+        EXTERNAL_TABLE_MAX_BYTES: 512 * 1024 * 1024,
         DEV_MODE: false,
         WORKSPACE_BACKEND: 'local',
     },
@@ -678,6 +684,7 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
 
     state.inputTables = state.inputTables.filter(t => t.id !== tableId);
     state.derivedTables = state.derivedTables.filter(t => t.id !== tableId);
+    state.workspaceItemOrder = state.workspaceItemOrder.filter(key => key !== `shelf-card-${tableId}`);
     state.loadedTableNodes = state.loadedTableNodes.filter(node => node.tableId !== tableId);
     if (state.focusedId?.type === 'reference') {
         const focusedNodeId = state.focusedId.referenceId;
@@ -769,7 +776,12 @@ export const generateStarterQuestions = createAsyncThunk(
                 description: typeof t.description === 'string' ? t.description : '',
             }));
 
-        if (inputTables.length === 0) {
+        const externalReferences = state.externalTableReferences.map(reference => ({
+            ...reference,
+            summary: { ...reference.summary, sampleRows: reference.summary.sampleRows?.slice(0, 10) },
+        }));
+
+        if (inputTables.length === 0 && externalReferences.length === 0) {
             dispatch(dfActions.setStarterQuestions({ tableId: arg.tableId, signature: arg.signature, questions: [] }));
             return;
         }
@@ -780,6 +792,7 @@ export const generateStarterQuestions = createAsyncThunk(
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     input_tables: inputTables,
+                    external_references: externalReferences,
                     primary_table: arg.tableId,
                     model: dfSelectors.getActiveModel(state),
                     n: 2,
@@ -940,6 +953,15 @@ export const dataFormulatorSlice = createSlice({
         setWorkspaceFileCount: (state, action: PayloadAction<number>) => {
             state.workspaceFileCount = Math.max(0, action.payload);
         },
+        appendWorkspaceItems: (state, action: PayloadAction<string[]>) => {
+            const existing = new Set(state.workspaceItemOrder);
+            for (const key of action.payload) {
+                if (!existing.has(key)) {
+                    state.workspaceItemOrder.push(key);
+                    existing.add(key);
+                }
+            }
+        },
         upsertExternalTableReference: (state, action: PayloadAction<ExternalTableReference>) => {
             if (state.activeWorkspace?.readOnly) return;
             const reference = action.payload;
@@ -947,7 +969,7 @@ export const dataFormulatorSlice = createSlice({
             if (existing) Object.assign(existing, reference, { id: existing.id });
             else state.externalTableReferences.push(reference);
         },
-        startTableLoad: (state, action: PayloadAction<{ id: string; names: string[] }>) => {
+        startTableLoad: (state, action: PayloadAction<DataFormulatorState['pendingTableLoads'][number]>) => {
             state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.payload.id);
             state.pendingTableLoads.push(action.payload);
         },
@@ -957,6 +979,9 @@ export const dataFormulatorSlice = createSlice({
         removeExternalTableReference: (state, action: PayloadAction<string>) => {
             if (state.activeWorkspace?.readOnly) return;
             state.externalTableReferences = state.externalTableReferences.filter(item => item.id !== action.payload);
+            state.workspaceItemOrder = state.workspaceItemOrder.filter(key => key !== action.payload);
+            delete state.starterQuestions[action.payload];
+            delete state.starterQuestionsStatus[action.payload];
             if (state.focusedId?.type === 'external-table' && state.focusedId.referenceId === action.payload) state.focusedId = undefined;
         },
         resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
@@ -1055,6 +1080,8 @@ export const dataFormulatorSlice = createSlice({
                 loadedTableNodes: saved.loadedTableNodes || [],
                 fileNodes: saved.fileNodes || [],
                 externalTableReferences: saved.externalTableReferences || [],
+                workspaceItemOrder: Array.isArray(saved.workspaceItemOrder)
+                    ? saved.workspaceItemOrder.filter((key: unknown) => typeof key === 'string') : [],
                 tableSemantics: saved.tableSemantics || [],
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
@@ -1221,6 +1248,7 @@ export const dataFormulatorSlice = createSlice({
         removeFileNodes: (state, action: PayloadAction<string>) => {
             const removedIds = new Set(state.fileNodes.filter(node => node.path === action.payload).map(node => node.id));
             state.fileNodes = state.fileNodes.filter(node => node.path !== action.payload);
+            state.workspaceItemOrder = state.workspaceItemOrder.filter(key => key !== `workspace-file-${action.payload}`);
             if (state.focusedId?.type === 'file' && state.focusedId.fileName === action.payload) {
                 state.focusedId = undefined;
             } else if (state.focusedId?.type === 'reference' && removedIds.has(state.focusedId.referenceId)) {
@@ -1785,6 +1813,7 @@ export const dataFormulatorSlice = createSlice({
                 id,
                 displayId,
                 parentNodeId,
+                createdAt: interaction.find(entry => entry.timestamp !== undefined)?.timestamp ?? Date.now(),
                 derive: {
                     source,
                     trigger: {
@@ -2086,7 +2115,14 @@ export const dataFormulatorSlice = createSlice({
         },
         // ── Text turns (clarify / explain) — design-docs/41 ──
         addTextTurn: (state, action: PayloadAction<TextTurn>) => {
-            const turn = action.payload;
+            const draft = state.draftNodes.find(item => action.payload.actionId
+                ? item.actionId === action.payload.actionId
+                : item.parentNodeId === action.payload.parentNodeId);
+            const startedAt = action.payload.startedAt
+                ?? state.textTurns.find(item => item.id === action.payload.id)?.startedAt
+                ?? draft?.createdAt
+                ?? draft?.derive.trigger.interaction?.find(item => item.timestamp !== undefined)?.timestamp;
+            const turn = startedAt === undefined ? action.payload : { ...action.payload, startedAt };
             const existingIndex = state.textTurns.findIndex(a => a.id === turn.id);
             if (existingIndex >= 0) {
                 state.textTurns[existingIndex] = turn;

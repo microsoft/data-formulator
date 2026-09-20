@@ -2395,16 +2395,24 @@ def connector_refresh_data():
         if meta is None or not meta.source_table:
             raise AppError(ErrorCode.INVALID_REQUEST, f"No refreshable source for '{table_name}'")
 
-        arrow_table = loader.fetch_data_as_arrow(
-            source_table=meta.source_table,
-            import_options=meta.import_options,
-        )
+        structured_query = (meta.import_options or {}).get("structured_query")
+        if structured_query is not None:
+            from data_formulator.data_operations import LoadQuery
+            from data_formulator.data_operations.executor import execute_aggregate_query
+            arrow_table = execute_aggregate_query(loader, meta.source_table, LoadQuery.from_dict(structured_query))
+        else:
+            arrow_table = loader.fetch_data_as_arrow(
+                source_table=meta.source_table,
+                import_options=meta.import_options,
+            )
         new_meta, data_changed = workspace.refresh_parquet_from_arrow(table_name, arrow_table)
 
         # Best-effort: refresh source metadata (table/column descriptions).
         try:
             from data_formulator.data_loader.external_data_loader import _merge_source_metadata
-            source_meta = _cached_source_metadata(source, meta.source_table) or loader.get_column_types(meta.source_table)
+            source_meta = {} if structured_query is not None else (
+                _cached_source_metadata(source, meta.source_table) or loader.get_column_types(meta.source_table)
+            )
             if source_meta:
                 _merge_source_metadata(new_meta, source_meta)
                 workspace.add_table_metadata(new_meta)
@@ -2442,15 +2450,12 @@ def connector_preview_data():
             size = data.get("limit", 10)
             import_options = {"size": size}
 
-        arrow_table = loader.fetch_data_as_arrow(
+        preview = loader.preview_data(
             source_table=source_id,
             import_options=import_options,
         )
-        from data_formulator.data_loader.external_data_loader import apply_import_projection
-        arrow_table = apply_import_projection(arrow_table, import_options)
-        df = arrow_table.to_pandas()
-        rows = df_to_safe_records(df)
-        columns = [{"name": col, "type": normalize_dtype_to_app_type(str(df[col].dtype))} for col in df.columns]
+        rows = preview["rows"]
+        columns = preview["columns"]
 
         # Preview returns *content only*. Source-level column types and
         # descriptions are metadata: fetching them live here (via
@@ -2460,16 +2465,7 @@ def connector_preview_data():
         # already holds this metadata in the catalog and merges it into the
         # preview columns, so we keep this path lean and just return data.
 
-        # Get actual total row count (some loaders store it before slicing)
-        total_row_count = getattr(loader, '_last_total_rows', None) or len(rows)
-
-        result = {
-            "status": "success",
-            "columns": columns,
-            "rows": rows,
-            "row_count": len(rows),
-            "total_row_count": total_row_count,
-        }
+        result = {"status": "success", **preview}
         cluster = getattr(loader, "kusto_cluster", None)
         database = getattr(loader, "kusto_database", None)
         if isinstance(cluster, str) and cluster:
