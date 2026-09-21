@@ -56,6 +56,7 @@ class TestLoaderImportsMaxImportRows:
         "data_formulator.data_loader.cosmosdb_data_loader",
         "data_formulator.data_loader.mysql_data_loader",
         "data_formulator.data_loader.athena_data_loader",
+        "data_formulator.data_loader.superset_data_loader",
     ])
     def test_loader_has_max_import_rows(self, module_path: str) -> None:
         import importlib
