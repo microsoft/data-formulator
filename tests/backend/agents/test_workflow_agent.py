@@ -70,6 +70,20 @@ def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, insta
     assert workspace.list_tables() == []
 
 
+def test_workflow_authoring_rejects_unmanaged_hosted_mode(tmp_path, instance, monkeypatch):
+    from data_formulator.analyst.skills.base import SkillContext
+    from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
+
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: False)
+    monkeypatch.setenv("DF_MANAGED", "false")
+    monkeypatch.setenv("DISABLE_DATABASE", "false")
+    context = SkillContext(client=MagicMock(), workspace=Workspace("author", root_dir=tmp_path), trajectory=[], payload={})
+    proposal = WorkspaceSkill().handle_action("propose_workflow", {"definition": instance}, context)
+    with pytest.raises(StopIteration) as stopped:
+        next(proposal)
+    assert "requires local or managed mode" in stopped.value.value
+
+
 def test_workflow_proposal_exposes_canonical_definition_schema():
     from data_formulator.analyst.skills import build_registry
     from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA, WORKFLOW_STEP_SCHEMA
@@ -951,6 +965,70 @@ def workflow_client(tmp_path, monkeypatch, request):
     return app.test_client(), workspaces
 
 
+def test_workflow_routes_require_enabled_mode_and_identity(workflow_client, monkeypatch):
+    from data_formulator.routes import workflows
+
+    client, _ = workflow_client
+    monkeypatch.setattr(workflows, "is_local_mode", lambda: False)
+    monkeypatch.setenv("DF_MANAGED", "false")
+    monkeypatch.setenv("DISABLE_DATABASE", "false")
+    for endpoint in ("list", "read", "save", "delete", "run", "run-state", "pause", "message", "artifact"):
+        response = client.post(f"/api/workflows/{endpoint}", json={})
+        assert response.status_code == 400
+        assert "require local or managed mode" in response.json["error"]
+    monkeypatch.setenv("DF_MANAGED", "true")
+    monkeypatch.setattr(workflows, "get_identity_id", lambda: None)
+    response = client.post("/api/workflows/list", json={})
+    assert response.status_code == 400
+    assert "Sign in" in response.json["error"]
+
+
+def test_managed_workflow_library_and_runs_are_user_scoped(workflow_client, instance, monkeypatch, tmp_path):
+    from uuid import uuid4
+    from data_formulator.routes import workflows
+
+    client, workspaces = workflow_client
+    monkeypatch.setattr(workflows, "is_local_mode", lambda: False)
+    monkeypatch.setenv("DF_MANAGED", "true")
+    monkeypatch.setattr(workflows, "get_user_home", lambda identity: tmp_path / "users" / identity)
+    headers = {"X-Workspace-Id": "first"}
+    payload = {"path": "private.yaml", "content": yaml.safe_dump(instance)}
+    assert client.post("/api/workflows/save", json=payload, headers=headers).status_code == 200
+    identifier = uuid4().hex
+    workflows.save_run(workflows.run_path(workspaces["first"], identifier), new_run(instance, identifier))
+    monkeypatch.setattr(workflows, "get_identity_id", lambda: "other-user")
+    other_workspace = Workspace("other-user", root_dir=tmp_path / "first")
+    monkeypatch.setattr(workflows, "get_workspace", lambda identity: other_workspace)
+    assert client.post("/api/workflows/read", json={"path": "private.yaml"}, headers=headers).status_code == 400
+    assert client.post("/api/workflows/run-state", json={"run_id": identifier}, headers=headers).status_code == 400
+    assert client.post("/api/workflows/run", json={"run_id": identifier, "model": {}}, headers=headers).status_code == 400
+    assert client.post("/api/workflows/message", json={"run_id": identifier, "message_id": uuid4().hex,
+        "message": "Change the plan"}, headers=headers).status_code == 400
+
+
+def test_managed_workflow_cannot_approve_local_terminal(workflow_client, instance, monkeypatch):
+    from uuid import uuid4
+    from data_formulator.routes import workflows
+    from data_formulator.analyst.skills.terminal import skill as terminal
+
+    client, workspaces = workflow_client
+    monkeypatch.setattr(workflows, "is_local_mode", lambda: False)
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: False)
+    monkeypatch.setenv("DF_MANAGED", "true")
+    command = MagicMock()
+    monkeypatch.setattr(terminal, "run_command", command)
+    identifier = uuid4().hex
+    state = new_run(instance, identifier)
+    state.update(status="paused", terminal_request={"id": "pending", "call_id": "command"})
+    workflows.save_run(workflows.run_path(workspaces["first"], identifier), state)
+    response = client.post("/api/workflows/run", json={"run_id": identifier, "model": {},
+        "terminal_response": {"request_id": "pending", "decision": "approve"}},
+        headers={"X-Workspace-Id": "first", "Origin": "http://localhost"})
+    assert response.status_code == 400
+    assert "only in single-user local mode" in response.json["error"]
+    command.assert_not_called()
+
+
 def test_user_workflow_save_read_across_workspaces(workflow_client, instance):
     client, workspaces = workflow_client
     instance.pop("steps")
@@ -1096,6 +1174,7 @@ def test_terminal_resume_executes_only_approved_stored_command(workflow_client, 
     state.update(status="paused", terminal_request={**proposal, "call_id": "command"})
     workflows.save_run(workflows.run_path(workspaces["first"], identifier), state)
     monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+    monkeypatch.setattr("data_formulator.configuration.user_connectors_disabled", lambda: False)
     monkeypatch.setattr("data_formulator.routes.agents.get_client", lambda model: MagicMock())
     commands = []
 

@@ -1070,7 +1070,14 @@ configuration save. Personal workspace workflow storage is unchanged.
 
 ### Conversational Workflow Authoring
 
-In local mode, ask the main chat to create a workflow from the current analysis.
+In local or managed mode, ask the main chat to create a workflow from the current analysis.
+Managed deployments (including the legacy `DISABLE_DATABASE=true` preset) support
+workflow authoring, personal workflow libraries, and execution for the current
+application identity; application administrator access is not required. Libraries
+remain user-scoped and run checkpoints remain workspace-scoped. Existing model,
+connector, and execution-sandbox policies still apply. Terminal commands remain
+restricted to single-user local mode; managed mode does not enable host-shell access
+or provide additional sandbox isolation.
 The **Define a workflow** shortcut in the Workflows panel submits a guidance prompt
 to that same chat without changing its conversation focus. There is no separate
 authoring dialog. The analyst uses the current conversation and data context,
