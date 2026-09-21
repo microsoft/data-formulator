@@ -10,6 +10,7 @@ from filelock import FileLock, Timeout
 from flask import Blueprint, Response, request, stream_with_context, send_file, current_app
 
 from data_formulator.auth.identity import get_identity_id, is_local_mode
+from data_formulator.configuration import is_managed_mode
 from data_formulator.datalake.workspace import get_user_home
 from data_formulator.error_handler import json_ok, stream_error_event, classify_and_wrap_llm_error
 from data_formulator.errors import AppError, ErrorCode
@@ -23,8 +24,8 @@ _lock = threading.Lock()
 
 
 def context(require_workspace: bool = True):
-    if not is_local_mode():
-        raise AppError(ErrorCode.ACCESS_DENIED, "Workflow execution is currently available in local mode only.")
+    if not (is_local_mode() or is_managed_mode()):
+        raise AppError(ErrorCode.ACCESS_DENIED, "Workflows require local or managed mode.")
     identity = get_identity_id()
     if not identity:
         raise AppError(ErrorCode.AUTH_REQUIRED, "Sign in to run workflows.")

@@ -32,12 +32,15 @@ def agent(tmp_path, instance):
     return WorkflowAgent(MagicMock(), workspace, state, lambda value: None, Event(), "")
 
 
-def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, instance, monkeypatch):
+@pytest.mark.parametrize("mode", ["local", "managed", "legacy-demo"])
+def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, instance, monkeypatch, mode):
     from data_formulator.analyst.agent import AnalystAgent
     from data_formulator.analyst.skills.base import SkillContext
     from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
 
-    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: mode == "local")
+    monkeypatch.setenv("DF_MANAGED", "true" if mode == "managed" else "false")
+    monkeypatch.setenv("DISABLE_DATABASE", "true" if mode == "legacy-demo" else "false")
     workspace = Workspace("chat-author", root_dir=tmp_path)
     analyst = AnalystAgent(MagicMock(), workspace)
     assert "propose_workflow" in analyst.registry.action_names()
@@ -928,8 +931,9 @@ def test_disconnect_before_tool_preserves_resumable_trajectory(agent, monkeypatc
     assert "interrupted" in agent.state["trajectory"][-1]["content"]
 
 
-@pytest.fixture
-def workflow_client(tmp_path, monkeypatch):
+@pytest.fixture(params=["local", "managed", "legacy-demo"])
+def workflow_client(tmp_path, monkeypatch, request):
+    mode = request.param
     from flask import Flask, request
     from data_formulator.errors import AppError
     from data_formulator.routes import workflows
@@ -938,7 +942,9 @@ def workflow_client(tmp_path, monkeypatch):
     app.register_blueprint(workflows.workflow_bp)
     app.register_error_handler(AppError, lambda error: ({"error": str(error)}, 400))
     workspaces = {name: Workspace("test-user", root_dir=tmp_path / name) for name in ("first", "second")}
-    monkeypatch.setattr(workflows, "is_local_mode", lambda: True)
+    monkeypatch.setattr(workflows, "is_local_mode", lambda: mode == "local")
+    monkeypatch.setenv("DF_MANAGED", "true" if mode == "managed" else "false")
+    monkeypatch.setenv("DISABLE_DATABASE", "true" if mode == "legacy-demo" else "false")
     monkeypatch.setattr(workflows, "get_identity_id", lambda: "test-user")
     monkeypatch.setattr(workflows, "get_user_home", lambda identity: tmp_path / "user")
     monkeypatch.setattr(workflows, "get_workspace", lambda identity: workspaces[request.headers["X-Workspace-Id"]])

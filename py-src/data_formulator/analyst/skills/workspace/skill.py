@@ -310,10 +310,11 @@ class WorkspaceSkill:
         if action == "propose_workflow":
             import yaml
             from data_formulator.auth.identity import is_local_mode
+            from data_formulator.configuration import is_managed_mode
             from data_formulator.workflows.instances import validate_workflow_definition
 
-            if not is_local_mode():
-                return "Workflow authoring is currently available in local mode only."
+            if not (is_local_mode() or is_managed_mode()):
+                return "Workflow authoring requires local or managed mode."
             try:
                 definition = validate_workflow_definition(spec.get("definition"), authored=True)
                 content = yaml.safe_dump(definition, sort_keys=False, allow_unicode=True)
