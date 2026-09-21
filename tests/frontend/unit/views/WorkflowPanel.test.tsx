@@ -1452,6 +1452,29 @@ describe('Workflow session publication', () => {
         }
     });
 
+    it('collapses pending step details, allows preview, and opens them when work starts', async () => {
+        const snapshot = run();
+        snapshot.outputs = [];
+        snapshot.instance!.steps!.push({ id: 'report', description: 'Explain the findings', instructions: 'Write the final report.' });
+        await publishWorkflowRun(snapshot, 'session');
+        const { container, rerender } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        const report = within(container.querySelector('[data-workflow-step="report"]') as HTMLElement);
+        expect(report.getByRole('heading', { name: 'Explain the findings' })).toBeVisible();
+        expect(report.getByText('pending')).toBeVisible();
+        expect(report.queryByRole('tablist')).not.toBeInTheDocument();
+        expect(report.getByText('Write the final report.')).not.toBeVisible();
+        fireEvent.click(report.getByRole('button', { name: 'Show details for report' }));
+        expect(report.getByRole('tablist')).toBeVisible();
+        expect(report.getByText('Write the final report.')).toBeVisible();
+        fireEvent.click(report.getByRole('button', { name: 'Hide details for report' }));
+        expect(report.queryByRole('tablist')).not.toBeInTheDocument();
+        await publishWorkflowRun({ ...snapshot, step_id: 'report' }, 'session');
+        rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        expect(report.getByRole('tablist')).toBeVisible();
+        expect(report.getByText('Write the final report.')).toBeVisible();
+        expect(report.queryByRole('button', { name: 'Show details for report' })).not.toBeInTheDocument();
+    });
+
     it('resets step progress to pending when the revised plan needs review', async () => {
         const snapshot = run();
         snapshot.outputs = [];
@@ -1505,19 +1528,11 @@ describe('Workflow session publication', () => {
             expect(within(summary).getByRole('heading', { name: 'Results' })).toBeVisible();
             expect(within(summary).getByText('Revenue increased in three regions.')).toBeVisible();
             expect(within(summary).queryByText('Planned next')).not.toBeInTheDocument();
-        } else if (state === 'reviewing') {
-            expect(within(summary).getByRole('heading', { name: 'Reviewing the plan' })).toBeVisible();
-            expect(within(summary).queryByText('Planned next')).not.toBeInTheDocument();
-            expect(within(summary).queryByText('Completed so far')).not.toBeInTheDocument();
-        } else {
-            expect(within(summary).getByRole('heading', { name: 'Completed so far' })).toBeVisible();
-            expect(within(summary).getByText('All four regions have matching periods.')).toBeVisible();
-            expect(within(summary).getByText('Compare regional revenue')).toBeVisible();
-            expect(within(summary).getByRole('heading', { name: state === 'paused' ? 'Needs attention' : 'Working on' })).toBeVisible();
-            expect(within(summary).getByRole('heading', { name: 'Planned next' })).toBeVisible();
-            expect(within(summary).getByText('Explain the differences')).toBeVisible();
-            if (state === 'paused') expect(within(summary).getByText('Choose which regions to include.')).toBeVisible();
+        } else if (state === 'paused') {
+            expect(within(summary).getByRole('heading', { name: 'Needs attention' })).toBeVisible();
+            expect(within(summary).getByText('Choose which regions to include.')).toBeVisible();
         }
+        expect(within(summary).queryByText(/^(Completed so far|Working on|Planned next|Reviewing the plan)$/)).not.toBeInTheDocument();
         expect(within(summary).getByText('Last quarter')).not.toBeVisible();
         fireEvent.click(within(summary).getByText('Scope and inputs'));
         expect(within(summary).getByText('Regional comparison chart')).toBeVisible();

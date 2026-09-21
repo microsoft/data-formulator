@@ -505,6 +505,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const [savedLog, setSavedLog] = useState<NonNullable<TextTurn['workflow']>['log']>();
     const [savedPlan, setSavedPlan] = useState<Run>();
     const [stepTabs, setStepTabs] = useState<Record<string, string>>({});
+    const [expandedPendingSteps, setExpandedPendingSteps] = useState<Record<string, boolean>>({});
     const [loadingLog, setLoadingLog] = useState(false);
     const [historyUnavailable, setHistoryUnavailable] = useState(false);
     const [approvalOpen, setApprovalOpen] = useState(false);
@@ -594,13 +595,6 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const scope = workflow.prompt ?? savedPlan?.instance?.prompt;
     const deliverables = workflow.deliverables ?? savedPlan?.instance?.deliverables ?? [];
     const setup = workflow.setup ?? savedPlan?.setup;
-    const stepGoal = (step: NonNullable<TextTurn['workflow']>['steps'][number]) =>
-        step.description || savedPlan?.instance?.steps?.find(item => item.id === step.id)?.description || step.instructions || step.id.replaceAll('_', ' ');
-    const completedSteps = workflow.planReviewPending ? [] : workflow.steps.filter(step => step.status === 'passed' || step.status === 'completed');
-    const currentStep = workflow.steps.find(step => step.id === workflow.stepId);
-    const currentIndex = workflow.steps.findIndex(step => step.id === workflow.stepId);
-    const nextStep = currentStep?.next ? workflow.steps.find(step => step.id === currentStep.next)
-        : workflow.steps.slice(currentIndex + 1).find(step => !['passed', 'completed'].includes(step.status));
     const proseSx = { fontSize: textVar.md, lineHeight: 1.6, overflowWrap: 'anywhere', '& p': { my: 0.5 }, '& ul, & ol': { pl: 2.5, my: 0.5 } };
     const statusColor = workflow.status === 'completed' ? 'success.main'
         : workflow.status === 'running' ? 'text.primary' : workflow.status === 'paused' ? 'warning.main' : 'error.main';
@@ -698,6 +692,8 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 const connectorReached = reached && index < activeIndex;
                 const connectorStyle = connectorReached && !finished ? 'dashed' : 'solid';
                 const tabKey = `${turn.id}-${revision}-${step.id}`;
+                const pending = status === 'pending' && !active;
+                const collapsed = pending && !expandedPendingSteps[tabKey];
                 const selectedTab = stepTabs[tabKey] || (stepArtifacts.length ? 'artifacts' : 'action');
                 const tabId = (name: string) => `${encodeURIComponent(tabKey)}-${name}`;
                 const panelProps = (name: string) => ({ role: 'tabpanel', id: `${tabId(name)}-panel`,
@@ -716,12 +712,20 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                     </Box>
                     <Box sx={{ minWidth: 0, containerType: 'inline-size' }}>
                         <Box sx={{ minHeight: 24, display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+                            {pending && <Tooltip title={collapsed ? 'Show step details' : 'Hide step details'}>
+                                <IconButton size="small" aria-label={`${collapsed ? 'Show' : 'Hide'} details for ${step.id}`}
+                                    aria-expanded={!collapsed} aria-controls={`${tabId('details')}-content`}
+                                    onClick={() => setExpandedPendingSteps(previous => ({ ...previous, [tabKey]: !previous[tabKey] }))}
+                                    sx={{ p: 0.25, alignSelf: 'center' }}>
+                                    <ChevronRightIcon sx={{ fontSize: 20, transform: collapsed ? 'none' : 'rotate(90deg)' }} />
+                                </IconButton>
+                            </Tooltip>}
                             <Typography component="h3" sx={{ m: 0, fontSize: textVar.md, fontWeight: 600,
                                 color: 'text.primary', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{step.description || definition?.description || step.id.replaceAll('_', ' ')}</Typography>
                             <Typography component="span" sx={{ fontSize: textVar.xs, fontWeight: reached ? 600 : 400,
                                 color: reached ? progressColor : 'text.secondary' }}>{status}{stepDuration(step.elapsedSeconds, active)}</Typography>
                         </Box>
-                        <Box sx={{ mt: 0.25, minWidth: 0 }}>
+                        <Box id={`${tabId('details')}-content`} hidden={collapsed} sx={{ mt: 0.25, minWidth: 0 }}>
                             <Tabs value={selectedTab} onChange={(_, value: string) => setStepTabs(previous => ({ ...previous, [tabKey]: value }))}
                                 aria-label={`${step.id} details`} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile
                                 sx={{ minHeight: 36, '& .MuiTab-root': {
@@ -835,7 +839,12 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             p: { xs: 2, sm: 3 }, '& > *': { maxWidth: 960, mx: 'auto' } } : { display: 'contents' }}>
         {!interactionOnly && <>
         {canvas && <Box sx={{ mb: 2, overflowWrap: 'anywhere' }}>
-            <Typography component="h1" sx={{ fontSize: 24, lineHeight: 1.25, fontWeight: 600, letterSpacing: 0 }}>{turn.prompt?.replace(/^Run workflow: /, '') || 'Workflow'}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
+                <Box sx={{ display: 'flex', flexShrink: 0, pt: '1px', color: 'text.secondary' }}>
+                    <WorkflowGears running={workflow.status === 'running'} size={28} showTooltip={false} />
+                </Box>
+                <Typography component="h1" sx={{ minWidth: 0, fontSize: 24, lineHeight: 1.25, fontWeight: 600, letterSpacing: 0 }}>{turn.prompt?.replace(/^Run workflow: /, '') || 'Workflow'}</Typography>
+            </Box>
             {overview && <Box data-workflow-overview sx={{ ...proseSx, mt: 1, color: 'text.secondary' }}><ReactMarkdown>{overview}</ReactMarkdown></Box>}
         </Box>}
         {canvas ? summary : <ThreadArtifactCard artifactType="workflow" warning={workflow.status === 'paused'} title="Open workflow response and analysis log" selected={selected} onClick={() => {
@@ -862,28 +871,11 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             {workflow.status === 'completed' ? <>
                 <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>Results</Typography>
                 <ReactMarkdown>{turn.content}</ReactMarkdown>
-            </> : <>
-                {completedSteps.length > 0 && <>
-                    <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>Completed so far</Typography>
-                    <Box component="ul" sx={{ pl: 2.5, my: 0.5 }}>
-                        {completedSteps.map(step => <Box component="li" key={step.id} sx={{ mb: 0.75 }}>
-                            <Box sx={{ fontWeight: 500 }}>{stepGoal(step)}</Box>
-                            {step.assessment?.explanation && <ReactMarkdown>{step.assessment.explanation}</ReactMarkdown>}
-                        </Box>)}
-                    </Box>
-                </>}
-                <Typography component="h2" sx={{ mt: completedSteps.length ? 1.5 : 0, fontSize: textVar.sm, fontWeight: 600 }}>
-                    {workflow.planReviewPending ? 'Reviewing the plan' : workflow.status === 'paused' ? 'Needs attention' : workflow.status === 'running' ? 'Working on' : 'Run stopped'}
+            </> : workflow.status !== 'running' && <>
+                <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>
+                    {workflow.status === 'paused' ? 'Needs attention' : 'Run stopped'}
                 </Typography>
-                {workflow.planReviewPending ? <Typography sx={{ fontSize: 'inherit' }}>Reviewing the remaining work after the latest changes.</Typography>
-                    : currentStep && <Box sx={{ mt: 0.5 }}>{stepGoal(currentStep)}
-                        {currentStep.assessment?.explanation && <ReactMarkdown>{currentStep.assessment.explanation}</ReactMarkdown>}
-                    </Box>}
-                {workflow.status !== 'running' && <ReactMarkdown>{turn.content}</ReactMarkdown>}
-                {!workflow.planReviewPending && nextStep && ['running', 'paused'].includes(workflow.status) && <Box sx={{ mt: 1.5 }}>
-                    <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>Planned next</Typography>
-                    <Box sx={{ mt: 0.5 }}>{stepGoal(nextStep)}</Box>
-                </Box>}
+                <ReactMarkdown>{turn.content}</ReactMarkdown>
             </>}
             {(scope || deliverables.length > 0 || setup?.instructions || Object.keys(setup?.parameters || {}).length > 0) && <Box component="details" sx={{ mt: 1.5,
                 '& summary': { cursor: 'pointer', color: 'text.secondary' } }}>

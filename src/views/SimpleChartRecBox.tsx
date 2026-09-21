@@ -2551,6 +2551,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const inputBox = (
         <>
         {availableWorkflow && <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mx: 1, mt: 0.5, mb: 0.25 }}>
+            <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Message to:</Typography>
             <ToggleButtonGroup size="small" exclusive value={chatWorkflow ? 'workflow' : 'request'} aria-label="Message target"
                 disabled={isChatFormulating || sendingWorkflowMessage}
                 onChange={(_, target) => {
@@ -2560,17 +2561,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 sx={{ maxWidth: '100%', '& .MuiToggleButton-root': { textTransform: 'none', fontSize: textVar.xs,
                     lineHeight: 1.4, px: 0.75, py: 0.25, gap: 0.5, fontWeight: 400, minWidth: 0, minHeight: 24,
                     color: 'text.secondary', borderColor: 'divider',
-                    '&.Mui-selected': { color: 'text.primary', bgcolor: 'action.selected',
-                        '&:hover': { bgcolor: 'action.hover' } } } }}>
-                <ToggleButton value="request"><QueryStatsIcon sx={{ fontSize: iconVar.sm }} />New request</ToggleButton>
-                <ToggleButton value="workflow" aria-label="Message workflow agent"><AccountTreeOutlinedIcon sx={{ fontSize: iconVar.sm }} />Workflow</ToggleButton>
+                    '&.Mui-selected': { color: 'text.secondary', bgcolor: 'action.hover',
+                        '&:hover': { bgcolor: 'action.selected' } } } }}>
+                <ToggleButton value="request">New request</ToggleButton>
+                <ToggleButton value="workflow" aria-label="Message workflow agent">Workflow agent</ToggleButton>
             </ToggleButtonGroup>
-            <Tooltip title={availableWorkflow.displayId && availableWorkflow.displayId !== availableWorkflow.id
-                && !availableWorkflow.displayId.startsWith('textTurn-workflow-') ? availableWorkflow.displayId : 'Workflow'}>
-                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
-                    {availableWorkflow.workflow?.status === 'running' ? 'Running' : 'Paused'}
-                </Typography>
-            </Tooltip>
         </Box>}
         <Card ref={inputCardRef} variant="outlined" data-chat-mode={chatWorkflow ? 'workflow' : 'analyst'} sx={{
             display: 'flex', flexDirection: 'column',

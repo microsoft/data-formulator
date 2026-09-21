@@ -128,11 +128,12 @@ describe('Analyst landing attachment handoff', () => {
             workflow: { runId: 'run', status: 'running', calls: 1, steps: [] } }));
         render(<Provider store={store}><SimpleChartRecBox /></Provider>);
         const workflowButton = screen.getByRole('button', { name: 'Message workflow agent' });
-        expect(workflowButton).toHaveTextContent(/^Workflow$/);
+        expect(workflowButton).toHaveTextContent(/^Workflow agent$/);
         expect(workflowButton).toHaveStyle({ minHeight: '24px', fontWeight: '400' });
         expect(screen.queryByText('Send to')).toBeNull();
         expect(screen.queryByText(new RegExp(id))).toBeNull();
-        expect(screen.getByText('Running')).toHaveAttribute('aria-label', 'Workflow');
+        expect(screen.getByText('Message to:')).toBeVisible();
+        expect(screen.queryByText(/^(Running|Paused)$/)).not.toBeInTheDocument();
     });
 
     it('keeps unrelated chat with the analyst while another workflow is running', async () => {
