@@ -11,6 +11,7 @@ import { getCachedChart } from '../app/chartCache';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { DataFrameTable } from './DataFrameTable';
+import { WorkflowProposal } from './WorkflowPanel';
 
 interface ConversationNode {
     id: string;
@@ -179,6 +180,7 @@ export const ConversationCanvas = ({ textTurnId, entryIndex, nodeIds }: { textTu
                         }}>
                             {agentMessage(<>
                             <TerminalMessageContent content={explanationContent(turn.content)} executions={turn.executions} variant="document" />
+                            {turn.workflowDefinition && <WorkflowProposal turn={turn} />}
                             {tables.filter(table => !nodeIds && !pathIds.has(table.id) && (table.parentNodeId === turn.id
                                 || loadedNodes.some(node => node.tableId === table.id && node.parentNodeId === turn.id))).map(table => tableArtifacts(table.id))}
                             {(turn.form || turn.dataOperation || (turn.textKind === 'clarify' && !turn.answered)) && <Button startIcon={<OpenInNewIcon />} sx={artifactButtonSx}

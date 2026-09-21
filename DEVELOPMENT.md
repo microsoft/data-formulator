@@ -66,6 +66,60 @@ down the backend, and a subsequent query starts a replacement without replaying
 the failed query. Worker processes are daemons and are terminated during normal
 backend shutdown; runs are not durable across server restarts.
 
+### Unified Workspace Loading
+
+Agent `propose_data_operation` uses the manual-import row/byte thresholds for
+query-free source additions. Known large sources return `result_references`
+using the existing external-reference identity and metadata format, without
+fetching rows or creating Parquet. Small or unknown-size sources follow ordinary
+loading. Reference results are persisted with the operation and workflow checkpoint;
+the frontend upserts them into workspace state by source/table identity.
+
+Supplying `query`, including `{}`, explicitly requests materialization. This
+intent is persisted in the plan hash, and concrete queries never fall back to
+virtual registration. Query execution also adds a virtual source reference when
+the source/table is absent from the current reference inventory and local-table
+provenance, regardless of source size. No separate preparation call is needed.
+The source retains its catalog name rather than the query-result label. If the
+query fails, registration and failure are returned separately; registration is
+not evidence of query success. Native queries retain source association without
+claiming verified row-level lineage. Native/aggregate limits and coverage rules remain unchanged.
+Agent observations distinguish virtual (`compute_ready: false`, no local path)
+from materialized (`compute_ready: true`, path and scope) outcomes. Workflow
+registration is input preparation, not a computed deliverable.
+
+### Native KQL Loading
+
+Kusto advertises `query_capabilities.native_query_languages: ["kql"]`.
+`propose_data_operation` accepts `query.native` with `language: "kql"` and
+`text`, mutually exclusive with structured query fields except `limit`.
+Prefer bounded ordinary loads followed by local Python; native queries are for
+source-side reductions that cannot be expressed by structured loading or whose
+raw inputs cannot reasonably be loaded. Other connectors reject native queries.
+
+The Kusto adapter uses the query endpoint, never command dispatch, and prepends
+an exact-table `restrict access` statement. Server request properties enforce
+read-only/hardline execution and disable callouts, external data/tables, remote
+entities, impersonation, and sandboxed execution. Agent text cannot contain
+commands, semicolons, comments, or request-setting statements. These conservative
+text restrictions are not the security boundary: Kusto permissions and request
+properties are. Use least-privilege, read-only connector credentials in deployment.
+Do not fall back to unrestricted execution if a server rejects these properties.
+
+Requests have a 60-second server deadline, 16-MiB response cap, and at most
+10,000 loaded rows. Partial failures fail the load. Without an explicit result
+limit, a 10,001-row sentinel rejects overflow rather than publishing partial data.
+Limits and sampling within native text still define partial coverage; native
+results are labeled `query_defined`, not complete-population aggregates. Small
+results do not bound scan cost. Cancellation is checked around the SDK call;
+an in-flight server query may continue until its deadline.
+
+Preview, publication, and refresh use the same guarded adapter. Native text is
+persisted in import metadata; never put credentials or secrets in query text.
+Selected source identity is retained, but lineage is marked unverified and does
+not inherit a verified single-source shelf group. No native query is executed
+through a local Python fallback.
+
 ### Starter Questions for External References
 
 `/api/agent/derive-starter-questions` accepts `input_tables` and optional
@@ -1013,6 +1067,49 @@ the configuration save fails. Removing a reference or resetting an override does
 not delete files. Old unreferenced versions can be removed manually. Existing
 inline `content` remains readable and migrates to file references on the next
 configuration save. Personal workspace workflow storage is unchanged.
+
+### Conversational Workflow Authoring
+
+In local mode, ask the main chat to create a workflow from the current analysis.
+The **Define a workflow** shortcut in the Workflows panel submits a guidance prompt
+to that same chat without changing its conversation focus. There is no separate
+authoring dialog. The analyst uses the current conversation and data context,
+asks clarification questions when needed, and calls `propose_workflow` to publish
+a validated definition in the chat rather than a Markdown file. The proposal
+action does not save files or execute the workflow.
+
+`propose_workflow` accepts a structured `definition` object and a short `summary`.
+The canonical JSON Schema lives in `workflows/instances.py`; the skill registry
+embeds it in the tool schema, and the proposal handler validates the object before
+serializing YAML for display and storage. YAML imports use the same contract, and
+`adapt_plan` reuses its step schema. Unknown definition, parameter, step, and checker
+fields are rejected; source mappings remain open descriptive guidance. New proposals
+require step descriptions, while older saved steps without descriptions remain valid.
+Structural validation is supplemented by parameter-value, unique-ID, and transition
+checks. Date interpretation and analytical correctness still require task-specific
+verification; schema validity alone does not establish either.
+
+**Save to workspace** writes a `.workflow.yaml` file visible under Workspace
+workflows. Existing files require their current content hash to be overwritten.
+**Run** opens the usual setup form and can execute the reviewed definition without
+saving it first. These actions are independent. Proposals are persisted with
+ordinary chat turns, and their complete YAML is included in focused-thread context
+for follow-up revisions. They are not entries in the shared workflow library.
+
+New chat-authored definitions require `version: 1`, `name`, `overview`,
+`deliverables`, and concrete ordered `steps`. Each step identifies its operation,
+inputs, expected results, and relevant verification conditions. Optional `prompt`
+provides cross-step constraints and adaptation rules; it does not replace the
+procedure. `source` and `parameters` support fixed inputs, parameterized inputs,
+and mixtures. `propose_workflow` returns a repair request for step-free definitions.
+Older saved definitions without steps remain runnable through an initial planning
+phase; newly authored definitions seed the run with their concrete steps.
+
+Each run stores an independent `definition` snapshot, mutable `plan.steps`, and
+execution state (progress, checks, evidence, outputs, and history). Adapting a run's
+plan never rewrites its definition or the saved YAML. Existing checkpoints are
+migrated when resumed. Workflow authoring belongs to the main analyst's workspace
+skill; the execution agent cannot call `propose_workflow`.
 
 ### Workflow Setup
 

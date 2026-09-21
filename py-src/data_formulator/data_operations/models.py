@@ -115,8 +115,18 @@ class LoadQuery:
     limit: int | None = None
     group_by: tuple[str, ...] = ()
     aggregates: tuple[Mapping[str, Any], ...] = ()
+    native: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        if self.native is not None:
+            if (not isinstance(self.native, Mapping) or set(self.native) != {"language", "text"}
+                    or self.native.get("language") != "kql"
+                    or not isinstance(self.native.get("text"), str)
+                    or not self.native["text"].strip() or len(self.native["text"]) > 16000):
+                raise ValueError("Native loading requires language='kql' and query text of 1-16000 characters.")
+            if self.filters or self.columns or self.order_by or self.group_by or self.aggregates:
+                raise ValueError("Native queries cannot be combined with structured query fields except limit.")
+            object.__setattr__(self, "native", _freeze_json(self.native))
         if self.limit is not None and self.limit < 1:
             raise ValueError("Load query limit must be positive")
         if len(self.order_by) > 1:
@@ -139,6 +149,8 @@ class LoadQuery:
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
+        if self.native is not None:
+            result["native"] = _thaw_json(self.native)
         if self.filters:
             result["filters"] = [
                 {
@@ -162,7 +174,7 @@ class LoadQuery:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any] | None) -> LoadQuery:
         raw = value or {}
-        unsupported = set(raw) - {"filters", "columns", "order_by", "limit", "group_by", "aggregates"}
+        unsupported = set(raw) - {"filters", "columns", "order_by", "limit", "group_by", "aggregates", "native"}
         if unsupported:
             raise ValueError(
                 f"Unsupported load query fields: {sorted(unsupported)}. "
@@ -181,6 +193,7 @@ class LoadQuery:
             limit=(int(raw["limit"]) if raw.get("limit") is not None else None),
             group_by=tuple(str(item) for item in raw.get("group_by", ())),
             aggregates=tuple(raw.get("aggregates", ())),
+            native=raw.get("native"),
         )
 
 
@@ -194,6 +207,7 @@ class ConnectorQueryStep:
     source_table: str
     source_table_name: str | None = None
     query: LoadQuery = field(default_factory=LoadQuery)
+    materialize: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -207,6 +221,8 @@ class ConnectorQueryStep:
             result["source_table_name"] = self.source_table_name
         if query := self.query.to_dict():
             result["query"] = query
+        if self.materialize:
+            result["materialize"] = True
         return result
 
     def to_public_dict(self) -> dict[str, Any]:
@@ -229,6 +245,7 @@ class ConnectorQueryStep:
                 else None
             ),
             query=LoadQuery.from_dict(value.get("query")),
+            materialize=value.get("materialize", False),
         )
 
 
@@ -339,6 +356,7 @@ class DataOperation:
     status: DataOperationStatus = DataOperationStatus.AWAITING_SELECTION
     selected_plan_id: str | None = None
     result_table_ids: tuple[str, ...] = ()
+    result_references: tuple[dict[str, Any], ...] = ()
     error: OperationError | None = None
     failed_steps: tuple[FailedOperationStep, ...] = ()
     superseded_by_operation_id: str | None = None
@@ -369,6 +387,8 @@ class DataOperation:
             result["selected_plan_id"] = self.selected_plan_id
         if self.result_table_ids:
             result["result_table_ids"] = list(self.result_table_ids)
+        if self.result_references:
+            result["result_references"] = list(self.result_references)
         if self.error is not None:
             result["error"] = self.error.to_dict()
         if self.failed_steps:
@@ -388,10 +408,21 @@ class DataOperation:
             "canvas_summary": self.canvas_summary,
             "plans": [plan.to_public_dict() for plan in self.plans],
         }
+        result["load_outcomes"] = [
+            {"id": table_id, "availability": "materialized", "compute_ready": True}
+            for table_id in self.result_table_ids
+        ] + [
+            {"id": reference["id"], "availability": "virtual", "compute_ready": False,
+             "source_id": reference["connectorId"], "table_key": reference["tableKey"],
+             "next_step": "This source reference is not Python-readable. Use a suitable materialized result from this call directly; otherwise refine the query before computation."}
+            for reference in self.result_references
+        ]
         if self.selected_plan_id is not None:
             result["selected_plan_id"] = self.selected_plan_id
         if self.result_table_ids:
             result["result_table_ids"] = list(self.result_table_ids)
+        if self.result_references:
+            result["result_references"] = list(self.result_references)
         if self.error is not None:
             result["error"] = self.error.to_dict()
         if self.failed_steps:
@@ -427,6 +458,7 @@ class DataOperation:
             result_table_ids=tuple(
                 str(item) for item in value.get("result_table_ids", ())
             ),
+            result_references=tuple(dict(item) for item in value.get("result_references", ())),
             error=OperationError.from_dict(error) if error is not None else None,
             failed_steps=tuple(
                 FailedOperationStep.from_dict(item)

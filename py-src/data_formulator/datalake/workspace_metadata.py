@@ -229,6 +229,7 @@ class TableMetadata:
     role: str | None = None
     edit_policy: str | None = None
     input_sources: list[dict] | None = None
+    imported_from: dict[str, str] | None = None
     stale: bool = False
 
     def to_dict(self) -> dict:
@@ -266,7 +267,7 @@ class TableMetadata:
             result["source_file"] = self.source_file
         if self.description is not None:
             result["description"] = self.description
-        for key in ("origin", "role", "edit_policy", "input_sources"):
+        for key in ("origin", "role", "edit_policy", "input_sources", "imported_from"):
             value = getattr(self, key)
             if value is not None:
                 result[key] = value
@@ -313,6 +314,7 @@ class TableMetadata:
             role=data.get("role"),
             edit_policy=data.get("edit_policy"),
             input_sources=data.get("input_sources"),
+            imported_from=data.get("imported_from"),
             stale=data.get("stale", False),
         )
 

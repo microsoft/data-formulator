@@ -43,6 +43,14 @@ def _scratch_path(workspace, name):
     return workspace.resolve_scratch_file(name.removeprefix("scratch/"))
 
 
+def _table_file_path(workspace, name):
+    for table_name in workspace.list_tables():
+        metadata = workspace.get_table_metadata(table_name)
+        if metadata and metadata.file_type == "parquet" and name == f"data/{metadata.filename}":
+            return workspace.get_parquet_path(table_name)
+    raise FileNotFoundError("Table file not found")
+
+
 def _scratch_metadata(workspace, name, path):
     stat = path.stat()
     display_name = workspace.get_scratch_display_name(name.removeprefix("scratch/"))
@@ -59,6 +67,15 @@ def _scratch_metadata(workspace, name, path):
 def list_workspace_files():
     workspace = _workspace()
     files = [_serialize(item) for item in workspace.list_workspace_files()]
+    if request.args.get("include_tables") == "true":
+        for table_name in workspace.list_tables():
+            metadata = workspace.get_table_metadata(table_name)
+            if metadata and metadata.file_type == "parquet":
+                files.append({
+                    "name": f"data/{metadata.filename}", "filename": metadata.filename,
+                    "created_at": metadata.created_at.isoformat(), "content_hash": metadata.content_hash or "",
+                    "file_size": metadata.file_size, "media_type": "application/vnd.apache.parquet",
+                })
     if request.args.get("include_temp") == "true":
         for name in workspace.list_scratch_files():
             try:
@@ -133,6 +150,9 @@ def workspace_text_file(name: str):
 @workspace_files_bp.route("/<path:name>", methods=["GET"])
 def download_workspace_file(name: str):
     try:
+        if name.startswith("data/"):
+            path = _table_file_path(_workspace(), name)
+            return send_file(path, as_attachment=True, download_name=path.name)
         if name.startswith("scratch/"):
             path = _scratch_path(_workspace(), name)
             return send_file(path, as_attachment=True, download_name=path.name)
@@ -156,7 +176,12 @@ def preview_workspace_file(name: str):
             import pyarrow.parquet as pq
             from data_formulator.datalake.parquet_utils import df_to_safe_records
             workspace = _workspace()
-            source = _scratch_path(workspace, name) if name.startswith("scratch/") else io.BytesIO(workspace.read_workspace_file(name)[1])
+            if name.startswith("data/"):
+                source = _table_file_path(workspace, name)
+            elif name.startswith("scratch/"):
+                source = _scratch_path(workspace, name)
+            else:
+                source = io.BytesIO(workspace.read_workspace_file(name)[1])
             parquet = pq.ParquetFile(source)
             columns = parquet.schema_arrow.names[:50]
             batch = next(parquet.iter_batches(batch_size=50, columns=columns), None)

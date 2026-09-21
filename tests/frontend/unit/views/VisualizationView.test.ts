@@ -13,8 +13,102 @@ import { SourceTableShelf } from '../../../../src/views/SourceTableShelf';
 import * as workspaceService from '../../../../src/app/workspaceService';
 import { WorkspaceFileCanvas } from '../../../../src/views/WorkspaceFileCanvas';
 import { DataThread } from '../../../../src/views/DataThread';
+import { buildDictTableFromWorkspace } from '../../../../src/app/tableThunks';
 
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
+
+it.each(['native', 'structured', 'restored', 'unavailable', 'error'])('handles load query availability for %s tables', async mode => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const text = 'Trips | summarize pickup_count=count() by pickup_date';
+    const query = mode === 'structured' ? { columns: ['pickup_date'], limit: 48 }
+        : { native: { language: 'kql', text }, limit: 48 };
+    const listing = { name: 'hourly_pickups', columns: [], sample_rows: [], row_count: 48,
+        source_metadata: { source_table_name: 'Trips', import_options: { structured_query: query } } };
+    const fetchMock = vi.fn(async () => {
+        if (mode === 'error') throw new Error('Offline');
+        return new Response(JSON.stringify({ status: 'success', data: { tables: mode === 'unavailable' ? [] : [listing], rows: [], columns: [], row_count: 0 } }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const table = buildDictTableFromWorkspace(listing, undefined);
+        if (['restored', 'unavailable', 'error'].includes(mode)) delete table.source!.loadQuery;
+        store.dispatch(dfActions.addTableToStore(table));
+        store.dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
+        render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
+        const button = screen.getByRole('button', { name: 'Load query' });
+        if (mode === 'unavailable' || mode === 'error') {
+            expect(button).toBeDisabled();
+            await act(async () => { await Promise.resolve(); });
+            expect(button).toBeDisabled();
+            fireEvent.click(button);
+            expect(screen.queryByRole('dialog')).toBeNull();
+            return;
+        }
+        await waitFor(() => expect(button).toBeEnabled());
+        fireEvent.click(button);
+        const dialog = await screen.findByRole('dialog', { name: 'Load query: hourly_pickups' });
+        expect(dialog.querySelector('code.language-json')?.textContent).toContain('48');
+        if (mode === 'structured') expect(dialog.querySelector('code.language-json')?.textContent).toContain('pickup_date');
+        else expect(dialog.querySelector('code.language-kql')?.textContent).toBe(text);
+        expect(dialog.textContent).toContain('Trips');
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(store.getState().focusedId).toEqual({ type: 'table', tableId: table.id });
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
+it.each(['source', 'python', 'sql'])('shows table-owned transformation details for %s tables without a chart', async kind => {
+    vi.stubGlobal('ResizeObserver', class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ rows: [], columns: [], row_count: 0 }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+    })));
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const code = kind === 'sql' ? 'SELECT * FROM source_data' : 'result = source_data.copy()';
+        store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'result', displayId: 'Result data',
+            names: [], rows: [], metadata: {},
+            ...(kind === 'sql' ? { virtual: { tableId: 'result', rowCount: 0 } } : {}),
+            ...(kind !== 'source' ? { derive: { source: [], code, dialog: [],
+                trigger: { tableId: 'source_data', resultTableId: 'result', instruction: 'Prepare data' } } } : {}),
+        } as any));
+        store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'result' }));
+        render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
+        expect(screen.getByRole('button', { name: 'Download CSV' })).toBeTruthy();
+        if (kind === 'source') {
+            expect(screen.queryByRole('button', { name: 'Transformation' })).toBeNull();
+            expect(screen.queryByText('Derived table')).toBeNull();
+            return;
+        }
+        expect(screen.getByText('Result data').parentElement).toContainElement(screen.getByText('Derived table'));
+        fireEvent.click(screen.getByRole('button', { name: 'Transformation' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Transformation: Result data' });
+        expect(dialog.querySelector(`code.language-${kind}`)?.textContent).toBe(code);
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(store.getState().focusedId).toEqual({ type: 'table', tableId: 'result' });
+        if (kind === 'python') {
+            act(() => {
+                store.dispatch(dfActions.createNewChart({ tableId: 'result', chartType: 'Table' }));
+                const chart = dfSelectors.getAllCharts(store.getState())[0];
+                store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'code' }));
+            const chartDialog = await screen.findByRole('dialog', { name: 'Transformation: Result data' });
+            expect(chartDialog.querySelector('code.language-python')?.textContent).toBe(code);
+        }
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
 
 it('preserves the conversation and focus when changing column layouts', () => {
     vi.stubGlobal('ResizeObserver', class {

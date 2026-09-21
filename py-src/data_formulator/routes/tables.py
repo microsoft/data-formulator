@@ -492,6 +492,7 @@ def list_tables():
                     "role": meta.role,
                     "edit_policy": meta.edit_policy or "protected",
                     "input_sources": meta.input_sources,
+                    "imported_from": meta.imported_from,
                     "stale": meta.stale,
                 }
                 if meta.description is not None:

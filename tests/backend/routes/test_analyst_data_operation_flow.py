@@ -43,7 +43,7 @@ class _Loader:
         return pa.table({"total": [30.0]})
 
 
-@pytest.mark.parametrize("aggregate", [False, True])
+@pytest.mark.parametrize("aggregate", [False, True, "native"])
 def test_operation_preview_is_bounded_and_display_only(
     agents_client,
     tmp_path: Path,
@@ -59,7 +59,7 @@ def test_operation_preview_is_bounded_and_display_only(
             table_key="public.orders",
             display_name="Recent orders",
             source_table="public.orders",
-            query=LoadQuery.from_dict({"limit": 100, **({"aggregates": [
+            query=LoadQuery.from_dict({"limit": 100, **({"native": {"language": "kql", "text": "orders | summarize total=sum(amount)"}} if aggregate == "native" else {"aggregates": [
                 {"op": "sum", "column": "amount", "as": "total"},
             ]} if aggregate else {})}),
         ),),
@@ -75,6 +75,7 @@ def test_operation_preview_is_bounded_and_display_only(
         "metadata": {"source_description": "Customer orders from the warehouse"},
     }])
     loader = _Loader()
+    loader.query_capabilities = lambda: {"native_query_languages": ["kql"]}
 
     with (
         patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
@@ -89,7 +90,7 @@ def test_operation_preview_is_bounded_and_display_only(
     assert response.status_code == 200
     inspection = response.get_json()["data"]["previews"][0]["inspection"]
     assert inspection["row_limit"] == 50
-    assert inspection["sample_method"] == ("aggregate" if aggregate else "source_head")
+    assert inspection["sample_method"] == ("native_query" if aggregate == "native" else "aggregate" if aggregate else "source_head")
     assert response.get_json()["data"] == {"previews": [{
         "display_name": "Recent orders",
         "source_id": "warehouse",

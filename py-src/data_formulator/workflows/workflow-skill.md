@@ -7,37 +7,16 @@ different things. Never substitute one for another.
 
 ## Plan Organization
 
-A workflow is a YAML mapping with these fields:
-
-| Field | Meaning |
-| --- | --- |
-| `version` | Required; use `1`. |
-| `name` | Required, nonempty human-readable workflow name. |
-| `overview` | Required, nonempty library summary, not execution history. |
-| `prompt` | Optional, nonempty overall task, scope, and analytical intent. |
-| `source` | Optional guidance: nonempty text, a mapping, or a list of either. |
-| `deliverables` | Required, nonempty list of concrete output descriptions. |
-| `steps` | Required ordered list of 1-30 named steps. |
-
-Each authored step needs a unique `id`, a human-facing `description`, and nonempty
-`instructions`. Write `description` as one or two plain-language sentences about
-what this stage accomplishes and why it matters to the reader. Keep tool names,
-execution procedures, and verification details in `instructions` and `checkers`,
-not in the description. Older workflows without descriptions remain valid.
-Prefer stable IDs
-such as `gather`, `analyze`, and `report` over IDs containing a date or status.
-Optional `next` identifies an existing step. Optional `checkers` is a list of:
-
-- `id`: nonempty, unique across the entire plan.
-- `condition`: an observable acceptance criterion, not "looks good".
-- `when`: `before`, `during`, or `after`; omission means `after`.
-- `on_fail`: optional existing step ID to revisit when the check fails.
-
-Quote dates and other values YAML might interpret as non-JSON types. Do not put
-credentials in a plan. Keep the document within 48,000 characters. Do not invent
-new executable YAML fields, adapters, schedules, or template substitution syntax.
-Source descriptions, including formal API specifications, remain guidance for
-tools; they are not an execution engine or additional authorization.
+The definition is validated against the workflow contract; tool schemas describe
+the structures to author. YAML is its storage representation, not a template engine.
+Parameters describe inputs that can vary between runs; confirmed setup values
+override defaults and must be used consistently in calculations, checks, and labels.
+Interpret parameter values together with freeform setup instructions as information
+from the user. Convert formats internally for tools and record the resolved scope;
+clarify material ambiguity, not the formatting of an understandable answer.
+Keep fixed requirements in the definition and execution progress in the run.
+Source descriptions remain guidance for tools, not executable adapters or additional
+authorization. Never put credentials in a definition.
 
 ## Author a Useful Plan
 
@@ -46,13 +25,16 @@ tools; they are not an execution engine or additional authorization.
 2. Inspect existing workspace inputs and connected metadata before inventing a
    source. Describe what must be found if its exact location is not yet known.
 3. Define inspectable deliverables first: native tables, charts, files, or reports.
-4. Group work into a few meaningful stages. State the inputs, computation or
-   decision, expected outputs, and acceptance conditions for each stage.
+4. Group work by analytical goals or questions, not mechanical phases such as
+  loading all data followed by creating all charts. Each phase publishes inspectable
+  artifacts that answer its analytical question and checks their correctness; coverage notes or tables may suffice for
+  nonvisual work. Reuse valid data, computations, and outputs on resume, and honor
+  explicit reuse requests.
 5. Place checks where they detect failures early. Include final independent
    verification after the last published output, not only before writing a report.
 6. Give failures an actionable recovery route. A failed check is information to
    repair from, not a reason to silently weaken its condition.
-7. Validate IDs, transitions, coverage of every deliverable, and the YAML schema.
+7. Check that every deliverable has a producing step and meaningful verification.
 
 Example of a concrete, workspace-based analysis:
 
@@ -60,39 +42,49 @@ Example of a concrete, workspace-based analysis:
 version: 1
 name: Monthly Sales Review
 overview: Compare monthly sales by region and verify the published review.
-prompt: Summarize regional sales for January through June 2026 in reporting currency.
+parameters:
+  - name: reporting_period
+    label: Reporting period
+    type: text
+    required: true
+    default: January through June 2026
+prompt: Summarize regional sales for the selected reporting period in reporting currency.
 source:
   - Find the connected sales table with transaction date, region, and sales amount.
   - Use workspace documentation to confirm currency and treatment of returns.
 deliverables:
   - A native table of monthly net sales by region.
   - A line chart comparing regions.
+  - A table and bar chart of each region's contribution to the change in sales.
   - A Markdown review documenting findings, coverage, and limitations.
 steps:
-  - id: gather
-    description: Collect the sales data needed for a reliable regional comparison.
-    instructions: Inspect metadata and load the requested sales subset, reusing suitable workspace data.
-    next: analyze
+  - id: regional_trends
+    description: Compare monthly sales across regions to identify divergent trends.
+    instructions: Inspect metadata, load or reuse the requested sales subset, confirm currency and returns conventions, aggregate monthly net sales by region, and publish the supporting table and a new line chart for this run with a brief interpretation of regional trends.
+    next: growth_drivers
     checkers:
       - id: coverage
-        condition: Data covers "2026-01-01" through "2026-06-30" and the currency and returns convention are known.
+        condition: Data covers the selected reporting period and the currency and returns convention are known.
         when: after
-        on_fail: gather
-  - id: analyze
-    description: Compare monthly sales across regions and identify the main differences.
-    instructions: Aggregate net sales by month and region, publish the table and line chart, and reconcile totals.
-    next: report
-    checkers:
+        on_fail: regional_trends
       - id: totals
-        condition: Monthly regional totals reconcile to the source subset under the documented returns convention.
-        on_fail: analyze
-  - id: report
+        condition: The published monthly table and chart agree and reconcile to the source subset under the documented returns convention.
+        on_fail: regional_trends
+  - id: growth_drivers
+    description: Identify which regions account for the change in sales over the reporting period.
+    instructions: Reuse the monthly regional sales table, compute each region's absolute change from the first to last month of the selected period, and publish a contribution table and a new diverging bar chart for this run with a brief interpretation. Flag missing endpoint data rather than treating it as zero.
+    next: synthesize_findings
+    checkers:
+      - id: contribution_totals
+        condition: The published contribution table and chart agree, contributions sum to the overall first-to-last-month change for the selected period, and missing endpoints are identified.
+        on_fail: growth_drivers
+  - id: synthesize_findings
     description: Summarize the findings and confirm that the review agrees with the data.
     instructions: Publish the review, then independently verify its numerical claims against the final outputs.
     checkers:
       - id: final_review
-        condition: Final table, chart, and report agree; all required outputs and limitations are present.
-        on_fail: report
+        condition: Final tables, charts, and report agree; all required outputs and limitations are present.
+        on_fail: synthesize_findings
 ```
 
 ## Execute and Assess Progress

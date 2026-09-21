@@ -1,8 +1,12 @@
+import json
+from datetime import timedelta
 from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
 from azure.kusto.data._models import KustoResultTable
+from azure.kusto.data.client_base import ExecuteRequestParams
+from azure.kusto.data.exceptions import KustoApiError
 
 from data_formulator.data_loader.kusto_data_loader import (
     KustoDataLoader,
@@ -40,6 +44,89 @@ def test_materialized_query_restores_database_on_error():
     with pytest.raises(RuntimeError, match="failed"):
         loader.query_data_as_arrow("other.Events", {}, 10)
     assert loader.kusto_database is None
+
+
+def test_native_kql_uses_query_endpoint_and_server_guards():
+    loader = _loader()
+    assert loader.query_capabilities()["native_query_languages"] == ["kql"]
+    loader.client.execute_query.return_value = Mock(get_exceptions=Mock(return_value=[]), primary_results=[KustoResultTable({
+        "Columns": [{"ColumnName": "pickups", "ColumnType": "long"}], "Rows": [[42]],
+    })])
+    text = "Events | summarize pickups=count() by bin(timestamp, 1h)"
+    result = loader.query_data_as_arrow("Events", {"native": {"language": "kql", "text": text}}, 10001)
+    assert result.to_pylist() == [{"pickups": 42}]
+    database, query, properties = loader.client.execute_query.call_args.args
+    assert database == "analytics"
+    assert query == f"restrict access to (database().['Events']);\n{text}\n| take 10001"
+    for option in ("request_readonly", "request_readonly_hardline", "request_callout_disabled",
+                   "request_external_data_disabled", "request_external_table_disabled",
+                   "request_impersonation_disabled", "request_remote_entities_disabled", "request_sandboxed_execution_disabled"):
+        assert properties.get_option(option, None) is True
+    request = ExecuteRequestParams._from_query(
+        query=query, database=database, properties=properties, request_headers={},
+        timeout=timedelta(minutes=4), mgmt_default_timeout=timedelta(hours=1),
+        client_server_delta=timedelta(seconds=30),
+        client_details=Mock(version_for_tracing=None, application_for_tracing=None, user_name_for_tracing=None),
+    )
+    assert request.timeout == timedelta(seconds=90)
+    assert json.loads(request.json_payload["properties"])["Options"]["servertimeout"] == "0:01:00"
+    assert properties.get_option("servertimeout", None) == timedelta(seconds=60)
+    assert properties.get_option("truncationmaxsize", None) == 16 * 1024 * 1024
+    assert properties.get_option("truncationmaxrecords", None) == 10001
+    loader.client.execute.assert_not_called()
+    loader.client.execute_mgmt.assert_not_called()
+
+
+@pytest.mark.parametrize("text", [".drop table Events", "set notruncation; Events", "Events; Other", "Events // comment", "Events /* comment */", "", "x" * 16001])
+def test_native_kql_rejects_statements_before_execution(text):
+    loader = _loader()
+    with pytest.raises(ValueError):
+        loader.query_data_as_arrow("Events", {"native": {"language": "kql", "text": text}}, 10001)
+    loader.client.execute_query.assert_not_called()
+
+
+def test_native_kql_rejects_partial_failures():
+    loader = _loader()
+    loader.client.execute_query.return_value = Mock(get_exceptions=Mock(return_value=["truncated"]), primary_results=[])
+    with pytest.raises(ValueError, match="incomplete"):
+        loader.query_data_as_arrow("Events", {"native": {"language": "kql", "text": "Events"}}, 10001)
+
+
+@pytest.mark.parametrize("diagnostic", [
+    "SYN0002: The operator cannot be the first operator in a query. [line:position=2:1]",
+    "SEM0100: Failed to resolve table or column expression named 'missing'",
+])
+def test_native_kql_exposes_sanitized_query_diagnostics(diagnostic):
+    loader = _loader()
+    loader.client.execute_query.side_effect = KustoApiError({"error": {
+        "code": "BadRequest", "message": "Request rejected", "@message":
+        f"Request invalid: {diagnostic} password=secret-value https://private.example/query?token=secret-token\nServer stack details",
+        "@context": {"token": "context-secret", "server": "private-server"},
+    }})
+    with pytest.raises(ValueError) as error:
+        loader.query_data_as_arrow("Events", {"native": {"language": "kql", "text": "where value > 1"}}, 10)
+    message = str(error.value)
+    assert diagnostic.split(":")[0] in message
+    assert "complete query starting from the selected table" in message
+    for private in ("secret-value", "secret-token", "context-secret", "private-server", "private.example", "Server stack details"):
+        assert private not in message
+    loader.client.execute_query.assert_called_once()
+
+
+def test_native_kql_does_not_expose_unrecognized_service_errors():
+    loader = _loader()
+    failure = KustoApiError({"error": {"code": "InternalError", "message": "Failed", "@message": "private-server details"}})
+    loader.client.execute_query.side_effect = failure
+    with pytest.raises(KustoApiError) as error:
+        loader.query_data_as_arrow("Events", {"native": {"language": "kql", "text": "Events"}}, 10)
+    assert error.value is failure
+
+
+def test_native_kql_rejects_wildcard_scope():
+    loader = _loader()
+    with pytest.raises(ValueError, match="exact table"):
+        loader.query_data_as_arrow("*", {"native": {"language": "kql", "text": "Events"}}, 10001)
+    loader.client.execute_query.assert_not_called()
 
 
 @pytest.mark.parametrize("column_type", ["float", "real", "double"])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import threading
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -13,7 +14,7 @@ from data_formulator.datalake.workspace import get_user_home
 from data_formulator.error_handler import json_ok, stream_error_event, classify_and_wrap_llm_error
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.workspace_factory import get_workspace, get_active_workspace_id
-from data_formulator.workflows.instances import WorkflowStore, parse_workflow
+from data_formulator.workflows.instances import WorkflowStore, parse_definition
 from data_formulator.workflows.agent import WorkflowAgent, new_run, public_run
 
 workflow_bp = Blueprint("workflows", __name__, url_prefix="/api/workflows")
@@ -114,29 +115,45 @@ def list_instances():
                             | {"name": state["instance"]["name"]})
             except (ValueError, KeyError):
                 continue
-    return json_ok({"items": store.list_all(), "runs": runs})
+    items = store.list_all()
+    return json_ok({"items": items, "runs": runs})
+
+
+def read_definition(store, path):
+    content = store.read(path)
+    return content, hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 @workflow_bp.route("/read", methods=["POST"])
 def read_instance():
-    _, store, _ = context(False)
+    _, store, workspace = context(False)
     try:
-        return json_ok({"content": store.read((request.get_json() or {}).get("path"))})
+        content, content_hash = read_definition(store, (request.get_json() or {}).get("path"))
+        return json_ok({"content": content, "content_hash": content_hash})
     except (ValueError, FileNotFoundError) as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
 
 @workflow_bp.route("/save", methods=["POST"])
 def save_instance():
-    _, store, _ = context(False)
+    _, store, workspace = context(False)
     body = request.get_json() or {}
+    content_hash = None
     try:
         if not isinstance(body.get("content"), str):
             raise ValueError("Workflow content must be YAML text.")
-        store.save(body.get("path"), body["content"])
+        parse_definition(body["content"])
+        path = body.get("path")
+        store.validate_name(path)
+        with FileLock(str(store.files.resolve(".library.lock"))):
+            existing_hash = hashlib.sha256(store.read(path).encode("utf-8")).hexdigest() if store.files.exists(path) else None
+            if existing_hash != body.get("content_hash"):
+                raise ValueError("Workflow changed or already exists; read it again before saving.")
+            store.save(path, body["content"])
+        content_hash = hashlib.sha256(body["content"].encode("utf-8")).hexdigest()
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
-    return json_ok({"path": body["path"]})
+    return json_ok({"path": body["path"], "content_hash": content_hash})
 
 
 @workflow_bp.route("/delete", methods=["POST"])
@@ -285,7 +302,14 @@ def run_instance():
         else:
             if body.get("terminal_response") is not None or body.get("interaction_response") is not None:
                 raise ValueError("An interaction response requires an existing workflow run.")
-            state = new_run(parse_workflow(store.read(body.get("path"))), UUID(identifier).hex, body.get("setup"))
+            content = body.get("content") if "content" in body else read_definition(store, body.get("path"))[0]
+            state = new_run(parse_definition(content), UUID(identifier).hex, body.get("setup"))
+        if "external_references" in body:
+            from data_formulator.analyst.workspace_inputs import normalize_external_references
+
+            references = {item["id"]: item for item in normalize_external_references(state.get("external_references"))}
+            references.update({item["id"]: item for item in normalize_external_references(body["external_references"])})
+            state["external_references"] = list(references.values())
         from data_formulator.routes.agents import get_client
 
         client = get_client(body["model"])
@@ -339,8 +363,10 @@ def run_instance():
             elif execution_operation is not None:
                 from data_formulator.data_operations import DataOperationExecutor, OperationError
                 try:
-                    result = DataOperationExecutor(workspace).execute(execution_operation)
-                    completed = operation_repository.finish(execution_operation.id, result.result_table_ids, result.failed_steps)
+                    result = DataOperationExecutor(
+                        workspace, external_references=state.get("external_references", []),
+                    ).execute(execution_operation)
+                    completed = operation_repository.finish(execution_operation.id, result.result_table_ids, result.failed_steps, result.result_references)
                 except Exception as exc:
                     completed = operation_repository.fail(execution_operation.id, OperationError(code="IMPORT_FAILED", message=str(exc)))
                 agent.resolve_pending({"operation": completed.to_public_dict()})

@@ -54,10 +54,62 @@ describe('buildDictTableFromWorkspace', () => {
         expect(result.virtual?.tableId).toBe('orders');
     });
 
+    it('preserves exact connector import provenance alongside existing source settings', () => {
+        const listing = { ...baseTable, source_metadata: { import_options: { data_operation: {
+            source_id: 'kusto:trips', table_key: 'Trips',
+        } } } };
+        for (const source of [undefined, { type: 'database' as const, autoRefresh: true }]) {
+            const result = buildDictTableFromWorkspace(listing, source);
+            expect(result.source?.importedFrom).toEqual({ connectorId: 'kusto:trips', tableKey: 'Trips' });
+            if (source) expect(result.source?.autoRefresh).toBe(true);
+        }
+        expect(buildDictTableFromWorkspace(baseTable, undefined).source?.importedFrom).toBeUndefined();
+        const native = { ...baseTable, source_metadata: { import_options: { data_operation: {
+            source_id: 'kusto:trips', table_key: 'Trips', lineage_verified: false,
+        } } } };
+        expect(buildDictTableFromWorkspace(native, { type: 'database', importedFrom: { connectorId: 'kusto:trips', tableKey: 'Trips' } }).source?.importedFrom).toBeUndefined();
+    });
+
+    it('uses durable workflow identity and clears it when an update changes provenance', () => {
+        const source = { type: 'database' as const, autoRefresh: true,
+            importedFrom: { connectorId: 'old-connector', tableKey: 'Old' } };
+        const listing = { ...baseTable, origin: 'agent', imported_from: { source_id: 'adx:trips', table_key: 'Trips' } };
+        expect(buildDictTableFromWorkspace(listing, source).source).toMatchObject({ autoRefresh: true,
+            importedFrom: { connectorId: 'adx:trips', tableKey: 'Trips' } });
+        for (const imported_from of [null, undefined, { source_id: '', table_key: 'Trips' }]) {
+            expect(buildDictTableFromWorkspace({ ...listing, imported_from }, source).source?.importedFrom).toBeUndefined();
+        }
+        expect(source.importedFrom.connectorId).toBe('old-connector');
+    });
+
     it('preserves column descriptions in metadata', () => {
         const result = buildDictTableFromWorkspace(baseTable, undefined);
         expect(result.metadata['order_id'].description).toBe('Primary key');
         expect(result.metadata['region'].description).toBe('Sales region');
+    });
+
+    it.each([
+        { native: { language: 'kql', text: 'Trips | count' }, limit: 48 },
+        { group_by: ['pickup_date'], aggregates: [{ op: 'count', as: 'pickups' }] },
+    ])('preserves the recorded structured load query %j', query => {
+        const result = buildDictTableFromWorkspace({ ...baseTable, source_metadata: {
+            source_table_name: 'Trips', data_loader_params: { token: 'private' },
+            import_options: { structured_query: query, data_operation: { operation_id: 'operation' } },
+        } }, undefined);
+        expect(result.source?.loadQuery).toEqual({ sourceTable: 'Trips', query });
+        expect(JSON.stringify(result.source?.loadQuery)).not.toContain('private');
+        expect(JSON.stringify(result.source?.loadQuery)).not.toContain('operation');
+    });
+
+    it('preserves import options only for recorded source loads', () => {
+        const query = { source_filters: [{ column: 'region', operator: 'EQ', value: 'US' }],
+            columns: ['region'], sort_columns: ['region'], sort_order: 'asc', size: 100 };
+        const result = buildDictTableFromWorkspace({ ...baseTable, source_metadata: {
+            source_table_name: 'orders', import_options: { ...query, credential: 'private' },
+        } }, undefined);
+        expect(result.source?.loadQuery).toEqual({ sourceTable: 'orders', query });
+        expect(buildDictTableFromWorkspace({ ...baseTable, source_metadata: { import_options: {} } }, undefined).source?.loadQuery).toBeUndefined();
+        expect(buildDictTableFromWorkspace(baseTable, undefined).source?.loadQuery).toBeUndefined();
     });
 
     it('omits description when not provided by backend', () => {

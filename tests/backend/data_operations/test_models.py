@@ -40,11 +40,15 @@ def test_operation_round_trip_preserves_identity_and_status() -> None:
         plans=(plan,),
         status=DataOperationStatus.RUNNING,
         selected_plan_id=plan.id,
+        result_references=({"id": "external:warehouse:orders", "kind": "external-table-reference",
+                            "connectorId": "warehouse", "tableKey": "orders"},),
     )
 
     restored = DataOperation.from_dict(operation.to_dict())
 
     assert restored == operation
+    assert operation.to_public_dict()["result_references"] == list(operation.result_references)
+    assert operation.to_public_dict()["load_outcomes"][0]["compute_ready"] is False
     assert restored.plans[0].plan_hash == plan.plan_hash
 
 
@@ -117,6 +121,17 @@ def test_models_are_immutable() -> None:
         plan.label = "Changed"  # type: ignore[misc]
 
 
+def test_materialization_intent_round_trips_and_changes_plan_hash():
+    from dataclasses import replace
+
+    step = replace(_step(), query=LoadQuery())
+    automatic = DataOperationPlan(label="Add source", summary="", steps=(step,))
+    concrete = DataOperationPlan(label="Load rows", summary="", steps=(replace(step, materialize=True),))
+    assert automatic.plan_hash != concrete.plan_hash
+    assert DataOperationPlan.from_dict(concrete.to_dict()).steps[0].materialize is True
+    assert "materialize" not in automatic.to_dict()["steps"][0]
+
+
 def test_load_query_rejects_multiple_order_clauses() -> None:
     with pytest.raises(ValueError, match="at most one order_by"):
         LoadQuery(order_by=(
@@ -129,6 +144,21 @@ def test_load_query_rejects_multiple_order_clauses() -> None:
 def test_load_query_rejects_unsupported_fields_instead_of_loading_wrong_data(field):
     with pytest.raises(ValueError, match="structured query"):
         LoadQuery.from_dict({field: [], "limit": 10})
+
+
+def test_native_query_round_trip_and_validation():
+    raw = {"native": {"language": "kql", "text": "Trips | summarize count() by bin(pickup_datetime, 1h)"}}
+    query = LoadQuery.from_dict(raw)
+    assert query.to_dict() == raw
+    assert LoadQuery.from_dict(query.to_dict()) == query
+    with pytest.raises(TypeError):
+        query.native["text"] = "Other"
+    for invalid in [{"language": "sql", "text": "SELECT 1"}, {"language": "kql", "text": ""},
+                    {"language": "kql", "text": "x" * 16001}, {"language": "kql", "text": "Trips", "options": {}}]:
+        with pytest.raises(ValueError):
+            LoadQuery.from_dict({"native": invalid})
+    with pytest.raises(ValueError, match="combined"):
+        LoadQuery.from_dict({**raw, "columns": ["timestamp"]})
 
 
 def test_aggregate_load_query_round_trip_and_immutability():

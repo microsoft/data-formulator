@@ -296,13 +296,17 @@ def test_executor_materializes_bounded_table_with_provenance(tmp_path: Path) -> 
     assert result.failed_steps == ()
 
 
+@pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("limit", [None, 1])
-def test_executor_materializes_aggregate_without_raw_fetch(tmp_path, limit):
+def test_executor_materializes_aggregate_without_raw_fetch(tmp_path, limit, native):
     workspace = Workspace("test-user", root_dir=tmp_path)
     loader = _Loader(pa.table({"region": ["west", "east"], "total": [30, 20]}))
     query = LoadQuery.from_dict({"group_by": ["region"],
         "aggregates": [{"op": "sum", "column": "amount", "as": "total"}],
         **({"limit": limit} if limit else {})})
+    if native:
+        loader.query_capabilities = lambda: {"native_query_languages": ["kql"]}
+        query = LoadQuery(native={"language": "kql", "text": "orders | summarize total=sum(amount) by region"}, limit=limit)
     step = ConnectorQueryStep(source_id="warehouse", table_key="orders", display_name="Totals",
                               source_table="orders", query=query)
     result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
@@ -311,17 +315,153 @@ def test_executor_materializes_aggregate_without_raw_fetch(tmp_path, limit):
     metadata = workspace.get_table_metadata(result.result_table_ids[0])
     assert metadata.row_count == (limit or 2)
     assert metadata.import_options["structured_query"] == query.to_dict()
+    if native:
+        assert metadata.import_options["data_operation"]["lineage_verified"] is False
+        assert '"coverage": "query_defined"' in metadata.description
+        derived = workspace.save_agent_data(workspace.read_data_as_df(metadata.name), "native_copy", input_sources=[{
+            "kind": "data", "table_name": metadata.name, "content_hash": metadata.content_hash,
+        }])
+        assert derived.imported_from is None
     assert [column.name for column in metadata.columns] == ["region", "total"]
 
 
-def test_executor_rejects_overflow_instead_of_publishing_partial_aggregate(tmp_path):
+@pytest.mark.parametrize("native", [False, True])
+def test_executor_rejects_overflow_instead_of_publishing_partial_aggregate(tmp_path, native):
     workspace = Workspace("test-user", root_dir=tmp_path)
     loader = _Loader(pa.table({"region": list(range(10001))}))
     step = ConnectorQueryStep(source_id="warehouse", table_key="orders", display_name="Regions",
-                              source_table="orders", query=LoadQuery(group_by=("region",)))
+                              source_table="orders", query=LoadQuery(native={"language": "kql", "text": "orders"}) if native else LoadQuery(group_by=("region",)))
+    loader.query_capabilities = lambda: {"native_query_languages": ["kql"]}
     result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
     assert not result.result_table_ids
     assert "exceeds 10000" in result.failed_steps[0].error.message
+    assert workspace.list_tables() == []
+
+
+def test_native_loading_rejects_unsupported_connector_before_execution(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"value": [1]}))
+    loader.query_capabilities = lambda: {"native_query_languages": []}
+    step = ConnectorQueryStep(source_id="warehouse", table_key="orders", display_name="Native",
+        source_table="orders", query=LoadQuery(native={"language": "kql", "text": "orders"}))
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert not result.result_table_ids
+    assert "not supported" in result.failed_steps[0].error.message
+    assert loader.calls == []
+
+
+@pytest.mark.parametrize("metadata,virtual", [
+    ({"row_count": 1000001}, True), ({"size_bytes": 600000000}, True),
+    ({"row_count": 1000000}, False), ({}, False), ({"row_count": "unknown"}, False),
+])
+def test_source_load_uses_virtual_reference_for_large_tables(tmp_path, monkeypatch, metadata, virtual):
+    from data_formulator.data_operations.discovery import DataDiscoveryService
+
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+    monkeypatch.setattr(DataDiscoveryService, "resolve_load_table", lambda *args: {"metadata": metadata})
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"value": [1]}))
+    step = ConnectorQueryStep(source_id="kusto:demo", table_key="Events", display_name="Events", source_table="Events")
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert not result.failed_steps
+    if virtual:
+        assert not loader.calls
+        assert not result.result_table_ids
+        assert workspace.list_tables() == []
+        assert result.result_references[0]["id"] == "external:kusto%3Ademo:Events"
+        assert result.result_references[0]["summary"]["columns"] == []
+    else:
+        assert result.result_table_ids
+        assert not result.result_references
+
+
+@pytest.mark.parametrize("query", [LoadQuery(limit=10), LoadQuery()])
+def test_explicit_query_materializes_even_when_source_is_large(tmp_path, monkeypatch, query):
+    from data_formulator.data_operations.discovery import DataDiscoveryService
+
+    monkeypatch.setattr(DataDiscoveryService, "resolve_load_table", lambda *args: {"metadata": {"row_count": 100000000}})
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"value": [1]}))
+    step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Events",
+                              source_table="Events", query=query, materialize=True)
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert result.result_table_ids
+    assert result.result_references[0]["tableKey"] == "Events"
+    assert loader.calls
+
+
+def test_query_reuses_existing_source_reference(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"value": [1]}))
+    reference = {"id": "external:warehouse:Events", "connectorId": "warehouse", "tableKey": "Events"}
+    step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Recent events",
+                              source_table="Events", query=LoadQuery(limit=10))
+    result = DataOperationExecutor(workspace, lambda _: loader, external_references=[reference]).execute(_operation(step))
+    assert result.result_table_ids
+    assert not result.result_references
+    assert loader.calls
+
+
+@pytest.mark.parametrize("manual", [False, True])
+def test_query_does_not_register_source_already_loaded_locally(tmp_path, manual):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    metadata = workspace.write_parquet_from_arrow(pa.table({"value": [1]}), "existing")
+    origin = {"source_id": "warehouse", "table_key": "Events"}
+    if manual:
+        metadata.imported_from = origin
+    else:
+        metadata.import_options = {"data_operation": {**origin, "operation_id": "previous"}}
+    workspace.add_table_metadata(metadata)
+    loader = _Loader(pa.table({"value": [2]}))
+    step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Recent events",
+                              source_table="Events", query=LoadQuery(limit=10))
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert result.result_table_ids
+    assert not result.result_references
+
+
+def test_query_failure_preserves_registered_source_and_reports_failure(tmp_path):
+    from data_formulator.data_operations import DataOperationRepository
+
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Recent events",
+                              source_table="Events", query=LoadQuery(limit=10))
+    operation = _operation(step)
+    repository = DataOperationRepository.for_workspace(workspace)
+    repository.create(operation, conversation_id="test")
+    loader = _Loader(error=ValueError("Narrow the query"))
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(operation)
+    completed = repository.finish(operation.id, result.result_table_ids, result.failed_steps, result.result_references)
+    assert completed.status == DataOperationStatus.PARTIALLY_LOADED
+    assert completed.failed_steps[0].error.message == "Narrow the query"
+    assert completed.result_references[0]["displayName"] == "Events"
+    assert not completed.result_table_ids
+    assert completed.to_public_dict()["load_outcomes"][0]["compute_ready"] is False
+
+
+def test_native_kql_diagnostic_reaches_failed_step(tmp_path):
+    from unittest.mock import Mock
+    from azure.kusto.data.exceptions import KustoApiError
+    from data_formulator.data_loader.kusto_data_loader import KustoDataLoader
+
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = object.__new__(KustoDataLoader)
+    loader.kusto_database = "analytics"
+    loader.client = Mock()
+    loader.client.execute_query.side_effect = KustoApiError({"error": {
+        "code": "BadRequest", "message": "Invalid request", "@message":
+        "Syntax error: SYN0002: The operator cannot be the first operator in a query. [line:position=2:1]",
+        "@context": {"token": "private-token"},
+    }})
+    step = ConnectorQueryStep(source_id="kusto", table_key="Events", display_name="Hourly counts",
+        source_table="Events", query=LoadQuery(native={"language": "kql", "text": "where value > 1"}))
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    message = result.failed_steps[0].error.message
+    assert "SYN0002" in message
+    assert "operator cannot be the first operator" in message
+    assert "complete query starting from the selected table" in message
+    assert "private-token" not in message
+    assert not result.result_table_ids
     assert workspace.list_tables() == []
 
 

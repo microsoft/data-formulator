@@ -127,12 +127,14 @@ def preview_data_operation():
             preview_size = min(requested, PREVIEW_ROW_LIMIT) if isinstance(requested, int) and requested > 0 else PREVIEW_ROW_LIMIT
             options["size"] = preview_size
             from data_formulator.data_loader.external_data_loader import ExternalDataLoader
-            if step.query.group_by or step.query.aggregates:
+            if step.query.group_by or step.query.aggregates or step.query.native:
+                if step.query.native and step.query.native["language"] not in loader.query_capabilities().get("native_query_languages", []):
+                    raise ValueError("Native query language is not supported by this connector.")
                 from data_formulator.data_loader.query_runtime import execute_source_query
                 table = execute_source_query(loader, "query_data_as_arrow",
                     source_table=step.source_table, query=step.query.to_dict(), limit=preview_size)
                 preview = ExternalDataLoader.format_preview(table, options)
-                preview["inspection"].update(sample_method="aggregate", may_scan_full_source=True)
+                preview["inspection"].update(sample_method="native_query" if step.query.native else "aggregate", may_scan_full_source=True)
             else:
                 preview = loader.preview_data(step.source_table, options)
         except Exception as exc:
@@ -684,13 +686,18 @@ def analyst_streaming():
                             "tables": [step.source_table_name for plan in execution_operation.plans
                                        if plan.id == execution_operation.selected_plan_id for step in plan.steps],
                         }}) + '\n'
-                        execution_result = DataOperationExecutor(workspace).execute(
+                        from data_formulator.analyst.workspace_inputs import normalize_external_references
+
+                        execution_result = DataOperationExecutor(
+                            workspace, external_references=normalize_external_references(content.get("external_references")),
+                        ).execute(
                             execution_operation
                         )
                         completed_operation = operation_repository.finish(
                             execution_operation.id,
                             execution_result.result_table_ids,
                             execution_result.failed_steps,
+                            execution_result.result_references,
                         )
                 except QueryCancelled:
                     operation_repository.fail(execution_operation.id, OperationError(
@@ -716,7 +723,7 @@ def analyst_streaming():
                     )
                 if load_started:
                     yield json.dumps({"type": "tool_result", "tool": "load_data",
-                                      "status": "ok" if completed_operation.result_table_ids
+                                      "status": "ok" if (completed_operation.result_table_ids or completed_operation.result_references)
                                       and not completed_operation.failed_steps else "error"}) + '\n'
                 yield json.dumps({
                     "type": "data_operation_result",

@@ -42,6 +42,7 @@ import dfLogo from '../assets/df-logo.svg';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { TableIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
@@ -617,6 +618,9 @@ const getLeadUpTurnIds = (tables: DictTable[], textTurns: TextTurn[], loadedNode
 // render as a thread rooted at the question (design-docs/42).
 let SingleThreadGroupView: FC<{
     threadLabel?: string, // Header label; absent on continuation segments
+    threadSummary?: string,
+    historyCollapsed?: boolean,
+    onToggleHistory?: () => void,
     // A continuation of the thread above: renders the "↑ continued" header +
     // a chip for the carried-over parent, and no label of its own.
     isSplitThread?: boolean,
@@ -641,6 +645,9 @@ let SingleThreadGroupView: FC<{
     sx?: SxProps
 }> = function ({
     threadLabel,
+    threadSummary,
+    historyCollapsed = false,
+    onToggleHistory,
     isSplitThread = false,
     joinedAbove = false,
     joinedBelow = false,
@@ -689,6 +696,7 @@ let SingleThreadGroupView: FC<{
 
     let charts = useSelector(dfSelectors.getAllCharts);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
     const deleteFile = async (path: string) => {
@@ -1203,6 +1211,7 @@ let SingleThreadGroupView: FC<{
             runningPlan: string | undefined,
             isRunning: boolean,
             keyPrefix: string,
+            outputParentId?: string,
         ) => {
             // For the live banner, anchor elapsed-time to the most recent
             // user-side entry so resuming after a clarify resets the counter
@@ -1220,6 +1229,7 @@ let SingleThreadGroupView: FC<{
             if (pauseIdx < 0) {
                 // No pause — render all entries then ThinkingStepsBanner
                 pushInteractionEntries(interaction, tableId, triggerType, highlighted, keyPrefix);
+                if (outputParentId) pushLoadedTables(outputParentId, triggerType, false);
                 const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
                 timelineItems.push({
                     key: `agent-thinking-${tableId}`,
@@ -1257,6 +1267,7 @@ let SingleThreadGroupView: FC<{
 
             // 3. Pause + response entries
             pushInteractionEntries(pauseAndAfter, tableId, triggerType, highlighted, `${keyPrefix}-post`, { isClarifying: false, tableId });
+            if (outputParentId) pushLoadedTables(outputParentId, triggerType, false);
 
             // 4. Second-round thinking steps (current runningPlan)
             if (isRunning) {
@@ -1289,15 +1300,18 @@ let SingleThreadGroupView: FC<{
                 if (hasGeneratingReport) {
                     // Just the prompt/clarity entries — no thinking banner.
                     pushInteractionEntries(draftInteraction, tableId, triggerType, highlighted, 'agent-running-entry');
+                    if (runningDraft) pushLoadedTables(runningDraft.id, triggerType, false);
                 } else {
                     renderSplitByClarity(
                         draftInteraction,
                         runningDraft?.derive?.runningPlan,
                         true,
                         'agent-running-entry',
+                        runningDraft?.id,
                     );
                 }
             } else if (!hasGeneratingReport) {
+                if (runningDraft) pushLoadedTables(runningDraft.id, triggerType, false);
                 const runningAction = runningAgentTableIds.get(tableId);
                 // `description` is the running plan: steps joined by STEP_SEP
                 // ('\x1E'), which renders invisibly. Split it back into discrete
@@ -1337,6 +1351,7 @@ let SingleThreadGroupView: FC<{
                     undefined,
                     false,
                     'agent-clarify-entry',
+                    clarifyDraft?.id,
                 );
                 const lastItem = timelineItems[timelineItems.length - 1];
                 if (lastItem?.interactionEntry?.role === 'clarify' || lastItem?.interactionEntry?.role === 'explain' || lastItem?.interactionEntry?.role === 'delegate') {
@@ -1401,7 +1416,7 @@ let SingleThreadGroupView: FC<{
             tableCard.forEach((subItem: any, j: number) => {
                 if (!subItem) return;
                 const subKey = subItem?.key || `card-${tableId}-${j}`;
-                const isChart = subKey.includes('chart');
+                const isChart = subKey.startsWith('relevant-chart-');
                 let itemChartType: string | undefined;
                 if (isChart) {
                     const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
@@ -1447,7 +1462,8 @@ let SingleThreadGroupView: FC<{
     };
     const pushFileItems = (parentNodeId: string, highlighted: boolean) => {
         for (const file of fileNodes.filter(node => artifactParentOf(node.parentNodeId) === parentNodeId)) {
-            const selected = focusedId?.type === 'reference' && focusedId.referenceId === file.id;
+            const selected = focusedId?.type === 'reference' ? focusedId.referenceId === file.id
+                : canvasTarget?.type === 'file' && canvasTarget.fileName === file.path;
             timelineItems.push({
                 key: file.id, outputNodeId: file.id, type: 'artifact', highlighted: highlighted || selected,
                 gutterIcon: <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14,
@@ -1531,18 +1547,25 @@ let SingleThreadGroupView: FC<{
             && !awaitingAnswer && !turn.answer && !producedTables && !producedReports && derivedTableIds.length === 0
             && dependentDrafts.length === 0 && !!turn.executions?.length
             && turn.executions.every(execution => execution.status === 'completed');
-        const iconColor = focusedId?.type === 'conversation' ? theme.palette.text.secondary
-            : rowHL ? theme.palette.primary.main : 'rgba(0,0,0,0.15)';
+        const iconColor = focusedId?.type !== 'conversation' && rowHL
+            ? theme.palette.primary.main : 'rgba(0,0,0,0.15)';
         const gutterIcon = workflow
             ? <WorkflowGears running={workflow.status === 'running'} color={workflow.status === 'paused'
                 ? theme.palette.warning.main : rowHL ? theme.palette.primary.main : theme.palette.text.secondary} />
+            : turn.workflowDefinition
+            ? <WorkflowGears running={false} color={iconColor} />
             : turn.form
             ? <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />
             : getEntryGutterIcon(
                 { from: 'data-agent', to: 'user', role: turn.textKind, content: '' },
                 iconColor,
             );
-        const card = workflow ? <WorkflowProgress turn={workflowTurn!} selected={isFocused} /> : (
+        const card = workflow ? <WorkflowProgress turn={workflowTurn!} selected={isFocused} /> : turn.workflowDefinition ? (
+            <ThreadArtifactCard artifactType="workflow" title={turn.workflowDefinition.definition.name}
+                notes="Workflow definition" selected={isFocused} onClick={openTurn}
+                actions={hasDependents ? undefined : <ArtifactDeleteButton label="Delete workflow definition"
+                    onClick={() => dispatch(dfActions.removeTextTurn(turn.id))} />} />
+        ) : (
             <ThreadResponseCard
                 responseKind={turn.form ? 'form' : 'agent'}
                 selected={isFocused}
@@ -1584,6 +1607,9 @@ let SingleThreadGroupView: FC<{
         const turnHighlighted = highlighted
             || highlightedTextTurnIds.has(turn.id)
             || focusedNarrativeTurnIds.has(turn.id);
+        const loadedTables = loadedTablesByTurn.get(turn.id) || [];
+        const summarizesLoadedTables = turn.textKind === 'explain' && !turn.form && !turn.dataOperation && !turn.workflow
+            && loadedTables.length > 0 && loadedTables.every(node => node.createdAt <= turn.createdAt);
         if (turn.prompt) {
             const prompt = turn.prompt;
             parts.push({ startsTurn: true, keepVisible: false, render: () => pushInteractionEntries(
@@ -1594,6 +1620,7 @@ let SingleThreadGroupView: FC<{
         parts.push({ startsTurn: !turn.prompt && !(previousTurn?.answered && previousTurn.answer),
             keepVisible: keepTurnVisible(turn, hasResult), render: () => {
                 pushFileItems(turn.id, turnHighlighted);
+                if (summarizesLoadedTables) pushLoadedTables(turn.id, triggerType, false);
                 const item = buildTextTurnTimelineItem(turn, turnHighlighted, false);
                 const previous = timelineItems[timelineItems.length - 1];
                 if (item.workRunId && previous?.workRunId === item.workRunId && previous.workUpdates
@@ -1610,11 +1637,14 @@ let SingleThreadGroupView: FC<{
                 for (const report of reportsByParentNode.get(turn.id) || []) {
                     timelineItems.push(buildReportTimelineItem(report, turnHighlighted));
                 }
-                pushLoadedTables(turn.id, triggerType);
+                if (summarizesLoadedTables) {
+                    for (const node of loadedTables) pushLoadedTableFollowups(node, triggerType);
+                } else {
+                    pushLoadedTables(turn.id, triggerType);
+                }
             } });
-        const loadedTables = loadedTablesByTurn.get(turn.id) || [];
         const connectedForm = turn.form?.kind === 'connector' && turn.form.connector.status === 'connected';
-        if (turn.answered && turn.answer && loadedTables.length === 0 && !connectedForm) {
+        if (turn.answered && turn.answer && (loadedTables.length === 0 || !turn.dataOperation) && !connectedForm) {
             const answer = turn.answer;
             parts.push({ startsTurn: true, keepVisible: false, render: () => pushInteractionEntries(
                 [{ from: 'user', to: 'data-agent', role: 'prompt', content: answer }],
@@ -1636,6 +1666,7 @@ let SingleThreadGroupView: FC<{
             && (draft.derive?.status === 'running' || draft.derive?.status === 'clarifying'));
     const keepTurnVisible = (turn: TextTurn, hasResult = false) => isTurnActive(turn, hasResult)
         || !!turn.workflowCardFor
+        || !!turn.workflowDefinition
         || !!turn.workflowMessage
         || fileNodes.some(node => node.parentNodeId === turn.id)
         || (reportsByParentNode.get(turn.id) || []).length > 0
@@ -1750,9 +1781,16 @@ let SingleThreadGroupView: FC<{
         pushTextTurnSubtree(tableId, highlighted, triggerType);
     };
 
-    // Loaded-table reference nodes rendered right after their parent turn,
-    // followed by everything built on the referenced shelf tables.
-    const pushLoadedTables = (turnId: string, triggerType: 'trigger' | 'leaf-trigger') => {
+    const pushLoadedTableFollowups = (node: LoadedTableNode, triggerType: 'trigger' | 'leaf-trigger') => {
+        const table = tableById.get(node.tableId);
+        if (!table || usedIntermediateTableIds.includes(table.id)) return;
+        const isHL = highlightedTableIds.includes(table.id);
+        pushReportItems(table.id, isHL, triggerType);
+        pushTableTextTurns(table.id, isHL, triggerType);
+        pushAgentDraftItems(table.id, triggerType, isHL);
+    };
+
+    const pushLoadedTables = (turnId: string, triggerType: 'trigger' | 'leaf-trigger', includeFollowups = true) => {
         for (const node of loadedTablesByTurn.get(turnId) || []) {
             const table = tableById.get(node.tableId);
             if (!table) continue;
@@ -1776,9 +1814,7 @@ let SingleThreadGroupView: FC<{
                 highlighted: isHL,
                 element: el,
             }));
-            pushReportItems(table.id, isHL, triggerType);
-            pushTableTextTurns(table.id, isHL, triggerType);
-            pushAgentDraftItems(table.id, triggerType, isHL);
+            if (includeFollowups) pushLoadedTableFollowups(node, triggerType);
         }
     };
 
@@ -1953,6 +1989,25 @@ let SingleThreadGroupView: FC<{
         );
     }
 
+    if (conversationRootId && leafTable) {
+        for (const node of loadedTablesByTurn.get(conversationRootId) || []) {
+            const loadedItem = timelineItems.find(item => item.key === node.id);
+            const question = timelineItems.find(item => item.interactionEntry?.role === 'instruction'
+                && item.outputNodeId && tableById.get(item.outputNodeId)?.derive?.source.includes(node.tableId));
+            if (!loadedItem || !question) continue;
+            question.element = <Box sx={{ minWidth: 0 }}>
+                {question.element}
+                <Typography data-thread-item={loadedItem.key}
+                    sx={{ mt: 0.25, px: 0.5, fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere' }}>
+                    {t('dataThread.loadedTableReference', {
+                        name: tableById.get(node.tableId)?.displayId || node.tableId,
+                        defaultValue: 'Loaded: {{name}}',
+                    })}
+                </Typography>
+            </Box>;
+            timelineItems = timelineItems.filter(item => item !== loadedItem);
+        }
+    }
     timelineItems = orderThreadOutputs(timelineItems, textTurns);
     const workflowTurns = textTurns.filter(turn => turn.workflow && timelineItems.some(item => item.key === `textturn-${turn.id}`
         || item.key.startsWith(`textturn-prompt-${turn.id}-`)
@@ -2095,8 +2150,8 @@ let SingleThreadGroupView: FC<{
                     },
                 }} />;
             }
-            if (tableForDot?.virtual) {
-                return <TableIcon sx={{ ...iconSx, width: 14, height: 14 }} />;
+            if (tableForDot?.derive) {
+                return <Box data-thread-table-dot sx={{ width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', backgroundColor: color }} />;
             }
             return <TableIcon sx={iconSx} />;
         }
@@ -2180,7 +2235,7 @@ let SingleThreadGroupView: FC<{
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
-                        <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'white' }}>
+                        <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <CallMergeIcon sx={{ fontSize: iconVar.xs, color: item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.15)', transform: 'rotate(180deg)' }} />
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
@@ -2198,9 +2253,8 @@ let SingleThreadGroupView: FC<{
         if (isTrigger) {
             const entry = item.interactionEntry;
             const isFromUser = entry ? entry.from === 'user' : false;
-            // User → custom (orange), Agent → secondary when highlighted, muted when not
             const iconColor = item.highlighted
-                ? (isFromUser ? theme.palette.custom.main : theme.palette.text.secondary)
+                ? (isFromUser ? theme.palette.custom.main : theme.palette.primary.main)
                 : 'rgba(0,0,0,0.15)';
             // Pick step-specific icon for completed thinking steps
             const getStepIcon = (label: string, color: string) => {
@@ -2223,7 +2277,11 @@ let SingleThreadGroupView: FC<{
                     : item.isCompleted && item.stepLabel
                         ? getStepIcon(item.stepLabel, iconColor)
                         : item.gutterIcon
-                            ? item.gutterIcon
+                            ? React.isValidElement(item.gutterIcon)
+                                ? React.cloneElement(item.gutterIcon as React.ReactElement<any>, {
+                                    sx: [item.gutterIcon.props.sx || {}, { color: item.highlighted ? theme.palette.primary.main : iconColor }],
+                                })
+                                : item.gutterIcon
                             : entry
                                 ? getEntryGutterIcon(entry, iconColor)
                                 : getDefaultGutterIcon(iconColor);
@@ -2323,7 +2381,7 @@ let SingleThreadGroupView: FC<{
                         // so the timeline reads as a single unbroken path.
                         <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
                     )}
-                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Box sx={{ flexShrink: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {getTimelineDot(item)}
                     </Box>
                     {!isLast && (
@@ -2349,6 +2407,20 @@ let SingleThreadGroupView: FC<{
 
     const threadActive = focusedId?.type === 'conversation' && focusedId.tableId === conversationTargetId;
     const showItemFocus = focusedId?.type !== 'conversation';
+    const conversationButtonSx = {
+        flexShrink: 0, minWidth: 0, minHeight: 24, px: 0.75, py: 0.25, ml: 'auto',
+        fontSize: textVar.xs, textTransform: 'none', letterSpacing: 0,
+        '& .MuiButton-endIcon': { ml: 0.5, mr: 0, '& > *:nth-of-type(1)': { fontSize: iconVar.sm } },
+        color: 'text.primary',
+        bgcolor: threadActive ? 'action.selected' : 'transparent',
+        '&:hover': {
+            bgcolor: alpha(theme.palette.text.primary, 0.1),
+        },
+        '&.Mui-focusVisible': {
+            outline: `2px solid ${theme.palette.text.secondary}`,
+            outlineOffset: 2,
+        },
+    };
     const flowBlocks: { key: string; indices: number[]; exchangeId?: string; outputNodeId?: string }[] = [];
     timelineItems.forEach((item, index) => {
         const key = item.outputNodeId ? `output-${item.outputNodeId}` : item.exchangeId || item.key;
@@ -2397,12 +2469,14 @@ let SingleThreadGroupView: FC<{
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
                         <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
-                        <Box sx={{ 
-                            width: 8, height: 8, borderRadius: '50%', 
-                            border: `1.5px solid ${showItemFocus && headerHL ? alpha(hlColor, 0.6) : 'rgba(0,0,0,0.15)'}`,
-                            backgroundColor: 'transparent',
-                            flexShrink: 0,
-                        }} />
+                        <Tooltip title={historyCollapsed ? t('dataThread.expandThread', { defaultValue: 'Expand thread' }) : t('dataThread.collapseThread', { defaultValue: 'Collapse thread' })}>
+                            <IconButton size="small" aria-label={historyCollapsed ? t('dataThread.expandThread', { defaultValue: 'Expand thread' }) : t('dataThread.collapseThread', { defaultValue: 'Collapse thread' })}
+                                aria-expanded={!historyCollapsed} onClick={onToggleHistory} sx={{ width: 18, height: 18, p: 0, color: showItemFocus && headerHL ? hlColor : 'text.secondary' }}>
+                                {historyCollapsed ? <ChevronRightIcon sx={{ fontSize: 16 }} />
+                                    : <Box component="span" aria-hidden="true" sx={{ width: 8, height: 8, borderRadius: '50%',
+                                        border: '1.5px solid currentColor', boxSizing: 'content-box' }} />}
+                            </IconButton>
+                        </Tooltip>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
@@ -2413,16 +2487,33 @@ let SingleThreadGroupView: FC<{
                         }}>
                             {threadLabel}
                         </Typography>
-                        <Tooltip title={t('dataThread.openConversation', { defaultValue: 'Open full conversation' })}>
-                            <IconButton size="small" aria-label={t('dataThread.openThreadConversation', { defaultValue: 'Open thread conversation' })}
-                                sx={{ flexShrink: 0 }} onClick={openThreadConversation}>
-                                <OpenInNewIcon sx={{ fontSize: iconVar.sm }} />
-                            </IconButton>
+                        <Tooltip describeChild title={t('dataThread.openConversation', { defaultValue: 'Open full conversation' })}>
+                            <Button size="small" variant="text" endIcon={<ArrowForwardIcon />}
+                                aria-pressed={threadActive} sx={conversationButtonSx} onClick={openThreadConversation}>
+                                {t('dataThread.viewChat', { defaultValue: 'view chat' })}
+                            </Button>
                         </Tooltip>
                     </Box>
                 </Box>
                 );
             })()}
+            {historyCollapsed && threadSummary && <Box sx={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+                <Box aria-hidden="true" sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                    <Box sx={{ width: 0, borderLeft: '2px solid', borderColor: showItemFocus && headerHL
+                        ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)' }} />
+                </Box>
+                <Tooltip describeChild title={threadSummary}>
+                    <Typography component="button" type="button" data-thread-summary aria-expanded={false} onClick={onToggleHistory}
+                        sx={{ flex: 1, minWidth: 0, ml: '4px', mr: `${TIMELINE_WIDTH}px`,
+                        mt: 0.25, fontSize: textVar.xs, lineHeight: 1.4, color: 'text.secondary',
+                        p: 0, border: 0, background: 'transparent', textAlign: 'left', fontFamily: theme.typography.fontFamily, cursor: 'pointer',
+                        '&:hover': { color: 'text.primary' },
+                        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>
+                        {threadSummary}
+                    </Typography>
+                </Tooltip>
+            </Box>}
             {isSplitThread && !joinedAbove && (() => {
                 // Continuation header: a small "↑ continued" chip on a dashed
                 // gutter.  The parent chip immediately below identifies the
@@ -2447,17 +2538,17 @@ let SingleThreadGroupView: FC<{
                             }}>
                                 {t('dataThread.continuedFromAbove')}
                             </Typography>
-                            <Tooltip title={t('dataThread.openConversation', { defaultValue: 'Open full conversation' })}>
-                                <IconButton size="small" aria-label={t('dataThread.openThreadConversation', { defaultValue: 'Open thread conversation' })}
-                                    sx={{ flexShrink: 0 }} onClick={openThreadConversation}>
-                                    <OpenInNewIcon sx={{ fontSize: iconVar.sm }} />
-                                </IconButton>
+                            <Tooltip describeChild title={t('dataThread.openConversation', { defaultValue: 'Open full conversation' })}>
+                                <Button size="small" variant="text" endIcon={<ArrowForwardIcon />}
+                                    aria-pressed={threadActive} sx={conversationButtonSx} onClick={openThreadConversation}>
+                                    {t('dataThread.viewChat', { defaultValue: 'view chat' })}
+                                </Button>
                             </Tooltip>
                         </Box>
                     </Box>
                 );
             })()}
-            {flowBlocks.map((block, blockIndex) => <Box key={block.key} data-thread-flow-block={block.key}
+            {!historyCollapsed && flowBlocks.map((block, blockIndex) => <Box key={block.key} data-thread-flow-block={block.key}
                 sx={{ breakInside: 'avoid', breakBefore: blockIndex === 0 ? 'avoid' : 'auto', minWidth: 0 }}>
                 {block.indices.map(index => {
                     const item = timelineItems[index];
@@ -2465,7 +2556,7 @@ let SingleThreadGroupView: FC<{
                         index, index === timelineItems.length - 1 && !joinedBelow, showItemFocus && (timelineItems[index + 1]?.highlighted ?? (joinedBelow && shouldHighlightThread)));
                 })}
             </Box>)}
-            {hasContinuationBelow && !joinedBelow && (() => {
+            {!historyCollapsed && hasContinuationBelow && !joinedBelow && (() => {
                 return (
                     <Box sx={{ display: 'flex', flexDirection: 'row' }}>
                         <Box sx={{
@@ -3091,6 +3182,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // names truncate. DataFormulator snaps the pane from the same tokens.
     const { tokens: threadTokens } = useLayout();
     const [expandedColumns, setExpandedColumns] = useState(false);
+    const [threadExpansion, setThreadExpansion] = useState<Record<string, boolean>>({});
     const [containerWidth, setContainerWidth] = useState(0);
     const [threadPanelHeight, setThreadPanelHeight] = useState(600);
     const triggerHeightsRef = useRef(new Map<string, number>());
@@ -3433,6 +3525,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // artifacts that stack inline under their parent table.
     type ThreadEntry = {
         key: string;
+        expansionKey?: string;
+        historyCollapsed?: boolean;
+        threadSummary?: string;
         isShelf?: boolean;                // true → the source-table shelf, not a thread
         leafTable?: DictTable;            // absent → source-artifact-only thread
         originTableId?: string;           // source table this thread grew out of (reference chip)
@@ -3537,6 +3632,14 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         });
     });
 
+    for (const rootId of conversationRootIds) {
+        const owner = allThreadEntries.find(entry => entry.leafTable && !entry.isSplitThread
+            && getCachedTriggers(entry.leafTable)[0]?.tableId === rootId);
+        if (!owner) continue;
+        owner.conversationRootId = rootId;
+        allThreadEntries = allThreadEntries.filter(entry => entry.leafTable || entry.conversationRootId !== rootId);
+    }
+
     const firstTurnByRoot = new Map<string, TextTurn>();
     const turnOrder = new Map(textTurnsForHome.map((turn, index) => [turn.id, index]));
     for (const turn of textTurnsForHome) {
@@ -3544,7 +3647,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         const first = firstTurnByRoot.get(rootId);
         if (!first || (turn.startedAt ?? turn.createdAt) < (first.startedAt ?? first.createdAt)) firstTurnByRoot.set(rootId, turn);
     }
-    const threadGroups = new Map<string, { entries: ThreadEntry[]; firstTurn?: TextTurn; startedAt: number }>();
+    const threadGroups = new Map<string, { entries: ThreadEntry[]; firstTurn?: TextTurn; summary: string; startedAt: number }>();
     for (const entry of allThreadEntries) {
         if (entry.isShelf) continue;
         const groupId = entry.leafTable ? `table:${groupIdOf(entry.leafTable)}` : entry.key;
@@ -3567,6 +3670,11 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         threadGroups.set(groupId, {
             entries: [entry],
             firstTurn,
+            summary: (firstTurn?.prompt || firstTurn?.workflowDefinition?.definition.name
+                || triggers[0]?.interaction?.find(item => item.from === 'user' && item.role === 'prompt')?.content
+                || draftNodes.find(draft => draftHostOf(draft) === rootId)?.derive.trigger.interaction?.find(item => item.from === 'user' && item.role === 'prompt')?.content
+                || firstTurn?.content || firstTable?.displayId
+                || (rootId ? tableById.get(rootId)?.displayId : '') || '').replace(/\s+/g, ' ').trim(),
             startedAt: Math.min(
                 firstTurn?.startedAt ?? firstTurn?.createdAt ?? Infinity,
                 ...interactionStarts,
@@ -3582,6 +3690,15 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         ...allThreadEntries.filter(entry => entry.isShelf),
         ...orderedGroups.flatMap((group, index) => {
             group.entries[0].threadLabel = t('dataThread.threadIndex', { index: String(index + 1) });
+            const firstEntry = group.entries[0];
+            const firstTrigger = firstEntry.leafTable ? getCachedTriggers(firstEntry.leafTable)[0] : undefined;
+            const expansionKey = `${activeWorkspace?.id || ''}:${group.firstTurn?.id || firstEntry.conversationRootId || firstTrigger?.resultTableId || firstEntry.key}`;
+            const expanded = threadExpansion[expansionKey] ?? index === orderedGroups.length - 1;
+            for (const entry of group.entries) {
+                entry.expansionKey = expansionKey;
+                entry.historyCollapsed = !expanded;
+                entry.threadSummary = group.summary;
+            }
             return group.entries;
         }),
     ];
@@ -3625,7 +3742,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
 
             if (entry.conversationRootId) {
                 claimLoadedTables(entry.conversationRootId!);
-                continue;
+                if (!entry.leafTable) continue;
             }
 
             if (entry.originTableId) {
@@ -3652,6 +3769,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
 
         }
     }
+
+    allThreadEntries = allThreadEntries.filter(entry => !entry.historyCollapsed || !entry.isSplitThread);
 
     // (design-docs/42) No per-turn home assignment: a table's attached content
     // (conversation turns + live run state) renders at its single real card
@@ -3700,6 +3819,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         return <SingleThreadGroupView
             key={entry.key}
             threadLabel={entry.threadLabel}
+            threadSummary={entry.threadSummary}
+            historyCollapsed={entry.historyCollapsed}
+            onToggleHistory={() => setThreadExpansion(previous => ({ ...previous, [entry.expansionKey!]: !!entry.historyCollapsed }))}
             isSplitThread={entry.isSplitThread}
             joinedAbove={joinedAbove}
             joinedBelow={joinedBelow}
@@ -3766,6 +3888,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
 
     const entryHeights = allThreadEntries.map(entry => {
         if (entry.isShelf) return Math.ceil(shelfHeight);
+        if (entry.historyCollapsed) return entry.threadSummary ? 78 : 42;
         if (entry.leafTable) {
             const owned = getCachedTriggers(entry.leafTable).filter(trigger => !entry.usedTableIds?.includes(trigger.resultTableId));
             return Math.ceil(LAYOUT_THREAD_OVERHEAD + owned.reduce((sum, trigger) => sum + triggerHeight(trigger), 0));

@@ -40,7 +40,158 @@ describe('Analyst landing attachment handoff', () => {
         vi.mocked(streamRequest).mock.calls[index][1].body as string,
     );
 
-    it('keeps agent loading cards until the published table is registered', async () => {
+    it.each(['Write a report', 'Create a workflow'])('starts %s as a visible user prompt requesting suggestions', async label => {
+        const { dispatchSpy } = mountTask();
+        fireEvent.click(screen.getByRole('button', { name: 'Quick actions' }));
+        expect(streamRequest).not.toHaveBeenCalled();
+        expect(screen.getAllByRole('menuitem')).toHaveLength(2);
+        fireEvent.click(screen.getByRole('menuitem', { name: label }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        const prompt = requestBody().user_question;
+        expect(prompt).toContain(label === 'Write a report' ? 'write a report' : 'create a workflow');
+        expect(prompt).toContain('Suggest a few useful directions');
+        const draftAction = dispatchSpy.mock.calls.map(([action]) => action as any)
+            .find(action => action.type === dfActions.createDraftNode.type);
+        expect(draftAction.payload.interaction).toEqual(expect.arrayContaining([
+            expect.objectContaining({ from: 'user', role: 'prompt', content: prompt }),
+        ]));
+        expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
+    });
+
+    it('routes the workflow shortcut to analyst chat even when a paused execution is focused', async () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'paused-run', displayId: 'Paused run', textKind: 'explain',
+            content: 'Waiting for inputs', parentNodeId: 'conversation-root:run', createdAt: 1,
+            workflow: { runId: 'run', status: 'paused', stepId: 'inspect', calls: 1, steps: [] } }));
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'paused-run' }));
+        store.dispatch(dfActions.queueAnalystTask({ text: 'I want to create a workflow from this analysis.',
+            images: [], attachments: [], intent: 'workflow-authoring' }));
+        render(<StrictMode><Provider store={store}><SimpleChartRecBox /></Provider></StrictMode>);
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(String(vi.mocked(streamRequest).mock.calls[0][0])).not.toContain('/workflows/run');
+        expect(requestBody().user_question).toContain('create a workflow');
+        expect(requestBody().focused_thread).toEqual(expect.arrayContaining([expect.objectContaining({
+            workflow: expect.objectContaining({ run_id: 'run' }),
+        })]));
+        expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
+    });
+
+    it.each(['running', 'paused'] as const)('allows general chat while a %s workflow is selected', async status => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const workflow = { runId: 'run', status, stepId: 'inspect', calls: 1, steps: [], outputVersions: {} };
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'active-run', displayId: 'Active run', textKind: 'explain',
+            content: 'Inspecting data', parentNodeId: 'conversation-root:run', createdAt: 1, workflow }));
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'active-run' }));
+        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        const input = screen.getByRole('textbox');
+        fireEvent.change(input, { target: { value: 'Create a new workflow organized around analytical goals.' } });
+        const targetSwitch = screen.getByRole('button', { name: 'Message workflow agent' });
+        expect(targetSwitch).toHaveAttribute('aria-pressed', 'true');
+        expect(targetSwitch.closest('[data-chat-mode]')).toBeNull();
+        const newRequest = screen.getByRole('button', { name: 'New request' });
+        fireEvent.click(newRequest);
+        expect(newRequest).toHaveAttribute('aria-pressed', 'true');
+        expect(targetSwitch).toHaveAttribute('aria-pressed', 'false');
+        expect(input).toHaveValue('Create a new workflow organized around analytical goals.');
+        expect(input.closest('[data-chat-mode]')).toHaveAttribute('data-chat-mode', 'analyst');
+        fireEvent.click(targetSwitch);
+        expect(targetSwitch).toHaveAttribute('aria-pressed', 'true');
+        expect(input.closest('[data-chat-mode]')).toHaveAttribute('data-chat-mode', 'workflow');
+        fireEvent.click(newRequest);
+        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: 'active-run' })));
+        expect(newRequest).toHaveAttribute('aria-pressed', 'true');
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'workflow-result', displayId: 'Workflow result',
+                textKind: 'explain', content: 'Hourly comparison', parentNodeId: 'active-run', createdAt: 2 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'workflow-result' }));
+        });
+        expect(newRequest).toHaveAttribute('aria-pressed', 'true');
+        expect(input).toHaveValue('Create a new workflow organized around analytical goals.');
+        if (status === 'running') fireEvent.keyDown(input, { key: 'Enter' });
+        else fireEvent.click(screen.getByRole('button', { name: 'Explore' }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(String(vi.mocked(streamRequest).mock.calls[0][0])).not.toContain('/workflows/');
+        expect(requestBody().user_question).toContain('Create a new workflow');
+        expect(requestBody().focused_thread).toEqual(expect.arrayContaining([expect.objectContaining({
+            workflow: expect.objectContaining({ run_id: 'run' }),
+        })]));
+        expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
+        expect(store.getState().textTurns.find(turn => turn.id === 'active-run')).toMatchObject({ workflow });
+        expect(store.getState().textTurns.find(turn => turn.id === 'active-run')?.answered).not.toBe(true);
+    });
+
+    it('keeps the recipient switch compact and hides legacy internal workflow names', () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const id = 'textTurn-workflow-internal-run';
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain',
+            content: 'Inspecting data', parentNodeId: 'conversation-root:run', createdAt: 1,
+            workflow: { runId: 'run', status: 'running', calls: 1, steps: [] } }));
+        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        const workflowButton = screen.getByRole('button', { name: 'Message workflow agent' });
+        expect(workflowButton).toHaveTextContent(/^Workflow$/);
+        expect(workflowButton).toHaveStyle({ minHeight: '24px', fontWeight: '400' });
+        expect(screen.queryByText('Send to')).toBeNull();
+        expect(screen.queryByText(new RegExp(id))).toBeNull();
+        expect(screen.getByText('Running')).toHaveAttribute('aria-label', 'Workflow');
+    });
+
+    it('keeps unrelated chat with the analyst while another workflow is running', async () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'active-run', displayId: 'Active run', textKind: 'explain',
+            content: '', parentNodeId: 'conversation-root:run', createdAt: 1,
+            workflow: { runId: 'run', status: 'running', stepId: 'inspect', calls: 1, steps: [], outputVersions: {} } }));
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'other-chat', displayId: 'Other chat', textKind: 'explain',
+            content: 'Previous analysis', parentNodeId: 'conversation-root:other', createdAt: 2 }));
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'other-chat' }));
+        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        expect(screen.getByRole('button', { name: 'Message workflow agent' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'New request' })).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Explain this analysis' } });
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().user_question).toContain('Explain this analysis');
+        expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
+    });
+
+    it('publishes workflow proposals in chat and carries the full definition into refinements', async () => {
+        const proposal = { content: 'version: 1\nname: Daily trip review\noverview: Compare the previous day\ndeliverables: [Hourly chart]',
+            definition: { name: 'Daily trip review', overview: 'Compare the previous day', deliverables: ['Hourly chart'] } };
+        vi.mocked(apiRequest).mockResolvedValue({ data: { result: [], statistics: {} } } as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'Review the proposed workflow.', workflow_definition: proposal } };
+        });
+        const { store } = mountTask({ text: 'Create a daily trip workflow from this analysis', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toBeDefined());
+        const turn = store.getState().textTurns.find(turn => turn.workflowDefinition)!;
+        expect(turn.workflowDefinition).toEqual(proposal);
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: turn.id });
+        expect(screen.queryByRole('region', { name: 'Workflow definition' })).toBeNull();
+        expect(store.getState().fileNodes).toHaveLength(0);
+        const revised = { content: `${proposal.content}\nparameters:\n  - name: target_date\n    type: text\n    required: true`,
+            definition: { ...proposal.definition, parameters: [{ name: 'target_date', type: 'text', required: true }] } };
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'Added the target date parameter.', workflow_definition: revised } };
+        });
+        act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Parameterize the target date', images: [], attachments: [] })));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(requestBody(1).focused_thread).toEqual(expect.arrayContaining([expect.objectContaining({
+            workflow_definition: proposal.content, agent_response: 'Review the proposed workflow.',
+        })]));
+        await waitFor(() => expect(store.getState().textTurns.filter(turn => turn.workflowDefinition)).toHaveLength(2));
+        const revisionTurn = store.getState().textTurns.find(turn => turn.workflowDefinition?.content === revised.content)!;
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: revisionTurn.id });
+        expect(store.getState().textTurns.find(item => item.id === turn.id)?.workflowDefinition).toEqual(proposal);
+        act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Now add explicit source loading', images: [], attachments: [] })));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(3));
+        expect(requestBody(2).focused_thread.filter((step: any) => step.workflow_definition)
+            .map((step: any) => step.workflow_definition)).toEqual([proposal.content, revised.content]);
+        expect(vi.mocked(streamRequest).mock.calls.every(([url]) => !String(url).includes('/workflows/run'))).toBe(true);
+    });
+
+    it.each([false, true])('keeps agent loading cards until the published table is registered (source: %s)', async includeSource => {
+        const sourceReference = { kind: 'external-table-reference', id: 'external:warehouse:orders',
+            connectorId: 'warehouse', tableKey: 'orders', sourceTable: { id: 'orders', name: 'All orders' },
+            displayName: 'All orders', capturedAt: '2026-09-20T00:00:00Z', summary: { columns: [], rowCount: 2000000 } };
         let finishLoad!: () => void;
         const loading = new Promise<void>(resolve => { finishLoad = resolve; });
         let publish!: (value: any) => void;
@@ -56,6 +207,7 @@ describe('Analyst landing attachment handoff', () => {
                 plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Orders', summary: '',
                     steps: [{ kind: 'connector_query', display_name: 'Orders' }] }],
                 result_table_ids: ['orders'],
+                result_references: includeSource ? [sourceReference] : [],
             } };
         });
         const { store } = mountTask({ text: 'Load orders', images: [], attachments: [] });
@@ -69,6 +221,25 @@ describe('Analyst landing attachment handoff', () => {
             await act(async () => { finishLoad(); publish({ data: { tables: [{ name: 'orders', columns: [], row_count: 5, sample_rows: [] }] } }); });
         }
         await waitFor(() => expect(store.getState().inputTables).toHaveLength(1));
+        expect(store.getState().externalTableReferences).toEqual(includeSource ? [sourceReference] : []);
+        expect(store.getState().pendingTableLoads).toEqual([]);
+    });
+
+    it('registers agent virtual sources without requesting local tables', async () => {
+        const reference = { kind: 'external-table-reference', id: 'external:warehouse:orders',
+            connectorId: 'warehouse', tableKey: 'orders', sourceTable: { id: 'orders', name: 'Orders' },
+            displayName: 'Orders', capturedAt: '2026-09-20T00:00:00Z', summary: { columns: [], rowCount: 2000000 } };
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'data_operation_result', operation: {
+                schema_version: 1, id: 'virtual-operation', status: 'loaded', reason: '',
+                plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Add orders', summary: '',
+                    steps: [{ kind: 'connector_query', display_name: 'Orders' }] }], result_references: [reference],
+            } };
+        });
+        const { store } = mountTask({ text: 'Add orders', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().externalTableReferences).toEqual([reference]));
+        expect(store.getState().inputTables).toEqual([]);
+        expect(vi.mocked(apiRequest).mock.calls.some(([url]) => String(url).includes('list-tables'))).toBe(false);
         expect(store.getState().pendingTableLoads).toEqual([]);
     });
 
@@ -118,7 +289,7 @@ describe('Analyst landing attachment handoff', () => {
             store.dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
         });
         expect(screen.getByRole('button', { name: 'Get idea suggestions' })).toBeEnabled();
-        expect(screen.getByRole('button', { name: 'Generate a report' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Quick actions' })).toBeEnabled();
         const input = screen.getByRole('textbox');
         fireEvent.change(input, { target: { value: 'Count events by region' } });
         expect(screen.getByRole('button', { name: 'Explore', exact: true })).toBeEnabled();
@@ -289,6 +460,40 @@ describe('Analyst landing attachment handoff', () => {
         expect(store.getState().draftNodes).toHaveLength(0);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: response.id })));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'retail_sales' });
+    });
+
+    it('attaches automatically loaded data to its fresh conversation through completion', async () => {
+        let finishRun!: () => void;
+        const running = new Promise<void>(resolve => { finishRun = resolve; });
+        vi.mocked(apiRequest).mockResolvedValue({ data: {
+            tables: [{ name: 'consumer_prices', columns: [{ name: 'price', type: 'FLOAT' }],
+                row_count: 241, sample_rows: [{ price: 12 }] }], result: [], statistics: {},
+        } } as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'data_operation_result', operation: {
+                schema_version: 1, id: 'operation', status: 'loaded', reason: 'Load consumer prices',
+                plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Consumer prices', summary: '',
+                    steps: [{ kind: 'connector_query', display_name: 'Consumer prices' }] }],
+                result_table_ids: ['consumer_prices'],
+            } };
+            await running;
+            yield { type: 'completion', status: 'success', content: { summary: 'Loaded consumer prices.' } };
+        });
+        const { store } = mountTask({ text: 'Load consumer price data', images: [], attachments: [] });
+        try {
+            await waitFor(() => expect(store.getState().loadedTableNodes).toHaveLength(1));
+            expect(store.getState().inputTables).toHaveLength(1);
+            expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(store.getState().draftNodes[0].id);
+        } finally {
+            await act(async () => { finishRun(); });
+        }
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
+        const response = store.getState().textTurns[0];
+        expect(response.prompt).toBe('Load consumer price data');
+        expect(store.getState().loadedTableNodes[0]).toMatchObject({ tableId: 'consumer_prices', parentNodeId: response.id });
+        expect(store.getState().draftNodes).toHaveLength(0);
+        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: response.id })));
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'consumer_prices' });
     });
 
     it('focuses a loaded-table reference and continues its conversation', async () => {

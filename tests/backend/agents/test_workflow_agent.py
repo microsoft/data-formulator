@@ -12,7 +12,7 @@ import yaml
 
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workflows.agent import TOOLS, WorkflowAgent, new_run, public_run
-from data_formulator.workflows.instances import WorkflowStore, parse_workflow, resolve_setup
+from data_formulator.workflows.instances import WorkflowStore, parse_definition, parse_workflow, resolve_setup
 
 pytestmark = [pytest.mark.backend]
 
@@ -30,6 +30,155 @@ def agent(tmp_path, instance):
     workspace = Workspace("workflow-test", root_dir=tmp_path)
     state = new_run(instance, "test")
     return WorkflowAgent(MagicMock(), workspace, state, lambda value: None, Event(), "")
+
+
+def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, instance, monkeypatch):
+    from data_formulator.analyst.agent import AnalystAgent
+    from data_formulator.analyst.skills.base import SkillContext
+    from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
+
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+    workspace = Workspace("chat-author", root_dir=tmp_path)
+    analyst = AnalystAgent(MagicMock(), workspace)
+    assert "propose_workflow" in analyst.registry.action_names()
+    context = SkillContext(client=MagicMock(), workspace=workspace, trajectory=[], payload={})
+    instance["steps"][0]["description"] = "Assess market changes with verified coverage."
+    events = list(WorkspaceSkill().handle_action("propose_workflow", {"definition": instance, "summary": "Ready for review"}, context))
+    assert events[0]["type"] == "completion"
+    proposal = events[0]["content"]["workflow_definition"]
+    assert proposal["definition"] == instance
+    assert parse_workflow(proposal["content"]) == instance
+    state = new_run(events[0]["content"]["workflow_definition"]["definition"], "authored")
+    assert state["plan"]["steps"] == instance["steps"]
+    assert state["step_id"] == "work"
+    assert state["plan"]["steps"] is not state["definition"]["steps"]
+    assert workspace.list_workspace_files() == []
+    assert workspace.list_tables() == []
+    invalid = WorkspaceSkill().handle_action("propose_workflow", {"definition": {"name": "invalid"}}, context)
+    with pytest.raises(StopIteration) as stopped:
+        next(invalid)
+    assert "Invalid workflow definition" in stopped.value.value
+    guidance_only = {key: value for key, value in instance.items() if key != "steps"}
+    invalid = WorkspaceSkill().handle_action("propose_workflow", {"definition": guidance_only}, context)
+    with pytest.raises(StopIteration) as stopped:
+        next(invalid)
+    assert "'steps' is a required property" in stopped.value.value
+    assert workspace.list_workspace_files() == []
+    assert workspace.list_tables() == []
+
+
+def test_workflow_proposal_exposes_canonical_definition_schema():
+    from data_formulator.analyst.skills import build_registry
+    from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA, WORKFLOW_STEP_SCHEMA
+    from jsonschema import Draft202012Validator
+
+    Draft202012Validator.check_schema(WORKFLOW_DEFINITION_SCHEMA)
+    proposal = next(spec for spec in build_registry().tool_specs["workspace"]
+                    if spec["function"]["name"] == "propose_workflow")
+    contract = proposal["function"]["parameters"]
+    assert contract["properties"]["definition"] == WORKFLOW_DEFINITION_SCHEMA
+    assert contract["required"] == ["definition", "summary"]
+    assert "content" not in contract["properties"]
+    assert "parameters" in WORKFLOW_DEFINITION_SCHEMA["properties"]
+    adaptation = next(spec for spec in TOOLS if spec["function"]["name"] == "adapt_plan")
+    assert adaptation["function"]["parameters"]["properties"]["steps"]["items"] == WORKFLOW_STEP_SCHEMA
+
+
+def test_parameterized_pickup_definition_roundtrips_and_resolves_run_values(instance):
+    from data_formulator.workflows.instances import validate_workflow_definition
+
+    instance.update(name="Daily Pickup Alert Review", parameters=[
+        {"name": "comparison_date", "label": "Comparison date", "type": "text", "required": True,
+         "default": "2011-01-17"},
+        {"name": "target_date", "label": "Target date", "type": "text", "required": True,
+         "default": "2011-01-18"},
+        {"name": "alert_threshold_percent", "label": "Alert threshold (%)", "type": "number", "default": 15},
+    ])
+    instance["steps"][0].update(description="Compare pickup volumes and assess the alert threshold.")
+    validate_workflow_definition(instance, authored=True)
+    assert parse_workflow(yaml.safe_dump(instance)) == instance
+    setup = resolve_setup(instance, {"parameters": {"target_date": "2011-01-19", "alert_threshold_percent": 20}})
+    assert setup["parameters"] == {"comparison_date": "2011-01-17", "target_date": "2011-01-19",
+                                   "alert_threshold_percent": 20}
+    assert instance["parameters"][1]["default"] == "2011-01-18"
+
+
+@pytest.mark.parametrize("location", ["definition", "step", "checker", "parameter"])
+def test_workflow_contract_rejects_unknown_fields(instance, location):
+    instance["parameters"] = [{"name": "date", "label": "Date"}]
+    target = {"definition": instance, "step": instance["steps"][0],
+              "checker": instance["steps"][0]["checkers"][0], "parameter": instance["parameters"][0]}[location]
+    target["unsupported"] = "not executable"
+    with pytest.raises(ValueError, match="Additional properties"):
+        parse_workflow(yaml.safe_dump(instance))
+    if location == "parameter":
+        with pytest.raises(ValueError, match="Additional properties"):
+            resolve_setup(instance)
+
+
+def test_workflow_contract_rejects_recursive_and_nonfinite_values(instance):
+    from data_formulator.workflows.instances import validate_workflow_definition
+
+    for source in ({"value": float("inf")}, {"recursive": instance}):
+        instance["source"] = source
+        with pytest.raises(ValueError, match="JSON-compatible"):
+            validate_workflow_definition(instance)
+
+
+def test_new_proposals_require_step_descriptions_but_saved_workflows_remain_readable(instance):
+    from data_formulator.workflows.instances import validate_workflow_definition
+
+    assert parse_workflow(yaml.safe_dump(instance)) == instance
+    with pytest.raises(ValueError, match="'description' is a required property"):
+        validate_workflow_definition(instance, authored=True)
+
+
+def test_execution_prompt_guides_progressive_visual_analysis(agent):
+    prompt = agent._build_system_prompt()
+    assert prompt.count(agent.registry.load_body("visualization")) == 1
+    assert prompt.count("## Progressive Visual Analysis") == 1
+    assert "## Define Workflows In Conversation" not in prompt
+    assert "propose_workflow" not in prompt
+    assert "## Adapt the Active Run" in prompt
+
+
+def test_execution_agent_cannot_propose_new_workflow_definitions(agent):
+    assert "propose_workflow" not in {spec["function"]["name"] for spec in agent._current_tools()}
+    with pytest.raises(ValueError, match="Unknown workflow tool"):
+        agent._execute("propose_workflow", {}, "not-authoring")
+
+
+def test_definition_without_steps_gets_independent_execution_plan(instance):
+    instance.pop("steps")
+    definition = parse_definition(yaml.safe_dump(instance))
+    state = new_run(definition, "definition-only")
+    assert "steps" not in state["definition"]
+    assert state["plan"]["steps"][0]["id"] == "plan"
+    assert public_run(state)["instance"]["steps"] == state["plan"]["steps"]
+
+
+def test_legacy_adapted_checkpoint_migrates_definition_and_plan(tmp_path, instance):
+    state = new_run(instance, "legacy")
+    state.pop("definition")
+    state.pop("plan")
+    state["original_instance"] = json.loads(json.dumps(instance))
+    revised_steps = [{"id": "revised", "instructions": "Use updated data"}]
+    state["instance"]["steps"] = revised_steps
+    agent = WorkflowAgent(MagicMock(), Workspace("legacy", root_dir=tmp_path), state, lambda value: None, Event(), "")
+    assert agent.state["definition"] == instance
+    assert agent.state["plan"]["steps"] == revised_steps
+    assert agent.state["instance"] == instance
+
+
+def test_definition_and_execution_plan_are_independent(agent, instance):
+    steps = [{"id": "revised", "instructions": "Inspect current data", "checkers": []}]
+    agent._execute("adapt_plan", {"reason": "Different data", "step_id": "revised", "steps": steps}, "adapt")
+    assert agent.state["definition"] == instance
+    assert agent.state["plan"]["steps"] == steps
+    assert public_run(agent.state)["instance"]["steps"] == steps
+    assert public_run(agent.state)["definition"] == instance
+    instance["name"] = "Changed outside the run"
+    assert agent.state["definition"]["name"] == "Live stocks"
 
 
 def test_workflow_setup_defaults_overrides_and_snapshot(instance):
@@ -114,7 +263,7 @@ def test_step_description_survives_parsing_and_checkpoint_creation(instance):
 @pytest.mark.parametrize("description", [None, "", "  ", 3, {}])
 def test_step_description_rejects_invalid_values(instance, description):
     instance["steps"][0]["description"] = description
-    with pytest.raises(ValueError, match="Step description must be nonempty text"):
+    with pytest.raises(ValueError, match="steps.0.description"):
         parse_workflow(yaml.safe_dump(instance))
 
 
@@ -204,6 +353,28 @@ def test_workflow_asks_a_structured_question_and_retains_its_reply(agent):
     assert "Last quarter" in agent.state["trajectory"][-1]["content"]
 
 
+def test_workflow_virtual_source_survives_checkpoint_and_resume(agent, monkeypatch):
+    from data_formulator.datalake.catalog_cache import save_catalog
+
+    save_catalog(agent.workspace.user_home, "warehouse", [{"name": "Events", "table_key": "events",
+        "path": ["events"], "metadata": {"row_count": 2000000}}])
+    loader = MagicMock()
+    monkeypatch.setattr("data_formulator.data_connector.resolve_live_loader", loader)
+    result = agent._execute("propose_data_operation", {"options": [{"label": "Add events",
+        "tables": [{"source_id": "warehouse", "table_key": "events"}]}]}, "virtual-load")
+    assert '"compute_ready": false' in result
+    assert agent.state["external_references"][0]["tableKey"] == "events"
+    assert not agent.state["outputs"]
+    assert not agent.workspace.list_tables()
+    loader.assert_not_called()
+    restored = WorkflowAgent(agent.client, agent.workspace, json.loads(json.dumps(agent.state)), lambda *args: None,
+                             Event(), "test-user")
+    assert restored._run_payload["external_references"][0]["tableKey"] == "events"
+    restored.state["interaction"] = {"call_id": "reviewed-load", "tool": "propose_data_operation"}
+    restored.resolve_pending({"operation": {"result_references": agent.state["external_references"]}})
+    assert len(restored._run_payload["external_references"]) == 1
+
+
 def test_legacy_help_uses_the_question_interaction(agent):
     agent._execute("request_help", {"question": "Please confirm the source."}, "help")
     assert agent.state["interaction"]["questions"][0]["text"] == "Please confirm the source."
@@ -220,7 +391,7 @@ def test_steering_is_injected_once_without_changing_progress(agent):
 
 
 def test_new_steering_allows_returning_to_an_earlier_step(agent):
-    agent.state["instance"]["steps"].append({"id": "report", "instructions": "Write the report"})
+    agent.state["plan"]["steps"].append({"id": "report", "instructions": "Write the report"})
     agent.state["step_id"] = "report"
     agent._execute("move_to_step", {"step_id": "work", "reason": "Check inputs"}, "first-jump")
     agent.state["transitions"] *= 3
@@ -252,7 +423,8 @@ def test_adapt_plan_updates_only_the_run_and_requires_fresh_verification(agent, 
              {"id": "report", "instructions": "Update the report"}]
     result = agent._execute("adapt_plan", {"steps": steps, "step_id": "recheck", "reason": "User changed the date range"}, "adapt")
     assert "saved workflow unchanged" in result
-    assert agent.state["instance"]["steps"] == steps
+    assert agent.state["plan"]["steps"] == steps
+    assert agent.state["definition"] == original
     assert agent.state["instance"]["deliverables"] == original["deliverables"]
     assert agent.state["original_instance"] == original
     assert store.read("review.yaml") == saved
@@ -324,6 +496,9 @@ def test_workflow_planning_skill_is_loaded_and_its_yaml_is_valid(agent):
 
     skill = Path(workflow_module.__file__).with_name("workflow-skill.md").read_text()
     assert skill in agent._build_system_prompt()
+    assert "Each phase publishes inspectable" in skill
+    assert "artifacts that answer its analytical question" in skill
+    assert "Reuse valid data, computations, and outputs on resume" in skill
     examples = re.findall(r"```yaml\n(.*?)```", skill, re.DOTALL)
     assert examples
     for example in examples:
@@ -480,7 +655,7 @@ def test_later_output_preserves_step_checks_but_requires_final_verification(agen
     agent._execute("execute_python_script", {"code": "print(42)"}, "inspect")
     agent._execute("record_check", {"check_id": "coverage", "status": "passed",
         "evidence_ids": ["inspect"], "explanation": "Inputs verified"}, "check")
-    agent.state["instance"]["steps"].append({"id": "report", "instructions": "Write report"})
+    agent.state["plan"]["steps"].append({"id": "report", "instructions": "Write report"})
     agent._execute("move_to_step", {"step_id": "report", "reason": "Inputs verified"}, "move")
     agent.state["calls"] = 2
     agent._execute("write_report", {"report": "# Review\n42 observations"}, "report")
@@ -563,7 +738,7 @@ def test_failed_check_and_repair(agent):
 
 def test_table_only_workflow_can_verify_and_complete(agent, monkeypatch):
     agent.state["instance"]["deliverables"] = ["Analysis table"]
-    agent.state["instance"]["steps"][0]["checkers"] = []
+    agent.state["plan"]["steps"][0]["checkers"] = []
     agent.state["calls"] = 1
     agent._execute("create_data", {"table_name": "values", "rows": [{"value": 2}], "input_sources": []}, "data")
     agent.state["calls"] = 2
@@ -768,6 +943,57 @@ def workflow_client(tmp_path, monkeypatch):
     monkeypatch.setattr(workflows, "get_user_home", lambda identity: tmp_path / "user")
     monkeypatch.setattr(workflows, "get_workspace", lambda identity: workspaces[request.headers["X-Workspace-Id"]])
     return app.test_client(), workspaces
+
+
+def test_user_workflow_save_read_across_workspaces(workflow_client, instance):
+    client, workspaces = workflow_client
+    instance.pop("steps")
+    payload = {"path": "review.workflow.yaml", "content": yaml.safe_dump(instance)}
+    headers = {"X-Workspace-Id": "first"}
+    saved = client.post("/api/workflows/save", json=payload, headers=headers)
+    assert saved.status_code == 200
+    path = saved.json["data"]["path"]
+    assert path == "review.workflow.yaml"
+    read = client.post("/api/workflows/read", json={"path": path}, headers=headers).json["data"]
+    assert saved.json["data"]["content_hash"] == read["content_hash"]
+    assert parse_definition(read["content"]) == instance
+    assert client.post("/api/workflows/save", json=payload, headers=headers).status_code == 400
+    assert client.post("/api/workflows/save", json={**payload, "content_hash": read["content_hash"]}, headers=headers).status_code == 200
+    assert client.post("/api/workflows/read", json={"path": path}, headers={"X-Workspace-Id": "second"}).json["data"] == read
+    assert client.post("/api/workflows/read", json={"path": path}).json["data"] == read
+    listed = client.post("/api/workflows/list", json={}, headers=headers).json["data"]["items"]
+    assert any(item["path"] == path and item["origin"] == "user" for item in listed)
+    assert workspaces["first"].list_tables() == []
+    assert workspaces["first"].list_workspace_files() == []
+    workspaces["first"].save_workspace_text_file("ignored.workflow.yaml", yaml.safe_dump(instance))
+    listed = client.post("/api/workflows/list", json={}, headers=headers).json["data"]["items"]
+    assert not any(item["origin"] == "workspace" or item["path"] == "ignored.workflow.yaml" for item in listed)
+    assert client.post("/api/workflows/read", json={"path": "workspace/ignored.workflow.yaml"}, headers=headers).status_code == 400
+
+
+def test_running_unsaved_definition_creates_independent_plan_not_saved_file(workflow_client, instance, monkeypatch):
+    from data_formulator.routes import agents
+
+    client, workspaces = workflow_client
+    instance.pop("steps")
+    monkeypatch.setattr(agents, "get_client", lambda model: MagicMock())
+
+    def run_workflow(self):
+        self.state.update(status="paused", message="Planning")
+        yield {"type": "workflow_state", "run": public_run(self.state)}
+
+    monkeypatch.setattr(WorkflowAgent, "run_workflow", run_workflow)
+    states = []
+    for _ in range(2):
+        response = client.post("/api/workflows/run", json={"content": yaml.safe_dump(instance), "model": {}},
+                               headers={"X-Workspace-Id": "first"})
+        assert response.status_code == 200
+        events = [json.loads(line) for line in response.data.decode().splitlines()]
+        states.append(next(event["run"] for event in events if event["type"] == "workflow_state"))
+    assert states[0]["definition"] == instance
+    assert states[0]["plan"]["steps"][0]["id"] == "plan"
+    assert states[0]["id"] != states[1]["id"]
+    assert workspaces["first"].list_workspace_files() == []
 
 
 def test_steering_inbox_is_scoped_idempotent_and_does_not_pause(workflow_client, instance):

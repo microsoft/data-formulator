@@ -13,9 +13,22 @@ Use `visualize` to run Python that produces a DataFrame and render it as a
 chart. The result returns as an observation, so inspect it before deciding what
 to do next.
 
+## Progressive Visual Analysis
+
+When grounded data supports a view that advances the question, publish it and
+use the returned evidence to guide subsequent analysis; do not reserve all charts
+for final delivery. Reuse useful views and avoid redundant charts. Respect explicit
+nonvisual requests; prefer a scalar or table for exact lookups or validation tallies.
+Inspect the returned data, specification, and diagnostics, claiming visual inspection
+only when image evidence is available. Verify numerical claims independently.
+
+## Inputs and Publication
+
 Follow the workspace Data Access Paths to choose or load inputs. Compute
 chart-specific filters, grouping, and ranking from their listed paths. No
 separate `create_data` call is needed to prepare or publish chart data.
+Virtual load outcomes are not local chart inputs; follow the workspace policy
+to obtain a compute-ready result or use the connector input path below.
 
 For the optional one-off chart path, declare `connector_inputs` in this call.
 Each input has a unique `alias`, `source_id`,

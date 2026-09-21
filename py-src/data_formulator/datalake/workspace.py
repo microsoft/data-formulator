@@ -1150,6 +1150,18 @@ class Workspace:
                     raise TextEditConflictError("Table changed; read it again before updating")
                 result.created_at = existing.created_at
                 result.original_name = display_name or existing.original_name
+            if len(input_sources) == 1 and input_sources[0].get("kind") == "data":
+                source = input_sources[0]
+                parent = metadata.get_table(source.get("table_name", ""))
+                if (parent is not None and not parent.stale and parent.content_hash
+                        and parent.content_hash == source.get("content_hash")
+                        and len(parent.input_sources or []) <= 1):
+                    origin = parent.imported_from or (parent.import_options or {}).get("data_operation")
+                    if isinstance(origin, dict) and origin.get("lineage_verified") is not False and all(
+                        isinstance(origin.get(key), str) and origin[key].strip()
+                        for key in ("source_id", "table_key")
+                    ):
+                        result.imported_from = {key: origin[key] for key in ("source_id", "table_key")}
             self.upload_file(content, filename)
             metadata.add_table(result)
             changed = {safe_name}

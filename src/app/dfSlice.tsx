@@ -256,7 +256,7 @@ export interface DataFormulatorState {
     cleanInProgress: boolean;
 
     /** Seeded prompt for the analyst (data-thread) chat, e.g. from the landing box. */
-    analystChatPending: { text: string; images: string[]; attachments: string[] } | null;
+    analystChatPending: { text: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' } | null;
     /**
      * Monotonic counter bumped whenever a connector is created/changed from a
      * surface that is not the sidebar itself (e.g. the inline connection form
@@ -456,8 +456,13 @@ const toInputTable = (table: DictTable): InputTable => ({
 });
 
 const replaceStoredTable = (state: DataFormulatorState, table: DictTable): void => {
+    const existing = state.derivedTables.find(item => item.id === table.id);
+    if (!table.derive && existing) {
+        table = { ...table, derive: existing.derive, parentNodeId: existing.parentNodeId };
+    }
     if (table.derive) {
-    table = withDerivedParent(table);
+        table = withDerivedParent(table);
+        state.inputTables = state.inputTables.filter(input => input.id !== table.id);
         const index = state.derivedTables.findIndex(item => item.id === table.id);
         if (index >= 0) state.derivedTables[index] = table;
         else state.derivedTables.push(table);
@@ -969,6 +974,20 @@ export const dataFormulatorSlice = createSlice({
             if (existing) Object.assign(existing, reference, { id: existing.id });
             else state.externalTableReferences.push(reference);
         },
+        replaceExternalTableReference: (state, action: PayloadAction<{ referenceId: string; table: DictTable }>) => {
+            if (state.activeWorkspace?.readOnly) return;
+            const { referenceId, table } = action.payload;
+            const reference = state.externalTableReferences.find(item => item.id === referenceId);
+            if (!reference) return;
+            replaceStoredTable(state, { ...table, displayId: reference.displayName });
+            state.externalTableReferences = state.externalTableReferences.filter(item => item.id !== referenceId);
+            state.workspaceItemOrder = state.workspaceItemOrder.map(key => key === referenceId ? `shelf-card-${table.id}` : key);
+            delete state.starterQuestions[referenceId];
+            delete state.starterQuestionsStatus[referenceId];
+            if (state.focusedId?.type === 'external-table' && state.focusedId.referenceId === referenceId) {
+                state.focusedId = { type: 'table', tableId: table.id };
+            }
+        },
         startTableLoad: (state, action: PayloadAction<DataFormulatorState['pendingTableLoads'][number]>) => {
             state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.payload.id);
             state.pendingTableLoads.push(action.payload);
@@ -1049,6 +1068,7 @@ export const dataFormulatorSlice = createSlice({
             // no version.
             const saved = migrateState(action.payload);
             const { miniMode: _legacyMiniMode, ...savedConfig } = saved.config || {};
+            const derivedIds = new Set((saved.derivedTables || []).map((table: DictTable) => table.id));
 
             // Return a brand-new state object so Immer skips
             // recursive proxy / freeze on potentially huge table rows.
@@ -1068,7 +1088,7 @@ export const dataFormulatorSlice = createSlice({
                 // value was session-only and often agent-fabricated. We don't
                 // migrate it to `description`, which is reserved for
                 // loader-supplied source descriptions.
-                inputTables: saved.inputTables || [],
+                inputTables: (saved.inputTables || []).filter((table: InputTable) => !derivedIds.has(table.id)),
                 derivedTables: (saved.derivedTables || []).map((t: any) => {
                     const { attachedMetadata: _legacyAttachedMetadata, ...rest } = t;
                     return {
@@ -1209,18 +1229,7 @@ export const dataFormulatorSlice = createSlice({
                 table = { ...table, contentHash: computeContentHash(table.rows, table.names) };
             }
 
-            if (table.derive) {
-                table = withDerivedParent(table);
-                const existingIdx = state.derivedTables.findIndex(t => t.id === table.id);
-                if (existingIdx >= 0) state.derivedTables[existingIdx] = table;
-                else state.derivedTables.push(table);
-            } else {
-                const inputTable = toInputTable(table);
-                setInputTablePreview(inputTable, table.rows);
-                const existingIdx = state.inputTables.findIndex(t => t.id === table.id);
-                if (existingIdx >= 0) state.inputTables[existingIdx] = inputTable;
-                else state.inputTables.push(inputTable);
-            }
+            replaceStoredTable(state, table);
             if (state.conceptShelfItems.some(f => f.tableRef === table.id)) {
                 state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== table.id);
             }
@@ -1798,8 +1807,8 @@ export const dataFormulatorSlice = createSlice({
         },
         insertDerivedTables: (state, action: PayloadAction<DictTable>) => {
             // Guard against duplicate IDs (e.g. race conditions or backend name collisions)
-            if (collectAllTables(state).some(t => t.id === action.payload.id)) return;
-            state.derivedTables = [...state.derivedTables, withDerivedParent(action.payload)];
+            if (state.derivedTables.some(t => t.id === action.payload.id)) return;
+            replaceStoredTable(state, action.payload);
         },
         // ?? Draft node reducers ??????????????????????????????????
         createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentNodeId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string; externalReferenceId?: string }>) => {
@@ -1894,7 +1903,7 @@ export const dataFormulatorSlice = createSlice({
                 source,
                 parentNodeId: draft.parentNodeId,
             };
-            state.derivedTables = [...state.derivedTables, table];
+            replaceStoredTable(state, table);
             state.draftNodes = state.draftNodes.filter(d => d.id !== draftId);
         },
         removeDraftNode: (state, action: PayloadAction<string | { draftId: string; fileParentNodeId: string }>) => {
@@ -1962,7 +1971,7 @@ export const dataFormulatorSlice = createSlice({
                 deleteTablesFromWorkspace([oldTable.virtual.tableId]);
             }
             
-            state.derivedTables = [...state.derivedTables.filter(t => t.id != table.id), table];
+            replaceStoredTable(state, table);
         },
         deleteDerivedTableById: (state, action: PayloadAction<string>) => {
             // delete a synthesis output based on index
@@ -2089,7 +2098,7 @@ export const dataFormulatorSlice = createSlice({
         },
         queueAnalystTask: (
             state,
-            action: PayloadAction<{ text: string; images: string[]; attachments: string[] }>,
+            action: PayloadAction<{ text: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' }>,
         ) => {
             state.analystChatPending = action.payload;
         },
@@ -2819,7 +2828,7 @@ export const dfSelectors = {
             if (art.workflowCardFor && textTurns.some(turn => turn.id === art.workflowCardFor && turn.workflow)) {
                 return { type: 'text', textId: art.workflowCardFor };
             }
-            if (art.dataOperation || art.form || art.workflow) return { type: 'text', textId: art.id };
+            if (art.dataOperation || art.form || art.workflow || art.workflowDefinition) return { type: 'text', textId: art.id };
             if (art.textKind === 'explain' && art.presentation === 'long_response') {
                 return { type: 'text', textId: art.id };
             }
@@ -2828,6 +2837,8 @@ export const dfSelectors = {
             if (latestOutput && tables.some(table => table.id === latestOutput.tableId)) {
                 return { type: 'table', tableId: latestOutput.tableId };
             }
+            const latestFile = fileNodes.filter(node => node.parentNodeId === art.id).slice(-1)[0];
+            if (latestFile) return { type: 'file', fileName: latestFile.path };
             if (art.sourceFormId && textTurns.some(turn => turn.id === art.sourceFormId && turn.form)) {
                 return { type: 'text', textId: art.sourceFormId };
             }
@@ -2844,6 +2855,9 @@ export const dfSelectors = {
                 seen.add(cur.id);
                 const p: string | undefined = cur.parentNodeId;
                 if (!p) break;
+                const file = fileNodes.find(node => node.id === p)
+                    || fileNodes.filter(node => node.parentNodeId === p).slice(-1)[0];
+                if (file) return { type: 'file', fileName: file.path };
                 const parentTurn: TextTurn | undefined = textTurns.find(tt => tt.id === p);
                 if (parentTurn?.dataOperation || parentTurn?.form) {
                     return { type: 'text', textId: parentTurn.id };

@@ -4,7 +4,8 @@ import logging
 import json
 import hashlib
 from pathlib import PurePosixPath
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Callable
 
@@ -36,6 +37,8 @@ LoaderResolver = Callable[[str], ExternalDataLoader]
 
 
 def execute_aggregate_query(loader, source_table: str, query: LoadQuery) -> pa.Table:
+    if query.native is not None and query.native["language"] not in loader.query_capabilities().get("native_query_languages", []):
+        raise ValueError("Native query language is not supported by this connector.")
     if query.limit is not None and query.limit > MAX_AGGREGATE_ROWS:
         raise ValueError(f"Aggregate result limit must not exceed {MAX_AGGREGATE_ROWS}")
     result_limit = query.limit or MAX_AGGREGATE_ROWS
@@ -46,7 +49,7 @@ def execute_aggregate_query(loader, source_table: str, query: LoadQuery) -> pa.T
     if not isinstance(table, pa.Table):
         raise TypeError("Connector query must return pyarrow.Table")
     if table.num_rows > result_limit and query.limit is None:
-        raise ValueError("Aggregate result exceeds 10000 rows. Narrow the query or request an explicit ranked limit.")
+        raise ValueError("Query result exceeds 10000 rows. Narrow the query or request an explicit result limit.")
     return table.slice(0, result_limit)
 
 
@@ -54,6 +57,7 @@ def execute_aggregate_query(loader, source_table: str, query: LoadQuery) -> pa.T
 class DataOperationExecutionResult:
     result_table_ids: tuple[str, ...]
     failed_steps: tuple[FailedOperationStep, ...] = ()
+    result_references: tuple[dict, ...] = ()
 
 
 class DataOperationExecutor:
@@ -61,9 +65,12 @@ class DataOperationExecutor:
         self,
         workspace,
         loader_resolver: LoaderResolver | None = None,
+        *,
+        external_references: list[dict] | None = None,
     ):
         self._workspace = workspace
         self._loader_resolver = loader_resolver or self._resolve_live_loader
+        self._external_references = external_references or []
 
     def execute(self, operation: DataOperation) -> DataOperationExecutionResult:
         if operation.status != DataOperationStatus.RUNNING:
@@ -78,15 +85,36 @@ class DataOperationExecutor:
         published = self._find_published_results(operation.id, plan.plan_hash)
         used_names = set(self._workspace.list_tables())
         result_table_ids: list[str] = []
+        result_references: list[dict] = []
+        known_sources = {(item.get("connectorId"), item.get("tableKey")) for item in self._external_references}
+        for name in used_names:
+            metadata = self._workspace.get_table_metadata(name)
+            provenance = (metadata.import_options or {}).get("data_operation", {}) if metadata else {}
+            if provenance.get("operation_id") != operation.id:
+                known_sources.add((provenance.get("source_id"), provenance.get("table_key")))
+                origin = metadata.imported_from or {} if metadata else {}
+                known_sources.add((origin.get("source_id"), origin.get("table_key")))
         failed_steps: list[FailedOperationStep] = []
         for step_index, step in enumerate(plan.steps):
             check_cancelled()
-            if step_index in published:
-                result_table_ids.append(published[step_index])
-                continue
             table_name = self._allocate_table_name(self._requested_table_name(step), used_names)
             used_names.add(table_name)
             try:
+                concrete_query = bool(step.materialize or step.query.to_dict())
+                source_key = (step.source_id, step.table_key)
+                reference = None if concrete_query and source_key in known_sources else self._virtual_reference(step)
+                if reference is not None:
+                    if source_key not in known_sources:
+                        result_references.append(reference)
+                        known_sources.add(source_key)
+                    if not concrete_query:
+                        if not any(item["id"] == reference["id"] for item in result_references):
+                            existing = next((item for item in self._external_references if item.get("id") == reference["id"]), reference)
+                            result_references.append(existing)
+                        continue
+                if step_index in published:
+                    result_table_ids.append(published[step_index])
+                    continue
                 result_table_ids.append(self._publish_connector_query(
                     table_name,
                     step,
@@ -110,10 +138,54 @@ class DataOperationExecutor:
                                  else f"{step.display_name} could not be loaded."),
                     ),
                 ))
+        for reference in result_references:
+            for table_id in result_table_ids:
+                metadata = self._workspace.get_table_metadata(table_id)
+                provenance = (metadata.import_options or {}).get("data_operation", {})
+                if (provenance.get("source_id"), provenance.get("table_key")) == (reference["connectorId"], reference["tableKey"]):
+                    reference["capturedAt"] = metadata.created_at.isoformat()
+                    break
         return DataOperationExecutionResult(
             tuple(result_table_ids),
             tuple(failed_steps),
+            tuple(result_references),
         )
+
+    def _virtual_reference(self, step: ConnectorQueryStep) -> dict | None:
+        concrete_query = bool(step.materialize or step.query.to_dict())
+        from data_formulator.configuration import effective_limit
+        from .discovery import DataDiscoveryService
+
+        resolved = DataDiscoveryService(self._workspace).resolve_load_table(step.source_id, step.table_key)
+        metadata = (resolved or {}).get("metadata") or {}
+        sizes = {}
+        for key in ("row_count", "original_size_bytes", "size_bytes", "file_size"):
+            try:
+                value = float(metadata.get(key))
+                if value >= 0 and value < float("inf"):
+                    sizes[key] = value
+            except (TypeError, ValueError):
+                pass
+        if not concrete_query and not (sizes.get("row_count", 0) > effective_limit("external_table_max_rows")
+                or any(sizes.get(key, 0) > effective_limit("external_table_max_bytes")
+                       for key in ("original_size_bytes", "size_bytes", "file_size"))):
+            return None
+        safe = "~()*!.'-"
+        return {
+            "kind": "external-table-reference",
+            "id": f"external:{quote(step.source_id, safe=safe)}:{quote(step.table_key, safe=safe)}",
+            "connectorId": step.source_id,
+            "tableKey": step.table_key,
+            "sourceTable": {"id": step.source_table, "name": step.source_table_name or step.source_table},
+            "displayName": (resolved or {}).get("display_name") or step.source_table_name or step.source_table,
+            "capturedAt": datetime.now(timezone.utc).isoformat(),
+            "summary": {
+                "description": metadata.get("source_description") or metadata.get("description"),
+                "columns": metadata.get("columns") or [],
+                "rowCount": sizes.get("row_count"),
+                "sizeBytes": next((sizes[key] for key in ("original_size_bytes", "size_bytes", "file_size") if key in sizes), None),
+            },
+        }
 
     def _publish_connector_query(
         self,
@@ -126,7 +198,7 @@ class DataOperationExecutor:
     ) -> str:
         loader = self._loader_resolver(step.source_id)
         import_options = self._build_import_options(step)
-        aggregate_query = bool(step.query.group_by or step.query.aggregates)
+        aggregate_query = bool(step.query.group_by or step.query.aggregates or step.query.native)
         if aggregate_query:
             table = execute_aggregate_query(loader, step.source_table, step.query)
         else:
@@ -157,6 +229,7 @@ class DataOperationExecutor:
                     "step_index": step_index,
                     "source_id": step.source_id,
                     "table_key": step.table_key,
+                    **({"lineage_verified": False} if step.query.native else {}),
                 },
             },
             },
@@ -178,7 +251,7 @@ class DataOperationExecutor:
             "order_by": [{"column": item.column, "direction": item.direction} for item in step.query.order_by],
             "requested_limit": step.query.limit,
             "loaded_row_count": table.num_rows,
-                **({"query": step.query.to_dict(), "coverage": "requested_limit" if step.query.limit else "complete_aggregate_result"}
+                **({"query": step.query.to_dict(), "coverage": "query_defined" if step.query.native else "requested_limit" if step.query.limit else "complete_aggregate_result"}
                     if aggregate_query else {}),
         }
         scope_description = (
@@ -216,7 +289,7 @@ class DataOperationExecutor:
     @staticmethod
     def _build_import_options(step: ConnectorQueryStep) -> dict:
         options: dict = {}
-        if step.query.group_by or step.query.aggregates:
+        if step.query.group_by or step.query.aggregates or step.query.native:
             options["structured_query"] = step.query.to_dict()
         if step.query.limit is not None:
             options["size"] = step.query.limit

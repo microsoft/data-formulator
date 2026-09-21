@@ -15,6 +15,7 @@ import React, { FC, memo, useEffect, useMemo, useState } from 'react';
 import {
     Box,
     Button,
+    ButtonBase,
     ClickAwayListener,
     Collapse,
     CircularProgress,
@@ -47,6 +48,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { DictTable } from '../components/ComponentType';
 import { InlineLoadingStatus } from '../components/FunComponents';
 import {
@@ -409,6 +411,8 @@ export const SourceTableShelf: FC<{
 
     const [sectionExpanded, setSectionExpanded] = useState(true);
     const [expanded, setExpanded] = useState(false);
+    const [expandedImportGroups, setExpandedImportGroups] = useState<string[]>([]);
+    const [importProvenanceChecked, setImportProvenanceChecked] = useState<string>();
     const [addDataDialogOpen, setAddDataDialogOpen] = useState(false);
 
     // Metadata popup state
@@ -425,6 +429,25 @@ export const SourceTableShelf: FC<{
         removeLabel: string;
     } | null>(null);
     const [deletingFileName, setDeletingFileName] = useState<string | null>(null);
+
+    useEffect(() => {
+        const workspaceId = activeWorkspace?.id;
+        if (!workspaceId || !externalReferences?.length || importProvenanceChecked === workspaceId) return;
+        const candidates = inputTables.filter(table => table.source?.type === 'database' && !table.source.importedFrom);
+        if (!candidates.length) return;
+        let cancelled = false;
+        void apiRequest(getUrls().LIST_TABLES, { method: 'GET', headers: { 'X-Workspace-Id': workspaceId } }).then(({ data }) => {
+            if (cancelled) return;
+            setImportProvenanceChecked(workspaceId);
+            for (const table of candidates) {
+                const listing = (data.tables || []).find((item: any) => item.name === table.id);
+                if (!listing) continue;
+                const source = buildDictTableFromWorkspace(listing, table.source).source;
+                if (source?.importedFrom) dispatch(dfActions.updateTableSource({ tableId: table.id, source }));
+            }
+        }).catch(() => { if (!cancelled) setImportProvenanceChecked(workspaceId); });
+        return () => { cancelled = true; };
+    }, [activeWorkspace?.id, externalReferences, inputTables, importProvenanceChecked, dispatch]);
 
     // Refresh data dialog state
     const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
@@ -651,10 +674,56 @@ export const SourceTableShelf: FC<{
 
     // A long list drowns the threads beside it, so show only the first few by
     // default — the focused table always stays visible, even below the cut.
-    const collapsible = inputTables.length > SHELF_VISIBLE_LIMIT;
+    const importsByReference = new Map<string, DictTable[]>();
+    const nestedTableIds = new Set<string>();
+    const importParent = (table: DictTable, visited = new Set<string>()): string | undefined => {
+        if (visited.has(table.id)) return undefined;
+        visited.add(table.id);
+        if ((table.dataProvenance?.inputSources.length || 0) > 1
+            || (table.derive?.source.length || 0) > 1 || (table.derive?.inputSources?.length || 0) > 1) return undefined;
+        const origin = table.source?.importedFrom;
+        if (origin) {
+            const matches = (externalReferences || []).filter(reference => reference.connectorId === origin.connectorId && reference.tableKey === origin.tableKey);
+            return matches.length === 1 ? matches[0].id : undefined;
+        }
+        const inputs = table.dataProvenance?.inputSources || table.derive?.inputSources;
+        if (!inputs?.length || inputs[0].kind !== 'data' || table.dataProvenance?.stale) return undefined;
+        const manifestId = /^data:(?:([a-f0-9]{64}):)?([^:]+)$/.exec(inputs[0].id);
+        if (!manifestId) return undefined;
+        const sourceHash = inputs[0].contentHash || manifestId[1];
+        if (!sourceHash || (manifestId[1] && manifestId[1] !== sourceHash)) return undefined;
+        let sourceId: string;
+        try { sourceId = decodeURIComponent(manifestId[2]); } catch { return undefined; }
+        const sources = tables.filter(candidate => candidate.id === sourceId || candidate.virtual?.tableId === sourceId);
+        return sources.length === 1 && sources[0].contentHash === sourceHash && !sources[0].dataProvenance?.stale
+            ? importParent(sources[0], visited) : undefined;
+    };
+    for (const table of inputTables) {
+        const parentId = importParent(table);
+        if (!parentId) continue;
+        const siblings = importsByReference.get(parentId) || [];
+        siblings.push(table);
+        importsByReference.set(parentId, siblings);
+        nestedTableIds.add(table.id);
+    }
+    for (const children of importsByReference.values()) {
+        children.sort((first, second) => {
+            const firstIndex = workspaceItemOrder.indexOf(`shelf-card-${first.id}`);
+            const secondIndex = workspaceItemOrder.indexOf(`shelf-card-${second.id}`);
+            return (firstIndex < 0 ? Infinity : firstIndex) - (secondIndex < 0 ? Infinity : secondIndex);
+        });
+    }
+    const topLevelTables = inputTables.filter(table => !nestedTableIds.has(table.id));
+    const collapsible = topLevelTables.length > SHELF_VISIBLE_LIMIT;
     const visibleTables = !collapsible || expanded
-        ? inputTables
-        : inputTables.filter((tbl, index) => index < SHELF_VISIBLE_LIMIT || tbl.id === focusedTableId);
+        ? topLevelTables
+        : topLevelTables.filter((tbl, index) => index < SHELF_VISIBLE_LIMIT || tbl.id === focusedTableId);
+
+    useEffect(() => {
+        const selectedTableId = focusedTableId || (focusedId?.type === 'table' ? focusedId.tableId : undefined);
+        const parent = [...importsByReference].find(([, children]) => children.some(table => table.id === selectedTableId))?.[0];
+        if (parent) setExpandedImportGroups(previous => previous.includes(parent) ? previous : [...previous, parent]);
+    }, [focusedTableId, focusedId, inputTables, externalReferences, tables]);
 
     // One row per table, laid out exactly like a DataThread timeline row: a
     // gutter carrying the table's icon with rail segments above and below it,
@@ -743,8 +812,10 @@ export const SourceTableShelf: FC<{
     })];
 
     const artifactCards = workspaceArtifacts.map(artifact => {
+        const importedTables = importsByReference.get(artifact.key) || [];
+        const importsExpanded = expandedImportGroups.includes(artifact.key);
         return (
-        <Box key={artifact.key} sx={{ display: 'flex', flexDirection: 'row' }}>
+        <Box key={artifact.key} data-workspace-item={artifact.key} sx={{ display: 'flex', flexDirection: 'row' }}>
             <Box sx={{
                 width: GUTTER_WIDTH, flexShrink: 0,
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -752,8 +823,8 @@ export const SourceTableShelf: FC<{
                 <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
                 <Box sx={{ flexShrink: 0, zIndex: 1, bgcolor: 'white', display: 'flex' }}>
                     {artifact.artifactType === 'table'
-                        ? <TableIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.15)' }} />
-                        : <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.35)' }} />}
+                        ? <TableIcon sx={{ width: 14, height: 14, color: artifact.selected ? 'primary.main' : 'rgba(0,0,0,0.15)' }} />
+                        : <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: artifact.selected ? 'primary.main' : 'rgba(0,0,0,0.35)' }} />}
                 </Box>
                 <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
             </Box>
@@ -794,6 +865,41 @@ export const SourceTableShelf: FC<{
                     </Box> : undefined}
                 </ThreadArtifactCard>
                 </Box>
+                {importedTables.length > 0 && <Box sx={{ mt: 0.5, ml: 0.75, borderLeft: 1, borderColor: 'divider', pl: 0.75, minWidth: 0 }}>
+                    <ButtonBase aria-label={t('dataThread.importsFrom', { name: artifact.title, defaultValue: 'Imports from {{name}}' })} aria-expanded={importsExpanded}
+                        aria-controls={`source-imports-${artifact.key}`}
+                        onClick={() => setExpandedImportGroups(previous => importsExpanded ? previous.filter(id => id !== artifact.key) : [...previous, artifact.key])}
+                        sx={{ display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 0.5, py: 0.5, color: 'text.secondary', fontSize: textVar.xs,
+                            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                        {importsExpanded ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} /> : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
+                        {t('dataThread.importedTables', { count: importedTables.length, defaultValue: '{{count}} imported tables' })}
+                    </ButtonBase>
+                    <Collapse in={importsExpanded} unmountOnExit>
+                        <Box component="ul" id={`source-imports-${artifact.key}`} aria-label={t('dataThread.importsFrom', { name: artifact.title, defaultValue: 'Imports from {{name}}' })} sx={{ listStyle: 'none', p: 0, m: 0 }}>
+                            {importedTables.map(table => {
+                                const selected = focusedTableId === table.id || (focusedId?.type === 'table' && focusedId.tableId === table.id);
+                                return <Box component="li" key={table.id} data-workspace-import={table.id}
+                                    sx={{ display: 'flex', alignItems: 'center', minWidth: 0, borderRadius: 0.5,
+                                        bgcolor: selected ? 'action.selected' : undefined,
+                                        '&:hover': { bgcolor: 'action.hover' },
+                                        '& .artifact-actions': { opacity: 0 }, '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
+                                        '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } } }}>
+                                    <ButtonBase aria-label={table.displayId || table.id} aria-current={selected ? 'true' : undefined}
+                                        onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
+                                        sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-start', gap: 0.75, px: 0.5, py: 0.5,
+                                            color: selected || highlightedTableIds.includes(table.id) ? 'primary.main' : 'text.primary',
+                                            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
+                                        <TableIcon sx={{ width: 12, height: 12, flexShrink: 0 }} />
+                                        <Typography component="span" title={`${table.displayId || table.id}${table.displayId !== table.id ? ` (${table.id})` : ''}`}
+                                            sx={{ fontSize: textVar.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{table.displayId || table.id}</Typography>
+                                    </ButtonBase>
+                                    <Box className="artifact-actions" sx={{ flexShrink: 0 }}><ArtifactMenuButton label={t('dataThread.fileActions', { name: table.displayId || table.id, defaultValue: 'Actions for {{name}}' })}
+                                        tooltip={t('dataThread.moreOptions')} onClick={anchor => handleOpenTableMenu(table, anchor)} /></Box>
+                                </Box>;
+                            })}
+                        </Box>
+                    </Collapse>
+                </Box>}
             </Box>
         </Box>
     );
@@ -905,7 +1011,7 @@ export const SourceTableShelf: FC<{
                             >
                                 {expanded
                                     ? t('dataThread.showFewerTables', { defaultValue: 'Show fewer' })
-                                    : t('dataThread.showAllTables', { count: inputTables.length, defaultValue: `Show all ${inputTables.length}` })}
+                                    : t('dataThread.showAllTables', { count: topLevelTables.length, defaultValue: `Show all ${topLevelTables.length}` })}
                             </Button>
                         </Box>
                     )}

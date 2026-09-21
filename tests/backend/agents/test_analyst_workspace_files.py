@@ -157,6 +157,54 @@ def test_agent_data_python_provenance_staleness_and_failed_update(tmp_path):
     assert restored.edit_policy == "agent_editable"
 
 
+def test_agent_data_persists_verified_single_source_identity(tmp_path, monkeypatch):
+    from flask import Flask
+    from data_formulator.routes.tables import tables_bp
+
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    origin = {"source_id": "adx:trips", "table_key": "Trips"}
+    workspace.write_parquet(pd.DataFrame({"value": [1]}), "trips", source_info={
+        "loader_type": "TestLoader", "loader_params": {}, "source_table": "Trips",
+        "import_options": {"data_operation": origin},
+    })
+    skill = WorkspaceSkill()
+    ctx = SkillContext(client=None, workspace=workspace, payload={"input_tables": [{"name": "trips"}]})
+    source = build_workspace_input_manifest(ctx.payload["input_tables"], [], workspace).data[0]
+    skill.handle_tool("create_data", {"table_name": "hourly", "rows": [{"value": 2}],
+        "input_sources": [{"id": source.id, "kind": "data"}]}, ctx)
+    hourly = workspace.get_table_metadata("hourly")
+    assert hourly.imported_from == origin
+    assert Workspace("test-user", root_dir=tmp_path).get_table_metadata("hourly").imported_from == origin
+    frame = pd.DataFrame({"value": [3]})
+    source_input = {"id": f"data:{hourly.content_hash}:hourly", "kind": "data",
+                    "table_name": "hourly", "content_hash": hourly.content_hash}
+    summary = workspace.save_agent_data(frame, "summary", input_sources=[source_input])
+    assert summary.imported_from == origin
+    app = Flask(__name__)
+    app.register_blueprint(tables_bp)
+    monkeypatch.setattr("data_formulator.routes.tables._get_workspace", lambda: workspace)
+    with app.test_client() as client:
+        response = client.get("/api/tables/list-tables")
+    assert response.status_code == 200
+    listed = next(table for table in response.get_json()["data"]["tables"] if table["name"] == "summary")
+    assert listed["imported_from"] == origin
+    assert listed["source_metadata"] is None
+    joined = workspace.save_agent_data(frame, "joined", input_sources=[source_input, {"kind": "file", "id": "notes"}])
+    assert joined.imported_from is None
+    for name, inputs in [("missing", [{**source_input, "table_name": "missing"}]),
+                         ("changed", [{**source_input, "content_hash": "old"}]),
+                         ("unversioned", [{**source_input, "content_hash": None}])]:
+        assert workspace.save_agent_data(frame, name, input_sources=inputs).imported_from is None
+    updated = workspace.save_agent_data(frame, "hourly", input_sources=[], expected_content_hash=hourly.content_hash)
+    assert updated.imported_from is None
+    assert workspace.get_table_metadata("summary").imported_from == origin
+    assert workspace.get_table_metadata("summary").stale
+    stale = workspace.save_agent_data(frame, "stale_copy", input_sources=[{
+        "kind": "data", "table_name": "summary", "content_hash": summary.content_hash,
+    }])
+    assert stale.imported_from is None
+
+
 def test_create_file_is_create_only_and_listed_as_input(tmp_path):
     workspace = Workspace("test-user", root_dir=tmp_path)
     workspace.save_workspace_file(b"original", "source.md", "text/markdown")

@@ -839,17 +839,91 @@ class TestDataRoutes:
         assert data["data"]["row_count"] == 5
         assert data["data"]["refreshable"] is True
 
+    def test_full_copy_imports_all_rows_without_preview_options(self, connected_client, tmp_path):
+        from data_formulator.datalake.workspace import Workspace
+
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace", return_value=workspace),
+            patch.object(MockLoader, "query_data_as_arrow", side_effect=[
+                pa.table({"total_rows": [3]}), pa.table({"value": [1, 2, 3]}),
+            ]) as query,
+        ):
+            response = connected_client.post("/api/connectors/import-data", json={
+                "connector_id": "mock_db", "source_table": "public.users", "table_name": "users",
+                "full_copy": True, "import_options": {"size": 1, "columns": ["missing"]},
+            })
+        result = response.get_json()
+        assert result["status"] == "success"
+        assert result["data"]["row_count"] == 3
+        assert result["data"]["refreshable"] is False
+        assert result["data"]["table_name"].startswith("users_copy_")
+        assert workspace.get_table_metadata(result["data"]["table_name"]).row_count == 3
+        assert query.call_args_list[1].args == ("public.users", {}, 4)
+
+    def test_full_copy_materializes_local_source_without_modifying_it(self, connected_client, tmp_path):
+        from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
+        from data_formulator.datalake.workspace import Workspace
+
+        source_file = tmp_path / "events.csv"
+        original = "value\n" + "\n".join(str(value) for value in range(75)) + "\n"
+        source_file.write_text(original)
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        workspace = Workspace("test-user", root_dir=tmp_path / "workspace")
+        workspace.write_parquet_from_arrow(pa.table({"value": [-1]}), "events")
+        assert len(loader.preview_data("events.csv")["rows"]) == 50
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch.object(DataConnector, "_require_loader", return_value=loader),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace", return_value=workspace),
+        ):
+            response = connected_client.post("/api/connectors/import-data", json={
+                "connector_id": "mock_db", "source_table": "events.csv", "table_name": "events", "full_copy": True,
+            })
+        result = response.get_json()
+        assert result["status"] == "success", result
+        name = result["data"]["table_name"]
+        assert workspace.read_data_as_df(name)["value"].tolist() == list(range(75))
+        assert workspace.read_data_as_df("events")["value"].tolist() == [-1]
+        assert source_file.read_text() == original
+        source_file.write_text("value\n999\n")
+        assert workspace.read_data_as_df(name)["value"].tolist() == list(range(75))
+        assert not workspace.get_table_metadata(name).source_table
+
+    @pytest.mark.parametrize("count, values", [(2_000_001, None), (3, [1, 2]), (1, [1, 2])])
+    def test_full_copy_rejects_oversize_or_incomplete_data(self, connected_client, count, values):
+        results = [pa.table({"total_rows": [count]})]
+        if values is not None:
+            results.append(pa.table({"value": values}))
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace") as workspace,
+            patch.object(MockLoader, "query_data_as_arrow", side_effect=results),
+        ):
+            response = connected_client.post("/api/connectors/import-data", json={
+                "connector_id": "mock_db", "source_table": "public.users", "full_copy": True,
+            })
+        assert response.get_json()["status"] == "error"
+        workspace.return_value.write_parquet_from_arrow.assert_not_called()
+
     def test_refresh_requires_table_name(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/refresh-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
 
-    def test_refresh_preserves_materialized_aggregate_query(self, connected_client, tmp_path):
+    @pytest.mark.parametrize("native", [False, True])
+    def test_refresh_preserves_materialized_aggregate_query(self, connected_client, tmp_path, native):
         from data_formulator.datalake.workspace import Workspace
 
         workspace = Workspace("test-user", root_dir=tmp_path)
         query = {"aggregates": [{"op": "sum", "column": "amount", "as": "total"}]}
+        if native:
+            query = {"native": {"language": "kql", "text": "orders | summarize total=sum(amount)"}}
         workspace.write_parquet_from_arrow(pa.table({"total": [350.0]}), "totals", source_info={
             "source_table": "public.orders", "import_options": {"structured_query": query},
         })
@@ -859,6 +933,7 @@ class TestDataRoutes:
             patch("data_formulator.workspace_factory.get_workspace", return_value=workspace),
             patch.object(MockLoader, "query_data_as_arrow", return_value=pa.table({"total": [400.0]})) as aggregate,
             patch.object(MockLoader, "fetch_data_as_arrow", side_effect=AssertionError("No raw-row refresh")),
+            patch.object(MockLoader, "query_capabilities", return_value={"native_query_languages": ["kql"]}),
         ):
             response = connected_client.post("/api/connectors/refresh-data", json={
                 "connector_id": "mock_db", "table_name": "totals",

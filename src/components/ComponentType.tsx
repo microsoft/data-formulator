@@ -212,6 +212,15 @@ export interface TerminalExecution {
 }
 
 export interface TextTurn {
+    workflowDefinition?: {
+        content: string;
+        definition: { name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
+            parameters?: { name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
+                required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
+            steps?: { id: string; instructions: string; description?: string; next?: string;
+                checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[] };
+        saved?: { path: string; content_hash: string };
+    };
     externalReferenceId?: string;
     workflowCardFor?: string;
     workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply'; afterOutputIds?: string[] };
@@ -234,6 +243,10 @@ export interface TextTurn {
         calls: number;
         toolCalls?: number;
         activity?: string;
+        overview?: string;
+        prompt?: string;
+        deliverables?: string[];
+        setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
         activeTool?: { id: string; tool: string; step_id: string; details: Record<string, string> };
         appliedMessageIds?: string[];
         planRevision?: number;
@@ -383,6 +396,8 @@ export interface DataSourceConfig {
 
     // The original table name before backend sanitization (e.g. "Sales Report 2024")
     originalTableName?: string;
+    importedFrom?: { connectorId: string; tableKey: string };
+    loadQuery?: { sourceTable?: string; query: Record<string, unknown> };
 }
 
 export type InputTableSource =

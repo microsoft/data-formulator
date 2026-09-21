@@ -61,6 +61,7 @@ import { apiRequest } from '../app/apiClient';
 import { DataFormulatorState } from '../app/dfSlice';
 import { textVar } from '../app/layout';
 import { WorkspaceFile, previewWorkspaceFile, downloadWorkspaceFile } from '../app/workspaceService';
+import { formatBytes } from './ViewUtils';
 
 const DEFAULT_TAIL_LINES = 500;
 
@@ -346,6 +347,7 @@ export const LogViewerDialog: FC<{
     const [scratchPreview, setScratchPreview] = useState('');
     const [scratchPreviewError, setScratchPreviewError] = useState<string | null>(null);
     const [scratchPreviewLoading, setScratchPreviewLoading] = useState(false);
+    const filesRequestRef = useRef(0);
     const preRef = useRef<HTMLPreElement>(null);
     const savedStateEditorRef = useRef<EditorView | null>(null);
 
@@ -388,25 +390,31 @@ export const LogViewerDialog: FC<{
     }, [activeWorkspace?.id, t]);
 
     const fetchScratchFiles = useCallback(async () => {
+        const requestId = ++filesRequestRef.current;
         setLoading(true);
         setError(null);
         try {
             if (!activeWorkspace?.id) throw new Error('No active workspace to inspect.');
-            const { data } = await apiRequest<{ files: WorkspaceFile[] }>('/api/workspace/files?include_temp=true');
-            const files = data.files.filter(file => file.temporary && file.name.startsWith('scratch/'));
+            const { data } = await apiRequest<{ files: WorkspaceFile[] }>('/api/workspace/files?include_temp=true&include_tables=true', {
+                headers: { 'X-Workspace-Id': activeWorkspace.id },
+            });
+            if (requestId !== filesRequestRef.current) return;
+            const files = data.files;
             setScratchFiles(files);
             setSelectedScratch(selected => files.some(file => file.name === selected) ? selected : null);
         } catch (error: any) {
-            setError(error?.message || 'Failed to load scratch files');
+            if (requestId === filesRequestRef.current) setError(error?.message || 'Failed to load workspace files');
         } finally {
-            setLoading(false);
+            if (requestId === filesRequestRef.current) setLoading(false);
         }
     }, [activeWorkspace?.id]);
 
     useEffect(() => {
+        filesRequestRef.current++;
         setSavedState('');
         setScratchFiles([]);
         setSelectedScratch(null);
+        return () => { filesRequestRef.current++; };
     }, [activeWorkspace?.id]);
 
     useEffect(() => {
@@ -605,7 +613,7 @@ export const LogViewerDialog: FC<{
                 >
                     <Tab label={t('logs.logTab', { defaultValue: 'Backend log' })} />
                     <Tab label={t('logs.savedStateTab', { defaultValue: 'Saved state' })} />
-                    <Tab label={t('logs.scratchFilesTab', { defaultValue: 'Scratch files' })} />
+                    <Tab label={t('logs.workspaceFilesTab', { defaultValue: 'Workspace files' })} />
                 </Tabs>
                 <DialogContent dividers data-testid="diagnostics-content" sx={{ p: 0, height: '60vh', flex: '0 1 60vh', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
                     {activeTab === 0 && path && (
@@ -658,17 +666,18 @@ export const LogViewerDialog: FC<{
                                 {content || (!loading && !error ? t('logs.empty', { defaultValue: 'Log file is empty.' }) : '')}
                             </Box>
                             <Box sx={{ flex: 1, minHeight: 0, display: activeTab === 2 ? 'flex' : 'none', flexDirection: { xs: 'column', sm: 'row' }, overflow: 'hidden' }}>
-                                <List dense aria-label="Scratch files" sx={{ width: { xs: '100%', sm: 260 }, maxHeight: { xs: '20vh', sm: '100%' }, flexShrink: 0, overflow: 'auto', borderRight: '1px solid', borderColor: 'divider' }}>
-                                    {!loading && !error && scratchFiles.length === 0 && <Typography sx={{ p: 2, fontSize: textVar.sm, color: 'text.secondary' }}>No scratch files.</Typography>}
+                                <List dense aria-label="Workspace files" sx={{ width: { xs: '100%', sm: 260 }, maxHeight: { xs: '20vh', sm: '100%' }, flexShrink: 0, overflow: 'auto', borderRight: '1px solid', borderColor: 'divider' }}>
+                                    {!loading && !error && scratchFiles.length === 0 && <Typography sx={{ p: 2, fontSize: textVar.sm, color: 'text.secondary' }}>No workspace files.</Typography>}
                                     {scratchFiles.map(file => <ListItemButton key={file.name} selected={selectedScratch === file.name} onClick={() => setSelectedScratch(file.name)}>
-                                        <ListItemText primary={file.name.slice('scratch/'.length)} secondary={`${file.file_size.toLocaleString()} bytes`}
-                                            primaryTypographyProps={{ sx: { fontSize: textVar.sm, overflowWrap: 'anywhere' } }} />
+                                        <ListItemText primary={file.name} secondary={file.file_size === 0 ? '0 B' : formatBytes(file.file_size)}
+                                            primaryTypographyProps={{ sx: { fontSize: textVar.sm, overflowWrap: 'anywhere' } }}
+                                            secondaryTypographyProps={{ sx: { fontSize: textVar.xs, lineHeight: 1.4 } }} />
                                     </ListItemButton>)}
                                 </List>
                                 <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                                     {selectedScratch && <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 0.5, borderBottom: '1px solid', borderColor: 'divider' }}>
                                         <Typography sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontSize: textVar.sm }}>{selectedScratch}</Typography>
-                                        <Tooltip title="Download file"><IconButton aria-label="Download scratch file" size="small" onClick={handleDownloadScratch}><DownloadIcon fontSize="small" /></IconButton></Tooltip>
+                                        <Tooltip title="Download file"><IconButton aria-label="Download file" size="small" onClick={handleDownloadScratch}><DownloadIcon fontSize="small" /></IconButton></Tooltip>
                                     </Box>}
                                     {scratchPreviewLoading ? <Box sx={{ p: 2 }}><CircularProgress size={20} /></Box>
                                         : scratchPreviewError ? <Typography color="error" sx={{ p: 2 }}>{scratchPreviewError}</Typography>

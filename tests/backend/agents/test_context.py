@@ -52,6 +52,7 @@ def test_focused_context_includes_text_turn_and_loading_decision() -> None:
             "options": ["Movies", "Shows"],
             "selected_plan": "Movies",
             "result_tables": ["netflix_movies"],
+            "result_references": [{"displayName": "All shows", "connectorId": "warehouse", "tableKey": "shows"}],
         },
     }])
 
@@ -60,6 +61,20 @@ def test_focused_context_includes_text_turn_and_loading_decision() -> None:
     assert "User reply: Use movies" in context
     assert "Selected loading option: Movies" in context
     assert "Loaded workspace tables: netflix_movies" in context
+    assert "Virtual workspace sources (not compute-ready; rows remain remote)" in context
+    assert '"tableKey": "shows"' in context
+
+
+def test_focused_context_preserves_workflow_definition_for_revision() -> None:
+    definition = "version: 1\nname: Daily trips\noverview: Compare the previous day\ndeliverables: [Hourly chart]"
+    context = build_focused_thread_context([{
+        "user_question": "Create a workflow",
+        "agent_response": "Review this proposal.",
+        "workflow_definition": definition,
+    }])
+    assert definition in context
+    assert "not execution state" in context
+    assert "Workflow status and outputs" not in context
 
 
 def test_focused_context_includes_workflow_status_and_outputs() -> None:

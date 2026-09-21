@@ -33,6 +33,10 @@ def test_visualize_schema_requires_generalized_input_sources():
                 if spec["function"]["name"] == "propose_data_operation")
     assert "workspace Data Access Paths" in load["function"]["description"]
     assert "user_review_needed=false executes automatically" in load["function"]["description"]
+    loading_query = load["function"]["parameters"]["properties"]["options"]["items"]["properties"]["tables"]["items"]["properties"]["query"]
+    assert loading_query["properties"]["native"]["properties"]["language"]["enum"] == ["kql"]
+    assert loading_query["properties"]["native"]["additionalProperties"] is False
+    assert "local Python" in loading_query["description"]
 
     assert "title" in parameters["required"]
     assert "display_name" in parameters["required"]

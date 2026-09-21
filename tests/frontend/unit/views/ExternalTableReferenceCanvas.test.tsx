@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { dataFormulatorReducer, dfActions } from '../../../../src/app/dfSlice';
+import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { ExternalTableReferenceCanvas } from '../../../../src/views/ExternalTableReferenceCanvas';
 import { SourceTableShelf } from '../../../../src/views/SourceTableShelf';
 import { apiRequest } from '../../../../src/app/apiClient';
@@ -100,7 +100,8 @@ it('uses a centered track for empty grid requests and retains rows with inline r
 it('preserves the timeline rail beside both shelf expansion controls', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const tables = Array.from({ length: 7 }, (_, index) => ({ kind: 'table' as const,
-        id: `table-${index}`, displayId: `Table ${index}`, names: [], rows: [], metadata: {}, description: '' }));
+        id: `table-${index}`, displayId: `Table ${index}`, names: [], rows: [], metadata: {}, description: '',
+        virtual: { tableId: `table-${index}`, rowCount: 0 } }));
     render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
     const showAll = screen.getByRole('button', { name: 'Show all 7' });
     expect(showAll.parentElement?.querySelector('[aria-hidden="true"]')).toHaveStyle({
@@ -166,27 +167,36 @@ function showArtifact(withReference = true) {
 it('uses the standard table card for references and keeps their information in the preview', async () => {
     const table = {
         kind: 'table' as const, id: 'local-events', displayId: 'Local events', names: [], metadata: {}, rows: [],
-        virtual: { tableId: 'local-events', rowCount: 0 },
+        virtual: { tableId: 'local-events', rowCount: 0 }, description: '',
     };
     const initialState = dataFormulatorReducer(undefined, { type: 'init' });
     const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: { ...initialState, derivedTables: [table] } });
     store.dispatch(dfActions.upsertExternalTableReference(reference));
-    render(<Provider store={store}><SourceTableShelf inputTables={[table]} highlightedTableIds={[]} workspaceFiles={[{
+    const { container } = render(<Provider store={store}><SourceTableShelf inputTables={[table]} highlightedTableIds={[]} workspaceFiles={[{
         name: 'notes.txt', filename: 'notes.txt', created_at: reference.capturedAt,
         content_hash: 'notes', file_size: 10, media_type: 'text/plain',
     }]} /></Provider>);
-    const tableCard = screen.getByRole('button', { name: 'Local events', exact: true });
-    const referenceCard = screen.getByRole('button', { name: 'Events', exact: true });
+    const tableCard = screen.getByRole('button', { name: 'Local events' });
+    const referenceCard = screen.getByRole('button', { name: 'Events' });
     expect(referenceCard.closest('.data-thread-card')?.className).toBe(tableCard.closest('.data-thread-card')?.className);
     expect(screen.getAllByTestId('InsertDriveFileOutlinedIcon')).toHaveLength(1);
     expect(screen.getByText('(virtual)')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Remove reference' })).not.toBeInTheDocument();
+    const referenceIcon = container.querySelector(`[data-workspace-item="${reference.id}"] > div:first-child svg`)!;
+    const fileIcon = screen.getByTestId('InsertDriveFileOutlinedIcon');
+    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
     fireEvent.click(referenceCard);
     expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: reference.id });
+    expect(referenceIcon).toHaveStyle({ color: 'rgb(25, 118, 210)' });
+    expect(fileIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.35)' });
+    fireEvent.click(screen.getByRole('button', { name: 'notes.txt' }));
+    expect(fileIcon).toHaveStyle({ color: 'rgb(25, 118, 210)' });
+    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
+    fireEvent.click(referenceCard);
     fireEvent.click(screen.getByRole('button', { name: 'Actions for Events' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove reference' }));
     expect(store.getState().externalTableReferences).toEqual([]);
-    expect(screen.getByRole('button', { name: 'notes.txt', exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'notes.txt' })).toBeInTheDocument();
     expect(apiRequest).not.toHaveBeenCalled();
 });
 
@@ -199,11 +209,156 @@ it.each([
     store.dispatch(dfActions.upsertExternalTableReference({ ...reference, displayName: sourceName,
         sourceTable: { id: sourceName, name: sourceName } }));
     render(<Provider store={store}><SourceTableShelf inputTables={[]} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
-    expect(screen.getByRole('button', { name: shortName, exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: shortName })).toBeInTheDocument();
     expect(screen.getByText(shortName, { exact: true })).toBeInTheDocument();
     expect(screen.queryByText(sourceName, { exact: true })).not.toBeInTheDocument();
     expect(store.getState().externalTableReferences[0].sourceTable.name).toBe(sourceName);
     expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('nests exact single-source imports as compact rows and keeps ambiguous tables at top level', async () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    const imported = { kind: 'table' as const, id: 'loaded-events', displayId: 'Loaded events', names: [], metadata: {}, rows: [], description: '',
+        virtual: { tableId: 'loaded-events', rowCount: 0 },
+        source: { type: 'database' as const, importedFrom: { connectorId: reference.connectorId, tableKey: reference.tableKey } } };
+    const multiSource = { ...imported, id: 'joined-events', displayId: 'Joined events', virtual: { tableId: 'joined-events', rowCount: 0 }, dataProvenance: {
+        origin: 'agent', role: 'source', editPolicy: 'agent_editable', stale: false,
+        inputSources: [{ id: 'first', kind: 'data' as const, displayName: 'First' }, { id: 'second', kind: 'data' as const, displayName: 'Second' }],
+    } };
+    const otherConnector = { ...imported, id: 'other-events', displayId: 'Other events', virtual: { tableId: 'other-events', rowCount: 0 }, source: {
+        ...imported.source, importedFrom: { connectorId: 'different', tableKey: reference.tableKey },
+    } };
+    const unknown = { ...imported, id: 'legacy-events', displayId: 'Legacy events', virtual: { tableId: 'legacy-events', rowCount: 0 }, source: undefined };
+    const tables = [imported, multiSource, otherConnector, unknown];
+    tables.forEach(table => store.dispatch(dfActions.addTableToStore(table)));
+    render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    expect(screen.queryByRole('button', { name: 'Loaded events' })).not.toBeInTheDocument();
+    for (const name of ['Joined events', 'Other events', 'Legacy events']) {
+        expect(screen.getByRole('button', { name }).closest('.data-thread-card')).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Imports from Events' }));
+    const child = screen.getByRole('button', { name: 'Loaded events' });
+    expect(child.closest('ul')).toHaveAttribute('aria-label', 'Imports from Events');
+    expect(child.closest('.data-thread-card')).toBeNull();
+    fireEvent.click(child);
+    expect(store.getState().focusedId).toEqual({ type: 'table', tableId: imported.id });
+    expect(child).toHaveAttribute('aria-current', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Loaded events' }));
+    expect(await screen.findByRole('menuitem', { name: /Rename/ })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Imports from Events' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Loaded events' })).not.toBeInTheDocument());
+    act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: unknown.id })));
+    act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: imported.id })));
+    expect(await screen.findByRole('button', { name: 'Loaded events' })).toBeInTheDocument();
+    act(() => store.dispatch(dfActions.removeExternalTableReference(reference.id)));
+    expect(screen.getByRole('button', { name: 'Loaded events' }).closest('.data-thread-card')).toBeInTheDocument();
+    expect(dfSelectors.getAllTables(store.getState()).map(table => table.id)).toContain(imported.id);
+});
+
+it('groups single-input workflow tables through manifest provenance but not joins or unresolved lineage', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    const imported = { kind: 'table' as const, id: 'loaded:events', displayId: 'Imported events', names: [], metadata: {}, rows: [], description: '',
+        virtual: { tableId: 'loaded:events', rowCount: 0 },
+        contentHash: 'a'.repeat(64),
+        source: { type: 'database' as const, importedFrom: { connectorId: reference.connectorId, tableKey: reference.tableKey } } };
+    const workflowTable = (id: string, sourceIds: string[]) => ({ ...imported, id, displayId: id, source: undefined,
+        virtual: { tableId: id, rowCount: 0 },
+        dataProvenance: { origin: 'agent', role: 'source', editPolicy: 'agent_editable', stale: false,
+            inputSources: sourceIds.map(sourceId => ({ id: `data:${'a'.repeat(64)}:${encodeURIComponent(sourceId)}`, kind: 'data' as const, displayName: 'Not an identity' })) } });
+    const tables = [imported, workflowTable('Hourly counts', [imported.id]), workflowTable('Daily summary', ['Hourly counts']),
+        workflowTable('Joined comparison', [imported.id, 'Hourly counts']), workflowTable('Missing input', ['unavailable']),
+        workflowTable('Cycle first', ['Cycle second']), workflowTable('Cycle second', ['Cycle first']),
+        workflowTable('Summary of join', ['Joined comparison'])];
+    tables.forEach(table => store.dispatch(dfActions.addTableToStore(table)));
+    render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Imports from Events' }));
+    for (const name of ['Imported events', 'Hourly counts', 'Daily summary']) {
+        const child = screen.getByRole('button', { name });
+        expect(child.closest('ul')).toHaveAttribute('aria-label', 'Imports from Events');
+        expect(child.closest('.data-thread-card')).toBeNull();
+    }
+    for (const name of ['Joined comparison', 'Missing input', 'Cycle first', 'Cycle second', 'Summary of join']) {
+        expect(screen.getByRole('button', { name }).closest('.data-thread-card')).toBeInTheDocument();
+    }
+});
+
+it('only follows version-matched lineage and keeps durable workflow identity without a parent', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    const origin = { connectorId: reference.connectorId, tableKey: reference.tableKey };
+    const parent = { kind: 'table' as const, id: 'parent', displayId: 'Parent', names: [], metadata: {}, rows: [],
+        description: '', virtual: { tableId: 'parent', rowCount: 0 },
+        contentHash: 'b'.repeat(64), source: { type: 'database' as const, importedFrom: origin } };
+    const derived = { ...parent, id: 'changed', displayId: 'Changed input', source: undefined,
+        virtual: { tableId: 'changed', rowCount: 0 },
+        dataProvenance: { origin: 'agent', role: 'derived', editPolicy: 'agent_editable', stale: false,
+            inputSources: [{ id: `data:${'a'.repeat(64)}:parent`, kind: 'data' as const, displayName: 'Parent' }] } };
+    const unversioned = { ...derived, id: 'unversioned', displayId: 'Unversioned input', virtual: { tableId: 'unversioned', rowCount: 0 }, dataProvenance: { ...derived.dataProvenance,
+        inputSources: [{ id: 'data:parent', kind: 'data' as const, displayName: 'Parent' }] } };
+    const durable = { ...derived, id: 'durable', displayId: 'Durable identity', virtual: { tableId: 'durable', rowCount: 0 }, source: parent.source };
+    const tables = [derived, unversioned, durable];
+    [parent, ...tables].forEach(table => store.dispatch(dfActions.addTableToStore(table)));
+    const view = render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    for (const name of ['Changed input', 'Unversioned input']) {
+        expect(screen.getByRole('button', { name: new RegExp(`^${name}`) }).closest('.data-thread-card')).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: 'Durable identity' }).closest('.data-thread-card')).toBeNull();
+    view.unmount();
+    const restored = configureStore({ reducer: dataFormulatorReducer });
+    restored.dispatch(dfActions.upsertExternalTableReference(reference));
+    restored.dispatch(dfActions.addTableToStore(durable));
+    render(<Provider store={restored}><SourceTableShelf inputTables={[durable]} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    expect(screen.getByRole('button', { name: 'Durable identity' }).closest('.data-thread-card')).toBeNull();
+});
+
+it('recovers saved import provenance from workspace metadata and preserves it on reload', async () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.setActiveWorkspace({ id: 'imports', displayName: 'Imports' }));
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    const table = { kind: 'table' as const, id: 'saved-events', displayId: 'Saved events', names: [], metadata: {}, rows: [], description: '',
+        virtual: { tableId: 'saved-events', rowCount: 0 },
+        source: { type: 'database' as const, autoRefresh: true } };
+    store.dispatch(dfActions.addTableToStore(table));
+    vi.mocked(apiRequest).mockResolvedValue({ data: { tables: [{ name: table.id, columns: [], sample_rows: [], row_count: 0,
+        source_metadata: { import_options: { data_operation: { source_id: reference.connectorId, table_key: reference.tableKey } } },
+    }] } });
+    const shelf = () => <Provider store={store}><SourceTableShelf inputTables={dfSelectors.getAllTables(store.getState())}
+        highlightedTableIds={[]} workspaceFiles={[]} /></Provider>;
+    const view = render(shelf());
+    await waitFor(() => expect(dfSelectors.getAllTables(store.getState())[0].source?.importedFrom).toEqual({
+        connectorId: reference.connectorId, tableKey: reference.tableKey,
+    }));
+    expect(apiRequest).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: { 'X-Workspace-Id': 'imports' } }));
+    expect(dfSelectors.getAllTables(store.getState())[0].source?.autoRefresh).toBe(true);
+    view.unmount();
+    store.dispatch(dfActions.loadState(store.getState()));
+    render(shelf());
+    expect(screen.getByRole('button', { name: 'Imports from Events' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Saved events' }).closest('.data-thread-card')).toBeNull();
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+});
+
+it('ignores import metadata returned after switching workspaces', async () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.setActiveWorkspace({ id: 'old-workspace', displayName: 'Old workspace' }));
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    const table = { kind: 'table' as const, id: 'events', displayId: 'Events import', names: [], metadata: {}, rows: [], description: '',
+        virtual: { tableId: 'events', rowCount: 0 },
+        source: { type: 'database' as const } };
+    store.dispatch(dfActions.addTableToStore(table));
+    let finishOldRequest!: (value: any) => void;
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(resolve => { finishOldRequest = resolve; }))
+        .mockResolvedValue({ data: { tables: [] } });
+    render(<Provider store={store}><SourceTableShelf inputTables={[table]} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    act(() => store.dispatch(dfActions.setActiveWorkspace({ id: 'new-workspace', displayName: 'New workspace' })));
+    await act(async () => finishOldRequest({ data: { tables: [{ name: table.id, columns: [], sample_rows: [], row_count: 0,
+        source_metadata: { import_options: { data_operation: { source_id: reference.connectorId, table_key: reference.tableKey } } },
+    }] } }));
+    expect(dfSelectors.getAllTables(store.getState())[0].source?.importedFrom).toBeUndefined();
+    expect(screen.queryByRole('button', { name: 'Imports from Events' })).not.toBeInTheDocument();
 });
 
 it('appends new workspace items after existing ones and preserves order on reload', () => {
@@ -216,12 +371,12 @@ it('appends new workspace items after existing ones and preserves order on reloa
     const view = render(shelf([]));
     act(() => { store.dispatch(dfActions.addTableToStore(table)); });
     view.rerender(shelf([table]));
-    expect(screen.getByRole('button', { name: 'Events', exact: true }).compareDocumentPosition(
-        screen.getByRole('button', { name: 'Loaded events', exact: true })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Events' }).compareDocumentPosition(
+        screen.getByRole('button', { name: 'Loaded events' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     act(() => { store.dispatch(dfActions.upsertExternalTableReference({ ...reference, id: 'external:later',
         tableKey: 'later', displayName: 'Later source' })); });
-    expect(screen.getByRole('button', { name: 'Loaded events', exact: true }).compareDocumentPosition(
-        screen.getByRole('button', { name: 'Later source', exact: true })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Loaded events' }).compareDocumentPosition(
+        screen.getByRole('button', { name: 'Later source' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const order = store.getState().workspaceItemOrder;
     expect(order).toEqual([reference.id, 'shelf-card-loaded-events', 'external:later']);
     act(() => { store.dispatch(dfActions.upsertExternalTableReference({ ...reference, capturedAt: '2026-09-20T00:00:00Z' })); });
@@ -230,8 +385,8 @@ it('appends new workspace items after existing ones and preserves order on reloa
     act(() => { store.dispatch(dfActions.loadState(store.getState())); });
     render(shelf([table]));
     expect(store.getState().workspaceItemOrder).toEqual(order);
-    expect(screen.getByRole('button', { name: 'Events', exact: true }).compareDocumentPosition(
-        screen.getByRole('button', { name: 'Loaded events', exact: true })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Events' }).compareDocumentPosition(
+        screen.getByRole('button', { name: 'Loaded events' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it('automatically displays and caches a small sample when the preview opens', async () => {
@@ -242,10 +397,13 @@ it('automatically displays and caches a small sample when the preview opens', as
     expect(screen.getByRole('region', { name: 'Sample data' })).toBeVisible();
     expect(screen.getByText('Virtual')).toBeVisible();
     expect(screen.queryByText('Preview only. Full data remains in the connected source.')).not.toBeInTheDocument();
-    expect(screen.getByText('Virtual table. Full data remains in the connected source.')).toBeVisible();
-    expect(screen.getByText('Location: db.events')).toBeVisible();
-    expect(screen.getByText(/Connector: Corporate ADX/)).toBeVisible();
+    expect(screen.getByText('Data stays in the connected source and is read when needed.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show in data sources' })).toHaveTextContent('db.events');
+    expect(screen.getByText(/Corporate ADX/)).toBeVisible();
     expect(screen.getByText('Virtual').closest('.MuiChip-root')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Events' }).parentElement)
+        .toContainElement(screen.getByText('Virtual'));
+    expect(screen.getByText('Virtual').parentElement?.querySelector('svg')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Events' }).parentElement?.parentElement?.parentElement)
         .toContainElement(screen.getByRole('button', { name: 'Refresh metadata' }));
     expect(screen.queryByRole('button', { name: /analyze|create chart/i })).not.toBeInTheDocument();
@@ -276,6 +434,8 @@ it('preserves full metadata when only selected columns are sampled and shows lim
     expect(summary.sampleTruncated).toBe(true);
     expect(screen.getByText(/1 columns omitted from preview/)).toHaveTextContent('Long or nested values shortened.');
     expect(screen.getByText(/Inferred schema; later records may differ/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Preview details' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/not a random sample/)).not.toBeInTheDocument();
     expect(screen.queryByText('timestamp', { exact: true })).not.toBeInTheDocument();
 });
 
@@ -291,8 +451,8 @@ it('limits initial loading to the table body with metadata visible and retains c
     expect(loading).toHaveStyle({ height: '100%', alignItems: 'center', justifyContent: 'center' });
     expect(screen.getByRole('heading', { name: 'Events' })).toBeVisible();
     expect(screen.getByText('Virtual')).toBeVisible();
-    expect(screen.getByText('Location: db.events')).toBeVisible();
-    expect(screen.getByText(/Connector: Corporate ADX/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show in data sources' })).toHaveTextContent('db.events');
+    expect(screen.getByText(/Corporate ADX/)).toBeVisible();
     expect(screen.getByText('Telemetry events')).toBeVisible();
     expect(screen.getAllByRole('progressbar')).toHaveLength(1);
     const progress = screen.getByRole('progressbar', { name: 'Loading table preview: Events...' });
@@ -402,11 +562,11 @@ it('hides unknown column counts while preserving available source metadata', asy
     store.dispatch(dfActions.upsertExternalTableReference({ ...reference, summary: { columns: [], sizeBytes: 880_000_000 } }));
     render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
     expect(screen.queryByText(/0 columns/)).not.toBeInTheDocument();
-    expect(screen.getByText('Location: db.events')).toBeVisible();
-    expect(screen.getByText(/Connector: Corporate ADX/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show in data sources' })).toHaveTextContent('db.events');
+    expect(screen.getByText(/Corporate ADX/)).toBeVisible();
     await act(async () => { finishPreview({ data: { columns: reference.summary.columns, rows: [] } }); });
     expect(screen.queryByText(/0 columns/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Connector: Corporate ADX/)).toHaveTextContent('1 column');
+    expect(screen.getByText(/1 columns shown/)).toBeVisible();
 });
 
 it('refreshes only the selected table schema and sample while preserving source metadata', async () => {
@@ -424,11 +584,51 @@ it('refreshes only the selected table schema and sample while preserving source 
         columns: [{ name: 'count', type: 'number' }], sampleRows: [{ count: 3 }],
     });
     expect(apiRequest).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('Location: https://help.kusto.windows.net / Samples / db.events')).toBeVisible();
+    expect(screen.getByText('https://help.kusto.windows.net / Samples / db.events')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show in data sources' })).toHaveTextContent('https://help.kusto.windows.net / Samples / db.events');
     expect(store.getState().externalTableReferences[0].sourceLocation).toEqual({
         address: 'https://help.kusto.windows.net', database: 'Samples',
     });
     expect(vi.mocked(apiRequest).mock.calls[0][0]).toBe(CONNECTOR_ACTION_URLS.PREVIEW_DATA);
+});
+
+it.each([
+    [undefined, [{ value: 1 }], 'Total rows unknown'],
+    [0, [{ value: 1 }], 'Total rows unknown'],
+    [0, [], '0 total rows'],
+    [250, [{ value: 1 }], '250 total rows'],
+] as const)('separates preview size from source total %s', (rowCount, sampleRows, total) => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference({ ...reference, connectorName: undefined, summary: {
+        columns: [{ name: 'value', type: 'integer' }], rowCount, sampleRows: [...sampleRows],
+        inspection: { sample_method: 'source_head' },
+    } }));
+    render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
+    expect(screen.getByLabelText('Source metadata')).toHaveTextContent(total);
+    expect(screen.getByText(`First ${sampleRows.length} rows · 1 columns shown`)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Preview details' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Inferred schema/)).not.toBeInTheDocument();
+    expect(screen.queryByText('adx', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText(new Date(reference.capturedAt).toLocaleString())).not.toBeInTheDocument();
+});
+
+it('opens the containing connection in the source sidebar without copying or opening the file', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const path = 'https://example.org/datasets/events.csv';
+    store.dispatch(dfActions.setDataSourceSidebarOpen(false));
+    store.dispatch(dfActions.setDataSourceSidebarTab('knowledge'));
+    store.dispatch(dfActions.upsertExternalTableReference({ ...reference,
+        sourceTable: { id: path, name: 'events.csv' }, summary: { columns: [], sampleRows: [] } }));
+    render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
+    const location = screen.getByRole('button', { name: 'Show in data sources' });
+    expect(location).toHaveTextContent(path);
+    fireEvent.click(location);
+    expect(store.getState()).toMatchObject({
+        dataSourceSidebarOpen: true, dataSourceSidebarTab: 'sources', focusedConnectorId: reference.connectorId,
+    });
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /copy/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
 it('shows persisted schema and sample without another network request', async () => {
@@ -449,14 +649,80 @@ it('fills the canvas with a sample preview without search or loaded-table action
             sampleRows: [{ review: 'First review' }, { review: 'Second review' }] } }));
     render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
     expect(screen.getByRole('heading', { name: 'games_reviews.csv' })).toBeVisible();
-    expect(screen.getByText(`Location: ${sourceName}`)).toBeVisible();
+    expect(screen.getByText(sourceName)).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Sample data' }).closest('#vis-view-canvas')).toHaveStyle({ width: '100%', minWidth: '0' });
     expect(screen.getByText('Second review')).toBeVisible();
     expect(screen.getByText('First review')).toBeVisible();
-    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getAllByRole('button')).toHaveLength(3);
     expect(screen.queryByRole('button', { name: /quick chart|download|column menu|analyze/i })).not.toBeInTheDocument();
     expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it.each(['success', 'failure', 'workspace changed'])('imports a confirmed full copy: %s', async outcome => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.setActiveWorkspace({ id: 'original', displayName: 'Original' }));
+    store.dispatch(dfActions.upsertExternalTableReference({ ...reference,
+        queryIntent: { size: 1 }, summary: { ...reference.summary, sampleRows: [] } }));
+    store.dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+    store.dispatch(dfActions.appendWorkspaceItems([reference.id]));
+    let finishImport!: (value: any) => void;
+    let failImport!: (error: Error) => void;
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise((resolve, reject) => {
+        finishImport = resolve;
+        failImport = reject;
+    }));
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { tables: [{ name: 'events_copy', columns: [{ name: 'timestamp', type: 'TIMESTAMP' }],
+        row_count: 100, sample_rows: [{ timestamp: '2026-09-20' }] }] } });
+    const { rerender } = render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Import into workspace' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('uses workspace storage');
+    expect(screen.getByRole('dialog')).toHaveTextContent("won't reflect future source changes");
+    expect(apiRequest).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Import copy' }));
+    await screen.findByText('Importing workspace copy...');
+    expect(store.getState().externalTableReferences).toHaveLength(1);
+    expect(store.getState().inputTables).toEqual([]);
+    expect(JSON.parse(String(vi.mocked(apiRequest).mock.calls[0][1]?.body))).toEqual({
+        connector_id: reference.connectorId, source_table: reference.sourceTable, table_name: 'Events', full_copy: true,
+    });
+    if (outcome !== 'failure') {
+        rerender(<Provider store={store}><ExternalTableReferenceCanvas key="reopened" referenceId={reference.id} /></Provider>);
+    }
+    expect(screen.queryByRole('button', { name: 'Import into workspace' })).not.toBeInTheDocument();
+    if (outcome === 'workspace changed') {
+        act(() => { store.dispatch(dfActions.resetForNewWorkspace({ id: 'other', displayName: 'Other' })); });
+    }
+    await act(async () => {
+        if (outcome === 'failure') failImport(new Error('Source is unavailable'));
+        else finishImport({ data: { table_name: 'events_copy', row_count: 100 } });
+    });
+    await waitFor(() => expect(store.getState().pendingTableLoads).toEqual([]));
+    if (outcome === 'success') {
+        expect(store.getState().externalTableReferences).toEqual([]);
+        expect(dfSelectors.getAllTables(store.getState())[0]).toMatchObject({ id: 'events_copy', displayId: 'Events', virtual: { rowCount: 100 }, source: { canRefresh: false } });
+        expect(store.getState().workspaceItemOrder).toEqual(['shelf-card-events_copy']);
+        expect(store.getState().focusedId).toEqual({ type: 'table', tableId: 'events_copy' });
+    } else {
+        expect(store.getState().inputTables).toEqual([]);
+        if (outcome === 'failure') {
+            expect(store.getState().externalTableReferences).toHaveLength(1);
+            expect(await screen.findByRole('alert')).toHaveTextContent('Source is unavailable');
+            expect(screen.getByRole('button', { name: 'Import into workspace' })).toBeVisible();
+        }
+    }
+});
+
+it('cancels before import and hides importing in a read-only workspace', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference({ ...reference, summary: { ...reference.summary, sampleRows: [] } }));
+    render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Import into workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(store.getState().externalTableReferences).toHaveLength(1);
+    act(() => { store.dispatch(dfActions.setActiveWorkspace({ id: 'shared', displayName: 'Shared', readOnly: true })); });
+    expect(screen.queryByRole('button', { name: 'Import into workspace' })).not.toBeInTheDocument();
 });
 
 it('caches at most 50 sample rows without registering a workspace table', async () => {

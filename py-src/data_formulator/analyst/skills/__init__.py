@@ -357,7 +357,15 @@ def _load_tool_specs(skill_dir: Path) -> list[dict[str, Any]]:
     except Exception:
         logger.warning("Failed to parse %s", f, exc_info=True)
         return []
-    return [s for s in data if isinstance(s, dict)] if isinstance(data, list) else []
+    specs = [spec for spec in data if isinstance(spec, dict)] if isinstance(data, list) else []
+    for spec in specs:
+        properties = spec.get("function", {}).get("parameters", {}).get("properties", {})
+        if properties.get("definition") == {"$ref": "workflow-definition"}:
+            from copy import deepcopy
+            from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA
+
+            properties["definition"] = deepcopy(WORKFLOW_DEFINITION_SCHEMA)
+    return specs
 
 
 def build_registry(skills_dir: Path | None = None) -> SkillRegistry:

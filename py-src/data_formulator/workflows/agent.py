@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 import json
 import re
 import time
@@ -12,7 +13,7 @@ from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.skills.base import SkillContext
 from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
 from data_formulator.agents.agent_utils import attach_reasoning_content
-from data_formulator.workflows.instances import parse_workflow, resolve_setup
+from data_formulator.workflows.instances import WORKFLOW_STEP_SCHEMA, initial_steps, parse_workflow, resolve_setup
 
 
 def tool(name: str, description: str, properties: dict, required: list[str]) -> dict:
@@ -36,11 +37,7 @@ TOOLS = [
          {"step_id": TEXT, "reason": TEXT}, ["step_id", "reason"]),
     tool("adapt_plan", "Revise this run's execution steps when user steering or observed context requires a different plan. Never edits the saved workflow. Preserve the task's deliverables and authorization boundaries; do not remove checks merely to avoid failed verification. Provide the complete revised steps, a reason, and the step to execute next.",
          {"reason": TEXT, "step_id": TEXT, "steps": {"type": "array", "minItems": 1, "maxItems": 30,
-          "items": {"type": "object", "properties": {"id": TEXT, "description": TEXT, "instructions": TEXT, "next": TEXT,
-            "checkers": {"type": "array", "items": {"type": "object", "properties": {
-                "id": TEXT, "condition": TEXT, "when": {"type": "string", "enum": ["before", "during", "after"]},
-                "on_fail": TEXT}, "required": ["id", "condition"], "additionalProperties": False}}},
-            "required": ["id", "instructions"], "additionalProperties": False}}}, ["reason", "step_id", "steps"]),
+                    "items": deepcopy(WORKFLOW_STEP_SCHEMA)}}, ["reason", "step_id", "steps"]),
     tool("review_plan", "Assess every step of the active plan against retained history before continuing after adaptation. Mark a step completed only with relevant successful tool evidence and an explanation; pending steps may have no evidence. This does not waive current verification checks. Choose the next active step after reviewing the whole plan.",
          {"step_id": TEXT, "steps": {"type": "array", "minItems": 1, "maxItems": 30, "items": {
              "type": "object", "properties": {"id": TEXT, "status": {"type": "string", "enum": ["pending", "completed"]},
@@ -129,15 +126,19 @@ Do not ask 'shall I continue'. Be concise. Make one tool call at a time.
 
 
 def new_run(instance: dict, run_id: str, setup: dict | None = None) -> dict:
-    return {"id": run_id, "instance": instance, "setup": resolve_setup(instance, setup),
+    steps = deepcopy(instance.get("steps") or initial_steps())
+    return {"id": run_id, "definition": deepcopy(instance), "instance": deepcopy(instance),
+            "plan": {"steps": steps}, "setup": resolve_setup(instance, setup),
             "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
-            "step_id": instance["steps"][0]["id"], "trajectory": [], "checks": {}, "evidence": {},
+            "step_id": steps[0]["id"], "trajectory": [], "checks": {}, "evidence": {},
             "transitions": [], "calls": 0, "elapsed_seconds": 0, "revision": 0, "report": "",
-            "visited": [instance["steps"][0]["id"]], "message": "", "artifacts": [], "outputs": []}
+            "visited": [steps[0]["id"]], "message": "", "artifacts": [], "outputs": []}
 
 
 def public_run(state: dict) -> dict:
     return {**{key: value for key, value in state.items() if key != "trajectory"},
+            "instance": {**state.get("definition", state["instance"]),
+                         "steps": state.get("plan", {}).get("steps", state["instance"].get("steps", []))},
             "tool_calls": sum(message.get("role") == "tool" for message in state.get("trajectory", []))}
 
 
@@ -145,6 +146,9 @@ class WorkflowAgent(AnalystAgent):
     def __init__(self, client, workspace, state: dict, checkpoint, cancel: Event, identity_id: str):
         super().__init__(client, workspace, identity_id=identity_id)
         self.state = state
+        state.setdefault("definition", deepcopy(state.get("original_instance", state["instance"])))
+        state.setdefault("plan", {"steps": deepcopy(state["instance"].get("steps") or initial_steps())})
+        state["instance"] = deepcopy(state["definition"])
         self.checkpoint = checkpoint
         self.cancel = cancel
         self.read_messages = lambda: []
@@ -160,6 +164,12 @@ class WorkflowAgent(AnalystAgent):
         self._refresh_context()
 
     def _refresh_context(self) -> None:
+        from data_formulator.analyst.workspace_inputs import normalize_external_references
+
+        references = {item["id"]: item for item in normalize_external_references(self.state.get("external_references"))}
+        references.update({item["id"]: item for item in normalize_external_references(self._run_payload.get("external_references"))})
+        self.state["external_references"] = list(references.values())
+        self._run_payload["external_references"] = self.state["external_references"]
         self._run_payload["input_tables"] = [{"name": name, "rows": [], "virtual": True} for name in self.workspace.list_tables()]
         self._run_payload["workspace_inputs"] = WorkspaceInputEngine(self.workspace, self._run_payload["input_tables"]).manifest
         self._run_payload["scratch_files"] = self.workspace.list_scratch_files()
@@ -180,6 +190,8 @@ class WorkflowAgent(AnalystAgent):
         pending = self.state.pop("terminal_request", None) or self.state.pop("interaction", None)
         if not pending:
             raise ValueError("No workflow interaction is pending.")
+        references = (result.get("operation") or {}).get("result_references", [])
+        self._run_payload.setdefault("external_references", []).extend(references)
         self._refresh_artifacts()
         self.state["revision"] += 1
         self.state["checks"] = {}
@@ -196,6 +208,7 @@ class WorkflowAgent(AnalystAgent):
         for item in TOOLS:
             tools[item["function"]["name"]] = item
         tools.pop("long_response", None)
+        tools.pop("propose_workflow", None)
         tools.pop("read_connector_form", None)
         tools.pop("update_connector_form", None)
         if self.state.get("plan_review_pending"):
@@ -205,7 +218,7 @@ class WorkflowAgent(AnalystAgent):
     def _build_system_prompt(self, **kwargs) -> str:
         capabilities = "\n\n".join(self.registry.load_body(name) for name in ("workspace", "visualization", "terminal"))
         planning = Path(__file__).with_name("workflow-skill.md").read_text(encoding="utf-8")
-        current_plan = {"revision": self.state.get("plan_revision", 0), "steps": self.state["instance"]["steps"],
+        current_plan = {"revision": self.state.get("plan_revision", 0), "steps": self.state["plan"]["steps"],
                 "step_id": self.state["step_id"], "review_required": self.state.get("plan_review_pending", False),
             "progress": self.state.get("step_progress", {}), "current_checks": self.state["checks"]}
         return capabilities + "\n\n" + planning + "\n\n## Workflow execution contract\n" + INSTRUCTIONS + "\n\nCurrent run plan:\n" + json.dumps(current_plan)
@@ -386,7 +399,7 @@ class WorkflowAgent(AnalystAgent):
                 state["outputs"][previous] = report_output
             result = f"Report saved to {self.run_dir / 'report.md'}. Revision {state['revision']}. Independently verify final outputs and any invalidated checks; unchanged step checks remain valid."
         elif name == "record_check":
-            checks = {check["id"]: check for step in state["instance"]["steps"] for check in step.get("checkers", [])}
+            checks = {check["id"]: check for step in state["plan"]["steps"] for check in step.get("checkers", [])}
             if args.get("check_id") not in checks or args.get("status") not in ("passed", "failed", "inconclusive"):
                 raise ValueError("Unknown checker or invalid status.")
             self._require_evidence(args.get("evidence_ids"), current_revision=False)
@@ -398,7 +411,7 @@ class WorkflowAgent(AnalystAgent):
             reason = args.get("reason")
             if not isinstance(reason, str) or not reason.strip():
                 raise ValueError("Explain why this run's plan needs to change.")
-            revised = parse_workflow(json.dumps({**state["instance"], "steps": args.get("steps")}))
+            revised = parse_workflow(json.dumps({**state["definition"], "steps": args.get("steps")}))
             target = args.get("step_id")
             if target not in {step["id"] for step in revised["steps"]}:
                 raise ValueError("Choose an active step from the revised plan.")
@@ -410,8 +423,8 @@ class WorkflowAgent(AnalystAgent):
                 "previous_step_elapsed_seconds": state.get("step_elapsed_seconds", {}),
                 "evidence_ids": [identifier for identifier, evidence in state["evidence"].items()
                                  if evidence.get("plan_revision", 0) == plan_revision],
-                "previous_steps": state["instance"]["steps"], "previous_step_id": state["step_id"], "step_id": target})
-            state["instance"] = revised
+                "previous_steps": state["plan"]["steps"], "previous_step_id": state["step_id"], "step_id": target})
+            state["plan"] = {"steps": revised["steps"]}
             state["plan_revision"] = plan_revision + 1
             state["plan_review_pending"] = True
             state["step_progress"] = {}
@@ -424,7 +437,7 @@ class WorkflowAgent(AnalystAgent):
             result = "Active run plan revised; saved workflow unchanged. Call review_plan for every new step before working. Earlier evidence and outputs remain available; reverify before delivery.\n" + json.dumps(revised["steps"])
         elif name == "review_plan":
             assessments = args.get("steps")
-            step_ids = {step["id"] for step in state["instance"]["steps"]}
+            step_ids = {step["id"] for step in state["plan"]["steps"]}
             if (not isinstance(assessments, list) or len(assessments) != len(step_ids)
                     or any(not isinstance(item, dict) or not isinstance(item.get("id"), str) for item in assessments)
                     or {item["id"] for item in assessments} != step_ids or args.get("step_id") not in step_ids):
@@ -449,7 +462,7 @@ class WorkflowAgent(AnalystAgent):
             result = "Plan progress assessed. Continue from the selected step; all required checks and final verification still apply."
         elif name == "move_to_step":
             target = args.get("step_id")
-            if target not in {step["id"] for step in state["instance"]["steps"]}:
+            if target not in {step["id"] for step in state["plan"]["steps"]}:
                 raise ValueError("Unknown step ID.")
             if not isinstance(args.get("reason"), str) or not args["reason"].strip():
                 raise ValueError("Explain the transition.")
@@ -479,7 +492,7 @@ class WorkflowAgent(AnalystAgent):
                        and item.get("call", 0) > state.get("last_output_call", state.get("report_call", 0))
                        for item in state["evidence"].values()):
                 raise ValueError("Run an independent verification script after publishing the final outputs.")
-            required = [check["id"] for step in state["instance"]["steps"] for check in step.get("checkers", [])]
+            required = [check["id"] for step in state["plan"]["steps"] for check in step.get("checkers", [])]
             missing_checks = any(state["checks"].get(identifier, {}).get("status") != "passed" for identifier in required)
             if missing_checks:
                 raise ValueError("Required checks are missing, stale, failed, or inconclusive. Verify or request help.")
@@ -499,7 +512,7 @@ class WorkflowAgent(AnalystAgent):
             return state["message"]
         elif name in self._loaded_skill_tool_map():
             result = self._loaded_skill_tool_map()[name].handle_tool(name, args, context).text
-        elif name == "ask_user" or name in self._legal_actions() and name != "long_response":
+        elif name == "ask_user" or name in self._legal_actions() and name not in {"long_response", "propose_workflow"}:
             events = self.registry.get_skill(self.registry.action_owner(name)).handle_action(name, args, context)
             try:
                 while True:

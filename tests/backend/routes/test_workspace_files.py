@@ -100,6 +100,33 @@ def test_upload_list_download_and_delete(client, tmp_workspace):
     assert client.get("/api/workspace/files").get_json()["data"]["files"] == []
 
 
+def test_diagnostics_include_managed_parquet_files_with_bounded_read_only_access(client, tmp_workspace):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    metadata = tmp_workspace.write_parquet_from_arrow(pa.table({"value": list(range(75))}), "events")
+    tmp_workspace.confined_scratch.write("note.txt", b"scratch note")
+    _upload(client, "notes.md", b"saved note")
+    path = f"data/{metadata.filename}"
+    ordinary = client.get("/api/workspace/files?include_temp=true").get_json()["data"]["files"]
+    assert path not in [item["name"] for item in ordinary]
+    files = client.get("/api/workspace/files?include_temp=true&include_tables=true").get_json()["data"]["files"]
+    assert [item["name"] for item in files] == [path, "notes.md", "scratch/note.txt"]
+    assert files[0]["file_size"] > 0
+    preview = client.get(f"/api/workspace/files/{path}/preview").get_json()["data"]
+    assert preview["kind"] == "table"
+    assert len(preview["rows"]) == 50
+    assert preview["row_count"] == 75
+    assert preview["truncated"] is True
+    downloaded = client.get(f"/api/workspace/files/{path}")
+    assert pq.read_table(io.BytesIO(downloaded.data)).num_rows == 75
+    assert client.delete(f"/api/workspace/files/{path}").get_json()["status"] == "error"
+    for invalid in ("data/missing.parquet", "data/../notes.md", "data/../events.parquet"):
+        assert client.get(f"/api/workspace/files/{invalid}").get_json()["status"] == "error"
+        assert client.get(f"/api/workspace/files/{invalid}/preview").get_json()["status"] == "error"
+    assert tmp_workspace.get_table_metadata("events").row_count == 75
+
+
 def test_duplicate_filenames_are_kept(client):
     assert _upload(client, "notes.md").get_json()["data"]["name"] == "notes.md"
     assert _upload(client, "notes.md").get_json()["data"]["name"] == "notes_2.md"

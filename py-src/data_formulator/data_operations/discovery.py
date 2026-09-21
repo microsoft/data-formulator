@@ -479,6 +479,7 @@ class DataDiscoveryService:
                 "source_table": str(source_table),
                 "source_table_name": str(source_table_name),
                 "row_count": metadata.get("row_count"),
+                "metadata": metadata,
             }
         return None
 

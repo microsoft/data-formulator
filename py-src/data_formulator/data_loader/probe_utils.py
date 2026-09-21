@@ -248,16 +248,37 @@ def preview_file(register_source: Callable, source: str, import_options: dict[st
 
 def register_file_scan(connection, source: str, *, preview: bool = False):
     from glob import escape
+    import duckdb
 
     extension = source.lower().rsplit(".", 1)[-1]
     path = escape(source)
     if extension == "parquet":
         relation = connection.read_parquet(path, hive_partitioning=False)
     elif extension in ("csv", "tsv"):
-        relation = connection.read_csv(
-            path, header=True, sep="\t" if extension == "tsv" else ",", hive_partitioning=False,
-            **({"sample_size": 2048} if preview else {}),
-        )
+        delimiter = "\t" if extension == "tsv" else ","
+        encoding = "utf-8"
+        local_source = "://" not in source
+        if local_source:
+            with open(source, "rb") as source_file:
+                prefix = source_file.read(4)
+            if prefix.startswith((b"\xff\xfe", b"\xfe\xff")):
+                encoding = "utf-16"
+        if encoding == "utf-8":
+            try:
+                relation = connection.read_csv(
+                    path, header=True, sep=delimiter, hive_partitioning=False,
+                    **({"sample_size": 2048} if preview else {}),
+                )
+            except duckdb.InvalidInputException as error:
+                if not local_source or "not utf-8 encoded" not in str(error):
+                    raise
+                encoding = "cp1252"
+        if encoding != "utf-8":
+            import pyarrow.csv as arrow_csv
+
+            reader = arrow_csv.open_csv(source, read_options=arrow_csv.ReadOptions(encoding=encoding),
+                                        parse_options=arrow_csv.ParseOptions(delimiter=delimiter, newlines_in_values=True))
+            relation = connection.from_arrow(reader)
     elif extension in ("json", "jsonl"):
         relation = connection.read_json(
             path, format="newline_delimited" if extension == "jsonl" else "auto",

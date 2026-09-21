@@ -2,6 +2,22 @@
   {
     "type": "function",
     "function": {
+      "name": "propose_workflow",
+      "description": "Propose or revise an analysis workflow definition in the current conversation for user review, Save, or Run. Use this for workflow creation instead of creating a Markdown file. This action neither saves nor executes the workflow. Ground it in the user's conversation and available data; use ask_user for material unknowns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "definition": { "$ref": "workflow-definition" },
+          "summary": { "type": "string", "description": "Concise description of the proposed definition or revision, without claiming execution or saving." }
+        },
+        "required": ["definition", "summary"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "create_data",
       "description": "Create an independently needed registered workspace table, not a scratch export or staging table for a chart. For chart-specific transformations, use visualize directly: it publishes both the derived table and chart. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame. Declare actual data/file input_sources; use [] for generated data without inputs and clearly identify synthetic data. Returns the table name and content hash.",
       "parameters": {
@@ -645,7 +661,7 @@
     "type": "function",
     "function": {
       "name": "propose_data_operation",
-      "description": "Load connected data into durable workspace tables using the workspace Data Access Paths. Ground source IDs, table keys, and query fields in discovery or reference context. One option with user_review_needed=false executes automatically; review-required proposals pause for user selection. Multiple options always require review. Successful loads return IDs, paths, schema, row counts, and scope for subsequent computation.",
+      "description": "Add connected data to the workspace using the workspace Data Access Paths. For analysis, submit the needed query directly: the application also registers a virtual source reference only if that source/table is not already in the workspace. No separate preparation call is needed. Query results are materialized and never silently become virtual references. Omit query for an add-source request using automatic small/local or large/virtual loading, matching manual imports. Ground source IDs, table keys, and query fields in discovery or reference context. One option with user_review_needed=false executes automatically; review-required proposals pause for user selection. Multiple options always require review. Inspect load_outcomes: virtual means compute_ready=false with no local path; materialized means compute_ready=true with input paths and scope. When both are returned, compute from the materialized result without loading again. Source registration does not imply query success.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -687,8 +703,17 @@
                       },
                       "query": {
                         "type": "object",
-                        "description": "Optional structured subset or aggregate query. Omit for raw rows subject to connector limits. Aggregate loading requires query_capabilities.aggregate_loading=supported and allows at most 10000 result rows. An explicit limit defines partial/top-N coverage, not a complete population.",
+                        "description": "Omit to add the source with automatic small/local or large/virtual selection. Supplying a query, even {}, requests materialization and never falls back to a virtual reference. Prefer a bounded reusable working dataset then local Python; use native only when source-side computation is required and its language is advertised in query_capabilities.native_query_languages. Native and aggregate results allow at most 10000 rows; explicit limits mean partial coverage.",
                         "properties": {
+                          "native": {
+                            "type": "object",
+                            "description": "Complete read-only KQL expression including the selected table, for example Events | where event_time >= datetime(2026-01-01) and event_time < datetime(2026-02-01) | summarize event_count=count() by category. Use verified table and column names. The connector does not prepend a table: do not start with where or a bare pipe. No commands, semicolons, comments, settings, external/remote access, or plugins. Cannot combine with other query fields except limit. 60-second/16-MiB execution limits; constrain scan scope explicitly. Native limits or sampling in the text define coverage, never assume a complete population.",
+                            "properties": {
+                              "language": {"type": "string", "enum": ["kql"]},
+                              "text": {"type": "string", "minLength": 1, "maxLength": 16000}
+                            },
+                            "required": ["language", "text"], "additionalProperties": false
+                          },
                           "group_by": {"type": "array", "items": {"type": "string"}},
                           "aggregates": {"type": "array", "items": {
                             "type": "object",

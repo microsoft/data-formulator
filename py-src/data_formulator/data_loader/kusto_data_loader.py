@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import time
+from datetime import timedelta
 from threading import Lock
 from typing import Any
 import pandas as pd
@@ -22,6 +23,8 @@ from data_formulator.data_loader import probe_utils
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRequestProperties
 from azure.kusto.data.helpers import dataframe_from_result_table, parse_float
+from azure.kusto.data.exceptions import KustoApiError
+from data_formulator.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -465,7 +468,56 @@ class KustoDataLoader(ExternalDataLoader):
         
         return arrow_table
 
+    @classmethod
+    def query_capabilities(cls) -> dict[str, Any]:
+        return {**super().query_capabilities(), "native_query_languages": ["kql"],
+                "native_query_guidance": "Single read-only KQL expression scoped to the selected table in this database. No commands, statements, comments, external data, remote entities, callouts, or plugins. Use native queries only when ordinary loading and local Python are unsuitable. Maximum 10000 loaded rows, 16 MiB, 60 seconds; narrow queries explicitly to control scan cost."}
+
     def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        if query.get("native") is not None:
+            native = query["native"]
+            if not isinstance(native, dict) or native.get("language") != "kql":
+                raise ValueError("This connector supports native KQL only.")
+            text = native.get("text")
+            if (not isinstance(text, str) or not text.strip() or len(text) > 16000
+                    or any(token in text for token in (";", "//", "/*", "*/", "\x00"))
+                    or text.lstrip().startswith(".")):
+                raise ValueError("Provide one KQL query expression without commands, comments, or statements (maximum 16000 characters).")
+            if not 1 <= limit <= 10001:
+                raise ValueError("Native query result limit must be between 1 and 10001.")
+            database, table = self._resolve_source_table(source_table)
+            if not table or "*" in table:
+                raise ValueError("Native queries require one exact table, not a wildcard scope.")
+            properties = ClientRequestProperties()
+            for option in ("request_readonly", "request_readonly_hardline", "request_callout_disabled",
+                           "request_external_data_disabled", "request_external_table_disabled",
+                           "request_impersonation_disabled", "request_remote_entities_disabled",
+                           "request_sandboxed_execution_disabled"):
+                properties.set_option(option, True)
+            properties.set_option("servertimeout", timedelta(seconds=60))
+            properties.set_option("truncationmaxrecords", limit)
+            properties.set_option("truncationmaxsize", 16 * 1024 * 1024)
+            properties.set_option("deferpartialqueryfailures", False)
+            properties.set_option("query_language", "kql")
+            restricted = f"restrict access to (database().{self._kql_ident(table)});\n{text}\n| take {limit}"
+            try:
+                result = self.client.execute_query(database, restricted, properties)
+            except KustoApiError as exc:
+                diagnostic = re.search(r"\b(?:SYN|SEM)\d{4}: [^\r\n]+", exc.get_api_error().description or "")
+                if diagnostic:
+                    message = re.sub(r"https?://\S+", "<url>", diagnostic.group(0))
+                    raise ValueError(
+                        f"Native KQL query rejected: {sanitize_error_message(message)} "
+                        "Provide a complete query starting from the selected table (for example, TableName | where ...). "
+                        "The connector restricts access but does not prepend the source table to your query."
+                    ) from exc
+                raise
+            if result.get_exceptions() or len(result.primary_results) != 1:
+                raise ValueError("Native query returned incomplete results or multiple result tables.")
+            frame = dataframe_from_result_table(result.primary_results[0],
+                converters_by_type={"float": lambda column, frame: parse_float(frame, column)})
+            frame = self._stringify_dynamic_columns(self._convert_kusto_datetime_columns(frame))
+            return pa.Table.from_pandas(frame, preserve_index=False)
         database, table = self._resolve_source_table(source_table)
         kql = self._compile_probe_kql(table, query, limit, exact_distinct=True)
         previous_database = self.kusto_database

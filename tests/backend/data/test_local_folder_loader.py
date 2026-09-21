@@ -23,6 +23,18 @@ from data_formulator.data_loader.local_folder_data_loader import (
 
 pytestmark = [pytest.mark.backend]
 
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "cp1252", "utf-16"])
+@pytest.mark.parametrize("extension,delimiter", [("csv", ","), ("tsv", "\t")])
+def test_local_text_encoding_preserves_rows_and_original_file(tmp_path, encoding, extension, delimiter):
+    source = tmp_path / f"encoded.{extension}"
+    original = f"city{delimiter}value\nMontr\u00e9al{delimiter}1\nZ\u00fcrich \u2013 centre{delimiter}2\n".encode(encoding)
+    source.write_bytes(original)
+    loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+    expected = [{"city": "Montr\u00e9al", "value": 1}, {"city": "Z\u00fcrich \u2013 centre", "value": 2}]
+    assert loader.preview_data(source.name)["rows"] == expected
+    assert loader.fetch_data_as_arrow(source.name).to_pylist() == expected
+    assert source.read_bytes() == original
+
 
 # ── ConfinedDir tests ────────────────────────────────────────────────────
 

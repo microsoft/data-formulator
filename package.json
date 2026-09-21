@@ -122,6 +122,7 @@
         "@testing-library/jest-dom": "^6.9.1",
         "@testing-library/react": "^16.3.2",
         "@types/d3": "^7.4.3",
+        "@types/js-yaml": "^4.0.9",
         "@types/lodash": "^4.17.7",
         "@types/node": "^20.14.10",
         "@types/prismjs": "^1.26.0",

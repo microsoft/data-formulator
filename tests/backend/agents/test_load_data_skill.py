@@ -196,6 +196,10 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
     assert "An ordinary summary can be answered directly without report delivery" in prompt
     assert "write up / summarize / report" not in prompt
     assert "successful `visualize` result" in report
+    assert "other threads only when relevant" in report
+    assert "Reuse verified findings and charts" in report
+    assert "Embed every chart you discuss" not in report
+    assert "make the one `write_report` call" not in report
 
 
 def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_names(
@@ -464,12 +468,91 @@ def test_multiple_load_options_still_require_review(tmp_path: Path, include_revi
     loader.assert_not_called()
 
 
+def test_large_source_load_returns_virtual_outcome_and_reuses_inventory(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    save_catalog(workspace.user_home, "warehouse", [{"name": "Orders", "table_key": "orders",
+        "path": ["orders"], "metadata": {"row_count": 2000000, "columns": [{"name": "amount", "type": "number"}]}}])
+    skill = build_registry().get_skill("workspace")
+    context = _context(workspace)
+    spec = {"options": [{"label": "Add orders", "tables": [{"source_id": "warehouse", "table_key": "orders"}]}]}
+    with patch("data_formulator.data_connector.resolve_live_loader") as loader:
+        for attempt in range(2):
+            events = list(skill.handle_action("propose_data_operation", spec, context))
+            assert events[-1]["operation"]["status"] == "loaded"
+            assert events[1]["status"] == "ok"
+            result = context.payload["last_data_operation_result"]
+            assert result["workspace_inputs"] == []
+            assert result["load_outcomes"][0]["availability"] == "virtual"
+            assert result["load_outcomes"][0]["compute_ready"] is False
+            assert "path" not in result["load_outcomes"][0]
+            stored = DataOperationRepository.for_workspace(workspace).get(result["id"])
+            assert stored.result_references[0]["tableKey"] == "orders"
+        loader.assert_not_called()
+    assert len(context.payload["external_references"]) == 1
+    assert context.payload["input_tables"] == []
+    assert workspace.list_tables() == []
+    materialized_loader = MagicMock()
+    materialized_loader.fetch_data_as_arrow.return_value = pa.table({"amount": [10.0]})
+    materialized_loader.get_safe_params.return_value = {}
+    spec["options"][0]["tables"][0]["query"] = {"limit": 10}
+    with patch("data_formulator.data_connector.resolve_live_loader", return_value=materialized_loader):
+        events = list(skill.handle_action("propose_data_operation", spec, context))
+    result = context.payload["last_data_operation_result"]
+    assert result["load_outcomes"][0]["availability"] == "materialized"
+    assert result["load_outcomes"][0]["compute_ready"] is True
+    assert result["workspace_inputs"][0]["path"].startswith("data/")
+    assert len(context.payload["external_references"]) == 1
+    materialized_loader.fetch_data_as_arrow.assert_called_once()
+
+
 @pytest.mark.parametrize("flag", ["false", 0, None])
 def test_review_flag_requires_a_boolean(tmp_path: Path, flag) -> None:
     skill = build_registry().get_skill("workspace")
     events = list(skill.handle_action("propose_data_operation", {"user_review_needed": flag}, _context(_Workspace(tmp_path))))
     assert events[0]["type"] == "error"
     assert "must be a boolean" in events[0]["message"]
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("fails", [False, True])
+def test_query_load_registers_only_missing_source_alongside_result(tmp_path, existing, fails):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    save_catalog(workspace.user_home, "warehouse", [{"name": "All orders", "table_key": "orders",
+        "path": ["orders"], "metadata": {"row_count": 20}}])
+    context = _context(workspace)
+    reference = {"kind": "external-table-reference", "id": "external:warehouse:orders",
+        "connectorId": "warehouse", "tableKey": "orders", "displayName": "My orders",
+        "sourceTable": {"id": "orders", "name": "orders"}, "capturedAt": "original", "summary": {"columns": []}}
+    if existing:
+        context.payload["external_references"] = [reference]
+    loader = MagicMock()
+    loader.get_safe_params.return_value = {}
+    if fails:
+        loader.fetch_data_as_arrow.side_effect = ValueError("Query failed")
+    else:
+        loader.fetch_data_as_arrow.return_value = pa.table({"amount": [10.0]})
+    spec = {"options": [{"label": "Recent orders", "tables": [{"source_id": "warehouse", "table_key": "orders",
+        "display_name": "Recent orders", "query": {"limit": 10}}]}]}
+    with patch("data_formulator.data_connector.resolve_live_loader", return_value=loader):
+        events = list(build_registry().get_skill("workspace").handle_action("propose_data_operation", spec, context))
+    result = context.payload["last_data_operation_result"]
+    assert events[1]["status"] == ("error" if fails else "ok")
+    assert bool(result.get("failed_steps")) is fails
+    assert len(context.payload["external_references"]) == 1
+    if existing:
+        assert context.payload["external_references"] == [reference]
+        assert not result.get("result_references")
+    else:
+        assert result["result_references"][0]["displayName"] == "All orders"
+        assert result["load_outcomes"][0]["compute_ready"] is False
+    if fails:
+        assert result["workspace_inputs"] == []
+        assert result["failed_steps"][0]["error"]["message"] == "Query failed"
+    else:
+        assert result["workspace_inputs"][0]["compute_ready"] is True
+        assert result["workspace_inputs"][0]["path"].startswith("data/")
+    loader.fetch_data_as_arrow.assert_called_once()
 
 
 def test_narration_is_the_response_shown_to_the_user(tmp_path: Path) -> None:

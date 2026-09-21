@@ -787,7 +787,7 @@ class ExternalDataLoader(ABC):
     QUERY_EXECUTION: str = "unknown"
 
     @classmethod
-    def query_capabilities(cls) -> dict[str, str]:
+    def query_capabilities(cls) -> dict[str, Any]:
         guidance = {
             "remote_file_scan": (
                 "Queries read remote files into the application; filters and aggregates are not "
@@ -812,6 +812,7 @@ class ExternalDataLoader(ABC):
         return {
             "execution_model": cls.QUERY_EXECUTION,
             "aggregate_loading": "supported" if cls.query_data_as_arrow is not ExternalDataLoader.query_data_as_arrow else "unsupported",
+            "native_query_languages": [],
             "guidance": guidance.get(cls.QUERY_EXECUTION,
                 "Query execution cost is unknown. Do not assume server-side pushdown or a cheap probe."),
         }

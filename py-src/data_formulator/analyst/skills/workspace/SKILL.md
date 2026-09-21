@@ -18,7 +18,7 @@ tools:
   - list_connectors
   - describe_connector
   - read_connector_form
-actions: [propose_data_operation, propose_connection, update_connector_form]
+actions: [propose_data_operation, propose_connection, update_connector_form, propose_workflow]
 ---
 
 # Workspace
@@ -31,7 +31,7 @@ actions: [propose_data_operation, propose_connection, update_connector_form]
 | Agent-managed workspace data and files | Read, combine, analyze, and revise using listed paths and hashes. | Create with `create_data`/`create_file`; revise with `update_data`/`edit_file`. Durable until deleted. |
 | Scratch | Read execution intermediates and legacy artifacts when relevant. | Internal temporary storage, not the destination for requested outputs. |
 | Connected-source catalogs | Discover tables, inspect metadata, and run bounded read-only probes. | Discovery does not load data or make catalog paths readable in sandboxed Python. |
-| External table references in the workspace | Use the cached schema and exact source ID/table key to describe, probe, or load a relevant subset. | A successful connector query creates an ordinary workspace table; the reference itself is not a Python input. |
+| External table references in the workspace | Use the cached schema and exact source ID/table key to describe, probe, or load a relevant subset. | Adding a large source can succeed as a virtual reference. Only a materialized query result is a Python input. |
 | Import proposal or connector form awaiting review | Explain the grounded choice and wait for the user's selection or Connect. | Clear single-option imports may execute automatically; only successful execution establishes availability. |
 
 Ownership controls writes and lifecycle, not read access. A workspace without
@@ -46,11 +46,38 @@ workspace and keeps large tables as external references, using configured row
 and byte thresholds when sizes are known. This is an initial access decision,
 not a reason to ask the user to manage storage. Already loaded data stays loaded.
 
+Use the same `propose_data_operation` action for workspace preparation and concrete
+loads; no separate preparation tool is needed. Omit `query` to add a source using
+the same size policy as manual selection: known large tables become virtual
+references, while smaller or unknown-size tables use ordinary loading. For an
+analysis request, submit the needed working-dataset query directly: the application
+automatically adds a virtual source reference only if that source/table is not
+already represented in the workspace. Do not make a separate preparation call.
+
+Inspect each returned `load_outcomes` entry. `availability: virtual` and
+`compute_ready: false` means registration succeeded but rows remain remote, with
+no Python-readable path. A query load can return this source reference alongside
+a `materialized`, `compute_ready: true` dataset. Use that dataset directly; do not
+reload merely because the source remains virtual. If no suitable materialized
+result exists, use the source ID/table key to refine the query as needed.
+Registration alone does not complete a computation request, and query failures
+remain failures even when source registration succeeded. A request only to add
+the source does not require materialization.
+
+Supply `query` to request concrete rows, preferably with selective filters,
+projection, or aggregation. Even `query: {}` requests materialization rather than
+automatic virtual registration; use it only when the ordinary full load is
+appropriate. Concrete queries never silently fall back to references. If a query
+fails or exceeds limits, refine it without changing the requested coverage or
+ask about a necessary tradeoff. `availability: materialized` and
+`compute_ready: true` means use the returned path and scope for local work, not
+that the result necessarily covers the full source.
+
 | Starting point | Agent path |
 |---|---|
 | Relevant workspace table or file covers the task | Read its listed path, compute locally, and visualize or report. No connector load is needed. |
 | Large external reference, no suitable local copy | Reuse cached metadata; describe or probe only for unresolved schema or scope. Load a bounded, reusable working dataset with `propose_data_operation`, then analyze and visualize from the successful result. |
-| Needed data is absent | Discover connected data, reconcile it with existing inputs, then load a suitable working dataset and continue. A discovery-only request does not require loading. |
+| Needed data is absent | Discover connected data and reconcile it with existing inputs. Load a suitable working dataset directly; missing source references are registered automatically with query loads. A discovery-only request does not require loading. |
 | Follow-up on an existing analysis | Reuse a dataset whose coverage contains the request and whose columns, detail, and freshness support it; filter locally. Query the source only for a concrete gap, not chart styling or another local grouping. |
 | Single external chart with known schema and scope, and no broader analysis requested | Optionally use `visualize` with `connector_inputs` for a bounded query and chart in one call. When unsure, use the separate load path. |
 
@@ -124,6 +151,18 @@ top-N or partial coverage. Unsupported connectors fail rather than loading a
 sampled aggregate. Probe output is inspection evidence, not a durable input.
 Small output limits do not guarantee small scans on file sources, especially for
 global ordering or aggregation.
+
+Prefer loading a complete, bounded working dataset and using Python locally.
+When raw loading is too large or prohibited, or structured loading cannot express
+the required reduction, use `query.native` only for an advertised
+`query_capabilities.native_query_languages` language. Kusto accepts
+`{"native": {"language": "kql", "text": "Events | summarize event_count=count() by category"}}`.
+Add the relevant date/scope filters before aggregation. Submit one query expression
+over the selected table; commands, statements, comments, external/remote access,
+and plugins are unavailable. Native queries cannot be mixed with structured fields
+except `limit`. Execution is bounded to 60 seconds, 16 MiB, and 10,000 loaded rows;
+partial failures are rejected. Limits/sampling written into KQL still mean partial
+coverage. Load the reusable result, then compute comparisons and charts locally.
 
 Read `query_capabilities` in reference context and discovery results before
 probing (`source_query_capabilities` maps source IDs in search results):

@@ -37,6 +37,43 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it('replaces a virtual reference in place without disturbing existing outputs', () => {
+    const reference = { kind: 'external-table-reference' as const, id: 'external:orders', connectorId: 'db',
+      tableKey: 'orders', sourceTable: { id: 'orders', name: 'orders' }, displayName: 'Original orders',
+      capturedAt: '', summary: { columns: [] } };
+    let state = dataFormulatorReducer(undefined, dfActions.upsertExternalTableReference(reference));
+    state = dataFormulatorReducer(state, dfActions.addTableToStore(derivedTable as any));
+    state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems(['before', reference.id, 'after']));
+    state = dataFormulatorReducer(state, dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+    state = dataFormulatorReducer(state, dfActions.replaceExternalTableReference({ referenceId: reference.id, table: sourceTable as any }));
+    expect(state.externalTableReferences).toEqual([]);
+    expect(state.inputTables[0].displayId).toBe('Original orders');
+    expect(state.workspaceItemOrder).toEqual(['before', 'shelf-card-orders', 'after']);
+    expect(state.focusedId).toEqual({ type: 'table', tableId: 'orders' });
+    expect(state.derivedTables[0].derive).toMatchObject(derivedTable.derive);
+    const deleted = dataFormulatorReducer(undefined, dfActions.replaceExternalTableReference({ referenceId: reference.id, table: sourceTable as any }));
+    expect(deleted.inputTables).toEqual([]);
+  });
+
+  it.each(['add', 'insert'])('keeps one derived owner across %s publication, refresh, and restore', publication => {
+    const { derive, ...snapshot } = derivedTable;
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(snapshot as any));
+    const staleInput = state.inputTables[0];
+    state = dataFormulatorReducer(state, publication === 'add'
+      ? dfActions.addTableToStore(derivedTable as any)
+      : dfActions.insertDerivedTables(derivedTable as any));
+    expect(state.inputTables).toEqual([]);
+    expect(state.derivedTables).toHaveLength(1);
+    state = dataFormulatorReducer(state, dfActions.addTableToStore({ ...snapshot, rows: [{ order_id: 2 }] } as any));
+    expect(state.inputTables).toEqual([]);
+    expect(state.derivedTables[0].derive).toEqual(derive);
+    expect(state.derivedTables[0].rows).toEqual([{ order_id: 2 }]);
+    state = dataFormulatorReducer(state, dfActions.loadState({ ...state, inputTables: [staleInput] }));
+    expect(state.inputTables).toEqual([]);
+    expect(dfSelectors.getAllTables(state)).toHaveLength(1);
+    expect(state.derivedTables[0].derive).toEqual(derive);
+  });
+
   it("preserves workspace item order and appends recreated items at the end", () => {
     let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
     state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems([

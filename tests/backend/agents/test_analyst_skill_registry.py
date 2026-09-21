@@ -41,9 +41,43 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])
     } == {
         "visualize", "ask_user", "long_response",
-        "propose_data_operation", "propose_connection", "update_connector_form",
+        "propose_data_operation", "propose_connection", "update_connector_form", "propose_workflow",
     }
     assert registry.action_owner("long_response") == "meta"
+
+
+def test_baseline_guides_progressive_visual_analysis() -> None:
+    registry = build_registry()
+    baseline = registry.load_body("meta")
+    visualization = registry.load_body("visualization")
+    assert baseline.count(visualization) == 1
+    assert baseline.count("## Progressive Visual Analysis") == 1
+    assert baseline.count("## Define Workflows In Conversation") == 1
+    assert "## Define Workflows In Conversation" not in registry.load_body("workspace")
+    assert "propose_workflow" in registry.action_names()
+    assert "use the latest relevant complete definition" in baseline
+    assert "actual steps and instructions, not only the summary" in baseline
+    assert "near-identical proposal as an update" in baseline
+    assert "complete structured definition" in baseline
+    assert "Organize steps around analytical goals" in baseline
+    assert "Expose meaningful rerun inputs as parameters" in baseline
+    assert "Prefer text parameters for everyday descriptions, with boolean or select inputs" in baseline
+    assert "Do not require ISO dates or other machine formats" in baseline
+    assert "keep fixed requirements in the definition" in baseline
+    assert "Preserve user acceptance criteria" in baseline
+    assert "each phase combines its analysis" in baseline
+    assert "before proposing, unless the user requests a draft" in baseline
+    assert "Failed prerequisites" in baseline
+    assert "pickup_datetime" not in baseline
+    assert "explicit\nnonvisual requests" in visualization
+    assert "Verify numerical claims independently" in visualization
+    workspace = registry.load_body("workspace")
+    assert "Omit `query` to add a source" in workspace
+    assert "`compute_ready: false`" in workspace
+    assert "Concrete queries never silently fall back to references" in workspace
+    assert "Do not make a separate preparation call" in workspace
+    assert "Use that dataset directly" in workspace
+    assert "Virtual load outcomes are not local chart inputs" in visualization
 
 
 def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> None:
@@ -67,7 +101,7 @@ def test_connector_actions_are_registered_as_actions_not_read_only_tools() -> No
     action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])}
     tool_names = {spec["function"]["name"] for spec in registry.tools_for(["workspace"])}
 
-    assert action_names == {"propose_data_operation", "propose_connection", "update_connector_form"}
+    assert action_names == {"propose_data_operation", "propose_connection", "update_connector_form", "propose_workflow"}
     for action_name in action_names:
         assert registry.action_owner(action_name) == "workspace"
         assert action_name not in tool_names

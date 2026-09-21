@@ -42,6 +42,46 @@ it('keeps intermediate agent instructions non-clickable even with a plan and cal
   expect(screen.queryByRole('button')).toBeNull();
 });
 
+it('collapses older threads when a new thread appears and preserves manual expansion during updates', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  const addTurn = (id: string, parentNodeId: string, createdAt: number) => store.dispatch(dfActions.addTextTurn({
+    kind: 'text', id, displayId: id, textKind: 'explain', content: `${id} response`, parentNodeId, createdAt,
+    prompt: `Analyze ${id} pickups`,
+  }));
+  addTurn('old', 'conversation-root:old', 1);
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+    }),
+  }));
+  expect(screen.getByText('old response')).toBeTruthy();
+  act(() => { addTurn('new', 'conversation-root:new', 2); });
+  expect(screen.getByRole('button', { name: 'Collapse thread' }).querySelector('span[aria-hidden="true"]'))
+    .toHaveStyle({ borderRadius: '50%' });
+  expect(screen.getByRole('button', { name: 'Expand thread' }).querySelector('[data-testid="ChevronRightIcon"]')).toBeTruthy();
+  expect(screen.queryByText('old response')).toBeNull();
+  expect(screen.getByText('Analyze old pickups').closest('[data-thread-summary]')).toBeTruthy();
+  expect(screen.getByText('new response')).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(2);
+  const previousFocus = store.getState().focusedId;
+  const summary = screen.getByRole('button', { name: 'Analyze old pickups' });
+  expect(summary).toHaveAttribute('aria-expanded', 'false');
+  expect(summary).toHaveStyle({ color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily });
+  expect(summary.previousElementSibling).toHaveAttribute('aria-hidden', 'true');
+  expect(summary.previousElementSibling?.firstElementChild).toHaveStyle({ borderLeftWidth: '2px', borderLeftStyle: 'solid' });
+  fireEvent.click(summary);
+  expect(store.getState().focusedId).toEqual(previousFocus);
+  expect(screen.getByText('old response')).toBeTruthy();
+  act(() => { addTurn('followup', 'new', 3); });
+  expect(screen.getByText('old response')).toBeTruthy();
+  expect(screen.getByText('followup response')).toBeTruthy();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Collapse thread' })[0]);
+  expect(screen.queryByText('old response')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Expand thread' }));
+  expect(screen.getByText('old response')).toBeTruthy();
+});
+
 it.each(['prompt', 'instruction'])('keeps user %s bubbles non-interactive even inside clickable rows', role => {
   const onClick = vi.fn();
   const onParentClick = vi.fn();
@@ -75,9 +115,9 @@ it.each([
     ...(producesTable && id === 'second' ? { executions: [{ id: 'old-command', argv: ['ls'], cwd: '.',
       purpose: 'Inspect files', status: 'awaiting_approval' as const }] } : {}),
   })));
-  if (producesTable) store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'result-table', displayId: 'Result',
+  if (producesTable) store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'result-chart-table', displayId: 'Result',
     names: [], metadata: {}, rows: [], parentNodeId: 'latest',
-    derive: { source: [], code: '', dialog: [], trigger: { tableId: CONVERSATION_ROOT_ID, resultTableId: 'result-table', instruction: 'Create result',
+    derive: { source: [], code: '', dialog: [], trigger: { tableId: CONVERSATION_ROOT_ID, resultTableId: 'result-chart-table', instruction: 'Create result',
       interaction: [
         { from: 'user', to: 'data-agent', role: 'prompt', content: 'Visualize this result' },
         { from: 'data-agent', to: 'user', role: 'instruction', content: 'Inspecting resource usage' },
@@ -86,11 +126,11 @@ it.each([
     } },
   } as any));
   if (producesTable) store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'after-result', displayId: 'After',
-    textKind: 'explain', content: 'Response after the result', parentNodeId: 'result-table', createdAt: 5 }));
-  if (producesTable) store.dispatch(dfActions.addChart({ id: 'result-chart', chartType: 'Bar Chart', tableRef: 'result-table',
+    textKind: 'explain', content: 'Response after the result', parentNodeId: 'result-chart-table', createdAt: 5 }));
+  if (producesTable) store.dispatch(dfActions.addChart({ id: 'result-chart', chartType: 'Bar Chart', tableRef: 'result-chart-table',
     source: 'user', encodingMap: {} } as any));
-  const segmentFocus = { type: 'conversation', tableId: producesTable ? 'result-table' : CONVERSATION_ROOT_ID,
-    nodeIds: producesTable ? [...nodeIds, 'result-table', 'after-result'] : [...nodeIds, ...(hasReport ? ['pending-report'] : [])] };
+  const segmentFocus = { type: 'conversation', tableId: producesTable ? 'result-chart-table' : CONVERSATION_ROOT_ID,
+    nodeIds: producesTable ? [...nodeIds, 'result-chart-table', 'after-result'] : [...nodeIds, ...(hasReport ? ['pending-report'] : [])] };
   const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
   const { container } = render(React.createElement(Provider, { store, children:
     React.createElement(ThemeProvider, { theme, children:
@@ -101,18 +141,27 @@ it.each([
     act(() => { store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'result-chart' })); });
     expect(store.getState().focusedId).toEqual({ type: 'chart', chartId: 'result-chart' });
     expect(container.querySelector('[data-thread-active="true"]')).toBeNull();
+    const instructionGutter = screen.getByText('Inspecting resource usage').closest('[data-thread-item]')!.firstElementChild!;
+    expect(instructionGutter.querySelector('svg')).toHaveStyle({ color: theme.palette.primary.main });
+    const tableDot = container.querySelector('[data-thread-item="regular-table-box-result-chart-table"] [data-thread-table-dot]');
+    expect(tableDot).toHaveStyle({ backgroundColor: theme.palette.primary.main });
   }
   const heading = screen.getByText(/thread.*1/i);
   const previousFocus = store.getState().focusedId;
   fireEvent.click(heading);
   expect(store.getState().focusedId).toEqual(previousFocus);
   expect(heading.closest('button, [role="button"]')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Open thread conversation' }));
+  fireEvent.click(screen.getByRole('button', { name: 'view chat' }));
   expect(store.getState().focusedId).toEqual(segmentFocus);
   expect(container.querySelector('[data-thread-active="true"]')).toBeTruthy();
+  if (producesTable) {
+    const instructionGutter = screen.getByText('Inspecting resource usage').closest('[data-thread-item]')!.firstElementChild!;
+    expect(instructionGutter.querySelector('svg')).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
+    expect(container.querySelector('[data-thread-table-dot]')).toHaveStyle({ backgroundColor: 'rgba(0, 0, 0, 0.15)' });
+  }
   act(() => { store.dispatch(dfActions.setFocused(undefined)); });
   expect(container.querySelector('[data-thread-active="true"]')).toBeNull();
-  const openThreadButton = screen.getByRole('button', { name: 'Open thread conversation' });
+  const openThreadButton = screen.getByRole('button', { name: 'view chat' });
   expect(heading.contains(openThreadButton)).toBe(false);
   fireEvent.click(openThreadButton);
   expect(store.getState().focusedId).toEqual(segmentFocus);
@@ -213,6 +262,32 @@ it.each(['pending', 'loaded', 'live-draft', 'interrupted-draft'] as const)(
     expect(store.getState().textTurns.find(turn => turn.id === 'second')?.executions?.[0].status).toBe('awaiting_approval');
   },
 );
+
+it('highlights the displayed file when its closing chat response or follow-up is selected', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'file-summary', displayId: 'Summary', textKind: 'explain',
+    prompt: 'Create a daily trip workflow', content: 'Created Daily Trip Trend Workflow.',
+    parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
+  const file = { kind: 'file' as const, id: 'workflow-file', path: 'files/daily_trip_trend_workflow.md',
+    displayName: 'Daily Trip Trend Workflow', parentNodeId: 'file-summary', createdAt: 2 };
+  store.dispatch(dfActions.upsertFileNode(file));
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'follow-up', displayId: 'Follow-up', textKind: 'explain',
+    content: 'The target date is configurable.', parentNodeId: 'file-summary', createdAt: 3 }));
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+    }),
+  }));
+  for (const content of ['Created Daily Trip Trend Workflow.', 'The target date is configurable.']) {
+    fireEvent.click(screen.getByText(content));
+    expect(store.getState().focusedId?.type).toBe('text');
+    expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: file.path });
+    expect(screen.getByRole('button', { name: file.displayName }).closest('.selected-artifact-card')).toBeTruthy();
+  }
+  act(() => store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: CONVERSATION_ROOT_ID })));
+  expect(screen.getByRole('button', { name: file.displayName }).closest('.selected-artifact-card')).toBeNull();
+});
 
 it('opens, updates, and deletes a file result without a text turn, retaining it on deletion failure', async () => {
   const store = configureStore({ reducer: dataFormulatorReducer });
@@ -418,6 +493,9 @@ it.each([
       React.createElement(LayoutProvider, { children: React.createElement(DataThread, { denseColumns: true }) }),
     }),
   }));
+  for (let index = 0; index < counts.length - 1; index++) {
+    fireEvent.click(screen.getAllByRole('button', { name: 'Expand thread' })[0]);
+  }
   expect(counts.map((_, thread) => screen.getByText(`Thread ${thread} response 0`)
     .closest('[data-thread-column]')?.getAttribute('data-thread-column'))).toEqual(columns);
   expect(container.querySelectorAll('[data-thread-column]')).toHaveLength(2);
@@ -453,6 +531,9 @@ it('balances consecutive pieces and visually joins neighbors without discarding 
     }));
     const segmentOf = (index: number) => container.querySelector(`[data-thread-flow-block="output-segment-table-${index}"]`)
       ?.closest('[data-thread-segment]')?.getAttribute('data-thread-segment');
+    expect(segmentOf(0)).toBeUndefined();
+    expect(container.querySelectorAll('[data-thread-active]')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread' }));
     const originalSegments = Array.from({ length: 4 }, (_, index) => segmentOf(index));
     expect(originalSegments).toEqual(['0', '0', '0', '1']);
     act(() => {
@@ -480,7 +561,7 @@ it('balances consecutive pieces and visually joins neighbors without discarding 
     expect(container.querySelectorAll('[data-thread-item^="used-table-ref-"]')).toHaveLength(0);
     act(() => { store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'segment-table-0' })); });
     expect(container.querySelectorAll('[data-thread-highlighted="true"]')).toHaveLength(4);
-    fireEvent.click(screen.getAllByRole('button', { name: 'Open thread conversation' })[1]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'view chat' })[1]);
     expect(store.getState().focusedId).toMatchObject({ type: 'conversation', tableId: 'segment-table-9' });
     expect(container.querySelectorAll('[data-thread-active="true"]')).toHaveLength(4);
     for (let index = 0; index < 10; index++) {
@@ -496,7 +577,7 @@ it('balances consecutive pieces and visually joins neighbors without discarding 
     expect(container.querySelectorAll('[data-thread-active]')).toHaveLength(5);
     expect(container.querySelectorAll('[data-thread-joined-above="true"]')).toHaveLength(3);
     expect(container.querySelectorAll('[data-thread-joined-below="true"]')).toHaveLength(3);
-    expect(screen.getAllByRole('button', { name: 'Open thread conversation' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(2);
     for (let index = 0; index < 10; index++) {
       expect(container.querySelectorAll(`[data-thread-flow-block="output-segment-table-${index}"]`)).toHaveLength(1);
     }
@@ -549,9 +630,12 @@ describe('thread provenance', () => {
         React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
       }),
     }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread' }));
     const references = container.querySelectorAll('[data-thread-item] .data-thread-card-wrapper[data-table-id="shared"]');
     expect(references).toHaveLength(2);
     fireEvent.click(references[1].querySelector('button')!);
+    expect(references[0].querySelector('.selected-artifact-card')).toBeNull();
+    expect(references[1].querySelector('.selected-artifact-card')).toBeTruthy();
     expect(store.getState().focusedId).toEqual({ type: 'reference', referenceId: 'second-reference' });
     expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'shared' });
   });

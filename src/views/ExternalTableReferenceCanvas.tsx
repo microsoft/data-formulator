@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, Link, Tooltip, Typography } from '@mui/material';
+import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import LinkIcon from '@mui/icons-material/Link';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { AppDispatch } from '../app/store';
+import { importExternalTableReference } from '../app/tableThunks';
 import type { ExternalTableReference } from '../components/ComponentType';
 import { InlineLoadingStatus, LoadingStatus } from '../components/FunComponents';
 import { formatBytes, formatCellValue, getColumnAlign } from './ViewUtils';
@@ -20,7 +22,7 @@ const PREVIEW_TIMEOUT_MS = 120_000;
 
 export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = ({ referenceId }) => {
     const { t } = useTranslation();
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const store = useStore<DataFormulatorState>();
     const readOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly);
     const reference = useSelector((state: DataFormulatorState) => state.externalTableReferences?.find(item => item.id === referenceId));
@@ -28,6 +30,10 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
     const [error, setError] = useState('');
     const [stopped, setStopped] = useState(false);
     const [refreshVersion, setRefreshVersion] = useState(0);
+    const [importDialogOpen, setImportDialogOpen] = useState(false);
+    const [importError, setImportError] = useState('');
+    const importing = useSelector((state: DataFormulatorState) => state.pendingTableLoads.some(item => item.id === `import-copy:${referenceId}`));
+    useEffect(() => { setImportDialogOpen(false); setImportError(''); }, [referenceId]);
     const sample = reference?.summary.sampleRows;
     const availableReferenceId = reference?.id;
     let title = reference?.displayName || t('externalReference.missing', { defaultValue: 'Reference unavailable' });
@@ -118,8 +124,13 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
     }, [availableReferenceId, readOnly, refreshVersion, store, dispatch]);
 
     const initialLoading = !!reference && sample === undefined && !error && !stopped && !readOnly;
-    const columnCount = reference && (reference.summary.columns.length > 0 || sample !== undefined)
-        ? t('dataGrid.columnCount', { count: reference.summary.columns.length }) : null;
+    const inspection = reference?.summary.inspection;
+    const totalRows = reference?.summary.rowCount;
+    const knownTotal = typeof totalRows === 'number' && Number.isFinite(totalRows) && totalRows >= 0
+        && totalRows >= (sample?.length || 0);
+    const location = [reference?.sourceLocation?.address, reference?.sourceLocation?.database,
+        reference?.sourceTable.id].filter(Boolean).join(' / ');
+    const fileType = reference?.sourceTable.id.match(/\.(csv|tsv|parquet|jsonl?|xlsx?)$/i)?.[1].toUpperCase();
     const loadingLabel = t('externalReference.loadingPreview', { name: title, defaultValue: 'Loading table preview: {{name}}...' });
 
     return <Box id="vis-view-canvas" sx={{ width: '100%', flex: 1, minWidth: 0, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', px: { xs: 1.5, sm: 3 }, py: 2, boxSizing: 'border-box' }}>
@@ -128,15 +139,10 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
                         <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: 600, overflowWrap: 'anywhere', lineHeight: 1.2, m: 0 }}>{title}</Typography>
-                        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
-                            <LinkIcon sx={{ fontSize: 14, flexShrink: 0 }} />
-                            <Typography component="span" sx={{ fontSize: textVar.xs }}>{t('externalReference.virtual', { defaultValue: 'Virtual' })}</Typography>
-                        </Box>
+                        <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>
+                            {t('externalReference.virtual', { defaultValue: 'Virtual' })}
+                        </Typography>
                     </Box>
-                    {reference && <Typography color="text.secondary" sx={{ fontSize: textVar.xs, mt: 0.25 }}>
-                        {[sample !== undefined ? t('externalReference.sampleCount', { count: sample.length, defaultValue: '{{count}} sample rows' }) : null,
-                            columnCount, formatBytes(reference.summary.sizeBytes ?? null)].filter(Boolean).join(' · ')}
-                    </Typography>}
                 </Box>
                 <Tooltip title={t('externalReference.refresh', { defaultValue: 'Refresh metadata' })}><span>
                     <IconButton size="small" sx={{ color: 'text.secondary' }} aria-label={t('externalReference.refresh', { defaultValue: 'Refresh metadata' })} disabled={!reference || readOnly} onClick={() => setRefreshVersion(version => version + 1)}>
@@ -159,6 +165,14 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
             </Box>}
             {busy && !initialLoading && <InlineLoadingStatus label={loadingLabel} sx={{ mb: 1 }} />}
             {reference && <>
+                {sample !== undefined && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5, pb: 0.75 }}>
+                    <Typography color="text.secondary" sx={{ fontSize: textVar.xs }}>
+                        {[inspection?.sample_method === 'source_head' && !inspection.filtered
+                            ? t('externalReference.firstRows', { count: sample.length, defaultValue: 'First {{count}} rows' })
+                            : t('externalReference.previewRows', { count: sample.length, defaultValue: '{{count}} preview rows' }),
+                            t('externalReference.columnsShown', { count: columns.length - 1, defaultValue: '{{count}} columns shown' })].join(' · ')}
+                    </Typography>
+                </Box>}
                 {initialLoading && reference.summary.columns.length > 0 && <Typography color="text.secondary"
                     sx={{ fontSize: textVar.xs, mb: 1, overflowWrap: 'anywhere' }}>
                     {reference.summary.columns.slice(0, 8).map(column => `${column.name} (${column.source_type || column.type})`).join(', ')}
@@ -179,11 +193,9 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                             virtual={false} columnDefs={columns} previewOnly hideFooter />}
                 </Box>
                 {sample?.length === 0 && <Typography color="text.secondary" sx={{ py: 1, fontSize: textVar.sm }}>{t('externalReference.emptySample', { defaultValue: 'No sample rows returned.' })}</Typography>}
-                {sample !== undefined && <Typography color="text.secondary" sx={{ pt: 0.5, fontSize: textVar.xs, overflowWrap: 'anywhere' }}>
+                {sample !== undefined && !!(inspection?.schema_source === 'inferred' || inspection?.columns_omitted || reference.summary.sampleTruncated) && <Typography color="text.secondary" sx={{ pt: 0.5, fontSize: textVar.xs, overflowWrap: 'anywhere' }}>
                     {[
-                        reference.summary.inspection?.sample_method === 'source_head'
-                            ? t('externalReference.sourceHead', { defaultValue: 'Leading source rows; not a representative sample.' }) : null,
-                        reference.summary.inspection?.schema_source === 'inferred'
+                        inspection?.schema_source === 'inferred'
                             ? t('externalReference.inferredSchema', { defaultValue: 'Inferred schema; later records may differ.' }) : null,
                         reference.summary.inspection?.columns_omitted
                             ? t('externalReference.omittedColumns', { count: reference.summary.inspection.columns_omitted,
@@ -193,29 +205,65 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                     ].filter(Boolean).join(' ')}
                 </Typography>}
             </>}
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mt: 1.5, width: '100%' }}>
-            <Box sx={{ flex: 1, minWidth: 0, '& .MuiTypography-root': { fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere', lineHeight: 1.6 } }}>
-                {reference && <>
-                    <Typography>
-                        {t('externalReference.virtualDescription', { defaultValue: 'Virtual table. Full data remains in the connected source.' })}
-                    </Typography>
-                    <Typography>
-                        {t('externalReference.locationLabel', { defaultValue: 'Location:' })}{' '}
-                        {[reference.sourceLocation?.address, reference.sourceLocation?.database,
-                            reference.sourceTable.name].filter(Boolean).join(' / ')}
-                    </Typography>
-                    <Typography>
-                        {t('externalReference.connectorLabel', { defaultValue: 'Connector:' })}{' '}
-                        {[reference.connectorName || reference.connectorId,
-                            reference.summary.rowCount != null ? t('chatConnector.rowCount', { count: reference.summary.rowCount.toLocaleString(), defaultValue: '{{count}} rows' }) : null,
-                            columnCount,
-                            formatBytes(reference.summary.sizeBytes ?? null),
-                            new Date(reference.capturedAt).toLocaleString()].filter(Boolean).join(' · ')}
-                    </Typography>
-                    {reference.summary.description && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{reference.summary.description}</Typography>}
-                </>}
+        {reference && <Box sx={{ mt: 0.75, px: 0.5, minWidth: 0,
+            '& .MuiTypography-root': { fontSize: textVar.xs, lineHeight: 1.6, color: 'text.secondary', overflowWrap: 'anywhere' } }}>
+            <Typography aria-label={t('externalReference.sourceMetadata', { defaultValue: 'Source metadata' })}>
+                {[fileType, formatBytes(reference.summary.sizeBytes ?? null), knownTotal
+                    ? t('externalReference.totalRowCount', { count: totalRows.toLocaleString(), defaultValue: '{{count}} total rows' })
+                    : t('externalReference.totalRowsUnknown', { defaultValue: 'Total rows unknown' })].filter(Boolean).join(' · ')}
+            </Typography>
+            <Typography>
+                <Tooltip title={t('externalReference.showInSources', { defaultValue: 'Show in data sources' })}>
+                    <Link component="button" underline="hover" color="inherit" onClick={() => {
+                        dispatch(dfActions.setDataSourceSidebarTab('sources'));
+                        dispatch(dfActions.focusConnector(reference.connectorId));
+                    }} sx={{ font: 'inherit', textAlign: 'left', verticalAlign: 'baseline', overflowWrap: 'anywhere', maxWidth: '100%' }}>
+                        {location}
+                    </Link>
+                </Tooltip>
+                {reference.connectorName ? ` · ${reference.connectorName}` : ''}
+            </Typography>
+            {reference.summary.description && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{reference.summary.description}</Typography>}
+            <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 1, mt: 0.5 }}>
+            <Typography>
+                {t('externalReference.sourceGuidance', { defaultValue: 'Data stays in the connected source and is read when needed.' })}
+            </Typography>
+            {!readOnly && (importing
+                ? <Typography role="status">{t('externalReference.importing', { defaultValue: 'Importing workspace copy...' })}</Typography>
+                : <Button size="small" startIcon={<DownloadIcon />} onClick={() => { setImportError(''); setImportDialogOpen(true); }}
+                    sx={{ fontSize: textVar.xs, textTransform: 'none', py: 0, minHeight: 0 }}>
+                    {t('externalReference.importAction', { defaultValue: 'Import into workspace' })}
+                </Button>)}
             </Box>
-        </Box>
+            {importError && <Typography role="alert" sx={{ mt: 0.5 }}>{importError}</Typography>}
+            <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="xs" fullWidth aria-labelledby="import-copy-title">
+                <DialogTitle id="import-copy-title">{t('externalReference.importTitle', { defaultValue: 'Import a workspace copy?' })}</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        {t('externalReference.importDescription', { name: title,
+                            defaultValue: 'Copy {{name}} into this workspace and replace its virtual reference. The original source will not be changed.' })}
+                    </DialogContentText>
+                    <DialogContentText sx={{ mt: 1 }}>
+                        {t('externalReference.importTradeoff', { defaultValue: 'Importing a workspace copy can speed up analysis and reduce repeated reads from the source, but uses workspace storage and won\'t reflect future source changes.' })}
+                    </DialogContentText>
+                    <DialogContentText sx={{ mt: 1 }}>
+                        {[formatBytes(reference.summary.sizeBytes ?? null), knownTotal
+                            ? t('externalReference.totalRowCount', { count: totalRows.toLocaleString(), defaultValue: '{{count}} total rows' }) : null].filter(Boolean).join(' · ')}
+                    </DialogContentText>
+                    <DialogContentText sx={{ mt: 1 }}>
+                        {t('externalReference.importLimit', { defaultValue: 'Full copies only, up to 2,000,000 rows. Larger sources remain virtual.' })}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setImportDialogOpen(false)}>{t('common.cancel', { defaultValue: 'Cancel' })}</Button>
+                    <Button variant="contained" disabled={importing || readOnly} onClick={async () => {
+                        setImportDialogOpen(false);
+                        try { await dispatch(importExternalTableReference(reference.id)).unwrap(); }
+                        catch (error: any) { setImportError(error?.message || t('externalReference.importFailed', { defaultValue: 'Import failed. The virtual reference has not changed.' })); }
+                    }}>{t('externalReference.importConfirm', { defaultValue: 'Import copy' })}</Button>
+                </DialogActions>
+            </Dialog>
+        </Box>}
         </Box>
     </Box>;
 };

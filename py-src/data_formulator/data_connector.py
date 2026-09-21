@@ -2358,6 +2358,27 @@ def connector_import_data():
 
         safe_name = sanitize_table_name(table_name)
 
+        if data.get("full_copy") is True:
+            from data_formulator.data_loader.external_data_loader import MAX_IMPORT_ROWS
+
+            count_table = loader.query_data_as_arrow(
+                source_id, {"aggregates": [{"op": "count", "as": "total_rows"}]}, 1,
+            )
+            expected_rows = count_table.column("total_rows")[0].as_py()
+            if not isinstance(expected_rows, int) or expected_rows < 0:
+                raise AppError(ErrorCode.INVALID_REQUEST, "Could not verify the source row count")
+            if expected_rows > MAX_IMPORT_ROWS:
+                raise AppError(ErrorCode.INVALID_REQUEST,
+                               f"Workspace copies are limited to {MAX_IMPORT_ROWS:,} rows. Keep this source virtual or import a filtered table.")
+            arrow_table = loader.query_data_as_arrow(source_id, {}, expected_rows + 1)
+            if arrow_table.num_rows != expected_rows:
+                raise AppError(ErrorCode.INVALID_REQUEST,
+                               "The source changed or returned incomplete data. No workspace copy was saved; please retry.")
+            meta = workspace.write_parquet_from_arrow(
+                table=arrow_table, table_name=f"{safe_name}_copy_{uuid4().hex[:12]}",
+            )
+            return json_ok({"table_name": meta.name, "row_count": meta.row_count, "refreshable": False})
+
         meta = loader.ingest_to_workspace(
             workspace=workspace,
             table_name=safe_name,

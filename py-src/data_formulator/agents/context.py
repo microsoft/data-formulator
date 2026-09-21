@@ -71,6 +71,9 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
             lines.append(f"  User reply: {step['user_answer']}")
         if step.get("workflow"):
             lines.append("  Workflow status and outputs: " + json.dumps(step["workflow"], ensure_ascii=False))
+        definition = step.get("workflow_definition")
+        if isinstance(definition, str) and definition:
+            lines.append("  Proposed workflow definition (conversation context, not execution state):\n" + definition[:48000])
         operation = step.get("data_operation")
         if operation:
             options = ", ".join(operation.get("options") or [])
@@ -85,6 +88,9 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
                     "  Loaded workspace tables: "
                     + ", ".join(operation["result_tables"])
                 )
+            if operation.get("result_references"):
+                lines.append("  Virtual workspace sources (not compute-ready; rows remain remote): "
+                             + json.dumps(operation["result_references"], ensure_ascii=False))
         if step.get("agent_thinking"):
             lines.append(f"  Agent thinking: {step['agent_thinking']}")
         if step.get("display_instruction"):

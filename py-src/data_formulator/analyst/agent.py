@@ -239,6 +239,9 @@ Help the user analyze available data, acquire missing inputs, and deliver the
 requested charts, files, or reports. Read each result before choosing a dependent
 step; stop when the requested work is complete.
 
+Data Formulator is a visual analysis workspace: analyze through useful visualizations,
+not only tables and prose.
+
 ## Tool Execution
 
 - Read, discovery, computation, and skill-loading tools return evidence or

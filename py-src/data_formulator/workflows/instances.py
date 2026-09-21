@@ -2,12 +2,93 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import yaml
+from jsonschema import Draft202012Validator
 
 from data_formulator.security.path_safety import ConfinedDir
+
+
+_TEXT_SCHEMA = {"type": "string", "minLength": 1, "pattern": r"\S"}
+_SOURCE_SCHEMA = {"anyOf": [_TEXT_SCHEMA, {"type": "object", "minProperties": 1}]}
+WORKFLOW_STEP_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["id", "description", "instructions"],
+    "properties": {
+        "id": {**_TEXT_SCHEMA, "description": "Stable step identifier, unique within the workflow."},
+        "description": {**_TEXT_SCHEMA, "description": "The analytical goal of this step."},
+        "instructions": {**_TEXT_SCHEMA, "description": "Inputs, work to perform, and inspectable results."},
+        "next": {**_TEXT_SCHEMA, "description": "Optional existing step ID to visit next."},
+        "checkers": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["id", "condition"],
+            "properties": {
+                "id": {**_TEXT_SCHEMA, "description": "Unique checker ID across the workflow."},
+                "condition": {**_TEXT_SCHEMA, "description": "Observable acceptance criterion."},
+                "when": {"type": "string", "enum": ["before", "during", "after"], "default": "after"},
+                "on_fail": {**_TEXT_SCHEMA, "description": "Existing step ID to revisit on failure."},
+            },
+        }},
+    },
+}
+WORKFLOW_PARAMETER_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["name", "label"],
+    "properties": {
+        "name": {"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_]{0,63}$"},
+        "label": _TEXT_SCHEMA,
+        "type": {"type": "string", "enum": ["text", "number", "boolean", "select"], "default": "text"},
+        "required": {"type": "boolean"},
+        "default": {"type": ["string", "number", "boolean", "null"]},
+        "description": {"type": "string"},
+        "options": {"type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": True, "items": _TEXT_SCHEMA},
+        "allow_custom": {"type": "boolean"},
+    },
+}
+WORKFLOW_DEFINITION_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["version", "name", "overview", "deliverables", "steps"],
+    "properties": {
+        "version": {"type": "integer", "enum": [1]},
+        "name": _TEXT_SCHEMA,
+        "overview": {**_TEXT_SCHEMA, "description": "Reusable library summary, not execution history."},
+        "prompt": {**_TEXT_SCHEMA, "description": "Cross-step scope, constraints, and analytical intent."},
+        "source": {"description": "Grounded input guidance, not executable configuration or credentials.",
+                   "anyOf": [*_SOURCE_SCHEMA["anyOf"], {"type": "array", "minItems": 1, "items": _SOURCE_SCHEMA}]},
+        "parameters": {"type": "array", "maxItems": 20, "items": WORKFLOW_PARAMETER_SCHEMA,
+                       "description": "Meaningful inputs that may vary between runs; omit for fixed-input work."},
+        "deliverables": {"type": "array", "minItems": 1, "items": _TEXT_SCHEMA,
+                         "description": "Concrete outputs the user can inspect."},
+        "steps": {"type": "array", "minItems": 1, "maxItems": 30, "items": WORKFLOW_STEP_SCHEMA},
+    },
+}
+
+
+def validate_workflow_definition(workflow: Any, *, authored: bool = False) -> dict[str, Any]:
+    try:
+        json.dumps(workflow, allow_nan=False)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise ValueError("Workflow must contain JSON-compatible values; quote dates.") from exc
+    schema = deepcopy(WORKFLOW_DEFINITION_SCHEMA)
+    if not authored:
+        schema["properties"]["steps"]["items"]["required"].remove("description")
+    error = next(Draft202012Validator(schema).iter_errors(workflow), None)
+    if error:
+        location = ".".join(str(part) for part in error.absolute_path) or "definition"
+        raise ValueError(f"Invalid workflow {location}: {error.message}")
+    resolve_setup(workflow, require_values=False)
+    step_ids = [step["id"] for step in workflow["steps"]]
+    if len(set(step_ids)) != len(step_ids):
+        raise ValueError("Step IDs must be unique.")
+    check_ids = [check["id"] for step in workflow["steps"] for check in step.get("checkers", [])]
+    if len(set(check_ids)) != len(check_ids):
+        raise ValueError("Checker IDs must be unique across the workflow.")
+    for step in workflow["steps"]:
+        targets = [step.get("next")] + [check.get("on_fail") for check in step.get("checkers", [])]
+        if any(target is not None and target not in step_ids for target in targets):
+            raise ValueError("Transition targets must refer to existing step IDs.")
+    return workflow
 
 
 def resolve_setup(workflow: dict, setup: Any = None, *, require_values: bool = True) -> dict:
@@ -20,32 +101,21 @@ def resolve_setup(workflow: dict, setup: Any = None, *, require_values: bool = T
     if not isinstance(values, dict) or not isinstance(instructions, str) or len(instructions) > 8000:
         raise ValueError("Setup requires parameter values and instructions of at most 8,000 characters.")
     parameters = workflow.get("parameters", [])
-    if not isinstance(parameters, list) or len(parameters) > 20:
-        raise ValueError("Provide at most 20 workflow parameters.")
+    error = next(Draft202012Validator(WORKFLOW_DEFINITION_SCHEMA["properties"]["parameters"]).iter_errors(parameters), None)
+    if error:
+        location = ".".join(str(part) for part in error.absolute_path)
+        raise ValueError(f"Invalid workflow parameters{'.' + location if location else ''}: {error.message}")
     names = set()
     resolved = {}
     for parameter in parameters:
-        if not isinstance(parameter, dict):
-            raise ValueError("Each parameter must be a mapping.")
-        name = parameter.get("name")
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) or name in names:
-            raise ValueError("Parameter names must be unique identifiers of at most 64 characters.")
+        name = parameter["name"]
+        if name in names:
+            raise ValueError("Parameter names must be unique.")
         names.add(name)
-        if not isinstance(parameter.get("label"), str) or not parameter["label"].strip():
-            raise ValueError("Each parameter needs a label.")
         kind = parameter.get("type", "text")
-        if kind not in ("text", "number", "boolean", "select"):
-            raise ValueError("Parameter type must be text, number, boolean, or select.")
-        for flag in ("required", "allow_custom"):
-            if flag in parameter and not isinstance(parameter[flag], bool):
-                raise ValueError(f"Parameter {flag} must be boolean.")
-        if "description" in parameter and not isinstance(parameter["description"], str):
-            raise ValueError("Parameter description must be text.")
         options = parameter.get("options", [])
-        if kind == "select" and (not isinstance(options, list) or not 1 <= len(options) <= 50
-                or any(not isinstance(option, str) or not option.strip() for option in options)
-                or len(set(options)) != len(options)):
-            raise ValueError("Select parameters need 1-50 unique text options.")
+        if kind == "select" and not options:
+            raise ValueError("Select parameters need options.")
         value = values.get(name, parameter.get("default"))
         if value is None or (isinstance(value, str) and not value.strip()):
             if require_values and parameter.get("required"):
@@ -73,63 +143,27 @@ def parse_workflow(content: str) -> dict[str, Any]:
         workflow = yaml.safe_load(content)
     except yaml.YAMLError as exc:
         raise ValueError("Invalid workflow YAML.") from exc
-    if not isinstance(workflow, dict) or workflow.get("version") != 1:
-        raise ValueError("Workflow must be a mapping with version: 1.")
-    for field in ("name", "overview"):
-        if not isinstance(workflow.get(field), str) or not workflow[field].strip():
-            raise ValueError(f"Workflow requires {field}.")
-    if "prompt" in workflow and (not isinstance(workflow["prompt"], str) or not workflow["prompt"].strip()):
-        raise ValueError("Workflow prompt must be nonempty text.")
-    if "source" in workflow:
-        sources = workflow["source"] if isinstance(workflow["source"], list) else [workflow["source"]]
-        if not sources or any(
-            not isinstance(source, (str, dict)) or not source or (isinstance(source, str) and not source.strip())
-            for source in sources
-        ):
-            raise ValueError("Workflow source must be nonempty text, a mapping, or a list of these.")
-    resolve_setup(workflow, require_values=False)
-    deliverables = workflow.get("deliverables")
-    if not isinstance(deliverables, list) or not deliverables or any(
-        not isinstance(item, str) or not item.strip() for item in deliverables
-    ):
-        raise ValueError("Provide nonempty deliverables.")
-    steps = workflow.get("steps")
-    if not isinstance(steps, list) or not 1 <= len(steps) <= 30:
-        raise ValueError("Provide 1-30 workflow steps.")
-    step_ids: set[str] = set()
-    check_ids: set[str] = set()
-    for step in steps:
-        if not isinstance(step, dict) or not isinstance(step.get("id"), str) or not step["id"].strip():
-            raise ValueError("Each step needs an ID.")
-        if step["id"] in step_ids:
-            raise ValueError("Step IDs must be unique.")
-        step_ids.add(step["id"])
-        if not isinstance(step.get("instructions"), str) or not step["instructions"].strip():
-            raise ValueError("Each step needs instructions.")
-        if "description" in step and (not isinstance(step["description"], str) or not step["description"].strip()):
-            raise ValueError("Step description must be nonempty text.")
-        checks = step.get("checkers", [])
-        if not isinstance(checks, list):
-            raise ValueError("checkers must be a list.")
-        for check in checks:
-            if not isinstance(check, dict) or not isinstance(check.get("id"), str) or not check["id"].strip():
-                raise ValueError("Each checker needs an ID.")
-            if check["id"] in check_ids:
-                raise ValueError("Checker IDs must be unique across the workflow.")
-            check_ids.add(check["id"])
-            if not isinstance(check.get("condition"), str) or not check["condition"].strip():
-                raise ValueError("Each checker needs a condition.")
-            if check.get("when", "after") not in ("before", "during", "after"):
-                raise ValueError("Checker when must be before, during, or after.")
-    for step in steps:
-        targets = [step.get("next")] + [check.get("on_fail") for check in step.get("checkers", [])]
-        if any(target is not None and (not isinstance(target, str) or target not in step_ids) for target in targets):
-            raise ValueError("Transition targets must refer to existing step IDs.")
+    return validate_workflow_definition(workflow)
+
+
+def parse_definition(content: str) -> dict[str, Any]:
+    if not isinstance(content, str) or len(content) > 48000:
+        raise ValueError("Workflow definition must be YAML text under 48,000 characters.")
     try:
-        json.dumps(workflow, allow_nan=False)
-    except (ValueError, TypeError, RecursionError) as exc:
-        raise ValueError("Workflow must contain JSON-compatible values; quote dates.") from exc
-    return workflow
+        definition = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        raise ValueError("Invalid workflow YAML.") from exc
+    if not isinstance(definition, dict):
+        raise ValueError("Workflow definition must be a mapping.")
+    if "steps" in definition:
+        return parse_workflow(content)
+    validated = parse_workflow(yaml.safe_dump({**definition, "steps": initial_steps()}))
+    validated.pop("steps")
+    return validated
+
+
+def initial_steps() -> list[dict]:
+    return [{"id": "plan", "instructions": "Inspect the workflow definition and available inputs. Ask about material unknowns, then use adapt_plan to establish execution steps and meaningful verification for the deliverables."}]
 
 
 class WorkflowStore:
@@ -148,12 +182,12 @@ class WorkflowStore:
 
     @staticmethod
     def validate_name(name: str) -> None:
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*\.yaml", name):
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*(?:\.workflow)?\.ya?ml", name):
             raise ValueError("Use a simple .yaml filename.")
 
     def save(self, name: str, content: str) -> None:
         self.validate_name(name)
-        parse_workflow(content)
+        parse_definition(content)
         self.files.write_text(name, content)
 
     def delete(self, name: str) -> None:
@@ -164,7 +198,7 @@ class WorkflowStore:
 
     def list_all(self) -> list[dict]:
         items = []
-        sources = [(path, path.name, "user") for path in sorted(self.files.rglob("*.yaml"))]
+        sources = [(path, path.name, "user") for pattern in ("*.yaml", "*.yml") for path in sorted(self.files.rglob(pattern))]
         sources.extend((path, f"demo/{path.name}", "demo") for path in sorted(Path(__file__).parent.glob("*.yaml")))
         from data_formulator.configuration import read_configuration
         configured = read_configuration()['overrides'].get('workflows', {})
@@ -174,7 +208,7 @@ class WorkflowStore:
             if origin != 'user' and not configured.get(name, {}).get('enabled', True):
                 continue
             try:
-                workflow = parse_workflow(self.read(name))
+                workflow = parse_definition(self.read(name))
                 items.append({"path": name, "name": workflow["name"], "overview": workflow["overview"], "origin": origin,
                               "parameters": workflow.get("parameters", [])})
             except (ValueError, OSError) as exc:

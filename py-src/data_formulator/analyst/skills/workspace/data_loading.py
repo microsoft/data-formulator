@@ -5,7 +5,7 @@ from dataclasses import asdict
 from typing import Any, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
-from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
+from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine, normalize_external_references
 from data_formulator.data_operations import (
     ConnectorQueryStep,
     DataDiscoveryService,
@@ -330,6 +330,7 @@ class WorkspaceDataLoading:
                             else None
                         ),
                         query=LoadQuery.from_dict(raw_step.get("query")),
+                        materialize=raw_step.get("query") is not None,
                     ))
                 resolved_plans.append(DataOperationPlan(
                     label=str(raw_plan["label"]).strip(),
@@ -387,36 +388,49 @@ class WorkspaceDataLoading:
                 "tables": [step.source_table_name for step in operation.plans[0].steps],
             }}
             try:
-                result = DataOperationExecutor(ctx.workspace).execute(selected)
-                completed = repository.finish(operation.id, result.result_table_ids, result.failed_steps)
+                result = DataOperationExecutor(
+                    ctx.workspace, external_references=normalize_external_references(ctx.payload.get("external_references")),
+                ).execute(selected)
+                completed = repository.finish(operation.id, result.result_table_ids, result.failed_steps, result.result_references)
             except QueryCancelled:
                 repository.fail(operation.id, OperationError(code="CANCELLED", message="Loading cancelled."))
                 raise
             except Exception as exc:
                 completed = repository.fail(operation.id, OperationError(code="IMPORT_FAILED", message=str(exc)))
+            references = {item["id"]: item for item in normalize_external_references(ctx.payload.get("external_references"))}
+            references.update({item["id"]: item for item in completed.result_references})
+            ctx.payload["external_references"] = list(references.values())
             input_tables = ctx.payload.setdefault("input_tables", [])
             existing_names = {table["name"] for table in input_tables}
             input_tables.extend({"name": name, "rows": [], "virtual": True}
                                 for name in completed.result_table_ids if name not in existing_names)
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
             yield {"type": "tool_result", "tool": "load_data",
-                   "status": "ok" if completed.result_table_ids and not completed.failed_steps else "error"}
+                   "status": "ok" if (completed.result_table_ids or completed.result_references) and not completed.failed_steps else "error"}
             yield {"type": "data_operation_result", "operation": completed.to_public_dict()}
             result_payload = completed.to_public_dict()
             result_payload["workspace_inputs"] = []
+            result_payload["load_outcomes"] = [{
+                "id": reference["id"], "availability": "virtual", "compute_ready": False,
+                "source_id": reference["connectorId"], "table_key": reference["tableKey"],
+                "summary": reference.get("summary", {}),
+                "next_step": "Use this reference for future source queries, not Python. Use a suitable materialized outcome from this call directly; only refine loading if no suitable local result exists.",
+            } for reference in completed.result_references]
             for item in ctx.payload["workspace_inputs"].data:
                 if item.display_name not in completed.result_table_ids:
                     continue
                 metadata = ctx.workspace.get_table_metadata(item.display_name)
                 result_payload["workspace_inputs"].append({
                     **asdict(item),
+                    "availability": "materialized", "compute_ready": True,
                     "row_count": metadata.row_count,
                     "columns": [column.to_dict() for column in metadata.columns or []],
                     "scope": metadata.import_options or {},
                     "description": metadata.description,
                 })
+                result_payload["load_outcomes"].append(result_payload["workspace_inputs"][-1])
             ctx.payload["last_data_operation_result"] = result_payload
-            return "Connected-data loading finished. Use the returned input IDs and paths directly:\n" + json.dumps(result_payload)
+            return "Workspace loading finished. Check load_outcomes and failed_steps. Use compute-ready input paths directly; an accompanying virtual source reference does not require another load or imply query success.\n" + json.dumps(result_payload)
 
         yield {
             "type": "interact",
