@@ -279,6 +279,30 @@ class TestOrcaRouter:
 
 
 # ---------------------------------------------------------------------------
+# Cheaper Inference endpoint
+# ---------------------------------------------------------------------------
+
+class TestCheaperInference:
+    def test_default_base_url(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k")
+        assert c.params["api_base"] == "https://api.cheaperinference.com/v1"
+
+    def test_custom_base_url_strips_trailing_slash(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k",
+                   api_base="https://api.cheaperinference.com/v1/")
+        assert c.params["api_base"] == "https://api.cheaperinference.com/v1"
+
+    def test_uses_openai_compatible_provider(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k")
+        assert c.params["custom_llm_provider"] == "openai"
+
+    def test_model_id_kept_bare(self):
+        """Cheaper Inference model ids are bare, so no prefix is added."""
+        c = Client("cheaperinference", "claude-sonnet-5", api_key="k")
+        assert c.model == "claude-sonnet-5"
+
+
+# ---------------------------------------------------------------------------
 # Ollama api_base normalisation
 # ---------------------------------------------------------------------------
 
