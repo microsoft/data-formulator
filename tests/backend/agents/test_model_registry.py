@@ -56,6 +56,12 @@ SAMPLE_ENV = _make_env({
         "api_base": "https://api.orcarouter.ai/v1",
         "models": "auto",
     },
+    "cheaperinference": {
+        "enabled": "true",
+        "api_key": "sk-ci-secret-key",
+        "api_base": "https://api.cheaperinference.com/v1",
+        "models": "gpt-5.4-mini",
+    },
 })
 
 
@@ -75,11 +81,12 @@ class TestModelDiscovery:
         assert "global-ollama-qwen3:32b" in ids
         assert "global-deepseek-deepseek-chat" in ids
         assert "global-orcarouter-auto" in ids
+        assert "global-cheaperinference-gpt-5.4-mini" in ids
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_total_model_count(self):
         registry = ModelRegistry()
-        assert len(registry.list_public()) == 5  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter
+        assert len(registry.list_public()) == 6  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter + 1 cheaperinference
 
     @patch.dict(os.environ, {}, clear=True)
     def test_empty_env_yields_no_models(self):
@@ -156,6 +163,15 @@ class TestCustomProvider:
         assert config is not None
         assert config["endpoint"] == "orcarouter"
         assert config["api_base"] == "https://api.orcarouter.ai/v1"
+
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_cheaperinference_builtin_uses_own_name_as_endpoint(self):
+        """cheaperinference is in BUILTIN_PROVIDERS, so it uses itself as endpoint."""
+        registry = ModelRegistry()
+        config = registry.get_config("global-cheaperinference-gpt-5.4-mini")
+        assert config is not None
+        assert config["endpoint"] == "cheaperinference"
+        assert config["api_base"] == "https://api.cheaperinference.com/v1"
 
     @patch.dict(os.environ, {
         "MYVENDOR_ENABLED": "true",
