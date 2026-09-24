@@ -252,7 +252,7 @@ def test_connection():
                     raise ValueError('Model provider cannot change during editing.')
                 if not definition.get('api_key') and definition.get('auth_mode') not in ('azure_identity', 'managed_identity'):
                     definition['api_key'] = previous_definition.get('api_key', '')
-            if definition.get('endpoint') not in ('openai', 'azure', 'anthropic', 'gemini', 'ollama', 'orcarouter') or not definition.get('model', '').strip():
+            if definition.get('endpoint') not in ('openai', 'azure', 'anthropic', 'gemini', 'ollama', 'orcarouter', 'cheaperinference') or not definition.get('model', '').strip():
                 raise ValueError('Select an API provider and model.')
             if definition.get('auth_mode') not in (None, 'key', 'azure_identity', 'managed_identity'):
                 raise ValueError('Interactive model authentication is not supported here.')
