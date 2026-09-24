@@ -97,6 +97,7 @@ const PROVIDERS: Record<string, { label: string; model: string; base: string; co
     github_copilot: { label: 'GitHub Copilot', model: '', base: 'https://api.githubcopilot.com', connectionMethod: 'account' },
     chatgpt: { label: 'ChatGPT', model: '', base: '', connectionMethod: 'account' },
     orcarouter: { label: 'OrcaRouter', model: 'auto', base: 'https://api.orcarouter.ai/v1', connectionMethod: 'api' },
+    cheaperinference: { label: 'Cheaper Inference', model: 'gpt-5.4-mini', base: 'https://api.cheaperinference.com/v1', connectionMethod: 'api' },
 };
 
 const connectionRequest = (provider: string, action: string, body: object = {}) => apiRequest(
@@ -187,7 +188,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         'anthropic': [],
         'gemini': [],
         'ollama': [],
-        'orcarouter': []
+        'orcarouter': [],
+        'cheaperinference': []
     });
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -565,7 +567,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             'anthropic': [],
             'gemini': [],
             'ollama': [],
-            'orcarouter': []
+            'orcarouter': [],
+            'cheaperinference': []
         };
 
         globalModels.forEach((modelConfig: any) => {
