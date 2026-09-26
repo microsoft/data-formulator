@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
+import { createTheme, Menu, MenuItem, ThemeProvider } from '@mui/material';
 
-import { LayoutProvider, useLayout } from '../../../../src/app/LayoutProvider';
+import { LayoutProvider, menuPaperSlotProps, useLayout } from '../../../../src/app/LayoutProvider';
 import { MIN_SUPPORTED, REFERENCE, maxThreadColumnsForWidth, threadPaneWidthFor } from '../../../../src/app/layout';
 
 const Probe: React.FC = () => {
@@ -29,6 +30,36 @@ const renderAt = (width: number, height: number) => {
 const probe = () => screen.getByTestId('probe').dataset;
 
 describe('LayoutProvider', () => {
+    it('carries surface typography across a menu portal without adopting icon button sizing', () => {
+        render(<div style={{ fontSize: 18 }}><button style={{ fontSize: 24 }}>Open menu</button></div>);
+        const anchor = screen.getByRole('button', { name: 'Open menu' });
+        const props = menuPaperSlotProps({ open: true, anchorEl: anchor });
+        expect(props.style).toEqual({ '--df-menu-font-size': 'max(0.875rem, var(--df-text-md, 13px), 18px)' });
+        expect(menuPaperSlotProps({ open: true, anchorEl: () => anchor })).toEqual(props);
+        anchor.parentElement!.style.fontSize = '20px';
+        expect(menuPaperSlotProps({ open: true, anchorEl: anchor }).style)
+            .toEqual({ '--df-menu-font-size': 'max(0.875rem, var(--df-text-md, 13px), 20px)' });
+    });
+
+    it('keeps a readable fallback when no contextual menu anchor is available', () => {
+        expect(menuPaperSlotProps({ open: false, anchorEl: null }).style)
+            .toEqual({ '--df-menu-font-size': 'max(0.875rem, var(--df-text-md, 13px), 0px)' });
+    });
+
+    it('applies contextual sizing through MUI default props to portaled menu paper', () => {
+        const surface = render(<div style={{ fontSize: 18 }}><button>Menu anchor</button></div>);
+        const anchor = screen.getByRole('button', { name: 'Menu anchor' });
+        vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({
+            x: 20, y: 20, top: 20, left: 20, bottom: 52, right: 100, width: 80, height: 32, toJSON: () => ({}),
+        });
+        const theme = createTheme({ components: { MuiMenu: { defaultProps: { slotProps: { paper: menuPaperSlotProps } } } } });
+        render(<ThemeProvider theme={theme}><Menu open anchorEl={anchor}><MenuItem>Action</MenuItem></Menu></ThemeProvider>);
+        const paper = screen.getByRole('menu').closest<HTMLElement>('.MuiPaper-root')!;
+        expect(surface.container.contains(paper)).toBe(false);
+        expect(paper.style.getPropertyValue('--df-menu-font-size'))
+            .toBe('max(0.875rem, var(--df-text-md, 13px), 18px)');
+    });
+
     it('classifies the minimum supported viewport as compact and short', () => {
         renderAt(MIN_SUPPORTED.width, MIN_SUPPORTED.height);
         expect(probe().widthClass).toBe('compact');

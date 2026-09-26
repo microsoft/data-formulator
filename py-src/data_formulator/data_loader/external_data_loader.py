@@ -11,6 +11,54 @@ from data_formulator.datalake.table_names import sanitize_external_loader_table_
 MAX_IMPORT_ROWS = 2_000_000
 
 
+def bound_preview_rows(rows: list[dict[str, Any]], value_limit: int) -> tuple[list[dict[str, Any]], bool]:
+    truncated = False
+    remaining = value_limit
+
+    def bound(value: Any, depth: int = 0) -> Any:
+        nonlocal truncated, remaining
+        if isinstance(value, str):
+            available = max(0, remaining)
+            remaining -= len(value)
+            if len(value) > available:
+                truncated = True
+                return value[:available] + "..."
+            return value
+        if isinstance(value, (dict, list)):
+            if depth >= 3 or remaining <= 0:
+                truncated = True
+                return "..."
+            if isinstance(value, dict):
+                truncated |= len(value) > 20
+                result = {}
+                for key, item in list(value.items())[:20]:
+                    remaining -= len(str(key))
+                    if remaining <= 0:
+                        truncated = True
+                        break
+                    result[key] = bound(item, depth + 1)
+                return result
+            truncated |= len(value) > 10
+            items = []
+            for item in value[:10]:
+                if remaining <= 0:
+                    truncated = True
+                    break
+                items.append(bound(item, depth + 1))
+            return items
+        remaining -= len(str(value))
+        return value
+
+    bounded = []
+    for row in rows:
+        result = {}
+        for name, value in row.items():
+            remaining = value_limit
+            result[name] = bound(value)
+        bounded.append(result)
+    return bounded, truncated
+
+
 def apply_import_projection(
     table: pa.Table,
     import_options: dict[str, Any] | None,
@@ -31,6 +79,31 @@ if TYPE_CHECKING:
     from data_formulator.datalake.workspace_metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
+
+
+def _concise_identity(value: str) -> str:
+    """Reduce a connection param to the part a human recognises.
+
+    URLs collapse to their host (``https://x.kusto.windows.net/`` -> ``x.kusto.windows.net``)
+    and home directories to ``~`` so identities stay short and screenshot-safe.
+    """
+    trimmed = value.strip().rstrip("/\\")
+    if not trimmed:
+        return ""
+    if "://" in trimmed:
+        from urllib.parse import urlparse
+        host = urlparse(trimmed).netloc
+        if host:
+            return host
+    if trimmed.startswith(("/", "~")) or (len(trimmed) > 2 and trimmed[1] == ":"):
+        from pathlib import Path
+        try:
+            home = str(Path.home())
+            if trimmed.startswith(home):
+                return "~" + trimmed[len(home):]
+        except Exception:
+            pass
+    return trimmed
 
 
 @dataclass(frozen=True)
@@ -458,8 +531,10 @@ class ExternalDataLoader(ABC):
         """
         Fetch data from the external source as a PyArrow Table.
         
-        This is the primary method for data fetching. Each loader must implement
-        this method to fetch data directly as Arrow format for optimal performance.
+        This is the primary method for data fetching. Arrow is the result format,
+        not a required scan engine: loaders may execute at the source, use native
+        DuckDB file scans, or read directly with Arrow. A full row import still
+        decodes and materializes data; it is not a byte-for-byte file copy.
         Only source_table is supported (no raw query strings) to avoid security
         and dialect diversity issues across loaders.
         
@@ -709,6 +784,76 @@ class ExternalDataLoader(ABC):
     #: back to ``DISPLAY_NAME``.  This is NOT the verbose ``auth_instructions``.
     DESCRIPTION: str | None = None
 
+    QUERY_EXECUTION: str = "unknown"
+
+    @classmethod
+    def query_capabilities(cls) -> dict[str, Any]:
+        guidance = {
+            "remote_file_scan": (
+                "Queries read remote files into the application; filters and aggregates are not "
+                "executed by a database at the source. CSV/JSON filtering, aggregation, and sorting "
+                "may transfer and scan the entire file even with a small result limit. "
+                "Parquet may reduce reads, but do not assume predicate or limit pushdown. "
+                "Reuse cached schema and samples and relevant loaded data before probing. "
+                "When the needed raw-row scope is known, load it once and compute locally instead "
+                "of probing then loading the same source. Probe only when its result is needed; "
+                "a bounded result is not a bounded scan."
+            ),
+            "server_query": (
+                "Structured queries execute on the source engine, which can apply filters and "
+                "aggregations before returning rows. Query cost still depends on coverage, "
+                "indexes, and the source engine; a result limit does not guarantee a cheap query."
+            ),
+            "local_file_scan": (
+                "Queries scan files in the application rather than a source database. "
+                "Reuse cached metadata and loaded data; small result limits do not bound scan cost."
+            ),
+        }
+        return {
+            "execution_model": cls.QUERY_EXECUTION,
+            "aggregate_loading": "supported" if cls.query_data_as_arrow is not ExternalDataLoader.query_data_as_arrow else "unsupported",
+            "native_query_languages": [],
+            "guidance": guidance.get(cls.QUERY_EXECUTION,
+                "Query execution cost is unknown. Do not assume server-side pushdown or a cheap probe."),
+        }
+
+    #: Params naming *which* instance of this source a connector points at
+    #: (cluster, host, bucket…), most significant first.  When ``None`` the
+    #: identity is derived from the required, non-advanced connection params,
+    #: which is right for most loaders; override where that picks up routing
+    #: detail rather than identity (Databricks' ``http_path``, S3's region).
+    IDENTITY_PARAMS: tuple[str, ...] | None = None
+
+    @classmethod
+    def identity_params(cls) -> list[str]:
+        """Return the param names that identify this connector's instance."""
+        if cls.IDENTITY_PARAMS is not None:
+            return list(cls.IDENTITY_PARAMS)
+        return [
+            p["name"] for p in cls.list_params()
+            if p.get("tier") == "connection"
+            and p.get("required")
+            and not p.get("advanced")
+            and not p.get("sensitive")
+        ][:2]
+
+    @classmethod
+    def connection_identity(cls, params: dict[str, Any]) -> str:
+        """Render the connection's identity, e.g. ``"mycluster.kusto.windows.net · sales"``.
+
+        Returns an empty string when no identifying param has a value, which
+        is the normal case for loaders that take no connection params at all.
+        """
+        parts: list[str] = []
+        for name in cls.identity_params():
+            value = params.get(name)
+            if value is None:
+                continue
+            concise = _concise_identity(str(value))
+            if concise and concise not in parts:
+                parts.append(concise)
+        return " · ".join(parts)
+
     @staticmethod
     def delegated_login_config() -> dict[str, Any] | None:
         """Return config for delegated (popup-based) token login, or None.
@@ -917,10 +1062,50 @@ class ExternalDataLoader(ABC):
         """
         return {"options": [], "has_more": False}
 
+    def preview_data(self, source_table: str, import_options: dict[str, Any] | None = None,
+                     *, purpose: str = "ui") -> dict[str, Any]:
+        """Return bounded examples and optional inspection facts, without extra metadata queries.
+
+        File loaders override this to project before scanning. Other loaders keep
+        their native fetch semantics; output limits do not bound source I/O.
+        """
+        options = dict(import_options or {})
+        options["size"] = min(max(1, int(options.get("size") or 50)), 5 if purpose == "agent" else 50)
+        table = self.fetch_data_as_arrow(source_table, options)
+        table = apply_import_projection(table, options)
+        result = self.format_preview(table, options, purpose=purpose)
+        result["total_row_count"] = getattr(self, "_last_total_rows", None)
+        result["inspection"]["row_count_status"] = "exact" if result["total_row_count"] is not None else "unknown"
+        return result
+
+    @staticmethod
+    def format_preview(table: pa.Table, options: dict[str, Any], *, purpose: str = "ui",
+                       columns_omitted: int = 0, schema_source: str = "source") -> dict[str, Any]:
+        from data_formulator.datalake.parquet_utils import df_to_safe_records, normalize_dtype_to_app_type
+
+        row_limit = min(max(1, int(options.get("size") or 50)), 5 if purpose == "agent" else 50)
+        value_limit = 200 if purpose == "agent" else 1000
+        columns_omitted += max(0, table.num_columns - 20)
+        table = table.select(table.column_names[:20]).slice(0, row_limit)
+        frame = table.to_pandas()
+        rows, truncated = bound_preview_rows(df_to_safe_records(frame), value_limit)
+        return {
+            "columns": [{"name": name, "type": normalize_dtype_to_app_type(str(frame[name].dtype)),
+                         "source_type": str(table.schema.field(name).type)} for name in frame.columns],
+            "rows": rows, "row_count": len(rows), "total_row_count": None,
+            "inspection": {
+                "schema_source": schema_source, "row_count_status": "unknown", "sample_status": "loaded",
+                "sample_method": "ordered" if options.get("sort_columns") else "source_head",
+                "filtered": bool(options.get("source_filters")), "row_limit": row_limit,
+                "columns_omitted": columns_omitted, "values_truncated": truncated,
+            },
+        }
+
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         """Get detailed metadata for a single catalog node.
 
-        For a table: columns, types, row count, sample rows.
+        For a table: inexpensive columns/types and optional row count/sample rows.
+        Missing samples are not empty tables; missing counts are not zero.
         Default: finds the node via ``ls`` and returns its metadata dict.
         """
         if not path:
@@ -956,6 +1141,10 @@ class ExternalDataLoader(ABC):
         except Exception:
             pass
         return {}
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Materialize a structured query without probe preview caps or sampled aggregation."""
+        raise NotImplementedError("Aggregate loading is not supported for this connector")
 
     # -- Agent probing (design 37) ---------------------------------------
 

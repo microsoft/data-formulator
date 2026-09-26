@@ -48,14 +48,17 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
+import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import embed from 'vega-embed';
-import { Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
+import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
+import { WorkflowProgress, WorkflowProposal } from './WorkflowPanel';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
+import { ConversationCanvas } from './ConversationCanvas';
 
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
@@ -97,6 +100,9 @@ import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
 import { LocalFolderPanel } from './UnifiedDataUploadDialog';
+import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
+import { ExternalTableReferenceCanvas } from './ExternalTableReferenceCanvas';
+import { ExplanationCanvas } from './ExplanationCanvas';
 
 export interface VisPanelProps { }
 
@@ -106,14 +112,25 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-interface OperationPreviewTable {
+interface OperationPreviewResponse {
     display_name: string;
     source_id?: string;
     table_description?: string;
     error?: string;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+}
+
+interface OperationPreviewTable extends OperationPreviewResponse {
     columns: string[];
     rows: Record<string, unknown>[];
 }
+
+export const normalizeOperationPreview = (preview: OperationPreviewResponse): OperationPreviewTable => ({
+    ...preview,
+    columns: Array.isArray(preview.columns) ? preview.columns : [],
+    rows: Array.isArray(preview.rows) ? preview.rows : [],
+});
 
 // Wide tables scroll horizontally; past this the row count makes the DOM the
 // bottleneck, so the remainder collapses into the trailing marker column.
@@ -159,12 +176,15 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
         setFailedPlans(new Set());
         const previewPlanIds = new Set(previewGroups.map(({ plan }) => plan.id));
         operation.plans.filter(plan => previewPlanIds.has(plan.id)).forEach(plan => {
-            apiRequest<{ previews: OperationPreviewTable[] }>('/api/agent/data-operation-preview', {
+            apiRequest<{ previews?: OperationPreviewResponse[] }>('/api/agent/data-operation-preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ operation_id: operation.id, plan_id: plan.id }),
             }).then(({ data }) => {
-                if (active) setPreviews(current => ({ ...current, [plan.id]: data.previews }));
+                if (active) setPreviews(current => ({
+                    ...current,
+                    [plan.id]: (data.previews ?? []).map(normalizeOperationPreview),
+                }));
             }).catch(() => {
                 if (active) setFailedPlans(current => new Set(current).add(plan.id));
             });
@@ -178,10 +198,6 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                 <Box sx={{ mb: 1.75 }}>
                     <Typography sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
                         {operation.canvasTitle || t('dataLoading.operation.previewHeading', { defaultValue: 'Tables to load' })}
-                    </Typography>
-                    <Typography sx={{ mt: 0.25, fontSize: textVar.xs, color: 'text.secondary' }}>
-                        {operation.canvasSummary
-                            || t('dataLoading.operation.previewGuide', { defaultValue: 'A preview of each table before it is added to your workspace.' })}
                     </Typography>
                 </Box>
                 {previewGroups.map(({ plan, tables }) => (
@@ -238,7 +254,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                                 </Typography>
                                             )}
                                         </Box>
-                                        {preview && (
+                                        {preview && !preview.error && (
                                             <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0 }}>
                                                 {t('dataLoading.operation.previewColumns', {
                                                     count: preview.columns.length,
@@ -261,7 +277,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                             ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
                                             : 'none',
                                     }}>
-                                        {failed ? (
+                                        {failed || preview?.error ? (
                                             <Typography sx={{ px: 1.5, py: 1.25, fontSize: textVar.xs, color: 'error.main' }}>
                                                 {t('dataLoading.operation.previewUnavailable', { defaultValue: 'Preview unavailable' })}
                                             </Typography>
@@ -303,7 +319,7 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
 
     switch (form.kind) {
         case 'connector':
-            if (form.connector.sourceType === 'local_folder') {
+            if (form.connector.sourceType === 'local_folder' && form.connector.status !== 'connected') {
                 return (
                     <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
                         <Box sx={{ width: '100%', maxWidth: 624, height: '100%', mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, boxSizing: 'border-box' }}>
@@ -332,17 +348,12 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                 );
             }
             return (
-                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
-                    <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
-                            {getConnectorIcon(form.connector.sourceType, {
-                                sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 },
-                            })}
-                            <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, lineHeight: 1.35 }}>
-                                {form.title}
-                            </Typography>
-                        </Box>
+                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: form.connector.status === 'connected' ? 'hidden' : 'auto', bgcolor: 'background.default' }}>
+                    <Box sx={{ width: '100%', maxWidth: form.connector.status === 'connected' ? 'none' : 624,
+                        height: form.connector.status === 'connected' ? '100%' : 'auto', mx: 'auto',
+                        px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
                         <ConnectorFormCard
+                            key={turn.id}
                             messageId={turn.id}
                             prompt={form.connector}
                             variant="bare"
@@ -354,6 +365,7 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                                     form: {
                                         kind: 'connector',
                                         title: form.title,
+                                        draft: form.draft,
                                         connector: {
                                             sourceType: form.connector.sourceType,
                                             status: resolution.status,
@@ -1159,8 +1171,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }
 
     // Check if concepts are available
-    const availableConcepts = extractConceptExplanations(table);
-    const hasConcepts = availableConcepts.length > 0;
     const hasDerived = !!(triggerTable?.derive || table.derive);
 
     let vegaEditorButton = (
@@ -1359,33 +1369,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         // the floating top-right cluster. A clickaway/close dialog (not a bottom
         // tab) so the bottom panel stays a pure data table.
         hasDerived ? (
-            <Dialog key="code-dialog-overlay" open={codeDialogOpen} onClose={() => setCodeDialogOpen(false)}
-                sx={{ '& .MuiDialog-paper': { maxHeight: '90%' } }}
-                maxWidth="md" fullWidth>
-                <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.25 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <TerminalIcon sx={{ fontSize: iconVar.lg, color: 'text.secondary' }} />
-                        <Typography sx={{ fontSize: textVar.lg, fontWeight: 600 }}>{t('chart.code')}</Typography>
-                    </Box>
-                    <IconButton size="small" aria-label={t('app.close')} onClick={() => setCodeDialogOpen(false)}>
-                        <CloseIcon sx={{ fontSize: iconVar.lg }} />
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{ overflowY: 'auto', overflowX: 'hidden' }} dividers>
-                    {hasConcepts && (
-                        <Box sx={{ pb: 1.5, mb: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                            <Typography sx={{ fontSize: textVar.xxs, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 }}>
-                                {t('chart.derivedConcepts')}
-                            </Typography>
-                            <ConceptExplCards
-                                concepts={extractConceptExplanations(table)}
-                                maxCards={8}
-                            />
-                        </Box>
-                    )}
-                    <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
-                </DialogContent>
-            </Dialog>
+            <TableTransformationDialog key="code-dialog-overlay" table={table}
+                open={codeDialogOpen} onClose={() => setCodeDialogOpen(false)} />
         ) : null,
     ]
     
@@ -1581,6 +1566,67 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     </Box>
 }
 
+const TableLoadQueryDialog: FC<{ table: DictTable; loadQuery: NonNullable<NonNullable<DictTable['source']>['loadQuery']>; onClose: () => void }> = ({ table, loadQuery, onClose }) => {
+    const { t } = useTranslation();
+    const titleId = React.useId();
+    const native = loadQuery?.query.native as { language?: string; text?: string } | undefined;
+    const options = Object.fromEntries(Object.entries(loadQuery?.query || {}).filter(([key]) => key !== 'native'));
+    return <Dialog open onClose={onClose} aria-labelledby={titleId} maxWidth="md" fullWidth>
+        <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                {t('chart.loadQuery', { defaultValue: 'Load query' })}: {table.displayId || table.id}
+            </Typography>
+            <IconButton size="small" aria-label={t('app.close')} onClick={onClose}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ overflowX: 'hidden' }}>
+            <>
+                    {loadQuery.sourceTable && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mb: 1, overflowWrap: 'anywhere' }}>
+                        {loadQuery.sourceTable}{native?.language ? ` (${native.language.toUpperCase()})` : ''}
+                    </Typography>}
+                    {typeof native?.text === 'string' && <CodeBox code={native.text} language={native.language || 'text'} />}
+                    {(!native?.text || Object.keys(options).length > 0) && <CodeBox code={JSON.stringify(options, null, 2)} language="json" />}
+            </>
+        </DialogContent>
+    </Dialog>;
+};
+
+const TableTransformationDialog: FC<{
+    table: DictTable;
+    open: boolean;
+    onClose: () => void;
+}> = ({ table, open, onClose }) => {
+    const { t } = useTranslation();
+    const titleId = React.useId();
+    const concepts = extractConceptExplanations(table);
+    return (
+        <Dialog open={open} onClose={onClose} aria-labelledby={titleId}
+            sx={{ '& .MuiDialog-paper': { maxHeight: '90%' } }} maxWidth="md" fullWidth>
+            <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, py: 1.25 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                    <TerminalIcon sx={{ fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 }} />
+                    <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                        {t('chart.transformation', { defaultValue: 'Transformation' })}: {table.displayId || table.id}
+                    </Typography>
+                </Box>
+                <IconButton size="small" aria-label={t('app.close')} onClick={onClose}>
+                    <CloseIcon sx={{ fontSize: iconVar.lg }} />
+                </IconButton>
+            </DialogTitle>
+            <DialogContent sx={{ overflowY: 'auto', overflowX: 'hidden' }} dividers>
+                {concepts.length > 0 && (
+                    <Box sx={{ pb: 1.5, mb: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                        <Typography sx={{ fontSize: textVar.xxs, fontWeight: 700, letterSpacing: 0, textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 }}>
+                            {t('chart.derivedConcepts')}
+                        </Typography>
+                        <ConceptExplCards concepts={concepts} maxCards={8} />
+                    </Box>
+                )}
+                <CodeBox code={(table.derive?.code || '').trimStart()} language={table.virtual ? 'sql' : 'python'} />
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 // Landing / empty-state hero shown when no chart is focused AND there is
 // no existing thread (no charts, no derived/ancestor tables) for the
 // focused table — i.e., the very first moment after data is loaded.
@@ -1635,6 +1681,26 @@ const TableActionDock: FC<{
     const { t } = useTranslation();
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [transformationOpen, setTransformationOpen] = useState(false);
+    const [loadQueryOpen, setLoadQueryOpen] = useState(false);
+    const table = useSelector(dfSelectors.getAllTables).find(table => table.id === tableId);
+    const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
+    const queryKey = `${workspaceId}:${table?.virtual?.tableId || tableId}`;
+    const [savedQuery, setSavedQuery] = useState<{ key: string; query: NonNullable<DictTable['source']>['loadQuery'] }>();
+    const loadQuery = table?.source?.loadQuery || (savedQuery?.key === queryKey ? savedQuery.query : undefined);
+    useEffect(() => {
+        if (!table || table.source?.loadQuery || table.source?.type !== 'database' || table.derive) return;
+        let cancelled = false;
+        void apiRequest(getUrls().LIST_TABLES, { method: 'GET',
+            ...(workspaceId ? { headers: { 'X-Workspace-Id': workspaceId } } : {}),
+        }).then(({ data }) => {
+            if (cancelled) return;
+            const listing = (data.tables || []).find((item: any) => item.name === (table.virtual?.tableId || table.id));
+            setSavedQuery({ key: queryKey, query: listing ? buildDictTableFromWorkspace(listing, undefined).source?.loadQuery : undefined });
+        }).catch(() => { if (!cancelled) setSavedQuery({ key: queryKey, query: undefined }); });
+        return () => { cancelled = true; };
+    }, [queryKey, workspaceId, table?.id, table?.virtual?.tableId, table?.source?.loadQuery, table?.source?.type, table?.derive]);
+    const hasTransformation = !!table?.derive && (!!table.derive.code?.trim() || extractConceptExplanations(table).length > 0);
     const open = Boolean(anchorEl);
     // The Quick chart action only renders when a template picker is supplied.
     const showQuickChart = !!chartSelectionBox;
@@ -1680,7 +1746,7 @@ const TableActionDock: FC<{
             backgroundColor: 'background.paper',
         }}>
             <Box sx={{
-                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.5,
                 px: 1, py: compact ? 0.25 : 0.5, borderRadius: '8px',
                 backgroundColor: 'background.paper',
                 border: '1px solid', borderColor: 'divider',
@@ -1710,6 +1776,18 @@ const TableActionDock: FC<{
                     {t('dataGrid.downloadCsv', { defaultValue: 'Download CSV' })}
                 </Button>
                 <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                {hasTransformation && (
+                    <Button size="small" variant="text" startIcon={<TerminalIcon />}
+                        onClick={() => setTransformationOpen(true)}
+                        sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: textVar.sm } : {}) }}>
+                        {t('chart.transformation', { defaultValue: 'Transformation' })}
+                    </Button>
+                )}
+                <Button size="small" variant="text" startIcon={<CodeIcon />} disabled={!loadQuery}
+                    onClick={() => setLoadQueryOpen(true)}
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: textVar.sm } : {}) }}>
+                    {t('chart.loadQuery', { defaultValue: 'Load query' })}
+                </Button>
                 <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', px: 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
                     {gridReport?.virtual
                         ? (gridReport.loadedCount < gridReport.rowCount
@@ -1737,6 +1815,10 @@ const TableActionDock: FC<{
                     </Tooltip>
                 )}
             </Box>
+            {hasTransformation && table && (
+                <TableTransformationDialog table={table} open={transformationOpen} onClose={() => setTransformationOpen(false)} />
+            )}
+            {loadQueryOpen && loadQuery && table && <TableLoadQueryDialog key={queryKey} table={table} loadQuery={loadQuery} onClose={() => setLoadQueryOpen(false)} />}
             {showQuickChart && (
                 <Popover
                     open={open}
@@ -1770,15 +1852,24 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const focusedOperationTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.dataOperation)
         : undefined;
+    const focusedWorkflowTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflow)
+        : undefined;
+    const focusedWorkflowDefinition = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflowDefinition)
+        : undefined;
     const focusedFormTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
+        : undefined;
+    const focusedExplanationTurn = focusedId?.type === 'text'
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain' && turn.presentation === 'long_response' && !turn.form && !turn.dataOperation)
         : undefined;
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = (focusedId as { type: 'chart'; chartId: string }).chartId;
-        const chart = allCharts.find(c => c.id === chartId);
+        if (focusedId.type !== 'chart') return undefined;
+        const chart = allCharts.find(c => c.id === focusedId.chartId);
         return chart?.tableRef;
     }, [focusedId, allCharts]);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
@@ -1793,6 +1884,30 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
 
+    if (focusedId?.type === 'external-table') {
+        return <ExternalTableReferenceCanvas key={focusedId.referenceId} referenceId={focusedId.referenceId} />;
+    }
+    if (focusedId?.type === 'file') {
+        return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
+    }
+    if (focusedId?.type === 'conversation') {
+        return <ConversationCanvas textTurnId={focusedId.tableId} entryIndex={focusedId.entryIndex} nodeIds={focusedId.nodeIds} />;
+    }
+    if (focusedId?.type === 'explanation') {
+        return <ExplanationCanvas {...focusedId} />;
+    }
+    if (focusedWorkflowDefinition) {
+        return <WorkflowProposal key={focusedWorkflowDefinition.id} turn={focusedWorkflowDefinition} canvas />;
+    }
+    if (focusedWorkflowTurn) {
+        if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {
+            return <DataOperationCanvas operation={focusedWorkflowTurn.workflow.dataOperation} />;
+        }
+        return <WorkflowProgress key={focusedWorkflowTurn.id} turn={focusedWorkflowTurn} canvas />;
+    }
+    if (focusedExplanationTurn) {
+        return <ExplanationCanvas content={explanationContent(focusedExplanationTurn.content)} textTurnId={focusedExplanationTurn.id} executions={focusedExplanationTurn.executions} />;
+    }
     if (focusedOperationTurn?.dataOperation) {
         return <DataOperationCanvas operation={focusedOperationTurn.dataOperation} />;
     }
@@ -1940,6 +2055,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             const ft = tables.find(t => t.id === focusedTableId);
                             return (
                                 <TableActionDock
+                                    key={focusedTableId}
                                     chartSelectionBox={chartSelectionBox}
                                     tableId={focusedTableId}
                                     tableName={ft?.displayId || ft?.id || 'table'}

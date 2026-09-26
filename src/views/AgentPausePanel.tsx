@@ -26,6 +26,9 @@ import { alpha } from '@mui/material/styles';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
@@ -36,6 +39,8 @@ import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
 import { iconVar, textVar } from '../app/layout';
 import { DataOperationCard } from '../components/DataOperationCard';
 import type { DataOperation } from '../dataOperations/models';
+import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
+import type { TerminalExecution } from '../components/ComponentType';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -110,10 +115,9 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                     {icon}
                 </Box>
                 <Typography sx={{
-                    fontSize: textVar.xs, fontWeight: 600,
+                    fontSize: textVar.sm, fontWeight: 600,
                     color: theme.palette.text.primary,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em', flex: 1,
+                    flex: 1,
                 }}>
                     {title}
                 </Typography>
@@ -133,6 +137,59 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
             </Box>
 
             {children}
+        </Box>
+    );
+};
+
+interface ResponseOptionButtonProps {
+    children: ReactNode;
+    accentColor: string;
+    selected?: boolean;
+    disabled?: boolean;
+    onClick: () => void;
+}
+
+export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
+    children,
+    accentColor,
+    selected = false,
+    disabled = false,
+    onClick,
+}) => {
+    const theme = useTheme();
+    return (
+        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
+            <Typography
+                component="button"
+                type="button"
+                disabled={disabled}
+                aria-pressed={selected}
+                onClick={onClick}
+                sx={{
+                    position: 'relative', zIndex: 1,
+                    px: '8px', py: '4px',
+                    borderRadius: '6px',
+                    border: `1px solid ${selected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
+                    backgroundColor: selected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
+                    cursor: disabled ? 'default' : 'pointer',
+                    fontSize: textVar.xs,
+                    fontWeight: selected ? 600 : 400,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.4,
+                    color: disabled ? theme.palette.text.disabled : theme.palette.text.primary,
+                    textAlign: 'left',
+                    fontFamily: theme.typography.fontFamily,
+                    '&:hover': disabled ? {} : {
+                        backgroundColor: alpha(accentColor, selected ? 0.16 : 0.08),
+                    },
+                }}
+            >
+                {children}
+            </Typography>
         </Box>
     );
 };
@@ -172,14 +229,14 @@ interface ClarificationPanelProps {
     /** Close: de-highlight the pause and switch focus to the previous chart. */
     onClose: () => void;
     /** Delete: remove this pending pause block. */
-    onDelete: () => void;
+    onDelete?: () => void;
 }
 
 export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     questions,
     dataOperation,
     variant = 'clarify',
-    selectedAnswers,
+    selectedAnswers: controlledAnswers,
     onSelectAnswer,
     onClearAnswer,
     onSubmit,
@@ -194,10 +251,15 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // they answer. A question's own index holds its typed text; the sentinel
     // key -1 holds the explain variant's panel-level custom-followup override.
     const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
+    const [localAnswers, setLocalAnswers] = useState<Record<number, ClarificationResponse>>({});
+    const [hasUsedSkip, setHasUsedSkip] = useState(false);
+    const selectedAnswers = controlledAnswers ?? localAnswers;
 
     useEffect(() => {
         submittedRef.current = false;
         setFreeTexts({});
+        setLocalAnswers({});
+        setHasUsedSkip(false);
     }, [questions]);
 
     const setFreeText = (key: number, value: string) =>
@@ -244,7 +306,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // an unfinished typed answer. The button belongs to the panel, not a row.
     const hasFreeTextQuestion = !isExplain && questions.some(q => q.responseType === 'free_text');
     const anyTextTyped = questions.some((_q, idx) => (freeTexts[idx] || '').trim().length > 0);
-    const showPanelSubmit = !isExplain && (hasFreeTextQuestion || anyTextTyped);
+    const showPanelSubmit = !isExplain && (hasFreeTextQuestion || anyTextTyped || hasUsedSkip);
 
     // Gather the reply: each question's clicked option, else its typed
     // free-text; plus (explain only) the optional panel-level custom override.
@@ -272,6 +334,11 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // pick is invalidated the moment the user starts typing.
     const recordFreeText = (idx: number, value: string) => {
         setFreeText(idx, value);
+        setLocalAnswers(previous => {
+            const next = { ...previous };
+            delete next[idx];
+            return next;
+        });
         const typed = value.trim();
         if (typed) {
             onSelectAnswer?.(idx, { question_index: idx, answer: typed, source: 'free_text' }, false);
@@ -308,9 +375,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         // sits at the end of the input line via an InputAdornment for tight
         // spacing rather than floating in its own column.
         const hasTypedAnswer = (freeTexts[idx] || '').trim().length > 0;
+        const isSkipped = selectedAnswers[idx]?.source === 'skip';
         return (
             <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '8px', pr: '4px' }}>
-                <Box sx={{ flex: '0 1 auto', width: '100%', maxWidth: 320 }}>
+            <Box sx={{ flex: '0 1 auto', minWidth: 0, width: '100%', maxWidth: 320 }}>
                     <TextField
                         value={freeTexts[idx] || ''}
                         onChange={(e) => recordFreeText(idx, e.target.value)}
@@ -337,6 +405,45 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         sx={freeTextSx}
                     />
                 </Box>
+                {questions[idx]?.responseType === 'free_text' && <Button
+                    size="small"
+                    variant="text"
+                    color="inherit"
+                    aria-pressed={isSkipped}
+                    sx={{
+                        flexShrink: 0, minWidth: 0, fontSize: textVar.xs, mb: '2px',
+                        px: '8px', py: '4px', borderRadius: '6px', lineHeight: 1.4,
+                        border: `1px solid ${isSkipped ? alpha(accentColor, 0.6) : 'transparent'}`,
+                        color: isSkipped ? theme.palette.text.primary : theme.palette.text.secondary,
+                        fontWeight: isSkipped ? 600 : 400,
+                        backgroundColor: isSkipped ? alpha(accentColor, 0.12) : 'transparent',
+                        textDecoration: 'none',
+                        '&:hover': {
+                            backgroundColor: isSkipped ? alpha(accentColor, 0.16) : 'transparent',
+                            textDecoration: 'none',
+                        },
+                    }}
+                    onClick={() => {
+                        setHasUsedSkip(true);
+                        setFreeText(idx, '');
+                        if (isSkipped) {
+                            setLocalAnswers(previous => {
+                                const next = { ...previous };
+                                delete next[idx];
+                                return next;
+                            });
+                            onClearAnswer?.(idx);
+                        } else {
+                            const response: ClarificationResponse = {
+                                question_index: idx, answer: t('chartRec.skipAnswer'), source: 'skip',
+                            };
+                            setLocalAnswers(previous => ({ ...previous, [idx]: response }));
+                            onSelectAnswer?.(idx, response, false);
+                        }
+                    }}
+                >
+                    {t('chartRec.skipAnswer')}
+                </Button>}
                 {trailing && <Box sx={{ flexShrink: 0, mb: '2px', ml: 'auto' }}>{trailing}</Box>}
             </Box>
         );
@@ -406,7 +513,12 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
             setFreeText(response.question_index, '');
         }
         if (onSelectAnswer) {
-            onSelectAnswer(response.question_index, response);
+            if (showPanelSubmit) onSelectAnswer(response.question_index, response, false);
+            else onSelectAnswer(response.question_index, response);
+            return;
+        }
+        if (showPanelSubmit) {
+            setLocalAnswers(previous => ({ ...previous, [response.question_index]: response }));
             return;
         }
         submitResponses([response]);
@@ -540,38 +652,19 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                         ? selected.value === option.value
                                                         : selected.answer === option.label);
                                                 return (
-                                                    <Box key={optionIndex} sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
-                                                        <Typography
-                                                            component="button"
-                                                            type="button"
-                                                            onClick={() => handleAnswer({
+                                                    <ResponseOptionButton
+                                                        key={optionIndex}
+                                                        accentColor={accentColor}
+                                                        selected={isSelected}
+                                                        onClick={() => handleAnswer({
                                                                 question_index: questionIndex,
                                                                 answer: option.label,
                                                                 ...(option.value ? { value: option.value } : {}),
                                                                 source: 'option',
                                                             })}
-                                                            sx={{
-                                                                position: 'relative', zIndex: 1,
-                                                                px: '8px', py: '4px',
-                                                                borderRadius: '6px',
-                                                                border: `1px solid ${isSelected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
-                                                                backgroundColor: isSelected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
-                                                                cursor: 'pointer',
-                                                                fontSize: textVar.xs,
-                                                                fontWeight: isSelected ? 600 : 400,
-                                                                display: 'inline-block',
-                                                                whiteSpace: 'normal',
-                                                                wordBreak: 'break-word',
-                                                                lineHeight: 1.4,
-                                                                color: theme.palette.text.primary,
-                                                                textAlign: 'left',
-                                                                fontFamily: theme.typography.fontFamily,
-                                                                '&:hover': { backgroundColor: alpha(accentColor, isSelected ? 0.16 : 0.08) },
-                                                            }}
-                                                        >
+                                                    >
                                                             {renderFieldHighlights(option.label, accentColor)}
-                                                        </Typography>
-                                                    </Box>
+                                                    </ResponseOptionButton>
                                                 );
                                             })}
                                         </Box>
@@ -629,6 +722,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
 interface ExplanationPanelProps {
     /** The agent's plain-text answer (markdown) to display read-only. */
     content: string;
+    executions?: TerminalExecution[];
     /** Close: de-highlight the panel and switch focus to the previous chart. */
     onClose: () => void;
     /** Delete: remove this explanation block from the thread. */
@@ -642,7 +736,7 @@ interface ExplanationPanelProps {
  * but carries no inputs or actions — it's purely "here's what I said",
  * dismissible by the header's delete button or by focusing another item.
  */
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, executions, onClose, onDelete }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
@@ -665,7 +759,67 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
                 pb: '8px', pl: '20px', pr: '8px',
                 fontSize: textVar.sm,
             }}>
-                <CompactMarkdown content={content} color={theme.palette.text.primary} />
+                <TerminalMessageContent content={content} executions={executions} />
+            </Box>
+        </AgentPauseShell>
+    );
+};
+
+interface FailedDraftPanelProps {
+    prompt?: string;
+    error: string;
+    onClose: () => void;
+    onRetry: () => void;
+    retryDisabled?: boolean;
+    retryLabel?: string;
+}
+
+/** Focused view for a retained failed analysis round. */
+export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
+    prompt,
+    error,
+    onClose,
+    onRetry,
+    retryDisabled = false,
+    retryLabel,
+}) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const accent = theme.palette.error.main;
+
+    return (
+        <AgentPauseShell
+            icon={<ErrorOutlineRoundedIcon sx={{ fontSize: textVar.xl, color: alpha(accent, 0.75) }} />}
+            accentColor={accent}
+            title={t('chartRec.interruptedTitle', { defaultValue: 'Interrupted' })}
+            closeTooltip={t('chartRec.pauseClose')}
+            onClose={onClose}
+        >
+            <Box sx={{ pb: '8px', pl: '20px', pr: '8px' }}>
+                {prompt && (
+                    <Typography sx={{
+                        mb: '5px', fontSize: textVar.sm, fontWeight: 500,
+                        color: theme.palette.text.primary, wordBreak: 'break-word',
+                    }}>
+                        {prompt}
+                    </Typography>
+                )}
+                <Typography sx={{
+                    fontSize: textVar.xs, lineHeight: 1.45,
+                    color: theme.palette.text.secondary, wordBreak: 'break-word',
+                }}>
+                    {error}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mt: '7px' }}>
+                    <ResponseOptionButton
+                        accentColor={theme.palette.primary.main}
+                        disabled={retryDisabled}
+                        onClick={onRetry}
+                    >
+                        <ReplayRoundedIcon sx={{ fontSize: iconVar.sm }} />
+                        {retryLabel || t('messages.retry', { defaultValue: 'Retry' })}
+                    </ResponseOptionButton>
+                </Box>
             </Box>
         </AgentPauseShell>
     );

@@ -1,3 +1,5 @@
+import type { ExternalTableReference } from '../components/ComponentType';
+
 export const DATA_OPERATION_SCHEMA_VERSION = 1 as const;
 
 export type JsonValue =
@@ -68,6 +70,7 @@ export interface DataOperation {
     plans: DataOperationPlan[];
     selectedPlanId?: string;
     resultTableIds: string[];
+    resultReferences?: ExternalTableReference[];
     error?: OperationError;
     failedSteps: FailedOperationStep[];
     supersededByOperationId?: string;
@@ -182,6 +185,35 @@ export const parseDataOperation = (value: unknown): DataOperation => {
         : operation.result_table_ids;
     if (!Array.isArray(resultTableIds)) throw new Error('result_table_ids must be an array');
 
+    const rawReferences = operation.result_references ?? [];
+    if (!Array.isArray(rawReferences)) throw new Error('result_references must be an array');
+    const resultReferences = rawReferences.map((value): ExternalTableReference => {
+        const reference = requireRecord(value, 'reference');
+        if (reference.kind !== 'external-table-reference') throw new Error('Invalid reference kind');
+        const source = requireRecord(reference.sourceTable, 'reference.sourceTable');
+        const summary = requireRecord(reference.summary, 'reference.summary');
+        return {
+            kind: 'external-table-reference',
+            id: requireString(reference.id, 'reference.id'),
+            connectorId: requireString(reference.connectorId, 'reference.connectorId'),
+            tableKey: requireString(reference.tableKey, 'reference.tableKey'),
+            displayName: requireString(reference.displayName, 'reference.displayName'),
+            sourceTable: { id: requireString(source.id, 'sourceTable.id'), name: requireString(source.name, 'sourceTable.name') },
+            capturedAt: requireString(reference.capturedAt, 'reference.capturedAt'),
+            summary: {
+                description: typeof summary.description === 'string' ? summary.description : undefined,
+                columns: Array.isArray(summary.columns) ? summary.columns.map(value => {
+                    const column = requireRecord(value, 'column');
+                    return { name: requireString(column.name, 'column.name'),
+                        type: typeof column.type === 'string' ? column.type : 'unknown',
+                        description: typeof column.description === 'string' ? column.description : undefined };
+                }) : [],
+                rowCount: typeof summary.rowCount === 'number' ? summary.rowCount : undefined,
+                sizeBytes: typeof summary.sizeBytes === 'number' ? summary.sizeBytes : undefined,
+            },
+        };
+    });
+
     const rawError = operation.error === undefined
         ? undefined
         : requireRecord(operation.error, 'error');
@@ -215,6 +247,7 @@ export const parseDataOperation = (value: unknown): DataOperation => {
         canvasSummary: typeof operation.canvas_summary === 'string' ? operation.canvas_summary : '',
         plans,
         selectedPlanId,
+        resultReferences,
         resultTableIds: resultTableIds.map((item, index) =>
             requireString(item, `result_table_ids[${index}]`)),
         error: rawError === undefined ? undefined : {

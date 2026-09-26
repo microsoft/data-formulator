@@ -143,6 +143,10 @@ def get_workspace(identity_id: str) -> Workspace:
                 "WORKSPACE_EXPIRED",
                 "This temporary workspace has expired.",
             )
-        mgr.create_workspace(ws_id)
+        try:
+            mgr.create_workspace(ws_id)
+        except ValueError:
+            if not mgr.workspace_exists(ws_id):
+                raise
 
     return mgr.open_workspace(ws_id, identity_id)

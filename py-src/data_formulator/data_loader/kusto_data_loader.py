@@ -3,6 +3,8 @@ import logging
 import os
 import re
 import time
+from datetime import timedelta
+from threading import Lock
 from typing import Any
 import pandas as pd
 import pyarrow as pa
@@ -20,9 +22,49 @@ from data_formulator.data_loader.external_data_loader import ExternalDataLoader,
 from data_formulator.data_loader import probe_utils
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder, ClientRequestProperties
-from azure.kusto.data.helpers import dataframe_from_result_table
+from azure.kusto.data.helpers import dataframe_from_result_table, parse_float
+from azure.kusto.data.exceptions import KustoApiError
+from data_formulator.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
+
+
+class _KustoCachedCredential:
+    """Keep one ambient token per credential instance, never across identities."""
+
+    def __init__(self, credential):
+        self._credential = credential
+        self._lock = Lock()
+        self._token: AccessToken | None = None
+        self._request = None
+        self._closed = False
+
+    def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Kusto credential is closed")
+            if kwargs.keys() - {"claims", "tenant_id", "enable_cae"}:
+                self._token = None
+                self._request = None
+                return self._credential.get_token(*scopes, **kwargs)
+            request = (scopes, tuple(sorted(kwargs.items())))
+            if self._request == request and self._token is not None and self._token.expires_on > time.time() + 300:
+                return self._token
+            self._token = None
+            self._request = None
+            token = self._credential.get_token(*scopes, **kwargs)
+            if token.expires_on > time.time() + 300:
+                self._token = token
+                self._request = request
+            return token
+
+    def close(self):
+        with self._lock:
+            self._token = None
+            self._request = None
+            if not self._closed:
+                self._closed = True
+                self._credential.close()
 
 
 class _KustoDelegatedCredential:
@@ -117,6 +159,12 @@ class KustoDataLoader(ExternalDataLoader):
                 "required_fields": [],
                 "kind": "ambient",
                 "default": not microsoft_sign_in,
+                "cli_login": {
+                    "provider": "azure",
+                    "label": "Sign in with Azure CLI",
+                    "status_url": "/api/local/azure-status",
+                    "login_url": "/api/local/azure-login",
+                },
             },
             {
                 "id": "service_principal",
@@ -158,6 +206,7 @@ class KustoDataLoader(ExternalDataLoader):
         }
 
     AUTH_GUIDE = "kusto.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -217,7 +266,7 @@ class KustoDataLoader(ExternalDataLoader):
 
         # 3. DefaultAzureCredential: az login, Managed Identity, VS Code, env vars, etc.
         from azure.identity import DefaultAzureCredential
-        credential = DefaultAzureCredential()
+        credential = _KustoCachedCredential(DefaultAzureCredential())
         logger.info(
             "Using DefaultAzureCredential for Kusto client "
             "(az login / Managed Identity / etc.).")
@@ -320,7 +369,10 @@ class KustoDataLoader(ExternalDataLoader):
             properties.set_option("notruncation", True)
         result = self.client.execute(self.kusto_database, kql, properties)
         logger.info(f"Query executed successfully, returning results.")
-        df = dataframe_from_result_table(result.primary_results[0])
+        df = dataframe_from_result_table(
+            result.primary_results[0],
+            converters_by_type={"float": lambda column, frame: parse_float(frame, column)},
+        )
         
         # Convert datetime columns properly
         df = self._convert_kusto_datetime_columns(df)
@@ -390,6 +442,9 @@ class KustoDataLoader(ExternalDataLoader):
         else:
             segments.append(f"take {size}")
 
+        if opts.get("columns"):
+            segments.append("project " + ", ".join(self._kql_ident(column) for column in opts["columns"]))
+
         kql_query = "\n| ".join(segments)
 
         logger.info(f"Executing Kusto query: {kql_query[:200]}...")
@@ -412,6 +467,66 @@ class KustoDataLoader(ExternalDataLoader):
         logger.info(f"Fetched {arrow_table.num_rows} rows from Kusto")
         
         return arrow_table
+
+    @classmethod
+    def query_capabilities(cls) -> dict[str, Any]:
+        return {**super().query_capabilities(), "native_query_languages": ["kql"],
+                "native_query_guidance": "Single read-only KQL expression scoped to the selected table in this database. No commands, statements, comments, external data, remote entities, callouts, or plugins. Use native queries only when ordinary loading and local Python are unsuitable. Maximum 10000 loaded rows, 16 MiB, 60 seconds; narrow queries explicitly to control scan cost."}
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        if query.get("native") is not None:
+            native = query["native"]
+            if not isinstance(native, dict) or native.get("language") != "kql":
+                raise ValueError("This connector supports native KQL only.")
+            text = native.get("text")
+            if (not isinstance(text, str) or not text.strip() or len(text) > 16000
+                    or any(token in text for token in (";", "//", "/*", "*/", "\x00"))
+                    or text.lstrip().startswith(".")):
+                raise ValueError("Provide one KQL query expression without commands, comments, or statements (maximum 16000 characters).")
+            if not 1 <= limit <= 10001:
+                raise ValueError("Native query result limit must be between 1 and 10001.")
+            database, table = self._resolve_source_table(source_table)
+            if not table or "*" in table:
+                raise ValueError("Native queries require one exact table, not a wildcard scope.")
+            properties = ClientRequestProperties()
+            for option in ("request_readonly", "request_readonly_hardline", "request_callout_disabled",
+                           "request_external_data_disabled", "request_external_table_disabled",
+                           "request_impersonation_disabled", "request_remote_entities_disabled",
+                           "request_sandboxed_execution_disabled"):
+                properties.set_option(option, True)
+            properties.set_option("servertimeout", timedelta(seconds=60))
+            properties.set_option("truncationmaxrecords", limit)
+            properties.set_option("truncationmaxsize", 16 * 1024 * 1024)
+            properties.set_option("deferpartialqueryfailures", False)
+            properties.set_option("query_language", "kql")
+            restricted = f"restrict access to (database().{self._kql_ident(table)});\n{text}\n| take {limit}"
+            try:
+                result = self.client.execute_query(database, restricted, properties)
+            except KustoApiError as exc:
+                diagnostic = re.search(r"\b(?:SYN|SEM)\d{4}: [^\r\n]+", exc.get_api_error().description or "")
+                if diagnostic:
+                    message = re.sub(r"https?://\S+", "<url>", diagnostic.group(0))
+                    raise ValueError(
+                        f"Native KQL query rejected: {sanitize_error_message(message)} "
+                        "Provide a complete query starting from the selected table (for example, TableName | where ...). "
+                        "The connector restricts access but does not prepend the source table to your query."
+                    ) from exc
+                raise
+            if result.get_exceptions() or len(result.primary_results) != 1:
+                raise ValueError("Native query returned incomplete results or multiple result tables.")
+            frame = dataframe_from_result_table(result.primary_results[0],
+                converters_by_type={"float": lambda column, frame: parse_float(frame, column)})
+            frame = self._stringify_dynamic_columns(self._convert_kusto_datetime_columns(frame))
+            return pa.Table.from_pandas(frame, preserve_index=False)
+        database, table = self._resolve_source_table(source_table)
+        kql = self._compile_probe_kql(table, query, limit, exact_distinct=True)
+        previous_database = self.kusto_database
+        try:
+            if database:
+                self.kusto_database = database
+            return pa.Table.from_pandas(self.query(kql), preserve_index=False)
+        finally:
+            self.kusto_database = previous_database
 
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         """Compile the SPJQ to KQL and run ``summarize`` on the cluster.
@@ -483,7 +598,7 @@ class KustoDataLoader(ExternalDataLoader):
         return KustoDataLoader._kql_lit(value)
 
     def _compile_probe_kql(
-        self, table: str, query: dict[str, Any], out_limit: int,
+        self, table: str, query: dict[str, Any], out_limit: int, *, exact_distinct: bool = False,
     ) -> str:
         """Compile a probe SPJQ object into a KQL query pipeline.
 
@@ -518,7 +633,8 @@ class KustoDataLoader(ExternalDataLoader):
                 elif op == "count_distinct":
                     if not col:
                         raise ValueError("count_distinct requires a column")
-                    expr = f"dcount({ident(col)})"
+                    operation = "count_distinct" if exact_distinct else "dcount"
+                    expr = f"{operation}({ident(col)})"
                 elif op in ("sum", "avg", "min", "max"):
                     if not col:
                         raise ValueError(f"aggregate {op} requires a column")
@@ -595,20 +711,15 @@ class KustoDataLoader(ExternalDataLoader):
         return parts
 
     def _resolve_source_table(self, source_table: str) -> tuple[str | None, str]:
-        """Parse a source_table identifier into ``(database, table)``.
+        """Preserve literal table names in a pinned database.
 
-        Cross-database catalog entries are ``"database.table"`` and must be
-        split even when a database is pinned — otherwise the whole identifier
-        gets bracket-quoted (``['db.table']``) and Kusto reads it as a single
-        table literally named with a dot. A bare identifier uses the pinned
-        database when available. Returns ``(database_or_None, table)``; when
-        *database* is ``None`` the caller should use the connect-time database.
+        Only legacy unpinned catalogs use database-qualified source names.
         """
-        parts = source_table.split(".")
-        if len(parts) >= 2:
-            return parts[0], ".".join(parts[1:])
         if self.kusto_database:
             return self.kusto_database, source_table
+        if "." in source_table:
+            database, table = source_table.split(".", 1)
+            return database, table
         return None, source_table
 
     @classmethod

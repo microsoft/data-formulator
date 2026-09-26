@@ -176,7 +176,8 @@ def _contains_lit(v: Any) -> str:
     return f"'%{s}%'"
 
 
-def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect) -> str:
+def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect,
+                   string_columns: tuple[str, ...] = ()) -> str:
     """Compile probe ``filters`` into a dialect-aware ``WHERE`` clause."""
     parts: list[str] = []
     for f in filters or []:
@@ -199,6 +200,9 @@ def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect) -> str:
             if not vals:
                 continue
             parts.append(f"{qcol} {op} ({', '.join(_lit(v) for v in vals)})")
+            if (dialect == DUCKDB and op == "IN" and col in string_columns
+                    and len(vals) > 1 and all(isinstance(value, str) for value in vals)):
+                parts.append(f"list_contains([{', '.join(_lit(value) for value in vals)}], {qcol})")
         elif op == "BETWEEN":
             if isinstance(val, (list, tuple)) and len(val) == 2:
                 parts.append(f"{qcol} BETWEEN {_lit(val[0])} AND {_lit(val[1])}")
@@ -218,12 +222,96 @@ def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect) -> str:
 # SQL compiler (shared by every SQL backend and the DuckDB path)
 # ---------------------------------------------------------------------------
 
+def preview_file(register_source: Callable, source: str, import_options: dict[str, Any] | None = None,
+                 *, purpose: str = "ui") -> dict[str, Any]:
+    import duckdb
+    from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+
+    options = dict(import_options or {})
+    options["size"] = min(max(1, int(options.get("size") or 50)), 5 if purpose == "agent" else 50)
+    query = query_from_import_options(options)
+    with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
+        relation = register_source(connection, source, preview=True)
+        available_columns = relation.columns
+        selected = query["columns"] or available_columns
+        query["columns"] = selected[:20]
+        sql = compile_probe_sql(query, options["size"], dialect=DUCKDB)
+        table = connection.execute(sql).fetch_arrow_table()
+    result = ExternalDataLoader.format_preview(
+        table, options, purpose=purpose, columns_omitted=max(0, len(selected) - 20),
+        schema_source="footer" if source.lower().endswith(".parquet") else "inferred",
+    )
+    result["inspection"]["schema_complete"] = source.lower().endswith(".parquet")
+    result["inspection"]["may_scan_full_source"] = bool(options.get("source_filters") or options.get("sort_columns"))
+    return result
+
+
+def register_file_scan(connection, source: str, *, preview: bool = False):
+    from glob import escape
+    import duckdb
+
+    extension = source.lower().rsplit(".", 1)[-1]
+    path = escape(source)
+    if extension == "parquet":
+        relation = connection.read_parquet(path, hive_partitioning=False)
+    elif extension in ("csv", "tsv"):
+        delimiter = "\t" if extension == "tsv" else ","
+        encoding = "utf-8"
+        local_source = "://" not in source
+        if local_source:
+            with open(source, "rb") as source_file:
+                prefix = source_file.read(4)
+            if prefix.startswith((b"\xff\xfe", b"\xfe\xff")):
+                encoding = "utf-16"
+        if encoding == "utf-8":
+            try:
+                relation = connection.read_csv(
+                    path, header=True, sep=delimiter, hive_partitioning=False,
+                    **({"sample_size": 2048} if preview else {}),
+                )
+            except duckdb.InvalidInputException as error:
+                if not local_source or "not utf-8 encoded" not in str(error):
+                    raise
+                encoding = "cp1252"
+        if encoding != "utf-8":
+            import pyarrow.csv as arrow_csv
+
+            reader = arrow_csv.open_csv(source, read_options=arrow_csv.ReadOptions(encoding=encoding),
+                                        parse_options=arrow_csv.ParseOptions(delimiter=delimiter, newlines_in_values=True))
+            relation = connection.from_arrow(reader)
+    elif extension in ("json", "jsonl"):
+        relation = connection.read_json(
+            path, format="newline_delimited" if extension == "jsonl" else "auto",
+            records="true", hive_partitioning=False,
+            **({"sample_size": 256} if preview else {}),
+        )
+    else:
+        raise ValueError(f"Unsupported file type: {source}")
+    relation.create_view("t")
+    return relation
+
+
+def query_from_import_options(options: dict[str, Any]) -> dict[str, Any]:
+    source_filters = options.get("source_filters") or []
+    normalized = probe_filters_to_source_filters(source_filters)
+    if len(normalized) != len(source_filters):
+        raise ValueError("Unsupported source filter operator")
+    return {
+        "columns": options.get("columns") or [],
+        "filters": [{"column": item["column"], "op": item["operator"], "value": item.get("value")}
+                    for item in normalized],
+        "order_by": [{"column": column, "dir": options.get("sort_order", "asc")}
+                     for column in options.get("sort_columns") or []],
+    }
+
+
 def compile_probe_sql(
     query: dict[str, Any],
     out_limit: int,
     *,
     relation: str = "t",
     dialect: SqlDialect = ANSI,
+    string_columns: tuple[str, ...] = (),
 ) -> str:
     """Compile a probe SPJQ ``query`` (design 37 §4.2) into a single SELECT.
 
@@ -232,6 +320,10 @@ def compile_probe_sql(
     ops are emitted — never raw expressions. Filters are always applied here so
     the result is correct regardless of what a loader pushed down. Raises
     ``ValueError`` on an invalid aggregate op.
+
+    ``string_columns`` supplies verified VARCHAR fields for an additional exact
+    DuckDB membership predicate. Keep IN for statistics pruning; list_contains
+    also filters inside Parquet scans where IN alone may be only optional.
     """
     columns = query.get("columns") or []
     group_by = query.get("group_by") or []
@@ -276,7 +368,7 @@ def compile_probe_sql(
     else:
         sql = f"SELECT {select_list} FROM {relation}"
 
-    where = _compile_where(filters, dialect)
+    where = _compile_where(filters, dialect, string_columns)
     if where:
         sql += f" {where}"
 

@@ -22,17 +22,14 @@ import {
     Fade,
     Popover,
     Button,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogContentText,
-    DialogActions,
+    Divider,
     TextField,
     InputAdornment,
     Menu,
     MenuItem,
     ListItemIcon,
     ListItemText,
+    ListSubheader,
     ClickAwayListener,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -47,15 +44,16 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import { InlineLoadingStatus, WorkflowGears } from '../components/FunComponents';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import PushPinIcon from '@mui/icons-material/PushPin';
@@ -63,11 +61,11 @@ import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import SortIcon from '@mui/icons-material/Sort';
 import CheckIcon from '@mui/icons-material/Check';
 
-import { KnowledgePanel } from './KnowledgePanel';
+import { WorkflowPanel } from './WorkflowPanel';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
+import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend, fetchConnectorCatalog } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
@@ -88,6 +86,8 @@ import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ResizeHandle } from '../components/ResizeHandle';
 import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
+import { formatBytes } from './ViewUtils';
+import { importConnectorFile, isLargeConnectorTable, createExternalTableReference } from '../app/workspaceService';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -98,32 +98,6 @@ const MAX_PANEL_WIDTH = REFERENCE.sidebar.max;
 
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 const SIDEBAR_PINNED_KEY = 'df-sidebar-pinned';
-
-// Above this many rows or this much uncompressed data, importing a table
-// wholesale is slow/unwieldy (and can hit backend result-size limits). Tables
-// past these thresholds are handed off to the conversational data-loading chat
-// instead, where the user can filter, sample, or aggregate before loading.
-const RECOMMENDED_MAX_IMPORT_ROWS = 1_000_000;
-const RECOMMENDED_MAX_IMPORT_BYTES = 512 * 1024 * 1024; // 512 MB uncompressed
-
-// Human-readable byte size ("1.2 GB", "340 MB"). Returns '' when unknown.
-function formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    let value = bytes;
-    let i = 0;
-    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
-    return `${value >= 100 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
-}
-
-// Whether a catalog table is large enough that a direct full import is
-// discouraged in favor of the conversational loader.
-function isTableTooLarge(node: CatalogTreeNode): boolean {
-    const rows = node.metadata?.row_count;
-    const bytes = node.metadata?.original_size_bytes;
-    return (typeof rows === 'number' && rows > RECOMMENDED_MAX_IMPORT_ROWS)
-        || (typeof bytes === 'number' && bytes > RECOMMENDED_MAX_IMPORT_BYTES);
-}
 
 // Compact relative time for sidebar rows: "2m", "3h", "yesterday",
 // "May 5", "May 5, 24". Designed to stay <= ~10 chars so it fits in
@@ -175,8 +149,8 @@ export const DataSourceSidebar: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
     connectorRefreshKey?: number;
     onConnectorsChanged?: () => void;
-    onStartDataLoadingChat?: (text: string) => void;
-}> = ({ onOpenUploadDialog, connectorRefreshKey = 0, onConnectorsChanged, onStartDataLoadingChat }) => {
+    onAskAgent?: (text: string) => void;
+}> = ({ onOpenUploadDialog, connectorRefreshKey = 0, onConnectorsChanged, onAskAgent }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -229,7 +203,7 @@ export const DataSourceSidebar: React.FC<{
         const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
         return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
     });
-    const [isPinned, setIsPinned] = useState(() => localStorage.getItem(SIDEBAR_PINNED_KEY) !== 'false');
+    const [isPinned, setIsPinned] = useState(() => localStorage.getItem(SIDEBAR_PINNED_KEY) === 'true');
 
     const togglePinned = useCallback(() => {
         setIsPinned(previous => {
@@ -318,11 +292,12 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                {/* Primary action — adding data is the main task. Styled like
-                    the view-switcher icons but kept in primary color as a
-                    subtle cue; opens the upload dialog (landing menu). */}
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
-                    <IconButton size="small" onClick={() => onOpenUploadDialog?.()} sx={{
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
+                    <IconButton
+                        size="small"
+                        onClick={() => onOpenUploadDialog?.('menu')}
+                        aria-label={t('sidebar.openUpload', { defaultValue: 'Upload data' })}
+                        sx={{
                         color: 'primary.main',
                         borderRadius: 1,
                         '&:hover': { bgcolor: 'action.hover' },
@@ -348,13 +323,13 @@ export const DataSourceSidebar: React.FC<{
                         <RelationalDBIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Agent knowledge' })} placement="right">
+                <Tooltip title={t('knowledge.workflows')} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
                         bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
                         borderRadius: 1,
                     }}>
-                        <LightbulbOutlinedIcon fontSize="small" />
+                        <WorkflowGears running={false} size={20} showTooltip={false} />
                     </IconButton>
                 </Tooltip>
             </Box>
@@ -372,6 +347,7 @@ export const DataSourceSidebar: React.FC<{
                     width: panelWidth,
                     minWidth: panelWidth,
                     height: '100%',
+                    maxHeight: '100%',
                     flexShrink: 0,
                     display: 'flex',
                     backgroundColor: 'background.paper',
@@ -387,7 +363,7 @@ export const DataSourceSidebar: React.FC<{
                         connectorRefreshKey={connectorRefreshKey}
                         onConnectorsChanged={onConnectorsChanged}
                         disableConnectors={disableConnectors}
-                        onStartDataLoadingChat={onStartDataLoadingChat}
+                        onAskAgent={onAskAgent}
                     />
                     <ResizeHandle
                         direction="horizontal"
@@ -412,12 +388,13 @@ const DataSourceSidebarPanel: React.FC<{
     connectorRefreshKey?: number;
     onConnectorsChanged?: () => void;
     disableConnectors?: boolean;
-    onStartDataLoadingChat?: (text: string) => void;
-}> = ({ panelWidth, onOpenUploadDialog, onCollapse, isPinned, onTogglePinned, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onStartDataLoadingChat }) => {
+    onAskAgent?: (text: string) => void;
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, isPinned, onTogglePinned, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onAskAgent }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector(
         (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
     );
@@ -480,22 +457,16 @@ const DataSourceSidebarPanel: React.FC<{
     // selection changes.
     const selectionRef = useRef(selection);
     selectionRef.current = selection;
-    // Sequential batch-load progress (current/total + table name), or null.
-    const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; name: string } | null>(null);
 
     // Preview popover state
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [previewLoading, setPreviewLoading] = useState<{ connectorId: string; itemId: string } | null>(null);
     const previewRequestIdRef = useRef(0);
-    const [importing, setImporting] = useState(false);
+    const importing = useSelector((state: DataFormulatorState) => state.pendingTableLoads.some(load => load.progress));
     // Cache of fetched sample previews, keyed by `${connectorId}:${pathKey}`,
     // so re-opening a table's preview is instant and costs no extra query.
     const previewCacheRef = useRef<Record<string, PreviewState>>({});
-
-    // Delete connector confirmation
-    const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
-    const [deleting, setDeleting] = useState(false);
 
     // Add-connector menu anchor
     const [addConnectorAnchor, setAddConnectorAnchor] = useState<HTMLElement | null>(null);
@@ -542,10 +513,10 @@ const DataSourceSidebarPanel: React.FC<{
 
     const [sessions, setSessions] = useState<WorkspaceSummary[]>([]);
 
-    // Session lists prioritize recent work. Creation-order views remain
-    // available when users need the original chronology.
+    // Default to creation chronology so auto-saves do not unexpectedly move
+    // older sessions. Modified time remains available as an explicit sort.
     type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
-    const [sessionSort, setSessionSort] = useState<SessionSortKey>('updated_desc');
+    const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
     const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
 
     const sortedSessions = useMemo(() => {
@@ -805,7 +776,7 @@ const DataSourceSidebarPanel: React.FC<{
 
     // Sort connectors by category
     const sortedConnectors = useMemo(
-        () => [...connectors].sort((a, b) => connectorSortOrder(a.source_type, b.source_type)),
+        () => [...connectors].sort((a, b) => connectorSortOrder(a.source_type ?? '', b.source_type ?? '')),
         [connectors],
     );
 
@@ -825,29 +796,9 @@ const DataSourceSidebarPanel: React.FC<{
             ...prev,
             [connectorId]: loadingLoadable(prev[connectorId]),
         }));
-        // Poll the backend for high-level progress (e.g. which database is
-        // being queried) while the listing runs, so the spinner isn't silent
-        // on slow multi-database sources like Kusto.
-        let cancelled = false;
-        const poll = async () => {
-            if (cancelled) return;
-            try {
-                const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CATALOG_PROGRESS, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ connector_id: connectorId }),
-                });
-                if (!cancelled && data?.message) {
-                    setCatalogProgress(prev => ({ ...prev, [connectorId]: data.message }));
-                }
-            } catch { /* progress is best-effort */ }
-        };
-        const progressTimer = window.setInterval(poll, 700);
         try {
-            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorId }),
+            const { data } = await fetchConnectorCatalog(connectorId, {
+                onProgress: message => setCatalogProgress(prev => ({ ...prev, [connectorId]: message })),
             });
             const tree: CatalogTreeNode[] = data.tree || [];
             setCatalogByConnector(prev => ({
@@ -876,11 +827,9 @@ const DataSourceSidebarPanel: React.FC<{
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'warning',
                 component: 'data-source-sidebar',
-                value: e?.apiError?.message || t('dataLoading.syncPartial'),
+                value: e?.apiError?.message || e?.message || t('dataLoading.syncPartial'),
             }));
         } finally {
-            cancelled = true;
-            window.clearInterval(progressTimer);
             setCatalogProgress(prev => {
                 if (!(connectorId in prev)) return prev;
                 const next = { ...prev };
@@ -1084,16 +1033,14 @@ const DataSourceSidebarPanel: React.FC<{
         setPreviewLoading(null);
         setPreview(null);
         setPreviewAnchor(null);
-        setExpandedConnectorId(prev => {
-            if (prev === connectorId) return null;
-            if (!catalogCacheRef.current[connectorId]) {
-                fetchCatalogTree(connectorId);
-            }
-            return connectorId;
-        });
-    }, [fetchCatalogTree]);
+        const opening = expandedConnectorId !== connectorId;
+        if (opening && !catalogCacheRef.current[connectorId]) {
+            void fetchCatalogTree(connectorId);
+        }
+        setExpandedConnectorId(opening ? connectorId : null);
+    }, [expandedConnectorId, fetchCatalogTree]);
 
-    // Auto-expand only when there's a single connected connector — for a
+    // Auto-expand only when there's a single available connector — for a
     // fresh user that's just the built-in sample_datasets, so the sidebar
     // isn't an empty-looking collapsed list. Once the user has added their
     // own connectors, we leave everything collapsed; expansion then happens
@@ -1114,9 +1061,8 @@ const DataSourceSidebarPanel: React.FC<{
         const key = `${identityKey}:${connectorRefreshKey}`;
         if (autoExpandedRef.current === key) return;
         if (focusedConnectorId) return;
-        const connected = sortedConnectors.filter(c => c.connected);
-        if (connected.length !== 1) return;
-        const only = connected[0];
+        if (sortedConnectors.length !== 1 || !sortedConnectors[0].connected) return;
+        const only = sortedConnectors[0];
         autoExpandedRef.current = key;
         setExpandedConnectorId(prev => prev ?? only.id);
         if (!catalogCacheRef.current[only.id]) {
@@ -1169,6 +1115,13 @@ const DataSourceSidebarPanel: React.FC<{
         // row-level progress indicator, but don't open an empty popover.
         setPreview(null);
         setPreviewAnchor(null);
+
+        if (nodeMeta.artifact_kind === 'file') {
+            setPreviewLoading(null);
+            setPreview({ connectorId, node, columns: [], sampleRows: [], rowCount: null, loading: false });
+            setPreviewAnchor(anchorEl);
+            return;
+        }
 
         // Cache hit: re-open instantly, no query. Repeats are free.
         const cached = previewCacheRef.current[cacheKey];
@@ -1365,8 +1318,34 @@ const DataSourceSidebarPanel: React.FC<{
     // thunk. No session creation, no user messaging — callers own that so this
     // can be reused for both single imports and sequential batch loads.
     const loadTableNode = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
+        if (node.metadata?.artifact_kind === 'file') {
+            return importConnectorFile(connectorId, node.path.join('/')).then(file => {
+                dispatch(dfActions.setFocused({ type: 'file', fileName: file.name }));
+                return { truncated: false };
+            });
+        }
         const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
+        if (isLargeConnectorTable(node.metadata, serverConfig)) {
+            const metadata = node.metadata || {};
+            const rows = Number(metadata.row_count);
+            const bytes = Number(metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size);
+            const reference = createExternalTableReference({
+                kind: 'external-table-reference', connectorId,
+                tableKey: metadata.table_key || pathKey, sourceTable: ref, displayName: node.name,
+                capturedAt: new Date().toISOString(),
+                summary: {
+                    description: metadata.source_description || metadata.description,
+                    columns: metadata.columns || [],
+                    rowCount: Number.isFinite(rows) ? rows : undefined,
+                    sizeBytes: Number.isFinite(bytes) ? bytes : undefined,
+                },
+                queryIntent: importOptions,
+            });
+            dispatch(dfActions.upsertExternalTableReference(reference));
+            dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+            return Promise.resolve({ truncated: false });
+        }
         const tableObj: DictTable = {
             kind: 'table' as const,
             id: node.name,
@@ -1390,7 +1369,7 @@ const DataSourceSidebarPanel: React.FC<{
             sourceTableRef: ref,
             importOptions: importOptions || {},
         })).unwrap();
-    }, [dispatch, buildSourceTableRef]);
+    }, [dispatch, buildSourceTableRef, serverConfig]);
 
     // ── Selection helpers (multi-select) ─────────────────────────────────────
 
@@ -1429,65 +1408,34 @@ const DataSourceSidebarPanel: React.FC<{
         opts?: { newSession?: boolean },
     ) => {
         const tables = nodes.filter(n => n.node_type === 'table');
-        if (tables.length === 0) return;
-
-        // Tables past the recommended size are impractical to import wholesale
-        // (slow, memory-heavy, and can exceed backend result limits). When the
-        // selection contains any such table, hand the whole selection off to
-        // the conversational data-loading chat so the user can filter, sample,
-        // or aggregate before loading — instead of a direct bulk import.
-        const oversized = tables.filter(isTableTooLarge);
-        if (oversized.length > 0 && onStartDataLoadingChat) {
-            const connector = connectors.find(c => c.id === connectorId);
-            const connectorName = connector?.display_name || connectorId;
-            const describe = (n: CatalogTreeNode) => {
-                const rows = n.metadata?.row_count;
-                const bytes = n.metadata?.original_size_bytes;
-                const parts = [
-                    typeof rows === 'number' ? `${Number(rows).toLocaleString()} rows` : null,
-                    formatBytes(typeof bytes === 'number' ? bytes : null) || null,
-                ].filter(Boolean);
-                return parts.length > 0 ? `${n.name} (${parts.join(', ')})` : n.name;
-            };
-            const allNames = tables.map(n => n.name).join(', ');
-            const largeList = oversized.map(describe).join('; ');
-            const promptText = t('sidebar.largeTableChatPrompt', {
-                connector: connectorName,
-                tables: allNames,
-                large: largeList,
-                defaultValue:
-                    `I want to load the following table(s) from "${connectorName}": ${allNames}. ` +
-                    `These are too large to import in full: ${largeList}. ` +
-                    `Help me load a filtered, sampled, or aggregated subset instead of the entire table.`,
-            });
-            clearSelection();
-            closePreview();
-            onStartDataLoadingChat(promptText);
-            return;
-        }
+        if (tables.length === 0 || importing) return;
 
         if (opts?.newSession || !activeWorkspace) {
             createNewSession(t('sidebar.batchSessionName', { count: tables.length, defaultValue: `${tables.length} tables` }));
         }
 
-        setImporting(true);
-        setBatchProgress({ current: 0, total: tables.length, name: '' });
+        const loadId = `batch-${generateUUID()}`;
+        closePreview();
+        clearSelection();
+        if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
         let ok = 0;
         let truncated = 0;
         const failed: string[] = [];
-        for (let i = 0; i < tables.length; i++) {
-            const node = tables[i];
-            setBatchProgress({ current: i + 1, total: tables.length, name: node.name });
-            try {
-                const result = await loadTableNode(connectorId, node);
-                ok++;
-                if (result?.truncated) truncated++;
-            } catch {
-                failed.push(node.name);
+        try {
+            for (const [index, node] of tables.entries()) {
+                dispatch(dfActions.startTableLoad({ id: loadId, names: [],
+                    progress: { current: index + 1, total: tables.length, name: node.name } }));
+                try {
+                    const result = await loadTableNode(connectorId, node);
+                    ok++;
+                    if (result?.truncated) truncated++;
+                } catch {
+                    failed.push(node.name);
+                }
             }
+        } finally {
+            dispatch(dfActions.finishTableLoad(loadId));
         }
-        setBatchProgress(null);
-        setImporting(false);
 
         if (ok > 0) {
             dispatch(dfActions.addMessages({
@@ -1513,9 +1461,7 @@ const DataSourceSidebarPanel: React.FC<{
                 }),
             }));
         }
-        closePreview();
-        clearSelection();
-    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, connectors, onStartDataLoadingChat, t]);
+    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, importing, isPinned, t]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
@@ -1569,40 +1515,9 @@ const DataSourceSidebarPanel: React.FC<{
         }
     }, [closePreview, preview?.connectorId]);
 
-    // ── Delete connector ──────────────────────────────────────────────────
-
-    const handleDeleteConnector = useCallback(async () => {
-        if (!deleteTarget) return;
-        setDeleting(true);
-        try {
-            await apiRequest(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
-            setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
-            clearConnectorUiState(deleteTarget.id);
-            onConnectorsChanged?.();
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'success',
-                component: 'data source sidebar',
-                value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
-            }));
-        } catch (e: any) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'data source sidebar',
-                value: e?.apiError?.message || t('sidebar.failedDeleteConnector'),
-            }));
-        } finally {
-            setDeleting(false);
-            setDeleteTarget(null);
-        }
-    }, [clearConnectorUiState, deleteTarget, dispatch, onConnectorsChanged, t]);
-
     // ── Disconnect connector ──────────────────────────────────────────────
-    // For admin (non-deletable) connectors the user can't remove the
-    // definition itself, but they *can* clear stored credentials and the
-    // active loader so they (or the next user on this identity) can
-    // re-authenticate via "Edit connection".
+    // Clear stored credentials and the active loader without removing the
+    // connector definition, so the user can reconnect through its form.
 
     const handleDisconnectConnector = useCallback(async (connector: ConnectorInstance) => {
         try {
@@ -1634,6 +1549,36 @@ const DataSourceSidebarPanel: React.FC<{
         }
     }, [clearConnectorUiState, dispatch, t]);
 
+    const handleConnectConnector = useCallback(async (connector: ConnectorInstance) => {
+        if (connector.auth_mode !== 'none') {
+            onOpenUploadDialog?.(`connector:${connector.id}`);
+            return;
+        }
+        try {
+            await apiRequest(CONNECTOR_ACTION_URLS.CONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id }),
+            });
+            setConnectors(prev => prev.map(c => c.id === connector.id
+                ? { ...c, connected: true }
+                : c));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorConnected', { name: connector.display_name }),
+            }));
+        } catch (e: any) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: e?.apiError?.message || t('sidebar.failedConnectConnector'),
+            }));
+        }
+    }, [dispatch, onOpenUploadDialog, t]);
+
     // ── Render ───────────────────────────────────────────────────────────────
 
     const panelHeaderSx = {
@@ -1656,6 +1601,19 @@ const DataSourceSidebarPanel: React.FC<{
         p: 0,
         color: 'text.secondary',
         '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
+    } as const;
+
+    const panelSubActionSx = {
+        minWidth: 0,
+        p: 0,
+        color: 'text.secondary',
+        fontSize: textVar.xs,
+        fontWeight: 400,
+        lineHeight: 1.2,
+        textTransform: 'none',
+        '& .MuiButton-startIcon': { mr: 0.25 },
+        '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: iconVar.xs },
+        '&:hover': { color: 'primary.main', bgcolor: 'transparent' },
     } as const;
 
     const pinAction = (
@@ -1693,16 +1651,12 @@ const DataSourceSidebarPanel: React.FC<{
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
+            maxHeight: '100%',
             borderLeft: `1px solid ${borderColor.view}`,
             backgroundColor: 'rgba(0, 0, 0, 0.018)',
             overflow: 'hidden',
         }}>
 
-            {/* ── Data Connectors tab ──
-                Sample datasets remain available even when external
-                connectors are disabled; the Add Connector / Link Folder
-                actions route through the upload dialog, which renders
-                the LocalInstallUpgradePanel in disabled mode. */}
             {activeTab === 'sources' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
@@ -1711,7 +1665,7 @@ const DataSourceSidebarPanel: React.FC<{
                     <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
                     </Typography>
-                    <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
+                    {!disableConnectors && <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
                         <IconButton
                             size="small"
                             onClick={(e) => setAddConnectorAnchor(e.currentTarget)}
@@ -1719,10 +1673,10 @@ const DataSourceSidebarPanel: React.FC<{
                         >
                             <AddIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
-                    </Tooltip>
+                    </Tooltip>}
                     <Menu
                         anchorEl={addConnectorAnchor}
-                        open={Boolean(addConnectorAnchor)}
+                        open={!disableConnectors && Boolean(addConnectorAnchor)}
                         onClose={() => setAddConnectorAnchor(null)}
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
@@ -1799,9 +1753,7 @@ const DataSourceSidebarPanel: React.FC<{
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }} ref={setConnectorScrollEl}>
 
                 {loadingConnectors && connectors.length === 0 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                        <CircularProgress size={20} />
-                    </Box>
+                    <InlineLoadingStatus label={t('sidebar.loadingSources', { defaultValue: 'Loading sources...' })} sx={{ px: 1.5, py: 3 }} />
                 )}
 
                 {sortedConnectors
@@ -1831,14 +1783,15 @@ const DataSourceSidebarPanel: React.FC<{
                         : expandedConnectorId === connector.id;
                     const isLoading = serverSearchActive
                         ? (searchingCatalog[connector.id] ?? false)
-                        : catalogState?.status === 'loading';
+                        : catalogState?.status === 'loading'
+                            || (connector.connected && isExpanded && !catalogState);
                     const catalogError = !serverSearchActive && catalogState?.status === 'error'
                         ? catalogState.error
                         : undefined;
                     // The catalog body shows its own spinner while the initial
                     // catalog loads (expanded, no cache yet). Suppress the inline
                     // refresh spinner in that case so we don't render two.
-                    const bodySpinnerVisible = connector.connected && isExpanded && !displayCache && isLoading;
+                    const bodySpinnerVisible = connector.connected && isExpanded && isLoading;
                     const expanded = treeExpanded[connector.id] || [];
 
                     return (
@@ -1854,16 +1807,10 @@ const DataSourceSidebarPanel: React.FC<{
                                 of the connector header's chevron. */}
                             <Box
                                 onClick={() => {
-                                    // No-auth connectors (auth_mode = 'none')
-                                    // are always available — clicking the
-                                    // header just toggles expansion, never
-                                    // opens a credentials dialog.
-                                    const isAlwaysOn = connector.auth_mode === 'none';
-                                    if (connector.connected || isAlwaysOn) {
+                                    if (connector.connected) {
                                         toggleSource(connector.id);
                                     } else {
-                                        // Not connected — open config dialog for this connector
-                                        onOpenUploadDialog?.(`connector:${connector.id}`);
+                                        void handleConnectConnector(connector);
                                     }
                                 }}
                                 sx={{
@@ -1875,9 +1822,15 @@ const DataSourceSidebarPanel: React.FC<{
                                     pr: 0.5,
                                     py: 0.75,
                                     cursor: 'pointer',
-                                    backgroundColor: isExpanded ? 'rgba(25, 118, 210, 0.055)' : 'transparent',
-                                    '&:hover': { bgcolor: isExpanded ? 'rgba(25, 118, 210, 0.085)' : 'rgba(0, 0, 0, 0.045)' },
-                                    '&:hover .connector-row-action': { visibility: 'visible' },
+                                    '--connector-surface': theme => `color-mix(in srgb, ${theme.palette.background.paper} 98.2%, black)`,
+                                    '--connector-row-background': isExpanded
+                                        ? 'color-mix(in srgb, #1976d2 5.5%, var(--connector-surface))'
+                                        : 'var(--connector-surface)',
+                                    backgroundColor: 'var(--connector-row-background)',
+                                    '&:hover': { '--connector-row-background': isExpanded
+                                        ? 'color-mix(in srgb, #1976d2 8.5%, var(--connector-surface))'
+                                        : 'color-mix(in srgb, black 4.5%, var(--connector-surface))' },
+                                    '&:hover .connector-row-actions, &:focus-within .connector-row-actions': { opacity: 1, pointerEvents: 'auto' },
                                     userSelect: 'none',
                                 }}
                             >
@@ -1892,31 +1845,39 @@ const DataSourceSidebarPanel: React.FC<{
                                         pointerEvents: 'none',
                                     }}
                                 >
-                                    {(connector.connected || connector.auth_mode === 'none') && isExpanded
+                                    {connector.connected && isExpanded
                                         ? <ExpandMoreIcon sx={{ fontSize: iconVar.sm }} />
                                         : <ChevronRightIcon sx={{ fontSize: iconVar.sm }} />}
                                 </Box>
                                 {getConnectorIcon(connector.icon || connector.source_type, { sx: { fontSize: iconVar.md, opacity: 0.7 } })}
-                                {/* Status dot — green for live connections
-                                    and for always-on built-ins (which are
-                                    ready by definition), warning for
-                                    disconnected. */}
+                                {/* Status dot — green when this source is available
+                                    to the user and agent, warning when disconnected. */}
                                 <Box sx={{
                                     width: 6,
                                     height: 6,
                                     borderRadius: '50%',
                                     flexShrink: 0,
-                                    bgcolor: (connector.connected || connector.auth_mode === 'none')
+                                    bgcolor: connector.connected
                                         ? 'success.main'
                                         : 'warning.main',
                                 }} />
-                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, fontWeight: 500, color: (connector.connected || connector.auth_mode === 'none') ? 'text.primary' : 'text.secondary' }}>
+                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, minWidth: 0, fontWeight: 500, color: connector.connected ? 'text.primary' : 'text.secondary' }}>
                                     {connector.display_name}
                                 </Typography>
-                                {(connector.connected || connector.auth_mode === 'none') && (
+                                <Box className="connector-row-actions" sx={{
+                                    position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 1,
+                                    display: 'flex', alignItems: 'center', gap: 0, px: 0.25,
+                                    bgcolor: 'var(--connector-row-background)',
+                                    '& .connector-row-action': { width: 24, height: 24, borderRadius: 1 },
+                                    opacity: (isLoading && !bodySpinnerVisible) ? 1 : 0,
+                                    pointerEvents: (isLoading && !bodySpinnerVisible) ? 'auto' : 'none',
+                                    '@media (hover: none)': { opacity: 1, pointerEvents: 'auto' },
+                                }}>
+                                {connector.connected && (
                                     <Tooltip title={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}>
                                         <IconButton
                                             size="small"
+                                            aria-label={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}
                                             className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1928,9 +1889,6 @@ const DataSourceSidebarPanel: React.FC<{
                                             }}
                                             sx={{
                                                 color: 'text.disabled', p: 0.25,
-                                                // Stays visible while a refresh is in-flight so the
-                                                // spinner is always shown.
-                                                visibility: (isLoading && !bodySpinnerVisible) ? 'visible' : 'hidden',
                                             }}
                                         >
                                             {(isLoading && !bodySpinnerVisible)
@@ -1939,61 +1897,54 @@ const DataSourceSidebarPanel: React.FC<{
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {/* Edit connection — available for both user and admin
-                                    connectors. Admin connectors can't be deleted, but
-                                    the user still needs a way to (re)enter credentials
-                                    or trigger a fresh login after disconnecting.
-                                    No-auth connectors have no credentials to configure,
-                                    so we skip this entirely. */}
-                                {connector.auth_mode !== 'none' && (
-                                <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
-                                    <IconButton
-                                        size="small"
-                                        className="connector-row-action"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onOpenUploadDialog?.(`connector:${connector.id}`);
-                                        }}
-                                        sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
-                                    >
-                                        <SettingsOutlinedIcon sx={{ fontSize: iconVar.sm }} />
-                                    </IconButton>
-                                </Tooltip>
-                                )}
-                                {connector.deletable ? (
-                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                {connector.connected ? (
+                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}>
                                         <IconButton
                                             size="small"
-                                            className="connector-row-action"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setDeleteTarget(connector);
-                                            }}
-                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
-                                        >
-                                            <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                ) : connector.connected && connector.auth_mode !== 'none' && (
-                                    /* Admin connector: surface Disconnect in place of Delete.
-                                       Only meaningful when there's an active session/credentials
-                                       to clear; if already disconnected, "Edit connection" is
-                                       the path to re-authenticate.
-                                       No-auth connectors have nothing to disconnect. */
-                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
-                                        <IconButton
-                                            size="small"
+                                            aria-label={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}
                                             className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 void handleDisconnectConnector(connector);
                                             }}
-                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'warning.main' } }}
+                                            sx={{ color: 'text.disabled', p: 0.25, '&:hover': { color: 'warning.main' } }}
                                         >
                                             <LinkOffOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
+                                ) : (
+                                    <Tooltip title={t('sidebar.connectConnector', { defaultValue: 'Connect' })}>
+                                        <IconButton
+                                            size="small"
+                                            aria-label={t('sidebar.connectConnector', { defaultValue: 'Connect' })}
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleConnectConnector(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, '&:hover': { color: 'primary.main' } }}
+                                        >
+                                            <LinkOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                                        </IconButton>
+                                    </Tooltip>
                                 )}
+                                {onOpenUploadDialog && (
+                                    <Tooltip title={t('sidebar.connectorSettings', { defaultValue: 'Connector settings' })}>
+                                        <IconButton
+                                            size="small"
+                                            aria-label={t('sidebar.connectorSettings', { defaultValue: 'Connector settings' })}
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onOpenUploadDialog(`connector:${connector.id}`);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, '&:hover': { color: 'primary.main' } }}
+                                        >
+                                            <SettingsOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                </Box>
                             </Box>
 
                             {/* Catalog tree — only for connected sources.
@@ -2011,19 +1962,20 @@ const DataSourceSidebarPanel: React.FC<{
                             {connector.connected && (
                             <Collapse in={isExpanded} timeout={100}>
                                 <Box sx={{ pl: '6px', pr: 0.5, pb: 1 }}>
-                                    {!displayCache && isLoading && (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, py: 1.5 }}>
-                                            <CircularProgress size={16} />
-                                            {catalogProgress[connector.id] && (
-                                                <Typography
-                                                    variant="caption"
-                                                    color="text.secondary"
-                                                    sx={{ fontSize: textVar.xs, textAlign: 'center', px: 1, wordBreak: 'break-word' }}
-                                                >
-                                                    {catalogProgress[connector.id]}
-                                                </Typography>
-                                            )}
-                                        </Box>
+                                    {catalogError && !isLoading && <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, py: 1 }}>
+                                        <Typography role="alert" sx={{ fontSize: textVar.xs, color: 'error.main', minWidth: 0, overflowWrap: 'anywhere' }}>
+                                            {t('sidebar.discoveryIncomplete', { defaultValue: 'Connected; catalog discovery incomplete.' })} {catalogError}
+                                        </Typography>
+                                        <Tooltip title={t('sidebar.retryDiscovery', { defaultValue: 'Retry discovery' })}>
+                                            <IconButton size="small" aria-label={t('sidebar.retryDiscovery', { defaultValue: 'Retry discovery' })}
+                                                onClick={() => void fetchCatalogTree(connector.id)} sx={{ flexShrink: 0 }}>
+                                                <RefreshIcon sx={{ fontSize: iconVar.sm }} />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Box>}
+                                    {isLoading && (
+                                        <InlineLoadingStatus sx={{ px: 1, py: 1.5 }}
+                                            label={catalogProgress[connector.id] || t('sidebar.loadingTables', { defaultValue: 'Loading tables...' })} />
                                     )}
                                     {displayCache && displayCache.tree.length > 0 && (
                                         <VirtualizedCatalogTree
@@ -2052,7 +2004,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                     const isChecked = selection?.connectorId === connector.id
                                                         && !!selection.nodes[pathKey];
                                                     toggleSelectTable(connector.id, node, !isChecked);
-                                                    if (isChecked) {
+                                                    if (isChecked || connector.source_type === 'AzureBlobDataLoader') {
                                                         closePreviewForTable(connector.id, node);
                                                     } else {
                                                         handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
@@ -2065,11 +2017,13 @@ const DataSourceSidebarPanel: React.FC<{
                                                 const sourceName = node.metadata?._source_name || node.name;
                                                 const item: CatalogTableDragItem = {
                                                     type: CATALOG_TABLE_ITEM,
+                                                    artifactKind: node.metadata?.artifact_kind === 'file' ? 'file' : 'table',
                                                     connectorId: connector.id,
                                                     tableName: sourceName,
                                                     tableId: dsId != null ? String(dsId) : sourceName,
                                                     tablePath: node.path,
                                                     sourceType: connector.source_type,
+                                                    metadata: node.metadata ?? undefined,
                                                 };
                                                 event.dataTransfer.setData('application/json', JSON.stringify(item));
                                                 event.dataTransfer.effectAllowed = 'copy';
@@ -2096,14 +2050,9 @@ const DataSourceSidebarPanel: React.FC<{
                                             sx={{ px: 0.5 }}
                                         />
                                     )}
-                                    {displayCache && displayCache.tree.length === 0 && !isLoading && (
+                                    {displayCache && displayCache.tree.length === 0 && !isLoading && !catalogError && (
                                         <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
                                             {t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
-                                        </Typography>
-                                    )}
-                                    {!displayCache && !isLoading && (
-                                        <Typography sx={{ fontSize: textVar.xs, color: catalogError ? 'error.main' : 'text.disabled', pl: 1, fontStyle: 'italic' }}>
-                                            {catalogError || t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
                                         </Typography>
                                     )}
                                 </Box>
@@ -2119,20 +2068,6 @@ const DataSourceSidebarPanel: React.FC<{
                 Loads sequentially (Kusto's client isn't parallel-safe). */}
             {selection && Object.keys(selection.nodes).length > 0 && (
                 <Box sx={{ flexShrink: 0, borderTop: `1px solid ${borderColor.view}`, boxShadow: '0 -2px 8px -6px rgba(0,0,0,0.12)', px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 1, backgroundColor: 'background.paper' }}>
-                    {batchProgress ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CircularProgress size={14} thickness={5} />
-                            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {t('sidebar.batchLoading', {
-                                    current: batchProgress.current,
-                                    total: batchProgress.total,
-                                    name: batchProgress.name,
-                                    defaultValue: `Loading ${batchProgress.current}/${batchProgress.total}: ${batchProgress.name}`,
-                                })}
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <Typography sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 600 }}>
                                     {t('sidebar.selectedCount', {
@@ -2155,6 +2090,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 variant="contained"
                                 disableElevation
                                 fullWidth
+                                disabled={importing}
                                 onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
                                 sx={{ fontSize: textVar.md, fontWeight: 600, textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
                             >
@@ -2168,14 +2104,13 @@ const DataSourceSidebarPanel: React.FC<{
                                     size="small"
                                     variant="outlined"
                                     fullWidth
+                                    disabled={importing}
                                     onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes), { newSession: true })}
                                     sx={{ fontSize: textVar.sm, textTransform: 'none', py: 0.5, borderRadius: 1.5, color: 'text.secondary', borderColor: borderColor.view, '&:hover': { borderColor: 'primary.main', color: 'primary.main', backgroundColor: 'transparent' } }}
                                 >
                                     {t('sidebar.loadInNewSession', { defaultValue: 'Load in new session' })}
                                 </Button>
                             )}
-                        </>
-                    )}
                 </Box>
             )}
             </Box>
@@ -2187,10 +2122,9 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={{ ...panelHeaderSx, borderBottomColor: sidebarEdge.border }}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
-                    <Box sx={{ flex: 1 }} />
                     <Tooltip title={t('sidebar.newSession', { defaultValue: 'New session' })} placement="bottom">
                         <IconButton
                             size="small"
@@ -2201,34 +2135,44 @@ const DataSourceSidebarPanel: React.FC<{
                             <AddIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip title={t('workspace.importZip')} placement="bottom">
-                        <IconButton
-                            size="small"
-                            aria-label={t('workspace.importZip')}
-                            onClick={() => importRef.current?.click()}
-                            sx={panelHeaderActionSx}
-                        >
-                            <UploadFileIcon sx={{ fontSize: iconVar.md }} />
+                    {pinAction}
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
+                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
-                    <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
-                    <Tooltip title={`${t('sidebar.sortSessions')}: ${({
-                        created_desc: t('sidebar.sortNewest'),
-                        created_asc: t('sidebar.sortOldest'),
-                        updated_desc: t('sidebar.sortRecentlyModified'),
-                        name_asc: t('sidebar.sortName'),
-                    } as Record<SessionSortKey, string>)[sessionSort]}`} placement="bottom">
-                        <IconButton
-                            size="small"
-                            aria-label={t('sidebar.sortSessions')}
+                </Box>
+                <Box sx={{
+                    px: 1.25, py: 0.375,
+                    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+                    borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, whiteSpace: 'nowrap' }}>
+                        <Button
+                            startIcon={<UploadFileIcon />}
+                            aria-label={t('sidebar.importSession', { defaultValue: 'Import session' })}
+                            onClick={() => importRef.current?.click()}
+                            sx={panelSubActionSx}
+                        >
+                            {t('sidebar.importSession', { defaultValue: 'Import session' })}
+                        </Button>
+                        <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                        <Button
+                            startIcon={<SortIcon />}
+                            aria-label={t('sidebar.sortSessionList', { defaultValue: 'Sort sessions' })}
                             aria-haspopup="menu"
                             aria-expanded={sessionSortAnchor ? 'true' : undefined}
                             onClick={(event) => setSessionSortAnchor(event.currentTarget)}
-                            sx={panelHeaderActionSx}
+                            sx={panelSubActionSx}
                         >
-                            <SortIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>
+                            {({
+                                created_desc: t('sidebar.sortNewest'),
+                                created_asc: t('sidebar.sortOldest'),
+                                updated_desc: t('sidebar.sortRecentlyModified'),
+                                name_asc: t('sidebar.sortName'),
+                            } as Record<SessionSortKey, string>)[sessionSort]}
+                        </Button>
+                    </Box>
                     <Menu
                         anchorEl={sessionSortAnchor}
                         open={Boolean(sessionSortAnchor)}
@@ -2236,10 +2180,13 @@ const DataSourceSidebarPanel: React.FC<{
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                     >
+                        <ListSubheader sx={{ fontSize: textVar.xxs, lineHeight: '28px', color: 'text.disabled' }}>
+                            {t('sidebar.sortSessions', { defaultValue: 'Sort' })}
+                        </ListSubheader>
                         {([
-                            ['updated_desc', t('sidebar.sortRecentlyModifiedFirst')],
                             ['created_desc', t('sidebar.sortNewestFirst')],
                             ['created_asc', t('sidebar.sortOldestFirst')],
+                            ['updated_desc', t('sidebar.sortRecentlyModifiedFirst')],
                             ['name_asc', t('sidebar.sortNameAsc')],
                         ] as [SessionSortKey, string][]).map(([key, label]) => (
                             <MenuItem
@@ -2258,12 +2205,6 @@ const DataSourceSidebarPanel: React.FC<{
                             </MenuItem>
                         ))}
                     </Menu>
-                    {pinAction}
-                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
-                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>
                 </Box>
             <ScrollFadeContainer sx={{ overflowX: 'hidden', overscrollBehavior: 'contain' }} resetKey={sessions.length}>
                 {sessions.length === 0 ? (
@@ -2412,21 +2353,15 @@ const DataSourceSidebarPanel: React.FC<{
 
             {/* ── Knowledge tab ── */}
             {activeTab === 'knowledge' && (
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Box
-                    sx={panelHeaderSx}
-                >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
-                        {t('knowledge.title', { defaultValue: 'Agent Knowledge' })}
-                    </Typography>
+            <Box sx={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <WorkflowPanel onCreateSession={createNewSession} headerActions={<>
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
                             <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
                     </Tooltip>
-                </Box>
-                <KnowledgePanel />
+                </>} />
             </Box>
             )}
 
@@ -2468,6 +2403,10 @@ const DataSourceSidebarPanel: React.FC<{
                     const sourceTableRef = buildSourceTableRef(preview.node);
                     const nodeMeta = preview.node.metadata || {};
                     const sourceDescription = nodeMeta.source_description || preview.tableDescription || nodeMeta.description;
+                    if (nodeMeta.artifact_kind === 'file') return <Box sx={{ p: 2 }}>
+                        <Typography sx={{ fontSize: textVar.md, overflowWrap: 'anywhere' }}>{preview.node.name}</Typography>
+                        <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 1 }}>{nodeMeta.file_type?.toUpperCase()} · {formatBytes(nodeMeta.file_size)}</Typography>
+                    </Box>;
                     return (
                         <Box sx={{ p: 2, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
                             <ConnectorTablePreview
@@ -2499,44 +2438,6 @@ const DataSourceSidebarPanel: React.FC<{
                     );
                 })()}
             </Popover>
-
-            {/* Delete connector confirmation dialog */}
-            <Dialog
-                open={!!deleteTarget}
-                onClose={() => { if (!deleting) setDeleteTarget(null); }}
-            >
-                <DialogTitle sx={{ fontSize: textVar.xl, pb: 0.5 }}>
-                    {t('sidebar.deleteConnectorTitle', { defaultValue: 'Delete connector' })}
-                </DialogTitle>
-                <DialogContent>
-                    <DialogContentText sx={{ fontSize: textVar.md }}>
-                        {t('sidebar.deleteConnectorConfirm', {
-                            name: deleteTarget?.display_name,
-                            defaultValue: `Are you sure you want to delete "{{name}}"? Imported data will not be affected.`,
-                        })}
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => setDeleteTarget(null)}
-                        disabled={deleting}
-                        sx={{ textTransform: 'none', fontSize: textVar.sm }}
-                    >
-                        {t('app.cancel', { defaultValue: 'Cancel' })}
-                    </Button>
-                    <Button
-                        onClick={handleDeleteConnector}
-                        disabled={deleting}
-                        color="error"
-                        variant="contained"
-                        sx={{ textTransform: 'none', fontSize: textVar.sm }}
-                    >
-                        {deleting
-                            ? t('sidebar.deletingEllipsis', { defaultValue: 'Deleting...' })
-                            : t('sidebar.deleteConfirmBtn', { defaultValue: 'Delete' })}
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
         </Box>
     );

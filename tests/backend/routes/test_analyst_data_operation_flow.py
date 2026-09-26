@@ -34,8 +34,76 @@ class _Loader:
     def get_safe_params(self):
         return {}
 
+    def preview_data(self, source_table, import_options):
+        from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+        return ExternalDataLoader.format_preview(self.fetch_data_as_arrow(source_table, import_options), import_options)
 
+    def query_data_as_arrow(self, source_table, query, limit):
+        self.calls.append((source_table, {"query": query, "limit": limit}))
+        return pa.table({"total": [30.0]})
+
+
+@pytest.mark.parametrize("aggregate", [False, True, "native"])
 def test_operation_preview_is_bounded_and_display_only(
+    agents_client,
+    tmp_path: Path,
+    aggregate: bool,
+) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    plan = DataOperationPlan(
+        id="plan-1",
+        label="Recent orders",
+        summary="",
+        steps=(ConnectorQueryStep(
+            source_id="warehouse",
+            table_key="public.orders",
+            display_name="Recent orders",
+            source_table="public.orders",
+            query=LoadQuery.from_dict({"limit": 100, **({"native": {"language": "kql", "text": "orders | summarize total=sum(amount)"}} if aggregate == "native" else {"aggregates": [
+                {"op": "sum", "column": "amount", "as": "total"},
+            ]} if aggregate else {})}),
+        ),),
+    )
+    operation = DataOperation(id="operation-1", reason="Choose orders", plans=(plan,))
+    DataOperationRepository.for_workspace(workspace).create(
+        operation,
+        conversation_id="conversation-1",
+    )
+    save_catalog(workspace.user_home, "warehouse", [{
+        "table_key": "public.orders",
+        "name": "orders",
+        "metadata": {"source_description": "Customer orders from the warehouse"},
+    }])
+    loader = _Loader()
+    loader.query_capabilities = lambda: {"native_query_languages": ["kql"]}
+
+    with (
+        patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
+        patch("data_formulator.routes.agents.get_workspace", return_value=workspace),
+        patch("data_formulator.data_connector.resolve_live_loader", return_value=loader),
+    ):
+        response = agents_client.post(
+            "/api/agent/data-operation-preview",
+            json={"operation_id": operation.id, "plan_id": plan.id},
+        )
+
+    assert response.status_code == 200
+    inspection = response.get_json()["data"]["previews"][0]["inspection"]
+    assert inspection["row_limit"] == 50
+    assert inspection["sample_method"] == ("native_query" if aggregate == "native" else "aggregate" if aggregate else "source_head")
+    assert response.get_json()["data"] == {"previews": [{
+        "display_name": "Recent orders",
+        "source_id": "warehouse",
+        "table_description": "Customer orders from the warehouse",
+        "columns": ["total"] if aggregate else ["id", "amount"],
+        "rows": [{"total": 30.0}] if aggregate else [{"id": 1, "amount": 10.0}, {"id": 2, "amount": 20.0}],
+        "inspection": inspection,
+    }]}
+    assert loader.calls == [("public.orders", {"query": plan.steps[0].query.to_dict(), "limit": 50}
+                            if aggregate else {"size": 50})]
+
+
+def test_operation_preview_failure_keeps_table_shape(
     agents_client,
     tmp_path: Path,
 ) -> None:
@@ -57,17 +125,14 @@ def test_operation_preview_is_bounded_and_display_only(
         operation,
         conversation_id="conversation-1",
     )
-    save_catalog(workspace.user_home, "warehouse", [{
-        "table_key": "public.orders",
-        "name": "orders",
-        "metadata": {"source_description": "Customer orders from the warehouse"},
-    }])
-    loader = _Loader()
 
     with (
         patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
         patch("data_formulator.routes.agents.get_workspace", return_value=workspace),
-        patch("data_formulator.data_connector.resolve_live_loader", return_value=loader),
+        patch(
+            "data_formulator.data_connector.resolve_live_loader",
+            side_effect=RuntimeError("Warehouse unavailable"),
+        ),
     ):
         response = agents_client.post(
             "/api/agent/data-operation-preview",
@@ -75,14 +140,12 @@ def test_operation_preview_is_bounded_and_display_only(
         )
 
     assert response.status_code == 200
-    assert response.get_json()["data"] == {"previews": [{
-        "display_name": "Recent orders",
-        "source_id": "warehouse",
-        "table_description": "Customer orders from the warehouse",
-        "columns": ["id", "amount"],
-        "rows": [{"id": 1, "amount": 10.0}, {"id": 2, "amount": 20.0}],
-    }]}
-    assert loader.calls == [("public.orders", {"size": 50})]
+    preview = response.get_json()["data"]["previews"][0]
+    assert preview["display_name"] == "Recent orders"
+    assert preview["source_id"] == "warehouse"
+    assert preview["error"] == "Warehouse unavailable"
+    assert preview["columns"] == []
+    assert preview["rows"] == []
 
 
 @pytest.fixture()
@@ -141,15 +204,16 @@ def test_selected_operation_executes_without_model_turn(
                     "plan_id": plan.id,
                 },
             },
+            buffered=True,
         )
 
     events = [
         json.loads(line)
         for line in response.data.decode("utf-8").splitlines()
     ]
-    assert [event["type"] for event in events] == ["data_operation_result"]
-    assert events[0]["operation"]["status"] == "loaded"
-    assert events[0]["operation"]["result_table_ids"] == ["recent_orders"]
+    assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result"]
+    assert events[-1]["operation"]["status"] == "loaded"
+    assert events[-1]["operation"]["result_table_ids"] == ["recent_orders"]
     get_client.assert_not_called()
     analyst_agent.assert_not_called()
 

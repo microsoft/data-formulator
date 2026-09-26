@@ -8,6 +8,7 @@ can construct tiered context (primary/other tables, focused thread,
 peripheral threads) from the same code.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -68,6 +69,11 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
             lines.append(f"  Analyst: {step['agent_response']}")
         if step.get("user_answer"):
             lines.append(f"  User reply: {step['user_answer']}")
+        if step.get("workflow"):
+            lines.append("  Workflow status and outputs: " + json.dumps(step["workflow"], ensure_ascii=False))
+        definition = step.get("workflow_definition")
+        if isinstance(definition, str) and definition:
+            lines.append("  Proposed workflow definition (conversation context, not execution state):\n" + definition[:48000])
         operation = step.get("data_operation")
         if operation:
             options = ", ".join(operation.get("options") or [])
@@ -82,6 +88,9 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
                     "  Loaded workspace tables: "
                     + ", ".join(operation["result_tables"])
                 )
+            if operation.get("result_references"):
+                lines.append("  Virtual workspace sources (not compute-ready; rows remain remote): "
+                             + json.dumps(operation["result_references"], ensure_ascii=False))
         if step.get("agent_thinking"):
             lines.append(f"  Agent thinking: {step['agent_thinking']}")
         if step.get("display_instruction"):
@@ -159,7 +168,7 @@ def build_lightweight_table_context(
     """Build compact table context with schema, metadata, value samples, and rows.
 
     When ``primary_tables`` is provided, tables are grouped into
-    [PRIMARY TABLE(S)] and [OTHER AVAILABLE TABLES] sections.
+    [PRIMARY ANALYSIS INPUTS] and [OTHER ANALYSIS INPUTS] sections.
     """
     table_desc_cache, col_desc_cache, import_opts_cache = _get_workspace_metadata_lookups(workspace)
     table_extra_cache: dict[str, list[str]] = {}
@@ -263,7 +272,7 @@ def build_lightweight_table_context(
             return _client_schema_section(table, label)
 
     load_hint = (
-        "\nThe tables above are the data already loaded into this workspace, and the "
+        "\nThe analysis input tables above are already materialized and are the "
         "only data you can read directly. Anything not listed here has not been loaded "
         "yet: find it in a connected source and propose loading it before relying on it.\n"
         "To load a table in code: pd.read_parquet('file.parquet') or "
@@ -278,12 +287,11 @@ def build_lightweight_table_context(
 
         sections = []
         if primary_tables_list:
-            header = "[PRIMARY TABLE]" if len(primary_tables_list) == 1 else "[PRIMARY TABLES]"
             primary_parts = [_table_section(t) for t in primary_tables_list]
-            sections.append(header + "\n\n" + "\n\n".join(primary_parts))
+            sections.append("[PRIMARY ANALYSIS INPUTS]\n\n" + "\n\n".join(primary_parts))
         if other_tables_list:
             other_parts = [_table_section(t) for t in other_tables_list]
-            sections.append("[OTHER AVAILABLE TABLES]\n\n" + "\n\n".join(other_parts))
+            sections.append("[OTHER ANALYSIS INPUTS]\n\n" + "\n\n".join(other_parts))
         return "\n\n".join(sections) + "\n" + load_hint
 
     sections = [_table_section(table) for table in input_tables]
@@ -375,6 +383,10 @@ def handle_read_catalog_metadata(
     if not user_home:
         return "Cannot read catalog metadata: user home not available."
 
+    from data_formulator.datalake.connector_preferences import connector_is_enabled
+    if not connector_is_enabled(user_home, source_id):
+        return f"Source '{source_id}' is disconnected."
+
     # Surface zero-config admin connectors (e.g. sample_datasets) on first use.
     ensure_no_auth_catalogs_cached(user_home)
 
@@ -425,8 +437,27 @@ def handle_read_catalog_metadata(
 
     for field in ("schema", "database", "row_count"):
         val = meta.get(field)
-        if val:
+        if val is not None:
             lines.append(f"{field}: {val}")
+
+    inspection = meta.get("inspection") or {}
+    if inspection:
+        details = {key: inspection[key] for key in (
+            "schema_source", "schema_complete", "row_count_status", "sample_status",
+            "sample_method", "filtered", "row_limit", "columns_omitted", "values_truncated",
+        ) if key in inspection}
+        lines.append("Inspection: " + json.dumps(details))
+        if inspection.get("row_count_status") == "unknown":
+            lines.append("Row count not collected; no full count scan was requested.")
+        if inspection.get("schema_source") == "inferred":
+            lines.append("Schema inferred from a bounded sample; later records may differ.")
+
+    sample = meta.get("sample_rows")
+    if sample is not None:
+        sample_text = json.dumps(sample[:TABLE_SAMPLE_MAX_ROWS], default=str, ensure_ascii=False)
+        shortened = len(sample_text) > TABLE_SAMPLE_CHAR_LIMIT
+        lines.append("Sample rows (not necessarily representative): " + sample_text[:TABLE_SAMPLE_CHAR_LIMIT]
+                     + ("... [sample text truncated]" if shortened else ""))
 
     table_desc = meta.get("description", "") or meta.get("source_description", "")
     if table_desc:

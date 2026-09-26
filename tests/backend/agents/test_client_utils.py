@@ -27,6 +27,199 @@ pytestmark = [pytest.mark.backend]
 # ---------------------------------------------------------------------------
 
 class TestModelNamePrefixing:
+    def test_chatgpt_uses_private_native_responses_transport(self, monkeypatch):
+        import base64
+        import httpx
+        import json
+        from litellm.llms.chatgpt.authenticator import Authenticator
+        from litellm.llms.custom_httpx.http_handler import HTTPHandler
+
+        def forbid_file_auth(*args, **kwargs):
+            raise AssertionError("Shared file authentication must not run")
+
+        monkeypatch.setattr(Authenticator, "__init__", forbid_file_auth)
+        monkeypatch.setattr(client_utils.litellm, "ChatGPTConfig", client_utils.litellm.ChatGPTConfig)
+        original_config = client_utils.litellm.ChatGPTResponsesAPIConfig
+        monkeypatch.setattr(client_utils.litellm, "ChatGPTResponsesAPIConfig", original_config)
+        requests = []
+
+        def respond(handler, url, **kwargs):
+            requests.append((url, kwargs))
+            return httpx.Response(200, request=httpx.Request("POST", url),
+                headers={"content-type": "text/event-stream"}, text="data: " + json.dumps({
+                    "type": "response.completed", "response": {
+                        "id": "resp_test", "object": "response", "created_at": 1, "status": "completed",
+                        "model": "gpt-5.4", "output": [{"type": "message", "id": "msg_test",
+                            "role": "assistant", "status": "completed", "content": [
+                                {"type": "output_text", "text": "ok", "annotations": []}]}],
+                        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                    },
+                }) + "\n\n")
+
+        monkeypatch.setattr(HTTPHandler, "post", respond)
+        for owner in ("alice", "bob"):
+            claims = base64.urlsafe_b64encode(json.dumps({"https://api.openai.com/auth": {
+                "chatgpt_account_id": owner}}).encode()).decode().rstrip("=")
+            token = "header." + claims + ".signature"
+            client = Client("chatgpt", "gpt-5.4", api_key=token, chatgpt_account_id=owner)
+            response = client.get_completion([{"role": "user", "content": "Hello"}])
+            assert response.choices[0].message.content == "ok"
+            url, options = requests[-1]
+            assert url == "https://chatgpt.com/backend-api/codex/responses"
+            headers = {key.lower(): value for key, value in options["headers"].items()}
+            assert headers["authorization"] == "Bearer " + token
+            assert headers["chatgpt-account-id"] == owner
+            body = options["json"]
+            assert body["model"] == "gpt-5.4"
+            assert body["store"] is False
+            assert body["stream"] is True
+            assert not {"max_tokens", "max_output_tokens", "max_completion_tokens"} & body.keys()
+
+    def test_responses_stream_survives_analyst_reconstruction(self, monkeypatch):
+        import json
+        from unittest.mock import Mock
+        from data_formulator.analyst.agent import AnalystAgent
+        from data_formulator.agents.agent_utils import attach_reasoning_content
+
+        reasoning = {"type": "reasoning", "id": "rs_stream", "summary": [], "encrypted_content": "opaque-stream"}
+        call = {"type": "function_call", "id": "fc_stream", "call_id": "call_stream",
+                "name": "query", "arguments": ""}
+        events = [
+            {"type": "response.output_text.delta", "delta": "Checking data"},
+            {"type": "response.output_item.added", "output_index": 1, "item": call},
+            {"type": "response.function_call_arguments.delta", "output_index": 1, "delta": '{"sql":'},
+            {"type": "response.function_call_arguments.delta", "output_index": 1, "delta": '"select 1"}'},
+            {"type": "response.completed", "response": {"output": [reasoning, call],
+                "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}},
+        ]
+        responses = Mock(side_effect=lambda **kwargs: iter(json.dumps(event) for event in events))
+        monkeypatch.setattr(client_utils.litellm, "responses", responses)
+        client = Client("github_copilot", "test-model", api_key="test-key",
+                        api_base="https://api.githubcopilot.com", api_type="responses")
+        messages = [{"role": "user", "content": "Query"}]
+        tools = [{"type": "function", "function": {"name": "query", "parameters": {"type": "object"}}}]
+        chunks = list(client.get_completion_with_tools(messages, tools, stream=True))
+        assert any(getattr(chunk, "usage", None) and chunk.usage.total_tokens == 15 for chunk in chunks)
+        analyst = AnalystAgent.__new__(AnalystAgent)
+        monkeypatch.setattr(analyst, "_open_stream", lambda messages, tools: iter(chunks))
+        monkeypatch.setattr(analyst, "_forward_stream_delta", lambda *args: iter(()))
+        with pytest.raises(StopIteration) as finished:
+            next(analyst._stream_llm(messages, tools))
+        message = finished.value.value.choices[0].message
+        assert message.content == "Checking data"
+        assert message.tool_calls[0].id == "call_stream"
+        assert message.tool_calls[0].function.arguments == '{"sql":"select 1"}'
+        assert attach_reasoning_content({"role": "assistant"}, message)["reasoning_items"] == [reasoning]
+        assert responses.call_args.kwargs["stream"] is True
+
+    def test_responses_failure_does_not_fall_back_to_chat(self, monkeypatch):
+        from unittest.mock import Mock
+
+        responses = Mock(side_effect=RuntimeError("provider unavailable"))
+        monkeypatch.setattr(client_utils.litellm, "responses", responses)
+        client = Client("openai", "test-model", api_key="test-key", api_type="responses")
+        chat = Mock(side_effect=AssertionError("Must not fall back to chat"))
+        monkeypatch.setattr(client, "_dispatch_chat_completions", chat)
+        with pytest.raises(Exception, match="provider unavailable"):
+            client.get_completion([{"role": "user", "content": "Hello"}])
+        assert responses.call_count == 1
+        chat.assert_not_called()
+
+    def test_responses_stream_error_does_not_restart_generation(self, monkeypatch):
+        import json
+        from unittest.mock import Mock
+
+        def broken_stream():
+            yield json.dumps({"type": "response.output_text.delta", "delta": "Partial"})
+            raise RuntimeError("stream interrupted")
+
+        responses = Mock(side_effect=lambda **kwargs: broken_stream())
+        monkeypatch.setattr(client_utils.litellm, "responses", responses)
+        client = Client("openai", "test-model", api_key="test-key", api_type="responses")
+        with pytest.raises(Exception, match="stream interrupted"):
+            list(client.get_completion([{"role": "user", "content": "Hello"}], stream=True))
+        assert responses.call_count == 1
+
+    def test_explicit_chat_routing_skips_responses_bridge(self, monkeypatch):
+        from unittest.mock import Mock
+
+        completion = Mock()
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("github_copilot", "test-model", api_key="test-key",
+                        api_base="https://api.githubcopilot.com", api_type="chat_completions")
+        client.ping()
+        assert completion.call_args.kwargs["_skip_responses_api_bridge"] is True
+        assert completion.call_args.kwargs["model"] == "test-model"
+
+    @pytest.mark.parametrize("endpoint", ["openai", "azure", "github_copilot"])
+    def test_responses_transport_preserves_client_identity_and_contract(self, monkeypatch, endpoint):
+        from unittest.mock import Mock
+        from litellm.types.llms.openai import ResponsesAPIResponse
+
+        responses = Mock(return_value=ResponsesAPIResponse(
+            id="resp_test", created_at=1, model="test-deployment", object="response",
+            status="completed", parallel_tool_calls=True, tool_choice="auto", tools=[],
+            output=[{"type": "reasoning", "id": "rs_test", "summary": [], "encrypted_content": "opaque-test"},
+                    {"type": "function_call", "id": "fc_test", "call_id": "call_test", "name": "query",
+                     "arguments": '{"sql":"select 1"}', "status": "completed"}],
+            usage={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+        ))
+        monkeypatch.setattr(client_utils.litellm, "responses", responses)
+        client = Client.from_config({"endpoint": endpoint, "model": "test-deployment", "api_key": "test-key",
+                                     "api_base": "https://api.example.test", "api_type": "responses"})
+        original_model = client.model
+        original_params = dict(client.params)
+        tools = [{"type": "function", "function": {"name": "query", "parameters": {"type": "object"}}}]
+        messages = [{"role": "user", "content": "Query the data"}]
+        reply = client.get_completion_with_tools(messages, tools, max_tokens=64, tool_choice="auto")
+        assert reply.choices[0].message.tool_calls[0].id == "call_test"
+        assert reply.usage.total_tokens == 15
+        assert responses.call_args.kwargs["store"] is False
+        assert responses.call_args.kwargs["max_output_tokens"] == 64
+        assert responses.call_args.kwargs["tool_choice"] == "auto"
+        assert "reasoning.encrypted_content" in responses.call_args.kwargs["include"]
+        messages.extend([reply.choices[0].message.model_dump(exclude_none=True),
+                         {"role": "tool", "tool_call_id": "call_test", "content": "1"}])
+        client.get_completion_with_tools(messages, tools)
+        inputs = responses.call_args.kwargs["input"]
+        assert any(item.get("type") == "reasoning" and item.get("encrypted_content") == "opaque-test" for item in inputs)
+        assert any(item.get("type") == "function_call" and item["call_id"] == "call_test" for item in inputs)
+        assert any(item.get("type") == "function_call_output" and item["call_id"] == "call_test"
+                   and item["output"] == [{"type": "input_text", "text": "1"}] for item in inputs)
+        assert client.model == original_model
+        assert client.params == original_params
+
+        client.ping()
+        assert responses.call_args.kwargs["max_output_tokens"] == 3
+
+    def test_copilot_uses_explicit_credentials_without_shared_authenticator(self, monkeypatch):
+        from unittest.mock import Mock
+        from litellm.llms.github_copilot.authenticator import Authenticator
+
+        authenticate = Mock(side_effect=AssertionError("Shared token cache must not be used"))
+        monkeypatch.setattr(Authenticator, "get_api_key", authenticate)
+        completion = Mock(return_value="response")
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("github_copilot", "gpt-4.1", api_key="private-copilot", api_base="https://api.githubcopilot.com")
+        messages = [{"role": "user", "content": "hello"}]
+        tools = [{"type": "function", "function": {"name": "query", "parameters": {"type": "object"}}}]
+        assert client._dispatch(messages=messages, stream=True, params=client.params, tools=tools) == "response"
+        kwargs = completion.call_args.kwargs
+        assert kwargs["model"] == "gpt-4.1"
+        assert kwargs["custom_llm_provider"] == "openai"
+        assert kwargs["api_key"] == "private-copilot"
+        assert kwargs["api_base"] == "https://api.githubcopilot.com"
+        assert kwargs["extra_headers"]["X-Initiator"] == "agent"
+        assert kwargs["tools"] == tools
+        authenticate.assert_not_called()
+
+    @pytest.mark.parametrize("model", ["openai/gpt-4o", "openrouter/openai/gpt-4o"])
+    def test_openrouter_preserves_provider_namespace(self, model):
+        client = Client("openrouter", model, api_key="test-key")
+        assert client.model == "openrouter/openai/gpt-4o"
+        assert client.params["api_base"] == "https://openrouter.ai/api/v1"
+        assert client.params["api_key"] == "test-key"
+
     def test_gemini_prefix_added_when_missing(self):
         c = Client("gemini", "gemini-1.5-pro", api_key="k")
         assert c.model == "gemini/gemini-1.5-pro"
@@ -54,6 +247,59 @@ class TestModelNamePrefixing:
     def test_openai_model_prefixed(self):
         c = Client("openai", "gpt-4o", api_key="k")
         assert c.model == "openai/gpt-4o"
+
+
+# ---------------------------------------------------------------------------
+# OrcaRouter endpoint
+# ---------------------------------------------------------------------------
+
+class TestOrcaRouter:
+    def test_default_base_url(self):
+        c = Client("orcarouter", "auto", api_key="k")
+        assert c.params["api_base"] == "https://api.orcarouter.ai/v1"
+
+    def test_custom_base_url_strips_trailing_slash(self):
+        c = Client("orcarouter", "auto", api_key="k",
+                   api_base="https://api.orcarouter.ai/v1/")
+        assert c.params["api_base"] == "https://api.orcarouter.ai/v1"
+
+    def test_uses_openai_compatible_provider(self):
+        c = Client("orcarouter", "auto", api_key="k")
+        assert c.params["custom_llm_provider"] == "openai"
+
+    def test_model_prefixed_with_orcarouter_namespace(self):
+        """The ``orcarouter/`` prefix is preserved by LiteLLM (unlike
+        ``openai/``, which it strips) so OrcaRouter's gateway can route it."""
+        c = Client("orcarouter", "auto", api_key="k")
+        assert c.model == "orcarouter/auto"
+
+    def test_model_prefix_not_doubled(self):
+        c = Client("orcarouter", "orcarouter/auto", api_key="k")
+        assert c.model == "orcarouter/auto"
+
+
+# ---------------------------------------------------------------------------
+# Cheaper Inference endpoint
+# ---------------------------------------------------------------------------
+
+class TestCheaperInference:
+    def test_default_base_url(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k")
+        assert c.params["api_base"] == "https://api.cheaperinference.com/v1"
+
+    def test_custom_base_url_strips_trailing_slash(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k",
+                   api_base="https://api.cheaperinference.com/v1/")
+        assert c.params["api_base"] == "https://api.cheaperinference.com/v1"
+
+    def test_uses_openai_compatible_provider(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k")
+        assert c.params["custom_llm_provider"] == "openai"
+
+    def test_model_id_kept_bare(self):
+        """Cheaper Inference model ids are bare, so no prefix is added."""
+        c = Client("cheaperinference", "claude-sonnet-5", api_key="k")
+        assert c.model == "claude-sonnet-5"
 
 
 # ---------------------------------------------------------------------------
@@ -89,10 +335,25 @@ class TestOllamaApiBaseNormalisation:
 # ---------------------------------------------------------------------------
 
 class TestAzureCredentialSelection:
-    def test_desktop_keyless_model_uses_azure_cli_credential(self, monkeypatch):
-        cli_credential = object()
+    def test_server_keyless_model_keeps_default_credential(self, monkeypatch):
+        credential = object()
+        monkeypatch.delenv("DATA_FORMULATOR_DESKTOP", raising=False)
+        monkeypatch.setattr(client_utils, "DefaultAzureCredential", lambda: credential)
+        monkeypatch.setattr(client_utils, "get_bearer_token_provider", lambda selected, scope: selected)
+        monkeypatch.setattr(client_utils, "get_desktop_azure_token_provider", lambda: pytest.fail("desktop auth used"))
+        client = Client("azure", "deployment", api_base="https://example.openai.azure.com")
+        assert client.params["azure_ad_token_provider"] is credential
+
+    def test_desktop_api_key_does_not_use_cli(self, monkeypatch):
         monkeypatch.setenv("DATA_FORMULATOR_DESKTOP", "1")
-        monkeypatch.setattr(client_utils, "AzureCliCredential", lambda: cli_credential)
+        monkeypatch.setattr(client_utils, "get_desktop_azure_token_provider", lambda: pytest.fail("CLI auth used"))
+        client = Client("azure", "deployment", api_key="key", api_base="https://example.openai.azure.com")
+        assert "azure_ad_token_provider" not in client.params
+
+    def test_desktop_keyless_model_uses_azure_cli_credential(self, monkeypatch):
+        token_provider = object()
+        monkeypatch.setenv("DATA_FORMULATOR_DESKTOP", "1")
+        monkeypatch.setattr(client_utils, "get_desktop_azure_token_provider", lambda: token_provider)
         monkeypatch.setattr(
             client_utils,
             "DefaultAzureCredential",
@@ -110,10 +371,7 @@ class TestAzureCredentialSelection:
             api_base="https://example.openai.azure.com",
         )
 
-        assert client.params["azure_ad_token_provider"] == (
-            cli_credential,
-            "https://cognitiveservices.azure.com/.default",
-        )
+        assert client.params["azure_ad_token_provider"] is token_provider
 
     def test_blank_api_version_is_not_defaulted(self):
         client = Client(

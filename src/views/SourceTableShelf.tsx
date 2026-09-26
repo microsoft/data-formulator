@@ -15,6 +15,7 @@ import React, { FC, memo, useEffect, useMemo, useState } from 'react';
 import {
     Box,
     Button,
+    ButtonBase,
     ClickAwayListener,
     Collapse,
     CircularProgress,
@@ -26,6 +27,7 @@ import {
     Popper,
     Switch,
     TextField,
+    Tooltip,
     Typography,
     SxProps,
     useTheme,
@@ -33,7 +35,7 @@ import {
 import { alpha } from '@mui/material/styles';
 
 import AddIcon from '@mui/icons-material/Add';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -46,12 +48,18 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { DictTable } from '../components/ComponentType';
-import { deleteWorkspace } from '../app/workspaceService';
+import { InlineLoadingStatus } from '../components/FunComponents';
+import {
+    deleteWorkspace,
+    deleteWorkspaceFile,
+    type WorkspaceFile,
+} from '../app/workspaceService';
 import { useDataRefresh } from '../app/useDataRefresh';
 import { ViewBorderStyle } from '../app/tokens';
 import { StreamIcon, TableIcon } from '../icons';
-import { buildTableCard } from './DataThreadCards';
+import { ArtifactMenuButton, buildTableCard, ThreadArtifactCard } from './DataThreadCards';
 import { RefreshDataDialog } from './RefreshDataDialog';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { iconVar, textVar } from '../app/layout';
@@ -381,11 +389,13 @@ const RenameTablePopup = memo<{
 export const SourceTableShelf: FC<{
     /** The workspace input tables, in display order, materialized for the cards. */
     inputTables: DictTable[];
+    /** Persisted uploads that were not converted into tables. */
+    workspaceFiles: WorkspaceFile[];
     /** Tables highlighted by the current focus (computed once in DataThread). */
     highlightedTableIds: string[];
     focusedTableId?: string;
     sx?: SxProps;
-}> = function ({ inputTables, highlightedTableIds, focusedTableId, sx }) {
+}> = function ({ inputTables, workspaceFiles, highlightedTableIds, focusedTableId, sx }) {
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -393,11 +403,16 @@ export const SourceTableShelf: FC<{
     const { manualRefresh } = useDataRefresh();
 
     const tables = useSelector(dfSelectors.getAllTables);
-    const inferredTableNames = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
+    const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
+    const workspaceItemOrder = useSelector((state: DataFormulatorState) => state.workspaceItemOrder);
 
     const [sectionExpanded, setSectionExpanded] = useState(true);
     const [expanded, setExpanded] = useState(false);
+    const [expandedImportGroups, setExpandedImportGroups] = useState<string[]>([]);
+    const [importProvenanceChecked, setImportProvenanceChecked] = useState<string>();
     const [addDataDialogOpen, setAddDataDialogOpen] = useState(false);
 
     // Metadata popup state
@@ -408,6 +423,31 @@ export const SourceTableShelf: FC<{
     // Table menu state
     const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
     const [selectedTableForMenu, setSelectedTableForMenu] = useState<DictTable | null>(null);
+    const [fileMenuAnchorEl, setFileMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [selectedArtifactForMenu, setSelectedArtifactForMenu] = useState<{
+        remove: () => void;
+        removeLabel: string;
+    } | null>(null);
+    const [deletingFileName, setDeletingFileName] = useState<string | null>(null);
+
+    useEffect(() => {
+        const workspaceId = activeWorkspace?.id;
+        if (!workspaceId || !externalReferences?.length || importProvenanceChecked === workspaceId) return;
+        const candidates = inputTables.filter(table => table.source?.type === 'database' && !table.source.importedFrom);
+        if (!candidates.length) return;
+        let cancelled = false;
+        void apiRequest(getUrls().LIST_TABLES, { method: 'GET', headers: { 'X-Workspace-Id': workspaceId } }).then(({ data }) => {
+            if (cancelled) return;
+            setImportProvenanceChecked(workspaceId);
+            for (const table of candidates) {
+                const listing = (data.tables || []).find((item: any) => item.name === table.id);
+                if (!listing) continue;
+                const source = buildDictTableFromWorkspace(listing, table.source).source;
+                if (source?.importedFrom) dispatch(dfActions.updateTableSource({ tableId: table.id, source }));
+            }
+        }).catch(() => { if (!cancelled) setImportProvenanceChecked(workspaceId); });
+        return () => { cancelled = true; };
+    }, [activeWorkspace?.id, externalReferences, inputTables, importProvenanceChecked, dispatch]);
 
     // Refresh data dialog state
     const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
@@ -465,6 +505,31 @@ export const SourceTableShelf: FC<{
     const handleCloseTableMenu = () => {
         setTableMenuAnchorEl(null);
         setSelectedTableForMenu(null);
+    };
+
+    const handleCloseFileMenu = () => {
+        setFileMenuAnchorEl(null);
+        setSelectedArtifactForMenu(null);
+    };
+
+    const handleDeleteFile = async (workspaceFile: WorkspaceFile) => {
+        setDeletingFileName(workspaceFile.name);
+        try {
+            await deleteWorkspaceFile(workspaceFile.name);
+            dispatch(dfActions.removeFileNodes(workspaceFile.name));
+        } catch (error) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: t('dataThread.workspace', { defaultValue: 'Workspace' }),
+                value: t('dataThread.failedDeleteFile', {
+                    name: workspaceFile.name,
+                    defaultValue: `Failed to delete ${workspaceFile.name}`,
+                }),
+            }));
+        } finally {
+            setDeletingFileName(null);
+        }
     };
 
     const handleOpenRefreshDialog = (table: DictTable) => {
@@ -609,10 +674,56 @@ export const SourceTableShelf: FC<{
 
     // A long list drowns the threads beside it, so show only the first few by
     // default — the focused table always stays visible, even below the cut.
-    const collapsible = inputTables.length > SHELF_VISIBLE_LIMIT;
+    const importsByReference = new Map<string, DictTable[]>();
+    const nestedTableIds = new Set<string>();
+    const importParent = (table: DictTable, visited = new Set<string>()): string | undefined => {
+        if (visited.has(table.id)) return undefined;
+        visited.add(table.id);
+        if ((table.dataProvenance?.inputSources.length || 0) > 1
+            || (table.derive?.source.length || 0) > 1 || (table.derive?.inputSources?.length || 0) > 1) return undefined;
+        const origin = table.source?.importedFrom;
+        if (origin) {
+            const matches = (externalReferences || []).filter(reference => reference.connectorId === origin.connectorId && reference.tableKey === origin.tableKey);
+            return matches.length === 1 ? matches[0].id : undefined;
+        }
+        const inputs = table.dataProvenance?.inputSources || table.derive?.inputSources;
+        if (!inputs?.length || inputs[0].kind !== 'data' || table.dataProvenance?.stale) return undefined;
+        const manifestId = /^data:(?:([a-f0-9]{64}):)?([^:]+)$/.exec(inputs[0].id);
+        if (!manifestId) return undefined;
+        const sourceHash = inputs[0].contentHash || manifestId[1];
+        if (!sourceHash || (manifestId[1] && manifestId[1] !== sourceHash)) return undefined;
+        let sourceId: string;
+        try { sourceId = decodeURIComponent(manifestId[2]); } catch { return undefined; }
+        const sources = tables.filter(candidate => candidate.id === sourceId || candidate.virtual?.tableId === sourceId);
+        return sources.length === 1 && sources[0].contentHash === sourceHash && !sources[0].dataProvenance?.stale
+            ? importParent(sources[0], visited) : undefined;
+    };
+    for (const table of inputTables) {
+        const parentId = importParent(table);
+        if (!parentId) continue;
+        const siblings = importsByReference.get(parentId) || [];
+        siblings.push(table);
+        importsByReference.set(parentId, siblings);
+        nestedTableIds.add(table.id);
+    }
+    for (const children of importsByReference.values()) {
+        children.sort((first, second) => {
+            const firstIndex = workspaceItemOrder.indexOf(`shelf-card-${first.id}`);
+            const secondIndex = workspaceItemOrder.indexOf(`shelf-card-${second.id}`);
+            return (firstIndex < 0 ? Infinity : firstIndex) - (secondIndex < 0 ? Infinity : secondIndex);
+        });
+    }
+    const topLevelTables = inputTables.filter(table => !nestedTableIds.has(table.id));
+    const collapsible = topLevelTables.length > SHELF_VISIBLE_LIMIT;
     const visibleTables = !collapsible || expanded
-        ? inputTables
-        : inputTables.filter((tbl, index) => index < SHELF_VISIBLE_LIMIT || tbl.id === focusedTableId);
+        ? topLevelTables
+        : topLevelTables.filter((tbl, index) => index < SHELF_VISIBLE_LIMIT || tbl.id === focusedTableId);
+
+    useEffect(() => {
+        const selectedTableId = focusedTableId || (focusedId?.type === 'table' ? focusedId.tableId : undefined);
+        const parent = [...importsByReference].find(([, children]) => children.some(table => table.id === selectedTableId))?.[0];
+        if (parent) setExpandedImportGroups(previous => previous.includes(parent) ? previous : [...previous, parent]);
+    }, [focusedTableId, focusedId, inputTables, externalReferences, tables]);
 
     // One row per table, laid out exactly like a DataThread timeline row: a
     // gutter carrying the table's icon with rail segments above and below it,
@@ -649,7 +760,6 @@ export const SourceTableShelf: FC<{
                 {buildTableCard({
                     tableId: tbl.id,
                     tables,
-                    inferredDisplayName: inferredTableNames.find(info => info.tableId === tbl.id)?.displayName,
                     // The shelf never shows artifacts — charts live in the thread
                     // started from the table.
                     chartElements: [],
@@ -662,20 +772,164 @@ export const SourceTableShelf: FC<{
                     collapsed: false,
                     dispatch,
                     handleOpenTableMenu,
-                    primaryBgColor: theme.palette.primary.bgcolor,
                     t,
                     showOriginalName: true,
                 })}
             </Box>
         </Box>;
-    }), [visibleTables, tables, inferredTableNames, highlightedTableIds, focusedTableId, theme, t]);
+    }), [visibleTables, tables, highlightedTableIds, focusedTableId, theme, t]);
 
-    return <Box sx={{
+    const workspaceArtifacts = [...workspaceFiles.map(workspaceFile => {
+        const fileName = workspaceFile.temporary ? workspaceFile.name.replace(/^scratch\//, '') : workspaceFile.name;
+        return {
+            key: `workspace-file-${workspaceFile.name}`,
+            artifactType: 'file' as const,
+            title: workspaceFile.display_name || fileName,
+            notes: workspaceFile.display_name && workspaceFile.display_name !== fileName ? fileName : undefined,
+            selected: focusedId?.type === 'file' && focusedId.fileName === workspaceFile.name,
+            deleting: deletingFileName === workspaceFile.name,
+            open: () => dispatch(dfActions.setFocused({ type: 'file', fileName: workspaceFile.name })),
+            remove: () => { void handleDeleteFile(workspaceFile); },
+            removeLabel: t('dataThread.deleteFile', { defaultValue: 'Delete file' }),
+        };
+    }), ...(externalReferences || []).map(reference => {
+        let title = reference.displayName || reference.sourceTable.name;
+        if (title === reference.sourceTable.name) {
+            try { title = new URL(title).pathname || title; } catch {}
+            title = title.split(/[\\/]/).filter(Boolean).pop() || reference.sourceTable.name;
+        }
+        return {
+            key: reference.id,
+            artifactType: 'table' as const,
+            title,
+            notes: reference.sourceTable.name !== title ? reference.sourceTable.name : undefined,
+            selected: focusedId?.type === 'external-table' && focusedId.referenceId === reference.id,
+            deleting: false,
+            open: () => dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id })),
+            remove: () => { dispatch(dfActions.removeExternalTableReference(reference.id)); },
+            removeLabel: t('externalReference.remove', { defaultValue: 'Remove reference' }),
+        };
+    })];
+
+    const artifactCards = workspaceArtifacts.map(artifact => {
+        const importedTables = importsByReference.get(artifact.key) || [];
+        const importsExpanded = expandedImportGroups.includes(artifact.key);
+        return (
+        <Box key={artifact.key} data-workspace-item={artifact.key} sx={{ display: 'flex', flexDirection: 'row' }}>
+            <Box sx={{
+                width: GUTTER_WIDTH, flexShrink: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+            }}>
+                <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                <Box sx={{ flexShrink: 0, zIndex: 1, bgcolor: 'white', display: 'flex' }}>
+                    {artifact.artifactType === 'table'
+                        ? <TableIcon sx={{ width: 14, height: 14, color: artifact.selected ? 'primary.main' : 'rgba(0,0,0,0.15)' }} />
+                        : <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: artifact.selected ? 'primary.main' : 'rgba(0,0,0,0.35)' }} />}
+                </Box>
+                <Box aria-hidden sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: GUTTER_GAP, pr: CARD_INSET_RIGHT }}>
+                <Box sx={{ width: '100%', minWidth: 0,
+                    ...(artifact.deleting ? {
+                        opacity: 0.55, '& .artifact-actions': { opacity: 1 },
+                    } : {}),
+                }}>
+                <ThreadArtifactCard
+                    artifactType={artifact.artifactType}
+                    title={artifact.title}
+                    notes={artifact.artifactType === 'table' ? undefined : artifact.notes}
+                    selected={artifact.selected}
+                    onClick={artifact.open}
+                    actions={artifact.deleting ? (
+                        <Box sx={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <CircularProgress size={16} />
+                        </Box>
+                    ) : (
+                        <ArtifactMenuButton
+                            tooltip={t('dataThread.moreOptions')}
+                            label={t('dataThread.fileActions', {
+                                name: artifact.title,
+                                defaultValue: `Actions for ${artifact.title}`,
+                            })}
+                            onClick={anchorEl => {
+                                setSelectedArtifactForMenu(artifact);
+                                setFileMenuAnchorEl(anchorEl);
+                            }}
+                        />
+                    )}>
+                    {artifact.artifactType === 'table' ? <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.sm, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{artifact.title}</Typography>
+                        <Tooltip title={artifact.notes || artifact.title}>
+                            <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', opacity: 0.75, fontWeight: 400, flexShrink: 0 }}>{t('externalReference.virtualNote', { defaultValue: '(virtual)' })}</Typography>
+                        </Tooltip>
+                    </Box> : undefined}
+                </ThreadArtifactCard>
+                </Box>
+                {importedTables.length > 0 && <Box sx={{ mt: 0.5, ml: 0.75, borderLeft: 1, borderColor: 'divider', pl: 0.75, minWidth: 0 }}>
+                    <ButtonBase aria-label={t('dataThread.importsFrom', { name: artifact.title, defaultValue: 'Imports from {{name}}' })} aria-expanded={importsExpanded}
+                        aria-controls={`source-imports-${artifact.key}`}
+                        onClick={() => setExpandedImportGroups(previous => importsExpanded ? previous.filter(id => id !== artifact.key) : [...previous, artifact.key])}
+                        sx={{ display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 0.5, py: 0.5, color: 'text.secondary', fontSize: textVar.xs,
+                            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                        {importsExpanded ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} /> : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
+                        {t('dataThread.importedTables', { count: importedTables.length, defaultValue: '{{count}} imported tables' })}
+                    </ButtonBase>
+                    <Collapse in={importsExpanded} unmountOnExit>
+                        <Box component="ul" id={`source-imports-${artifact.key}`} aria-label={t('dataThread.importsFrom', { name: artifact.title, defaultValue: 'Imports from {{name}}' })} sx={{ listStyle: 'none', p: 0, m: 0 }}>
+                            {importedTables.map(table => {
+                                const selected = focusedTableId === table.id || (focusedId?.type === 'table' && focusedId.tableId === table.id);
+                                return <Box component="li" key={table.id} data-workspace-import={table.id}
+                                    sx={{ display: 'flex', alignItems: 'center', minWidth: 0, borderRadius: 0.5,
+                                        bgcolor: selected ? 'action.selected' : undefined,
+                                        '&:hover': { bgcolor: 'action.hover' },
+                                        '& .artifact-actions': { opacity: 0 }, '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
+                                        '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } } }}>
+                                    <ButtonBase aria-label={table.displayId || table.id} aria-current={selected ? 'true' : undefined}
+                                        onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
+                                        sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-start', gap: 0.75, px: 0.5, py: 0.5,
+                                            color: selected || highlightedTableIds.includes(table.id) ? 'primary.main' : 'text.primary',
+                                            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
+                                        <TableIcon sx={{ width: 12, height: 12, flexShrink: 0 }} />
+                                        <Typography component="span" title={`${table.displayId || table.id}${table.displayId !== table.id ? ` (${table.id})` : ''}`}
+                                            sx={{ fontSize: textVar.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{table.displayId || table.id}</Typography>
+                                    </ButtonBase>
+                                    <Box className="artifact-actions" sx={{ flexShrink: 0 }}><ArtifactMenuButton label={t('dataThread.fileActions', { name: table.displayId || table.id, defaultValue: 'Actions for {{name}}' })}
+                                        tooltip={t('dataThread.moreOptions')} onClick={anchor => handleOpenTableMenu(table, anchor)} /></Box>
+                                </Box>;
+                            })}
+                        </Box>
+                    </Collapse>
+                </Box>}
+            </Box>
+        </Box>
+    );
+    });
+
+    const currentItemKeys = [
+        ...(externalReferences || []).map(reference => reference.id),
+        ...workspaceFiles.map(file => `workspace-file-${file.name}`),
+        ...inputTables.map(table => `shelf-card-${table.id}`),
+    ];
+    const itemOrder = [...new Set([...workspaceItemOrder, ...currentItemKeys])];
+    const orderedCards = [...cards, ...artifactCards].sort((first, second) =>
+        itemOrder.indexOf(String(first.key)) - itemOrder.indexOf(String(second.key)));
+
+    useEffect(() => {
+        if (currentItemKeys.some(key => !workspaceItemOrder.includes(key))) {
+            dispatch(dfActions.appendWorkspaceItems(currentItemKeys));
+        }
+    }, [currentItemKeys, workspaceItemOrder, dispatch]);
+
+    return <Box data-thread-shelf sx={{
         ...sx,
         '& .selected-card': {
             boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
             borderColor: 'transparent',
             margin: '1px 0',
+        },
+        '& .selected-artifact-card': {
+            boxShadow: '0 0 0 2px var(--artifact-selection-color)',
+            borderColor: 'transparent',
         },
         padding: '6px',
     }}>
@@ -690,7 +944,7 @@ export const SourceTableShelf: FC<{
                     textTransform: 'uppercase', letterSpacing: '0.02em',
                     color: 'rgba(0,0,0,0.55)',
                 }}>
-                    {t('dataThread.dataSources', { defaultValue: 'Data sources' })}
+                    {t('dataThread.workspace', { defaultValue: 'Workspace' })}
                 </Typography>
                 <IconButton
                     size="small"
@@ -716,10 +970,32 @@ export const SourceTableShelf: FC<{
                     {/* Each card carries its own gutter icon and rail segments (see the
                         `cards` memo), so the rail is punctuated exactly like a thread's
                         timeline rather than running as one long stroke. */}
-                    {cards}
+                    {orderedCards}
+                    {pendingTableLoads.flatMap(load => load.names.map((name, index) => (
+                        <Box key={`${load.id}-${index}`} role="status" aria-label={t('dataThread.loadingTable', { name, defaultValue: 'Loading {{name}}' })}
+                            sx={{ display: 'flex', flexDirection: 'row' }}>
+                            <Box aria-hidden sx={{ width: GUTTER_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                                <Box sx={{ flexShrink: 0, zIndex: 1, bgcolor: 'white', display: 'flex' }}>
+                                    <TableIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.15)' }} />
+                                </Box>
+                                <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: GUTTER_GAP, pr: CARD_INSET_RIGHT }}>
+                                <Box sx={{ px: 0.75, py: 0.5, border: 1, borderColor: 'divider', borderRadius: '6px', color: 'text.secondary' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                                        <Typography title={name} sx={{ fontSize: textVar.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Typography>
+                                    </Box>
+                                    <InlineLoadingStatus label={t('common.loading', { defaultValue: 'Loading...' })}
+                                        sx={{ fontSize: textVar.xs, gap: 0.5 }} />
+                                </Box>
+                            </Box>
+                        </Box>
+                    )))}
 
                     {collapsible && (
-                        <Box sx={{ pl: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, pr: CARD_INSET_RIGHT }}>
+                        <Box sx={{ position: 'relative', pl: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, pr: CARD_INSET_RIGHT }}>
+                            <Box aria-hidden sx={{ position: 'absolute', left: RAIL_OFFSET, top: 0, bottom: 0, borderLeft: RAIL_LINE }} />
                             <Button
                                 size="small"
                                 onClick={() => setExpanded(!expanded)}
@@ -735,7 +1011,7 @@ export const SourceTableShelf: FC<{
                             >
                                 {expanded
                                     ? t('dataThread.showFewerTables', { defaultValue: 'Show fewer' })
-                                    : t('dataThread.showAllTables', { count: inputTables.length, defaultValue: `Show all ${inputTables.length}` })}
+                                    : t('dataThread.showAllTables', { count: topLevelTables.length, defaultValue: `Show all ${topLevelTables.length}` })}
                             </Button>
                         </Box>
                     )}
@@ -850,6 +1126,25 @@ export const SourceTableShelf: FC<{
 
         {/* Source table actions menu */}
         <Menu
+            anchorEl={fileMenuAnchorEl}
+            open={Boolean(fileMenuAnchorEl)}
+            onClose={handleCloseFileMenu}
+            onClick={(event) => event.stopPropagation()}
+        >
+            <MenuItem
+                disabled={activeWorkspace?.readOnly}
+                onClick={() => {
+                    selectedArtifactForMenu?.remove();
+                    handleCloseFileMenu();
+                }}
+                sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
+            >
+                <DeleteIcon sx={{ fontSize: iconVar.md }} color="warning" />
+                {selectedArtifactForMenu?.removeLabel}
+            </MenuItem>
+        </Menu>
+
+        <Menu
             anchorEl={tableMenuAnchorEl}
             open={Boolean(tableMenuAnchorEl)}
             onClose={handleCloseTableMenu}
@@ -880,7 +1175,7 @@ export const SourceTableShelf: FC<{
                     }}
                     sx={{ fontSize: textVar.sm, display: 'flex', alignItems: 'center', gap: 1 }}
                 >
-                    <AttachFileIcon sx={{
+                    <InsertDriveFileOutlinedIcon sx={{
                         fontSize: textVar.xl,
                         color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
                     }} />

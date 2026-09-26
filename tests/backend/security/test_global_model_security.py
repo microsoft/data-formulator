@@ -18,7 +18,6 @@ pytestmark = [pytest.mark.backend]
 
 
 SAMPLE_ENV = {
-    "OPENAI_ENABLED": "true",
     "OPENAI_API_KEY": "sk-secret-key-12345",
     "OPENAI_MODELS": "gpt-4o",
 }
@@ -31,6 +30,42 @@ SAMPLE_ENV = {
 class TestGetClientGlobalResolution:
     """get_client() must resolve real credentials from model_registry
     when the model config has is_global=True."""
+
+    @pytest.mark.parametrize("managed", [False, True])
+    @pytest.mark.parametrize("is_global", [False, True])
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_managed_deployment_model_policy(self, managed, is_global):
+        from flask import Flask
+        from data_formulator.routes.agents import get_client
+
+        app = Flask(__name__)
+        app.config["CLI_ARGS"] = {"disable_custom_models": managed, "disable_data_connectors": False}
+        registry = ModelRegistry()
+        with app.app_context(), patch("data_formulator.routes.agents.model_registry", registry):
+            config = {
+                "id": "global-openai-gpt-4o",
+                "endpoint": "openai",
+                "model": "gpt-4o",
+                "is_global": is_global,
+                "api_key": "caller-key",
+                "api_base": "https://api.openai.com/v1",
+            }
+            if managed and not is_global:
+                with patch("data_formulator.routes.model_endpoints.resolve_model_connection") as resolve:
+                    with pytest.raises(AppError, match="Custom models are disabled") as exc:
+                        get_client(config)
+                    assert exc.value.get_http_status() == 403
+                    resolve.assert_not_called()
+            else:
+                assert get_client(config).params["api_key"] == (SAMPLE_ENV["OPENAI_API_KEY"] if is_global else "caller-key")
+
+    @patch.dict(os.environ, {**SAMPLE_ENV, "DISABLE_CUSTOM_MODELS": "true"}, clear=True)
+    def test_managed_policy_outside_app_context(self):
+        from data_formulator.routes.agents import get_client
+
+        with pytest.raises(AppError, match="Custom models are disabled"):
+            get_client({"endpoint": "openai", "model": "gpt-4o", "api_key": "caller-key"})
+        assert get_client(ModelRegistry().get_config("global-openai-gpt-4o"), trusted=True).params["api_key"] == SAMPLE_ENV["OPENAI_API_KEY"]
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_global_model_gets_real_api_key(self):
@@ -148,8 +183,45 @@ class TestGetClientGlobalResolution:
 
             assert exc.value.get_http_status() == 403
 
+    @pytest.mark.parametrize("endpoint", ["orcarouter", "cheaperinference"])
+    @patch.dict(
+        os.environ,
+        {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.openai.com/*"},
+        clear=True,
+    )
+    def test_blank_gateway_base_is_validated_as_its_default(self, endpoint):
+        """A blank api_base on a gateway still targets that gateway's default
+        host, so it must not slip past the allowlist as a 'provider default'."""
+        from data_formulator.routes.agents import get_client
+
+        with pytest.raises(AppError, match="allowlist") as exc:
+            get_client({"endpoint": endpoint, "model": "m", "api_key": "k", "api_base": ""})
+        assert exc.value.get_http_status() == 403
+
+    @patch.dict(
+        os.environ,
+        {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.cheaperinference.com/*"},
+        clear=True,
+    )
+    def test_blank_gateway_base_allowed_when_default_is_listed(self):
+        from data_formulator.routes.agents import get_client
+
+        client = get_client({"endpoint": "cheaperinference", "model": "m", "api_key": "k"})
+        assert client.params["api_base"] == "https://api.cheaperinference.com/v1"
+
+    @patch.dict(
+        os.environ,
+        {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.cheaperinference.com/*"},
+        clear=True,
+    )
+    def test_blank_first_party_base_still_allowed(self):
+        from data_formulator.routes.agents import get_client
+
+        get_client({"endpoint": "anthropic", "model": "m", "api_key": "k", "api_base": ""})
+
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_resolving_a_global_model_does_not_mutate_the_registry(self):
+
         """get_client normalises strings in place; it must copy first so the
         process-wide registry config is not edited by a request."""
         registry = ModelRegistry()

@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from data_formulator.datalake.workspace_metadata import (
     ColumnInfo,
     TableMetadata,
+    WorkspaceFileMetadata,
     WorkspaceMetadata,
 )
 from data_formulator.data_loader.external_data_loader import (
@@ -24,6 +25,36 @@ from data_formulator.data_loader.external_data_loader import (
 )
 
 pytestmark = [pytest.mark.backend]
+
+
+class TestWorkspaceFileMetadata:
+    def test_workspace_metadata_roundtrip(self):
+        now = datetime.now(timezone.utc)
+        metadata = WorkspaceMetadata.create_new()
+        metadata.add_file(WorkspaceFileMetadata(
+            name="README.md",
+            filename="README.md",
+            created_at=now,
+            content_hash="abc123",
+            file_size=42,
+            media_type="text/markdown",
+        ))
+
+        restored = WorkspaceMetadata.from_dict(metadata.to_dict())
+
+        assert restored.files["README.md"].filename == "README.md"
+        assert restored.files["README.md"].media_type == "text/markdown"
+
+    def test_legacy_metadata_defaults_to_no_files(self):
+        now = datetime.now(timezone.utc).isoformat()
+        restored = WorkspaceMetadata.from_dict({
+            "version": "1.1",
+            "created_at": now,
+            "updated_at": now,
+            "tables": {},
+        })
+
+        assert restored.files == {}
 
 
 # ── ColumnInfo backward-compat ────────────────────────────────────────
@@ -422,6 +453,26 @@ class TestCatalogTreeMetadataStatus:
 
 class TestRefreshPreservesImportOptions:
     """import_options must survive refresh_parquet_from_arrow."""
+
+    def test_value_hash_ignores_chunking_and_tracks_all_sample_values(self, tmp_path):
+        import pyarrow as pa
+        from data_formulator.datalake.parquet_utils import compute_arrow_table_hash
+        from data_formulator.datalake.workspace import Workspace
+
+        original = pa.table({"value": list(range(20)), "text": ["x" * 200] * 20})
+        chunked = pa.concat_tables([original.slice(0, 7), original.slice(7)])
+        assert compute_arrow_table_hash(original) == compute_arrow_table_hash(chunked)
+        rows = original.to_pylist()
+        rows[10]["text"] += "changed"
+        modified = pa.Table.from_pylist(rows)
+        assert compute_arrow_table_hash(original) != compute_arrow_table_hash(modified)
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        workspace.write_parquet_from_arrow(original, "values")
+        _, changed = workspace.refresh_parquet_from_arrow("values", chunked)
+        assert changed is False
+        _, changed = workspace.refresh_parquet_from_arrow("values", modified)
+        assert changed is True
+        assert workspace.read_data_as_df("values").iloc[10]["text"].endswith("changed")
 
     def test_import_options_retained_after_refresh(self, tmp_path):
         import pyarrow as pa

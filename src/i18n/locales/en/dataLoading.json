@@ -72,6 +72,7 @@
       "fromSource": "from"
     },
     "operation": {
+      "virtualSource": "{{name}}: Virtual source (rows remain remote)",
       "title": "Data loading options",
       "previewHeading": "Tables to load",
       "previewGuide": "A preview of each table before it is added to your workspace.",
@@ -92,10 +93,11 @@
       "listingFiles": "Listing files",
       "runningPython": "Running Python",
       "preparingPreview": "Preparing preview",
-      "browsingCatalog": "Browsing catalog",
-      "searchingData": "Searching data",
-      "describingData": "Reading table metadata",
-      "probingData": "Probing data",
+      "summarizingSources": "Summarizing connected data",
+      "browsingCatalog": "Browsing",
+      "searchingData": "Searching",
+      "describingData": "Reading table",
+      "probingData": "Probing",
       "proposingLoadPlan": "Proposing load plan"
     },
     "examples": {

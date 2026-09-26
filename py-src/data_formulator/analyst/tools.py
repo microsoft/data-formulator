@@ -9,7 +9,7 @@ user-visible action. See ``design-docs/35`` §4.1.
 
   - ``execute_python_script`` — run a general-purpose Python script in the
     sandbox to inspect/compute (stdout returned).
-  - ``inspect_source_data`` — schema + stats + sample rows for source tables.
+    - ``inspect_source_data`` — schema + stats + sample rows for analysis inputs.
   - ``load_skill`` — pull a skill's ``SKILL.md`` body into context, unlocking
     its gated actions (progressive disclosure; reading a doc is read-only).
 
@@ -53,8 +53,8 @@ INSPECT_SOURCE_DATA_TOOL: dict[str, Any] = {
     "function": {
         "name": "inspect_source_data",
         "description": (
-            "Get a detailed summary of one or more source tables — schema, "
-            "field-level statistics, and sample rows.  Cheaper than explore() "
+            "Get a detailed summary of one or more analysis input tables — schema, "
+            "field-level statistics, and sample rows. Cheaper than explore() "
             "for basic data inspection."
         ),
         "parameters": {
@@ -63,7 +63,7 @@ INSPECT_SOURCE_DATA_TOOL: dict[str, Any] = {
                 "table_names": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of workspace table names, as listed in the available-tables context, to inspect.",
+                    "description": "Names listed in the analysis-input-tables context to inspect.",
                 },
             },
             "required": ["table_names"],
@@ -112,8 +112,9 @@ def build_tools(
 
     Three groups share the one function-calling surface (see ``design-docs/36``):
 
-      * **inspection tools** (``explore`` / ``inspect_source_data`` / a loaded
-        skill's own tools) — contributed by the always-on ``core`` skill and any
+            * **inspection tools** (``execute_python_script`` / ``inspect_source_data`` /
+                a loaded skill's own tools) — contributed by the always-on ``meta``
+                bundle's included capabilities and any
         loaded skills, arriving via ``extra_tools``. Parallel-safe, non-committing.
       * **``load_skill``** — the progressive-disclosure switch, added here with
         its ``name`` enum built from ``skill_names`` (the loadable/gated skills).

@@ -8,13 +8,25 @@
  * manager is active. All backends expose the same API contract.
  */
 
-import { fetchWithIdentity, getUrls } from './utils';
+import { CONNECTOR_ACTION_URLS, fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
 import { migrateState } from './stateMigrations';
 import { workspaceTableIdOf } from './tableResolution';
-import type { InputTable } from '../components/ComponentType';
+import type { InputTable, ExternalTableReference } from '../components/ComponentType';
+import type { ServerConfig } from './dfSlice';
+
+export function createExternalTableReference(reference: Omit<ExternalTableReference, 'id'>): ExternalTableReference {
+    return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };
+}
+
+export function isLargeConnectorTable(metadata?: Record<string, any> | null,
+    config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
+    return Number(metadata?.row_count) > (config?.EXTERNAL_TABLE_MAX_ROWS ?? 1_000_000)
+        || ['original_size_bytes', 'size_bytes', 'file_size'].some(key =>
+            Number(metadata?.[key]) > (config?.EXTERNAL_TABLE_MAX_BYTES ?? 512 * 1024 * 1024));
+}
 
 export interface WorkspaceSummary {
     id: string;
@@ -23,7 +35,29 @@ export interface WorkspaceSummary {
     saved_at: string | null;
     table_count?: number | null;
     chart_count?: number | null;
+    source_ids?: string[];
     read_only?: boolean;
+}
+
+export interface WorkspaceFile {
+    temporary?: boolean;
+    display_name?: string;
+    name: string;
+    filename: string;
+    created_at: string;
+    content_hash: string;
+    file_size: number;
+    media_type: string | null;
+}
+
+export interface WorkspaceFilePreview {
+    name: string;
+    kind: 'text' | 'table';
+    content: string;
+    truncated: boolean;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+    row_count?: number;
 }
 
 async function isEphemeralBackend(): Promise<boolean> {
@@ -70,6 +104,7 @@ function createTableIndex(state: Record<string, any>): TableIndexEntry[] {
 // list consumers can refresh without coupling to each other.
 
 const WORKSPACE_LIST_CHANGED = 'df:workspace-list-changed';
+const WORKSPACE_FILES_CHANGED = 'df:workspace-files-changed';
 
 export function onWorkspaceListChanged(cb: () => void): () => void {
     window.addEventListener(WORKSPACE_LIST_CHANGED, cb);
@@ -78,6 +113,15 @@ export function onWorkspaceListChanged(cb: () => void): () => void {
 
 function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
+}
+
+export function onWorkspaceFilesChanged(cb: () => void): () => void {
+    window.addEventListener(WORKSPACE_FILES_CHANGED, cb);
+    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, cb);
+}
+
+export function notifyWorkspaceFilesChanged(): void {
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
 }
 
 type PreparedInputTablePreview = {
@@ -295,4 +339,103 @@ export function deleteTablesFromWorkspace(tableIds: string[]): void {
 
 export function isWorkspaceReadOnly(workspace: { readOnly?: boolean } | null | undefined): boolean {
     return workspace?.readOnly === true;
+}
+
+export async function listWorkspaceFiles(): Promise<WorkspaceFile[]> {
+    const { data } = await apiRequest<{ files: WorkspaceFile[] }>('/api/workspace/files');
+    return data.files;
+}
+
+export async function previewConnectorFile(connectorId: string, sourcePath: string, signal?: AbortSignal): Promise<File> {
+    const response = await fetchWithIdentity('/api/connectors/preview-file', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+        body: JSON.stringify({ connector_id: connectorId, source_path: sourcePath }),
+    });
+    await assertDownloadResponseOk(response, 'File preview failed');
+    const blob = await response.blob();
+    return new File([blob], sourcePath.split('/').pop() || sourcePath, { type: blob.type });
+}
+
+export async function importConnectorFile(connectorId: string, sourcePath: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>(CONNECTOR_ACTION_URLS.IMPORT_FILE, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connector_id: connectorId, source_path: sourcePath }),
+    });
+    notifyWorkspaceFilesChanged();
+    return data;
+}
+
+export async function uploadWorkspaceFile(file: File): Promise<WorkspaceFile> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiRequest<WorkspaceFile>('/api/workspace/files', {
+        method: 'POST',
+        body: formData,
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function deleteWorkspaceFile(name: string): Promise<void> {
+    await apiRequest(`/api/workspace/files/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+}
+
+export async function renameWorkspaceFile(name: string, newName: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>(`/api/workspace/files/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function createWorkspaceTextFile(name: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>('/api/workspace/files/text', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function readWorkspaceTextFile(name: string): Promise<WorkspaceFile & { content: string }> {
+    const { data } = await apiRequest<WorkspaceFile & { content: string }>(
+        `/api/workspace/files/${encodeURIComponent(name)}/text`,
+    );
+    return data;
+}
+
+export async function saveWorkspaceTextFile(name: string, content: string, contentHash: string): Promise<WorkspaceFile & { content: string }> {
+    const { data } = await apiRequest<WorkspaceFile & { content: string }>(
+        `/api/workspace/files/${encodeURIComponent(name)}/text`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, content_hash: contentHash }) },
+    );
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function previewWorkspaceFile(name: string): Promise<WorkspaceFilePreview> {
+    const { data } = await apiRequest<WorkspaceFilePreview>(
+        `/api/workspace/files/${encodeURIComponent(name)}/preview`,
+    );
+    return data;
+}
+
+export async function previewUploadedWorkspaceFile(file: File): Promise<WorkspaceFilePreview> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiRequest<WorkspaceFilePreview>('/api/workspace/files/preview', {
+        method: 'POST',
+        body: formData,
+    });
+    return data;
+}
+
+export async function downloadWorkspaceFile(name: string): Promise<Blob> {
+    const response = await fetchWithIdentity(`/api/workspace/files/${encodeURIComponent(name)}`);
+    await assertDownloadResponseOk(response, 'File download failed');
+    return response.blob();
 }

@@ -27,8 +27,10 @@ Given a dataset provided by the user,
     - good names: "Monthly Sales", "Stock Prices", "Survey Responses", "US GDP Quarterly"
     - bad names: "data", "result", "table1", "d_weekly_fuel_prices", "raw-data-filtered"
     - aim for 2-4 words, no more than 24 characters. Be smart with abbreviations but keep it readable.
+    - preserve the subject and scope of imported subsets from their name, description, and import filters. Do not rename distinct subsets to the same generic source name. Retain meaningful existing names even when longer than 24 characters.
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.
+    - include known filter scope and row limits; distinguish selected columns from selected rows. Do not infer full-source coverage or missing rows from a small sample or unusual value distribution.
 
 Types to consider include: string, number, date, datetime, time, duration
 

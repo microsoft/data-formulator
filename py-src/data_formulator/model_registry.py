@@ -4,7 +4,7 @@
 import os
 from typing import Optional, Dict, List
 
-BUILTIN_PROVIDERS = {'openai', 'azure', 'anthropic', 'gemini', 'ollama'}
+BUILTIN_PROVIDERS = {'openai', 'azure', 'anthropic', 'gemini', 'ollama', 'orcarouter', 'cheaperinference'}
 
 
 class ModelRegistry:
@@ -12,10 +12,11 @@ class ModelRegistry:
     Load global model configurations from environment variables.
 
     Supports both built-in providers (openai / azure / anthropic / gemini /
-    ollama) and arbitrary custom providers (e.g. DEEPSEEK, QWEN).
+    ollama / orcarouter / cheaperinference) and arbitrary custom providers
+    (e.g. DEEPSEEK, QWEN).
 
-    For a custom provider, set:
-        {PROVIDER}_ENABLED=true
+    A provider is enabled when {PROVIDER}_MODELS is set together with
+    {PROVIDER}_API_KEY and/or {PROVIDER}_API_BASE. For a custom provider, set:
         {PROVIDER}_ENDPOINT=openai        # actual call type; defaults to openai
         {PROVIDER}_API_KEY=<key>
         {PROVIDER}_API_BASE=<url>
@@ -36,14 +37,16 @@ class ModelRegistry:
 
     def _discover_providers(self) -> List[str]:
         """
-        Return the lowercase names of all enabled providers by scanning
-        every environment variable that ends with _ENABLED=true.
+        Return the lowercase names of all candidate providers by scanning
+        every non-empty environment variable that ends with _MODELS.
+        ``_reload`` skips candidates without an API key or base URL.
         """
         providers: List[str] = []
         for key, val in os.environ.items():
-            if key.upper().endswith("_ENABLED") and val.strip().lower() == "true":
-                prefix = key[: -len("_ENABLED")].lower()
-                providers.append(prefix)
+            if key.upper().endswith("_MODELS") and val.strip():
+                prefix = key[: -len("_MODELS")].lower()
+                if prefix:
+                    providers.append(prefix)
         return providers
 
     def _reload(self) -> None:
@@ -80,16 +83,27 @@ class ModelRegistry:
                     "provider_display": provider,
                 }
 
-    def get_config(self, model_id: str) -> Optional[dict]:
+    def get_config(self, model_id: str, *, configured: bool = True) -> Optional[dict]:
         """Return the full config (including credentials) for a global model."""
+        from data_formulator.configuration import resource_enabled
+        if configured and not resource_enabled('models', model_id):
+            return None
+        if isinstance(model_id, str) and model_id.startswith('installation-'):
+            from data_formulator.configuration import connection_definitions
+            definition = connection_definitions('models').get(model_id)
+            return {**definition, 'id': model_id} if definition else None
         return self._models.get(model_id)
 
-    def list_public(self) -> list:
+    def list_public(self, configured: bool = True) -> list:
         """
         Return public info for all globally configured models.
         Sensitive fields (api_key) are intentionally excluded.
         """
-        return [
+        from data_formulator.configuration import connection_definitions
+        definitions = {**self._models, **{identifier: {**definition, 'id': identifier, 'api_base': definition.get('api_base', ''),
+                   'api_version': definition.get('api_version', ''), 'api_key': definition.get('api_key', '')}
+                   for identifier, definition in connection_definitions('models').items()}}
+        models = [
             {
                 "id": m["id"],
                 "endpoint": m["endpoint"],
@@ -103,11 +117,21 @@ class ModelRegistry:
                 ),
                 "is_global": True,
             }
-            for m in self._models.values()
+            for m in definitions.values()
         ]
+        if not configured:
+            return models
+        from data_formulator.configuration import read_configuration
+        overrides = read_configuration()['overrides']
+        options = overrides.get('models', {})
+        models = [{**model, **({'display_name': options[model['id']]['display_name']}
+                   if options.get(model['id'], {}).get('display_name') else {})}
+                  for model in models if options.get(model['id'], {}).get('enabled', True)]
+        default = overrides.get('default_model')
+        return sorted(models, key=lambda model: model['id'] != default)
 
     def is_global(self, model_id: str) -> bool:
-        return model_id in self._models
+        return self.get_config(model_id) is not None
 
 
 model_registry = ModelRegistry()

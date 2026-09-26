@@ -102,6 +102,8 @@ if _disable_database and _default_ws_backend == 'local':
     _default_ws_backend = 'ephemeral'
 app.config['CLI_ARGS'] = {
     'host': os.environ.get('HOST', '127.0.0.1'),
+    'managed': _disable_database or os.environ.get('DF_MANAGED', 'false').lower() == 'true',
+    'disable_database': _disable_database,
     'sandbox': os.environ.get('SANDBOX', 'local'),
     'disable_display_keys': _disable_database or os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
     'disable_data_connectors': _disable_database or os.environ.get('DISABLE_DATA_CONNECTORS', 'false').lower() == 'true',
@@ -115,12 +117,9 @@ app.config['CLI_ARGS'] = {
     'azure_blob_connection_string': os.environ.get('AZURE_BLOB_CONNECTION_STRING', None),
     'azure_blob_account_url': os.environ.get('AZURE_BLOB_ACCOUNT_URL', None),
     'azure_blob_container': os.environ.get('AZURE_BLOB_CONTAINER', 'data-formulator'),
-    'available_languages': [
-        lang.strip() for lang in os.environ.get('AVAILABLE_LANGUAGES', 'en,zh').split(',') if lang.strip()
-    ],
 }
 
-# Get logger for this module (logging config moved to run_app function)
+# Get logger for this module.
 logger = logging.getLogger(__name__)
 
 _LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -274,6 +273,7 @@ def _register_blueprints():
     # Import server-log inspection routes (local-mode gated)
     from data_formulator.routes.logs import logs_bp
     from data_formulator.routes.model_endpoints import model_endpoints_bp
+    from data_formulator.routes.workspace_files import workspace_files_bp
 
     # Register blueprints
     app.register_blueprint(tables_bp)
@@ -282,6 +282,7 @@ def _register_blueprints():
     app.register_blueprint(demo_stream_bp)
     app.register_blueprint(logs_bp)
     app.register_blueprint(model_endpoints_bp)
+    app.register_blueprint(workspace_files_bp)
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
@@ -316,20 +317,48 @@ def _register_blueprints():
     from data_formulator.routes.knowledge import knowledge_bp
     app.register_blueprint(knowledge_bp)
 
-    # Auto-register all installed data loaders as DataConnector instances.
-    # We always run this so the connectors blueprint and the built-in
-    # 'sample_datasets' connector are available; the function itself
-    # honors disable_data_connectors by skipping admin YAML/env specs.
+    from data_formulator.routes.workflows import workflow_bp
+    app.register_blueprint(workflow_bp)
+
+    from data_formulator.routes.configurations import configuration_bp
+    app.register_blueprint(configuration_bp)
+
     with spinner("Loading data connectors"):
         from data_formulator.data_connector import register_data_connectors
         register_data_connectors(app)
     if app.config['CLI_ARGS'].get('disable_data_connectors'):
-        print("  External data connectors disabled (DISABLE_DATA_CONNECTORS=true) - sample datasets remain available", flush=True)
+        print("  User-created connectors disabled (DISABLE_DATA_CONNECTORS=true) - administrator-configured sources remain available", flush=True)
 
 
 def _safety_checks():
     """Warn about dangerous configuration combinations at startup."""
     cli = app.config.get('CLI_ARGS', {})
+    from data_formulator.configuration import configuration_path, is_managed_mode
+    with app.app_context():
+        if cli.get('disable_database'):
+            logger.warning('--disable-database / DISABLE_DATABASE is deprecated. It enables managed mode with the legacy demo restrictions and ephemeral storage. Use --managed and explicit deployment settings for new installations.')
+        if not is_managed_mode() and configuration_path().exists():
+            logger.warning('Saved installation configuration remains active. Start with --managed or DF_MANAGED=true to access Administration.')
+        if is_managed_mode():
+            from data_formulator.auth.identity import get_active_provider, is_local_mode
+            provider = get_active_provider()
+            local_mode = is_local_mode()
+            emails = [value.strip() for value in os.environ.get('DF_ADMIN_EMAILS', '').split(',') if value.strip()]
+            identities = [value.strip() for value in os.environ.get('DF_ADMIN_IDENTITIES', '').split(',')
+                          if value.strip().startswith('user:') and len(value.strip()) > 5]
+            email_supported = provider is not None and provider.name == 'azure_easyauth'
+            valid_emails = [value for value in emails if value.count('@') == 1
+                            and all(value.split('@')) and not any(character.isspace() for character in value)]
+            if emails and not email_supported:
+                logger.warning('DF_ADMIN_EMAILS requires active Azure EasyAuth; email-based administrator access is unavailable.')
+            if len(valid_emails) != len(emails):
+                logger.warning('DF_ADMIN_EMAILS contains invalid sign-in addresses. Use full addresses, not short aliases.')
+            if not local_mode and (provider is None or not (identities or (email_supported and valid_emails))):
+                logger.warning('Managed mode has no usable administrator access configuration. Configure authentication and DF_ADMIN_EMAILS or DF_ADMIN_IDENTITIES.')
+            host = cli.get('host') or os.environ.get('HOST', '127.0.0.1')
+            if local_mode and (host not in ('127.0.0.1', 'localhost', '::1')
+                               or os.environ.get('WEBSITE_INSTANCE_ID') or os.environ.get('WEBSITE_HOSTNAME')):
+                logger.critical('SECURITY WARNING: Managed mode uses local-owner administrator identity on a hosted or non-loopback server. Configure verified authentication before exposing this server.')
     backend = cli.get('workspace_backend', 'local')
     sandbox = cli.get('sandbox', 'not_a_sandbox')
     multi_user = backend != 'local'
@@ -344,11 +373,13 @@ def _safety_checks():
 
 # Register blueprints at module level so WSGI servers (gunicorn) pick up all routes.
 # The guard inside _register_blueprints() prevents double registration when run via CLI.
+configure_logging()
 _register_blueprints()
 _safety_checks()
 
 
 @app.route("/", defaults={"path": ""})
+@app.route("/configurations", defaults={"path": "configurations"})
 def index_alt(path):
     logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html")
@@ -371,22 +402,30 @@ def get_auth_info():
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
+    from data_formulator.configuration import effective_limit, is_managed_mode, read_configuration, user_connectors_disabled, user_models_disabled
     args = app.config['CLI_ARGS']
     
     workspace_backend = args.get('workspace_backend', 'local')
+    overrides = read_configuration()['overrides']
     config = {
+        "APP_NAME": overrides.get('app_name', '').strip(),
+        "APP_TAGLINE": overrides.get('app_tagline', '').strip(),
+        "MANAGED_MODE": is_managed_mode(),
         "SANDBOX": args['sandbox'],
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
-        "DISABLE_DATA_CONNECTORS": args.get('disable_data_connectors', False),
-        "DISABLE_CUSTOM_MODELS": args.get('disable_custom_models', False),
-        "MAX_DISPLAY_ROWS": args['max_display_rows'],
+        "DISABLE_DATA_CONNECTORS": user_connectors_disabled(),
+        "DISABLE_CUSTOM_MODELS": user_models_disabled(),
+        "MAX_DISPLAY_ROWS": effective_limit('max_display_rows'),
+        "EXTERNAL_TABLE_MAX_ROWS": effective_limit('external_table_max_rows'),
+        "EXTERNAL_TABLE_MAX_BYTES": effective_limit('external_table_max_bytes'),
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": workspace_backend,
-        "AVAILABLE_LANGUAGES": args.get('available_languages', ['en', 'zh']),
     }
 
     from data_formulator.auth.identity import is_local_mode
     config["IS_LOCAL_MODE"] = is_local_mode()
+    from data_formulator.routes.configurations import can_configure
+    config["CAN_CONFIGURE"] = can_configure()
 
     if workspace_backend == 'local':
         from data_formulator.datalake.workspace import get_data_formulator_home
@@ -449,6 +488,9 @@ def get_app_config():
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
     parser.add_argument("-p", "--port", type=int, default=5567, help="The port number you want to use")
+    parser.add_argument("--managed", action='store_true', default=os.environ.get('DF_MANAGED', 'false').lower() == 'true',
+        help="Enable administrator-managed resources, policies, and the Administration page. "
+             "Does not select authentication, workspace storage, or sandbox settings.")
     parser.add_argument("--host", type=str, default=os.environ.get('HOST', '127.0.0.1'),
         help="Network interface to bind to (default: 127.0.0.1). "
              "Use 0.0.0.0 to accept connections from other machines.")
@@ -456,16 +498,16 @@ def parse_args() -> argparse.Namespace:
         choices=['local', 'docker'],
         help="Python code execution backend: 'local' (default, isolated subprocess with audit hooks), "
              "'docker' (maximum isolation, requires Docker)")
-    parser.add_argument("--disable-display-keys", action='store_true', default=False,
+    parser.add_argument("--disable-display-keys", action='store_true', default=os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
-    parser.add_argument("--disable-database", action='store_true', default=False,
-        help="Multi-user anonymous preset: enables ephemeral workspace, disables data connectors, "
+    parser.add_argument("--disable-database", action='store_true', default=os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
+        help="Deprecated demo preset: enables managed mode and ephemeral workspace, disables user-created data connectors, "
              "disables custom LLM endpoints, and hides API keys. Equivalent to setting "
              "--workspace-backend=ephemeral --disable-data-connectors --disable-custom-models --disable-display-keys.")
-    parser.add_argument("--disable-data-connectors", action='store_true', default=False,
-        help="Disable external data connectors (MySQL, PostgreSQL, etc.). "
-             "Recommended for multi-user anonymous deployments to prevent credential exposure.")
-    parser.add_argument("--disable-custom-models", action='store_true', default=False,
+    parser.add_argument("--disable-data-connectors", action='store_true', default=os.environ.get('DISABLE_DATA_CONNECTORS', 'false').lower() == 'true',
+           help="Allow only administrator-configured data connectors; block creation and use of personal connectors. "
+               "Configured sources remain available with server-controlled connection parameters.")
+    parser.add_argument("--disable-custom-models", action='store_true', default=os.environ.get('DISABLE_CUSTOM_MODELS', 'false').lower() == 'true',
         help="Prevent users from adding custom LLM endpoints via the UI. "
              "Only server-configured models will be available.")
     parser.add_argument("--max-display-rows", type=int,
@@ -510,17 +552,18 @@ def run_app():
     # It bundles: ephemeral workspace + no data connectors + no custom models + hide keys.
     workspace_backend = args.workspace_backend
     if args.disable_database:
+        args.managed = True
         if workspace_backend == 'local':
             workspace_backend = 'ephemeral'
         args.disable_data_connectors = True
         args.disable_custom_models = True
         args.disable_display_keys = True
-        print("  Multi-user anonymous mode (--disable-database): "
-              "TTL-managed ephemeral workspace, no connectors, no custom models, keys hidden", flush=True)
 
     # Override config from CLI args
     app.config['CLI_ARGS'] = {
         'host': args.host,
+        'managed': args.managed,
+        'disable_database': args.disable_database,
         'sandbox': args.sandbox,
         'disable_display_keys': args.disable_display_keys,
         'disable_data_connectors': args.disable_data_connectors,
@@ -534,9 +577,6 @@ def run_app():
         'azure_blob_connection_string': args.azure_blob_connection_string,
         'azure_blob_account_url': args.azure_blob_account_url,
         'azure_blob_container': args.azure_blob_container,
-        'available_languages': [
-            lang.strip() for lang in os.environ.get('AVAILABLE_LANGUAGES', 'en,zh').split(',') if lang.strip()
-        ],
     }
     
     # Now that --data-dir is applied, ensure the persistent log file lives
@@ -545,6 +585,7 @@ def run_app():
 
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints()
+    _safety_checks()
 
     url = "http://localhost:{0}".format(args.port)
     print(f"Ready! Open {url} in your browser.", flush=True)

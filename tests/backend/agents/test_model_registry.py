@@ -34,21 +34,28 @@ def _make_env(providers: dict[str, dict[str, str]]) -> dict[str, str]:
 
 SAMPLE_ENV = _make_env({
     "openai": {
-        "enabled": "true",
         "api_key": "sk-secret-openai-key",
         "models": "gpt-4o,gpt-5",
     },
     "ollama": {
-        "enabled": "true",
         "api_base": "http://localhost:11434",
         "models": "qwen3:32b",
     },
     "deepseek": {
-        "enabled": "true",
         "endpoint": "openai",
         "api_key": "sk-secret-deepseek-key",
         "api_base": "https://api.deepseek.com/v1",
         "models": "deepseek-chat",
+    },
+    "orcarouter": {
+        "api_key": "sk-orca-secret-key",
+        "api_base": "https://api.orcarouter.ai/v1",
+        "models": "auto",
+    },
+    "cheaperinference": {
+        "api_key": "sk-ci-secret-key",
+        "api_base": "https://api.cheaperinference.com/v1",
+        "models": "gpt-5.4-mini",
     },
 })
 
@@ -68,27 +75,35 @@ class TestModelDiscovery:
         assert "global-openai-gpt-5" in ids
         assert "global-ollama-qwen3:32b" in ids
         assert "global-deepseek-deepseek-chat" in ids
+        assert "global-orcarouter-auto" in ids
+        assert "global-cheaperinference-gpt-5.4-mini" in ids
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_total_model_count(self):
         registry = ModelRegistry()
-        assert len(registry.list_public()) == 4  # 2 openai + 1 ollama + 1 deepseek
+        assert len(registry.list_public()) == 6  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter + 1 cheaperinference
 
     @patch.dict(os.environ, {}, clear=True)
     def test_empty_env_yields_no_models(self):
         registry = ModelRegistry()
         assert registry.list_public() == []
 
-    @patch.dict(os.environ, {"OPENAI_ENABLED": "true", "OPENAI_API_KEY": "sk-x"}, clear=True)
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-x"}, clear=True)
     def test_skips_provider_without_models(self):
         """OPENAI_MODELS not set → no models registered."""
         registry = ModelRegistry()
         assert registry.list_public() == []
 
-    @patch.dict(os.environ, {"OPENAI_ENABLED": "false", "OPENAI_API_KEY": "sk-x", "OPENAI_MODELS": "gpt-4o"}, clear=True)
-    def test_skips_disabled_provider(self):
+    @patch.dict(os.environ, {"OPENAI_MODELS": "gpt-4o", "DISABLE_CUSTOM_MODELS": "true"}, clear=True)
+    def test_skips_provider_without_key_or_base(self):
+        """_MODELS alone (including unrelated vars like DISABLE_CUSTOM_MODELS) registers nothing."""
         registry = ModelRegistry()
         assert registry.list_public() == []
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-x", "OPENAI_MODELS": "gpt-4o"}, clear=True)
+    def test_models_and_key_enable_provider(self):
+        registry = ModelRegistry()
+        assert [m["id"] for m in registry.list_public()] == ["global-openai-gpt-4o"]
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +156,25 @@ class TestCustomProvider:
         assert config is not None
         assert config["endpoint"] == "openai"
 
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_orcarouter_builtin_uses_own_name_as_endpoint(self):
+        """orcarouter is in BUILTIN_PROVIDERS, so it uses itself as endpoint."""
+        registry = ModelRegistry()
+        config = registry.get_config("global-orcarouter-auto")
+        assert config is not None
+        assert config["endpoint"] == "orcarouter"
+        assert config["api_base"] == "https://api.orcarouter.ai/v1"
+
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_cheaperinference_builtin_uses_own_name_as_endpoint(self):
+        """cheaperinference is in BUILTIN_PROVIDERS, so it uses itself as endpoint."""
+        registry = ModelRegistry()
+        config = registry.get_config("global-cheaperinference-gpt-5.4-mini")
+        assert config is not None
+        assert config["endpoint"] == "cheaperinference"
+        assert config["api_base"] == "https://api.cheaperinference.com/v1"
+
     @patch.dict(os.environ, {
-        "MYVENDOR_ENABLED": "true",
         "MYVENDOR_API_KEY": "key123",
         "MYVENDOR_MODELS": "my-model",
     }, clear=True)

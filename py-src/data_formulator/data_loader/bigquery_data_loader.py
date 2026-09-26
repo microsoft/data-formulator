@@ -53,6 +53,7 @@ class BigQueryDataLoader(ExternalDataLoader):
         return "service_account_file" if params.get("credentials_path") else "default_credentials"
 
     AUTH_GUIDE = "bigquery.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -184,7 +185,10 @@ class BigQueryDataLoader(ExternalDataLoader):
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
+            sanitized_cols = [
+                f'{probe_utils.quote_ident(str(col), probe_utils.BIGQUERY)} {order_direction}'
+                for col in sort_columns
+            ]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
         query = f"{base_query}{order_by_clause} LIMIT {size}"

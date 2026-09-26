@@ -1,0 +1,68 @@
+version: 1
+name: Microsoft Stock vs. the Market
+overview: Review MSFT against SPY using freshly retrieved Yahoo Finance daily prices.
+parameters:
+  - name: symbol
+    label: Stock symbol
+    type: text
+    default: MSFT
+    required: true
+  - name: benchmark
+    label: Benchmark symbol
+    type: select
+    options: [SPY, QQQ, DIA]
+    default: SPY
+    required: true
+    allow_custom: true
+  - name: lookback
+    label: Price history
+    type: select
+    options: [90 days, 180 days, 1 year]
+    default: 90 days
+prompt: >-
+  Compare the confirmed symbol with the confirmed benchmark over the selected
+  lookback period. Microsoft (MSFT), SPY, and 90 days are defaults only.
+  Verify symbol identities before acquisition. Use the selected symbols in
+  calculations, labels, checks, and reporting throughout the workflow.
+source: >-
+  Retrieve fresh daily historical prices from Yahoo Finance for the selected stock
+  and benchmark, covering the selected lookback period before this
+  run. Defaults are Microsoft (MSFT), the SPDR S&P 500 ETF Trust (SPY), and
+  90 calendar days; confirmed setup values override these defaults.
+  Obtain adjusted closing prices and available dividend, split, and adjustment
+  metadata. Use only complete trading sessions. Choose an available acquisition
+  tool and obtain any required approval before execution. Preserve the raw response,
+  source location, retrieval timestamp, and adjustment convention. If Yahoo Finance
+  is inaccessible, report the acquisition error rather than substituting stale
+  observations or another provider without asking the user.
+deliverables:
+  - Registered comparison data and a workspace CSV comparing the latest five complete trading sessions with the previous five, including benchmark-relative returns.
+  - A native normalized adjusted-price visualization in Data Formulator.
+  - A Data Formulator report embedding the visualization, with numerical findings, source dates, and limitations.
+steps:
+  - id: gather
+    description: Collect recent market prices and confirm that the comparison covers complete trading sessions.
+    instructions: Fetch live history. Inspect symbol coverage, dates, missing values, corporate actions, and adjustment metadata. Use complete trading sessions, never a partial current session.
+    checkers:
+      - id: coverage
+        condition: Both symbols have unique symbol/date keys, positive prices, and at least eleven aligned complete trading-session prices. Report their exact last available dates and any retrieval errors.
+        when: after
+        on_fail: gather
+    next: analyze
+  - id: analyze
+    description: Compare the stock's weekly performance with its benchmark.
+    instructions: Use aligned adjusted closing prices. Compute each symbol's five-session return and prior-five-session return using the preceding close as denominator. Compute selected stock minus benchmark return in percentage points. Publish full-precision calculations with create_data and a workspace CSV with create_file. Use visualize to create a native Line Chart of normalized adjusted closing prices over time, colored by symbol. Use unique names for this run's data and files.
+    checkers:
+      - id: return_math
+        condition: Independently recompute both windows from their boundary closing prices and reconcile CSV returns and benchmark differences. Do not round prices before computing.
+        when: after
+        on_fail: analyze
+    next: report
+  - id: report
+    description: Summarize the market comparison with supporting figures and clear limitations.
+    instructions: Write a concise factual report with supporting numbers, the native normalized-price chart embedded by chart ID, coverage, adjustment convention, and acquisition timestamp. Do not present price movements as causal explanations or personalized investment advice. After writing, reread the report and published data/CSV and reverify every checker against final outputs before delivery.
+    checkers:
+      - id: report_accuracy
+        condition: Read the saved report and independently compare all headline returns and dates against published data/CSV and raw prices. All requested native deliverables exist, the chart uses aligned normalized prices, and limitations are explicit.
+        when: after
+        on_fail: analyze

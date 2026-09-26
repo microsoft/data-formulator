@@ -314,5 +314,7 @@ export function buildDistillModelConfig(selectedModel: ModelConfig): Record<stri
         api_version: selectedModel.api_version,
         model: selectedModel.model,
         is_global: selectedModel.is_global,
+        connection_id: selectedModel.connection_id,
+        auth_mode: selectedModel.auth_mode,
     };
 }

@@ -41,6 +41,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         return params_list
 
     AUTH_GUIDE = "postgresql.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

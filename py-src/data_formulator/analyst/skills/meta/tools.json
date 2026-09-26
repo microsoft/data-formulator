@@ -1,0 +1,44 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "long_response",
+      "description": "Finish with an expanded, self-contained answer displayed on the canvas. Use when the answer needs expansion; for a concise closing answer, use plain text without an action. Do not use merely because several charting iterations occurred. Put the complete answer in content, without repeating it in narration.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {"type": "string", "description": "The complete expanded answer in Markdown."}
+        },
+        "required": ["content"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "ask_user",
+      "description": "Ask the user something and pause for their reply; the run resumes in the same turn with their answer in context. Prefer this when you want the user to respond: a choice to make, a clarification you need before acting, or a brief statement paired with clickable follow-ups. Put your reasoning, rationale, and context in your normal reply text, not inside this call. This is a preference, not a requirement; plain-text responses remain available when they fit the conversation better. Plain text ends the run, whereas ask_user preserves the paused turn for the reply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thought": {"type": "string", "description": "Brief rationale (not shown to the user)."},
+          "questions": {
+            "type": "array",
+            "description": "A short set of actionable questions: single_choice for one selection or free_text for an open answer. Ask only what is needed to proceed. Put rationale and context in your reply text, not here. An explanation is allowed as a short statement paired with clickable follow-ups (required=false with options).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {"type": "string", "description": "The question, or (for an optional follow-up) a short statement. Keep a statement to 1–3 grounded sentences and pair it with clickable follow-up options. Wrap a **column** in ** ** to highlight it."},
+                "responseType": {"type": "string", "enum": ["single_choice", "free_text"], "description": "single_choice for one selection; free_text for an open-ended answer (not your own exposition)."},
+                "required": {"type": "boolean", "description": "false for an explanation / optional follow-up; true for a clarification the run depends on."},
+                "options": {"type": "array", "items": {"type": "string"}, "description": "Plain-text choices. Keep the list short and labels concise, but include the choices needed to answer correctly; there is no fixed three-option limit. Avoid redundant options. For optional follow-ups, offer a few useful next steps phrased as the user would say them."}
+              },
+              "required": ["text"]
+            }
+          }
+        },
+        "required": ["questions"]
+      }
+    }
+  }
+]
