@@ -7,6 +7,20 @@ from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 from data_formulator.auth.azure_cli import get_desktop_azure_token_provider
 
+# Third-party gateways whose base URL is filled in when the caller leaves it
+# blank. Unlike first-party provider defaults, these must still pass the
+# DF_ALLOWED_API_BASES allowlist, so callers validate ``effective_api_base``.
+GATEWAY_DEFAULT_API_BASES = {
+    "openrouter": "https://openrouter.ai/api/v1",
+    "orcarouter": "https://api.orcarouter.ai/v1",
+    "cheaperinference": "https://api.cheaperinference.com/v1",
+}
+
+
+def effective_api_base(endpoint, api_base):
+    """Return the base URL a request will target, or ``None`` for a first-party provider default."""
+    return api_base or GATEWAY_DEFAULT_API_BASES.get(endpoint) or None
+
 
 def _synthesize_stream(response):
     """Yield LiteLLM-style streaming chunks reconstructed from a *buffered*
@@ -247,7 +261,7 @@ class Client(object):
                 self.model = f"openai/{model}"
         elif self.endpoint == "openrouter":
             self.model = model if model.startswith("openrouter/") else f"openrouter/{model}"
-            self.params["api_base"] = (api_base or "https://openrouter.ai/api/v1").rstrip("/")
+            self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
         elif self.endpoint == "github_copilot":
             from litellm.llms.github_copilot.common_utils import get_copilot_default_headers
 
@@ -312,7 +326,7 @@ class Client(object):
             # The ``orcarouter/`` prefix is preserved by LiteLLM (unlike
             # ``openai/``, which it strips), which is how OrcaRouter's gateway
             # addresses its model routers.
-            self.params["api_base"] = (api_base or "https://api.orcarouter.ai/v1").rstrip("/")
+            self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
             self.params["custom_llm_provider"] = "openai"
             if "/" not in model:
                 self.model = f"orcarouter/{model}"
@@ -321,7 +335,7 @@ class Client(object):
             # model ids (e.g. ``gpt-5.4-mini``, ``claude-sonnet-5``), so route
             # the model unchanged through LiteLLM's openai provider against
             # the Cheaper Inference base URL.
-            self.params["api_base"] = (api_base or "https://api.cheaperinference.com/v1").rstrip("/")
+            self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
             self.params["custom_llm_provider"] = "openai"
 
     def _strip_image_blocks(self, content):

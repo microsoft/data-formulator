@@ -15,8 +15,8 @@ class ModelRegistry:
     ollama / orcarouter / cheaperinference) and arbitrary custom providers
     (e.g. DEEPSEEK, QWEN).
 
-    For a custom provider, set:
-        {PROVIDER}_ENABLED=true
+    A provider is enabled when {PROVIDER}_MODELS is set together with
+    {PROVIDER}_API_KEY and/or {PROVIDER}_API_BASE. For a custom provider, set:
         {PROVIDER}_ENDPOINT=openai        # actual call type; defaults to openai
         {PROVIDER}_API_KEY=<key>
         {PROVIDER}_API_BASE=<url>
@@ -37,14 +37,16 @@ class ModelRegistry:
 
     def _discover_providers(self) -> List[str]:
         """
-        Return the lowercase names of all enabled providers by scanning
-        every environment variable that ends with _ENABLED=true.
+        Return the lowercase names of all candidate providers by scanning
+        every non-empty environment variable that ends with _MODELS.
+        ``_reload`` skips candidates without an API key or base URL.
         """
         providers: List[str] = []
         for key, val in os.environ.items():
-            if key.upper().endswith("_ENABLED") and val.strip().lower() == "true":
-                prefix = key[: -len("_ENABLED")].lower()
-                providers.append(prefix)
+            if key.upper().endswith("_MODELS") and val.strip():
+                prefix = key[: -len("_MODELS")].lower()
+                if prefix:
+                    providers.append(prefix)
         return providers
 
     def _reload(self) -> None:

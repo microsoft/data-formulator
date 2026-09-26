@@ -165,7 +165,7 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     ```
 - **Configure environment variables (optional)**
     - copy `.env.template` to `.env` and fill in your values:
-        - **API keys**: set `{PROVIDER}_ENABLED=true`, `{PROVIDER}_API_KEY=...`, and `{PROVIDER}_MODELS=...` for each LLM provider you want to use. See the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for provider-specific fields.
+        - **API keys**: set `{PROVIDER}_API_KEY=...` (and/or `{PROVIDER}_API_BASE=...`) and `{PROVIDER}_MODELS=...` for each LLM provider you want to use; a provider with models and a key or base URL is enabled automatically. See the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for provider-specific fields.
         - **Server settings**: `DISABLE_DISPLAY_KEYS`, `SANDBOX`, etc.
         - **Azure Blob workspace** (optional): see [Azure Blob Storage Workspace](#azure-blob-storage-workspace) below.
     - this lets Data Formulator automatically load API keys at startup so you don't need to enter them in the UI.
@@ -886,7 +886,6 @@ DISABLE_DATA_CONNECTORS=true
 DISABLE_CUSTOM_MODELS=true
 DISABLE_DISPLAY_KEYS=true
 # Pre-configure the LLM models users can access:
-OPENAI_ENABLED=true
 OPENAI_API_KEY=sk-...
 OPENAI_MODELS=gpt-4.1
 ```

@@ -261,8 +261,9 @@ def test_connection():
             if definition.get('endpoint') == 'azure' and not definition.get('api_key'):
                 if definition.get('auth_mode') not in ('azure_identity', 'managed_identity'):
                     raise ValueError('Select an API key or Entra authentication for Azure.')
+            from data_formulator.agents.client_utils import effective_api_base
             from data_formulator.security.url_allowlist import validate_api_base
-            validate_api_base(definition.get('api_base'))
+            validate_api_base(effective_api_base(definition.get('endpoint'), definition.get('api_base')))
             from data_formulator.routes.agents import get_client
             client = get_client(definition, trusted=True)
             client.ping(timeout=20)

@@ -525,7 +525,6 @@ def test_admin_branding_save_and_reset(config_client):
 
 def test_model_catalog_overrides_do_not_change_credentials(monkeypatch):
     from data_formulator.model_registry import ModelRegistry
-    monkeypatch.setenv('OPENAI_ENABLED', 'true')
     monkeypatch.setenv('OPENAI_API_KEY', 'private-test-key')
     monkeypatch.setenv('OPENAI_MODELS', 'first,second')
     registry = ModelRegistry()
@@ -944,6 +943,25 @@ def test_saved_endpoint_allowlist_and_environment_precedence(monkeypatch):
     validate_api_base('https://environment.example/v1')
     with pytest.raises(ValueError):
         validate_api_base('https://gateway.example/v1')
+
+
+def test_staged_gateway_model_validates_default_api_base(config_client, monkeypatch):
+    from types import SimpleNamespace
+    from data_formulator.auth import vault
+    from data_formulator.auth.vault.local_vault import LocalCredentialVault
+    from cryptography.fernet import Fernet
+    from data_formulator.configuration import configuration_path
+    from data_formulator.routes import configurations, agents
+    protected = LocalCredentialVault(configuration_path().parent / 'test-credentials.db', Fernet.generate_key().decode())
+    monkeypatch.setattr(vault, 'get_credential_vault', lambda: protected)
+    monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin')
+    monkeypatch.setattr(agents, 'get_client', lambda *args, **kwargs: SimpleNamespace(ping=lambda **kwargs: None))
+    request = {'section': 'models', 'definition': {'endpoint': 'cheaperinference', 'model': 'm', 'api_key': 'k'}}
+    headers = {'X-DF-Configuration': '1'}
+    monkeypatch.setenv('DF_ALLOWED_API_BASES', 'https://api.openai.com/*')
+    assert config_client.post('/api/configurations/test-connection', headers=headers, json=request).get_json()['status'] == 'error'
+    monkeypatch.setenv('DF_ALLOWED_API_BASES', 'https://api.cheaperinference.com/*')
+    assert config_client.post('/api/configurations/test-connection', headers=headers, json=request).get_json()['status'] == 'success'
 
 
 def test_shared_connector_staging_and_fixed_runtime_parameters(config_client, monkeypatch):

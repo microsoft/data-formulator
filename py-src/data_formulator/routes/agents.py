@@ -30,7 +30,7 @@ from data_formulator.datalake.workspace import Workspace, get_user_home
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
-from data_formulator.agents.client_utils import Client
+from data_formulator.agents.client_utils import Client, effective_api_base
 from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
 from data_formulator.data_operations import DataOperationExecutor, DataOperationRepository
@@ -248,7 +248,7 @@ def get_client(model_config, trusted=False):
     if not trusted:
         from data_formulator.security.url_allowlist import validate_api_base
         try:
-            validate_api_base(model_config.get("api_base"))
+            validate_api_base(effective_api_base(model_config.get("endpoint"), model_config.get("api_base")))
         except ValueError as e:
             # url_allowlist stays framework-agnostic and signals with
             # ValueError; translate it here so the caller gets a 403 instead
