@@ -4,7 +4,7 @@
 import os
 from typing import Optional, Dict, List
 
-BUILTIN_PROVIDERS = {'openai', 'azure', 'anthropic', 'gemini', 'ollama', 'orcarouter'}
+BUILTIN_PROVIDERS = {'openai', 'azure', 'anthropic', 'gemini', 'ollama', 'orcarouter', 'cheaperinference'}
 
 
 class ModelRegistry:
@@ -12,7 +12,8 @@ class ModelRegistry:
     Load global model configurations from environment variables.
 
     Supports both built-in providers (openai / azure / anthropic / gemini /
-    ollama / orcarouter) and arbitrary custom providers (e.g. DEEPSEEK, QWEN).
+    ollama / orcarouter / cheaperinference) and arbitrary custom providers
+    (e.g. DEEPSEEK, QWEN).
 
     For a custom provider, set:
         {PROVIDER}_ENABLED=true

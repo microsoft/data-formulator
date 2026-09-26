@@ -221,7 +221,7 @@ def _salvage_tool_calls_from_content(response, tools):
 class Client(object):
     """
     Returns a LiteLLM client configured for the specified endpoint and model.
-    Supports OpenAI, Azure, Ollama, OrcaRouter, and other providers via LiteLLM.
+    Supports OpenAI, Azure, Ollama, OrcaRouter, Cheaper Inference, and other providers via LiteLLM.
     """
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None,
                  *, api_type=None, chatgpt_account_id=None, managed_identity=False, managed_identity_client_id=None):
@@ -316,6 +316,13 @@ class Client(object):
             self.params["custom_llm_provider"] = "openai"
             if "/" not in model:
                 self.model = f"orcarouter/{model}"
+        elif self.endpoint == "cheaperinference":
+            # Cheaper Inference exposes an OpenAI-compatible API with bare
+            # model ids (e.g. ``gpt-5.4-mini``, ``claude-sonnet-5``), so route
+            # the model unchanged through LiteLLM's openai provider against
+            # the Cheaper Inference base URL.
+            self.params["api_base"] = (api_base or "https://api.cheaperinference.com/v1").rstrip("/")
+            self.params["custom_llm_provider"] = "openai"
 
     def _strip_image_blocks(self, content):
         """Remove image_url blocks from multimodal content arrays."""

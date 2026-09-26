@@ -172,10 +172,10 @@ describe('Model connection form', () => {
         fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
         const listbox = await screen.findByRole('listbox');
         expect(Array.from(listbox.children).map(child => child.textContent)).toEqual([
-            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter',
+            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
         ]);
         expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
-            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter',
+            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
         ]);
         const openRouter = screen.getByRole('option', { name: 'OpenRouter' });
         act(() => openRouter.focus());
@@ -561,7 +561,7 @@ describe('Model connection form', () => {
         expect(screen.queryByRole('button', { name: 'Use recent' })).not.toBeInTheDocument();
     });
 
-    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'Azure', 'Ollama', 'OrcaRouter'])(
+    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'Azure', 'Ollama', 'OrcaRouter', 'Cheaper Inference'])(
         '%s does not treat a suggested model as a selected model', async provider => {
         openForm();
         await chooseProvider(provider);
@@ -686,7 +686,7 @@ describe('Model connection form', () => {
         expect(store.getState().models[0]).toMatchObject({ endpoint: 'ollama', model: 'llama3.2', api_key: '', api_base: '' });
     });
 
-    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'OrcaRouter'])('%s keeps optional URL overrides under Advanced', async provider => {
+    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'OrcaRouter', 'Cheaper Inference'])('%s keeps optional URL overrides under Advanced', async provider => {
         openForm();
         await chooseProvider(provider);
         expect(screen.getByLabelText('Base URL')).not.toBeVisible();
