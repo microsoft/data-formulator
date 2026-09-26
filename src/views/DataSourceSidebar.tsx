@@ -35,6 +35,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
+import { generateWorkspaceId, leaveSession } from '../app/sessionThunks';
 import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 import { ScrollFadeContainer } from '../components/ScrollFade';
 
@@ -394,6 +395,7 @@ const DataSourceSidebarPanel: React.FC<{
     const dispatch = useDispatch<AppDispatch>();
 
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const inSession = useSelector(dfSelectors.selectInSession);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector(
         (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
@@ -623,11 +625,7 @@ const DataSourceSidebarPanel: React.FC<{
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.importingFile', { name: file.name }) }));
         try {
             const wsName = file.name.replace(/\.zip$/, '') || 'imported';
-            const now = new Date();
-            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            const short = generateUUID().slice(0, 4);
-            const wsId = `session_${date}_${time}_${short}`;
+            const wsId = generateWorkspaceId();
             const state = await importWorkspace(file, wsId, wsName);
             const restoredName = (state as any).activeWorkspace?.displayName || wsName;
             dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: restoredName } }));
@@ -701,13 +699,8 @@ const DataSourceSidebarPanel: React.FC<{
                     if (nextSession) {
                         handleOpenSession(nextSession.id, nextSession.display_name);
                     } else {
-                        // No sessions left — start fresh
-                        const now = new Date();
-                        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-                        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                        const short = generateUUID().slice(0, 4);
-                        const wsId = `session_${date}_${time}_${short}`;
-                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
+                        // No sessions left — back to the landing page.
+                        dispatch(dfActions.resetState());
                     }
                 }
                 return updated;
@@ -1306,12 +1299,7 @@ const DataSourceSidebarPanel: React.FC<{
     // Create a fresh workspace session (used when there's no active workspace
     // or when the user explicitly wants a clean session for the import).
     const createNewSession = useCallback((displayName: string) => {
-        const now = new Date();
-        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-        const short = generateUUID().slice(0, 4);
-        const wsId = `session_${date}_${time}_${short}`;
-        dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName }));
+        dispatch(dfActions.resetForNewWorkspace({ id: generateWorkspaceId(), displayName }));
     }, [dispatch]);
 
     // Core single-table load: builds the DictTable and dispatches the load
@@ -2099,7 +2087,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     defaultValue: `Load ${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'}`,
                                 })}
                             </Button>
-                            {activeWorkspace && (
+                            {inSession && (
                                 <Button
                                     size="small"
                                     variant="outlined"
@@ -2129,7 +2117,10 @@ const DataSourceSidebarPanel: React.FC<{
                         <IconButton
                             size="small"
                             aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
-                            onClick={() => dispatch(dfActions.resetState())}
+                            onClick={() => {
+                                if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
+                                void dispatch(leaveSession());
+                            }}
                             sx={panelHeaderActionSx}
                         >
                             <AddIcon sx={{ fontSize: iconVar.md }} />
@@ -2335,6 +2326,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     </Tooltip>
                                     <IconButton
                                         size="small"
+                                        aria-label={t('workspace.deleteSession')}
                                         onClick={(e) => handleDeleteSession(s.id, e)}
                                         sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'warning.main' } }}
                                     >

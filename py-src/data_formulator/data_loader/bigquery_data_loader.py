@@ -203,6 +203,16 @@ class BigQueryDataLoader(ExternalDataLoader):
         
         return arrow_table
     
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on BigQuery."""
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        # BigQuery quotes the whole `project.dataset.table` path as one unit.
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=probe_utils.quote_ident(source_table, probe_utils.BIGQUERY),
+            dialect=probe_utils.BIGQUERY, execute=lambda sql: self.client.query(sql).to_arrow(),
+        )
+
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         """Compile the SPJQ to BigQuery Standard SQL and run it server-side."""
         if not path:

@@ -583,9 +583,18 @@ class TestEmptyWorkspaceVisibility:
         """The provisional flag is a hint, not the source of truth: anything
         that writes real content shows up even if it never clears the flag."""
         manager.create_workspace("stray")
-        (manager.root / "stray" / "workspace.yaml").write_text("tables: []")
+        (manager.root / "stray" / "workspace.yaml").write_text("tables:\n  orders: {}\n")
 
         assert any(w["id"] == "stray" for w in manager.list_workspaces())
+
+    def test_opened_but_empty_workspace_stays_hidden(self, manager):
+        """Opening a workspace (e.g. for a scratch attachment) writes an empty
+        workspace.yaml; that alone is not work worth listing."""
+        manager.create_workspace("opened")
+        manager.open_workspace("opened", "user:test")
+        assert (manager.root / "opened" / "workspace.yaml").exists()
+
+        assert not any(w["id"] == "opened" for w in manager.list_workspaces())
 
     def test_workspace_with_tables_is_visible(self, manager):
         manager.create_workspace("real")

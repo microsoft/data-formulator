@@ -98,6 +98,7 @@ import { getUrls } from './utils';
 import { apiRequest } from './apiClient';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged, WorkspaceLoadSupersededError } from './workspaceService';
 import { getSerializableState } from './useAutoSave';
+import { leaveSession } from './sessionThunks';
 import store, { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
@@ -475,7 +476,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
     const [loading, setLoading] = useState(false);
     const [listLoading, setListLoading] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
 
@@ -526,8 +527,8 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
     };
 
     const handleCreate = () => {
-        dispatch(dfActions.resetState());
         onClose();
+        void dispatch(leaveSession());
     };
 
     const handleDelete = async (workspaceId: string) => {
@@ -669,25 +670,9 @@ const WorkspaceMenu: React.FC = () => {
 };
 
 // Exit the current session and return to the front-page (no workspace).
-// Saves work first so the session is recoverable from the workspace picker —
-// unless the session is empty, in which case it's discarded rather than left
-// behind as an untitled shell in the picker.
 const useExitSession = () => {
-    const dispatch = useDispatch();
-    const state = useSelector((s: DataFormulatorState) => s);
-    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
-
-    return useCallback(async () => {
-        const workspaceId = state.activeWorkspace?.id;
-        if (sessionEmpty) {
-            if (workspaceId) {
-                try { await deleteWorkspace(workspaceId); } catch { /* may never have been created */ }
-            }
-        } else {
-            try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
-        }
-        dispatch(dfActions.resetState());
-    }, [state, sessionEmpty, dispatch]);
+    const dispatch = useDispatch<AppDispatch>();
+    return useCallback(() => dispatch(leaveSession()), [dispatch]);
 };
 
 const ExitSessionButton: React.FC = () => {
@@ -1085,7 +1070,7 @@ const AppShell: FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const tables = useSelector(dfSelectors.getAllTables);
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const inWorkspaceSession = useSelector(dfSelectors.selectInSession);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     useEffect(() => {        const authError = searchParams.get('auth_error');
@@ -1117,7 +1102,7 @@ const AppShell: FC = () => {
     // room, so the app shell floors content at MIN_SUPPORTED. Landing and phone
     // workspace views reflow instead; the media override below removes the
     // desktop floor when Thread and Canvas become alternate full-width views.
-    const isLandingView = isAppPage && !activeWorkspace;
+    const isLandingView = isAppPage && !inWorkspaceSession;
     const shellMinWidth = isLandingView || location.pathname === '/configurations' ? 0 : `${MIN_SUPPORTED.width}px`;
 
     // Narrow toolbars fold their controls into menus instead of letting the
@@ -1127,7 +1112,7 @@ const AppShell: FC = () => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
     const exitSession = useExitSession();
-    const inSession = isAppPage && !!activeWorkspace;
+    const inSession = isAppPage && inWorkspaceSession;
 
     return (
         <Box sx={{
@@ -1196,7 +1181,7 @@ const AppShell: FC = () => {
                         {/* Workspace name — session indicator/switcher. Centered
                             absolutely when there is room, otherwise it flows
                             between the nav menu and the trailing actions. */}
-                        {activeWorkspace && isAppPage && (
+                        {inSession && (
                             isCompactToolbar ? (
                                 <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', mx: 1 }}>
                                     <WorkspaceMenu />

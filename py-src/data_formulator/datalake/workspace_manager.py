@@ -225,8 +225,17 @@ class WorkspaceManager:
         """
         if (ws_dir / SESSION_STATE_FILENAME).exists():
             return True
-        if (ws_dir / "workspace.yaml").exists():
-            return True
+        yaml_file = ws_dir / "workspace.yaml"
+        if yaml_file.exists():
+            # Opening a Workspace writes an empty workspace.yaml, so only
+            # registered tables or files count as work.
+            try:
+                import yaml
+                metadata = yaml.safe_load(yaml_file.read_text(encoding="utf-8")) or {}
+            except Exception:
+                return True
+            if not isinstance(metadata, dict) or metadata.get("tables") or metadata.get("files"):
+                return True
         data_dir = ws_dir / "data"
         return data_dir.is_dir() and any(data_dir.iterdir())
 

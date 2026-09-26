@@ -312,25 +312,37 @@ class MSSQLDataLoader(ExternalDataLoader):
         
         return arrow_table
 
+    def _structured_relation(self, source_table: str) -> str:
+        """Quoted ``[schema].[table]`` for compiled structured SQL (``dbo`` default)."""
+        if "." in source_table:
+            schema, table = source_table.split(".", 1)
+        else:
+            schema, table = "dbo", source_table
+        dialect = probe_utils.MSSQL
+        return (
+            f"{probe_utils.quote_ident(schema.strip('[]'), dialect)}."
+            f"{probe_utils.quote_ident(table.strip('[]'), dialect)}"
+        )
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on SQL Server."""
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=self._structured_relation(source_table),
+            dialect=probe_utils.MSSQL, execute=self._execute_query,
+        )
+
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         """Compile the SPJQ to T-SQL (TOP / bracket quoting) and run it."""
         if not path:
             return {"error": "probe requires a non-empty table path"}
-        src = ".".join(str(p) for p in path)
-        if "." in src:
-            schema, table = src.split(".", 1)
-        else:
-            schema, table = "dbo", src
-        dialect = probe_utils.MSSQL
         try:
-            relation = (
-                f"{probe_utils.quote_ident(schema.strip('[]'), dialect)}."
-                f"{probe_utils.quote_ident(table.strip('[]'), dialect)}"
-            )
+            relation = self._structured_relation(".".join(str(p) for p in path))
         except ValueError as exc:
             return {"error": f"invalid table identifier: {exc}"}
         return probe_utils.probe_via_native_sql(
-            query, relation=relation, dialect=dialect, execute=self._execute_query,
+            query, relation=relation, dialect=probe_utils.MSSQL, execute=self._execute_query,
         )
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:

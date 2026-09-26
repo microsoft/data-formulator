@@ -142,8 +142,9 @@ disconnected sources or access failures explicitly.
 
 When `query_capabilities.aggregate_loading` is `supported`, loading also accepts
 `group_by` and `aggregates`, each with a unique `as` output name. Do not combine
-aggregate fields with raw `columns`. Prefer source-side aggregation for Kusto:
-load a reusable result at sufficient granularity, not necessarily the final chart
+aggregate fields with raw `columns`. Prefer source-side aggregation for
+`server_query` sources (SQL databases and Kusto): load a reusable result at
+sufficient granularity, not necessarily the final chart
 totals or raw rows that Python would aggregate again. Aggregate
 results are bounded at 10,000 rows; an overflowing result without an explicit
 limit fails rather than silently truncating. Explicit limits represent requested

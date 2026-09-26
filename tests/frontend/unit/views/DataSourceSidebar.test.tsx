@@ -53,8 +53,14 @@ vi.mock('../../../../src/app/dfSlice', () => ({
     },
     dfSelectors: {
         getAllTables: (state: any) => [...(state.inputTables ?? []), ...(state.derivedTables ?? [])],
+        selectInSession: (state: any) => !!state.activeWorkspace && !state.activeWorkspace.provisional,
     },
     fetchFieldSemanticType: vi.fn(),
+}));
+
+vi.mock('../../../../src/app/sessionThunks', () => ({
+    generateWorkspaceId: () => 'session_test',
+    leaveSession: () => ({ type: 'session/leave' }),
 }));
 
 vi.mock('../../../../src/app/utils', async importOriginal => ({
@@ -414,19 +420,32 @@ describe('DataSourceSidebar', () => {
         expect(await screen.findByLabelText('Disconnect', { selector: 'button' })).toBeEnabled();
     });
 
-    it('returns to the landing state without creating an empty workspace', async () => {
+    it('leaves the session for the landing page and closes the unpinned sidebar', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         render(<DataSourceSidebar />);
 
         fireEvent.click(await screen.findByRole('button', { name: 'New session' }));
 
-        expect(dispatch).toHaveBeenCalledWith({ type: 'state/reset' });
-        expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({
-            type: 'state/load',
-            payload: expect.objectContaining({
-                activeWorkspace: expect.objectContaining({ displayName: 'Untitled Session' }),
-            }),
-        }));
+        expect(dispatch).toHaveBeenCalledWith({ type: 'sidebar/setOpen', payload: false });
+        expect(dispatch).toHaveBeenCalledWith({ type: 'session/leave' });
+        expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'workspace/reset' }));
+    });
+
+    it('returns to the landing page after deleting the last active session', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        (mockState as any).activeWorkspace = { id: 'only', displayName: 'Only' };
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            { id: 'only', display_name: 'Only', created_at: null, saved_at: null },
+        ]);
+        render(<DataSourceSidebar />);
+
+        await screen.findByText('Only');
+        // Row actions are revealed on hover (display: none until then).
+        fireEvent.click(screen.getByRole('button', { name: 'workspace.deleteSession', hidden: true }));
+
+        await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'state/reset' }));
+        expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'state/load' }));
+        (mockState as any).activeWorkspace = null;
     });
 
     it('shows newest-created sessions first and can switch to recently modified order', async () => {

@@ -282,7 +282,10 @@ export interface DataFormulatorState {
 
     // Active workspace (null = show workspace picker)
     // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
-    activeWorkspace: { id: string; displayName: string; readOnly?: boolean } | null;
+    // provisional: an ID minted only so backend requests have a home (e.g. a
+    // landing-page attachment). The UI stays on the landing page until the
+    // workspace holds real work, at which point the flag is cleared for good.
+    activeWorkspace: { id: string; displayName: string; readOnly?: boolean; provisional?: boolean } | null;
 
     /** Backend-synchronized count of persisted non-table files in the active workspace. */
     workspaceFileCount: number;
@@ -899,59 +902,52 @@ export const fetchAvailableModels = createAsyncThunk(
 // - User ID from auth provider (if logged in)
 // - Browser ID from localStorage (shared across all tabs)
 
+function isSessionEmpty(state: DataFormulatorState): boolean {
+    // Counted raw rather than via `selectAllTables`, which materializes
+    // every table from its snapshot just to answer "are there any?".
+    return (state.inputTables?.length ?? 0) === 0
+        && (state.workspaceFileCount ?? 0) === 0
+        && (state.externalTableReferences?.length ?? 0) === 0
+        && (state.derivedTables?.length ?? 0) === 0
+        && (state.textTurns?.length ?? 0) === 0
+        && (state.draftNodes?.length ?? 0) === 0
+        && (state.generatedReports?.length ?? 0) === 0
+        && state.analystChatPending == null;
+}
+
+/** Session data cleared, user settings / server config / identity / sidebar kept. */
+function freshSessionState(
+    state: DataFormulatorState,
+    activeWorkspace: DataFormulatorState['activeWorkspace'],
+): DataFormulatorState {
+    return {
+        ...initialState,
+        identity: state.identity,
+        globalModels: state.globalModels,
+        models: state.models,
+        selectedModelId: state.selectedModelId,
+        testedModels: state.testedModels,
+        serverConfig: state.serverConfig,
+        config: state.config,
+        viewMode: state.viewMode,
+        dataLoaderConnectParams: state.dataLoaderConnectParams,
+        dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+        dataSourceSidebarTab: state.dataSourceSidebarTab,
+        activeWorkspace,
+    };
+}
+
 export const dataFormulatorSlice = createSlice({
     name: 'dataFormulatorSlice',
     initialState: initialState,
     reducers: {
-        resetState: (state) => {
-            //state.table = undefined;
-            
-            // Preserve: models, selectedModelId, testedModels,
-            //           config, dataLoaderConnectParams, identity
-
-            state.inputTables = [];
-            state.derivedTables = [];
-            state.loadedTableNodes = [];
-            state.fileNodes = [];
-            state.externalTableReferences = [];
-            state.tableSemantics = [];
-            state.draftNodes = [];
-            state.charts = [];
-
-            state.conceptShelfItems = [];
-
-            state.messages = [];
-            state.displayedMessageIdx = -1;
-
-            state.focusedDataCleanBlockId = undefined;
-
-            state.focusedId = undefined;
-
-            state.viewMode = 'editor';
-
-            state.chartSynthesisInProgress = [];
-
-            // Preserve serverConfig ??it reflects the actual server state, not user state
-
-            state.dataCleanBlocks = [];
-            state.cleanInProgress = false;
-
-            state.analystChatPending = null;
-
-            state.generatedReports = [];
-            state.textTurns = [];
-
-            // Clear active workspace so stale IDs don't persist across restarts
-            state.activeWorkspace = null;
-            state.workspaceFileCount = 0;
-            // Redux Persist will handle persistence automatically
-            
-        },
+        /** Leave the current session for the landing page (no workspace). */
+        resetState: (state) => ({ ...freshSessionState(state, null), viewMode: 'editor' }),
         setSessionLoading: (state, action: PayloadAction<{loading: boolean, label?: string}>) => {
             state.sessionLoading = action.payload.loading;
             state.sessionLoadingLabel = action.payload.label || '';
         },
-        setActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string; readOnly?: boolean } | null>) => {
+        setActiveWorkspace: (state, action: PayloadAction<DataFormulatorState['activeWorkspace']>) => {
             state.activeWorkspace = action.payload;
             state.workspaceFileCount = 0;
         },
@@ -1003,24 +999,8 @@ export const dataFormulatorSlice = createSlice({
             delete state.starterQuestionsStatus[action.payload];
             if (state.focusedId?.type === 'external-table' && state.focusedId.referenceId === action.payload) state.focusedId = undefined;
         },
-        resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
-            // Fresh session data, but preserve user settings / server config / identity / view mode
-            return {
-                ...initialState,
-                identity: state.identity,
-                globalModels: state.globalModels,
-                models: state.models,
-                selectedModelId: state.selectedModelId,
-                testedModels: state.testedModels,
-                serverConfig: state.serverConfig,
-                config: state.config,
-                viewMode: state.viewMode,
-                dataLoaderConnectParams: state.dataLoaderConnectParams,
-                dataSourceSidebarOpen: state.dataSourceSidebarOpen,
-                dataSourceSidebarTab: state.dataSourceSidebarTab,
-                activeWorkspace: action.payload,
-            };
-        },
+        resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) =>
+            freshSessionState(state, action.payload),
         setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
             state.dataSourceSidebarOpen = action.payload;
         },
@@ -2599,6 +2579,17 @@ export const dataFormulatorSlice = createSlice({
                 state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.meta.requestId);
             },
         )
+        // A provisional workspace becomes a real session the moment it holds
+        // work, whichever action put it there. Clearing the flag (rather than
+        // re-deriving it from emptiness) keeps an emptied session open.
+        .addMatcher(
+            () => true,
+            (state) => {
+                if (state.activeWorkspace?.provisional && !isSessionEmpty(state)) {
+                    delete state.activeWorkspace.provisional;
+                }
+            },
+        )
     },
 })
 
@@ -2710,17 +2701,10 @@ export const dfSelectors = {
      * assigned and ends when the user exits. Deleting the last table empties
      * the workspace without ending the session.
      */
-    selectSessionEmpty: (state: DataFormulatorState): boolean => (
-        // Counted raw rather than via `selectAllTables`, which materializes
-        // every table from its snapshot just to answer "are there any?".
-        (state.inputTables?.length ?? 0) === 0
-        && (state.workspaceFileCount ?? 0) === 0
-        && (state.externalTableReferences?.length ?? 0) === 0
-        && (state.derivedTables?.length ?? 0) === 0
-        && (state.textTurns?.length ?? 0) === 0
-        && (state.draftNodes?.length ?? 0) === 0
-        && (state.generatedReports?.length ?? 0) === 0
-        && state.analystChatPending == null
+    selectSessionEmpty: isSessionEmpty,
+    /** True when the user is inside a session (not on the landing page). */
+    selectInSession: (state: DataFormulatorState): boolean => (
+        !!state.activeWorkspace && !state.activeWorkspace.provisional
     ),
     /** All models visible in the UI: global (server-managed) first, then user-added. */
     getAllModels: (state: DataFormulatorState): ModelConfig[] => {

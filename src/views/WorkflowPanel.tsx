@@ -1189,6 +1189,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
+    const inSession = useSelector(dfSelectors.selectInSession);
     const readOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly);
     const [items, setItems] = useState<Instance[]>([]);
     const [expandedDescriptions, setExpandedDescriptions] = useState<string[]>([]);
@@ -1397,7 +1398,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 }));
                 const setup = { parameters, instructions: setupInstructions.trim() };
                 const target = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-                if (target?.value === 'current' && workspaceId) void execute(runTarget.path, setup, runTarget.content);
+                if (target?.value === 'current' && inSession) void execute(runTarget.path, setup, runTarget.content);
                 else startNewSession(runTarget, setup);
             }}>
                 <DialogTitle id="workflow-setup-title">Workflow setup</DialogTitle>
@@ -1413,7 +1414,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 </DialogContent>
                 <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
                     <Button disabled={starting} onClick={() => setRunTarget(null)}>Cancel</Button>
-                    {workspaceId && <Button type="submit" value="current" disabled={busy || starting || !model}>Current session</Button>}
+                    {inSession && <Button type="submit" value="current" disabled={busy || starting || !model}>Current session</Button>}
                     <Button type="submit" value="new" variant="contained" startIcon={starting ? <CircularProgress size={16} /> : <PlayArrowIcon />}
                         disabled={busy || starting || !model}>New session</Button>
                 </DialogActions>

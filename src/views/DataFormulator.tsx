@@ -70,7 +70,7 @@ import { apiRequest } from '../app/apiClient';
 import { listWorkspaceFiles, listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { AppDispatch, store } from '../app/store';
-import { generateUUID } from '../app/identity';
+import { generateWorkspaceId, ensureActiveWorkspace } from '../app/sessionThunks';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
@@ -88,20 +88,12 @@ import DialogActions from '@mui/material/DialogActions';
 /** Quick enough not to feel like waiting, slow enough to read as a movement. */
 const CANVAS_TRANSITION_MS = 140;
 
-/** Generate a session ID like session_20260408_193052_a1b2 */
-function generateSessionId(): string {
-    const now = new Date();
-    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const short = generateUUID().slice(0, 4);
-    return `session_${date}_${time}_${short}`;
-}
-
 export const DataFormulatorFC = ({ }) => {
 
     const derivedTables = useSelector(dfSelectors.getDerivedTables);
     const hasInputTables = useSelector((state: DataFormulatorState) => state.inputTables.length > 0);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const inSession = useSelector(dfSelectors.selectInSession);
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const [canvasClosing, setCanvasClosing] = useState(false);
     const models = useSelector(dfSelectors.getAllModels);
@@ -111,7 +103,6 @@ export const DataFormulatorFC = ({ }) => {
     const appName = getToolName(serverConfig.APP_NAME);
     const headingSize = Math.max(32, Math.min(76, 76 * Math.sqrt(15 / appName.length)));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
-    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
@@ -179,10 +170,10 @@ export const DataFormulatorFC = ({ }) => {
     }, []);
 
     useEffect(() => {
-        if (!activeWorkspace) {
+        if (!inSession) {
             fetchWorkspaces();
         }
-    }, [activeWorkspace, fetchWorkspaces]);
+    }, [inSession, fetchWorkspaces]);
 
     useEffect(() => {
         return onWorkspaceListChanged(fetchWorkspaces);
@@ -284,7 +275,7 @@ export const DataFormulatorFC = ({ }) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.importingFile', { name: file.name }) }));
         try {
             const wsName = file.name.replace(/\.zip$/, '') || 'imported';
-            const wsId = generateSessionId();
+            const wsId = generateWorkspaceId();
             const state = await importWorkspace(file, wsId, wsName);
             const restoredName = (state as any).activeWorkspace?.displayName || wsName;
             dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: restoredName } }));
@@ -342,32 +333,28 @@ export const DataFormulatorFC = ({ }) => {
 
     const openUploadDialog = (tab: UploadTabType) => {
         if (activeWorkspace?.readOnly) return;
-        // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
-        if (!activeWorkspace) {
-            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
-        }
+        // The dialog talks to the backend, so it needs a workspace ID — but
+        // opening it is not entering a session. It stays provisional (landing
+        // page) until data lands.
+        dispatch(ensureActiveWorkspace());
         setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);
     };
-
-    // The dialog needs a workspace id to talk to the backend, but opening it is
-    // not entering a session: stay on the landing page until data lands.
-    const provisionalSession = uploadDialogOpen && sessionEmpty;
 
     const closeUploadDialog = async () => {
         setUploadDialogOpen(false);
         const state = store.getState();
         const workspaceId = state.activeWorkspace?.id;
+        // Non-table files saved from the dialog only show up in the file
+        // count; refresh it so a file-only upload still enters the session.
         if (workspaceId && dfSelectors.selectSessionEmpty(state)) {
             try {
                 const files = await listWorkspaceFiles();
-                dispatch(dfActions.setWorkspaceFileCount(files.length));
-                const currentWorkspaceId = store.getState().activeWorkspace?.id;
-                if (files.length === 0 && currentWorkspaceId === workspaceId) {
-                    dispatch(dfActions.setActiveWorkspace(null));
+                if (store.getState().activeWorkspace?.id === workspaceId) {
+                    dispatch(dfActions.setWorkspaceFileCount(files.length));
                 }
             } catch {
-                // Preserve the workspace when its backend contents cannot be checked.
+                // The count is refreshed again when the thread mounts.
             }
         }
         refreshPageConnectors();
@@ -378,11 +365,9 @@ export const DataFormulatorFC = ({ }) => {
     const startAnalystChat = (text: string, images: string[] = [], attachments: string[] = []) => {
         if (activeWorkspace?.readOnly) return;
         if (text.trim().length === 0 && images.length === 0 && attachments.length === 0) return;
-        // Every agent call carries X-Workspace-Id; the landing page can be used
-        // before a workspace exists, so mint one the way openUploadDialog does.
-        if (!activeWorkspace) {
-            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
-        }
+        // Every agent call carries X-Workspace-Id; queuing the task below is
+        // what turns the provisional workspace into a session.
+        dispatch(ensureActiveWorkspace());
         dispatch(dfActions.queueAnalystTask({ text, images, attachments }));
     };
 
@@ -404,9 +389,10 @@ export const DataFormulatorFC = ({ }) => {
             const file = new File([blob], `${session.id}.zip`, { type: 'application/zip' });
 
             // Import via the standard workspace import flow (parquet + state)
-            const wsId = generateSessionId();
-            // Set workspace ID first so fetchWithIdentity sends X-Workspace-Id header
-            dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title }));
+            const wsId = generateWorkspaceId();
+            // Set workspace ID first so fetchWithIdentity sends X-Workspace-Id
+            // header; provisional so a failed import stays on the landing page.
+            dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title, provisional: true }));
             const state = await importWorkspace(file, wsId, session.title);
             dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title } }));
 
@@ -919,11 +905,7 @@ export const DataFormulatorFC = ({ }) => {
             <Box sx={{ mt: 5 }}>
                 <LandingDataEntry
                     onStartChat={startAnalystChat}
-                    ensureActiveWorkspace={() => {
-                        if (!store.getState().activeWorkspace) {
-                            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
-                        }
-                    }}
+                    ensureActiveWorkspace={() => dispatch(ensureActiveWorkspace())}
                     onUpload={() => openUploadDialog('upload')}
                     onConnect={serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection')}
                     onLinkFolder={serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined}
@@ -1121,7 +1103,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {activeWorkspace && !provisionalSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : (
+                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}

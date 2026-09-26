@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable
 
 import pyarrow as pa
 import pymysql
@@ -227,35 +227,48 @@ class MySQLDataLoader(ExternalDataLoader):
         
         return arrow_table
 
-    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
-        """Compile the SPJQ to MySQL and run it server-side."""
-        if not path:
-            return {"error": "probe requires a non-empty table path"}
-        src = ".".join(str(p) for p in path)
+    def _structured_target(self, source_table: str) -> tuple[str, Callable[[str], pa.Table]]:
+        """Quoted relation and lock-guarded executor for compiled structured SQL."""
         dialect = probe_utils.MYSQL
-        try:
-            if "." in src:
-                db, tbl = src.split(".", 1)
-                relation = (
-                    f"{probe_utils.quote_ident(db.strip('`'), dialect)}."
-                    f"{probe_utils.quote_ident(tbl.strip('`'), dialect)}"
-                )
-            elif self.database:
-                relation = (
-                    f"{probe_utils.quote_ident(self.database, dialect)}."
-                    f"{probe_utils.quote_ident(src.strip('`'), dialect)}"
-                )
-            else:
-                relation = probe_utils.quote_ident(src.strip("`"), dialect)
-        except ValueError as exc:
-            return {"error": f"invalid table identifier: {exc}"}
+        if "." in source_table:
+            db, tbl = source_table.split(".", 1)
+            relation = (
+                f"{probe_utils.quote_ident(db.strip('`'), dialect)}."
+                f"{probe_utils.quote_ident(tbl.strip('`'), dialect)}"
+            )
+        elif self.database:
+            relation = (
+                f"{probe_utils.quote_ident(self.database, dialect)}."
+                f"{probe_utils.quote_ident(source_table.strip('`'), dialect)}"
+            )
+        else:
+            relation = probe_utils.quote_ident(source_table.strip("`"), dialect)
 
         def _execute(sql: str) -> pa.Table:
             with self._lock:
                 return self._read_sql(sql)
 
+        return relation, _execute
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on MySQL."""
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        relation, execute = self._structured_target(source_table)
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=relation, dialect=probe_utils.MYSQL, execute=execute,
+        )
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to MySQL and run it server-side."""
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        try:
+            relation, execute = self._structured_target(".".join(str(p) for p in path))
+        except ValueError as exc:
+            return {"error": f"invalid table identifier: {exc}"}
         return probe_utils.probe_via_native_sql(
-            query, relation=relation, dialect=dialect, execute=_execute,
+            query, relation=relation, dialect=probe_utils.MYSQL, execute=execute,
         )
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:

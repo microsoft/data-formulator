@@ -60,6 +60,7 @@ class AthenaDataLoader(ExternalDataLoader):
 
     DISPLAY_NAME = "Athena"
     DESCRIPTION = "Query data in Amazon S3 using AWS Athena (Presto SQL)."
+    QUERY_EXECUTION = "server_query"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -359,7 +360,18 @@ class AthenaDataLoader(ExternalDataLoader):
             probe_utils.query_from_import_options(opts), size,
             relation=source_table, dialect=probe_utils.ATHENA,
         )
-        
+        return self._run_query_arrow(query)
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on Athena."""
+        _validate_athena_table_name(source_table)
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=source_table, dialect=probe_utils.ATHENA,
+            execute=self._run_query_arrow,
+        )
+
+    def _run_query_arrow(self, query: str) -> pa.Table:
+        """Execute ``query`` on Athena and read its CSV result from S3."""
         log.info(f"Executing Athena query: {query[:200]}...")
         
         # Execute query and get result location

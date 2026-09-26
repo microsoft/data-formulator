@@ -177,19 +177,31 @@ def _contains_lit(v: Any) -> str:
 
 
 def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect,
-                   string_columns: tuple[str, ...] = ()) -> str:
-    """Compile probe ``filters`` into a dialect-aware ``WHERE`` clause."""
+                   string_columns: tuple[str, ...] = (), *, strict: bool = False) -> str:
+    """Compile probe ``filters`` into a dialect-aware ``WHERE`` clause.
+
+    Probes skip filters they cannot compile. ``strict`` (durable loads) raises
+    instead, so a dropped filter can never widen a result that claims a scope.
+    """
+    def skip(reason: str) -> None:
+        if strict:
+            raise ValueError(reason)
+
     parts: list[str] = []
     for f in filters or []:
         if not isinstance(f, dict):
+            skip("each filter must be an object")
             continue
         col = f.get("column")
         op = _FILTER_OP_TO_SQL.get((f.get("op") or "").upper().strip())
         if not col or op is None:
+            skip(f"unsupported filter: {f!r}")
             continue
         try:
             qcol = quote_ident(str(col), dialect)
         except ValueError:
+            if strict:
+                raise
             continue
         val = f.get("value")
 
@@ -198,6 +210,7 @@ def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect,
         elif op in ("IN", "NOT IN"):
             vals = val if isinstance(val, (list, tuple)) else [val]
             if not vals:
+                skip(f"{op} filter on {col!r} requires at least one value")
                 continue
             parts.append(f"{qcol} {op} ({', '.join(_lit(v) for v in vals)})")
             if (dialect == DUCKDB and op == "IN" and col in string_columns
@@ -206,6 +219,8 @@ def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect,
         elif op == "BETWEEN":
             if isinstance(val, (list, tuple)) and len(val) == 2:
                 parts.append(f"{qcol} BETWEEN {_lit(val[0])} AND {_lit(val[1])}")
+            else:
+                skip(f"BETWEEN filter on {col!r} requires a [low, high] value")
         elif op == "ILIKE" and dialect.ilike == "lower_like":
             parts.append(f"LOWER({qcol}) LIKE LOWER({_contains_lit(val)})")
         elif op == "ILIKE":
@@ -312,6 +327,7 @@ def compile_probe_sql(
     relation: str = "t",
     dialect: SqlDialect = ANSI,
     string_columns: tuple[str, ...] = (),
+    strict: bool = False,
 ) -> str:
     """Compile a probe SPJQ ``query`` (design 37 §4.2) into a single SELECT.
 
@@ -319,7 +335,8 @@ def compile_probe_sql(
     ``read_parquet(...)`` scan). Only bare columns and a fixed set of aggregate
     ops are emitted — never raw expressions. Filters are always applied here so
     the result is correct regardless of what a loader pushed down. Raises
-    ``ValueError`` on an invalid aggregate op.
+    ``ValueError`` on an invalid aggregate op. ``strict`` also raises on any
+    filter or ordering it cannot compile (see :func:`_compile_where`).
 
     ``string_columns`` supplies verified VARCHAR fields for an additional exact
     DuckDB membership predicate. Keep IN for statistics pruning; list_contains
@@ -368,7 +385,7 @@ def compile_probe_sql(
     else:
         sql = f"SELECT {select_list} FROM {relation}"
 
-    where = _compile_where(filters, dialect, string_columns)
+    where = _compile_where(filters, dialect, string_columns, strict=strict)
     if where:
         sql += f" {where}"
 
@@ -377,11 +394,11 @@ def compile_probe_sql(
 
     order_parts: list[str] = []
     for o in order_by:
-        if not isinstance(o, dict):
+        if not isinstance(o, dict) or not o.get("column"):
+            if strict:
+                raise ValueError(f"unsupported order_by entry: {o!r}")
             continue
-        col = o.get("column")
-        if not col:
-            continue
+        col = o["column"]
         direction = "DESC" if str(o.get("dir", "")).lower() == "desc" else "ASC"
         order_parts.append(f"{q(col)} {direction}")
     if order_parts:
@@ -449,6 +466,31 @@ def probe_via_native_sql(
         logger.debug("probe sql failed: %s", sql, exc_info=True)
         return {"error": f"probe failed: {exc}"}
     return shape_probe_payload(result, out_limit, exact=True)
+
+
+def query_via_native_sql(
+    query: dict[str, Any],
+    limit: int,
+    *,
+    relation: str,
+    dialect: SqlDialect,
+    execute: Callable[[str], pa.Table],
+) -> pa.Table:
+    """Run a durable structured load (filter/group/aggregate) on a SQL source.
+
+    The loader-side half of ``query_data_as_arrow`` for SQL backends: the same
+    compiler as probes, but ``limit`` is the caller's (the executor passes one
+    row past its cap to detect overflow) and every filter must compile. Only
+    the structured vocabulary is accepted; raw native SQL is never executed.
+    """
+    q = query or {}
+    if q.get("native") is not None:
+        raise ValueError("Native query text is not supported by this connector.")
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("Structured query limit must be a positive integer.")
+    sql = compile_probe_sql(q, limit, relation=relation, dialect=dialect, strict=True)
+    logger.info("Executing structured %s query against %s", dialect.name, relation)
+    return execute(sql)
 
 
 def run_probe_on_duckdb(

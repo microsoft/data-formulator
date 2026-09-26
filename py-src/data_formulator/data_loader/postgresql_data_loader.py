@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Callable
 
 _PG_CLIENT_ENCODING = "UTF8"
 # libpq/psycopg2 can consult this during connection startup, so set it before importing psycopg2.
@@ -238,21 +238,31 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         
         return arrow_table
 
+    def _structured_target(self, source_table: str) -> tuple[str, Callable[[str], pa.Table]]:
+        """Quoted relation and executor for compiled structured SQL."""
+        db, schema, table = self._resolve_source_table(source_table)
+        relation = (
+            f"{probe_utils.quote_ident(schema, probe_utils.POSTGRES)}."
+            f"{probe_utils.quote_ident(table, probe_utils.POSTGRES)}"
+        )
+        execute = (lambda sql: self._read_sql_on(sql, db)) if db else self._read_sql
+        return relation, execute
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on PostgreSQL."""
+        relation, execute = self._structured_target(source_table)
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=relation, dialect=probe_utils.POSTGRES, execute=execute,
+        )
+
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         """Compile the SPJQ to PostgreSQL and run it server-side."""
         if not path:
             return {"error": "probe requires a non-empty table path"}
-        db, schema, table = self._resolve_source_table(
-            ".".join(str(p) for p in path)
-        )
         try:
-            relation = (
-                f"{probe_utils.quote_ident(schema, probe_utils.POSTGRES)}."
-                f"{probe_utils.quote_ident(table, probe_utils.POSTGRES)}"
-            )
+            relation, execute = self._structured_target(".".join(str(p) for p in path))
         except ValueError as exc:
             return {"error": f"invalid table identifier: {exc}"}
-        execute = (lambda sql: self._read_sql_on(sql, db)) if db else self._read_sql
         return probe_utils.probe_via_native_sql(
             query, relation=relation, dialect=probe_utils.POSTGRES, execute=execute,
         )
