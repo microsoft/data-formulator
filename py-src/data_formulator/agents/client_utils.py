@@ -14,6 +14,7 @@ GATEWAY_DEFAULT_API_BASES = {
     "openrouter": "https://openrouter.ai/api/v1",
     "orcarouter": "https://api.orcarouter.ai/v1",
     "cheaperinference": "https://api.cheaperinference.com/v1",
+    "api_route": "https://global.api-route.com/v1",
 }
 
 
@@ -335,6 +336,10 @@ class Client(object):
             # model ids (e.g. ``gpt-5.4-mini``, ``claude-sonnet-5``), so route
             # the model unchanged through LiteLLM's openai provider against
             # the Cheaper Inference base URL.
+            self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
+            self.params["custom_llm_provider"] = "openai"
+        elif self.endpoint == "api_route":
+            # API Route accepts bare OpenAI-compatible model IDs.
             self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
             self.params["custom_llm_provider"] = "openai"
 

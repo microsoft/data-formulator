@@ -183,7 +183,7 @@ class TestGetClientGlobalResolution:
 
             assert exc.value.get_http_status() == 403
 
-    @pytest.mark.parametrize("endpoint", ["orcarouter", "cheaperinference"])
+    @pytest.mark.parametrize("endpoint", ["orcarouter", "cheaperinference", "api_route"])
     @patch.dict(
         os.environ,
         {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.openai.com/*"},
@@ -198,16 +198,17 @@ class TestGetClientGlobalResolution:
             get_client({"endpoint": endpoint, "model": "m", "api_key": "k", "api_base": ""})
         assert exc.value.get_http_status() == 403
 
-    @patch.dict(
-        os.environ,
-        {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.cheaperinference.com/*"},
-        clear=True,
-    )
-    def test_blank_gateway_base_allowed_when_default_is_listed(self):
+    @pytest.mark.parametrize("endpoint,base", [
+        ("cheaperinference", "https://api.cheaperinference.com/v1"),
+        ("api_route", "https://global.api-route.com/v1"),
+    ])
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_blank_gateway_base_allowed_when_default_is_listed(self, endpoint, base):
         from data_formulator.routes.agents import get_client
 
-        client = get_client({"endpoint": "cheaperinference", "model": "m", "api_key": "k"})
-        assert client.params["api_base"] == "https://api.cheaperinference.com/v1"
+        os.environ["DF_ALLOWED_API_BASES"] = base + "*"
+        client = get_client({"endpoint": endpoint, "model": "m", "api_key": "k"})
+        assert client.params["api_base"] == base
 
     @patch.dict(
         os.environ,

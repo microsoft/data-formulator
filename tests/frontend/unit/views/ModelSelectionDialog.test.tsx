@@ -172,10 +172,10 @@ describe('Model connection form', () => {
         fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
         const listbox = await screen.findByRole('listbox');
         expect(Array.from(listbox.children).map(child => child.textContent)).toEqual([
-            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
+            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference', 'API Route',
         ]);
         expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
-            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
+            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference', 'API Route',
         ]);
         const openRouter = screen.getByRole('option', { name: 'OpenRouter' });
         act(() => openRouter.focus());
@@ -561,7 +561,7 @@ describe('Model connection form', () => {
         expect(screen.queryByRole('button', { name: 'Use recent' })).not.toBeInTheDocument();
     });
 
-    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'Azure', 'Ollama', 'OrcaRouter', 'Cheaper Inference'])(
+    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'Azure', 'Ollama', 'OrcaRouter', 'Cheaper Inference', 'API Route'])(
         '%s does not treat a suggested model as a selected model', async provider => {
         openForm();
         await chooseProvider(provider);
@@ -686,13 +686,27 @@ describe('Model connection form', () => {
         expect(store.getState().models[0]).toMatchObject({ endpoint: 'ollama', model: 'llama3.2', api_key: '', api_base: '' });
     });
 
-    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'OrcaRouter', 'Cheaper Inference'])('%s keeps optional URL overrides under Advanced', async provider => {
+    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'OrcaRouter', 'Cheaper Inference', 'API Route'])('%s keeps optional URL overrides under Advanced', async provider => {
         openForm();
         await chooseProvider(provider);
         expect(screen.getByLabelText('Base URL')).not.toBeVisible();
         expect(screen.getByLabelText('API Key')).toBeVisible();
         fireEvent.click(screen.getByRole('button', { name: 'Advanced settings' }));
         expect(await screen.findByRole('textbox', { name: 'Base URL' })).toBeVisible();
+    });
+
+    it('offers the API Route URL and saves a model with its own provider ID', async () => {
+        const store = openForm();
+        await chooseProvider('API Route');
+        expect(screen.getByRole('textbox', { name: /^Model/ })).toHaveAttribute('placeholder', 'gpt-5.5');
+        fireEvent.click(screen.getByRole('button', { name: 'Advanced settings' }));
+        expect(screen.getByRole('textbox', { name: 'Base URL' })).toHaveAttribute('placeholder', 'https://global.api-route.com/v1');
+        fireEvent.change(screen.getByRole('textbox', { name: /^Model/ }), { target: { value: 'gpt-5.5' } });
+        fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'test-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(store.getState().models[0]).toMatchObject({
+            endpoint: 'api_route', model: 'gpt-5.5', api_base: '', api_key: 'test-key',
+        }));
     });
 
     it('clears credentials and incompatible values when switching providers', async () => {

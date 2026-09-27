@@ -98,6 +98,7 @@ const PROVIDERS: Record<string, { label: string; model: string; base: string; co
     chatgpt: { label: 'ChatGPT', model: '', base: '', connectionMethod: 'account' },
     orcarouter: { label: 'OrcaRouter', model: 'auto', base: 'https://api.orcarouter.ai/v1', connectionMethod: 'api' },
     cheaperinference: { label: 'Cheaper Inference', model: 'gpt-5.4-mini', base: 'https://api.cheaperinference.com/v1', connectionMethod: 'api' },
+    api_route: { label: 'API Route', model: 'gpt-5.5', base: 'https://global.api-route.com/v1', connectionMethod: 'api' },
 };
 
 const connectionRequest = (provider: string, action: string, body: object = {}) => apiRequest(
@@ -189,7 +190,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         'gemini': [],
         'ollama': [],
         'orcarouter': [],
-        'cheaperinference': []
+        'cheaperinference': [],
+        'api_route': []
     });
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -568,7 +570,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             'gemini': [],
             'ollama': [],
             'orcarouter': [],
-            'cheaperinference': []
+            'cheaperinference': [],
+            'api_route': []
         };
 
         globalModels.forEach((modelConfig: any) => {
