@@ -371,6 +371,7 @@ def handle_read_catalog_metadata(
     column_offset: int = 0,
     column_query: str | None = None,
     role: str | None = None,
+    relationship_offset: int | None = None,
 ) -> str:
     """Handle a read_catalog_metadata tool call.
 
@@ -467,20 +468,24 @@ def handle_read_catalog_metadata(
     if table_desc:
         lines.append(f"\nDescription: {table_desc}")
 
-    columns = meta.get("columns", [])
-    if columns:
-        if meta.get("query_model") == "semantic":
-            roles = [col.get("role") for col in columns]
-            entities = sorted({str(col["entity"]) for col in columns if col.get("entity")})
-            lines.append(
-                f"\nSemantic model: {len(columns)} fields: {roles.count('measure')} measures, "
-                f"{roles.count('dimension')} dimensions, {roles.count('time_dimension')} time dimensions."
-                + (f" Entities: {', '.join(entities[:30])}." if entities else "")
-                + " Select dimensions and measures in query.columns; the model groups by the selected dimensions."
-            )
-            relationships = meta.get("relationships") or []
-            if relationships and not column_offset:
-                lines.append("Relationships: " + json.dumps(relationships[:20], ensure_ascii=False))
+    header = "\n".join(lines)
+    lines = [header if len(header) <= 1200 else header[:1200] + "\n[Summary truncated]"]
+    columns = meta.get("columns") or []
+    relationships = meta.get("relationships") or []
+    if meta.get("query_model") == "semantic":
+        roles = [col.get("role") for col in columns]
+        lines.append(
+            f"\nSemantic model: {len(columns)} fields: {roles.count('measure')} measures, "
+            f"{roles.count('dimension')} dimensions, {roles.count('time_dimension')} time dimensions."
+            " Select dimensions and measures in query.columns; the model groups by the selected dimensions."
+        )
+
+    if relationship_offset is not None:
+        start = max(0, int(relationship_offset))
+        matching = relationships
+        label, cursor, filtered = "Relationships", "relationship_offset", ""
+        lines.append("For fields, omit relationship_offset.")
+    else:
         needle = (column_query or "").casefold().strip()
         matching = [
             col for col in columns
@@ -489,25 +494,32 @@ def handle_read_catalog_metadata(
         ]
         start = max(0, int(column_offset or 0))
         filtered = " matching the filter" if needle or role else ""
-        if start >= len(matching):
-            lines.append(f"\nNo columns{filtered} at column_offset={start}; {len(matching)} available.")
-        else:
-            budget = _CATALOG_METADATA_CHAR_LIMIT - len("\n".join(lines)) - 200
-            page: list[str] = []
-            for col in matching[start:start + _CATALOG_COLUMNS_PER_PAGE]:
-                line = _format_catalog_column(col)
-                if page and budget - len(line) - 1 < 0:
-                    break
-                page.append(line)
-                budget -= len(line) + 1
-            end = start + len(page)
-            lines.append(f"\nColumns {start + 1}-{end} of {len(matching)}{filtered}:")
-            lines.extend(page)
-            if end < len(matching):
-                lines.append(f"  Next: column_offset={end}.")
+        label, cursor = "Columns", "column_offset"
+        if relationships:
+            lines.append(f"Relationships: {len(relationships)} available; request relationship_offset=0.")
 
-    text = "\n".join(lines)
-    return text[:_CATALOG_METADATA_CHAR_LIMIT] + "\n..." if len(text) > _CATALOG_METADATA_CHAR_LIMIT else text
+    if start >= len(matching):
+        lines.append(f"\nNo {label.lower()}{filtered} at {cursor}={start}; {len(matching)} available.")
+    else:
+        budget = _CATALOG_METADATA_CHAR_LIMIT - len("\n".join(lines)) - 256
+        page: list[str] = []
+        for item in matching[start:start + _CATALOG_COLUMNS_PER_PAGE]:
+            line = ("  - " + json.dumps(item, ensure_ascii=False) if relationship_offset is not None
+                    else _format_catalog_column(item))
+            if len(line) + 1 > budget:
+                if page:
+                    break
+                marker = "... [metadata truncated]"
+                line = line[:budget - len(marker) - 1] + marker
+            page.append(line)
+            budget -= len(line) + 1
+        end = start + len(page)
+        lines.append(f"\n{label} {start + 1}-{end} of {len(matching)}{filtered}:")
+        lines.extend(page)
+        if end < len(matching):
+            lines.append(f"  Next: {cursor}={end}. Keep the same source, table, and filters.")
+
+    return "\n".join(lines)
 
 
 _CATALOG_METADATA_CHAR_LIMIT = 4000
@@ -516,12 +528,16 @@ _CATALOG_COLUMNS_PER_PAGE = 50
 
 def _format_catalog_column(col: dict[str, Any]) -> str:
     details = [str(col[key]) for key in ("type", "role") if col.get(key)]
+    if col.get("entity"):
+        details.append(f"entity={col['entity']}")
     if col.get("aggregation"):
         details.append(f"aggregation={col['aggregation']}")
     if col.get("granularities"):
         details.append("granularities=" + "/".join(map(str, col["granularities"])))
     if col.get("ref"):
         details.append(f"ref={col['ref']}")
+    if col.get("format"):
+        details.append(f"format={col['format']}")
     line = f"  - {col.get('name', '?')}"
     if col.get("verbose_name"):
         line += f" [{col['verbose_name']}]"
@@ -529,7 +545,8 @@ def _format_catalog_column(col: dict[str, Any]) -> str:
         line += f" ({', '.join(details)})"
     description = col.get("description", "") or col.get("source_description", "")
     if description:
-        line += f": {description}"
+        line += f": {description[:300]}" + ("... [description truncated]" if len(description) > 300 else "")
     if col.get("expression"):
-        line += f"  [calc: {col['expression']}]"
+        expression = str(col["expression"])
+        line += f"  [calc: {expression[:300]}" + ("... [expression truncated]" if len(expression) > 300 else "") + "]"
     return line

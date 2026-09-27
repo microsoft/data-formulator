@@ -416,6 +416,10 @@ class DataDiscoveryService:
             column_offset = max(0, int(args.get("column_offset") or 0))
         except (TypeError, ValueError):
             return {"error": "column_offset must be a non-negative integer"}
+        relationship_offset = args.get("relationship_offset")
+        if relationship_offset is not None:
+            if isinstance(relationship_offset, bool) or not isinstance(relationship_offset, int) or relationship_offset < 0:
+                return {"error": "relationship_offset must be a non-negative integer"}
         role = args.get("role") or None
         if role not in {None, "dimension", "time_dimension", "measure"}:
             return {"error": "role must be dimension, time_dimension, or measure"}
@@ -428,6 +432,7 @@ class DataDiscoveryService:
                 column_offset=column_offset,
                 column_query=str(args.get("column_query") or "") or None,
                 role=role,
+                relationship_offset=relationship_offset,
             )
         }
 

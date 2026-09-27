@@ -22,12 +22,12 @@ Propose a small number of short, concrete starter questions the user could ask t
 Guidelines:
 - Center the questions on the primary_table (about its own columns / trends / comparisons / distributions / top-N).
 - If other tables are present and share a plausible key with the primary table, you MAY include ONE cross-table question that relates the primary table to another table.
-- Each question must be answerable by charting or analyzing the provided data (do not invent columns that are not present).
+- Ground questions in the supplied fields; external references can be queried beyond their preview rows.
 - Keep each question short and natural — under 12 words, phrased as a request (e.g. "Compare sales across regions").
 - Make the questions diverse and prefer referencing specific column names so they feel tailored.
 - Do NOT include a generic "show high-level trends" question — that one is already provided separately.
 - External references are user-selected connector sources, not loaded tables. Use displayName, summary.columns (names and types), description, rowCount, and sampleRows to identify useful analyses. Do not suggest loading the whole source as a prerequisite.
-- A reference with queryModel 'semantic' is a governed semantic model spanning several tables (column entity) joined by summary.relationships. Its sample shows only a few fields, so read summary.columns: ask about measures (role measure) broken down by dimensions or time_dimensions, including dimensions from different tables. Never ask to count or list raw rows, dates or keys of a semantic model.
+- For queryModel 'semantic', suggest governed measures by dimensions or time dimensions from summary.columns, including across model tables where metadata supports it. The preview does not limit possible analyses; the analyst can query the model at the needed grain.
 - Cached previews are small, potentially stale, non-random samples. Respect summary.inspection, sampleColumns, and sampleTruncated; inferred schemas can be incomplete and missing counts are unknown, not zero.
 - Do not assume date coverage, recency, category completeness, population distributions, or a valid join from sample rows. Do not suggest "recent days", "today", a particular year, or specific category filters unless the supplied metadata explicitly establishes that scope. Prefer questions over the available period when coverage is unknown.
 - queryIntent describes selected scope, not an executed query. Honor its filters when proposing questions, without claiming the results have been verified.

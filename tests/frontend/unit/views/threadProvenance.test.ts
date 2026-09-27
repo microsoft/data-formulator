@@ -610,6 +610,42 @@ it('balances consecutive pieces and visually joins neighbors without discarding 
 });
 
 describe('thread provenance', () => {
+  it('places mid-run loads after the output that preceded them', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const source = (id: string) => ({ kind: 'table', id, displayId: id, names: [], metadata: {}, rows: [],
+      virtual: { tableId: id, rowCount: 0 } }) as any;
+    const derived = (id: string, parentNodeId: string, triggerTableId: string, input: string) => ({
+      ...source(id), displayId: `${id} chart`, parentNodeId,
+      derive: { source: [input], code: '', dialog: [], trigger: { tableId: triggerTableId, resultTableId: id,
+        interaction: [{ from: 'data-agent', to: 'user', role: 'instruction', content: `question ${id}` }] } },
+    }) as any;
+    store.dispatch(dfActions.addTableToStore(source('daily')));
+    store.dispatch(dfActions.addTableToStore(source('regional')));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'opening', displayId: 'opening', textKind: 'explain',
+      content: 'opening response', parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
+    store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'load-daily', tableId: 'daily',
+      parentNodeId: 'opening', createdAt: 2 }));
+    store.dispatch(dfActions.insertDerivedTables(derived('trend', 'opening', 'daily', 'daily')));
+    store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'load-regional', tableId: 'regional',
+      parentNodeId: 'trend', createdAt: 3 }));
+    store.dispatch(dfActions.insertDerivedTables(derived('regions', 'trend', 'trend', 'regional')));
+    const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+    const { container } = render(React.createElement(Provider, { store, children:
+      React.createElement(ThemeProvider, { theme, children:
+        React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+      }),
+    }));
+    const daily = container.querySelector('[data-thread-item="load-daily"]')!;
+    const regional = container.querySelector('[data-thread-item="load-regional"]')!;
+    expect(daily).toBeTruthy();
+    expect(regional).toBeTruthy();
+    const trend = screen.getByText('question trend');
+    const regions = screen.getByText('question regions');
+    expect(daily.compareDocumentPosition(trend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(trend.compareDocumentPosition(regional) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(regional.compareDocumentPosition(regions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('renders data references rooted directly in a conversation without a text reply', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'generated', displayId: 'Generated data',

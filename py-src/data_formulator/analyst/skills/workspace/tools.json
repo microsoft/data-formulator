@@ -465,7 +465,7 @@
     "type": "function",
     "function": {
       "name": "describe_data",
-      "description": "Read cached metadata, columns, types, description, and row count for one discovered table. Columns are paged: follow 'Next: column_offset=N', or narrow with column_query/role. Semantic models (query_model=semantic) list dimensions, time dimensions with granularities, and measures with declared aggregation and native refs.",
+      "description": "Read cached metadata for one table or semantic model. Page fields with column_offset; narrow with column_query/role. Semantic fields include roles, native refs, and granularities. Set relationship_offset to page relationships instead. Follow the returned Next cursor with the same source, table, and filters.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -479,6 +479,11 @@
             "type": "integer",
             "minimum": 0,
             "description": "Zero-based index of the first column to list."
+          },
+          "relationship_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Return a relationship page instead of fields, starting at this zero-based index. Omit for field pages."
           },
           "column_query": {
             "type": "string",
@@ -501,7 +506,7 @@
     "type": "function",
     "function": {
       "name": "probe_data",
-      "description": "Run a read-only structured query with a bounded RESULT against one connected table whose schema is known from cached context or describe_data. Check query_capabilities first: remote_file_scan can transfer and scan the entire CSV/JSON source despite a small result limit; server_query executes on the source engine but can still be expensive. Reuse cached metadata and relevant loaded data. When the needed raw-row scope is already known, load once and compute locally instead of probing then loading the same file. For semantic models, select dimensions and measures in columns; the model groups by the selected dimensions. native runs a read-only query in an advertised native_query_languages language, following query_capabilities.native_query_guidance. Results are evidence and do not become workspace inputs.",
+      "description": "Resolve unknown values or coverage with a bounded read-only query against a connected table or semantic model. Use known schema from context or describe_data. Semantic queries select dimensions and measures in columns; native uses an advertised language and its query_capabilities.native_query_guidance. A small result does not guarantee a cheap scan; check query_capabilities. Results are inspection evidence, not workspace inputs; use propose_data_operation to load data for analysis.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -726,7 +731,7 @@
                       },
                       "query": {
                         "type": "object",
-                        "description": "Omit to add the source with automatic small/local or large/virtual selection; semantic models are always added as a reference when query is omitted. Supplying a query, even {}, requests materialization and never falls back to a virtual reference. For semantic models, select dimensions and measures in columns at the final analysis grain. Prefer a bounded reusable working dataset then local Python; use native only when source-side computation is required and its language is advertised in query_capabilities.native_query_languages. Native, semantic, and aggregate results allow at most 10000 rows; explicit limits mean partial coverage.",
+                        "description": "Omit for automatic local/virtual selection; semantic models become references. Supply a query to materialize data, with no virtual fallback. Semantic queries select dimensions and measures in columns at the required grain. Use advertised native queries for shapes structured queries cannot express. Native, semantic, and aggregate results allow at most 10000 rows; explicit limits define requested coverage.",
                         "properties": {
                           "native": {
                             "type": "object",

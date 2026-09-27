@@ -1370,9 +1370,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
             if (result.type === "data_operation_result") {
                 const operation = parseDataOperation(result.operation);
-                if (askedFromNode?.startsWith('textTurn')) {
+                // Only the turn that proposed this operation owns it; loads the agent runs
+                // mid-run continue from the run's latest output instead.
+                const proposalTurn = (currentStore.getState() as DataFormulatorState).textTurns.find(turn =>
+                    turn.id === askedFromNode
+                    && (turn.dataOperation?.id === operation.id || turn.resume?.operationId === operation.id));
+                if (proposalTurn) {
                     dispatch(dfActions.updateTextTurn({
-                        id: askedFromNode,
+                        id: proposalTurn.id,
                         dataOperation: operation,
                     }));
                 }
@@ -1388,10 +1393,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const publishedIds = new Set(operation.resultTableIds);
                     const publishedTables = (data.tables || [])
                         .filter((table: any) => publishedIds.has(table.name));
-                    // The loaded table continues the conversation that produced
-                    // it, so author the thread edge back to that turn.
-                    const operationTurnId = askedFromNode?.startsWith('textTurn') ? askedFromNode
-                        : currentDraftId || runLastNodeRef.current || askedFromNode;
+                    const operationTurnId = proposalTurn?.id || runLastNodeRef.current || askedFromNode;
                     for (const workspaceTable of publishedTables) {
                         const existing = tables.find(table => table.id === workspaceTable.name);
                         const table = existing || buildDictTableFromWorkspace(workspaceTable, undefined);

@@ -1882,6 +1882,7 @@ let SingleThreadGroupView: FC<{
         if (afterEntries.length > 0) {
             pushInteractionEntries(afterEntries, tableId, triggerType, highlighted, `${keyPrefix}-after`);
         }
+        pushLoadedTables(tableId, triggerType);
         // Conversation on the table: the run's closing answer, then anything new.
         pushTableTextTurns(tableId, highlighted, triggerType);
         // Running / clarifying agent state.
@@ -1921,6 +1922,7 @@ let SingleThreadGroupView: FC<{
                 element: el,
             }));
             pushReportItems(originTableId, isHL, 'trigger');
+            pushLoadedTables(originTableId, 'trigger');
             pushTableTextTurns(originTableId, isHL, 'trigger');
             pushAgentDraftItems(originTableId, 'trigger', isHL);
         }
@@ -3090,13 +3092,14 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // root table that hosts its parent turn.
     const loadedTableHosts = useMemo(() => {
         const map = new Map<string, string>();
+        const tableIds = new Set(tables.map(table => table.id));
         for (const node of loadedTableNodes) {
-            const host = isConversationRootId(node.parentNodeId)
+            const host = isConversationRootId(node.parentNodeId) || tableIds.has(node.parentNodeId)
                 ? node.parentNodeId : textTurnRootByTurn.get(node.parentNodeId);
             if (host) map.set(node.tableId, host);
         }
         return map;
-    }, [loadedTableNodes, textTurnRootByTurn]);
+    }, [loadedTableNodes, textTurnRootByTurn, tables]);
     const loadedTablesByHost = useMemo(() => {
         const map = new Map<string, string[]>();
         for (const [tableId, host] of loadedTableHosts) {

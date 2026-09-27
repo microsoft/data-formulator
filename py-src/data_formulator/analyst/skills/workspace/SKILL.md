@@ -78,7 +78,7 @@ that the result necessarily covers the full source.
 | Relevant workspace table or file covers the task | Read its listed path, compute locally, and visualize or report. No connector load is needed. |
 | Large external reference, no suitable local copy | Reuse cached metadata; describe or probe only for unresolved schema or scope. Load a bounded, reusable working dataset with `propose_data_operation`, then analyze and visualize from the successful result. |
 | Needed data is absent | Discover connected data and reconcile it with existing inputs. Load a suitable working dataset directly; missing source references are registered automatically with query loads. A discovery-only request does not require loading. |
-| Follow-up on an existing analysis | Reuse a dataset whose coverage contains the request and whose columns, detail, and freshness support it; filter locally. Query the source only for a concrete gap, not chart styling or another local grouping. |
+| Follow-up on an existing analysis | Reuse a result whose fields, scope, grain, and freshness support the request. Query the source for gaps; chart styling alone needs no reload. For governed measures, follow Semantic Models below. |
 | Single external chart with known schema and scope, and no broader analysis requested | Optionally use `visualize` with `connector_inputs` for a bounded query and chart in one call. When unsure, use the separate load path. |
 
 ### Choose a Reusable Working Dataset
@@ -105,8 +105,8 @@ loaded within connector limits, explain the constraint and resolve the tradeoff.
 
 After success, use returned IDs, paths, schema, row counts, and scope directly;
 no extra workspace listing is needed. Continue to the requested answer or chart
-in the same run. Keep the working dataset as an input and derive chart-specific
-filters, grouping, and ranking locally rather than replacing that input.
+in the same run. Keep the working dataset as an input; derive chart-specific
+results locally when its coverage and metric semantics support them.
 
 ## Read Available Data
 
@@ -169,27 +169,24 @@ Other native languages follow `query_capabilities.native_query_guidance`.
 ### Semantic Models
 
 Catalog entries with `query_model: semantic` (for example Cube views or Power BI
-semantic models) expose dimensions and governed measures curated by data
-engineers, not raw rows.
+semantic models) expose dimensions and governed measures, not a fixed dataset.
+The preview is illustrative; a loaded result covers its saved query, not the
+whole model. Reuse it when it supports the request. Query the model for missing
+measures, dimensions, scope, or grain; roll up locally only when the metric's
+semantics permit it, not merely because its values are numeric.
 
 - Select dimensions and measures in `query.columns`; the model groups by the
-  selected dimensions. When a time dimension lists granularities, select a grain
-  as `"Name (grain)"`; otherwise use the model's date columns such as Year or
-  Month. Do not send
-  `group_by`/`aggregates`, and do not recreate a governed measure from raw columns.
-- For business metrics, prefer a semantic model that covers the metric over
-  rebuilding it from raw tables. If the model lacks the concept, use raw sources
-  and say the result is not the governed definition.
-- Measure values are computed at the selected grain; the declared `aggregation`
-  shows how each measure is computed. Query the model again to change grain.
-- Filter on dimensions. For measure-value filters or shapes the structured query
-  cannot express, use `query.native` in the advertised language with field `ref`s.
-- `describe_data` pages fields; narrow large models with `column_query` or `role`.
-- The model, not a cached sample, answers questions: a semantic reference's preview
-  shows only a few fields. For each question, query the model at the needed grain
-  (any measures by any dimensions, across its tables); use Python only on the
-  returned result.
-- Omitting `query` only adds the model as a reference.
+  selected dimensions. Use `"Name (grain)"` for advertised time granularities,
+  otherwise the model's date columns. Do not send `group_by`/`aggregates`.
+- Prefer governed measures over recreating business metrics from raw columns.
+  If a metric requires a raw-source fallback, distinguish it from the governed definition.
+- Use `describe_data` for missing fields, native `ref`s, or granularities;
+  page or narrow with `column_query`/`role`. Use `probe_data` when values or
+  coverage need checking, not as a mandatory step before every load.
+- Filter on dimensions. For measure filters or other unsupported query shapes,
+  use `query.native` with the advertised language and exact field `ref`s.
+- Omitting `query` adds only a reference. Supply a query to materialize a result
+  for Python analysis and visualization.
 
 Read `query_capabilities` in reference context and discovery results before
 probing (`source_query_capabilities` maps source IDs in search results):
