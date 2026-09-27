@@ -23,6 +23,7 @@ import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import TitleIcon from '@mui/icons-material/Title';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { iconVar, textVar } from '../app/layout';
+import { readingTypography } from '../app/tokens';
 
 /** Compact "1.2s" / "850ms" style duration for inspection steps. */
 function formatStepDuration(ms: number): string {
@@ -588,10 +589,10 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                     outline: 'none',
                     padding: '16px 24px',
                     minHeight: '100%',
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+                    fontFamily: readingTypography.fontFamily,
                     fontSize: '0.95rem',
                     lineHeight: 1.7,
-                    color: 'rgb(55, 53, 47)',
+                    color: readingTypography.color,
                     '& h1': {
                         fontSize: '1.75rem',
                         fontWeight: 700,

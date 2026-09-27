@@ -98,18 +98,15 @@ vi.mock('../../../../src/app/workspaceService', async importOriginal => ({
 }));
 
 vi.mock('../../../../src/components/VirtualizedCatalogTree', () => ({
-    VirtualizedCatalogTree: ({ nodes, onItemClick, selectedIds, onToggleSelectTable }: any) => <div data-testid="catalog-tree">
+    VirtualizedCatalogTree: ({ nodes, onItemClick, selectedIds, onToggleSelectTable, renderTableActions }: any) => <div data-testid="catalog-tree">
         {nodes.filter((node: any) => node.node_type === 'table').map((node: any) => <React.Fragment key={node.path.join('/')}>
             <input type="checkbox" aria-label={`Select ${node.name}`} checked={selectedIds?.has(node.path.join('/')) ?? false}
                 onChange={event => onToggleSelectTable?.(node, event.target.checked)} />
             <button
             aria-pressed={selectedIds?.has(node.path.join('/')) ?? false}
-            onClick={event => onItemClick(node, event)}>{node.name}</button></React.Fragment>)}
+            onClick={event => onItemClick(node, event)}>{node.name}</button>
+            {renderTableActions?.(node)}</React.Fragment>)}
     </div>,
-}));
-
-vi.mock('../../../../src/components/ConnectorTablePreview', () => ({
-    ConnectorTablePreview: () => null,
 }));
 
 vi.mock('../../../../src/components/ResizeHandle', () => ({
@@ -179,6 +176,21 @@ describe('DataSourceSidebar', () => {
         }
     });
 
+    it('stays open when clicking inside a dialog opened from it', async () => {
+        localStorage.setItem('df-sidebar-pinned', 'false');
+        render(<DataSourceSidebar />);
+        await screen.findByText('Data Connectors');
+        const dialog = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'MuiModal-root' }));
+        const inside = dialog.appendChild(document.createElement('button'));
+        fireEvent.mouseDown(inside);
+        fireEvent.click(inside);
+        expect(dispatch).not.toHaveBeenCalledWith({ type: 'sidebar/setOpen', payload: false });
+        fireEvent.mouseDown(document.body);
+        fireEvent.click(document.body);
+        expect(dispatch).toHaveBeenCalledWith({ type: 'sidebar/setOpen', payload: false });
+        dialog.remove();
+    });
+
     it('shows only the button tooltip when hovering the workflow icon', async () => {
         vi.useFakeTimers();
         try {
@@ -193,7 +205,7 @@ describe('DataSourceSidebar', () => {
         }
     });
 
-    it.each(['AzureBlobDataLoader', 'PostgreSQLDataLoader'])('selects %s rows and only previews database tables', async sourceType => {
+    it.each(['AzureBlobDataLoader', 'PostgreSQLDataLoader'])('selects %s rows without previewing and opens them in the data view', async sourceType => {
         vi.mocked(apiRequest).mockImplementation(async (url: string) => {
             if (url === '/api/connectors') return { data: { connectors: [{
                 id: 'test-source', display_name: 'Test source', source_type: sourceType, connected: true,
@@ -203,17 +215,18 @@ describe('DataSourceSidebar', () => {
             }] } };
             return { data: {} };
         });
-        render(<DataSourceSidebar />);
+        const onOpenUploadDialog = vi.fn();
+        render(<DataSourceSidebar onOpenUploadDialog={onOpenUploadDialog} />);
         const row = await screen.findByRole('button', { name: 'games.parquet' });
         fireEvent.click(row);
         expect(row).toHaveAttribute('aria-pressed', 'true');
-        if (sourceType === 'AzureBlobDataLoader') {
-            expect(apiRequest).not.toHaveBeenCalledWith('/api/connectors/preview-data', expect.anything());
-        } else {
-            await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/connectors/preview-data', expect.anything()));
-        }
+        expect(apiRequest).not.toHaveBeenCalledWith('/api/connectors/preview-data', expect.anything());
         fireEvent.click(row);
         expect(row).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(screen.getByRole('button', { name: 'Open in data view' }));
+        expect(onOpenUploadDialog).toHaveBeenCalledWith('connector:test-source', ['games.parquet']);
+        fireEvent.click(screen.getByRole('button', { name: 'Browse in data view' }));
+        expect(onOpenUploadDialog).toHaveBeenLastCalledWith('connector:test-source');
     });
 
     it('does not automatically expand the only connected source when other connectors are available', async () => {

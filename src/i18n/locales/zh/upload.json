@@ -121,6 +121,14 @@
     "createConnectionTo": "创建 {{name}} 连接",
     "connectionNameLabel": "连接名称",
     "dataSourceTypes": "数据源",
+    "connectorGroups": {
+      "samples": "示例",
+      "files": "文件",
+      "databases": "数据库",
+      "warehouses": "数据仓库",
+      "semantic": "BI 与语义层",
+      "other": "其他"
+    },
     "folderPathPlaceholder": "/你的数据文件夹路径",
     "includeSubfolders": "包含子文件夹",
     "localFolder": "链接本地文件夹",

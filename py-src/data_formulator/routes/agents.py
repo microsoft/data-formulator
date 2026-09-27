@@ -122,19 +122,22 @@ def preview_data_operation():
         # canvas, and the frontend needs the source to offer a reconnect.
         try:
             loader = resolve_live_loader(step.source_id)
-            options = DataOperationExecutor._build_import_options(step)
+            semantic = loader.query_model(step.source_table) == "semantic"
+            options = DataOperationExecutor._build_import_options(step, semantic=semantic)
             requested = options.get("size")
             preview_size = min(requested, PREVIEW_ROW_LIMIT) if isinstance(requested, int) and requested > 0 else PREVIEW_ROW_LIMIT
             options["size"] = preview_size
             from data_formulator.data_loader.external_data_loader import ExternalDataLoader
-            if step.query.group_by or step.query.aggregates or step.query.native:
-                if step.query.native and step.query.native["language"] not in loader.query_capabilities().get("native_query_languages", []):
-                    raise ValueError("Native query language is not supported by this connector.")
+            if step.query.group_by or step.query.aggregates or step.query.native or semantic:
+                if step.query.native:
+                    loader.check_native_query(step.query.native)
                 from data_formulator.data_loader.query_runtime import execute_source_query
                 table = execute_source_query(loader, "query_data_as_arrow",
                     source_table=step.source_table, query=step.query.to_dict(), limit=preview_size)
                 preview = ExternalDataLoader.format_preview(table, options)
-                preview["inspection"].update(sample_method="native_query" if step.query.native else "aggregate", may_scan_full_source=True)
+                preview["inspection"].update(
+                    sample_method="native_query" if step.query.native else "semantic_query" if semantic else "aggregate",
+                    may_scan_full_source=True)
             else:
                 preview = loader.preview_data(step.source_table, options)
         except Exception as exc:

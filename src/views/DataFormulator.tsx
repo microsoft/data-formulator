@@ -326,18 +326,20 @@ export const DataFormulatorFC = ({ }) => {
     // State for unified data upload dialog
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
+    const [uploadDialogTablePath, setUploadDialogTablePath] = useState<string[] | undefined>();
 
     // Loading state for sessions (from Redux, shared with App.tsx)
     const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
-    const openUploadDialog = (tab: UploadTabType) => {
+    const openUploadDialog = (tab: UploadTabType, tablePath?: string[]) => {
         if (activeWorkspace?.readOnly) return;
         // The dialog talks to the backend, so it needs a workspace ID — but
         // opening it is not entering a session. It stays provisional (landing
         // page) until data lands.
         dispatch(ensureActiveWorkspace());
         setUploadDialogInitialTab(tab);
+        setUploadDialogTablePath(tablePath);
         setUploadDialogOpen(true);
     };
 
@@ -660,7 +662,7 @@ export const DataFormulatorFC = ({ }) => {
     const phoneWorkspace = (
         <Box sx={{ display: 'flex', height: '100%', minWidth: 0 }}>
             <DataSourceSidebar
-                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
                 onAskAgent={(text) => startAnalystChat(text)}
@@ -694,7 +696,7 @@ export const DataFormulatorFC = ({ }) => {
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
             <DataSourceSidebar
-                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
                 onAskAgent={(text) => startAnalystChat(text)}
@@ -1106,7 +1108,7 @@ export const DataFormulatorFC = ({ }) => {
                 {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
-                            onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                            onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
                             connectorRefreshKey={connectorRefreshKey}
                             onConnectorsChanged={handleConnectorsChanged}
                             onAskAgent={(text) => startAnalystChat(text)}
@@ -1119,6 +1121,7 @@ export const DataFormulatorFC = ({ }) => {
                     onClose={closeUploadDialog}
                     onStartChat={startAnalystChat}
                     initialTab={uploadDialogInitialTab}
+                    initialTablePath={uploadDialogTablePath}
                     onConnectorsChanged={handleConnectorsChanged}
                 />
                 {/* Loading overlay for session loading */}

@@ -16,6 +16,7 @@ from data_formulator.data_operations import (
     OperationFilter,
 )
 from data_formulator.datalake.workspace import Workspace
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 from data_formulator.data_loader.query_runtime import execute_source_query, query_worker_scope
 from data_formulator.data_loader import query_runtime
 
@@ -236,6 +237,17 @@ class _Loader:
         self.calls.append((source_table, {"query": query, "limit": limit}))
         return self.table
 
+    def query_capabilities(self):
+        return {"native_query_languages": []}
+
+    def query_model(self, source_table):
+        return "relational"
+
+    def validate_native_query(self, language, text):
+        pass
+
+    check_native_query = ExternalDataLoader.check_native_query
+
 
 def _operation(*steps: ConnectorQueryStep) -> DataOperation:
     plan = DataOperationPlan(
@@ -325,6 +337,28 @@ def test_executor_materializes_aggregate_without_raw_fetch(tmp_path, limit, nati
     assert [column.name for column in metadata.columns] == ["region", "total"]
 
 
+@pytest.mark.parametrize(("reads", "verified"), [
+    (None, False), (["orders"], True), (["orders", "customers"], False), (["customers"], False),
+])
+def test_native_lineage_follows_declared_reads(tmp_path, reads, verified):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"region": ["west"], "total": [30]}))
+    loader.query_capabilities = lambda: {"native_query_languages": ["kql"]}
+    native = {"language": "kql", "text": "orders | summarize total=sum(amount) by region",
+              **({"reads": reads} if reads else {})}
+    step = ConnectorQueryStep(source_id="warehouse", table_key="orders", display_name="Totals",
+                              source_table="orders", query=LoadQuery(native=native))
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    metadata = workspace.get_table_metadata(result.result_table_ids[0])
+    origin = metadata.import_options["data_operation"]
+    assert ("lineage_verified" not in origin) is verified
+    assert (origin.get("lineage") == "declared") is verified
+    derived = workspace.save_agent_data(workspace.read_data_as_df(metadata.name), "native_copy", input_sources=[{
+        "kind": "data", "table_name": metadata.name, "content_hash": metadata.content_hash,
+    }])
+    assert (derived.imported_from == {"source_id": "warehouse", "table_key": "orders"}) is verified
+
+
 @pytest.mark.parametrize("native", [False, True])
 def test_executor_rejects_overflow_instead_of_publishing_partial_aggregate(tmp_path, native):
     workspace = Workspace("test-user", root_dir=tmp_path)
@@ -373,6 +407,40 @@ def test_source_load_uses_virtual_reference_for_large_tables(tmp_path, monkeypat
     else:
         assert result.result_table_ids
         assert not result.result_references
+
+
+def test_semantic_leaf_without_query_is_added_as_reference_only(tmp_path, monkeypatch):
+    from data_formulator.data_operations.discovery import DataDiscoveryService
+
+    monkeypatch.setattr(DataDiscoveryService, "resolve_load_table",
+                        lambda *args: {"display_name": "Orders", "metadata": {"query_model": "semantic"}})
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"value": [1]}))
+    step = ConnectorQueryStep(source_id="cube", table_key="orders", display_name="Orders", source_table="orders")
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert not loader.calls
+    assert not result.result_table_ids and not result.failed_steps
+    assert result.result_references[0]["id"] == "external:cube:orders"
+
+
+def test_semantic_query_uses_query_path_and_keeps_field_descriptions(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    loader = _Loader(pa.table({"Segment": ["SMB"], "Net Revenue": [10.5]}), source_meta={"columns": [
+        {"name": "Segment", "description": "Dimension: customer segment"},
+        {"name": "Net Revenue", "description": "Measure (sum): revenue after refunds"},
+    ]})
+    loader.query_model = lambda source_table: "semantic"
+    query = LoadQuery(columns=("Segment", "Net Revenue"))
+    step = ConnectorQueryStep(source_id="cube", table_key="orders", display_name="Revenue by segment",
+                              source_table="orders", query=query)
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+    assert not result.failed_steps
+    assert loader.calls == [("orders", {"query": query.to_dict(), "limit": 10001})]
+    metadata = workspace.get_table_metadata(result.result_table_ids[0])
+    assert metadata.import_options["structured_query"] == query.to_dict()
+    assert '"coverage": "semantic_query"' in metadata.description
+    assert {column.name: column.description for column in metadata.columns}["Net Revenue"] == (
+        "Measure (sum): revenue after refunds")
 
 
 @pytest.mark.parametrize("query", [LoadQuery(limit=10), LoadQuery()])

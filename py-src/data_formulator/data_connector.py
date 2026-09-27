@@ -173,14 +173,26 @@ def _filter_catalog_tables(
     return [table for table in tables if _matches(table)]
 
 
+_TREE_COLUMN_LIMIT = 50
+
+
 def _lightweight_tree_for_response(tree: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop heavy metadata fields from a catalog tree response."""
+    """Trim heavy metadata fields from a catalog tree response."""
     result: list[dict[str, Any]] = []
     for node in tree:
         cloned = dict(node)
         meta = cloned.get("metadata")
-        if isinstance(meta, dict):
+        if isinstance(meta, dict) and meta.get("query_model") != "semantic":
+            # Semantic fields are the model's only browsable content, so they stay whole.
+            columns = meta.get("columns")
             cloned["metadata"] = {k: v for k, v in meta.items() if k != "columns"}
+            if isinstance(columns, list) and columns:
+                cloned["metadata"]["columns"] = [
+                    {"name": column["name"], **({"type": column["type"]} if column.get("type") else {})}
+                    for column in columns[:_TREE_COLUMN_LIMIT]
+                    if isinstance(column, dict) and column.get("name")
+                ]
+                cloned["metadata"]["column_count"] = len(columns)
         children = cloned.get("children")
         if isinstance(children, list):
             cloned["children"] = _lightweight_tree_for_response(children)
@@ -2030,7 +2042,8 @@ def connector_get_catalog_tree():
             loader = source._require_loader()
             if raw is None or (
                 not data.get("poll") and (
-                    isinstance(loader, LocalFolderDataLoader)
+                    data.get("refresh")
+                    or isinstance(loader, LocalFolderDataLoader)
                     or discovery["status"] in ("failed", "interrupted")
                 )
             ):
@@ -2487,6 +2500,15 @@ def connector_preview_data():
         # preview columns, so we keep this path lean and just return data.
 
         result = {"status": "success", **preview}
+        if loader.query_model(source_id) == "semantic":
+            result["query_model"] = "semantic"
+            # The preview samples a few fields; the agents need the model's full field list.
+            try:
+                model = loader.get_metadata([source_id])
+                result["semantic_fields"] = model.get("columns") or []
+                result["relationships"] = model.get("relationships") or []
+            except Exception:
+                logger.debug("semantic field lookup failed", exc_info=True)
         cluster = getattr(loader, "kusto_cluster", None)
         database = getattr(loader, "kusto_database", None)
         if isinstance(cluster, str) and cluster:

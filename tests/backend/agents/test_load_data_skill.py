@@ -756,6 +756,52 @@ def test_skill_uses_shared_catalog_discovery(tmp_path: Path) -> None:
     assert payload["results"][0]["table_key"] == "public.orders"
 
 
+def test_native_probe_is_validated_by_loader_and_bounded(tmp_path: Path) -> None:
+    from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+
+    save_catalog(tmp_path, "warehouse", [{
+        "name": "orders", "table_key": "public.orders", "path": ["public", "orders"],
+        "metadata": {"_source_name": "public.orders"},
+    }])
+
+    class _NativeLoader(_Loader):
+        def __init__(self, languages):
+            super().__init__()
+            self.languages = languages
+            self.queries = []
+
+        def query_capabilities(self):
+            return {"native_query_languages": self.languages}
+
+        def validate_native_query(self, language, text):
+            if "drop" in text:
+                raise ValueError("rejected by loader")
+
+        check_native_query = ExternalDataLoader.check_native_query
+
+        def query_data_as_arrow(self, source_table, query, limit):
+            self.queries.append((source_table, query, limit))
+            return pa.table({"n": list(range(limit))})
+
+    skill = build_registry().get_skill("workspace")
+    native = {"native": {"language": "kql", "text": "orders | take 5"}, "limit": 3}
+
+    def probe(loader, query):
+        with patch("data_formulator.data_connector.resolve_live_loader", return_value=loader):
+            result = skill.handle_tool("probe_data", {"source_id": "warehouse", "table_key": "public.orders",
+                                                      "query": query}, _context(_Workspace(tmp_path)))
+        return json.loads(result.text)
+
+    loader = _NativeLoader(["kql"])
+    payload = probe(loader, native)
+    assert payload["rows"] == [{"n": 0}, {"n": 1}, {"n": 2}]
+    assert loader.queries == [("public.orders", native, 4)]
+    assert not loader.calls
+    assert "not supported" in probe(_NativeLoader([]), native)["error"]
+    rejected = {"native": {"language": "kql", "text": "orders | drop"}}
+    assert "rejected by loader" in probe(_NativeLoader(["kql"]), rejected)["error"]
+
+
 def test_probe_budget_is_shared_within_run_and_isolated_between_runs(tmp_path: Path) -> None:
     save_catalog(tmp_path, "warehouse", [{
         "name": "orders",

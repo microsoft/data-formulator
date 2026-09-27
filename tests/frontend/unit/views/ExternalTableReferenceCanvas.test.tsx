@@ -233,11 +233,10 @@ it('nests exact single-source imports as compact rows and keeps ambiguous tables
     const tables = [imported, multiSource, otherConnector, unknown];
     tables.forEach(table => store.dispatch(dfActions.addTableToStore(table)));
     render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
-    expect(screen.queryByRole('button', { name: 'Loaded events' })).not.toBeInTheDocument();
     for (const name of ['Joined events', 'Other events', 'Legacy events']) {
         expect(screen.getByRole('button', { name }).closest('.data-thread-card')).toBeInTheDocument();
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Imports from Events' }));
+    expect(screen.queryByText('1 imported table')).not.toBeInTheDocument();
     const child = screen.getByRole('button', { name: 'Loaded events' });
     expect(child.closest('ul')).toHaveAttribute('aria-label', 'Imports from Events');
     expect(child.closest('.data-thread-card')).toBeNull();
@@ -247,14 +246,28 @@ it('nests exact single-source imports as compact rows and keeps ambiguous tables
     fireEvent.click(screen.getByRole('button', { name: 'Actions for Loaded events' }));
     expect(await screen.findByRole('menuitem', { name: /Rename/ })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: 'Imports from Events' }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Loaded events' })).not.toBeInTheDocument());
-    act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: unknown.id })));
-    act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: imported.id })));
-    expect(await screen.findByRole('button', { name: 'Loaded events' })).toBeInTheDocument();
     act(() => store.dispatch(dfActions.removeExternalTableReference(reference.id)));
     expect(screen.getByRole('button', { name: 'Loaded events' }).closest('.data-thread-card')).toBeInTheDocument();
     expect(dfSelectors.getAllTables(store.getState()).map(table => table.id)).toContain(imported.id);
+});
+
+it('collapses large import groups to a count, with Show fewer and focus reopening', async () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    const tables = [1, 2, 3, 4].map(index => ({ kind: 'table' as const, id: `load-${index}`, displayId: `Load ${index}`, names: [], metadata: {},
+        rows: [], description: '', virtual: { tableId: `load-${index}`, rowCount: 0 },
+        source: { type: 'database' as const, importedFrom: { connectorId: reference.connectorId, tableKey: reference.tableKey } } }));
+    tables.forEach(table => store.dispatch(dfActions.addTableToStore(table)));
+    store.dispatch(dfActions.setFocused(undefined));
+    render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    expect(screen.queryByRole('button', { name: 'Load 1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /4 imported tables/ }));
+    expect(screen.getByRole('button', { name: 'Load 4' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /4 imported tables/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Show fewer/ }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Load 4' })).not.toBeInTheDocument());
+    act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'load-2' })));
+    expect(await screen.findByRole('button', { name: 'Load 2' })).toBeInTheDocument();
 });
 
 it('groups single-input workflow tables through manifest provenance but not joins or unresolved lineage', () => {
@@ -274,7 +287,6 @@ it('groups single-input workflow tables through manifest provenance but not join
         workflowTable('Summary of join', ['Joined comparison'])];
     tables.forEach(table => store.dispatch(dfActions.addTableToStore(table)));
     render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
-    fireEvent.click(screen.getByRole('button', { name: 'Imports from Events' }));
     for (const name of ['Imported events', 'Hourly counts', 'Daily summary']) {
         const child = screen.getByRole('button', { name });
         expect(child.closest('ul')).toHaveAttribute('aria-label', 'Imports from Events');
@@ -336,7 +348,7 @@ it('recovers saved import provenance from workspace metadata and preserves it on
     view.unmount();
     store.dispatch(dfActions.loadState(store.getState()));
     render(shelf());
-    expect(screen.getByRole('button', { name: 'Imports from Events' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('list', { name: 'Imports from Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Saved events' }).closest('.data-thread-card')).toBeNull();
     expect(apiRequest).toHaveBeenCalledTimes(1);
 });
@@ -358,7 +370,7 @@ it('ignores import metadata returned after switching workspaces', async () => {
         source_metadata: { import_options: { data_operation: { source_id: reference.connectorId, table_key: reference.tableKey } } },
     }] } }));
     expect(dfSelectors.getAllTables(store.getState())[0].source?.importedFrom).toBeUndefined();
-    expect(screen.queryByRole('button', { name: 'Imports from Events' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Imports from Events' })).not.toBeInTheDocument();
 });
 
 it('appends new workspace items after existing ones and preserves order on reload', () => {
@@ -722,6 +734,26 @@ it('cancels before import and hides importing in a read-only workspace', () => {
     expect(apiRequest).not.toHaveBeenCalled();
     expect(store.getState().externalTableReferences).toHaveLength(1);
     act(() => { store.dispatch(dfActions.setActiveWorkspace({ id: 'shared', displayName: 'Shared', readOnly: true })); });
+    expect(screen.queryByRole('button', { name: 'Import into workspace' })).not.toBeInTheDocument();
+});
+
+it.each([
+    ['flagged', { queryModel: 'semantic' as const }],
+    ['legacy', { summary: { columns: [{ name: 'Sales', type: 'number', role: 'measure' } as any], sampleRows: [] } }],
+])('offers no workspace copy for semantic models (%s)', (_label, overrides) => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference({ ...reference, summary: { ...reference.summary, sampleRows: [] }, ...overrides }));
+    render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
+    expect(screen.getByText('Data stays in the connected source and is read when needed.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Import into workspace' })).not.toBeInTheDocument();
+});
+
+it('learns a reference is semantic from its preview', async () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.upsertExternalTableReference(reference));
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { columns: [{ name: 'Sales', type: 'number' }], rows: [{ Sales: 1 }], query_model: 'semantic' } });
+    render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);
+    await waitFor(() => expect(store.getState().externalTableReferences[0].queryModel).toBe('semantic'));
     expect(screen.queryByRole('button', { name: 'Import into workspace' })).not.toBeInTheDocument();
 });
 

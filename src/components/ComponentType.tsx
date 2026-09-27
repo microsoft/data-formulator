@@ -140,9 +140,14 @@ export interface ExternalTableReference {
     sourceTable: { id: string; name: string };
     displayName: string;
     capturedAt: string;
+    // Semantic models have no raw rows to copy; they are only queried.
+    queryModel?: 'semantic';
     summary: {
         description?: string;
-        columns: { name: string; type: string; source_type?: string; description?: string }[];
+        columns: { name: string; type: string; source_type?: string; description?: string;
+            // Semantic models only: field role, declared aggregation, and owning model table.
+            role?: string; aggregation?: string; entity?: string }[];
+        relationships?: unknown[];
         rowCount?: number;
         sizeBytes?: number;
         sampleRows?: Record<string, unknown>[];

@@ -42,7 +42,7 @@ it('keeps intermediate agent instructions non-clickable even with a plan and cal
   expect(screen.queryByRole('button')).toBeNull();
 });
 
-it('collapses older threads when a new thread appears and preserves manual expansion during updates', () => {
+it('keeps a shown thread open when a new thread appears and only collapses on request', () => {
   const store = configureStore({ reducer: dataFormulatorReducer });
   const addTurn = (id: string, parentNodeId: string, createdAt: number) => store.dispatch(dfActions.addTextTurn({
     kind: 'text', id, displayId: id, textKind: 'explain', content: `${id} response`, parentNodeId, createdAt,
@@ -57,12 +57,14 @@ it('collapses older threads when a new thread appears and preserves manual expan
   }));
   expect(screen.getByText('old response')).toBeTruthy();
   act(() => { addTurn('new', 'conversation-root:new', 2); });
-  expect(screen.getByRole('button', { name: 'Collapse thread' }).querySelector('span[aria-hidden="true"]'))
-    .toHaveStyle({ borderRadius: '50%' });
+  expect(screen.getByText('old response')).toBeTruthy();
+  expect(screen.getByText('new response')).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'Collapse thread' })).toHaveLength(2);
+  expect(document.querySelector('[data-thread-flow-header] [aria-hidden="true"] span')).toHaveStyle({ borderRadius: '50%' });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Collapse thread' })[0]);
   expect(screen.getByRole('button', { name: 'Expand thread' }).querySelector('[data-testid="ChevronRightIcon"]')).toBeTruthy();
   expect(screen.queryByText('old response')).toBeNull();
   expect(screen.getByText('Analyze old pickups').closest('[data-thread-summary]')).toBeTruthy();
-  expect(screen.getByText('new response')).toBeTruthy();
   expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(2);
   const previousFocus = store.getState().focusedId;
   const summary = screen.getByRole('button', { name: 'Analyze old pickups' });
@@ -80,6 +82,22 @@ it('collapses older threads when a new thread appears and preserves manual expan
   expect(screen.queryByText('old response')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Expand thread' }));
   expect(screen.getByText('old response')).toBeTruthy();
+});
+
+it('opens only the newest thread when existing threads are first shown', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  for (const [id, createdAt] of [['old', 1], ['new', 2]] as const) {
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain', content: `${id} response`,
+      parentNodeId: `conversation-root:${id}`, createdAt, prompt: `Analyze ${id} pickups` }));
+  }
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+    }),
+  }));
+  expect(screen.queryByText('old response')).toBeNull();
+  expect(screen.getByText('new response')).toBeTruthy();
 });
 
 it.each(['prompt', 'instruction'])('keeps user %s bubbles non-interactive even inside clickable rows', role => {
@@ -147,10 +165,7 @@ it.each([
     expect(tableDot).toHaveStyle({ backgroundColor: theme.palette.primary.main });
   }
   const heading = screen.getByText(/thread.*1/i);
-  const previousFocus = store.getState().focusedId;
-  fireEvent.click(heading);
-  expect(store.getState().focusedId).toEqual(previousFocus);
-  expect(heading.closest('button, [role="button"]')).toBeNull();
+  expect(heading.closest('button')).toHaveAttribute('aria-label', 'Collapse thread');
   fireEvent.click(screen.getByRole('button', { name: 'view chat' }));
   expect(store.getState().focusedId).toEqual(segmentFocus);
   expect(container.querySelector('[data-thread-active="true"]')).toBeTruthy();

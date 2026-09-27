@@ -412,12 +412,22 @@ class DataDiscoveryService:
             from data_formulator.datalake.connector_preferences import connector_is_enabled
             if not connector_is_enabled(user_home, source_id) or not _source_is_discoverable(source_id):
                 return {"error": f"Source '{source_id}' is disconnected."}
+        try:
+            column_offset = max(0, int(args.get("column_offset") or 0))
+        except (TypeError, ValueError):
+            return {"error": "column_offset must be a non-negative integer"}
+        role = args.get("role") or None
+        if role not in {None, "dimension", "time_dimension", "measure"}:
+            return {"error": "role must be dimension, time_dimension, or measure"}
         return {
             "query_capabilities": get_query_capabilities(source_id),
             "result": handle_read_catalog_metadata(
                 source_id,
                 table_key,
                 self.workspace,
+                column_offset=column_offset,
+                column_query=str(args.get("column_query") or "") or None,
+                role=role,
             )
         }
 
@@ -517,7 +527,10 @@ class DataDiscoveryService:
         budget.consume()
         try:
             from data_formulator.data_loader.query_runtime import execute_source_query
-            result = execute_source_query(loader, "probe", path, query)
+            if query.get("native") is not None:
+                result = self._probe_native(loader, source_id, table_key, query)
+            else:
+                result = execute_source_query(loader, "probe", path, query)
         except Exception as exc:
             logger.debug("probe_data failed", exc_info=True)
             return {"error": f"probe failed: {exc}"}
@@ -529,3 +542,22 @@ class DataDiscoveryService:
                 f"{guidance.success}",
             )
         return result
+
+    def _probe_native(self, loader: Any, source_id: str, table_key: str, query: dict[str, Any]) -> dict[str, Any]:
+        from data_formulator.data_loader import probe_utils
+        from data_formulator.data_loader.query_runtime import execute_source_query
+        from .models import LoadQuery
+
+        parsed = LoadQuery.from_dict(query)
+        loader.check_native_query(parsed.native)
+        resolved = self.resolve_load_table(source_id, table_key)
+        if resolved is None:
+            return {"error": f"table_key '{table_key}' not found in source '{source_id}'."}
+        out_limit = probe_utils.clamp_probe_limit(parsed.limit)
+        table = execute_source_query(
+            loader, "query_data_as_arrow", source_table=resolved["source_table"],
+            query=parsed.to_dict(), limit=out_limit + 1,
+        )
+        return probe_utils.shape_probe_payload(
+            table.slice(0, out_limit), out_limit, exact=True, extra_note="native query",
+        )

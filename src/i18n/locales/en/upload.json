@@ -121,6 +121,14 @@
     "createConnectionTo": "Create a connection to {{name}}",
     "connectionNameLabel": "connection name",
     "dataSourceTypes": "Data Sources",
+    "connectorGroups": {
+      "samples": "Examples",
+      "files": "Files",
+      "databases": "Databases",
+      "warehouses": "Warehouses",
+      "semantic": "BI & semantic",
+      "other": "Other"
+    },
     "folderPathPlaceholder": "/path/to/your/data/folder",
     "includeSubfolders": "Include subfolders",
     "localFolder": "Link local folder",

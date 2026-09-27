@@ -9,6 +9,7 @@
 
 import type { SxProps } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { iconVar, textVar } from './layout';
 
 // ── Border colors ──────────────────────────────────────────────────────
 
@@ -34,6 +35,28 @@ export const sidebarEdge = {
     border: 'rgba(0, 0, 0, 0.08)',
     dockedShadow: '3px 0 10px -8px rgba(0, 0, 0, 0.32)',
     overlayShadow: '5px 0 16px -8px rgba(0, 0, 0, 0.32)',
+} as const;
+
+/** Reading typography for reports; other long-form canvases (workflow runs) match it. */
+export const readingTypography = {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+    color: 'rgb(55, 53, 47)',
+} as const;
+
+/** Sidebar panels keep only panel controls (pin, collapse) in the header;
+ *  the tab's own actions live in this toolbar row below it. */
+export const sidebarToolbarSx = {
+    display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.75, minWidth: 0, flexShrink: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+} as const;
+
+/** The tab's main action in `sidebarToolbarSx` (Add connector, New session, ...). */
+export const sidebarPrimaryActionSx = {
+    flexShrink: 0, minWidth: 0, height: 30, px: 1, borderRadius: 1, borderColor: borderColor.view,
+    fontSize: textVar.xs, fontWeight: 500, textTransform: 'none', whiteSpace: 'nowrap', color: 'primary.main',
+    '& .MuiButton-startIcon': { ml: -0.25, mr: 0.5 },
+    '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: iconVar.sm },
+    '&:hover': { borderColor: 'primary.main', bgcolor: 'transparent' },
 } as const;
 
 // ── Composite border styles (spread into sx) ───────────────────────────

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from importlib.resources import files
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, Mapping, TYPE_CHECKING
 import pandas as pd
 import pyarrow as pa
 import logging
@@ -808,6 +808,11 @@ class ExternalDataLoader(ABC):
                 "Queries scan files in the application rather than a source database. "
                 "Reuse cached metadata and loaded data; small result limits do not bound scan cost."
             ),
+            "semantic_query": (
+                "A semantic layer computes governed measures. Select dimensions and measures in "
+                "query.columns at the final analysis grain; the model groups by the selected "
+                "dimensions. Do not recreate measures from raw columns. To change grain, query again."
+            ),
         }
         return {
             "execution_model": cls.QUERY_EXECUTION,
@@ -1145,6 +1150,23 @@ class ExternalDataLoader(ABC):
     def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
         """Materialize a structured query without probe preview caps or sampled aggregation."""
         raise NotImplementedError("Aggregate loading is not supported for this connector")
+
+    def query_model(self, source_table: str) -> str:
+        """Return ``"semantic"`` for leaves whose columns are dimensions and measures."""
+        return "relational"
+
+    def validate_native_query(self, language: str, text: str) -> None:
+        """Reject native query text this connector must not run; loaders override per language."""
+        raise ValueError("Native queries are not supported by this connector.")
+
+    def check_native_query(self, native: Any) -> None:
+        """Require an advertised language, then apply the loader's own validation."""
+        if not isinstance(native, Mapping) or not isinstance(native.get("text"), str):
+            raise ValueError("Native query must be an object with language and text.")
+        language = native.get("language")
+        if language not in self.query_capabilities().get("native_query_languages", []):
+            raise ValueError("Native query language is not supported by this connector.")
+        self.validate_native_query(language, native["text"])
 
     # -- Agent probing (design 37) ---------------------------------------
 

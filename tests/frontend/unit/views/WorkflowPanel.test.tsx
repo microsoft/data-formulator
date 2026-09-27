@@ -584,6 +584,14 @@ describe('Workflow session publication', () => {
         expect(container.querySelectorAll(`[data-thread-item="textturn-${cardId}"]`)).toHaveLength(1);
     });
 
+    it('keeps the workflow run on the canvas when its completion message is focused', async () => {
+        await publishWorkflowRun({ ...run(), status: 'completed', message: 'Completed and verified the review.' }, 'session');
+        renderThread();
+        fireEvent.click(screen.getByText('Completed and verified the review.'));
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-completed-native' });
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: 'textTurn-workflow-native' });
+    });
+
     it.each(['textTurn-workflow-native', 'textTurn-workflow-card-native'])('sends an analyst follow-up from completed workflow focus %s with its status and output context', async focusedTextId => {
         const snapshot = { ...run(), status: 'completed' };
         await publishWorkflowRun(snapshot, 'session');
@@ -773,7 +781,7 @@ describe('Workflow session publication', () => {
         store.dispatch(dfActions.setFocused({ type: 'text', textId: 'context' }));
         vi.mocked(apiRequest).mockResolvedValue({ data: { items: [], runs: [] } });
         render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
-        fireEvent.click(screen.getByRole('button', { name: 'Create a workflow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'New workflow' }));
         expect(store.getState().analystChatPending).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Create with agent' }));
         expect(store.getState().analystChatPending).toMatchObject({ intent: 'workflow-authoring', images: [], attachments: [] });
@@ -794,7 +802,7 @@ describe('Workflow session publication', () => {
             store.dispatch(dfActions.resetForNewWorkspace({ id: 'authoring-session', displayName }));
         });
         render(<Provider store={store}><WorkflowPanel onCreateSession={createSession} /></Provider>);
-        fireEvent.click(screen.getByRole('button', { name: 'Create a workflow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'New workflow' }));
         expect(screen.getByRole('button', { name: 'Create with agent' })).toBeEnabled();
         fireEvent.click(screen.getByRole('button', { name: 'Create with agent' }));
         expect(createSession).toHaveBeenCalledExactlyOnceWith('Create a workflow');
@@ -808,7 +816,7 @@ describe('Workflow session publication', () => {
         store.dispatch(dfActions.selectModel('no-selected-model'));
         vi.mocked(apiRequest).mockResolvedValue({ data: { items: [], runs: [] } });
         render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
-        fireEvent.click(screen.getByRole('button', { name: 'Create a workflow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'New workflow' }));
         expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Create with agent' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Create with agent' }).parentElement)
@@ -1517,9 +1525,9 @@ describe('Workflow session publication', () => {
         const { container } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
         expect(screen.getByText('regional revenue')).toBeVisible();
         expect(container.querySelector('[data-workflow-scroll]')?.parentElement).toHaveStyle({
-            '--df-text-md': '15px', '--df-text-sm': '15px', '--df-text-xs': '13px',
+            '--df-text-md': '0.875rem', '--df-text-sm': '0.8125rem', '--df-text-xs': '0.75rem',
         });
-        expect(screen.getByRole('heading', { level: 1, name: 'Native review' })).toHaveStyle({ fontSize: '24px' });
+        expect(screen.getByRole('heading', { level: 1, name: 'Native review' })).toHaveStyle({ fontSize: '1.375rem' });
         expect(screen.getByText('Regional comparison chart')).not.toBeVisible();
         expect(screen.getByText('Summary report')).not.toBeVisible();
         const summary = screen.getByRole('region', { name: 'Workflow summary' });
@@ -1621,8 +1629,7 @@ describe('Workflow session publication', () => {
             const style = getComputedStyle(artifact);
             expect(style.borderTopStyle).toBe('solid');
             expect(style.borderTopWidth).toBe('1px');
-            expect(style.width).toBe('280px');
-            expect(style.maxWidth).toBe('100%');
+            expect(style.minWidth).toBe('0px');
             expect(style.boxSizing).toBe('border-box');
         }
         expect(within(gather as HTMLElement).getByRole('tab', { name: 'Artifacts (2)' })).toHaveAttribute('aria-selected', 'true');

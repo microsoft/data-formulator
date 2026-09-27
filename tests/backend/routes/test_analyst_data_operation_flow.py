@@ -42,6 +42,16 @@ class _Loader:
         self.calls.append((source_table, {"query": query, "limit": limit}))
         return pa.table({"total": [30.0]})
 
+    def query_model(self, source_table):
+        return "relational"
+
+    def validate_native_query(self, language, text):
+        pass
+
+    def check_native_query(self, native):
+        from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+        ExternalDataLoader.check_native_query(self, native)
+
 
 @pytest.mark.parametrize("aggregate", [False, True, "native"])
 def test_operation_preview_is_bounded_and_display_only(

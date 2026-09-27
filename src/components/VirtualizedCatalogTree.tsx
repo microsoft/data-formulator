@@ -297,8 +297,8 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                         borderRadius: '6px',
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: theme.palette.action.hover },
-                        '& .catalog-hover-action': { visibility: 'hidden' },
-                        '&:hover .catalog-hover-action': { visibility: 'visible' },
+                        '& .catalog-hover-action': { display: 'none' },
+                        '&:hover .catalog-hover-action': { display: 'inline-flex' },
                         ...(rowSelectable ? {
                             '&:hover .cat-slot-glyph': { display: 'none' },
                             '&:hover .cat-slot-check': { display: 'flex' },
@@ -375,6 +375,11 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                     {isTable && node.metadata?.row_count != null && (
                         <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                             {Number(node.metadata.row_count).toLocaleString()}
+                        </Typography>
+                    )}
+                    {isTable && node.metadata?.query_model === 'semantic' && (
+                        <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.disabled', flexShrink: 0 }}>
+                            {t('sidebar.semanticTag')}
                         </Typography>
                     )}
                     {/* Count badges */}

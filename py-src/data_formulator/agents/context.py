@@ -367,6 +367,10 @@ def handle_read_catalog_metadata(
     source_id: str,
     table_key: str,
     workspace: Any = None,
+    *,
+    column_offset: int = 0,
+    column_query: str | None = None,
+    role: str | None = None,
 ) -> str:
     """Handle a read_catalog_metadata tool call.
 
@@ -465,25 +469,67 @@ def handle_read_catalog_metadata(
 
     columns = meta.get("columns", [])
     if columns:
-        lines.append(f"\nColumns ({len(columns)}):")
-        for col in columns[:50]:
-            cname = col.get("name", "?")
-            ctype = col.get("type", "")
-            cdesc = col.get("description", "") or col.get("source_description", "")
-            vname = col.get("verbose_name", "")
-            expr = col.get("expression", "")
-            line = f"  - {cname}"
-            if vname:
-                line += f" [{vname}]"
-            if ctype:
-                line += f" ({ctype})"
-            if cdesc:
-                line += f": {cdesc}"
-            if expr:
-                line += f"  [calc: {expr}]"
-            lines.append(line)
-        if len(columns) > 50:
-            lines.append(f"  ... and {len(columns) - 50} more columns")
+        if meta.get("query_model") == "semantic":
+            roles = [col.get("role") for col in columns]
+            entities = sorted({str(col["entity"]) for col in columns if col.get("entity")})
+            lines.append(
+                f"\nSemantic model: {len(columns)} fields: {roles.count('measure')} measures, "
+                f"{roles.count('dimension')} dimensions, {roles.count('time_dimension')} time dimensions."
+                + (f" Entities: {', '.join(entities[:30])}." if entities else "")
+                + " Select dimensions and measures in query.columns; the model groups by the selected dimensions."
+            )
+            relationships = meta.get("relationships") or []
+            if relationships and not column_offset:
+                lines.append("Relationships: " + json.dumps(relationships[:20], ensure_ascii=False))
+        needle = (column_query or "").casefold().strip()
+        matching = [
+            col for col in columns
+            if (not role or col.get("role") == role)
+            and (not needle or needle in f"{col.get('name', '')} {col.get('description', '')}".casefold())
+        ]
+        start = max(0, int(column_offset or 0))
+        filtered = " matching the filter" if needle or role else ""
+        if start >= len(matching):
+            lines.append(f"\nNo columns{filtered} at column_offset={start}; {len(matching)} available.")
+        else:
+            budget = _CATALOG_METADATA_CHAR_LIMIT - len("\n".join(lines)) - 200
+            page: list[str] = []
+            for col in matching[start:start + _CATALOG_COLUMNS_PER_PAGE]:
+                line = _format_catalog_column(col)
+                if page and budget - len(line) - 1 < 0:
+                    break
+                page.append(line)
+                budget -= len(line) + 1
+            end = start + len(page)
+            lines.append(f"\nColumns {start + 1}-{end} of {len(matching)}{filtered}:")
+            lines.extend(page)
+            if end < len(matching):
+                lines.append(f"  Next: column_offset={end}.")
 
     text = "\n".join(lines)
-    return text[:4000] + "\n..." if len(text) > 4000 else text
+    return text[:_CATALOG_METADATA_CHAR_LIMIT] + "\n..." if len(text) > _CATALOG_METADATA_CHAR_LIMIT else text
+
+
+_CATALOG_METADATA_CHAR_LIMIT = 4000
+_CATALOG_COLUMNS_PER_PAGE = 50
+
+
+def _format_catalog_column(col: dict[str, Any]) -> str:
+    details = [str(col[key]) for key in ("type", "role") if col.get(key)]
+    if col.get("aggregation"):
+        details.append(f"aggregation={col['aggregation']}")
+    if col.get("granularities"):
+        details.append("granularities=" + "/".join(map(str, col["granularities"])))
+    if col.get("ref"):
+        details.append(f"ref={col['ref']}")
+    line = f"  - {col.get('name', '?')}"
+    if col.get("verbose_name"):
+        line += f" [{col['verbose_name']}]"
+    if details:
+        line += f" ({', '.join(details)})"
+    description = col.get("description", "") or col.get("source_description", "")
+    if description:
+        line += f": {description}"
+    if col.get("expression"):
+        line += f"  [calc: {col['expression']}]"
+    return line

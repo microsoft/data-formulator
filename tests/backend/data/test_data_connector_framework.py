@@ -599,6 +599,9 @@ class TestCatalogRoutes:
                 assert response.get_json()["data"]["tree"] == []
             listing.assert_called_once()
             submit.assert_called_once()
+            response = connected_client.post("/api/connectors/get-catalog-tree", json={**body, "refresh": True})
+            assert response.get_json()["data"]["discovery"]["status"] == "running"
+            assert submit.call_count == 2
 
     def test_ls_root(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
@@ -934,6 +937,7 @@ class TestDataRoutes:
             patch.object(MockLoader, "query_data_as_arrow", return_value=pa.table({"total": [400.0]})) as aggregate,
             patch.object(MockLoader, "fetch_data_as_arrow", side_effect=AssertionError("No raw-row refresh")),
             patch.object(MockLoader, "query_capabilities", return_value={"native_query_languages": ["kql"]}),
+            patch.object(MockLoader, "validate_native_query", return_value=None),
         ):
             response = connected_client.post("/api/connectors/refresh-data", json={
                 "connector_id": "mock_db", "table_name": "totals",

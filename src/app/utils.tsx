@@ -122,7 +122,7 @@ export const CONNECTOR_ACTION_URLS = {
 
 export async function fetchConnectorCatalog<T = any>(
     connectorId: string,
-    options: { signal?: AbortSignal; onProgress?: (message: string) => void } = {},
+    options: { signal?: AbortSignal; onProgress?: (message: string) => void; refresh?: boolean } = {},
 ): Promise<{ data: T }> {
     const { apiRequest } = await import('./apiClient');
     const deadline = Date.now() + 5 * 60_000;
@@ -136,7 +136,7 @@ export async function fetchConnectorCatalog<T = any>(
         try {
             const result = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorId, background: true, poll, retry: !poll }),
+                body: JSON.stringify({ connector_id: connectorId, background: true, poll, retry: !poll, refresh: !poll && options.refresh }),
                 signal: controller.signal,
             });
             failures = 0;

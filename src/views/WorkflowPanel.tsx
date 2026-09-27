@@ -10,7 +10,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import AddIcon from '@mui/icons-material/Add';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import EditIcon from '@mui/icons-material/Edit';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -18,9 +18,9 @@ import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
+import { readingTypography, sidebarPrimaryActionSx, sidebarToolbarSx } from '../app/tokens';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -117,39 +117,62 @@ function workflowArtifacts(run: Run): NonNullable<NonNullable<TextTurn['workflow
 
 const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn['workflow']>['artifacts']> }> = ({ artifacts }) => {
     const state = useSyncExternalStore(store.subscribe, store.getState);
-    return <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 1, my: 0.25 }}>
-        {artifacts.map(artifact => {
-            const chart = artifact.chartId ? dfSelectors.getAllCharts(state).find(item => item.id === artifact.chartId) : undefined;
-            const loaded = state.loadedTableNodes.find(item => item.id === artifact.nodeId);
-            const table = dfSelectors.getAllTables(state).find(item => item.id === (loaded?.tableId || artifact.nodeId));
-            const file = state.fileNodes.find(item => item.id === artifact.nodeId);
-            const report = state.generatedReports.find(item => item.id === artifact.nodeId);
-            if (!chart && !table && !file && !report) return null;
-            const title = chart?.title || table?.displayId || table?.id || file?.displayName || report?.title || artifact.nodeId;
-            const cached = chart ? getCachedChart(chart.id) : undefined;
-            const image = chart ? cached?.fullPngDataUrl || dfSelectors.getChartThumbnail(chart.id)(state) || cached?.thumbnailDataUrl : undefined;
-            const Icon = chart ? BarChartOutlinedIcon : table ? TableChartOutlinedIcon : file ? InsertDriveFileOutlinedIcon : ArticleOutlinedIcon;
-            return <ButtonBase key={artifact.nodeId} aria-label={`Open ${title}`} data-workflow-artifact={artifact.nodeId}
-                onClick={() => {
-                    if (chart) store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
-                    else if (loaded || file) store.dispatch(dfActions.setFocused({ type: 'reference', referenceId: artifact.nodeId }));
-                    else if (table) store.dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
-                    else if (report) store.dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
-                }} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left',
-                    maxWidth: '100%', width: 280, minHeight: 72, boxSizing: 'border-box', p: 1.25,
-                    border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper',
-                    '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                {image && <Box component="img" src={image} alt={title} sx={{ width: '100%', height: 160, objectFit: 'contain', mb: 0.75 }} />}
-                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, fontSize: textVar.sm }}>
-                    <Icon sx={{ fontSize: 16, flexShrink: 0, color: 'text.secondary' }} />
-                    <Box component="span" sx={{ overflowWrap: 'anywhere', minWidth: 0 }}>{title}</Box>
+    const items = artifacts.flatMap(artifact => {
+        const chart = artifact.chartId ? dfSelectors.getAllCharts(state).find(item => item.id === artifact.chartId) : undefined;
+        const loaded = state.loadedTableNodes.find(item => item.id === artifact.nodeId);
+        const table = dfSelectors.getAllTables(state).find(item => item.id === (loaded?.tableId || artifact.nodeId));
+        const file = state.fileNodes.find(item => item.id === artifact.nodeId);
+        const report = state.generatedReports.find(item => item.id === artifact.nodeId);
+        if (!chart && !table && !file && !report) return [];
+        const title = chart?.title || table?.displayId || table?.id || file?.displayName || report?.title || artifact.nodeId;
+        const cached = chart ? getCachedChart(chart.id) : undefined;
+        const image = chart ? cached?.fullPngDataUrl || dfSelectors.getChartThumbnail(chart.id)(state) || cached?.thumbnailDataUrl : undefined;
+        const Icon = chart ? BarChartOutlinedIcon : table ? TableChartOutlinedIcon : file ? InsertDriveFileOutlinedIcon : ArticleOutlinedIcon;
+        const open = () => {
+            if (chart) store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+            else if (loaded || file) store.dispatch(dfActions.setFocused({ type: 'reference', referenceId: artifact.nodeId }));
+            else if (table) store.dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
+            else if (report) store.dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+        };
+        const detail = table && !chart ? `${(table.virtual?.rowCount ?? table.rows.length).toLocaleString()} rows · ${table.names.length} columns`
+            : report?.status === 'generating' ? 'Composing...' : undefined;
+        return [{ artifact, chart, title, image, Icon, open, detail }];
+    });
+    const cardSx = { textAlign: 'left', minWidth: 0, boxSizing: 'border-box', border: 1, borderColor: 'divider', borderRadius: 1,
+        bgcolor: 'background.paper', '&:hover': { bgcolor: 'action.hover' },
+        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } } as const;
+    const others = items.filter(item => !item.chart);
+    const charts = items.filter(item => item.chart);
+    const gridSx = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1 } as const;
+    // Tables, files and reports read as compact rows; charts share one card size below them, in the same columns.
+    return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, my: 0.25 }}>
+        {others.length > 0 && <Box sx={gridSx}>
+            {others.map(({ artifact, title, Icon, open, detail }) => <ButtonBase key={artifact.nodeId} aria-label={`Open ${title}`}
+                data-workflow-artifact={artifact.nodeId} onClick={open}
+                sx={{ ...cardSx, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', gap: 0.75, px: 1, py: 0.75 }}>
+                <Icon sx={{ fontSize: 16, flexShrink: 0, mt: '2px', color: 'text.secondary' }} />
+                <Box component="span" sx={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                    <Box component="span" title={title} sx={{ fontSize: textVar.sm,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Box>
+                    {detail && <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{detail}</Typography>}
                 </Box>
-                {table && !chart && <Typography component="span" sx={{ pl: 2.75, fontSize: textVar.xs, color: 'text.secondary' }}>
-                    {(table.virtual?.rowCount ?? table.rows.length).toLocaleString()} rows · {table.names.length} columns
-                </Typography>}
-                {report?.status === 'generating' && <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Composing...</Typography>}
-            </ButtonBase>;
-        })}
+            </ButtonBase>)}
+        </Box>}
+        {charts.length > 0 && <Box sx={gridSx}>
+            {charts.map(({ artifact, title, image, Icon, open }) => <ButtonBase key={artifact.nodeId} aria-label={`Open ${title}`}
+                data-workflow-artifact={artifact.nodeId} onClick={open}
+                sx={{ ...cardSx, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 0.75, p: 1 }}>
+                <Box sx={{ height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {image ? <Box component="img" src={image} alt={title} sx={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        : <Icon sx={{ fontSize: 32, color: 'text.disabled' }} />}
+                </Box>
+                <Box component="span" sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75, minWidth: 0, fontSize: textVar.sm }}>
+                    <Icon sx={{ fontSize: 16, flexShrink: 0, mt: '2px', color: 'text.secondary' }} />
+                    <Box component="span" title={title} sx={{ minWidth: 0, overflowWrap: 'anywhere', display: '-webkit-box',
+                        WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{title}</Box>
+                </Box>
+            </ButtonBase>)}
+        </Box>}
     </Box>;
 };
 
@@ -831,10 +854,11 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         </Box>
     );
     return <Box data-workflow-progress={canvas || interactionOnly ? undefined : workflow.runId} onClick={event => event.stopPropagation()}
-        sx={{ fontFamily: theme => theme.typography.fontFamily, fontSize: canvas ? textVar.md : textVar.sm, lineHeight: 1.5, letterSpacing: 0,
+        sx={{ fontFamily: theme => canvas ? readingTypography.fontFamily : theme.typography.fontFamily, fontSize: canvas ? textVar.md : textVar.sm, lineHeight: 1.5, letterSpacing: 0,
             ...(canvas ? { position: 'relative', width: '100%', height: '100%', boxSizing: 'border-box', minWidth: 0, overflow: 'hidden',
-                '--df-text-xs': '13px', '--df-text-sm': '15px', '--df-text-md': '15px',
-                '& h2, & h3': { fontSize: '16px', lineHeight: 1.4, letterSpacing: 0 } } : { minWidth: 0, width: '100%' }) }}>
+                color: readingTypography.color, '--df-text-xs': '0.75rem', '--df-text-sm': '0.8125rem', '--df-text-md': '0.875rem',
+                '& h2': { fontSize: '0.95rem', lineHeight: 1.4, letterSpacing: 0 },
+                '& h3': { fontSize: '0.875rem', lineHeight: 1.4, letterSpacing: 0 } } : { minWidth: 0, width: '100%' }) }}>
         <Box data-workflow-scroll={canvas ? workflow.runId : undefined} sx={canvas ? { height: '100%', overflow: 'auto', boxSizing: 'border-box',
             p: { xs: 2, sm: 3 }, '& > *': { maxWidth: 960, mx: 'auto' } } : { display: 'contents' }}>
         {!interactionOnly && <>
@@ -843,7 +867,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 <Box sx={{ display: 'flex', flexShrink: 0, pt: '1px', color: 'text.secondary' }}>
                     <WorkflowGears running={workflow.status === 'running'} size={28} showTooltip={false} />
                 </Box>
-                <Typography component="h1" sx={{ minWidth: 0, fontSize: 24, lineHeight: 1.25, fontWeight: 600, letterSpacing: 0 }}>{turn.prompt?.replace(/^Run workflow: /, '') || 'Workflow'}</Typography>
+                <Typography component="h1" sx={{ minWidth: 0, fontFamily: 'inherit', fontSize: '1.375rem', lineHeight: 1.25, fontWeight: 700, letterSpacing: '-0.01em' }}>{turn.prompt?.replace(/^Run workflow: /, '') || 'Workflow'}</Typography>
             </Box>
             {overview && <Box data-workflow-overview sx={{ ...proseSx, mt: 1, color: 'text.secondary' }}><ReactMarkdown>{overview}</ReactMarkdown></Box>}
         </Box>}
@@ -898,7 +922,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             </Box>}
         </Box>}
         {canvas && <Box role="region" aria-label="Workflow response and analysis log" sx={{ mt: 1, overflowWrap: 'anywhere',
-            '& details, & summary': { fontFamily: theme => theme.typography.fontFamily, fontSize: textVar.sm, letterSpacing: 0 },
+            '& details, & summary': { fontFamily: 'inherit', fontSize: textVar.sm, letterSpacing: 0 },
             '& summary': { cursor: 'pointer', py: 1.25, '&:hover': { bgcolor: 'action.hover' },
                 '&:focus-visible': { outline: '2px solid', outlineColor: 'text.secondary', outlineOffset: -2 } },
             '& summary:has(.workflow-chevron)': { listStyle: 'none', '&::-webkit-details-marker': { display: 'none' } },
@@ -1295,21 +1319,23 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
             flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)' }}>
             <Typography sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1 }}>Workflows</Typography>
-            <Tooltip title="Create a workflow"><span>
-                <IconButton aria-label="Create a workflow" size="small" disabled={readOnly} onClick={() => {
+            {headerActions}
+        </Box>
+        <Box sx={sidebarToolbarSx}>
+            <Button variant="outlined" size="small" startIcon={<AddIcon />} disabled={readOnly} sx={sidebarPrimaryActionSx}
+                onClick={() => {
                     let path = 'workflow.workflow.yaml';
                     let suffix = 2;
                     while (items.some(item => item.path === path)) path = `workflow-${suffix++}.workflow.yaml`;
                     setEditor({ path, content: '', creating: true });
                 }}>
-                    <AddIcon sx={{ fontSize: iconVar.md }} />
-                </IconButton>
-            </span></Tooltip>
+                New workflow
+            </Button>
+            <Box sx={{ flex: 1 }} />
             <Tooltip title="Refresh workflows"><span><IconButton aria-label="Refresh workflows" size="small" disabled={loading} onClick={refresh}
                 sx={{ width: 24, height: 24, p: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } }}>
                 {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: iconVar.md }} />}
             </IconButton></span></Tooltip>
-            {headerActions}
         </Box>
         <Box sx={{ overflowY: 'auto', minHeight: 0, pb: 1 }}>
         {!model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>Select a model to run a workflow.</Alert>}
@@ -1321,13 +1347,12 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             return <Box component="section" aria-label={label} key={groupId}>
             <ButtonBase aria-label={label} aria-expanded={expanded} aria-controls={`workflow-group-${groupId}`}
                 onClick={() => setCollapsedGroups(previous => expanded ? [...previous, groupId] : previous.filter(item => item !== groupId))}
-                sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 0.75, py: 0.75, textAlign: 'left',
-                    '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
-                <ChevronRightIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', transform: expanded ? 'rotate(90deg)' : 'none' }} />
-                {expanded ? <FolderOpenIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />
-                    : <FolderOutlinedIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
-                <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, flex: 1 }}>{label}</Typography>
-                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{group.length}</Typography>
+                sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 1.5, pt: groupId === 'user' ? 1 : 1.5, pb: 0.5, textAlign: 'left',
+                    color: 'text.secondary', '&:hover': { color: 'text.primary' },
+                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
+                <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'inherit', flex: 1 }}>{label}</Typography>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>{group.length}</Typography>
+                <ExpandMoreIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
             </ButtonBase>
             <Box id={`workflow-group-${groupId}`} hidden={!expanded} sx={{ mx: 0.75 }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
@@ -1335,7 +1360,10 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         </Typography>}
         {group.map(item => {
             const origin = item.origin || 'user';
-            return <Box key={item.path} sx={{ px: 0.75, py: 0.5, borderRadius: 0.5, '&:hover, &:focus-within': { bgcolor: 'action.hover' } }}>
+            return <Box key={item.path} sx={{ px: 0.75, py: 0.5, borderRadius: 0.5, '&:hover, &:focus-within': { bgcolor: 'action.hover' },
+                '& .workflow-secondary-action': { opacity: 0 },
+                '&:hover .workflow-secondary-action, &:focus-within .workflow-secondary-action': { opacity: 1 },
+                '@media (hover: none)': { '& .workflow-secondary-action': { opacity: 1 } } }}>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', columnGap: 0.5 }}>
             <ButtonBase aria-label={`Description for ${item.name}`}
                     aria-expanded={expandedDescriptions.includes(item.path)}
@@ -1350,7 +1378,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     } : {}) }}>{item.error || item.overview}</Typography>
             </ButtonBase>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, '& .MuiIconButton-root': { width: 24, height: 24, p: 0.25 } }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', '& .MuiIconButton-root': { width: 24, height: 24, p: 0.25 } }}>
             <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" color="primary" disabled={busy || starting || readOnly || !!item.error}
                 onClick={() => {
                     setSetupValues(Object.fromEntries((item.parameters || []).map(parameter => [parameter.name,
@@ -1358,10 +1386,13 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                     setSetupInstructions('');
                     setRunTarget(item);
                 }}><PlayArrowIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
-            <Tooltip title={origin === 'demo' || origin === 'server' ? 'Customize a copy' : 'Edit definition'}><span><IconButton aria-label={`${origin === 'demo' || origin === 'server' ? 'Customize' : 'Edit'} ${item.name}`} size="small" disabled={busy} onClick={() => edit(item)}>
-                {origin === 'demo' || origin === 'server' ? <ContentCopyIcon sx={{ fontSize: iconVar.md }} /> : <EditOutlinedIcon sx={{ fontSize: iconVar.md }} />}</IconButton></span></Tooltip>
-            {origin === 'user' && <Tooltip title="Delete workflow"><span><IconButton aria-label={`Delete ${item.path}`} size="small" disabled={busy || deletingInstance}
-                onClick={() => setDeleteTarget(item)}><DeleteOutlineIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>}
+            <Box className="workflow-secondary-action" sx={{ display: 'flex', alignItems: 'center',
+                '& .MuiIconButton-root': { width: 22, height: 22, p: 0.25 }, '& .MuiSvgIcon-root': { fontSize: iconVar.sm } }}>
+            <Tooltip title={origin === 'demo' || origin === 'server' ? 'Customize a copy' : 'Edit definition'}><span><IconButton aria-label={`${origin === 'demo' || origin === 'server' ? 'Customize' : 'Edit'} ${item.name}`} size="small" color="primary" disabled={busy} onClick={() => edit(item)}>
+                {origin === 'demo' || origin === 'server' ? <ContentCopyIcon sx={{ fontSize: iconVar.md }} /> : <EditIcon sx={{ fontSize: iconVar.md }} />}</IconButton></span></Tooltip>
+            {origin === 'user' && <ArtifactDeleteButton label={`Delete ${item.path}`} disabled={busy || deletingInstance}
+                onClick={() => setDeleteTarget(item)} />}
+            </Box>
             </Box>
             {expandedDescriptions.includes(item.path) && <Typography sx={{ gridColumn: '1 / -1', mb: 0.25, fontSize: textVar.xs,
                 color: 'text.secondary', overflowWrap: 'anywhere' }}>{item.path}</Typography>}

@@ -37,8 +37,8 @@ LoaderResolver = Callable[[str], ExternalDataLoader]
 
 
 def execute_aggregate_query(loader, source_table: str, query: LoadQuery) -> pa.Table:
-    if query.native is not None and query.native["language"] not in loader.query_capabilities().get("native_query_languages", []):
-        raise ValueError("Native query language is not supported by this connector.")
+    if query.native is not None:
+        loader.check_native_query(query.native)
     if query.limit is not None and query.limit > MAX_AGGREGATE_ROWS:
         raise ValueError(f"Aggregate result limit must not exceed {MAX_AGGREGATE_ROWS}")
     result_limit = query.limit or MAX_AGGREGATE_ROWS
@@ -166,7 +166,8 @@ class DataOperationExecutor:
                     sizes[key] = value
             except (TypeError, ValueError):
                 pass
-        if not concrete_query and not (sizes.get("row_count", 0) > effective_limit("external_table_max_rows")
+        if not concrete_query and metadata.get("query_model") != "semantic" and not (
+                sizes.get("row_count", 0) > effective_limit("external_table_max_rows")
                 or any(sizes.get(key, 0) > effective_limit("external_table_max_bytes")
                        for key in ("original_size_bytes", "size_bytes", "file_size"))):
             return None
@@ -179,9 +180,11 @@ class DataOperationExecutor:
             "sourceTable": {"id": step.source_table, "name": step.source_table_name or step.source_table},
             "displayName": (resolved or {}).get("display_name") or step.source_table_name or step.source_table,
             "capturedAt": datetime.now(timezone.utc).isoformat(),
+            **({"queryModel": "semantic"} if metadata.get("query_model") == "semantic" else {}),
             "summary": {
                 "description": metadata.get("source_description") or metadata.get("description"),
                 "columns": metadata.get("columns") or [],
+                **({"relationships": metadata["relationships"]} if metadata.get("relationships") else {}),
                 "rowCount": sizes.get("row_count"),
                 "sizeBytes": next((sizes[key] for key in ("original_size_bytes", "size_bytes", "file_size") if key in sizes), None),
             },
@@ -197,8 +200,9 @@ class DataOperationExecutor:
         step_index: int,
     ) -> str:
         loader = self._loader_resolver(step.source_id)
-        import_options = self._build_import_options(step)
-        aggregate_query = bool(step.query.group_by or step.query.aggregates or step.query.native)
+        semantic = loader.query_model(step.source_table) == "semantic"
+        import_options = self._build_import_options(step, semantic=semantic)
+        aggregate_query = bool(step.query.group_by or step.query.aggregates or step.query.native or semantic)
         if aggregate_query:
             table = execute_aggregate_query(loader, step.source_table, step.query)
         else:
@@ -229,7 +233,7 @@ class DataOperationExecutor:
                     "step_index": step_index,
                     "source_id": step.source_id,
                     "table_key": step.table_key,
-                    **({"lineage_verified": False} if step.query.native else {}),
+                    **self._native_lineage(step, semantic),
                 },
             },
             },
@@ -237,7 +241,7 @@ class DataOperationExecutor:
         # Parity with ExternalDataLoader.ingest_to_workspace: without this the
         # published table carries no source description or column descriptions.
         try:
-            source_meta = {} if aggregate_query else loader.get_column_types(step.source_table)
+            source_meta = {} if aggregate_query and not semantic else loader.get_column_types(step.source_table)
             if source_meta:
                 _merge_source_metadata(metadata, source_meta)
                 self._workspace.add_table_metadata(metadata)
@@ -251,7 +255,9 @@ class DataOperationExecutor:
             "order_by": [{"column": item.column, "direction": item.direction} for item in step.query.order_by],
             "requested_limit": step.query.limit,
             "loaded_row_count": table.num_rows,
-                **({"query": step.query.to_dict(), "coverage": "query_defined" if step.query.native else "requested_limit" if step.query.limit else "complete_aggregate_result"}
+                **({"query": step.query.to_dict(), "coverage": (
+                    "query_defined" if step.query.native else "semantic_query" if semantic
+                    else "requested_limit" if step.query.limit else "complete_aggregate_result")}
                     if aggregate_query else {}),
         }
         scope_description = (
@@ -287,9 +293,19 @@ class DataOperationExecutor:
         return matches
 
     @staticmethod
-    def _build_import_options(step: ConnectorQueryStep) -> dict:
+    def _native_lineage(step: ConnectorQueryStep, semantic: bool) -> dict:
+        # Semantic native queries can only reach their own model; others rely on the agent's declared reads.
+        if not step.query.native or semantic:
+            return {}
+        reads = step.query.native.get("reads") or ()
+        if len(set(reads)) == 1 and reads[0] in {step.source_table, step.table_key, step.source_table_name}:
+            return {"lineage": "declared"}
+        return {"lineage_verified": False}
+
+    @staticmethod
+    def _build_import_options(step: ConnectorQueryStep, *, semantic: bool = False) -> dict:
         options: dict = {}
-        if step.query.group_by or step.query.aggregates or step.query.native:
+        if step.query.group_by or step.query.aggregates or step.query.native or semantic:
             options["structured_query"] = step.query.to_dict()
         if step.query.limit is not None:
             options["size"] = step.query.limit

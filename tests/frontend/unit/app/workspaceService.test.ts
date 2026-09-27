@@ -22,7 +22,7 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, createExternalTableReference } from '../../../../src/app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
@@ -49,6 +49,12 @@ describe('external table reference artifacts', () => {
         [{ file_size: 18 * 1024 ** 3 }, true], [{ original_size_bytes: 0, size_bytes: 18 * 1024 ** 3 }, true],
     ])('detects large source metadata %j', (metadata, expected) => {
         expect(isLargeConnectorTable(metadata)).toBe(expected);
+    });
+
+    it('adds semantic models as references regardless of size', () => {
+        expect(loadsAsConnectorReference({ query_model: 'semantic' })).toBe(true);
+        expect(loadsAsConnectorReference({ query_model: 'relational', row_count: 10 })).toBe(false);
+        expect(loadsAsConnectorReference({ row_count: 2_000_000 })).toBe(true);
     });
 
     it('keeps references in session state without files or table imports', async () => {

@@ -28,6 +28,16 @@ export function isLargeConnectorTable(metadata?: Record<string, any> | null,
             Number(metadata?.[key]) > (config?.EXTERNAL_TABLE_MAX_BYTES ?? 512 * 1024 * 1024));
 }
 
+export function isSemanticConnectorTable(metadata?: Record<string, any> | null): boolean {
+    return metadata?.query_model === 'semantic';
+}
+
+/** Semantic models and large tables are added as references; the agent queries them. */
+export function loadsAsConnectorReference(metadata?: Record<string, any> | null,
+    config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
+    return isSemanticConnectorTable(metadata) || isLargeConnectorTable(metadata, config);
+}
+
 export interface WorkspaceSummary {
     id: string;
     display_name: string;

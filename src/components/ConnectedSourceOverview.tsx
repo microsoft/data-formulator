@@ -10,7 +10,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS, fetchConnectorCatalog } from '../app/utils';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
-import { importConnectorFile, previewConnectorFile, isLargeConnectorTable, createExternalTableReference } from '../app/workspaceService';
+import { importConnectorFile, previewConnectorFile, loadsAsConnectorReference, isSemanticConnectorTable, createExternalTableReference } from '../app/workspaceService';
 import { WorkspaceFileCanvas } from '../views/WorkspaceFileCanvas';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
@@ -26,10 +26,11 @@ const MANUAL_PREVIEW_BYTES = 50 * 1024 * 1024;
 export interface ConnectedSourceOverviewProps {
     connectorId: string;
     connectorName?: string;
+    initialTablePath?: string[];
     onReferenceAdded?: () => void;
 }
 
-export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = ({ connectorId, connectorName, onReferenceAdded }) => {
+export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = ({ connectorId, connectorName, initialTablePath, onReferenceAdded }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state));
@@ -73,7 +74,7 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
         const bytes = rawBytes == null || rawBytes === '' ? NaN : Number(rawBytes);
         return { rows, bytes };
     };
-    const isTableTooLarge = (node: CatalogTreeNode) => isLargeConnectorTable(node.metadata, serverConfig);
+    const isTableTooLarge = (node: CatalogTreeNode) => loadsAsConnectorReference(node.metadata, serverConfig);
     const loadReference = async (node: CatalogTreeNode, importOptions: Record<string, any> = {}) => {
         if (importing || readOnly) return;
         setImporting(true);
@@ -84,9 +85,11 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                 kind: 'external-table-reference',
                 connectorId, connectorName, tableKey: node.metadata?.table_key || node.path.join('/'), sourceTable: sourceRef(node),
                 displayName: node.name, capturedAt: new Date().toISOString(),
+                ...(isSemanticConnectorTable(node.metadata) ? { queryModel: 'semantic' as const } : {}),
                 summary: {
                     description: node.metadata?.description || node.metadata?.source_description,
-                    columns: preview?.columns || node.metadata?.columns || [],
+                    columns: (isSemanticConnectorTable(node.metadata) ? node.metadata?.columns : preview?.columns) || node.metadata?.columns || [],
+                    ...(node.metadata?.relationships ? { relationships: node.metadata.relationships } : {}),
                     rowCount: Number.isFinite(rows) ? rows : preview?.count ?? undefined,
                     sizeBytes: Number.isFinite(bytes) ? bytes : undefined,
                 },
@@ -142,6 +145,7 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
         fetchConnectorCatalog<{ tree: CatalogTreeNode[] }>(connectorId, {
             signal: controller.signal,
             onProgress: setCatalogProgress,
+            refresh: refresh > 0,
         }).then(({ data }) => {
             if (controller.signal.aborted) return;
             setTree(data.tree || []);
@@ -206,6 +210,24 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
         }
     };
 
+    const initialTableKey = initialTablePath?.join('/');
+    const appliedInitialTable = useRef<string | undefined>();
+    useEffect(() => {
+        if (loading || !initialTableKey || appliedInitialTable.current === initialTableKey) return;
+        const find = (nodes: CatalogTreeNode[]): CatalogTreeNode | undefined => {
+            for (const node of nodes) {
+                if (node.node_type === 'table' && node.path.join('/') === initialTableKey) return node;
+                const child = find(node.children || []);
+                if (child) return child;
+            }
+        };
+        const node = find(tree);
+        if (!node) return;
+        appliedInitialTable.current = initialTableKey;
+        setExpanded(current => [...new Set([...current, ...node.path.slice(0, -1).map((_, index) => node.path.slice(0, index + 1).join('/'))])]);
+        void previewTable(node);
+    }, [loading, tree, initialTableKey]);
+
     const loadedMap: Record<string, string> = {};
     for (const table of tables) {
         if (table.source?.connectorId === connectorId && table.source.databaseTable) loadedMap[table.source.databaseTable] = table.id;
@@ -218,7 +240,8 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
     const filtered = matches(tree);
     const countTables = (nodes: CatalogTreeNode[]): number => nodes.reduce((count, node) => count + Number(node.node_type === 'table') + countTables(node.children || []), 0);
 
-    const selectedColumns: ColumnMeta[] = preview?.columns || selected?.metadata?.columns || [];
+    const selectedColumns: ColumnMeta[] = (selected?.metadata?.query_model === 'semantic' ? selected.metadata.columns : undefined)
+        || preview?.columns || selected?.metadata?.columns || [];
     const rowCount = preview?.count ?? selected?.metadata?.row_count;
     const description = selected?.metadata?.description || selected?.metadata?.source_description;
     const tableCount = countTables(tree);
@@ -229,6 +252,8 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
     const previousTable = matchingTables[selectedIndex - 1];
     const nextTable = selectedIndex >= 0 ? matchingTables[selectedIndex + 1] : undefined;
     const isFile = selected?.metadata?.artifact_kind === 'file';
+    const isSemantic = selected?.metadata?.query_model === 'semantic';
+    const semanticMeasureCount = isSemantic ? selectedColumns.filter(column => (column as any).role === 'measure').length : 0;
     const importedFile = selected ? importedFiles[selected.path.join('/')] : undefined;
     const containsFiles = collectTables(tree).some(node => node.metadata?.artifact_kind === 'file');
     const previewPrompt = selected && <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 120, gap: 1, p: 2 }}>
@@ -299,9 +324,11 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                     <Typography component="h2" sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', lineHeight: 1.5, overflowWrap: 'anywhere', m: 0 }}>{selected.name}</Typography>
                     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', color: 'text.secondary', mt: 0.25,
                         '& .MuiTypography-root': { fontSize: textVar.sm, fontWeight: 400, lineHeight: 1.5 } }}>
-                        {isFile ? <Typography variant="caption">{selected.metadata?.file_type?.toUpperCase()} · {Number(selected.metadata?.file_size || 0).toLocaleString()} bytes</Typography> : <>
+                        {isFile ? <Typography variant="caption">{selected.metadata?.file_type?.toUpperCase()} · {Number(selected.metadata?.file_size || 0).toLocaleString()} bytes</Typography> : isSemantic ?
+                        <Typography variant="caption">{t('sidebar.semanticModelSummary', {
+                            measures: semanticMeasureCount, dimensions: selectedColumns.length - semanticMeasureCount })}</Typography> : <>
                         {rowCount != null && <Typography variant="caption">{t('chatConnector.rowCount', { defaultValue: '{{count}} rows', count: Number(rowCount).toLocaleString() })}</Typography>}
-                        {(preview || selected.metadata?.columns) && <Typography variant="caption">{t('chatConnector.columnCount', { defaultValue: '{{count}} columns', count: selectedColumns.length })}</Typography>}
+                        {(preview || selected.metadata?.columns) && <Typography variant="caption">{t('chatConnector.columnCount', { defaultValue: '{{count}} columns', count: preview ? selectedColumns.length : (selected.metadata?.column_count ?? selectedColumns.length) })}</Typography>}
                         </>}
                         {loadedMap[selected.path.join('/')] && <Typography variant="caption">{t('connectorPreview.loaded', { defaultValue: 'Loaded' })}</Typography>}
                     </Box>
@@ -374,7 +401,8 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                 <Tab value="overview" id="source-tab-overview" aria-controls="source-panel-overview" label={t('chatConnector.overview', { defaultValue: 'Overview' })} />
             </Tabs>
             {activeTab === 'data' && preview && <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', py: 0.75, fontSize: textVar.sm, fontWeight: 400 }}>
-                {t('chatConnector.sampleCount', { defaultValue: '{{count}} sample rows', count: preview.rows.length })}
+                {isSemantic ? t('sidebar.semanticSampleCaption')
+                    : t('chatConnector.sampleCount', { defaultValue: '{{count}} sample rows', count: preview.rows.length })}
             </Typography>}
             </Box>
             {previewError && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -414,7 +442,8 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                 hideHeader
                 dockActions
                 previewRowLimit={CATALOG_PREVIEW_ROW_LIMIT}
-                loadLabel={isTableTooLarge(selected) ? t('connectorPreview.addReference', { defaultValue: 'Add table reference' }) : undefined}
+                loadLabel={isSemantic ? t('sidebar.semanticAddToWorkspace')
+                    : isTableTooLarge(selected) ? t('connectorPreview.addReference', { defaultValue: 'Add table reference' }) : undefined}
                 columns={preview?.columns || []} sampleRows={preview?.rows || []} rowCount={preview?.count ?? null}
                 loading={previewLoading || importing} alreadyLoaded={Boolean(loadedMap[selected.path.join('/')])}
                 hideLoadActions={!preview || !!previewError}

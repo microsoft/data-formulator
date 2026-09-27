@@ -10,7 +10,7 @@
 // reference card instead of repeating its actions, so "which column owns this
 // table" never has to be arbitrated.
 
-import React, { FC, memo, useEffect, useMemo, useState } from 'react';
+import React, { FC, memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
     Box,
@@ -69,6 +69,8 @@ const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86
 
 /** Tables shown before the shelf collapses behind a "show all" toggle. */
 export const SHELF_VISIBLE_LIMIT = 6;
+// Import groups up to this size start expanded.
+const IMPORT_GROUP_OPEN_LIMIT = 3;
 
 // Mirror DataThread's timeline geometry so shelf cards land on exactly the same
 // grid as thread cards instead of running wider than everything below them.
@@ -411,7 +413,8 @@ export const SourceTableShelf: FC<{
 
     const [sectionExpanded, setSectionExpanded] = useState(true);
     const [expanded, setExpanded] = useState(false);
-    const [expandedImportGroups, setExpandedImportGroups] = useState<string[]>([]);
+    const [importGroupExpansion, setImportGroupExpansion] = useState<Record<string, boolean>>({});
+    const importGroupSizesRef = useRef<Record<string, number>>({});
     const [importProvenanceChecked, setImportProvenanceChecked] = useState<string>();
     const [addDataDialogOpen, setAddDataDialogOpen] = useState(false);
 
@@ -722,8 +725,15 @@ export const SourceTableShelf: FC<{
     useEffect(() => {
         const selectedTableId = focusedTableId || (focusedId?.type === 'table' ? focusedId.tableId : undefined);
         const parent = [...importsByReference].find(([, children]) => children.some(table => table.id === selectedTableId))?.[0];
-        if (parent) setExpandedImportGroups(previous => previous.includes(parent) ? previous : [...previous, parent]);
+        if (parent) setImportGroupExpansion(previous => previous[parent] ? previous : { ...previous, [parent]: true });
     }, [focusedTableId, focusedId, inputTables, externalReferences, tables]);
+
+    useEffect(() => {
+        const grown = [...importsByReference].filter(([parent, children]) =>
+            parent in importGroupSizesRef.current && children.length > importGroupSizesRef.current[parent]);
+        importGroupSizesRef.current = Object.fromEntries([...importsByReference].map(([parent, children]) => [parent, children.length]));
+        if (grown.length) setImportGroupExpansion(previous => ({ ...previous, ...Object.fromEntries(grown.map(([parent]) => [parent, true])) }));
+    }, [inputTables, externalReferences, tables]);
 
     // One row per table, laid out exactly like a DataThread timeline row: a
     // gutter carrying the table's icon with rail segments above and below it,
@@ -813,7 +823,11 @@ export const SourceTableShelf: FC<{
 
     const artifactCards = workspaceArtifacts.map(artifact => {
         const importedTables = importsByReference.get(artifact.key) || [];
-        const importsExpanded = expandedImportGroups.includes(artifact.key);
+        const importsCollapsible = importedTables.length > IMPORT_GROUP_OPEN_LIMIT;
+        const importsExpanded = !importsCollapsible || (importGroupExpansion[artifact.key] ?? false);
+        const toggleImports = () => setImportGroupExpansion(previous => ({ ...previous, [artifact.key]: !importsExpanded }));
+        const importToggleSx = { display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 0.5, py: 0.5, color: 'text.secondary', fontSize: textVar.xs,
+            '&:hover': { color: 'text.primary' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } };
         return (
         <Box key={artifact.key} data-workspace-item={artifact.key} sx={{ display: 'flex', flexDirection: 'row' }}>
             <Box sx={{
@@ -866,30 +880,25 @@ export const SourceTableShelf: FC<{
                 </ThreadArtifactCard>
                 </Box>
                 {importedTables.length > 0 && <Box sx={{ mt: 0.5, ml: 0.75, borderLeft: 1, borderColor: 'divider', pl: 0.75, minWidth: 0 }}>
-                    <ButtonBase aria-label={t('dataThread.importsFrom', { name: artifact.title, defaultValue: 'Imports from {{name}}' })} aria-expanded={importsExpanded}
-                        aria-controls={`source-imports-${artifact.key}`}
-                        onClick={() => setExpandedImportGroups(previous => importsExpanded ? previous.filter(id => id !== artifact.key) : [...previous, artifact.key])}
-                        sx={{ display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 0.5, py: 0.5, color: 'text.secondary', fontSize: textVar.xs,
-                            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                        {importsExpanded ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} /> : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
+                    {!importsExpanded && <ButtonBase aria-expanded={false} aria-controls={`source-imports-${artifact.key}`} onClick={toggleImports} sx={importToggleSx}>
+                        <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />
                         {t('dataThread.importedTables', { count: importedTables.length, defaultValue: '{{count}} imported tables' })}
-                    </ButtonBase>
+                    </ButtonBase>}
                     <Collapse in={importsExpanded} unmountOnExit>
                         <Box component="ul" id={`source-imports-${artifact.key}`} aria-label={t('dataThread.importsFrom', { name: artifact.title, defaultValue: 'Imports from {{name}}' })} sx={{ listStyle: 'none', p: 0, m: 0 }}>
                             {importedTables.map(table => {
                                 const selected = focusedTableId === table.id || (focusedId?.type === 'table' && focusedId.tableId === table.id);
                                 return <Box component="li" key={table.id} data-workspace-import={table.id}
                                     sx={{ display: 'flex', alignItems: 'center', minWidth: 0, borderRadius: 0.5,
-                                        bgcolor: selected ? 'action.selected' : undefined,
-                                        '&:hover': { bgcolor: 'action.hover' },
+                                        bgcolor: selected ? alpha(theme.palette.primary.main, 0.08) : undefined,
+                                        '&:hover': { bgcolor: selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover' },
                                         '& .artifact-actions': { opacity: 0 }, '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
                                         '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } } }}>
                                     <ButtonBase aria-label={table.displayId || table.id} aria-current={selected ? 'true' : undefined}
                                         onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
                                         sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-start', gap: 0.75, px: 0.5, py: 0.5,
-                                            color: selected || highlightedTableIds.includes(table.id) ? 'primary.main' : 'text.primary',
+                                            color: selected ? 'primary.main' : 'text.primary',
                                             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
-                                        <TableIcon sx={{ width: 12, height: 12, flexShrink: 0 }} />
                                         <Typography component="span" title={`${table.displayId || table.id}${table.displayId !== table.id ? ` (${table.id})` : ''}`}
                                             sx={{ fontSize: textVar.sm, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{table.displayId || table.id}</Typography>
                                     </ButtonBase>
@@ -898,6 +907,11 @@ export const SourceTableShelf: FC<{
                                 </Box>;
                             })}
                         </Box>
+                        {importsCollapsible && <ButtonBase aria-expanded aria-controls={`source-imports-${artifact.key}`} onClick={toggleImports}
+                            sx={{ ...importToggleSx, color: 'text.disabled' }}>
+                            <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} />
+                            {t('dataThread.showFewerTables', { defaultValue: 'Show fewer' })}
+                        </ButtonBase>}
                     </Collapse>
                 </Box>}
             </Box>

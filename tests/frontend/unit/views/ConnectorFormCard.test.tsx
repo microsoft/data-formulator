@@ -20,12 +20,13 @@ it('polls discovery after a gateway timeout without restarting the scan', async 
             .mockRejectedValueOnce(Object.assign(new Error('HTTP 504'), { httpStatus: 504 }))
             .mockResolvedValueOnce({ data: { discovery: { status: 'complete' }, tree: [] } } as any);
         const onProgress = vi.fn();
-        const result = fetchConnectorCatalog('slow-source', { onProgress });
+        const result = fetchConnectorCatalog('slow-source', { onProgress, refresh: true });
         await vi.runAllTimersAsync();
         expect((await result).data.tree).toEqual([]);
         const bodies = vi.mocked(apiRequest).mock.calls.map(([, options]) => JSON.parse(options!.body as string));
         expect(bodies.map(body => body.poll)).toEqual([false, true, true]);
         expect(bodies.map(body => body.retry)).toEqual([true, false, false]);
+        expect(bodies.map(body => body.refresh)).toEqual([true, false, false]);
         expect(onProgress).toHaveBeenCalledWith('Listing files');
     } finally {
         vi.useRealTimers();

@@ -164,6 +164,32 @@ and plugins are unavailable. Native queries cannot be mixed with structured fiel
 except `limit`. Execution is bounded to 60 seconds, 16 MiB, and 10,000 loaded rows;
 partial failures are rejected. Limits/sampling written into KQL still mean partial
 coverage. Load the reusable result, then compute comparisons and charts locally.
+Other native languages follow `query_capabilities.native_query_guidance`.
+
+### Semantic Models
+
+Catalog entries with `query_model: semantic` (for example Cube views or Power BI
+semantic models) expose dimensions and governed measures curated by data
+engineers, not raw rows.
+
+- Select dimensions and measures in `query.columns`; the model groups by the
+  selected dimensions. When a time dimension lists granularities, select a grain
+  as `"Name (grain)"`; otherwise use the model's date columns such as Year or
+  Month. Do not send
+  `group_by`/`aggregates`, and do not recreate a governed measure from raw columns.
+- For business metrics, prefer a semantic model that covers the metric over
+  rebuilding it from raw tables. If the model lacks the concept, use raw sources
+  and say the result is not the governed definition.
+- Measure values are computed at the selected grain; the declared `aggregation`
+  shows how each measure is computed. Query the model again to change grain.
+- Filter on dimensions. For measure-value filters or shapes the structured query
+  cannot express, use `query.native` in the advertised language with field `ref`s.
+- `describe_data` pages fields; narrow large models with `column_query` or `role`.
+- The model, not a cached sample, answers questions: a semantic reference's preview
+  shows only a few fields. For each question, query the model at the needed grain
+  (any measures by any dimensions, across its tables); use Python only on the
+  returned result.
+- Omitting `query` only adds the model as a reference.
 
 Read `query_capabilities` in reference context and discovery results before
 probing (`source_query_capabilities` maps source IDs in search results):
@@ -173,6 +199,7 @@ probing (`source_query_capabilities` maps source IDs in search results):
   application. CSV/JSON probes may transfer and scan the entire source despite
   a small result limit. Parquet may reduce reads, but do not assume pushdown.
 - `local_file_scan`: files are scanned locally, with no source database engine.
+- `semantic_query`: a semantic layer computes governed measures; see Semantic Models.
 - `unknown`: do not assume server-side execution or cheap probes.
 
 Avoid scanning a file source twice merely to probe then import the same scope.

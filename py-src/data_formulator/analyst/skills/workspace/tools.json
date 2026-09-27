@@ -465,7 +465,7 @@
     "type": "function",
     "function": {
       "name": "describe_data",
-      "description": "Read cached metadata, columns, types, description, and row count for one discovered table.",
+      "description": "Read cached metadata, columns, types, description, and row count for one discovered table. Columns are paged: follow 'Next: column_offset=N', or narrow with column_query/role. Semantic models (query_model=semantic) list dimensions, time dimensions with granularities, and measures with declared aggregation and native refs.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -474,6 +474,20 @@
           },
           "table_key": {
             "type": "string"
+          },
+          "column_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based index of the first column to list."
+          },
+          "column_query": {
+            "type": "string",
+            "description": "Case-insensitive substring matched against column names and descriptions."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["dimension", "time_dimension", "measure"],
+            "description": "Semantic models only: list columns with this role."
           }
         },
         "required": [
@@ -487,7 +501,7 @@
     "type": "function",
     "function": {
       "name": "probe_data",
-      "description": "Run a read-only structured query with a bounded RESULT against one connected table whose schema is known from cached context or describe_data. Check query_capabilities first: remote_file_scan can transfer and scan the entire CSV/JSON source despite a small result limit; server_query executes on the source engine but can still be expensive. Reuse cached metadata and relevant loaded data. When the needed raw-row scope is already known, load once and compute locally instead of probing then loading the same file. Results are evidence and do not become workspace inputs.",
+      "description": "Run a read-only structured query with a bounded RESULT against one connected table whose schema is known from cached context or describe_data. Check query_capabilities first: remote_file_scan can transfer and scan the entire CSV/JSON source despite a small result limit; server_query executes on the source engine but can still be expensive. Reuse cached metadata and relevant loaded data. When the needed raw-row scope is already known, load once and compute locally instead of probing then loading the same file. For semantic models, select dimensions and measures in columns; the model groups by the selected dimensions. native runs a read-only query in an advertised native_query_languages language, following query_capabilities.native_query_guidance. Results are evidence and do not become workspace inputs.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -500,6 +514,15 @@
           "query": {
             "type": "object",
             "properties": {
+              "native": {
+                "type": "object",
+                "description": "Read-only native query. Cannot combine with other query fields except limit.",
+                "properties": {
+                  "language": {"type": "string", "enum": ["kql", "cube_json", "dax"]},
+                  "text": {"type": "string", "minLength": 1, "maxLength": 16000}
+                },
+                "required": ["language", "text"], "additionalProperties": false
+              },
               "filters": {
                 "type": "array",
                 "items": {
@@ -703,14 +726,16 @@
                       },
                       "query": {
                         "type": "object",
-                        "description": "Omit to add the source with automatic small/local or large/virtual selection. Supplying a query, even {}, requests materialization and never falls back to a virtual reference. Prefer a bounded reusable working dataset then local Python; use native only when source-side computation is required and its language is advertised in query_capabilities.native_query_languages. Native and aggregate results allow at most 10000 rows; explicit limits mean partial coverage.",
+                        "description": "Omit to add the source with automatic small/local or large/virtual selection; semantic models are always added as a reference when query is omitted. Supplying a query, even {}, requests materialization and never falls back to a virtual reference. For semantic models, select dimensions and measures in columns at the final analysis grain. Prefer a bounded reusable working dataset then local Python; use native only when source-side computation is required and its language is advertised in query_capabilities.native_query_languages. Native, semantic, and aggregate results allow at most 10000 rows; explicit limits mean partial coverage.",
                         "properties": {
                           "native": {
                             "type": "object",
-                            "description": "Complete read-only KQL expression including the selected table, for example Events | where event_time >= datetime(2026-01-01) and event_time < datetime(2026-02-01) | summarize event_count=count() by category. Use verified table and column names. The connector does not prepend a table: do not start with where or a bare pipe. No commands, semicolons, comments, settings, external/remote access, or plugins. Cannot combine with other query fields except limit. 60-second/16-MiB execution limits; constrain scan scope explicitly. Native limits or sampling in the text define coverage, never assume a complete population.",
+                            "description": "Read-only native query following query_capabilities.native_query_guidance for the connector. KQL: a complete expression including the selected table, for example Events | where event_time >= datetime(2026-01-01) and event_time < datetime(2026-02-01) | summarize event_count=count() by category; the connector does not prepend a table, so do not start with where or a bare pipe. cube_json: one Cube REST query object as JSON text using member refs from describe_data. dax: one DEFINE/EVALUATE query with exactly one EVALUATE, using table, column and measure names from describe_data. Use verified names. No commands, semicolons, comments, settings, external/remote access, or plugins. Cannot combine with other query fields except limit. Constrain scan scope explicitly. Native limits or sampling in the text define coverage, never assume a complete population.",
                             "properties": {
-                              "language": {"type": "string", "enum": ["kql"]},
-                              "text": {"type": "string", "minLength": 1, "maxLength": 16000}
+                              "language": {"type": "string", "enum": ["kql", "cube_json", "dax"]},
+                              "text": {"type": "string", "minLength": 1, "maxLength": 16000},
+                              "reads": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 256},
+                                "description": "Every source table the text reads, by name (e.g. [\"Events\"]); include joined, unioned or subqueried tables. A result is shown as coming from the selected table only when this lists just that table."}
                             },
                             "required": ["language", "text"], "additionalProperties": false
                           },

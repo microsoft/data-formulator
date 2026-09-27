@@ -14,6 +14,7 @@ import {
     useTheme,
     SxProps,
     Button,
+    ButtonBase,
     CircularProgress,
     Badge,
     Collapse,
@@ -36,7 +37,7 @@ import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
 import { WorkflowGears } from '../components/FunComponents';
-import { createExternalTableReference, isLargeConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
+import { createExternalTableReference, loadsAsConnectorReference, isSemanticConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import dfLogo from '../assets/df-logo.svg';
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -621,6 +622,7 @@ let SingleThreadGroupView: FC<{
     threadSummary?: string,
     historyCollapsed?: boolean,
     onToggleHistory?: () => void,
+    layoutKey?: string,
     // A continuation of the thread above: renders the "↑ continued" header +
     // a chip for the carried-over parent, and no label of its own.
     isSplitThread?: boolean,
@@ -648,6 +650,7 @@ let SingleThreadGroupView: FC<{
     threadSummary,
     historyCollapsed = false,
     onToggleHistory,
+    layoutKey,
     isSplitThread = false,
     joinedAbove = false,
     joinedBelow = false,
@@ -2437,7 +2440,7 @@ let SingleThreadGroupView: FC<{
     });
 
     return <Box data-thread-active={threadActive ? 'true' : 'false'} data-thread-highlighted={shouldHighlightThread ? 'true' : 'false'}
-        data-thread-joined-above={joinedAbove || undefined} data-thread-joined-below={joinedBelow || undefined} sx={{ ...sx,
+        data-thread-entry={layoutKey} data-thread-joined-above={joinedAbove || undefined} data-thread-joined-below={joinedBelow || undefined} sx={{ ...sx,
             backgroundColor: threadActive ? alpha(theme.palette.primary.main, 0.045) : 'background.paper',
             ...(showItemFocus ? {
                 '& .selected-card': {
@@ -2469,24 +2472,31 @@ let SingleThreadGroupView: FC<{
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
                         <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
-                        <Tooltip title={historyCollapsed ? t('dataThread.expandThread', { defaultValue: 'Expand thread' }) : t('dataThread.collapseThread', { defaultValue: 'Collapse thread' })}>
-                            <IconButton size="small" aria-label={historyCollapsed ? t('dataThread.expandThread', { defaultValue: 'Expand thread' }) : t('dataThread.collapseThread', { defaultValue: 'Collapse thread' })}
-                                aria-expanded={!historyCollapsed} onClick={onToggleHistory} sx={{ width: 18, height: 18, p: 0, color: showItemFocus && headerHL ? hlColor : 'text.secondary' }}>
-                                {historyCollapsed ? <ChevronRightIcon sx={{ fontSize: 16 }} />
-                                    : <Box component="span" aria-hidden="true" sx={{ width: 8, height: 8, borderRadius: '50%',
-                                        border: '1.5px solid currentColor', boxSizing: 'content-box' }} />}
-                            </IconButton>
-                        </Tooltip>
+                        <Box aria-hidden="true" sx={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: showItemFocus && headerHL ? hlColor : 'rgba(0,0,0,0.15)' }}>
+                            <Box component="span" sx={{ width: 8, height: 8, borderRadius: '50%',
+                                border: '1.5px solid currentColor', boxSizing: 'content-box' }} />
+                        </Box>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
-                        <Typography sx={{ minWidth: 0,
-                            fontSize: textVar.xs, fontWeight: 700, 
-                            textTransform: 'uppercase', letterSpacing: 0,
-                            color: showItemFocus && headerHL ? hlColor : 'text.secondary',
-                        }}>
-                            {threadLabel}
-                        </Typography>
+                        <ButtonBase disabled={!onToggleHistory} onClick={onToggleHistory} aria-expanded={!historyCollapsed}
+                            aria-label={historyCollapsed ? t('dataThread.expandThread', { defaultValue: 'Expand thread' }) : t('dataThread.collapseThread', { defaultValue: 'Collapse thread' })}
+                            sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.25, borderRadius: 0.5, px: 0.25, ml: -0.25,
+                                color: showItemFocus && headerHL ? hlColor : 'text.secondary',
+                                '& .thread-chevron': { color: 'text.disabled' },
+                                '&:hover, &:hover .thread-chevron': { color: 'text.primary' },
+                                '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                            <Typography component="span" sx={{ minWidth: 0, color: 'inherit',
+                                fontSize: textVar.xs, fontWeight: 700,
+                                textTransform: 'uppercase', letterSpacing: 0,
+                            }}>
+                                {threadLabel}
+                            </Typography>
+                            {onToggleHistory && (historyCollapsed
+                                ? <ChevronRightIcon className="thread-chevron" sx={{ fontSize: 16 }} />
+                                : <KeyboardArrowDownIcon className="thread-chevron" sx={{ fontSize: 16 }} />)}
+                        </ButtonBase>
                         <Tooltip describeChild title={t('dataThread.openConversation', { defaultValue: 'Open full conversation' })}>
                             <Button size="small" variant="text" endIcon={<ArrowForwardIcon />}
                                 aria-pressed={threadActive} sx={conversationButtonSx} onClick={openThreadConversation}>
@@ -3183,11 +3193,39 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const { tokens: threadTokens } = useLayout();
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [threadExpansion, setThreadExpansion] = useState<Record<string, boolean>>({});
+    // Keys found during render; the effects below persist them as explicit expansion.
+    const latestThreadKeyRef = useRef<string>();
+    const focusedThreadKeyRef = useRef<string>();
+    useEffect(() => {
+        const key = latestThreadKeyRef.current;
+        if (key) setThreadExpansion(previous => key in previous ? previous : { ...previous, [key]: true });
+    });
+    useEffect(() => {
+        const key = focusedThreadKeyRef.current;
+        if (key) setThreadExpansion(previous => previous[key] ? previous : { ...previous, [key]: true });
+    }, [focusedTableId]);
+    // Must run before the save effect so a workspace switch reads storage before it is overwritten.
+    const workspaceId = activeWorkspace?.id;
+    useEffect(() => {
+        if (!workspaceId) return;
+        try {
+            const saved = JSON.parse(localStorage.getItem(`df_thread_expansion:${workspaceId}`) || '{}');
+            const valid = Object.entries(saved ?? {}).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean');
+            if (valid.length) setThreadExpansion(previous => ({ ...previous, ...Object.fromEntries(valid) }));
+        } catch { /* ignore unreadable entries */ }
+    }, [workspaceId]);
+    useEffect(() => {
+        if (!workspaceId) return;
+        const entries = Object.entries(threadExpansion).filter(([key]) => key.startsWith(`${workspaceId}:`));
+        if (entries.length) localStorage.setItem(`df_thread_expansion:${workspaceId}`, JSON.stringify(Object.fromEntries(entries)));
+    }, [threadExpansion, workspaceId]);
     const [containerWidth, setContainerWidth] = useState(0);
     const [threadPanelHeight, setThreadPanelHeight] = useState(600);
     const triggerHeightsRef = useRef(new Map<string, number>());
     const [measuredTriggerHeights, setMeasuredTriggerHeights] = useState(new Map<string, number>());
     const [measuredShelfHeight, setMeasuredShelfHeight] = useState<number>();
+    const [measuredEntryHeights, setMeasuredEntryHeights] = useState<Record<string, number>>({});
+    const layoutSignatureRef = useRef<string>();
     const [isDragOver, setIsDragOver] = useState(false);
 
     // ── Drop handler for catalog table items from DataSourceSidebar ──────
@@ -3218,7 +3256,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 return;
             }
 
-            if (isLargeConnectorTable(item.metadata, serverConfig)) {
+            if (loadsAsConnectorReference(item.metadata, serverConfig)) {
                 const metadata = item.metadata || {};
                 const rows = Number(metadata.row_count);
                 const bytes = Number(metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size);
@@ -3227,9 +3265,11 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                     tableKey: metadata.table_key || item.tablePath.join('/'),
                     sourceTable: { id: item.tableId || item.tableName, name: item.tableName },
                     displayName: item.tableName, capturedAt: new Date().toISOString(),
+                    ...(isSemanticConnectorTable(metadata) ? { queryModel: 'semantic' as const } : {}),
                     summary: {
                         description: metadata.source_description || metadata.description,
                         columns: metadata.columns || [],
+                        ...(metadata.relationships ? { relationships: metadata.relationships } : {}),
                         rowCount: Number.isFinite(rows) ? rows : undefined,
                         sizeBytes: Number.isFinite(bytes) ? bytes : undefined,
                     },
@@ -3686,6 +3726,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const orderedGroups = [...threadGroups.values()].sort((first, second) =>
         first.startedAt - second.startedAt
         || (turnOrder.get(first.firstTurn?.id ?? '') ?? 0) - (turnOrder.get(second.firstTurn?.id ?? '') ?? 0));
+    latestThreadKeyRef.current = undefined;
+    focusedThreadKeyRef.current = undefined;
     allThreadEntries = [
         ...allThreadEntries.filter(entry => entry.isShelf),
         ...orderedGroups.flatMap((group, index) => {
@@ -3693,7 +3735,13 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             const firstEntry = group.entries[0];
             const firstTrigger = firstEntry.leafTable ? getCachedTriggers(firstEntry.leafTable)[0] : undefined;
             const expansionKey = `${activeWorkspace?.id || ''}:${group.firstTurn?.id || firstEntry.conversationRootId || firstTrigger?.resultTableId || firstEntry.key}`;
-            const expanded = threadExpansion[expansionKey] ?? index === orderedGroups.length - 1;
+            const isLatest = index === orderedGroups.length - 1;
+            if (isLatest) latestThreadKeyRef.current = expansionKey;
+            if (focusedTableId && group.entries.some(entry => entry.leafTable && (entry.leafTable.id === focusedTableId
+                || getCachedTriggers(entry.leafTable).some(trigger => trigger.tableId === focusedTableId || trigger.resultTableId === focusedTableId)))) {
+                focusedThreadKeyRef.current = expansionKey;
+            }
+            const expanded = threadExpansion[expansionKey] ?? isLatest;
             for (const entry of group.entries) {
                 entry.expansionKey = expansionKey;
                 entry.historyCollapsed = !expanded;
@@ -3771,6 +3819,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     }
 
     allThreadEntries = allThreadEntries.filter(entry => !entry.historyCollapsed || !entry.isSplitThread);
+    const entryLayoutKey = (entry: ThreadEntry) => `${entry.key}:${entry.historyCollapsed ? 'collapsed' : 'expanded'}`;
 
     // (design-docs/42) No per-turn home assignment: a table's attached content
     // (conversation turns + live run state) renders at its single real card
@@ -3822,6 +3871,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             threadSummary={entry.threadSummary}
             historyCollapsed={entry.historyCollapsed}
             onToggleHistory={() => setThreadExpansion(previous => ({ ...previous, [entry.expansionKey!]: !!entry.historyCollapsed }))}
+            layoutKey={entryLayoutKey(entry)}
             isSplitThread={entry.isSplitThread}
             joinedAbove={joinedAbove}
             joinedBelow={joinedBelow}
@@ -3844,9 +3894,23 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     useLayoutEffect(() => {
         const shelf = threadScrollRef.current?.querySelector<HTMLElement>('[data-thread-shelf]');
         if (!shelf && measuredShelfHeight !== undefined) setMeasuredShelfHeight(undefined);
-        if (shelf && measuredShelfHeight === undefined && shelf.offsetHeight > 0) {
-            setMeasuredShelfHeight(Math.ceil(shelf.offsetHeight / 24) * 24);
+        if (shelf && shelf.offsetHeight > 0) {
+            const height = Math.ceil(shelf.offsetHeight / 24) * 24;
+            if (height !== measuredShelfHeight) setMeasuredShelfHeight(height);
         }
+        // Entry heights are frozen between discrete layout events so streaming content grows in place.
+        const layoutSignature = [containerWidth, fittableColumns, workPending, ...allThreadEntries.map(entryLayoutKey)].join('|');
+        const relayout = layoutSignature !== layoutSignatureRef.current;
+        layoutSignatureRef.current = layoutSignature;
+        const entryHeightUpdates: Record<string, number> = {};
+        for (const element of threadScrollRef.current?.querySelectorAll<HTMLElement>('[data-thread-entry]') || []) {
+            const key = element.dataset.threadEntry!;
+            if (element.offsetHeight <= 0 || (!relayout && key in measuredEntryHeights)) continue;
+            const style = getComputedStyle(element);
+            const height = Math.ceil((element.offsetHeight + parseFloat(style.marginTop || '0') + parseFloat(style.marginBottom || '0')) / 24) * 24;
+            if (measuredEntryHeights[key] !== height) entryHeightUpdates[key] = height;
+        }
+        if (Object.keys(entryHeightUpdates).length) setMeasuredEntryHeights(previous => ({ ...previous, ...entryHeightUpdates }));
         const heights = new Map([...measuredTriggerHeights].filter(([id]) => tableById.has(id)));
         for (const thread of threadScrollRef.current?.querySelectorAll<HTMLElement>('[data-thread-active]') || []) {
             const groups = new Map<string, HTMLElement[]>();
@@ -3888,6 +3952,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
 
     const entryHeights = allThreadEntries.map(entry => {
         if (entry.isShelf) return Math.ceil(shelfHeight);
+        const measured = measuredEntryHeights[entryLayoutKey(entry)];
+        if (measured !== undefined) return measured;
         if (entry.historyCollapsed) return entry.threadSummary ? 78 : 42;
         if (entry.leafTable) {
             const owned = getCachedTriggers(entry.leafTable).filter(trigger => !entry.usedTableIds?.includes(trigger.resultTableId));

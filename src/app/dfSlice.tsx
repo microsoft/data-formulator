@@ -2846,6 +2846,10 @@ export const dfSelectors = {
                 if (parentTurn?.dataOperation || parentTurn?.form) {
                     return { type: 'text', textId: parentTurn.id };
                 }
+                // Messages after a workflow's status card keep the run on the canvas.
+                if (parentTurn?.workflowCardFor && textTurns.some(turn => turn.id === parentTurn.workflowCardFor && turn.workflow)) {
+                    return { type: 'text', textId: parentTurn.workflowCardFor };
+                }
                 if (tables.some(t => t.id === p)) {
                     // Charts render in `getAllCharts` order, so the last one on
                     // the table is the chart sitting just above this turn.

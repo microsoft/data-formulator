@@ -35,6 +35,9 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
     const importing = useSelector((state: DataFormulatorState) => state.pendingTableLoads.some(item => item.id === `import-copy:${referenceId}`));
     useEffect(() => { setImportDialogOpen(false); setImportError(''); }, [referenceId]);
     const sample = reference?.summary.sampleRows;
+    // References saved before `queryModel` existed still carry semantic column roles.
+    const semantic = reference?.queryModel === 'semantic'
+        || !!reference?.summary.columns.some(column => (column as { role?: string }).role === 'measure');
     const availableReferenceId = reference?.id;
     let title = reference?.displayName || t('externalReference.missing', { defaultValue: 'Reference unavailable' });
     if (reference && title === reference.sourceTable.name) {
@@ -81,6 +84,9 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                     rows: Record<string, unknown>[];
                     inspection?: ExternalTableReference['summary']['inspection'];
                     source_location?: ExternalTableReference['sourceLocation'];
+                    query_model?: string;
+                    semantic_fields?: ExternalTableReference['summary']['columns'];
+                    relationships?: unknown[];
                 }>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ connector_id: source.connectorId, source_table: source.sourceTable, limit: SAMPLE_ROW_LIMIT, import_options: { size: SAMPLE_ROW_LIMIT } }),
@@ -100,13 +106,15 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                     return { ...cached, name: column.name, type: column.type || cached?.type || 'string' };
                 });
                 const partialSchema = !!data.inspection?.columns_omitted || data.inspection?.schema_complete === false;
-                const columns = partialSchema
+                const columns = data.semantic_fields?.length ? [...data.semantic_fields] : partialSchema
                     ? current.summary.columns.map(column => sampledColumns.find(item => item.name === column.name) || column)
                     : [...sampledColumns];
                 columns.push(...sampledColumns.filter(column => !columns.some(item => item.name === column.name)));
                 const updated: ExternalTableReference = { ...current, capturedAt: new Date().toISOString(),
                     sourceLocation: data.source_location || current.sourceLocation,
+                    ...(data.query_model === 'semantic' ? { queryModel: 'semantic' as const } : {}),
                     summary: { ...current.summary, columns, sampleRows, sampleTruncated,
+                        ...(data.relationships ? { relationships: data.relationships } : {}),
                         sampleColumns: sampledColumns.map(column => column.name), inspection: data.inspection } };
                 dispatch(dfActions.upsertExternalTableReference(updated));
             } catch (reason) {
@@ -228,7 +236,7 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
             <Typography>
                 {t('externalReference.sourceGuidance', { defaultValue: 'Data stays in the connected source and is read when needed.' })}
             </Typography>
-            {!readOnly && (importing
+            {!readOnly && !semantic && (importing
                 ? <Typography role="status">{t('externalReference.importing', { defaultValue: 'Importing workspace copy...' })}</Typography>
                 : <Button size="small" startIcon={<DownloadIcon />} onClick={() => { setImportError(''); setImportDialogOpen(true); }}
                     sx={{ fontSize: textVar.xs, textTransform: 'none', py: 0, minHeight: 0 }}>

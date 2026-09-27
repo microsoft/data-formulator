@@ -33,7 +33,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
-import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
+import { StreamIcon, getConnectorIcon, connectorSortOrder, connectorCategory } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
@@ -809,7 +809,7 @@ const ConnectorTypePicker: React.FC<{
         fontWeight: selectedType === typeKey ? 600 : 400,
         textTransform: 'none' as const,
         width: { xs: 'auto', sm: '100%' },
-        minWidth: 'max-content',
+        minWidth: { xs: 'max-content', sm: 0 },
         justifyContent: 'flex-start',
         textAlign: 'left' as const,
         borderRadius: 0,
@@ -825,6 +825,7 @@ const ConnectorTypePicker: React.FC<{
         borderBottom: { xs: `1px solid ${borderColor.divider}`, sm: 0 },
         overflowY: { xs: 'hidden', sm: 'auto' }, overflowX: { xs: 'auto', sm: 'hidden' },
         pt: { xs: 0, sm: 1 },
+        pb: { xs: 0, sm: 1 },
         flexShrink: 0,
     }}>
         <Typography variant="subtitle2" sx={{
@@ -833,8 +834,17 @@ const ConnectorTypePicker: React.FC<{
         }}>
             {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
         </Typography>
-        {[...loaderTypes].sort((first, second) => connectorSortOrder(first.type, second.type)).map(loader => {
+        {[...loaderTypes].sort((first, second) => connectorSortOrder(first.type, second.type)).map((loader, index, sorted) => {
             const isPlugin = loader.source === 'plugin';
+            const category = connectorCategory(loader.type);
+            const header = (index === 0 || connectorCategory(sorted[index - 1].type) !== category) && <Typography
+                key={`group-${category}`} role="presentation" sx={{
+                    display: { xs: 'none', sm: 'block' }, px: 2.5, pt: index === 0 ? 0.25 : 1, pb: 0.25,
+                    fontSize: '0.6875rem', fontWeight: 400, color: 'text.disabled',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                {t(`upload.connectorGroups.${category}`)}
+            </Typography>;
             const button = <Button
                 key={loader.type}
                 variant="text" size="small" color="primary"
@@ -843,22 +853,25 @@ const ConnectorTypePicker: React.FC<{
                 sx={sidebarButtonSx(loader.type)}
                 startIcon={getConnectorIcon(loader.type, { sx: { fontSize: iconVar.lg } })}
             >
-                <Box component="span" sx={{ flex: 1, textAlign: 'left' }}>{loader.name}</Box>
+                <Box component="span" title={loader.name} sx={{ flex: 1, minWidth: 0, textAlign: 'left',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loader.name}</Box>
                 {isPlugin && <Box component="span" sx={{
-                    ml: 0.5, px: 0.5, fontSize: '0.75rem', color: 'text.secondary',
+                    ml: 0.5, px: 0.5, fontSize: '0.75rem', color: 'text.secondary', flexShrink: 0,
                     border: '1px solid', borderColor: 'divider', borderRadius: 0.5, lineHeight: 1.4,
                 }}>plugin</Box>}
             </Button>;
-            return isPlugin ? <Tooltip key={loader.type} title={`External plugin loaded from ${loader.source_path}`} placement="right" arrow>
+            const item = isPlugin ? <Tooltip key={loader.type} title={`External plugin loaded from ${loader.source_path}`} placement="right" arrow>
                 <span>{button}</span>
             </Tooltip> : button;
+            return header ? [header, item] : item;
         })}
         {Object.entries(disabledLoaders).sort(([first], [second]) => connectorSortOrder(first, second)).map(([name, { install_hint }]) => (
             <Tooltip key={name} title={install_hint} placement="right" arrow>
-                <span style={{ width: '100%' }}>
+                <span style={{ width: '100%', flexShrink: 0 }}>
                     <Button variant="text" size="small" disabled sx={{
                         fontSize: '0.8125rem', textTransform: 'none', width: { xs: 'auto', sm: '100%' },
-                        minWidth: 'max-content', justifyContent: 'flex-start', textAlign: 'left',
+                        minWidth: { xs: 'max-content', sm: 0 }, justifyContent: 'flex-start', textAlign: 'left',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         borderRadius: 0, py: 0.75, px: 2.5, color: 'text.disabled !important',
                     }} startIcon={getConnectorIcon(name, { sx: { fontSize: iconVar.lg, opacity: 0.4 } })}>
                         {name}
@@ -1071,6 +1084,8 @@ export interface UnifiedDataUploadDialogProps {
     onClose: () => void;
     onStartChat?: (prompt: string, images: string[], attachments: string[]) => void;
     initialTab?: UploadTabType;
+    /** Catalog path to preselect when opening a connector tab. */
+    initialTablePath?: string[];
     onConnectorsChanged?: () => void;
 }
 
@@ -1079,6 +1094,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     onClose,
     onStartChat,
     initialTab = 'menu',
+    initialTablePath,
     onConnectorsChanged,
 }) => {
     const theme = useTheme();
@@ -2019,6 +2035,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 key={browseConnector.id}
                                 connectorId={browseConnector.id}
                                 connectorName={browseConnector.display_name}
+                                initialTablePath={initialTab === `connector:${browseConnector.id}` ? initialTablePath : undefined}
                                 onReferenceAdded={handleClose}
                             />
                             : browseConnector ? <ScrollFadeContainer sx={{ p: 2, boxSizing: 'border-box' }} resetKey={browseConnector.id}>

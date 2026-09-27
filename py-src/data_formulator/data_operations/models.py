@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -119,11 +120,18 @@ class LoadQuery:
 
     def __post_init__(self) -> None:
         if self.native is not None:
-            if (not isinstance(self.native, Mapping) or set(self.native) != {"language", "text"}
-                    or self.native.get("language") != "kql"
+            language = self.native.get("language") if isinstance(self.native, Mapping) else None
+            if (not isinstance(self.native, Mapping) or not {"language", "text"} <= set(self.native) <= {"language", "text", "reads"}
+                    or not isinstance(language, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", language)
                     or not isinstance(self.native.get("text"), str)
                     or not self.native["text"].strip() or len(self.native["text"]) > 16000):
-                raise ValueError("Native loading requires language='kql' and query text of 1-16000 characters.")
+                raise ValueError(
+                    "Native loading requires a lowercase language identifier and query text of 1-16000 characters."
+                )
+            reads = self.native.get("reads")
+            if reads is not None and (not isinstance(reads, (list, tuple)) or not 1 <= len(reads) <= 16 or not all(
+                    isinstance(name, str) and name.strip() and len(name) <= 256 for name in reads)):
+                raise ValueError("Native reads must list 1-16 source table names the query reads.")
             if self.filters or self.columns or self.order_by or self.group_by or self.aggregates:
                 raise ValueError("Native queries cannot be combined with structured query fields except limit.")
             object.__setattr__(self, "native", _freeze_json(self.native))

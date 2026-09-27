@@ -3,9 +3,9 @@
 
 /**
  * DataSourceSidebar — persistent collapsible panel on the left edge.
- * Shows connected data sources with catalog trees.  Users can click
- * to preview, drag-and-drop to import, and see ✓ / refresh on loaded
- * tables.
+ * Shows connected data sources with catalog trees.  Users can hover
+ * for fields, open items in the data view, drag-and-drop to import, and
+ * see ✓ / refresh on loaded tables.
  */
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -19,8 +19,6 @@ import {
     Tooltip,
     Collapse,
     CircularProgress,
-    Fade,
-    Popover,
     Button,
     Divider,
     TextField,
@@ -39,10 +37,8 @@ import { generateWorkspaceId, leaveSession } from '../app/sessionThunks';
 import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 import { ScrollFadeContainer } from '../components/ScrollFade';
 
-import StorageIcon from '@mui/icons-material/Storage';
 import AddIcon from '@mui/icons-material/Add';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { InlineLoadingStatus, WorkflowGears } from '../components/FunComponents';
@@ -50,11 +46,12 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import NorthEastIcon from '@mui/icons-material/NorthEast';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import EditIcon from '@mui/icons-material/Edit';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import PushPinIcon from '@mui/icons-material/PushPin';
@@ -73,11 +70,9 @@ import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons
 import { loadTable } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, updateWorkspaceMeta, onWorkspaceListChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
-import { borderColor, sidebarEdge } from '../app/tokens';
+import { borderColor, sidebarEdge, sidebarPrimaryActionSx, sidebarToolbarSx } from '../app/tokens';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
-import { ConnectorTablePreview } from '../components/ConnectorTablePreview';
-import type { ColumnMeta } from '../components/ConnectorTablePreview';
 import {
     CatalogTreeNode,
     collectNamespaceIds,
@@ -88,7 +83,7 @@ import { ResizeHandle } from '../components/ResizeHandle';
 import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
 import { formatBytes } from './ViewUtils';
-import { importConnectorFile, isLargeConnectorTable, createExternalTableReference } from '../app/workspaceService';
+import { importConnectorFile, loadsAsConnectorReference, isSemanticConnectorTable, createExternalTableReference } from '../app/workspaceService';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -132,22 +127,12 @@ interface CatalogCache {
     fetchedAt: number;
 }
 
-interface PreviewState {
-    connectorId: string;
-    node: CatalogTreeNode;
-    columns: ColumnMeta[];
-    sampleRows: Record<string, any>[];
-    rowCount: number | null;
-    tableDescription?: string;
-    loading: boolean;
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 // ─── Outer wrapper — ultra-lightweight, only reads isOpen ────────────────────
 
 export const DataSourceSidebar: React.FC<{
-    onOpenUploadDialog?: (tab?: string) => void;
+    onOpenUploadDialog?: (tab?: string, tablePath?: string[]) => void;
     connectorRefreshKey?: number;
     onConnectorsChanged?: () => void;
     onAskAgent?: (text: string) => void;
@@ -205,6 +190,9 @@ export const DataSourceSidebar: React.FC<{
         return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
     });
     const [isPinned, setIsPinned] = useState(() => localStorage.getItem(SIDEBAR_PINNED_KEY) === 'true');
+    const panelRef = useRef<HTMLDivElement>(null);
+    const liveWidthRef = useRef(panelWidth);
+    useEffect(() => { liveWidthRef.current = panelWidth; }, [panelWidth]);
 
     const togglePinned = useCallback(() => {
         setIsPinned(previous => {
@@ -214,24 +202,27 @@ export const DataSourceSidebar: React.FC<{
         });
     }, []);
 
-    const handleClickAway = useCallback(() => {
+    const handleClickAway = useCallback((event: MouseEvent | TouchEvent) => {
+        // Dialogs, menus and tooltips render in portals outside the sidebar; clicking them isn't "away".
+        if ((event.target as Element | null)?.closest?.('.MuiModal-root, .MuiPopper-root')) return;
         if (isOpen && !isPinned) {
             dispatch(dfActions.setDataSourceSidebarOpen(false));
         }
     }, [dispatch, isOpen, isPinned]);
 
     const handleResize = useCallback((delta: number) => {
-        setPanelWidth(prev => {
-            const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, prev + delta));
-            return next;
-        });
+        // Drag updates the panel's style directly; React (and the pinned workspace) re-lay out once on release.
+        liveWidthRef.current = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, liveWidthRef.current + delta));
+        const panel = panelRef.current;
+        if (panel) {
+            panel.style.width = `${liveWidthRef.current}px`;
+            panel.style.minWidth = `${liveWidthRef.current}px`;
+        }
     }, []);
 
     const handleResizeEnd = useCallback(() => {
-        setPanelWidth(prev => {
-            localStorage.setItem(SIDEBAR_WIDTH_KEY, String(prev));
-            return prev;
-        });
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(liveWidthRef.current));
+        setPanelWidth(liveWidthRef.current);
     }, []);
 
     // Brief sidebar-wide attention nudge whenever a focus request lands
@@ -338,7 +329,7 @@ export const DataSourceSidebar: React.FC<{
             {/* The expanded panel overlays the workspace instead of changing
                 this flex item's width and relaying out charts on every toggle. */}
             {isOpen && (
-                <Box sx={{
+                <Box ref={panelRef} sx={{
                     position: isPinned ? 'relative' : 'absolute',
                     ...(isPinned ? {} : {
                         left: RAIL_WIDTH,
@@ -356,7 +347,6 @@ export const DataSourceSidebar: React.FC<{
                     boxShadow: isPinned ? 'none' : sidebarEdge.overlayShadow,
                 }}>
                     <DataSourceSidebarPanel
-                        panelWidth={panelWidth}
                         onOpenUploadDialog={onOpenUploadDialog}
                         onCollapse={toggle}
                         isPinned={isPinned}
@@ -381,8 +371,7 @@ export const DataSourceSidebar: React.FC<{
 // ─── Inner panel — only mounted when open, subscribes to heavier state ───────
 
 const DataSourceSidebarPanel: React.FC<{
-    panelWidth: number;
-    onOpenUploadDialog?: (tab?: string) => void;
+    onOpenUploadDialog?: (tab?: string, tablePath?: string[]) => void;
     onCollapse: () => void;
     isPinned: boolean;
     onTogglePinned: () => void;
@@ -390,7 +379,7 @@ const DataSourceSidebarPanel: React.FC<{
     onConnectorsChanged?: () => void;
     disableConnectors?: boolean;
     onAskAgent?: (text: string) => void;
-}> = ({ panelWidth, onOpenUploadDialog, onCollapse, isPinned, onTogglePinned, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onAskAgent }) => {
+}> = ({ onOpenUploadDialog, onCollapse, isPinned, onTogglePinned, connectorRefreshKey = 0, onConnectorsChanged, disableConnectors = false, onAskAgent }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -460,18 +449,9 @@ const DataSourceSidebarPanel: React.FC<{
     const selectionRef = useRef(selection);
     selectionRef.current = selection;
 
-    // Preview popover state
-    const [preview, setPreview] = useState<PreviewState | null>(null);
-    const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
-    const [previewLoading, setPreviewLoading] = useState<{ connectorId: string; itemId: string } | null>(null);
-    const previewRequestIdRef = useRef(0);
     const importing = useSelector((state: DataFormulatorState) => state.pendingTableLoads.some(load => load.progress));
-    // Cache of fetched sample previews, keyed by `${connectorId}:${pathKey}`,
-    // so re-opening a table's preview is instant and costs no extra query.
-    const previewCacheRef = useRef<Record<string, PreviewState>>({});
 
     // Add-connector menu anchor
-    const [addConnectorAnchor, setAddConnectorAnchor] = useState<HTMLElement | null>(null);
 
     // Catalog search: input changes are local; Enter/search button hits backend.
     const [catalogSearch, setCatalogSearch] = useState('');
@@ -488,28 +468,6 @@ const DataSourceSidebarPanel: React.FC<{
         (tab: 'sources' | 'sessions' | 'knowledge') => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
     );
-
-    useEffect(() => {
-        if (activeTab === 'sources') return;
-        previewRequestIdRef.current += 1;
-        setPreviewLoading(null);
-        setPreview(null);
-        setPreviewAnchor(null);
-    }, [activeTab]);
-
-    useEffect(() => {
-        if (!previewLoading) return;
-        const cancelPendingPreview = (event: PointerEvent) => {
-            const target = event.target instanceof Element
-                ? event.target.closest<HTMLElement>('[data-catalog-item-id]')
-                : null;
-            if (target?.dataset.catalogItemId === previewLoading.itemId) return;
-            previewRequestIdRef.current += 1;
-            setPreviewLoading(null);
-        };
-        document.addEventListener('pointerdown', cancelPendingPreview, true);
-        return () => document.removeEventListener('pointerdown', cancelPendingPreview, true);
-    }, [previewLoading]);
 
     // ── Sessions ─────────────────────────────────────────────────────────────
 
@@ -759,10 +717,6 @@ const DataSourceSidebarPanel: React.FC<{
             setSearchingCatalog({});
             setExpandedConnectorId(null);
             setTreeExpanded({});
-            previewRequestIdRef.current += 1;
-            setPreviewLoading(null);
-            setPreview(null);
-            setPreviewAnchor(null);
         }
         fetchConnectors();
     }, [fetchConnectors, identityKey, connectorRefreshKey]);
@@ -1022,10 +976,6 @@ const DataSourceSidebarPanel: React.FC<{
     catalogCacheRef.current = catalogCache;
 
     const toggleSource = useCallback((connectorId: string) => {
-        previewRequestIdRef.current += 1;
-        setPreviewLoading(null);
-        setPreview(null);
-        setPreviewAnchor(null);
         const opening = expandedConnectorId !== connectorId;
         if (opening && !catalogCacheRef.current[connectorId]) {
             void fetchCatalogTree(connectorId);
@@ -1087,177 +1037,37 @@ const DataSourceSidebarPanel: React.FC<{
          
     }, [focusedConnectorId, sortedConnectors]);
 
-    // ── Preview a table on click ──────────────────────────────────────────
-
     const buildSourceTableRef = useCallback((node: CatalogTreeNode): SourceTableRef => {
         const name = node.metadata?._source_name || node.metadata?._catalogName || node.name;
         const id = node.metadata?.dataset_id != null ? String(node.metadata.dataset_id) : name;
         return { id, name };
     }, []);
 
-    const handlePreviewTable = useCallback((connectorId: string, node: CatalogTreeNode, anchorEl: HTMLElement) => {
-        if (node.node_type !== 'table') return;
-
-        const ref = buildSourceTableRef(node);
-        const nodeMeta = node.metadata || {};
-        const pathKey = node.path.join('/');
-        const cacheKey = `${connectorId}:${pathKey}`;
-        const requestId = ++previewRequestIdRef.current;
-
-        // A new preview intent replaces any open or pending preview. Keep the
-        // row-level progress indicator, but don't open an empty popover.
-        setPreview(null);
-        setPreviewAnchor(null);
-
-        if (nodeMeta.artifact_kind === 'file') {
-            setPreviewLoading(null);
-            setPreview({ connectorId, node, columns: [], sampleRows: [], rowCount: null, loading: false });
-            setPreviewAnchor(anchorEl);
-            return;
-        }
-
-        // Cache hit: re-open instantly, no query. Repeats are free.
-        const cached = previewCacheRef.current[cacheKey];
-        if (cached && !cached.loading) {
-            setPreviewLoading(null);
-            setPreview({ ...cached, connectorId, node });
-            setPreviewAnchor(anchorEl);
-            return;
-        }
-
-        // Fast path: when the catalog node already carries an embedded
-        // preview (columns + sample_rows in metadata, as the sample-datasets
-        // connector emits via list_tables), skip the network round-trip and
-        // render the popover instantly. The real data is only fetched when
-        // the user clicks "Load Table". rowCount is intentionally left
-        // null — for embedded previews we don't know the true total without
-        // downloading the URL, and the preview UI handles that gracefully.
-        const embeddedSampleRows = Array.isArray(nodeMeta.sample_rows) ? nodeMeta.sample_rows : null;
-        const embeddedColumns = Array.isArray(nodeMeta.columns) ? nodeMeta.columns : null;
-        if (embeddedSampleRows && embeddedSampleRows.length > 0 && embeddedColumns && embeddedColumns.length > 0) {
-            const embedded: PreviewState = {
-                connectorId,
-                node,
-                columns: embeddedColumns as any,
-                sampleRows: embeddedSampleRows,
-                rowCount: nodeMeta.row_count ?? null,
-                tableDescription: nodeMeta.source_description || nodeMeta.description,
-                loading: false,
-            };
-            previewCacheRef.current[cacheKey] = embedded;
-            setPreviewLoading(null);
-            setPreview(embedded);
-            setPreviewAnchor(anchorEl);
-            return;
-        }
-
-        setPreviewLoading({ connectorId, itemId: pathKey });
-
-        apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                connector_id: connectorId,
-                source_table: ref,
-                limit: 10,
-            }),
-        })
-            .then(({ data }) => {
-                if (data.columns) {
-                    const rawCols = (data.columns as ColumnMeta[]);
-                    // Preview returns content only. Enrich each column's
-                    // source type / description from the catalog metadata we
-                    // already hold (nodeMeta.columns), so we keep the correct
-                    // filter widgets and header tooltips without paying for a
-                    // live metadata round-trip to the source on every preview.
-                    const catalogCols: any[] = Array.isArray(nodeMeta.columns) ? nodeMeta.columns : [];
-                    const catalogByName = new Map<string, any>(
-                        catalogCols.map((c: any) => [c.name, c]),
-                    );
-                    const newCols: ColumnMeta[] = rawCols.map(col => {
-                        const cat = catalogByName.get(col.name);
-                        if (!cat) return col;
-                        return {
-                            ...col,
-                            source_type: col.source_type ?? cat.source_type ?? cat.type,
-                            description: col.description ?? cat.description,
-                            verbose_name: col.verbose_name ?? cat.verbose_name,
-                            expression: col.expression ?? cat.expression,
-                        };
-                    });
-                    const sampleLen = (data.rows || []).length;
-                    // Only treat `total_row_count` as authoritative when
-                    // it's strictly greater than the returned sample, or
-                    // when the sample is short of the preview cap (10) —
-                    // both indicate the loader actually knows the total
-                    // rather than falling back to `len(rows)`. Otherwise
-                    // keep whatever the catalog metadata already gave us.
-                    const total = data.total_row_count;
-                    const baseRowCount = node.metadata?.row_count ?? null;
-                    const totalReliable = total != null && (total > sampleLen || sampleLen < 10);
-                    const resolved: PreviewState = {
-                        connectorId,
-                        node,
-                        columns: newCols.length > 0 ? newCols : [],
-                        sampleRows: data.rows || [],
-                        rowCount: totalReliable ? total : baseRowCount,
-                        tableDescription: data.description ?? (nodeMeta.source_description || nodeMeta.description),
-                        loading: false,
-                    };
-                    previewCacheRef.current[cacheKey] = resolved;
-                    if (previewRequestIdRef.current === requestId) {
-                        setPreviewLoading(null);
-                        if (anchorEl.isConnected && anchorEl.dataset.catalogItemId === pathKey) {
-                            setPreview(resolved);
-                            setPreviewAnchor(anchorEl);
-                        }
-                    }
-                } else if (previewRequestIdRef.current === requestId) {
-                    setPreviewLoading(null);
-                }
-            })
-            .catch(() => {
-                if (previewRequestIdRef.current === requestId) {
-                    setPreviewLoading(null);
-                }
-            });
-    }, [buildSourceTableRef]);
-
-    const closePreview = useCallback(() => {
-        previewRequestIdRef.current += 1;
-        setPreviewLoading(null);
-        setPreview(null);
-        setPreviewAnchor(null);
-    }, []);
-
-    const closePreviewForTable = useCallback((connectorId: string, node: CatalogTreeNode) => {
-        const itemId = node.path.join('/');
-        const isPending = previewLoading?.connectorId === connectorId
-            && previewLoading.itemId === itemId;
-        const isOpen = preview?.connectorId === connectorId
-            && preview.node.path.join('/') === itemId;
-        if (isPending || isOpen) closePreview();
-    }, [closePreview, preview, previewLoading]);
-
     // Lightweight hover card — basic metadata built entirely from data already
-    // in the catalog node, so hovering costs no network query. Clicking the row
-    // opens the full sample preview and selects the table.
+    // in the catalog node, so hovering costs no network query.
     const renderTableHoverCard = useCallback((node: CatalogTreeNode) => {
         const meta = node.metadata || {};
         const desc = (meta.source_description || meta.description || '').toString().trim();
         const rowCount = meta.row_count;
         const sizeLabel = formatBytes(meta.original_size_bytes);
         const cols: any[] = Array.isArray(meta.columns) ? meta.columns : [];
+        const columnCount = Number(meta.column_count) || cols.length;
+        const semantic = isSemanticConnectorTable(meta);
+        const chips = semantic ? [...cols].sort((a, b) => Number(b?.role === 'measure') - Number(a?.role === 'measure')) : cols;
+        const semanticCounts = semantic ? t('sidebar.semanticFieldCounts', {
+            measures: cols.filter(c => c?.role === 'measure').length,
+            dimensions: cols.filter(c => c?.role !== 'measure').length,
+        }) : null;
         return (
             <Box sx={{ p: 1.25, maxWidth: 300 }}>
                 <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'text.primary', wordBreak: 'break-word' }}>
                     {node.name}
                 </Typography>
-                {(rowCount != null || cols.length > 0 || sizeLabel) && (
+                {(semanticCounts || rowCount != null || cols.length > 0 || sizeLabel) && (
                     <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.5 }}>
-                        {[
+                        {semanticCounts ?? [
                             rowCount != null ? t('sidebar.hoverRowCount', { count: Number(rowCount).toLocaleString(), defaultValue: `${Number(rowCount).toLocaleString()} rows` }) : null,
-                            cols.length > 0 ? t('sidebar.hoverColumns', { count: cols.length, defaultValue: `${cols.length} columns` }) : null,
+                            cols.length > 0 ? t('sidebar.hoverColumns', { count: columnCount, defaultValue: `${columnCount} columns` }) : null,
                             sizeLabel || null,
                         ].filter(Boolean).join(' · ')}
                     </Typography>
@@ -1269,7 +1079,7 @@ const DataSourceSidebarPanel: React.FC<{
                 )}
                 {cols.length > 0 && (
                     <Box sx={{ mt: 0.75, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {cols.slice(0, 24).map((c: any, i: number) => (
+                        {chips.slice(0, 24).map((c: any, i: number) => (
                             <Box
                                 key={c?.name ?? i}
                                 component="span"
@@ -1280,12 +1090,12 @@ const DataSourceSidebarPanel: React.FC<{
                                 }}
                             >
                                 {c?.name}
-                                {c?.type && <Box component="span" sx={{ color: 'text.disabled', ml: 0.5 }}>{String(c.type)}</Box>}
+                                {(semantic ? c?.role === 'measure' && c?.aggregation : c?.type) && <Box component="span" sx={{ color: 'text.disabled', ml: 0.5 }}>{String(semantic ? c.aggregation : c.type)}</Box>}
                             </Box>
                         ))}
-                        {cols.length > 24 && (
+                        {columnCount > 24 && (
                             <Box component="span" sx={{ fontSize: textVar.xxs, lineHeight: 1.5, px: 0.5, color: 'text.disabled' }}>
-                                +{cols.length - 24}
+                                +{columnCount - 24}
                             </Box>
                         )}
                     </Box>
@@ -1314,7 +1124,7 @@ const DataSourceSidebarPanel: React.FC<{
         }
         const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
-        if (isLargeConnectorTable(node.metadata, serverConfig)) {
+        if (loadsAsConnectorReference(node.metadata, serverConfig)) {
             const metadata = node.metadata || {};
             const rows = Number(metadata.row_count);
             const bytes = Number(metadata.original_size_bytes ?? metadata.size_bytes ?? metadata.file_size);
@@ -1322,9 +1132,11 @@ const DataSourceSidebarPanel: React.FC<{
                 kind: 'external-table-reference', connectorId,
                 tableKey: metadata.table_key || pathKey, sourceTable: ref, displayName: node.name,
                 capturedAt: new Date().toISOString(),
+                ...(isSemanticConnectorTable(metadata) ? { queryModel: 'semantic' as const } : {}),
                 summary: {
                     description: metadata.source_description || metadata.description,
                     columns: metadata.columns || [],
+                    ...(metadata.relationships ? { relationships: metadata.relationships } : {}),
                     rowCount: Number.isFinite(rows) ? rows : undefined,
                     sizeBytes: Number.isFinite(bytes) ? bytes : undefined,
                 },
@@ -1403,7 +1215,6 @@ const DataSourceSidebarPanel: React.FC<{
         }
 
         const loadId = `batch-${generateUUID()}`;
-        closePreview();
         clearSelection();
         if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
         let ok = 0;
@@ -1449,7 +1260,7 @@ const DataSourceSidebarPanel: React.FC<{
                 }),
             }));
         }
-    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, closePreview, clearSelection, importing, isPinned, t]);
+    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, clearSelection, importing, isPinned, t]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
@@ -1498,10 +1309,7 @@ const DataSourceSidebarPanel: React.FC<{
         setSearchingCatalog(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setExpandedConnectorId(prev => (prev === connectorId ? null : prev));
         setTreeExpanded(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
-        if (preview?.connectorId === connectorId) {
-            closePreview();
-        }
-    }, [closePreview, preview?.connectorId]);
+    }, []);
 
     // ── Disconnect connector ──────────────────────────────────────────────
     // Clear stored credentials and the active loader without removing the
@@ -1634,8 +1442,8 @@ const DataSourceSidebarPanel: React.FC<{
 
     return (
         <Box sx={{
-            width: panelWidth,
-            minWidth: panelWidth,
+            flex: 1,
+            minWidth: 0,
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
@@ -1653,36 +1461,6 @@ const DataSourceSidebarPanel: React.FC<{
                     <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
                     </Typography>
-                    {!disableConnectors && <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
-                        <IconButton
-                            size="small"
-                            onClick={(e) => setAddConnectorAnchor(e.currentTarget)}
-                            sx={panelHeaderActionSx}
-                        >
-                            <AddIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>}
-                    <Menu
-                        anchorEl={addConnectorAnchor}
-                        open={!disableConnectors && Boolean(addConnectorAnchor)}
-                        onClose={() => setAddConnectorAnchor(null)}
-                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                        slotProps={{ paper: { sx: { minWidth: 180 } } }}
-                    >
-                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('add-connection'); }} sx={{ fontSize: textVar.sm, py: 0.75 }}>
-                            <ListItemIcon><StorageIcon sx={{ fontSize: iconVar.md }} /></ListItemIcon>
-                            <ListItemText slotProps={{ primary: { sx: { fontSize: textVar.sm } } }}>
-                                {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
-                            </ListItemText>
-                        </MenuItem>
-                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('local-folder'); }} sx={{ fontSize: textVar.sm, py: 0.75 }}>
-                            <ListItemIcon><FolderOpenIcon sx={{ fontSize: iconVar.md }} /></ListItemIcon>
-                            <ListItemText slotProps={{ primary: { sx: { fontSize: textVar.sm } } }}>
-                                {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
-                            </ListItemText>
-                        </MenuItem>
-                    </Menu>
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
@@ -1691,7 +1469,14 @@ const DataSourceSidebarPanel: React.FC<{
                     </Tooltip>
                 </Box>
                 {/* Search box: typing filters local cache, Enter/button searches backend. */}
-                <Box sx={{ px: 1.5, pt: 1, pb: 0.75, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }}>
+                <Box sx={sidebarToolbarSx}>
+                    {!disableConnectors && <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
+                        <Button variant="outlined" size="small" startIcon={<AddIcon />}
+                            aria-label={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
+                            onClick={() => onOpenUploadDialog?.('add-connection')} sx={sidebarPrimaryActionSx}>
+                            {t('sidebar.add', { defaultValue: 'Add' })}
+                        </Button>
+                    </Tooltip>}
                     <TextField
                         size="small"
                         fullWidth
@@ -1732,6 +1517,7 @@ const DataSourceSidebarPanel: React.FC<{
                             },
                         }}
                         sx={{
+                            flex: 1, minWidth: 0,
                             '& .MuiInputBase-root': { fontSize: textVar.sm, height: 30, borderRadius: 1 },
                             '& .MuiInputBase-input': { py: 0.5, px: 0.5 },
                             '& .MuiInputBase-input::placeholder': { fontSize: textVar.xs },
@@ -1867,6 +1653,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             size="small"
                                             aria-label={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}
                                             className="connector-row-action"
+                                            color="primary"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 if (serverSearchActive && searchText) {
@@ -1876,7 +1663,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                 }
                                             }}
                                             sx={{
-                                                color: 'text.disabled', p: 0.25,
+                                                p: 0.25,
                                             }}
                                         >
                                             {(isLoading && !bodySpinnerVisible)
@@ -1891,11 +1678,12 @@ const DataSourceSidebarPanel: React.FC<{
                                             size="small"
                                             aria-label={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}
                                             className="connector-row-action"
+                                            color="warning"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 void handleDisconnectConnector(connector);
                                             }}
-                                            sx={{ color: 'text.disabled', p: 0.25, '&:hover': { color: 'warning.main' } }}
+                                            sx={{ p: 0.25 }}
                                         >
                                             <LinkOffOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
@@ -1906,11 +1694,12 @@ const DataSourceSidebarPanel: React.FC<{
                                             size="small"
                                             aria-label={t('sidebar.connectConnector', { defaultValue: 'Connect' })}
                                             className="connector-row-action"
+                                            color="primary"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 void handleConnectConnector(connector);
                                             }}
-                                            sx={{ color: 'text.disabled', p: 0.25, '&:hover': { color: 'primary.main' } }}
+                                            sx={{ p: 0.25 }}
                                         >
                                             <LinkOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
@@ -1922,11 +1711,12 @@ const DataSourceSidebarPanel: React.FC<{
                                             size="small"
                                             aria-label={t('sidebar.connectorSettings', { defaultValue: 'Connector settings' })}
                                             className="connector-row-action"
+                                            color="primary"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 onOpenUploadDialog(`connector:${connector.id}`);
                                             }}
-                                            sx={{ color: 'text.disabled', p: 0.25, '&:hover': { color: 'primary.main' } }}
+                                            sx={{ p: 0.25 }}
                                         >
                                             <SettingsOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
@@ -1950,6 +1740,15 @@ const DataSourceSidebarPanel: React.FC<{
                             {connector.connected && (
                             <Collapse in={isExpanded} timeout={100}>
                                 <Box sx={{ pl: '6px', pr: 0.5, pb: 1 }}>
+                                    {onOpenUploadDialog && !activeSearchMode && (
+                                        <Button size="small" onClick={() => onOpenUploadDialog(`connector:${connector.id}`)}
+                                            sx={{ ml: '10px', mt: 0.25, px: 1, py: 0.25, minWidth: 0, textTransform: 'none',
+                                                fontSize: textVar.xs, fontWeight: 500, borderRadius: 1,
+                                                bgcolor: 'grey.100', color: 'text.secondary',
+                                                '&:hover': { bgcolor: 'grey.200', color: 'text.primary' } }}>
+                                            {t('sidebar.browseInDataView', { defaultValue: 'Browse in data view' })}
+                                        </Button>
+                                    )}
                                     {catalogError && !isLoading && <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, py: 1 }}>
                                         <Typography role="alert" sx={{ fontSize: textVar.xs, color: 'error.main', minWidth: 0, overflowWrap: 'anywhere' }}>
                                             {t('sidebar.discoveryIncomplete', { defaultValue: 'Connected; catalog discovery incomplete.' })} {catalogError}
@@ -1974,29 +1773,19 @@ const DataSourceSidebarPanel: React.FC<{
                                             selectedIds={selection?.connectorId === connector.id
                                                 ? new Set(Object.keys(selection.nodes))
                                                 : undefined}
-                                            loadingItemId={previewLoading?.connectorId === connector.id
-                                                ? previewLoading.itemId
-                                                : null}
-                                            onToggleSelectTable={(node, checked) => {
-                                                toggleSelectTable(connector.id, node, checked);
-                                                if (!checked) closePreviewForTable(connector.id, node);
-                                            }}
+                                            loadingItemId={null}
+                                            onToggleSelectTable={(node, checked) => toggleSelectTable(connector.id, node, checked)}
                                             onToggleSelectNamespace={(node, tables, checked) => toggleSelectNamespace(connector.id, tables, checked)}
                                             onExpandedChange={(newIds) => {
                                                 setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
                                             }}
                                             onLazyExpand={undefined}
-                                            onItemClick={(node, e) => {
+                                            onItemClick={(node) => {
                                                 if (node.node_type === 'table') {
                                                     const pathKey = node.path.join('/');
                                                     const isChecked = selection?.connectorId === connector.id
                                                         && !!selection.nodes[pathKey];
                                                     toggleSelectTable(connector.id, node, !isChecked);
-                                                    if (isChecked || connector.source_type === 'AzureBlobDataLoader') {
-                                                        closePreviewForTable(connector.id, node);
-                                                    } else {
-                                                        handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
-                                                    }
                                                 }
                                             }}
                                             renderHoverCard={renderTableHoverCard}
@@ -2020,8 +1809,21 @@ const DataSourceSidebarPanel: React.FC<{
                                                 const pathKey = node.path.join('/');
                                                 const sourceName = node.metadata?._source_name;
                                                 const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
-                                                if (!isLoaded) return null;
-                                                return (
+                                                return (<>
+                                                    {onOpenUploadDialog && (
+                                                        <Tooltip title={t('sidebar.openInDataView', { defaultValue: 'Open in data view' })}>
+                                                            <IconButton
+                                                                size="small"
+                                                                className="catalog-hover-action"
+                                                                aria-label={t('sidebar.openInDataView', { defaultValue: 'Open in data view' })}
+                                                                onClick={(e) => { e.stopPropagation(); onOpenUploadDialog(`connector:${connector.id}`, node.path); }}
+                                                                sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                            >
+                                                                <NorthEastIcon sx={{ fontSize: iconVar.xs }} />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    )}
+                                                    {isLoaded && (
                                                     <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
                                                         <IconButton
                                                             size="small"
@@ -2031,7 +1833,8 @@ const DataSourceSidebarPanel: React.FC<{
                                                             <RefreshIcon sx={{ fontSize: iconVar.sm }} />
                                                         </IconButton>
                                                     </Tooltip>
-                                                );
+                                                    )}
+                                                </>);
                                             }}
                                             maxHeight="none"
                                             scrollParent={connectorScrollEl}
@@ -2049,6 +1852,23 @@ const DataSourceSidebarPanel: React.FC<{
                         </Box>
                     );
                 })}
+
+                {/* A short list gets a visible add row; longer lists rely on the toolbar button. */}
+                {!disableConnectors && onOpenUploadDialog && !catalogSearch.trim() && !loadingConnectors
+                    && sortedConnectors.length <= 3 && (
+                    <Box sx={{ px: 1.25, pt: 1, pb: 1.5 }}>
+                        <Button fullWidth size="small" startIcon={<AddIcon sx={{ fontSize: iconVar.sm }} />}
+                            onClick={() => onOpenUploadDialog('add-connection')}
+                            sx={{
+                                justifyContent: 'flex-start', textTransform: 'none', fontSize: textVar.xs, fontWeight: 500,
+                                py: 0.5, borderRadius: '6px', border: '1px dashed', borderColor: 'rgba(0,0,0,0.15)',
+                                color: 'text.secondary', '& .MuiButton-startIcon': { mr: 0.5 },
+                                '&:hover': { borderColor: 'primary.main', color: 'primary.main', bgcolor: 'transparent' },
+                            }}>
+                            {t('sidebar.connectDataSource', { defaultValue: 'Connect a data source' })}
+                        </Button>
+                    </Box>
+                )}
 
             </Box>
             {/* ── Sticky batch-load action bar ──
@@ -2113,19 +1933,6 @@ const DataSourceSidebarPanel: React.FC<{
                     <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
-                    <Tooltip title={t('sidebar.newSession', { defaultValue: 'New session' })} placement="bottom">
-                        <IconButton
-                            size="small"
-                            aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
-                            onClick={() => {
-                                if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
-                                void dispatch(leaveSession());
-                            }}
-                            sx={panelHeaderActionSx}
-                        >
-                            <AddIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
@@ -2133,21 +1940,32 @@ const DataSourceSidebarPanel: React.FC<{
                         </IconButton>
                     </Tooltip>
                 </Box>
-                <Box sx={{
-                    px: 1.25, py: 0.375,
-                    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                    borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
-                }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, whiteSpace: 'nowrap' }}>
+                <Box sx={sidebarToolbarSx}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flex: 1, minWidth: 0, whiteSpace: 'nowrap' }}>
+                        <Tooltip title={t('sidebar.newSession', { defaultValue: 'New session' })}>
+                        <Button variant="outlined" size="small" startIcon={<AddIcon />}
+                            aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
+                            onClick={() => {
+                                if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
+                                void dispatch(leaveSession());
+                            }}
+                            sx={sidebarPrimaryActionSx}>
+                            {t('sidebar.new', { defaultValue: 'New' })}
+                        </Button>
+                        </Tooltip>
+                        <Tooltip title={t('sidebar.importSession', { defaultValue: 'Import session' })}>
                         <Button
+                            variant="outlined" size="small"
                             startIcon={<UploadFileIcon />}
                             aria-label={t('sidebar.importSession', { defaultValue: 'Import session' })}
                             onClick={() => importRef.current?.click()}
-                            sx={panelSubActionSx}
+                            sx={{ ...sidebarPrimaryActionSx, color: 'text.secondary' }}
                         >
-                            {t('sidebar.importSession', { defaultValue: 'Import session' })}
+                            {t('sidebar.import', { defaultValue: 'Import' })}
                         </Button>
+                        </Tooltip>
                         <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                        <Box sx={{ flex: 1 }} />
                         <Button
                             startIcon={<SortIcon />}
                             aria-label={t('sidebar.sortSessionList', { defaultValue: 'Sort sessions' })}
@@ -2232,9 +2050,10 @@ const DataSourceSidebarPanel: React.FC<{
                                 borderRadius: 0.75,
                                 backgroundColor: 'transparent',
                                 cursor: isRenaming ? 'default' : (activeWorkspace?.id === s.id ? 'default' : 'pointer'),
-                                '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.045)' },
+                                // Reserve room for the hover actions so the title truncates instead of running under them.
+                                '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.045)', pr: isRenaming ? 0.75 : '80px' },
                                 '&:hover .row-actions': { display: 'flex' },
-                                '&:hover .row-timestamp': { visibility: 'hidden' },
+                                '&:hover .row-timestamp': { display: 'none' },
                                 userSelect: 'none',
                             }}
                         >
@@ -2309,28 +2128,31 @@ const DataSourceSidebarPanel: React.FC<{
                                     <Tooltip title={t('sidebar.rename', { defaultValue: 'Rename' })}>
                                         <IconButton
                                             size="small"
+                                            color="primary"
                                             onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}
-                                            sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                            sx={{ p: 0.25 }}
                                         >
-                                            <EditOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                                            <EditIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                     <Tooltip title={t('sidebar.exportSession', { defaultValue: 'Export' })}>
                                         <IconButton
                                             size="small"
+                                            color="primary"
                                             onClick={(e) => { e.stopPropagation(); handleExportSession(s.id, s.display_name); }}
-                                            sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
+                                            sx={{ p: 0.25 }}
                                         >
                                             <DownloadIcon sx={{ fontSize: iconVar.sm }} />
                                         </IconButton>
                                     </Tooltip>
                                     <IconButton
                                         size="small"
+                                        color="error"
                                         aria-label={t('workspace.deleteSession')}
                                         onClick={(e) => handleDeleteSession(s.id, e)}
-                                        sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'warning.main' } }}
+                                        sx={{ p: 0.25 }}
                                     >
-                                        <DeleteOutlineIcon sx={{ fontSize: iconVar.sm }} />
+                                        <DeleteIcon sx={{ fontSize: iconVar.sm }} />
                                     </IconButton>
                                 </Box>
                             )}
@@ -2356,80 +2178,6 @@ const DataSourceSidebarPanel: React.FC<{
                 </>} />
             </Box>
             )}
-
-            {/* Preview popover */}
-            <Popover
-                open={Boolean(previewAnchor && preview)}
-                anchorEl={previewAnchor}
-                onClose={closePreview}
-                anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
-                transformOrigin={{ vertical: 'center', horizontal: 'left' }}
-                // Use Fade instead of the default Grow transition. Grow
-                // scales the paper from 75% → 100%, which reads as a
-                // "small → large" pop even when the paper layout is
-                // pixel-stable. Fade only crossfades opacity, so the
-                // popover appears at its final size in one shot.
-                slots={{ transition: Fade }}
-                slotProps={{
-                    transition: { timeout: 120 } as any,
-                    paper: {
-                        sx: {
-                            // Fixed width so the popover doesn't grow when
-                            // the table renders; height is content-driven
-                            // because the preview is capped at 10 rows and
-                            // therefore intrinsically stable. The table area
-                            // itself reserves space for ~10 rows during
-                            // loading (see ConnectorTablePreview) so the
-                            // popover opens at its final height.
-                            width: 'min(640px, 70vw)',
-                            maxHeight: '85vh',
-                            display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                            resize: 'both',
-                        },
-                    },
-                }}
-            >
-                {preview && (() => {
-                    const pathKey = preview.node.path.join('/');
-                    const alreadyLoaded = !!(loadedTablesMap[preview.node.name] || loadedTablesMap[pathKey]);
-                    const sourceTableRef = buildSourceTableRef(preview.node);
-                    const nodeMeta = preview.node.metadata || {};
-                    const sourceDescription = nodeMeta.source_description || preview.tableDescription || nodeMeta.description;
-                    if (nodeMeta.artifact_kind === 'file') return <Box sx={{ p: 2 }}>
-                        <Typography sx={{ fontSize: textVar.md, overflowWrap: 'anywhere' }}>{preview.node.name}</Typography>
-                        <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 1 }}>{nodeMeta.file_type?.toUpperCase()} · {formatBytes(nodeMeta.file_size)}</Typography>
-                    </Box>;
-                    return (
-                        <Box sx={{ p: 2, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
-                            <ConnectorTablePreview
-                                connectorId={preview.connectorId}
-                                sourceTable={sourceTableRef}
-                                displayName={preview.node.name}
-                                tableDescription={sourceDescription}
-                                sourceDescription={sourceDescription}
-                                columns={preview.columns}
-                                sampleRows={preview.sampleRows}
-                                rowCount={preview.rowCount}
-                                loading={preview.loading || importing}
-                                alreadyLoaded={alreadyLoaded}
-                                enableFilters={false}
-                                hideLoadActions
-                                onRefreshPreview={(rows, cols, rc) => {
-                                    setPreview(prev => {
-                                        if (!prev) return null;
-                                        return {
-                                            ...prev,
-                                            sampleRows: rows,
-                                            columns: cols.length > 0 ? cols : prev.columns,
-                                            rowCount: rc ?? prev.rowCount,
-                                        };
-                                    });
-                                }}
-                            />
-                        </Box>
-                    );
-                })()}
-            </Popover>
 
         </Box>
     );

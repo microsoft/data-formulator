@@ -34,7 +34,7 @@ def test_visualize_schema_requires_generalized_input_sources():
     assert "workspace Data Access Paths" in load["function"]["description"]
     assert "user_review_needed=false executes automatically" in load["function"]["description"]
     loading_query = load["function"]["parameters"]["properties"]["options"]["items"]["properties"]["tables"]["items"]["properties"]["query"]
-    assert loading_query["properties"]["native"]["properties"]["language"]["enum"] == ["kql"]
+    assert loading_query["properties"]["native"]["properties"]["language"]["enum"] == ["kql", "cube_json", "dax"]
     assert loading_query["properties"]["native"]["additionalProperties"] is False
     assert "local Python" in loading_query["description"]
 

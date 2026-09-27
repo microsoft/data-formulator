@@ -473,16 +473,21 @@ class KustoDataLoader(ExternalDataLoader):
         return {**super().query_capabilities(), "native_query_languages": ["kql"],
                 "native_query_guidance": "Single read-only KQL expression scoped to the selected table in this database. No commands, statements, comments, external data, remote entities, callouts, or plugins. Use native queries only when ordinary loading and local Python are unsuitable. Maximum 10000 loaded rows, 16 MiB, 60 seconds; narrow queries explicitly to control scan cost."}
 
+    def validate_native_query(self, language: str, text: str) -> None:
+        if language != "kql":
+            raise ValueError("This connector supports native KQL only.")
+        if (not isinstance(text, str) or not text.strip() or len(text) > 16000
+                or any(token in text for token in (";", "//", "/*", "*/", "\x00"))
+                or text.lstrip().startswith(".")):
+            raise ValueError("Provide one KQL query expression without commands, comments, or statements (maximum 16000 characters).")
+
     def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
         if query.get("native") is not None:
             native = query["native"]
-            if not isinstance(native, dict) or native.get("language") != "kql":
+            if not isinstance(native, dict):
                 raise ValueError("This connector supports native KQL only.")
-            text = native.get("text")
-            if (not isinstance(text, str) or not text.strip() or len(text) > 16000
-                    or any(token in text for token in (";", "//", "/*", "*/", "\x00"))
-                    or text.lstrip().startswith(".")):
-                raise ValueError("Provide one KQL query expression without commands, comments, or statements (maximum 16000 characters).")
+            self.validate_native_query(native.get("language"), native.get("text"))
+            text = native["text"]
             if not 1 <= limit <= 10001:
                 raise ValueError("Native query result limit must be between 1 and 10001.")
             database, table = self._resolve_source_table(source_table)

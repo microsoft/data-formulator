@@ -26,6 +26,36 @@ def test_catalog_inspection_exposes_limits_and_bounded_examples(tmp_path):
     assert len(text) < 2000
 
 
+def test_catalog_columns_are_paged_and_filtered(tmp_path):
+    columns = [{"name": f"Measure {index}", "role": "measure", "aggregation": "sum", "ref": f"orders.m{index}"}
+               for index in range(120)]
+    columns.append({"name": "Order Date", "role": "time_dimension", "granularities": ["day", "month"]})
+    metadata = {"query_model": "semantic", "columns": columns,
+                "relationships": [{"from": "orders", "to": "customers", "kind": "joinable"}]}
+    workspace = MagicMock(user_home=tmp_path)
+
+    def describe(**kwargs):
+        with patch("data_formulator.agents.context.ensure_no_auth_catalogs_cached"), \
+             patch("data_formulator.datalake.connector_preferences.connector_is_enabled", return_value=True), \
+             patch("data_formulator.datalake.catalog_cache.load_catalog", return_value=[{
+                 "name": "orders", "table_key": "orders", "metadata": metadata,
+             }]):
+            return handle_read_catalog_metadata("cube", "orders", workspace, **kwargs)
+
+    first = describe()
+    assert "121 fields: 120 measures, 0 dimensions, 1 time dimensions" in first
+    assert "Relationships:" in first
+    assert "Columns 1-50 of 121:" in first
+    assert "Next: column_offset=50." in first
+    assert "Measure 0 (measure, aggregation=sum, ref=orders.m0)" in first
+    second = describe(column_offset=50)
+    assert "Columns 51-100 of 121:" in second and "Relationships:" not in second
+    filtered = describe(role="time_dimension")
+    assert "Columns 1-1 of 1 matching the filter:" in filtered
+    assert "granularities=day/month" in filtered
+    assert "No columns matching the filter at column_offset=0" in describe(column_query="missing")
+
+
 def test_external_reference_agent_sample_bounds_values_without_mutation():
     from data_formulator.analyst.workspace_inputs import normalize_external_references
 
@@ -39,6 +69,25 @@ def test_external_reference_agent_sample_bounds_values_without_mutation():
     assert summary["sampleTruncated"] is True
     assert summary["inspection"]["columns_omitted"] == 2
     assert len(reference["summary"]["sampleRows"][0]["review"]) == 1000
+
+
+def test_semantic_reference_keeps_bounded_model_shape_for_agents():
+    from data_formulator.analyst.workspace_inputs import normalize_external_references
+
+    columns = [{"name": "Sales", "type": "number", "role": "measure", "aggregation": "sum", "entity": "Sales",
+                "ref": "[Sales]", "description": "d" * 400}]
+    columns += [{"name": f"Dim {index}", "type": "string", "role": "dimension", "entity": "Product"} for index in range(200)]
+    reference = {"kind": "external-table-reference", "id": "ref", "connectorId": "powerbi", "tableKey": "model",
+                 "displayName": "Model", "queryModel": "semantic",
+                 "summary": {"columns": columns, "relationships": [{"from": "Sales[Key]", "to": "Product[Key]"}] * 30}}
+    item = normalize_external_references([reference])[0]
+    assert item["queryModel"] == "semantic"
+    summary = item["summary"]
+    assert summary["columns"][0] == {"name": "Sales", "type": "number", "role": "measure", "aggregation": "sum",
+                                     "entity": "Sales", "description": "d" * 160}
+    assert len(summary["columns"]) == 150 and summary["columnsOmitted"] == 51
+    assert len(summary["relationships"]) == 20
+    assert len(reference["summary"]["columns"]) == 201
 
 
 def test_focused_context_includes_text_turn_and_loading_decision() -> None:

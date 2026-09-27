@@ -153,8 +153,15 @@ def test_native_query_round_trip_and_validation():
     assert LoadQuery.from_dict(query.to_dict()) == query
     with pytest.raises(TypeError):
         query.native["text"] = "Other"
-    for invalid in [{"language": "sql", "text": "SELECT 1"}, {"language": "kql", "text": ""},
-                    {"language": "kql", "text": "x" * 16001}, {"language": "kql", "text": "Trips", "options": {}}]:
+    assert LoadQuery.from_dict({"native": {"language": "cube_json", "text": "{}"}}).native["language"] == "cube_json"
+    declared = {"native": {"language": "kql", "text": "Trips | take 5", "reads": ["Trips"]}}
+    assert LoadQuery.from_dict(declared).to_dict() == declared
+    for invalid in [{"language": "SQL; DROP", "text": "SELECT 1"}, {"language": "", "text": "Trips"},
+                    {"language": "kql", "text": ""},
+                    {"language": "kql", "text": "x" * 16001}, {"language": "kql", "text": "Trips", "options": {}},
+                    {"language": "kql", "text": "Trips", "reads": []},
+                    {"language": "kql", "text": "Trips", "reads": "Trips"},
+                    {"language": "kql", "text": "Trips", "reads": [""]}]:
         with pytest.raises(ValueError):
             LoadQuery.from_dict({"native": invalid})
     with pytest.raises(ValueError, match="combined"):

@@ -200,14 +200,18 @@ export const parseDataOperation = (value: unknown): DataOperation => {
             displayName: requireString(reference.displayName, 'reference.displayName'),
             sourceTable: { id: requireString(source.id, 'sourceTable.id'), name: requireString(source.name, 'sourceTable.name') },
             capturedAt: requireString(reference.capturedAt, 'reference.capturedAt'),
+            ...(reference.queryModel === 'semantic' ? { queryModel: 'semantic' as const } : {}),
             summary: {
                 description: typeof summary.description === 'string' ? summary.description : undefined,
                 columns: Array.isArray(summary.columns) ? summary.columns.map(value => {
                     const column = requireRecord(value, 'column');
                     return { name: requireString(column.name, 'column.name'),
                         type: typeof column.type === 'string' ? column.type : 'unknown',
-                        description: typeof column.description === 'string' ? column.description : undefined };
+                        description: typeof column.description === 'string' ? column.description : undefined,
+                        ...Object.fromEntries((['role', 'aggregation', 'entity'] as const)
+                            .filter(key => typeof column[key] === 'string').map(key => [key, column[key] as string])) };
                 }) : [],
+                ...(Array.isArray(summary.relationships) ? { relationships: summary.relationships } : {}),
                 rowCount: typeof summary.rowCount === 'number' ? summary.rowCount : undefined,
                 sizeBytes: typeof summary.sizeBytes === 'number' ? summary.sizeBytes : undefined,
             },
