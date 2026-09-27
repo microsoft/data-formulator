@@ -1393,7 +1393,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const publishedIds = new Set(operation.resultTableIds);
                     const publishedTables = (data.tables || [])
                         .filter((table: any) => publishedIds.has(table.name));
-                    const operationTurnId = proposalTurn?.id || runLastNodeRef.current || askedFromNode;
+                    const operationTurnId = proposalTurn?.id || currentDraftId || runLastNodeRef.current || askedFromNode;
                     for (const workspaceTable of publishedTables) {
                         const existing = tables.find(table => table.id === workspaceTable.name);
                         const table = existing || buildDictTableFromWorkspace(workspaceTable, undefined);

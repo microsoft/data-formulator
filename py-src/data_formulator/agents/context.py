@@ -460,8 +460,9 @@ def handle_read_catalog_metadata(
     sample = meta.get("sample_rows")
     if sample is not None:
         sample_text = json.dumps(sample[:TABLE_SAMPLE_MAX_ROWS], default=str, ensure_ascii=False)
-        shortened = len(sample_text) > TABLE_SAMPLE_CHAR_LIMIT
-        lines.append("Sample rows (not necessarily representative): " + sample_text[:TABLE_SAMPLE_CHAR_LIMIT]
+        sample_limit = min(TABLE_SAMPLE_CHAR_LIMIT, 500)
+        shortened = len(sample_text) > sample_limit
+        lines.append("Sample rows (not necessarily representative): " + sample_text[:sample_limit]
                      + ("... [sample text truncated]" if shortened else ""))
 
     table_desc = meta.get("description", "") or meta.get("source_description", "")
@@ -495,7 +496,7 @@ def handle_read_catalog_metadata(
         start = max(0, int(column_offset or 0))
         filtered = " matching the filter" if needle or role else ""
         label, cursor = "Columns", "column_offset"
-        if relationships:
+        if relationships and not column_offset:
             lines.append(f"Relationships: {len(relationships)} available; request relationship_offset=0.")
 
     if start >= len(matching):

@@ -1,4 +1,8 @@
+import json
+import re
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from data_formulator.agents.context import (
     build_focused_thread_context,
@@ -75,7 +79,8 @@ def test_semantic_reference_keeps_bounded_model_shape_for_agents():
     from data_formulator.analyst.workspace_inputs import normalize_external_references
 
     columns = [{"name": "Sales", "type": "number", "role": "measure", "aggregation": "sum", "entity": "Sales",
-                "ref": "[Sales]", "description": "d" * 400}]
+                "ref": "SUM('Sales'[Amount])", "format": "$#,0.00", "description": "d" * 400}]
+    columns.append({"name": "Date", "role": "time_dimension", "ref": "orders.date", "granularities": ["day", "month"]})
     columns += [{"name": f"Dim {index}", "type": "string", "role": "dimension", "entity": "Product"} for index in range(200)]
     reference = {"kind": "external-table-reference", "id": "ref", "connectorId": "powerbi", "tableKey": "model",
                  "displayName": "Model", "queryModel": "semantic",
@@ -84,10 +89,56 @@ def test_semantic_reference_keeps_bounded_model_shape_for_agents():
     assert item["queryModel"] == "semantic"
     summary = item["summary"]
     assert summary["columns"][0] == {"name": "Sales", "type": "number", "role": "measure", "aggregation": "sum",
-                                     "entity": "Sales", "description": "d" * 160}
-    assert len(summary["columns"]) == 150 and summary["columnsOmitted"] == 51
+                                     "entity": "Sales", "ref": "SUM('Sales'[Amount])", "format": "$#,0.00",
+                                     "description": "d" * 160}
+    assert summary["columns"][1] == columns[1]
+    assert len(summary["columns"]) == 150 and summary["columnsOmitted"] == 52
     assert len(summary["relationships"]) == 20
-    assert len(reference["summary"]["columns"]) == 201
+    assert summary["relationshipsOmitted"] == 10
+    assert len(reference["summary"]["columns"]) == 202
+    assert len(reference["summary"]["relationships"]) == 30
+    assert normalize_external_references(json.loads(json.dumps([item])))[0] == item
+
+
+@pytest.mark.parametrize("relationships_only", [False, True])
+def test_catalog_pagination_preserves_progress_with_long_metadata(tmp_path, relationships_only):
+    columns = [{"name": f"Field {index}", "role": "measure", "entity": "Sales",
+                "ref": f"[Measure {index}]", "format": "$#,0", "description": "d" * 10000}
+               for index in range(130)]
+    relationships = [{"from": f"Sales[Key{index}]", "to": f"Dimension{index}[Key]", "active": False}
+                     for index in range(75)]
+    metadata = {"query_model": "semantic", "columns": columns, "relationships": relationships,
+                "description": "long description " * 1000}
+    cursor = "relationship_offset" if relationships_only else "column_offset"
+    items = relationships if relationships_only else columns
+    offset = 0
+    with patch("data_formulator.agents.context.ensure_no_auth_catalogs_cached"), \
+         patch("data_formulator.datalake.connector_preferences.connector_is_enabled", return_value=True), \
+         patch("data_formulator.datalake.catalog_cache.load_catalog", return_value=[{
+             "name": "Sales model", "table_key": "model", "metadata": metadata,
+         }]):
+        for _ in range(len(items)):
+            text = handle_read_catalog_metadata("source", "model", MagicMock(user_home=tmp_path), **{cursor: offset})
+            assert len(text) <= 4000
+            assert "[Summary truncated]" in text
+            page = re.search(r"(?:Columns|Relationships) (\d+)-(\d+) of (\d+):", text)
+            assert page is not None
+            start, end, total = map(int, page.groups())
+            assert start == offset + 1 and end > offset and total == len(items)
+            for index in range(offset, end):
+                if relationships_only:
+                    assert json.dumps(relationships[index]) in text
+                else:
+                    assert f"ref=[Measure {index}]" in text
+                    assert "entity=Sales" in text and "format=$#,0" in text
+            offset = end
+            if end == total:
+                assert "Next:" not in text
+                break
+            assert f"Next: {cursor}={end}." in text
+        assert offset == len(items)
+        empty = handle_read_catalog_metadata("source", "model", MagicMock(user_home=tmp_path), **{cursor: offset})
+        assert f"at {cursor}={offset}" in empty and "Next:" not in empty
 
 
 def test_focused_context_includes_text_turn_and_loading_decision() -> None:
