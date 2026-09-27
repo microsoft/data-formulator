@@ -20,6 +20,15 @@
     "or": "या",
     "browse": "ब्राउज़ करें",
     "supportedFormats": "समर्थित: CSV, TSV, JSON, Excel (xlsx, xls)",
+    "workspaceFile": "फ़ाइल",
+    "previewUnavailable": "इस फ़ाइल के लिए त्वरित पूर्वावलोकन उपलब्ध नहीं है।",
+    "emptyFile": "यह फ़ाइल खाली है।",
+    "previewTruncated": "पूर्वावलोकन छोटा किया गया।",
+    "removeFile": "फ़ाइल हटाएं",
+    "filesSelected": "{{count}} फ़ाइलें चुनी गईं",
+    "addMoreFiles": "और फ़ाइलें जोड़ें",
+    "addToWorkspace": "वर्कस्पेस में जोड़ें",
+    "addAllToWorkspace": "सभी को वर्कस्पेस में जोड़ें",
     "placeholder": {
       "url": "URL दर्ज करें: https://example.com/data.json या /api/data",
       "paste": "अपना डेटा यहां पेस्ट करें (CSV, TSV, या JSON प्रारूप)"
@@ -112,6 +121,14 @@
     "createConnectionTo": "{{name}} से कनेक्शन बनाएं",
     "connectionNameLabel": "कनेक्शन नाम",
     "dataSourceTypes": "डेटा स्रोत",
+    "connectorGroups": {
+      "samples": "उदाहरण",
+      "files": "फ़ाइलें",
+      "databases": "डेटाबेस",
+      "warehouses": "डेटा वेयरहाउस",
+      "semantic": "BI और सिमेंटिक",
+      "other": "अन्य"
+    },
     "folderPathPlaceholder": "/path/to/your/data/folder",
     "includeSubfolders": "उप-फ़ोल्डर शामिल करें",
     "localFolder": "स्थानीय फ़ोल्डर लिंक करें",
