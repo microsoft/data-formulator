@@ -4,5 +4,6 @@
 import en from './en';
 import zh from './zh';
 import hi from './hi';
+import id from './id';
 
-export { en, zh, hi };
+export { en, zh, hi, id };
