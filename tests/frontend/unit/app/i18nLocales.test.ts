@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import en from "../../../../src/i18n/locales/en";
 import zh from "../../../../src/i18n/locales/zh";
+import id from "../../../../src/i18n/locales/id";
 
 type TranslationValue = string | Record<string, TranslationValue>;
 type TranslationMap = Record<string, TranslationValue>;
@@ -26,5 +27,9 @@ function collectKeys(value: TranslationMap, prefix = ""): Set<string> {
 describe("i18n locale bundles", () => {
   it("keeps Simplified Chinese translation keys aligned with English", () => {
     expect(collectKeys(zh)).toEqual(collectKeys(en));
+  });
+
+  it("keeps Indonesian translation keys aligned with English", () => {
+    expect(collectKeys(id)).toEqual(collectKeys(en));
   });
 });
