@@ -471,7 +471,7 @@ class KustoDataLoader(ExternalDataLoader):
     @classmethod
     def query_capabilities(cls) -> dict[str, Any]:
         return {**super().query_capabilities(), "native_query_languages": ["kql"],
-                "native_query_guidance": "Single read-only KQL expression scoped to the selected table in this database. No commands, statements, comments, external data, remote entities, callouts, or plugins. Use native queries only when ordinary loading and local Python are unsuitable. Maximum 10000 loaded rows, 16 MiB, 60 seconds; narrow queries explicitly to control scan cost."}
+                "native_query_guidance": "Single read-only KQL expression starting from the selected table in this database; to join or union other tables in the same database, list every table in native.reads. No commands, statements, comments, external data, remote entities, callouts, or plugins. Use native queries only when ordinary loading and local Python are unsuitable. Maximum 10000 loaded rows, 16 MiB, 60 seconds; narrow queries explicitly to control scan cost."}
 
     def validate_native_query(self, language: str, text: str) -> None:
         if language != "kql":
@@ -479,7 +479,8 @@ class KustoDataLoader(ExternalDataLoader):
         if (not isinstance(text, str) or not text.strip() or len(text) > 16000
                 or any(token in text for token in (";", "//", "/*", "*/", "\x00"))
                 or text.lstrip().startswith(".")):
-            raise ValueError("Provide one KQL query expression without commands, comments, or statements (maximum 16000 characters).")
+            raise ValueError("Provide one KQL query expression without commands, comments, or statements such as let or set "
+                             "(maximum 16000 characters). Inline subqueries instead, e.g. union (T | ...), (T | ...).")
 
     def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
         if query.get("native") is not None:
@@ -504,7 +505,9 @@ class KustoDataLoader(ExternalDataLoader):
             properties.set_option("truncationmaxsize", 16 * 1024 * 1024)
             properties.set_option("deferpartialqueryfailures", False)
             properties.set_option("query_language", "kql")
-            restricted = f"restrict access to (database().{self._kql_ident(table)});\n{text}\n| take {limit}"
+            restricted_tables = list(dict.fromkeys([table, *(native.get("reads") or [])]))
+            scope = ", ".join(f"database().{self._kql_ident(name)}" for name in restricted_tables)
+            restricted = f"restrict access to ({scope});\n{text}\n| take {limit}"
             try:
                 result = self.client.execute_query(database, restricted, properties)
             except KustoApiError as exc:
@@ -514,7 +517,8 @@ class KustoDataLoader(ExternalDataLoader):
                     raise ValueError(
                         f"Native KQL query rejected: {sanitize_error_message(message)} "
                         "Provide a complete query starting from the selected table (for example, TableName | where ...). "
-                        "The connector restricts access but does not prepend the source table to your query."
+                        "The connector restricts access to the selected table plus tables listed in native.reads "
+                        "(same database) and does not prepend the source table to your query."
                     ) from exc
                 raise
             if result.get_exceptions() or len(result.primary_results) != 1:

@@ -35,6 +35,35 @@ _INTEGER_AGGREGATIONS = {"count", "countDistinct", "countDistinctApprox"}
 _REQUEST_TIMEOUT_SECONDS = 30
 _QUERY_TIMEOUT_SECONDS = 120
 _MAX_ROWS = 10_001
+_PERIOD_RE = re.compile(r"^(?P<year>\d{4})(?:-(?:Q(?P<quarter>[1-4])|(?P<month>\d{1,2})(?:-(?P<day>\d{1,2}))?))?(?:[T ].*)?$")
+
+
+def _grain_period(value: Any, grain: str, column: str) -> tuple[str, str]:
+    """Return the inclusive ISO date range of the ``grain`` period containing ``value``."""
+    from calendar import monthrange
+    from datetime import date, timedelta
+
+    match = _PERIOD_RE.match(str(value).strip())
+    if grain not in _DEFAULT_GRANULARITIES or match is None:
+        raise ValueError(f"Filter {column!r} with ISO dates such as '2025' or '2025-08-01', or filter its base "
+                         "time dimension with BETWEEN ISO dates.")
+    year = int(match["year"])
+    month = (int(match["quarter"]) - 1) * 3 + 1 if match["quarter"] else int(match["month"] or 1)
+    start = date(year, month, int(match["day"] or 1))
+    if grain == "year":
+        start, end = date(year, 1, 1), date(year, 12, 31)
+    elif grain == "quarter":
+        first = (start.month - 1) // 3 * 3 + 1
+        start = date(year, first, 1)
+        end = date(year, first + 2, monthrange(year, first + 2)[1])
+    elif grain == "month":
+        start, end = start.replace(day=1), start.replace(day=monthrange(year, start.month)[1])
+    elif grain == "week":
+        start = start - timedelta(days=start.weekday())
+        end = start + timedelta(days=6)
+    else:
+        end = start
+    return start.isoformat(), end.isoformat()
 
 
 class CubeDataLoader(ExternalDataLoader):
@@ -217,21 +246,19 @@ class CubeDataLoader(ExternalDataLoader):
                 "role": role,
                 "entity": (member.get("aliasMember") or member["name"]).split(".")[0],
             }
-            description = (member.get("description") or "").strip() or member.get("title") or name
             if role == "measure":
                 aggregation = member.get("aggType")
                 if aggregation:
                     field["aggregation"] = aggregation
-                label = f"Measure ({aggregation})" if aggregation else "Measure"
             elif role == "time_dimension":
                 custom = [item.get("name") for item in member.get("granularities") or [] if item.get("name")]
                 field["granularities"] = list(dict.fromkeys([*_DEFAULT_GRANULARITIES, *custom]))
-                label = f"Time dimension; select as '{name} (month)' etc."
-            else:
-                label = "Dimension"
             if member.get("format"):
                 field["format"] = member["format"] if isinstance(member["format"], str) else json.dumps(member["format"])
-            field["description"] = f"{label}: {description}"
+            # Only model-authored descriptions; role, aggregation, and granularities are separate keys.
+            description = (member.get("description") or "").strip()
+            if description:
+                field["description"] = description
             fields.append(field)
         return fields
 
@@ -357,13 +384,34 @@ class CubeDataLoader(ExternalDataLoader):
 
         compiled: list[dict[str, Any]] = []
         for item in filters:
-            field = by_name.get(item.get("column"))
+            column = item.get("column")
+            field, grain = by_name.get(column), None
             if field is None:
-                raise ValueError(f"Unknown filter column {item.get('column')!r}. Filter on a dimension name from describe_data.")
+                match = _GRAIN_NAME_RE.match(str(column or ""))
+                field = by_name.get(match.group("base")) if match else None
+                if field is None or field["role"] != "time_dimension":
+                    raise ValueError(f"Unknown filter column {column!r}. Filter on a dimension name from describe_data.")
+                grain = match.group("grain")
             if field["role"] == "measure":
                 raise ValueError("Filters on measure values require a native cube_json query.")
             member, op, value = field["ref"], str(item.get("op") or item.get("operator") or "").upper(), item.get("value")
             values = [text(v) for v in value] if isinstance(value, (list, tuple)) else [text(value)]
+            if grain is not None:
+                # 'Name (grain)' filters compare whole periods of the base time dimension.
+                if op in {"EQ", "IN"}:
+                    ranges = [{"member": member, "operator": "inDateRange", "values": list(_grain_period(v, grain, column))}
+                              for v in values]
+                    compiled.append(ranges[0] if len(ranges) == 1 else {"or": ranges})
+                    continue
+                if op in {"GT", "LTE"}:
+                    values = [_grain_period(v, grain, column)[1] for v in values]
+                elif op in {"GTE", "LT"}:
+                    values = [_grain_period(v, grain, column)[0] for v in values]
+                elif op == "BETWEEN" and len(values) == 2:
+                    values = [_grain_period(values[0], grain, column)[0], _grain_period(values[1], grain, column)[1]]
+                elif op not in {"IS_NULL", "IS_NOT_NULL", "BETWEEN"}:
+                    raise ValueError(f"Filter {column!r} with EQ, IN, comparisons, or BETWEEN; use its base time "
+                                     f"dimension {field['name']!r} for other operators.")
             simple = {"EQ": "equals", "IN": "equals", "NEQ": "notEquals", "NOT_IN": "notEquals",
                       "GT": "gt", "GTE": "gte", "LT": "lt", "LTE": "lte"}
             if op in simple:

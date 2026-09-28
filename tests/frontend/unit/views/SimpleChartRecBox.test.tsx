@@ -15,7 +15,7 @@ vi.mock('../../../../src/app/apiClient', () => ({
 
 vi.mock('../../../../src/views/AgentPausePanel', () => ({
     ClarificationPanel: ({ onSubmit }: { onSubmit: (responses: any[]) => void }) => (
-        <button onClick={() => onSubmit([{ question_index: 0, answer: 'Revenue', source: 'option' }])}>Submit clarification</button>
+        <button onClick={() => onSubmit([{ question_index: 0, answer: 'Revenue', value: 'plan', source: 'option' }])}>Submit clarification</button>
     ),
     ExplanationPanel: ({ content }: { content: string }) => <div data-testid="explanation-panel">{content}</div>,
     FailedDraftPanel: () => null,
@@ -224,6 +224,60 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(store.getState().inputTables).toHaveLength(1));
         expect(store.getState().externalTableReferences).toEqual(includeSource ? [sourceReference] : []);
         expect(store.getState().pendingTableLoads).toEqual([]);
+    });
+
+    it('continues an approved load through chart creation and completion in the same stream', async () => {
+        let finishAnalysis!: () => void;
+        const analyzing = new Promise<void>(resolve => { finishAnalysis = resolve; });
+        const operation = {
+            schema_version: 1, id: 'operation', status: 'awaiting_selection', reason: 'Choose orders',
+            plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Revenue', summary: '',
+                steps: [{ kind: 'connector_query', display_name: 'Orders' }] }],
+            result_table_ids: [] as string[],
+        };
+        const trajectory = [{ role: 'user', content: 'Find orders and show revenue by year' }];
+        vi.mocked(apiRequest).mockResolvedValue({ data: {
+            tables: [{ name: 'orders', columns: [{ name: 'revenue', type: 'FLOAT' }],
+                row_count: 1, sample_rows: [{ revenue: 30 }] }], result: [], statistics: {},
+        } } as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'interact', data_operation: operation, trajectory, completed_step_count: 1,
+                questions: [{ text: 'Use these orders?', responseType: 'single_choice', required: true,
+                    options: [{ label: 'Revenue', value: 'plan' }] }] };
+        }).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'load_data', args: { tables: ['Orders'] } };
+            yield { type: 'tool_result', tool: 'load_data', status: 'ok' };
+            yield { type: 'data_operation_result', operation: { ...operation,
+                status: 'loaded', result_table_ids: ['orders'] } };
+            await analyzing;
+            yield { type: 'action', action: 'visualize', input_tables: ['orders'] };
+            yield { type: 'result', status: 'success', content: { result: {
+                status: 'ok', content: { rows: [{ year: 2025, revenue: 30 }],
+                    virtual: { table_name: 'yearly_orders', row_count: 1 } },
+                refined_goal: { output_variable: 'result', display_name: 'Yearly revenue' },
+            } } };
+            yield { type: 'completion', status: 'success', content: { summary: 'Revenue was 30 in 2025.' } };
+        });
+        const { store } = mountTask({ text: trajectory[0].content, images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
+        const proposalId = store.getState().textTurns[0].id;
+        try {
+            fireEvent.click(screen.getByRole('button', { name: 'Submit clarification' }));
+            await waitFor(() => expect(store.getState().loadedTableNodes).toHaveLength(1));
+            expect(requestBody(1).interaction_response).toEqual({ operation_id: 'operation', plan_id: 'plan' });
+            expect(requestBody(1).trajectory).toEqual(trajectory);
+            expect(store.getState().textTurns[0]).toMatchObject({ answered: true, dataOperation: { status: 'loaded' } });
+            expect(store.getState().loadedTableNodes[0]).toMatchObject({ tableId: 'orders', parentNodeId: proposalId });
+            expect(store.getState().draftNodes).toHaveLength(1);
+            expect(store.getState().pendingTableLoads).toHaveLength(0);
+        } finally {
+            await act(async () => { finishAnalysis(); });
+        }
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
+        expect(streamRequest).toHaveBeenCalledTimes(2);
+        expect(store.getState().derivedTables[0]).toMatchObject({ id: 'yearly_orders', parentNodeId: proposalId });
+        expect(store.getState().textTurns[1]).toMatchObject({ parentNodeId: 'yearly_orders', content: 'Revenue was 30 in 2025.' });
+        expect(store.getState().draftNodes).toHaveLength(0);
     });
 
     it('registers agent virtual sources without requesting local tables', async () => {
@@ -495,6 +549,51 @@ describe('Analyst landing attachment handoff', () => {
         expect(store.getState().draftNodes).toHaveLength(0);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: response.id })));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'consumer_prices' });
+    });
+
+    it('keeps successive loads after the latest chart without overwriting the opening response', async () => {
+        vi.mocked(apiRequest).mockResolvedValue({ data: {
+            tables: ['daily', 'regional'].map(name => ({ name, columns: [{ name: 'value', type: 'FLOAT' }],
+                row_count: 1, sample_rows: [{ value: 12 }] })), result: [], statistics: {},
+        } } as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            for (const name of ['daily', 'regional']) {
+                yield { type: 'data_operation_result', operation: {
+                    schema_version: 1, id: `operation-${name}`, status: 'loaded', reason: `Load ${name}`,
+                    plans: [{ id: 'plan', hash: 'a'.repeat(64), label: name, summary: '',
+                        steps: [{ kind: 'connector_query', display_name: name }] }],
+                    result_table_ids: [name],
+                } };
+                yield { type: 'action', action: 'visualize', input_tables: [name] };
+                yield { type: 'result', status: 'success', content: { result: {
+                    status: 'ok', content: { rows: [{ value: 12 }],
+                        virtual: { table_name: `${name}_chart`, row_count: 1 } },
+                    refined_goal: { output_variable: 'result', display_name: `${name} chart` },
+                } } };
+            }
+            yield { type: 'completion', status: 'success', content: { summary: 'Created both charts.' } };
+        });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-opening', displayId: 'Opening',
+                textKind: 'explain', content: 'Previous analysis.', parentNodeId: 'conversation-root:sales', createdAt: 1 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'textTurn-opening' }));
+        });
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Explore daily and regional sales' } });
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
+        const state = store.getState();
+        expect(state.derivedTables).toHaveLength(2);
+        expect(state.loadedTableNodes.map(node => [node.tableId, node.parentNodeId])).toEqual([
+            ['daily', 'textTurn-opening'], ['regional', 'daily_chart'],
+        ]);
+        expect(state.derivedTables.map(table => [table.id, table.parentNodeId])).toEqual([
+            ['daily_chart', 'textTurn-opening'], ['regional_chart', 'daily_chart'],
+        ]);
+        expect(state.textTurns[0].dataOperation).toBeUndefined();
+        expect(state.textTurns[0].content).toBe('Previous analysis.');
+        expect(state.textTurns[1].parentNodeId).toBe('regional_chart');
+        expect(state.draftNodes).toHaveLength(0);
     });
 
     it('focuses a loaded-table reference and continues its conversation', async () => {

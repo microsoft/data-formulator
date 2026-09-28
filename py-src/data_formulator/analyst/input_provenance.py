@@ -7,12 +7,25 @@ from data_formulator.analyst.workspace_inputs import WorkspaceInputManifest
 from data_formulator.datalake.workspace_metadata import MemorySource
 
 
+def _resolve_input(manifest: WorkspaceInputManifest, input_id: str, kind: Any):
+    """Return the manifest input for an exact id, or a unique shortened id/name match."""
+    items = [item for item in manifest.inputs if item.kind == kind]
+    exact = next((item for item in items if item.id == input_id), None)
+    if exact is not None:
+        return exact
+    matches = [item for item in items if input_id in (
+        item.display_name, item.content_hash, item.id.rsplit(":", 1)[0], f"{item.kind}:{item.content_hash}")]
+    if len(matches) == 1:
+        return matches[0]
+    listed = ", ".join(item.id for item in items[:12]) or "none"
+    raise ValueError(f"Unknown or mismatched input source: {input_id}. Use an exact {kind} input id: {listed}")
+
+
 def normalize_input_sources(
     action: dict[str, Any],
     manifest: WorkspaceInputManifest | None,
 ) -> list[dict[str, str]]:
     """Resolve action provenance to exact run-manifest inputs."""
-    by_id = {item.id: item for item in manifest.inputs} if manifest is not None else {}
     raw_sources = action.get("input_sources")
     if raw_sources is None:
         legacy_names = action.get("input_tables", [])
@@ -45,9 +58,9 @@ def normalize_input_sources(
         kind = raw_source.get("kind")
         if not input_id or kind not in {"data", "file"}:
             raise ValueError("Each input source requires a valid id and kind")
-        item = by_id.get(input_id)
-        if manifest is not None and (item is None or item.kind != kind):
-            raise ValueError(f"Unknown or mismatched input source: {input_id}")
+        item = _resolve_input(manifest, input_id, kind) if manifest is not None else None
+        if item is not None:
+            input_id = item.id
         if input_id in seen:
             continue
         seen.add(input_id)
@@ -66,7 +79,6 @@ def memory_sources(
     """Validate direct inputs and retain their transitive evidence lineage."""
     if not isinstance(raw_sources, list) or not raw_sources:
         raise ValueError("input_sources must be a non-empty array")
-    by_id = {item.id: item for item in manifest.inputs} if manifest is not None else {}
     sources: list[MemorySource] = []
     seen: set[tuple[str, str]] = set()
     for raw_source in raw_sources:
@@ -74,11 +86,12 @@ def memory_sources(
             raise ValueError("Each input source must be an object")
         input_id = str(raw_source.get("id", "")).strip()
         kind = raw_source.get("kind")
-        item = by_id.get(input_id)
         if not input_id or kind not in {"data", "file"}:
             raise ValueError("Each input source requires a valid id and kind")
-        if item is None or item.kind != kind:
+        if manifest is None:
             raise ValueError(f"Unknown or mismatched input source: {input_id}")
+        item = _resolve_input(manifest, input_id, kind)
+        input_id = item.id
 
         inherited = item.sources if item.origin == "memory" and item.sources else ()
         candidates = [

@@ -78,7 +78,7 @@ def test_catalog_maps_members_to_semantic_fields(cube):
     assert set(fields) == {"Count", "Net Revenue", "Customers", "Segment", "Customer Name", "Product Name", "Order Date"}
     assert fields["Net Revenue"] == {
         "name": "Net Revenue", "ref": "orders_view.net_revenue", "type": "number", "role": "measure",
-        "entity": "orders_view", "aggregation": "sum", "description": "Measure (sum): Revenue after refunds",
+        "entity": "orders_view", "aggregation": "sum", "description": "Revenue after refunds",
     }
     assert fields["Order Date"]["role"] == "time_dimension"
     assert fields["Order Date"]["granularities"] == ["day", "week", "month", "quarter", "year", "fiscal_year"]
@@ -136,12 +136,29 @@ def test_structured_query_compiles_to_cube_and_returns_requested_names(cube):
     assert len([request for request in cube.requests if request[1].endswith("/v1/load")]) == 2
 
 
+@pytest.mark.parametrize("item,expected", [
+    ({"op": "EQ", "value": 2025}, {"member": "orders_view.created_at", "operator": "inDateRange", "values": ["2025-01-01", "2025-12-31"]}),
+    ({"op": "IN", "value": ["2025-08-01", "2026-02"]}, {"or": [
+        {"member": "orders_view.created_at", "operator": "inDateRange", "values": ["2025-08-01", "2025-08-31"]},
+        {"member": "orders_view.created_at", "operator": "inDateRange", "values": ["2026-02-01", "2026-02-28"]}]}),
+    ({"op": "GT", "value": "2025-08-15"}, {"member": "orders_view.created_at", "operator": "afterDate", "values": ["2025-08-31"]}),
+    ({"op": "BETWEEN", "value": ["2025-02", "2025-04"]},
+     {"member": "orders_view.created_at", "operator": "inDateRange", "values": ["2025-02-01", "2025-04-30"]}),
+])
+def test_time_grain_filters_compare_whole_periods(cube, item, expected):
+    cube.load_responses = [_Response({"data": []})]
+    cube.query_data_as_arrow("orders_view", {"columns": ["Segment"], "filters": [{"column": "Order Date (month)" if item["op"] != "EQ" else "Order Date (year)", **item}]}, 10)
+    assert cube.requests[-1][2]["query"]["filters"] == [expected]
+
+
 @pytest.mark.parametrize("query,message", [
     ({"columns": []}, "Select at least one"),
     ({"group_by": ["Segment"], "aggregates": [{"op": "sum", "column": "Net Revenue", "as": "x"}]}, "compute measures"),
     ({"columns": ["Revenue"]}, "Unknown field"),
     ({"columns": ["Order Date (hour)"]}, "Unknown field"),
     ({"columns": ["Segment"], "filters": [{"column": "Net Revenue", "op": "GT", "value": 1}]}, "native cube_json"),
+    ({"columns": ["Segment"], "filters": [{"column": "Order Date (year)", "op": "EQ", "value": "last year"}]}, "with ISO dates"),
+    ({"columns": ["Segment"], "filters": [{"column": "Order Date (month)", "op": "LIKE", "value": "2025%"}]}, "base time"),
     ({"columns": ["Segment"], "order_by": [{"column": "Count"}]}, "selected columns"),
 ])
 def test_structured_query_rejects_non_semantic_shapes(cube, query, message):

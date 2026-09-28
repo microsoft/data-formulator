@@ -196,7 +196,7 @@ class LoadQuery:
             columns=tuple(str(item) for item in raw.get("columns", ())),
             order_by=tuple(
                 LoadQueryOrder.from_dict(item)
-                for item in raw.get("order_by", ())
+                for item in ([raw["order_by"]] if isinstance(raw.get("order_by"), Mapping) else raw.get("order_by", ()))
             ),
             limit=(int(raw["limit"]) if raw.get("limit") is not None else None),
             group_by=tuple(str(item) for item in raw.get("group_by", ())),

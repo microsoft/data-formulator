@@ -77,6 +77,18 @@ def test_native_kql_uses_query_endpoint_and_server_guards():
     loader.client.execute_mgmt.assert_not_called()
 
 
+def test_native_kql_access_scope_includes_declared_reads():
+    loader = _loader()
+    loader.client.execute_query.return_value = Mock(get_exceptions=Mock(return_value=[]), primary_results=[KustoResultTable({
+        "Columns": [{"ColumnName": "sales", "ColumnType": "real"}], "Rows": [[1.5]],
+    })])
+    text = "Sales | join kind=inner Customers on CustomerKey | summarize sales=sum(Amount) by Region"
+    loader.query_data_as_arrow("Sales", {"native": {"language": "kql", "text": text,
+                                                    "reads": ["Sales", "Customers", "x'y"]}}, 10)
+    query = loader.client.execute_query.call_args.args[1]
+    assert query.startswith("restrict access to (database().['Sales'], database().['Customers'], database().['x\\'y']);\n")
+
+
 @pytest.mark.parametrize("text", [".drop table Events", "set notruncation; Events", "Events; Other", "Events // comment", "Events /* comment */", "", "x" * 16001])
 def test_native_kql_rejects_statements_before_execution(text):
     loader = _loader()

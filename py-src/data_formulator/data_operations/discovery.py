@@ -513,6 +513,8 @@ class DataDiscoveryService:
             return {"error": "source_id and table_key are required"}
         if not isinstance(query, dict):
             return {"error": "query must be an object"}
+        if isinstance(query.get("order_by"), dict):
+            query = {**query, "order_by": [query["order_by"]]}
         if budget.remaining <= 0:
             return {"error": guidance.exhausted}
 

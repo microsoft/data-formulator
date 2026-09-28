@@ -8,6 +8,9 @@ from data_formulator.analyst.input_provenance import normalize_input_sources
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.security.code_signing import sign_result
 
+_FULL_OBSERVATION_ROWS = 60
+_FULL_OBSERVATION_CHARS = 4000
+
 
 class VisualizationSkill:
     def handle_tool(
@@ -209,12 +212,17 @@ class VisualizationSkill:
         workspace: Any,
         chart_id: str | None = None,
     ) -> str:
+        rows = data["rows"]
+        # Small results are shown in full so answers never rely on a partial sample.
+        full = len(rows) <= _FULL_OBSERVATION_ROWS
         data_summary = generate_data_summary(
             [{
                 "name": data.get("virtual", {}).get("table_name", f"step_{step_index}"),
-                "rows": data["rows"],
+                "rows": rows,
             }],
             workspace=workspace,
+            row_sample_size=len(rows) if full else 5,
+            sample_char_limit=_FULL_OBSERVATION_CHARS if full else None,
         )
         chart_ref = ""
         if chart_id:

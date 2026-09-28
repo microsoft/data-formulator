@@ -140,6 +140,11 @@ def test_load_query_rejects_multiple_order_clauses() -> None:
         ))
 
 
+def test_load_query_accepts_a_single_order_object() -> None:
+    query = LoadQuery.from_dict({"columns": ["Year"], "order_by": {"column": "Year", "dir": "desc"}})
+    assert query.to_dict()["order_by"] == [{"column": "Year", "dir": "desc"}]
+
+
 @pytest.mark.parametrize("field", ["sql", "kql", "unknown"])
 def test_load_query_rejects_unsupported_fields_instead_of_loading_wrong_data(field):
     with pytest.raises(ValueError, match="structured query"):

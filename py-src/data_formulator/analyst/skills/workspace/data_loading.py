@@ -6,6 +6,7 @@ from typing import Any, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine, normalize_external_references
+from data_formulator.datalake.workspace import Workspace
 from data_formulator.data_operations import (
     ConnectorQueryStep,
     DataDiscoveryService,
@@ -397,40 +398,11 @@ class WorkspaceDataLoading:
                 raise
             except Exception as exc:
                 completed = repository.fail(operation.id, OperationError(code="IMPORT_FAILED", message=str(exc)))
-            references = {item["id"]: item for item in normalize_external_references(ctx.payload.get("external_references"))}
-            references.update({item["id"]: item for item in completed.result_references})
-            ctx.payload["external_references"] = list(references.values())
-            input_tables = ctx.payload.setdefault("input_tables", [])
-            existing_names = {table["name"] for table in input_tables}
-            input_tables.extend({"name": name, "rows": [], "virtual": True}
-                                for name in completed.result_table_ids if name not in existing_names)
-            ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
+            observation = record_data_operation_result(ctx.workspace, ctx.payload, completed)
             yield {"type": "tool_result", "tool": "load_data",
                    "status": "ok" if (completed.result_table_ids or completed.result_references) and not completed.failed_steps else "error"}
             yield {"type": "data_operation_result", "operation": completed.to_public_dict()}
-            result_payload = completed.to_public_dict()
-            result_payload["workspace_inputs"] = []
-            result_payload["load_outcomes"] = [{
-                "id": reference["id"], "availability": "virtual", "compute_ready": False,
-                "source_id": reference["connectorId"], "table_key": reference["tableKey"],
-                "summary": reference.get("summary", {}),
-                "next_step": "Use this reference for future source queries, not Python. Use a suitable materialized outcome from this call directly; only refine loading if no suitable local result exists.",
-            } for reference in completed.result_references]
-            for item in ctx.payload["workspace_inputs"].data:
-                if item.display_name not in completed.result_table_ids:
-                    continue
-                metadata = ctx.workspace.get_table_metadata(item.display_name)
-                result_payload["workspace_inputs"].append({
-                    **asdict(item),
-                    "availability": "materialized", "compute_ready": True,
-                    "row_count": metadata.row_count,
-                    "columns": [column.to_dict() for column in metadata.columns or []],
-                    "scope": metadata.import_options or {},
-                    "description": metadata.description,
-                })
-                result_payload["load_outcomes"].append(result_payload["workspace_inputs"][-1])
-            ctx.payload["last_data_operation_result"] = result_payload
-            return "Workspace loading finished. Check load_outcomes and failed_steps. Use compute-ready input paths directly; an accompanying virtual source reference does not require another load or imply query success.\n" + json.dumps(result_payload)
+            return observation
 
         yield {
             "type": "interact",
@@ -459,6 +431,44 @@ class WorkspaceDataLoading:
             budget = ProbeBudget()
             state[_PROBE_BUDGET_KEY] = budget
         return budget
+
+
+def record_data_operation_result(
+    workspace: Workspace,
+    payload: dict[str, Any],
+    completed: DataOperation,
+) -> str:
+    references = {item["id"]: item for item in normalize_external_references(payload.get("external_references"))}
+    references.update({item["id"]: item for item in completed.result_references})
+    payload["external_references"] = list(references.values())
+    input_tables = payload.setdefault("input_tables", [])
+    existing_names = {table["name"] for table in input_tables}
+    input_tables.extend({"name": name, "rows": [], "virtual": True}
+                        for name in completed.result_table_ids if name not in existing_names)
+    payload["workspace_inputs"] = WorkspaceInputEngine(workspace, input_tables).manifest
+    result_payload = completed.to_public_dict()
+    result_payload["workspace_inputs"] = []
+    result_payload["load_outcomes"] = [{
+        "id": reference["id"], "availability": "virtual", "compute_ready": False,
+        "source_id": reference["connectorId"], "table_key": reference["tableKey"],
+        "summary": reference.get("summary", {}),
+        "next_step": "Use this reference for future source queries, not Python. Use a suitable materialized outcome from this call directly; only refine loading if no suitable local result exists.",
+    } for reference in completed.result_references]
+    for item in payload["workspace_inputs"].data:
+        if item.display_name not in completed.result_table_ids:
+            continue
+        metadata = workspace.get_table_metadata(item.display_name)
+        result_payload["workspace_inputs"].append({
+            **asdict(item),
+            "availability": "materialized", "compute_ready": True,
+            "row_count": metadata.row_count,
+            "columns": [column.to_dict() for column in metadata.columns or []],
+            "scope": metadata.import_options or {},
+            "description": metadata.description,
+        })
+        result_payload["load_outcomes"].append(result_payload["workspace_inputs"][-1])
+    payload["last_data_operation_result"] = result_payload
+    return "Workspace loading finished. Check load_outcomes and failed_steps. Use compute-ready input paths directly; an accompanying virtual source reference does not require another load or imply query success.\n" + json.dumps(result_payload)
 
 
 def _source_is_available(source_id: str) -> bool:

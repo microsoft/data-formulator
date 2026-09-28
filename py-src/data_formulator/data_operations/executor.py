@@ -53,6 +53,29 @@ def execute_aggregate_query(loader, source_table: str, query: LoadQuery) -> pa.T
     return table.slice(0, result_limit)
 
 
+def _semantic_column_descriptions(fields: list[dict], output_names: list[str]) -> list[dict]:
+    """Describe loaded semantic columns with their role and declared aggregation.
+
+    Workspace column descriptions are how later turns learn that a loaded value
+    is, e.g., a distinct count that must not be summed across rows.
+    """
+    by_name = {field.get("name"): field for field in fields if isinstance(field, dict)}
+    described = []
+    for name in output_names:
+        base, grain = name, None
+        if name not in by_name and name.endswith(")") and " (" in name:
+            base, grain = name[:-1].rsplit(" (", 1)
+        field = by_name.get(base)
+        if field is None:
+            continue
+        role = field.get("role")
+        label = ("Measure" + (f" ({field['aggregation']})" if field.get("aggregation") else "") if role == "measure"
+                 else f"Time dimension{f' ({grain})' if grain else ''}" if role == "time_dimension" else "Dimension")
+        text = field.get("description") or ""
+        described.append({"name": name, "description": f"{label}: {text}" if text else label})
+    return described
+
+
 @dataclass(frozen=True)
 class DataOperationExecutionResult:
     result_table_ids: tuple[str, ...]
@@ -242,6 +265,9 @@ class DataOperationExecutor:
         # published table carries no source description or column descriptions.
         try:
             source_meta = {} if aggregate_query and not semantic else loader.get_column_types(step.source_table)
+            if source_meta and semantic:
+                source_meta = {**source_meta, "columns": _semantic_column_descriptions(
+                    source_meta.get("columns") or [], [column.name for column in metadata.columns or []])}
             if source_meta:
                 _merge_source_metadata(metadata, source_meta)
                 self._workspace.add_table_metadata(metadata)

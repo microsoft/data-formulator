@@ -1020,3 +1020,11 @@ def test_pdf_adapter_exposes_page_reads_and_eager_preview(tmp_path: Path) -> Non
     preview = build_workspace_input_preview(engine.manifest, workspace)
     assert preview.selected[0].preview_format == "structured"
     assert json.loads(preview.selected[0].content)["page_count"] == 2
+
+def test_reference_context_lists_connected_sources_for_discovery(monkeypatch):
+    import data_formulator.data_connector as data_connector
+    from data_formulator.analyst.workspace_inputs import render_external_reference_context
+
+    monkeypatch.setattr(data_connector, "list_available_connector_ids", lambda: ["powerbi:sales", "kusto:logs"])
+    text = render_external_reference_context([])
+    assert text.endswith("searchable with summarize_data_sources/find_data: powerbi:sales, kusto:logs")

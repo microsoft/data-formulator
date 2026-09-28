@@ -426,8 +426,8 @@ def test_semantic_leaf_without_query_is_added_as_reference_only(tmp_path, monkey
 def test_semantic_query_uses_query_path_and_keeps_field_descriptions(tmp_path):
     workspace = Workspace("test-user", root_dir=tmp_path)
     loader = _Loader(pa.table({"Segment": ["SMB"], "Net Revenue": [10.5]}), source_meta={"columns": [
-        {"name": "Segment", "description": "Dimension: customer segment"},
-        {"name": "Net Revenue", "description": "Measure (sum): revenue after refunds"},
+        {"name": "Segment", "role": "dimension", "description": "customer segment"},
+        {"name": "Net Revenue", "role": "measure", "aggregation": "sum", "description": "revenue after refunds"},
     ]})
     loader.query_model = lambda source_table: "semantic"
     query = LoadQuery(columns=("Segment", "Net Revenue"))
@@ -439,8 +439,8 @@ def test_semantic_query_uses_query_path_and_keeps_field_descriptions(tmp_path):
     metadata = workspace.get_table_metadata(result.result_table_ids[0])
     assert metadata.import_options["structured_query"] == query.to_dict()
     assert '"coverage": "semantic_query"' in metadata.description
-    assert {column.name: column.description for column in metadata.columns}["Net Revenue"] == (
-        "Measure (sum): revenue after refunds")
+    assert {column.name: column.description for column in metadata.columns} == {
+        "Segment": "Dimension: customer segment", "Net Revenue": "Measure (sum): revenue after refunds"}
 
 
 @pytest.mark.parametrize("query", [LoadQuery(limit=10), LoadQuery()])
@@ -660,3 +660,13 @@ def test_executor_bounds_long_file_names_and_preserves_scope_label() -> None:
     assert len(collision) <= 80
     assert collision != name
     assert collision.endswith("_2")
+
+def test_semantic_column_descriptions_cover_time_grains_and_missing_text():
+    from data_formulator.data_operations.executor import _semantic_column_descriptions
+
+    fields = [{"name": "Order Date", "role": "time_dimension"},
+              {"name": "Customers", "role": "measure", "aggregation": "countDistinct", "description": "distinct buyers"}]
+    assert _semantic_column_descriptions(fields, ["Order Date (month)", "Customers", "Other"]) == [
+        {"name": "Order Date (month)", "description": "Time dimension (month)"},
+        {"name": "Customers", "description": "Measure (countDistinct): distinct buyers"},
+    ]

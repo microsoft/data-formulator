@@ -240,7 +240,7 @@ def compute_dataframe_hash(df: pd.DataFrame, sample_rows: int = 100) -> str:
     """
     hash_parts = [
         f"rows:{len(df)}",
-        f"cols:{','.join(df.columns.tolist())}",
+        f"cols:{','.join(map(str, df.columns.tolist()))}",
     ]
 
     if len(df) > 0:

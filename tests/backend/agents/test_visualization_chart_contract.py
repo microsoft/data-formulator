@@ -302,3 +302,14 @@ def test_visualize_rejects_unknown_input_source_before_execution():
     assert events[0]["type"] == "error"
     assert "Unknown or mismatched input source" in events[0]["message"]
     runtime.run_visualize_code.assert_not_called()
+
+def test_input_sources_resolve_unique_shortened_ids_and_list_valid_ids():
+    from data_formulator.analyst.input_provenance import normalize_input_sources
+
+    manifest = _manifest()
+    data_ids = [item.id for item in manifest.inputs if item.kind == "data"]
+    shortened = data_ids[0].rsplit(":", 1)[0]
+    resolved = normalize_input_sources({"input_sources": [{"id": shortened, "kind": "data"}]}, manifest)
+    assert resolved[0]["id"] == data_ids[0]
+    with pytest.raises(ValueError, match=f"exact data input id: {data_ids[0]}"):
+        normalize_input_sources({"input_sources": [{"id": "d_result", "kind": "data"}]}, manifest)

@@ -78,6 +78,8 @@ from data_formulator.analyst.workspace_inputs import (
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "analyst"
+_EMPTY_RESPONSE_RETRIES = 2
+_EMPTY_RESPONSE_BACKOFF_SECONDS = 3.0
 
 # The always-on baseline profile. It composes concrete capability skills but
 # owns no tools, actions, schemas, or handlers itself.
@@ -1188,9 +1190,18 @@ class AnalystAgent:
                 return {"status": "error", "error_message": str(error_message)}
 
             full_df = execution_result['content']
+            # Pivots often yield int/float labels (years); workspace storage and
+            # chart encodings address columns by string name.
+            if hasattr(full_df, "columns") and not all(isinstance(c, str) for c in full_df.columns):
+                full_df = full_df.rename(columns=str)
             row_count = len(full_df)
 
             chart_encodings = chart_spec.get("encodings", {})
+            # Charts show tooltips for all fields automatically; a multi-field
+            # tooltip list is not a channel encoding, so drop it rather than fail.
+            if isinstance(chart_encodings, dict) and isinstance(chart_encodings.get("tooltip"), list):
+                chart_encodings = {k: v for k, v in chart_encodings.items() if k != "tooltip"}
+                chart_spec = {**chart_spec, "encodings": chart_encodings}
 
             def _missing_encoding(field: Any) -> bool:
                 # field is normally a column-name string. Weak models sometimes
@@ -1214,6 +1225,8 @@ class AnalystAgent:
             ]
             if missing_fields:
                 available = list(full_df.columns)
+                if any(isinstance(field, list) for field in chart_encodings.values()):
+                    missing_fields.append("(each channel takes one field, not a list)")
                 return {
                     "status": "error",
                     "error_message": (
@@ -1283,7 +1296,9 @@ class AnalystAgent:
 
         except Exception as e:
             logger.error("[AnalystAgent] Visualize execution error", exc_info=e)
-            return {"status": "error", "error_message": "Visualization execution failed"}
+            from data_formulator.security.sanitize import sanitize_error_message
+            return {"status": "error", "error_message": "Visualization execution failed: "
+                    + sanitize_error_message(f"{type(e).__name__}: {e}")[:300]}
 
     # ------------------------------------------------------------------
     # Message construction
@@ -1627,6 +1642,7 @@ class AnalystAgent:
     ):
         """Inner tool-calling loop, wrapped by _get_next_action in a
         SandboxSession context manager."""
+        empty_responses = 0
         for round_idx in range(max_tool_rounds):
             llm_calls_in_cycle += 1
             tools = self._current_tools()
@@ -1882,6 +1898,19 @@ class AnalystAgent:
 
                 logger.info("[AnalystAgent] Executed %d inspection tool call(s), looping back to LLM", len(readonly_calls))
                 continue
+
+            # A stream with neither text nor tool calls is a provider failure
+            # (e.g. throttled Responses streams end silently), not an answer.
+            if not content.strip():
+                empty_responses += 1
+                if empty_responses <= _EMPTY_RESPONSE_RETRIES and round_idx + 1 < max_tool_rounds:
+                    logger.warning("[AnalystAgent] Empty LLM response; retrying (%d)", empty_responses)
+                    time.sleep(_EMPTY_RESPONSE_BACKOFF_SECONDS * empty_responses)
+                    continue
+                yield {"type": "agent_action", "action_data": None, "reason": "llm_error",
+                   "error_message": "The model returned an empty response, possibly due to provider rate limits. Please retry shortly.",
+                       "llm_calls": llm_calls_in_cycle}
+                return
 
             # --- no tool calls — the model gave a plain-text answer ----------
             # In this turn model, committing no action is the NORMAL way to end

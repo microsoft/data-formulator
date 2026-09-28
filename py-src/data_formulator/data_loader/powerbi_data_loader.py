@@ -329,9 +329,13 @@ class PowerBIDataLoader(ExternalDataLoader):
 
         fields: list[dict[str, Any]] = []
         for item in measures:
-            folder = f" in {item['G']}" if item.get("G") else ""
             field = {"name": item["N"], "ref": dax_name(item["N"]), "type": "number", "role": "measure",
-                     "entity": item["T"], "description": f"Measure{folder}: {item.get('D') or item['N']}"}
+                     "entity": item["T"]}
+            description = ": ".join(filter(None, [item.get("G"), item.get("D")]))
+            if description:
+                field["description"] = description
+            if item.get("G"):
+                field["folder"] = item["G"]
             if item.get("F"):
                 field["format"] = item["F"]
             fields.append(field)
@@ -346,19 +350,16 @@ class PowerBIDataLoader(ExternalDataLoader):
                 aggregation = implicit.lower()
                 field = {"name": name, "ref": f"{implicit}({column_ref})", "type": "number",
                          "data_type": "Integer" if implicit in {"COUNT", "DISTINCTCOUNT"} else "Number" if implicit == "AVERAGE" else data_type,
-                         "role": "measure", "aggregation": aggregation, "entity": item["T"],
-                         "description": f"Measure: {aggregation} of {item['T']}[{item['N']}]. {item.get('D') or ''}".strip()}
-                if item.get("F"):
-                    field["format"] = item["F"]
-                fields.append(field)
-                continue
-            role = "time_dimension" if data_type in _TIME_TYPES else "dimension"
-            kind = ("time" if role == "time_dimension" else "number" if data_type in _INTEGER_TYPES | _NUMBER_TYPES
-                    else "boolean" if data_type == "Boolean" else "string")
-            label = "Time dimension" if role == "time_dimension" else "Dimension"
-            field = {"name": name, "ref": column_ref, "type": kind,
-                     "data_type": data_type, "role": role, "entity": item["T"],
-                     "description": f"{label}: {item.get('D') or item['N']}"}
+                         "role": "measure", "aggregation": aggregation, "entity": item["T"]}
+            else:
+                role = "time_dimension" if data_type in _TIME_TYPES else "dimension"
+                kind = ("time" if role == "time_dimension" else "number" if data_type in _INTEGER_TYPES | _NUMBER_TYPES
+                        else "boolean" if data_type == "Boolean" else "string")
+                field = {"name": name, "ref": column_ref, "type": kind,
+                         "data_type": data_type, "role": role, "entity": item["T"]}
+            # Only model-authored descriptions; role, entity, and ref already describe the field.
+            if item.get("D"):
+                field["description"] = item["D"]
             if item.get("F"):
                 field["format"] = item["F"]
             fields.append(field)
@@ -418,7 +419,7 @@ class PowerBIDataLoader(ExternalDataLoader):
             measures = [field for field in fields if field["role"] == "measure"]
             # Prefer authored measures over implicit column sums, led by the largest folder of the busiest table.
             has_authored = any(not field.get("aggregation") for field in measures)
-            group = lambda field: (field["entity"], field["description"].split(":")[0])  # noqa: E731
+            group = lambda field: (field["entity"], field.get("folder"))  # noqa: E731
             groups = [group(field) for field in measures if not (has_authored and field.get("aggregation"))]
             core = max(set(groups), key=groups.count) if groups else None
             columns = [field["name"] for field in sorted(measures, key=lambda field: (

@@ -93,11 +93,11 @@ def test_catalog_maps_model_to_semantic_fields(pbi):
                            "Sales Amount", "Unit Price", "Line Label"}
     assert fields["Sales Amount"] == {"name": "Sales Amount", "ref": "SUM('Sales'[Sales Amount])", "type": "number",
                                       "data_type": "Number", "role": "measure", "aggregation": "sum", "entity": "Sales",
-                                      "description": "Measure: sum of Sales[Sales Amount]. Line revenue."}
+                                      "description": "Line revenue."}
     assert fields["Unit Price"]["ref"] == "AVERAGE('Sales'[Unit Price])"
     assert fields["Line Label"]["role"] == "dimension"
     assert fields["Sales"] == {"name": "Sales", "ref": "[Sales]", "type": "number", "role": "measure", "entity": "Sales",
-                               "description": "Measure in Core: Total sales.", "format": "\\$#,0"}
+                               "description": "Core: Total sales.", "folder": "Core", "format": "\\$#,0"}
     assert fields["Customer[City]"]["ref"] == "'Customer'[City]"
     assert fields["Month"]["role"] == "time_dimension" and fields["Month"]["type"] == "time"
     assert fields["Year"]["type"] == "number" and fields["Is Active"]["type"] == "boolean"

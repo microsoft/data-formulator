@@ -21,6 +21,8 @@ for final delivery. Reuse useful views and avoid redundant charts. Respect expli
 nonvisual requests; prefer a scalar or table for exact lookups or validation tallies.
 Inspect the returned data, specification, and diagnostics, claiming visual inspection
 only when image evidence is available. Verify numerical claims independently.
+Before comparing periods, check that the first and last periods are complete;
+flag or exclude partial ones. Answer from the data; label facts it cannot support.
 
 ## Inputs and Publication
 

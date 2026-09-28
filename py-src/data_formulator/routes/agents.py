@@ -639,6 +639,8 @@ def analyst_streaming():
 
     def generate():
         nonlocal user_question
+        load_observation = None
+        external_references = content.get("external_references")
         try:
             if terminal_proposal is not None:
                 from data_formulator.analyst.skills.terminal.skill import run_command
@@ -732,8 +734,11 @@ def analyst_streaming():
                     "type": "data_operation_result",
                     "operation": completed_operation.to_public_dict(),
                 }, ensure_ascii=False) + '\n'
-                logger.setLevel(logging.WARNING)
-                return
+                from data_formulator.analyst.skills.workspace.data_loading import record_data_operation_result
+
+                load_payload = {"input_tables": input_tables, "external_references": external_references}
+                load_observation = record_data_operation_result(workspace, load_payload, completed_operation)
+                external_references = load_payload["external_references"]
 
             client = get_client(content['model'])
             agent = AnalystAgent(
@@ -758,6 +763,15 @@ def analyst_streaming():
                     "role": "user",
                     "content": user_question,
                 })
+                if load_observation is not None:
+                    trajectory.append({
+                        "role": "user",
+                        "content": (
+                            "The application executed the approved data operation. "
+                            "Continue the original request using this result; do not repeat the completed load.\n"
+                            + load_observation
+                        ),
+                    })
                 logger.debug("== resuming after interaction ===>")
 
             for event in agent.run(
@@ -772,7 +786,7 @@ def analyst_streaming():
                 charts=charts,
                 scratch_files=scratch_files,
                 focused_file=content.get("focused_file"),
-                external_references=content.get("external_references"),
+                external_references=external_references,
                 focused_external_reference=content.get("focused_external_reference"),
                 conversation_id=conversation_id,
                 connector_form=content.get("connector_form"),

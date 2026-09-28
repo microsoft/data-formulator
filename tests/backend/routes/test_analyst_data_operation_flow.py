@@ -13,9 +13,13 @@ from data_formulator.data_operations import (
     DataOperation,
     DataOperationPlan,
     DataOperationRepository,
+    FailedOperationStep,
     LoadQuery,
+    OperationError,
     DataOperationStatus,
 )
+from data_formulator.data_operations.executor import DataOperationExecutionResult
+from data_formulator.data_loader.query_runtime import QueryCancelled
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.datalake.catalog_cache import save_catalog
 
@@ -169,7 +173,7 @@ def agents_client():
     return app.test_client()
 
 
-def test_selected_operation_executes_without_model_turn(
+def test_selected_operation_executes_then_resumes_analysis(
     agents_client,
     tmp_path: Path,
 ) -> None:
@@ -201,13 +205,19 @@ def test_selected_operation_executes_without_model_turn(
         patch("data_formulator.data_connector.resolve_live_loader", return_value=_Loader()),
         patch("data_formulator.routes.agents.AnalystAgent") as analyst_agent,
     ):
+        analyst_agent.return_value.run.return_value = iter([{
+            "type": "completion", "summary": "Orders total 30.",
+        }])
         response = agents_client.post(
             "/api/agent/analyst-streaming",
             json={
                 "model": {},
                 "input_tables": [],
                 "user_question": "Recent orders",
-                "trajectory": [{"role": "assistant", "content": "Choose"}],
+                "trajectory": [
+                    {"role": "user", "content": "Find orders and calculate their total."},
+                    {"role": "assistant", "content": "Choose"},
+                ],
                 "conversation_id": "conversation-1",
                 "interaction_response": {
                     "operation_id": operation.id,
@@ -221,11 +231,15 @@ def test_selected_operation_executes_without_model_turn(
         json.loads(line)
         for line in response.data.decode("utf-8").splitlines()
     ]
-    assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result"]
-    assert events[-1]["operation"]["status"] == "loaded"
-    assert events[-1]["operation"]["result_table_ids"] == ["recent_orders"]
-    get_client.assert_not_called()
-    analyst_agent.assert_not_called()
+    assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result", "completion"]
+    assert events[-2]["operation"]["status"] == "loaded"
+    assert events[-2]["operation"]["result_table_ids"] == ["recent_orders"]
+    get_client.assert_called_once()
+    run_kwargs = analyst_agent.return_value.run.call_args.kwargs
+    assert run_kwargs["input_tables"] == [{"name": "recent_orders", "rows": [], "virtual": True}]
+    assert run_kwargs["trajectory"][0]["content"] == "Find orders and calculate their total."
+    assert "Workspace loading finished" in run_kwargs["trajectory"][-1]["content"]
+    assert '"compute_ready": true' in run_kwargs["trajectory"][-1]["content"]
 
     persisted = repository.get(operation.id)
     assert persisted is not None
@@ -240,6 +254,7 @@ def test_selected_operation_executes_without_model_turn(
         patch("data_formulator.data_connector.resolve_live_loader") as loader_resolver,
         patch("data_formulator.routes.agents.AnalystAgent") as retry_agent,
     ):
+        retry_agent.return_value.run.return_value = iter([{"type": "completion"}])
         retry_response = agents_client.post(
             "/api/agent/analyst-streaming",
             json={
@@ -255,11 +270,79 @@ def test_selected_operation_executes_without_model_turn(
             },
         )
 
-    retry_event = json.loads(retry_response.data.decode("utf-8").strip())
-    assert retry_event["operation"]["result_table_ids"] == ["recent_orders"]
-    retry_get_client.assert_not_called()
+    retry_events = [json.loads(line) for line in retry_response.data.decode("utf-8").splitlines()]
+    assert [event["type"] for event in retry_events] == ["data_operation_result", "completion"]
+    assert retry_events[0]["operation"]["result_table_ids"] == ["recent_orders"]
+    retry_get_client.assert_called_once()
     loader_resolver.assert_not_called()
-    retry_agent.assert_not_called()
+    retry_agent.return_value.run.assert_called_once()
+
+
+@pytest.mark.parametrize("outcome", ["virtual", "partial", "failed", "exception", "cancelled"])
+def test_approval_continuation_observes_load_outcome(agents_client, tmp_path: Path, outcome: str) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    repository = DataOperationRepository.for_workspace(workspace)
+    plan = DataOperationPlan(label="Orders", summary="", steps=(ConnectorQueryStep(
+        source_id="warehouse", table_key="orders", source_table="orders", display_name="Orders",
+    ),))
+    operation = DataOperation(reason="Choose orders", plans=(plan,))
+    repository.create(operation, conversation_id="conversation-1")
+    reference = {
+        "kind": "external-table-reference", "id": "external:warehouse:orders",
+        "connectorId": "warehouse", "tableKey": "orders", "displayName": "Orders",
+        "sourceTable": {"id": "orders", "name": "Orders"},
+        "capturedAt": "2026-09-28T00:00:00Z", "summary": {"columns": []},
+    }
+    existing_reference = {**reference, "id": "external:warehouse:customers", "tableKey": "customers"}
+    failures = (FailedOperationStep(0, "Orders", OperationError("LOAD_FAILED", "Query failed")),)
+    result = DataOperationExecutionResult(
+        result_table_ids=(),
+        failed_steps=failures if outcome in {"partial", "failed"} else (),
+        result_references=(reference,) if outcome in {"virtual", "partial"} else (),
+    )
+    with (
+        patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
+        patch("data_formulator.routes.agents.get_client"),
+        patch("data_formulator.routes.agents.get_workspace", return_value=workspace),
+        patch("data_formulator.data_operations.DataOperationExecutor.execute", return_value=result) as execute,
+        patch("data_formulator.routes.agents.AnalystAgent") as analyst_agent,
+    ):
+        if outcome == "exception":
+            execute.side_effect = RuntimeError("Warehouse unavailable")
+        elif outcome == "cancelled":
+            execute.side_effect = QueryCancelled()
+        analyst_agent.return_value.run.return_value = iter([{"type": "completion"}])
+        response = agents_client.post("/api/agent/analyst-streaming", json={
+            "model": {}, "input_tables": [], "external_references": [existing_reference],
+            "user_question": "Orders", "completed_step_count": 2,
+            "trajectory": [{"role": "user", "content": "Show yearly revenue"}],
+            "conversation_id": "conversation-1",
+            "interaction_response": {"operation_id": operation.id, "plan_id": plan.id},
+        }, buffered=True)
+
+    execute.assert_called_once()
+    events = [json.loads(line) for line in response.data.decode("utf-8").splitlines()]
+    if outcome == "cancelled":
+        analyst_agent.assert_not_called()
+        assert not any(event["type"] == "data_operation_result" for event in events)
+        assert repository.get(operation.id).error.code == "CANCELLED"
+        return
+    assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result", "completion"]
+    expected_status = "loaded" if outcome == "virtual" else "partially_loaded" if outcome == "partial" else "failed"
+    assert events[-2]["operation"]["status"] == expected_status
+    run_kwargs = analyst_agent.return_value.run.call_args.kwargs
+    assert run_kwargs["completed_step_count"] == 2
+    assert run_kwargs["input_tables"] == []
+    assert run_kwargs["trajectory"][0]["content"] == "Show yearly revenue"
+    observation = json.loads(run_kwargs["trajectory"][-1]["content"].split("\n", 2)[2])
+    assert observation["status"] == expected_status
+    assert observation["workspace_inputs"] == []
+    assert observation.get("failed_steps", []) == [item.to_dict() for item in result.failed_steps]
+    assert run_kwargs["external_references"] == [existing_reference, *result.result_references]
+    if result.result_references:
+        assert observation["load_outcomes"][0]["compute_ready"] is False
+    if outcome == "exception":
+        assert observation["error"]["message"]
 
 
 def test_expired_operation_resumes_analyst_for_rediscovery(
