@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import en from "../../../../src/i18n/locales/en";
 import zh from "../../../../src/i18n/locales/zh";
 import id from "../../../../src/i18n/locales/id";
+import ja from "../../../../src/i18n/locales/ja";
 
 type TranslationValue = string | Record<string, TranslationValue>;
 type TranslationMap = Record<string, TranslationValue>;
@@ -31,5 +32,9 @@ describe("i18n locale bundles", () => {
 
   it("keeps Indonesian translation keys aligned with English", () => {
     expect(collectKeys(id)).toEqual(collectKeys(en));
+  });
+
+  it("keeps Japanese translation keys aligned with English", () => {
+    expect(collectKeys(ja)).toEqual(collectKeys(en));
   });
 });
