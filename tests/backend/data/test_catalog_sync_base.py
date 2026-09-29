@@ -31,7 +31,7 @@ class _StubLoader(ExternalDataLoader):
 
     def __init__(self, params=None, tables=None):
         self.params = params or {}
-        self._tables = tables or []
+        self._tables = tables if tables is not None else []
 
     @staticmethod
     def list_params():
@@ -41,8 +41,16 @@ class _StubLoader(ExternalDataLoader):
     def auth_instructions():
         return ""
 
+    @staticmethod
+    def catalog_hierarchy():
+        return [
+            {"key": "database", "label": "Database"},
+            {"key": "table", "label": "Table"},
+        ]
+
     def list_tables(self, table_filter=None):
-        return list(self._tables)
+        # Return fresh dicts so ensure_table_keys does not leak between tests.
+        return [dict(t) for t in self._tables]
 
     def fetch_data_as_arrow(self, source_table, import_options=None):
         return pa.table({"x": [1]})
@@ -108,6 +116,78 @@ class TestEnsureTableKeys:
         ]
         ExternalDataLoader.ensure_table_keys(tables)
         assert tables[0]["table_key"] == "explicit"
+
+
+# ── table_key on tree / search responses ──────────────────────────────
+#
+# ``sync_catalog_metadata()`` backfills ``table_key`` before returning.  The
+# tree and search responses must carry the same field, otherwise a loader that
+# does not set it in ``list_tables()`` (athena, bigquery, s3, mongodb, ...)
+# produces tree nodes without a stable identity.
+
+def _table_nodes(tree):
+    """Flatten the nested catalog tree down to its table nodes."""
+    out = []
+    for node in tree:
+        if node.get("node_type") == "table" or node.get("metadata"):
+            out.append(node)
+        out.extend(_table_nodes(node.get("children") or []))
+    return out
+
+
+_DEFAULT_TABLES = [
+    {"name": "orders", "path": ["shop", "orders"], "metadata": {"columns": []}},
+    {"name": "users", "path": ["shop", "users"], "metadata": {"columns": []}},
+]
+
+
+class TestTreeAndSearchTableKey:
+    def test_list_tables_tree_backfills_table_key(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        nodes = _table_nodes(loader.list_tables_tree()["tree"])
+        assert nodes, "expected at least one table node"
+        missing = [n["name"] for n in nodes if not (n.get("metadata") or {}).get("table_key")]
+        assert missing == [], f"table nodes missing table_key: {missing}"
+
+    def test_search_catalog_backfills_table_key(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        nodes = _table_nodes(loader.search_catalog("ord", limit=10)["tree"])
+        assert nodes, "expected at least one table node"
+        missing = [n["name"] for n in nodes if not (n.get("metadata") or {}).get("table_key")]
+        assert missing == [], f"table nodes missing table_key: {missing}"
+
+    def test_explicit_table_key_survives_tree(self):
+        loader = _StubLoader(tables=[
+            {"name": "orders", "path": ["shop", "orders"], "table_key": "uuid-123",
+             "metadata": {"columns": []}},
+        ])
+        nodes = _table_nodes(loader.list_tables_tree()["tree"])
+        assert nodes[0]["metadata"]["table_key"] == "uuid-123"
+
+    def test_tree_and_sync_report_the_same_key(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        from_tree = {
+            n["name"]: (n.get("metadata") or {}).get("table_key")
+            for n in _table_nodes(loader.list_tables_tree()["tree"])
+        }
+        from_sync = {
+            t["name"]: t.get("table_key")
+            for t in loader.sync_catalog_metadata()
+        }
+        assert from_tree == from_sync
+
+    def test_source_name_is_preferred_over_name(self):
+        loader = _StubLoader(tables=[
+            {"name": "orders", "path": ["shop", "orders"],
+             "metadata": {"_source_name": "shop.orders", "columns": []}},
+        ])
+        nodes = _table_nodes(loader.list_tables_tree()["tree"])
+        assert nodes[0]["metadata"]["table_key"] == "shop.orders"
+
+    def test_empty_catalog_is_fine(self):
+        loader = _StubLoader(tables=[])
+        assert _table_nodes(loader.list_tables_tree()["tree"]) == []
+        assert loader.search_catalog("nothing")["tree"] == []
 
 
 # ── source_metadata_status constants ──────────────────────────────────

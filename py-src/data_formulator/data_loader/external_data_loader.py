@@ -1291,7 +1291,9 @@ class ExternalDataLoader(ABC):
         directly to place the table in the tree.  Otherwise the ``name``
         is split on ``"."`` as a fallback.
         """
-        tree = self._tables_to_catalog_tree(self.list_tables(table_filter=table_filter))
+        tables = self.list_tables(table_filter=table_filter)
+        self.ensure_table_keys(tables)
+        tree = self._tables_to_catalog_tree(tables)
 
         return {
             "hierarchy": self.catalog_hierarchy(),
@@ -1312,6 +1314,10 @@ class ExternalDataLoader(ABC):
 
         max_results = max(1, int(limit or 100))
         tables = self.list_tables(table_filter=text)
+        # ``search_catalog`` is the one public entry point that builds a tree
+        # without going through ``data_connector._catalog_tree_payload``, so the
+        # ``table_key`` contract has to be honoured here directly.
+        self.ensure_table_keys(tables)
         truncated = len(tables) > max_results
         return {
             "tree": self._tables_to_catalog_tree(tables[:max_results]),

@@ -221,6 +221,7 @@ def _catalog_tree_payload(
     flat_tables: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Build the lightweight tree sent to the frontend."""
+    loader.ensure_table_keys(flat_tables)
     tree = loader._tables_to_catalog_tree(flat_tables)
     return _lightweight_tree_for_response(tree)
 
