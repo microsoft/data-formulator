@@ -89,7 +89,7 @@ class WorkspaceSkill:
                 frame = pd.DataFrame(rows)
             metadata = ctx.workspace.save_agent_data(
                 frame, table_name, input_sources=sources, expected_content_hash=expected_hash,
-                display_name=display_name,
+                display_name=display_name, acquisition=args.get("acquisition"),
             )
             input_tables = ctx.payload.setdefault("input_tables", [])
             input_tables[:] = [table for table in input_tables if table.get("name") != metadata.name]
@@ -99,12 +99,15 @@ class WorkspaceSkill:
             })
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
             return ToolResult(text=json.dumps({
+                "id": next(item.id for item in ctx.payload["workspace_inputs"].data
+                           if item.path == f"data/{metadata.filename}"),
                 "table_name": metadata.name, "content_hash": metadata.content_hash,
                 "row_count": metadata.row_count, "operation": "update" if name == "update_data" else "create",
                 "input_sources": sources, "origin": metadata.origin, "role": metadata.role,
                 "edit_policy": metadata.edit_policy,
                 "display_name": metadata.original_name,
                 "path": f"data/{metadata.filename}",
+                **({"acquisition": metadata.import_options["acquisition"]} if metadata.import_options and "acquisition" in metadata.import_options else {}),
             }, ensure_ascii=False))
         if name in {"create_file", "edit_file"}:
             editing = name == "edit_file"

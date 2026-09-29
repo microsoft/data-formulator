@@ -35,13 +35,15 @@ import logging
 import re
 import time
 import uuid
+from dataclasses import asdict, replace
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Generator
 
 import pandas as pd
 
-from data_formulator.agent_config import reasoning_effort_for
+from data_formulator.agent_config import ANALYST_EXECUTION_DEFAULTS, AnalystExecutionConfig, reasoning_effort_for
 from data_formulator.agents.agent_utils import (
     accumulate_reasoning_content,
     accumulate_reasoning_items,
@@ -78,8 +80,6 @@ from data_formulator.analyst.workspace_inputs import (
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "analyst"
-_EMPTY_RESPONSE_RETRIES = 2
-_EMPTY_RESPONSE_BACKOFF_SECONDS = 3.0
 
 # The always-on baseline profile. It composes concrete capability skills but
 # owns no tools, actions, schemas, or handlers itself.
@@ -251,7 +251,7 @@ not only tables and prose.
 - File and data tools also return results, but create or revise durable workspace outputs.
 - Actions deliver results or request interaction. `visualize`, `write_report`, and
     unambiguous data loads return observations so you can continue. Questions, data
-    loads needing review, connector forms, and terminal approvals pause for the user.
+    loads needing review and connector forms pause for the user.
 - Plain text with no tool calls ends the run; `long_response` also finishes it.
     Choose the response form using the baseline workflows below.
 
@@ -272,10 +272,10 @@ and actions become available only after loading; do not reload an active skill.
 
 {skills_block}
 
-## Working within your budget
+## Completing your work
 
-- You have a budget of **{max_iterations} actions** for this run — a **hard
-    ceiling, not a target**.
+Stop when the request is satisfied. If essential input or authorization is missing,
+ask the user rather than repeating unsuccessful attempts without new evidence.
 
 {agent_exploration_rules}"""
 
@@ -286,7 +286,11 @@ and actions become available only after loading; do not reload an active skill.
 
 
 class AnalystAgent:
-    """Unified data analyst agent with baseline and on-demand skills."""
+    """Unified data analyst agent with baseline and on-demand skills.
+
+    max_iterations and max_repair_attempts are accepted for compatibility
+    but do not impose execution limits.
+    """
 
     def __init__(
         self,
@@ -296,18 +300,21 @@ class AnalystAgent:
         agent_exploration_rules: str = "",
         agent_coding_rules: str = "",
         language_instruction: str = "",
-        max_iterations: int = 5,
-        max_repair_attempts: int = 2,
+        max_iterations: int | None = None,
+        max_repair_attempts: int | None = None,
         identity_id: str | None = None,
+        execution_config: AnalystExecutionConfig | None = None,
     ):
         self.client = client
         self.workspace = workspace
-        self.registry = skill_registry or build_registry()
+        from data_formulator.configuration import terminal_mode
+        self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode())
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction
-        self.max_iterations = max_iterations
-        self.max_repair_attempts = max_repair_attempts
+        config = execution_config if execution_config is not None else ANALYST_EXECUTION_DEFAULTS
+        self.execution_config = replace(config, max_actions=max_iterations) if max_iterations is not None else config
+        self.max_iterations = self.execution_config.max_actions
 
         from data_formulator.agents.reasoning_log import (
             ReasoningLogger, _NullReasoningLogger,
@@ -371,12 +378,12 @@ class AnalystAgent:
                 legal.update(meta.action_names)
         return frozenset(legal)
 
-    @staticmethod
     def _initial_loaded_skills(
+        self,
         workspace_inputs: WorkspaceInputManifest,
     ) -> set[str]:
         """Return the skill gates that must be open before the first LLM call."""
-        return {_META_SKILL}
+        return {_META_SKILL} | ({"terminal"} if self.registry.has("terminal") else set())
 
     # ------------------------------------------------------------------
     # Public API
@@ -418,7 +425,7 @@ class AnalystAgent:
         total_llm_calls = 0
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
-        final_status = "max_iterations"
+        final_status = "success"
         workspace_files = sorted(
             self.workspace.list_workspace_files(), key=lambda item: item.name.lower(),
         )
@@ -461,6 +468,7 @@ class AnalystAgent:
                 user_question=user_question,
                 input_tables=[t.get("name", "") for t in input_tables],
                 model=self.client.model,
+                execution_config=asdict(self.execution_config),
                 rules_injected=[
                     r for r in [self.agent_exploration_rules, self.agent_coding_rules] if r
                 ],
@@ -501,17 +509,22 @@ class AnalystAgent:
                     }
             else:
                 self._rehydrate_loaded_skills(trajectory)
+                system_message = {"role": "system", "content": self._build_system_prompt(
+                    has_primary_tables=bool(primary_tables), has_focused_thread=bool(focused_thread),
+                    has_other_threads=bool(other_threads), has_attached_images=bool(attached_images), has_charts=bool(charts),
+                )}
+                if trajectory and trajectory[0].get("role") == "system":
+                    trajectory[0] = system_message
+                else:
+                    trajectory.insert(0, system_message)
 
             trajectory.append({"role": "user", "content": self._build_file_selection_context(focused_file)})
             trajectory.append({"role": "user", "content": render_external_reference_context(
                 external_references, focused_external_reference,
             )})
 
-            action_budget = self.max_iterations  # hard ceiling on committing actions
-            actions_committed = completed_step_count  # resume-aware count
-            hard_ceiling = iteration + max(self.max_iterations * 3, 12)
-
-            while iteration < hard_ceiling:
+            # TODO: Measure progress and repeated failures to detect stalled runs.
+            while True:
                 iteration += 1
 
                 # --- THINK: call LLM with tools, get the next action ------
@@ -541,7 +554,7 @@ class AnalystAgent:
                     # The normal close: the model answered in plain text and
                     # committed nothing. That final text IS the completion (the
                     # frontend renders it as the run's summary). An LLM API error
-                    # is fatal; the tool-round backstop also lands here.
+                    # is fatal.
                     if action_reason == "llm_error":
                         final_status = "llm_error"
                         yield self._error_event(
@@ -552,11 +565,7 @@ class AnalystAgent:
                         self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
                         return
 
-                    final_status = (
-                        "tool_rounds_exhausted"
-                        if action_reason == "tool_rounds_exhausted"
-                        else "success"
-                    )
+                    final_status = "success"
                     yield {
                         "type": "completion",
                         "iteration": iteration,
@@ -633,47 +642,7 @@ class AnalystAgent:
                     )
                     return
 
-                actions_committed += 1
-                remaining = action_budget - actions_committed
-                if remaining <= 0:
-                    # Hard action ceiling reached — stop and let the user steer.
-                    final_status = "max_iterations"
-                    yield {
-                        "type": "completion",
-                        "iteration": iteration,
-                        "status": "max_iterations",
-                        "content": {
-                            "summary": "Reached the maximum number of actions for this run.",
-                            "summary_code": "agent.maxIterationsSummary",
-                            "total_steps": len(completed_steps),
-                        },
-                    }
-                    self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
-                    return
-                if remaining == 1:
-                    trajectory.append({
-                        "role": "user",
-                        "content": (
-                            "[SYSTEM] You have 1 action left in your budget. Make it "
-                            "count, or wrap up by giving your final answer in plain "
-                            "text (which ends the run)."
-                        ),
-                    })
                 continue
-
-            # Runaway backstop — too many non-committing rounds without finishing.
-            final_status = "max_iterations"
-            self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
-            yield {
-                "type": "completion",
-                "iteration": iteration,
-                "status": "max_iterations",
-                "content": {
-                    "summary": "Reached the maximum number of exploration steps.",
-                    "summary_code": "agent.maxIterationsSummary",
-                    "total_steps": len(completed_steps),
-                },
-            }
         finally:
             rlog.close()
 
@@ -704,6 +673,10 @@ class AnalystAgent:
                 name = self.registry.canonical_name(m.group(1).strip())
                 if self.registry.has(name):
                     self._loaded_skills.add(name)
+                    if name in {"terminal", "workspace"}:
+                        message["content"] = _SKILL_LOADED_BANNER.format(name=name) + "\n" + self.registry.load_body(name)
+                else:
+                    message["content"] = "Application capability guidance is no longer available under the current policy."
             for candidate in content.split(_SKILL_PRELOADED_PREFIX)[1:]:
                 name, separator, remainder = candidate.partition("]")
                 if not separator or not remainder.startswith(_SKILL_PRELOADED_SUFFIX):
@@ -914,6 +887,8 @@ class AnalystAgent:
                 ev = gen.send(None)
         except StopIteration as stop:
             return stop.value  # the skill's observation string (or None)
+        finally:
+            gen.close()
 
     def _set_action_observation(
         self, messages: list[dict], tool_call_id: str | None, observation: str | None,
@@ -1378,7 +1353,6 @@ class AnalystAgent:
         substitutions = {
             "{context_guide}": context_guide,
             "{skills_block}": skills_block,
-            "{max_iterations}": str(self.max_iterations),
             "{agent_exploration_rules}": rules_block,
         }
         prompt = SYSTEM_PROMPT
@@ -1571,9 +1545,6 @@ class AnalystAgent:
         """Call the LLM with tools, run the inspection tool rounds internally,
         and surface the single committing action the turn ends with (as an
         ``agent_action`` event)."""
-        max_tool_rounds = 12
-        max_json_retries = 1
-        json_retries = 0
         messages = trajectory
         llm_calls_in_cycle = 0
 
@@ -1593,16 +1564,9 @@ class AnalystAgent:
                 import shutil
                 shutil.rmtree(ns_dir, ignore_errors=True)
 
-            self._tool_loop_exit_reason = None
             yield from self._tool_loop(
-                messages, max_tool_rounds, max_json_retries, json_retries,
-                llm_calls_in_cycle, rlog, input_tables, outer_iteration,
+                messages, llm_calls_in_cycle, rlog, input_tables, outer_iteration,
             )
-
-            if self._tool_loop_exit_reason == "tool_rounds_exhausted":
-                saved = explore_session.save_namespace(ns_dir, ws_path)
-                if saved:
-                    logger.info("[AnalystAgent] Saved explore namespace to %s", ns_dir)
 
             self._explore_session = None
 
@@ -1637,13 +1601,13 @@ class AnalystAgent:
 
     def _tool_loop(
         self,
-        messages, max_tool_rounds, max_json_retries, json_retries,
+        messages,
         llm_calls_in_cycle, rlog, input_tables, outer_iteration,
     ):
         """Inner tool-calling loop, wrapped by _get_next_action in a
         SandboxSession context manager."""
         empty_responses = 0
-        for round_idx in range(max_tool_rounds):
+        for round_idx in count():
             llm_calls_in_cycle += 1
             tools = self._current_tools()
             rlog.log("llm_request", iteration=outer_iteration,
@@ -1764,6 +1728,7 @@ class AnalystAgent:
                     yield {
                         "type": "tool_start",
                         "tool": tool_name,
+                        "tool_call_id": tc.id,
                         "args": _tool_progress_args(tool_name, tool_args),
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
@@ -1789,6 +1754,7 @@ class AnalystAgent:
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
+                            "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": result.get("stdout", ""),
                             "error": result.get("error"),
@@ -1801,6 +1767,7 @@ class AnalystAgent:
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
+                            "tool_call_id": tc.id,
                             "status": "ok",
                             "stdout": tool_content,
                         }
@@ -1825,6 +1792,7 @@ class AnalystAgent:
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
+                            "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": message,
                             "error": None if ok else message,
@@ -1853,6 +1821,7 @@ class AnalystAgent:
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
+                            "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": tool_content,
                         }
@@ -1903,9 +1872,9 @@ class AnalystAgent:
             # (e.g. throttled Responses streams end silently), not an answer.
             if not content.strip():
                 empty_responses += 1
-                if empty_responses <= _EMPTY_RESPONSE_RETRIES and round_idx + 1 < max_tool_rounds:
+                if empty_responses <= self.execution_config.empty_response_retries:
                     logger.warning("[AnalystAgent] Empty LLM response; retrying (%d)", empty_responses)
-                    time.sleep(_EMPTY_RESPONSE_BACKOFF_SECONDS * empty_responses)
+                    time.sleep(self.execution_config.empty_response_backoff_seconds * empty_responses)
                     continue
                 yield {"type": "agent_action", "action_data": None, "reason": "llm_error",
                    "error_message": "The model returned an empty response, possibly due to provider rate limits. Please retry shortly.",
@@ -1926,12 +1895,6 @@ class AnalystAgent:
                    "final_text": content.strip(), "llm_calls": llm_calls_in_cycle}
             return
 
-        # --- tool rounds exhausted ---
-        logger.warning("[AnalystAgent] Exceeded %d tool rounds without committing an action", max_tool_rounds)
-        self._tool_loop_exit_reason = "tool_rounds_exhausted"
-        yield {"type": "agent_action", "action_data": None, "reason": "tool_rounds_exhausted",
-               "llm_calls": llm_calls_in_cycle}
-        return
 
     def _commit_action(
         self,
@@ -2059,8 +2022,6 @@ class AnalystAgent:
                "narration": (content or "").strip()}
         return True
 
-    _MAX_LLM_RETRIES = 3
-
     @staticmethod
     def _is_transient_error(exc: Exception) -> bool:
         msg = str(exc).lower()
@@ -2088,7 +2049,8 @@ class AnalystAgent:
         belt-and-suspenders net.
         """
         last_exc: Exception | None = None
-        for attempt in range(self._MAX_LLM_RETRIES):
+        max_attempts = self.execution_config.stream_open_retries + 1
+        for attempt in range(max_attempts):
             try:
                 return self.client.get_completion_with_tools(
                     messages, tools=tools, stream=True,
@@ -2097,12 +2059,12 @@ class AnalystAgent:
                 )
             except Exception as e:
                 last_exc = e
-                if self._is_transient_error(e) and attempt < self._MAX_LLM_RETRIES - 1:
-                    wait = 2 ** attempt
+                if self._is_transient_error(e) and attempt < max_attempts - 1:
+                    wait = self.execution_config.stream_open_backoff_seconds * 2 ** attempt
                     logger.warning(
                         "[AnalystAgent] Transient LLM error (attempt %d/%d), "
-                        "retrying in %ds: %s",
-                        attempt + 1, self._MAX_LLM_RETRIES, wait, e,
+                        "retrying in %gs: %s",
+                        attempt + 1, max_attempts, wait, e,
                     )
                     time.sleep(wait)
                     continue

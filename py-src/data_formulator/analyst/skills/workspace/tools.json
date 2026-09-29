@@ -19,7 +19,7 @@
     "type": "function",
     "function": {
       "name": "create_data",
-      "description": "Create an independently needed registered workspace table, not a scratch export or staging table for a chart. For chart-specific transformations, use visualize directly: it publishes both the derived table and chart. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame. Declare actual data/file input_sources; use [] for generated data without inputs and clearly identify synthetic data. Returns the table name and content hash.",
+      "description": "Register newly acquired data as a reusable workspace input using acquisition metadata, or create an independently needed data deliverable. For chart-specific transformations, use visualize directly: it publishes both the derived table and chart. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame; parsing and normalization can happen in this call. Declare actual data/file input_sources; use [] only for generated data without inputs and identify synthetic data. Returns the stable input ID, path, table name and content hash for immediate analysis and charting.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -28,6 +28,12 @@
           "rows": { "type": "array", "items": { "type": "object" }, "description": "Literal records. Omit when using code." },
           "code": { "type": "string", "description": "Python that reads listed inputs and computes output_variable; do not write files directly." },
           "output_variable": { "type": "string", "description": "Variable containing the resulting pandas DataFrame." },
+          "acquisition": { "type": "object", "description": "Supply for acquired analysis inputs, not derived results or synthetic data. Declare the acquired files in input_sources. Store only non-sensitive source and coverage details, never credentials. The server records acquired_at when registering the dataset.", "properties": {
+            "source": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Non-secret source URL, local file, or service/resource identity." },
+            "scope": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Dataset coverage: subjects, dates, grain, measures, and units." },
+            "query": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Non-sensitive query or retrieval description." },
+            "limitations": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Known gaps, partial coverage, or other material limitations." }
+          }, "required": ["source", "scope"], "additionalProperties": false },
           "input_sources": { "type": "array", "items": { "type": "object", "properties": {
             "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
           }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Exact IDs from list_workspace_items(scope=input), or scratch/... paths with kind=file. Only inputs materially used." }
@@ -41,7 +47,7 @@
     "type": "function",
     "function": {
       "name": "update_data",
-      "description": "Explicitly revise agent-created editable workspace data under the same table ID. User uploads and connector tables are protected; create a derived copy instead. Provide rows OR Python producing a replacement DataFrame, actual input_sources, and the current table content_hash. On conflict reread and reconcile. Failed validation leaves the existing data intact.",
+      "description": "Explicitly revise agent-created editable workspace data under the same table ID. User uploads and connector tables are protected; create a derived copy instead. Provide rows OR Python producing a replacement DataFrame, actual input_sources, and the current table content_hash. When refreshing an acquired dataset, supply acquisition metadata and the newly acquired file inputs. Without acquisition metadata the replacement uses normal generated/derived semantics. On conflict reread and reconcile. Failed validation leaves the existing data intact.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -51,6 +57,12 @@
           "rows": { "type": "array", "items": { "type": "object" } },
           "code": { "type": "string", "description": "Recompute replacement data from listed inputs. Do not write files directly." },
           "output_variable": { "type": "string", "description": "Resulting pandas DataFrame." },
+          "acquisition": { "type": "object", "description": "For explicitly refreshing an acquired dataset from file inputs. Non-sensitive metadata only; the server records the new acquired_at timestamp.", "properties": {
+            "source": { "type": "string", "minLength": 1, "maxLength": 8000 },
+            "scope": { "type": "string", "minLength": 1, "maxLength": 8000 },
+            "query": { "type": "string", "minLength": 1, "maxLength": 8000 },
+            "limitations": { "type": "string", "minLength": 1, "maxLength": 8000 }
+          }, "required": ["source", "scope"], "additionalProperties": false },
           "input_sources": { "type": "array", "items": { "type": "object", "properties": {
             "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
           }, "required": ["id", "kind"], "additionalProperties": false } }

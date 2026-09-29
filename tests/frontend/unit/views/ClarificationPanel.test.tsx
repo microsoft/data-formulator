@@ -2,7 +2,7 @@ import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ClarificationPanel, ExplanationPanel } from '../../../../src/views/AgentPausePanel';
+import { ClarificationPanel, ExplanationPanel, ToolActivityPanel } from '../../../../src/views/AgentPausePanel';
 import { parseDataOperation } from '../../../../src/dataOperations/models';
 import type { ClarificationResponse } from '../../../../src/components/ComponentType';
 import { migrateState } from '../../../../src/app/stateMigrations';
@@ -34,7 +34,22 @@ vi.mock('react-i18next', () => ({
 }));
 
 describe('ClarificationPanel', () => {
-  it('opens commands collapsed and allows expansion inside the panel', () => {
+  it.each(['terminal', 'python'] as const)('matches expanded %s text to the explanation body', kind => {
+    const execution = kind === 'terminal'
+      ? { id: 'command', purpose: 'Run a check', argv: ['echo', 'result'], cwd: '.', status: 'completed' as const,
+          result: { output: 'Check output' } }
+      : { id: 'code', purpose: 'Run a check', tool: 'execute_python_script', code: 'print(42)', output: 'Check output', status: 'completed' as const };
+    render(<><ExplanationPanel content="Normal answer" onClose={vi.fn()} onDelete={vi.fn()} />
+      <ToolActivityPanel execution={execution} onClose={vi.fn()} /></>);
+    const bodySize = getComputedStyle(screen.getByText('Normal answer').parentElement!.parentElement!).fontSize;
+    expect(getComputedStyle(screen.getByText('Run a check')).fontSize).toBe(bodySize);
+    expect(getComputedStyle(screen.getByText(kind === 'terminal' ? 'echo result' : 'print(42)')).fontSize).toBe(bodySize);
+    expect(getComputedStyle(screen.getByText('Check output')).fontSize).toBe(bodySize);
+    expect(screen.getByText('Run a check')).toHaveStyle({ lineHeight: '1.6' });
+    expect(screen.getByText(kind === 'terminal' ? 'echo result' : 'print(42)')).toHaveStyle({ lineHeight: '1.6' });
+  });
+
+  it('opens only the selected command directly in the panel', () => {
     const executions = [{
       id: 'check', argv: ['az', 'account', 'show'], cwd: '/workspace', purpose: 'Check account access.',
       status: 'completed' as const, result: { exit_code: 0, output: 'Reader access confirmed' },
@@ -42,20 +57,30 @@ describe('ClarificationPanel', () => {
       id: 'list', argv: ['az', 'account', 'list'], cwd: '/workspace', purpose: 'List accounts.',
       status: 'completed' as const, result: { exit_code: 0, output: 'Other account output' },
     }];
-    const panel = <ExplanationPanel content="Check account access."
-      executions={executions} onClose={vi.fn()} onDelete={vi.fn()} />;
+    const panel = <ToolActivityPanel execution={executions[0]} onClose={vi.fn()} />;
     const view = render(panel);
+    expect(screen.queryByRole('tablist')).toBeNull();
     expect(screen.getByText('Check account access.')).toBeInTheDocument();
-    expect(screen.queryByText('Reader access confirmed')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(2);
-    fireEvent.click(screen.getAllByRole('button', { expanded: false })[0]);
+    expect(screen.queryByText('Account inspection complete.')).toBeNull();
     expect(screen.getByText('Reader access confirmed')).toBeInTheDocument();
-    expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { expanded: false })).toBeNull();
     expect(screen.queryByText('Other account output')).not.toBeInTheDocument();
     view.unmount();
     render(panel);
-    expect(screen.queryByText('Reader access confirmed')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(2);
+    expect(screen.getByText('Reader access confirmed')).toBeVisible();
+  });
+
+  it('shows the selected Python call without a second disclosure', () => {
+    render(<ToolActivityPanel onClose={vi.fn()}
+      execution={{ id: 'compute', createdAt: 2, tool: 'execute_python_script', purpose: 'Compute total',
+        code: 'print(total)', output: '42', error: 'Example error', status: 'failed' }} />);
+    expect(screen.queryByText('The total is 42.')).toBeNull();
+    expect(screen.getAllByTestId('CodeIcon')).toHaveLength(1);
+    expect(screen.getByText('print(total)')).toBeVisible();
+    expect(screen.getByText('42')).toBeVisible();
+    expect(screen.getByText('Example error')).toBeVisible();
+    expect(screen.queryByRole('button', { expanded: false })).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull();
   });
 
   it('shows legacy terminal JSON through the collapsed execution display', () => {
@@ -69,15 +94,20 @@ describe('ClarificationPanel', () => {
 
     const migrated = migrateState({ __stateVersion: 6, textTurns: [{ id: 'legacy', content: legacy }] }).textTurns[0];
     const { container } = render(
-      <ExplanationPanel content={migrated.content} executions={migrated.executions} onClose={vi.fn()} onDelete={vi.fn()} />,
+      <ToolActivityPanel execution={migrated.executions[0]} onClose={vi.fn()} />,
     );
-    expect(container.querySelector('pre')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
     const commandBlock = container.querySelector('pre');
     expect(commandBlock).not.toBeNull();
     expect(commandBlock?.textContent).toContain('set -euo pipefail');
     expect(container.textContent).toContain('terminal.directory: /workspace');
     expect(container.textContent).not.toContain('"argv"');
+  });
+
+  it('keeps the explanation answer-only', () => {
+    render(<ExplanationPanel content="The total is 42." onClose={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.getByText('The total is 42.')).toBeVisible();
+    expect(screen.queryByText('Inspect account')).toBeNull();
+    expect(screen.queryByRole('button', { expanded: false })).toBeNull();
   });
 
   it('allows skipping, editing, and submitting a free-text answer alongside a choice', () => {

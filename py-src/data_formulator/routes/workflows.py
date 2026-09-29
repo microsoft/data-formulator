@@ -267,6 +267,7 @@ def run_instance():
                         raise ValueError("Terminal request expired. Reject it and request a new command.")
                     terminal_proposal = broker.consume(pending_terminal["id"], identity, state["id"],
                                                        workspace_id=get_active_workspace_id() or "")
+                    terminal_proposal["decision"] = "approve"
                 else:
                     broker = current_app.extensions.get("terminal_requests")
                     if broker is not None:
@@ -355,7 +356,7 @@ def run_instance():
                         if cancellation.is_set():
                             break
                         yield json.dumps(event, ensure_ascii=False) + "\n"
-                except OSError as exc:
+                except (OSError, ValueError) as exc:
                     terminal_result = {"error": str(exc), "exit_code": None}
                 finally:
                     execution.close()

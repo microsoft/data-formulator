@@ -1,12 +1,97 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { store } from '../../../../src/app/store';
 import { dfActions } from '../../../../src/app/dfSlice';
 import { setCachedChart, invalidateChart } from '../../../../src/app/chartCache';
-import { expect, it, vi } from 'vitest';
-import { TerminalApprovalDialog, TerminalExecutionView, TerminalMessageContent } from '../../../../src/components/TerminalApprovalDialog';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { TerminalAccessButton, TerminalApprovalDialog, TerminalExecutionView, TerminalMessageContent } from '../../../../src/components/TerminalApprovalDialog';
+import { apiRequest } from '../../../../src/app/apiClient';
 import { migrateState } from '../../../../src/app/stateMigrations';
+
+vi.mock('../../../../src/app/apiClient', () => ({ apiRequest: vi.fn() }));
+beforeEach(() => vi.mocked(apiRequest).mockReset());
+
+it.each(['off', 'ask', 'auto'] as const)('saves terminal mode %s in place without Administration access', async mode => {
+    store.dispatch(dfActions.resetState());
+    const initial = mode === 'off' ? 'ask' : 'off';
+    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TERMINAL_MODE: initial,
+        TERMINAL_AVAILABLE: true, IS_LOCAL_MODE: true, DISABLE_DATA_CONNECTORS: false, CAN_CONFIGURE: false }));
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { mode: initial, available: true, locked: false, revision: 2 } })
+        .mockResolvedValueOnce({ data: { mode, available: true, locked: false, revision: 3 } });
+    const { unmount } = render(<Provider store={store}><TerminalAccessButton /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: `Terminal: ${initial === 'off' ? 'Off' : 'Ask'}` }));
+    const choice = screen.getByRole('radio', { name: { off: 'Off', ask: 'Ask every time', auto: 'Auto approve' }[mode] });
+    await waitFor(() => expect(choice).toBeEnabled());
+    expect(screen.getByText(/online datasets, documentation, or APIs/)).toBeVisible();
+    expect(screen.getByText(/When enabled, commands can read sensitive local files outside the workspace/)).toBeVisible();
+    expect(screen.getByText(/Sandboxed writes are limited to scratch, runtime storage, and allowed CLI state/)).toBeVisible();
+    fireEvent.click(choice);
+    expect(store.getState().serverConfig.TERMINAL_MODE).toBe(initial);
+    if (mode === 'auto') expect(screen.getByText(/Commands run without confirmation/)).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    await waitFor(() => expect(store.getState().serverConfig.TERMINAL_MODE).toBe(mode));
+    expect(apiRequest).toHaveBeenLastCalledWith('/api/configurations/terminal', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-DF-Configuration': '1' },
+        body: JSON.stringify({ revision: 2, mode }),
+    });
+    unmount();
+    store.dispatch(dfActions.resetState());
+});
+
+it.each(['deployment', 'environment'])('keeps controls disabled for a %s restriction', async restriction => {
+    store.dispatch(dfActions.resetState());
+    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TERMINAL_MODE: 'off',
+        TERMINAL_AVAILABLE: false, IS_LOCAL_MODE: true, DISABLE_DATA_CONNECTORS: true, CAN_CONFIGURE: true }));
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { mode: 'off', available: restriction !== 'deployment',
+        locked: restriction === 'environment', revision: 0 } });
+    const { unmount } = render(<Provider store={store}><TerminalAccessButton /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal: Off' }));
+    await screen.findByText(restriction === 'deployment' ? /deployment policy disables/ : /DF_TERMINAL_MODE/);
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    expect(store.getState().serverConfig.TERMINAL_MODE).toBe('off');
+    unmount();
+    store.dispatch(dfActions.resetState());
+});
+
+it('discards an unsaved terminal choice on Close', async () => {
+    store.dispatch(dfActions.resetState());
+    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TERMINAL_MODE: 'off' }));
+    vi.mocked(apiRequest).mockResolvedValue({ data: { mode: 'off', available: true, locked: false, revision: 1 } });
+    const { unmount } = render(<Provider store={store}><TerminalAccessButton /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal: Off' }));
+    const choice = screen.getByRole('radio', { name: 'Auto approve' });
+    await waitFor(() => expect(choice).toBeEnabled());
+    fireEvent.click(choice);
+    fireEvent.click(screen.getByRole('button', { name: 'Close', exact: true }));
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+    expect(store.getState().serverConfig.TERMINAL_MODE).toBe('off');
+    unmount();
+    store.dispatch(dfActions.resetState());
+});
+
+it.each(['load', 'save'])('keeps the actual policy unchanged after a failed %s', async failure => {
+    store.dispatch(dfActions.resetState());
+    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TERMINAL_MODE: 'off' }));
+    if (failure === 'save') vi.mocked(apiRequest).mockResolvedValueOnce({ data: { mode: 'off', available: true, locked: false, revision: 1 } });
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('Configuration changed. Reload before saving.'));
+    const { unmount } = render(<Provider store={store}><TerminalAccessButton /></Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal: Off' }));
+    if (failure === 'save') {
+        const choice = screen.getByRole('radio', { name: 'Auto approve' });
+        await waitFor(() => expect(choice).toBeEnabled());
+        fireEvent.click(choice);
+        fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    }
+    await screen.findByText('Configuration changed. Reload before saving.');
+    expect(store.getState().serverConfig.TERMINAL_MODE).toBe('off');
+    expect(screen.getByRole('dialog', { name: 'Terminal access' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeEnabled();
+    unmount();
+    store.dispatch(dfActions.resetState());
+});
 
 it.each(['compact', 'document'] as const)('resolves delayed chart images in %s Markdown without allowing unsafe URLs', variant => {
     const chartId = `markdown-comparison-${variant}`;
@@ -134,6 +219,9 @@ it('shows exact arguments and host access warning without granting permission on
     render(<TerminalApprovalDialog proposal={proposal} onDecision={onDecision} />);
     expect(screen.getByRole('dialog').textContent).toContain(JSON.stringify(proposal.argv, null, 2));
     expect(screen.getByText(/Filesystem writes are restricted/)).toBeTruthy();
+    expect(screen.getByText(/Reads and network access are not/)).toBeVisible();
+    expect(screen.getByText(/send data to remote services, and use existing CLI credentials/)).toBeVisible();
+    expect(screen.getByText(/Command output is sent to your model provider/)).toBeVisible();
     expect(screen.getByText(proposal.cwd)).toBeTruthy();
     expect(onDecision).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Run once' }));
@@ -141,14 +229,66 @@ it('shows exact arguments and host access warning without granting permission on
     expect(onDecision).toHaveBeenCalledExactlyOnceWith('approve');
 });
 
-it('rejects without executing and treats escape as rejection', () => {
+it('shows the bypass reason and full host risk without implicitly approving', () => {
     const onDecision = vi.fn();
-    const view = render(<TerminalApprovalDialog proposal={proposal} onDecision={onDecision} />);
+    render(<TerminalApprovalDialog proposal={{ ...proposal, dangerouslyDisableSandbox: true,
+        sandboxDisablingReason: 'Client needs writes outside the configured policy.' }} onDecision={onDecision} />);
+    expect(screen.getByRole('dialog', { name: 'Run outside the sandbox?' })).toBeVisible();
+    expect(screen.getByText('Client needs writes outside the configured policy.')).toBeVisible();
+    expect(screen.getByText(/normal OS-user access/)).toBeVisible();
+    expect(screen.getByText(/Auto mode never approves this request/)).toBeVisible();
+    expect(screen.getByText(/previous attempt may have partially completed/)).toBeVisible();
+    expect(onDecision).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Run outside sandbox' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run outside sandbox' }));
+    expect(onDecision).toHaveBeenCalledExactlyOnceWith('approve');
+});
+
+it('retains the write grant scope in execution history', () => {
+    render(<TerminalExecutionView defaultExpanded execution={{ ...proposal, status: 'completed',
+        writePaths: ['/Users/example/client-state'], result: { exit_code: 0 } }} />);
+    expect(screen.getByText('Additional write paths (this command only)')).toBeVisible();
+    expect(screen.getByText('/Users/example/client-state')).toBeVisible();
+});
+
+it('retains the bypass reason in execution history', () => {
+    render(<TerminalExecutionView defaultExpanded execution={{ ...proposal, status: 'completed',
+        dangerouslyDisableSandbox: true, sandboxDisablingReason: 'Client needs host state', result: { exit_code: 0 } }} />);
+    expect(screen.getByText('Outside sandbox: Client needs host state')).toBeVisible();
+});
+
+it('shows the resolved sandbox paths without requesting new grants', () => {
+    render(<TerminalApprovalDialog proposal={{ ...proposal, sandboxFilesystem: { allowWrite: ['/home/example/.azure'],
+        configured: false, requested: ['~/.azure'], skipped: [] } }} onDecision={vi.fn()} />);
+    fireEvent.click(screen.getByText('Sandbox write policy'));
+    expect(screen.getByText('/home/example/.azure')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Run once' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Run outside sandbox' })).toBeNull();
+});
+
+it('uses consistent label typography throughout expanded execution details', () => {
+    render(<TerminalExecutionView detailsOnly execution={{ ...proposal, status: 'completed',
+        sandboxFilesystem: { allowWrite: [], configured: false, requested: [], skipped: [] },
+        result: { exit_code: 0, output: 'Done' } }} />);
+    const commandStyle = getComputedStyle(screen.getByText('Command'));
+    for (const element of [screen.getByText(/Working directory:/), screen.getByText('Output'), screen.getByText('Exit code: 0'),
+        screen.getByText('Sandbox write policy').closest('details')!,
+        screen.getByText('Executable and exact arguments').closest('details')!]) {
+        expect(getComputedStyle(element).fontSize).toBe(commandStyle.fontSize);
+        expect(getComputedStyle(element).fontFamily).toBe(commandStyle.fontFamily);
+        expect(getComputedStyle(element).lineHeight).toBe(commandStyle.lineHeight);
+    }
+    expect(screen.getByText('Sandbox write policy')).toHaveStyle({ fontWeight: 400 });
+});
+
+it.each([false, true])('rejects without executing and treats escape as rejection (bypass: %s)', dangerouslyDisableSandbox => {
+    const onDecision = vi.fn();
+    const view = render(<TerminalApprovalDialog proposal={{ ...proposal, dangerouslyDisableSandbox }} onDecision={onDecision} />);
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     expect(onDecision).toHaveBeenCalledExactlyOnceWith('reject');
     view.unmount();
     onDecision.mockClear();
-    render(<TerminalApprovalDialog proposal={proposal} onDecision={onDecision} />);
+    render(<TerminalApprovalDialog proposal={{ ...proposal, dangerouslyDisableSandbox }} onDecision={onDecision} />);
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape', code: 'Escape' });
     expect(onDecision).toHaveBeenCalledExactlyOnceWith('reject');
 });

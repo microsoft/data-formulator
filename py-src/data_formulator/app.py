@@ -402,7 +402,7 @@ def get_auth_info():
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
-    from data_formulator.configuration import effective_limit, is_managed_mode, read_configuration, user_connectors_disabled, user_models_disabled
+    from data_formulator.configuration import effective_limit, is_managed_mode, read_configuration, terminal_available, terminal_mode, user_connectors_disabled, user_models_disabled
     args = app.config['CLI_ARGS']
     
     workspace_backend = args.get('workspace_backend', 'local')
@@ -414,6 +414,9 @@ def get_app_config():
         "SANDBOX": args['sandbox'],
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
         "DISABLE_DATA_CONNECTORS": user_connectors_disabled(),
+        "TERMINAL_MODE": terminal_mode(),
+        "TERMINAL_AVAILABLE": terminal_available(),
+        "TERMINAL_CONFIG_LOCKED": 'DF_TERMINAL_MODE' in os.environ,
         "DISABLE_CUSTOM_MODELS": user_models_disabled(),
         "MAX_DISPLAY_ROWS": effective_limit('max_display_rows'),
         "EXTERNAL_TABLE_MAX_ROWS": effective_limit('external_table_max_rows'),

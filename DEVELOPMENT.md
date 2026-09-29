@@ -9,6 +9,40 @@ How to set up your local machine.
 
 ## Backend (Python)
 
+### Analyst Execution Defaults
+
+`AnalystExecutionConfig` and `ANALYST_EXECUTION_DEFAULTS` in
+[agent_config.py](py-src/data_formulator/agent_config.py) own analyst loop limits.
+Interactive chat and API callers share these defaults:
+
+| Setting | Default | Scope |
+| --- | --- | --- |
+| `max_actions` | 10 | Action budget, accounting for completed steps on resume |
+| `max_tool_rounds_per_action` | 12 | Model rounds before each committing action |
+| `empty_response_retries` | 2 | Empty responses within each tool-loop invocation |
+| `empty_response_backoff_seconds` | 3 | Linear retry delay: 3, then 6 seconds |
+| `stream_open_retries` | 2 | Transient stream-opening errors, before consuming tokens |
+| `stream_open_backoff_seconds` | 1 | Exponential retry delay: 1, then 2 seconds |
+| `outer_iteration_multiplier` | 3 | Outer-loop safety bound relative to action budget |
+| `min_outer_iterations` | 12 | Minimum outer-loop safety bound per invocation |
+
+The HTTP field `max_iterations` remains supported and overrides `max_actions`.
+Interactive chat omits this field and uses the shared default of 10 actions.
+Budgets must be positive integers. Retry counts and finite backoff durations
+may be zero, but not negative. Invalid request budgets fail before execution.
+No new upper cap, environment overrides, or user-facing controls are introduced.
+
+Python callers and evaluations can pass `execution_config=AnalystExecutionConfig(...)`
+to `AnalystAgent`; an explicit legacy `max_iterations` argument takes precedence
+over its action budget. The configuration is immutable and resolved per instance.
+Effective settings are recorded in the reasoning log's `session_start` event.
+The legacy `max_repair_attempts` argument is accepted but ignored.
+
+Empty-response retries still consume tool rounds; if no round remains, the agent
+reports the provider error without waiting. Stream-opening retries happen within
+one model round. Neither budget is a total token, cost, or wall-clock limit.
+Reasoning-effort settings remain independently configured in the same module.
+
 ### Connector Timeouts
 
 Connection validation and catalog discovery are separate requests. The connection
@@ -202,40 +236,152 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
 
 ### Local Terminal Skill
 
-The analyst can use the `terminal` skill to locate data files, inspect installed
-data clients, query metadata through existing CLI logins, and troubleshoot a
-connection. For example: "Find CSV files in my Downloads folder and help me
-connect the folder." Discoveries feed back into the existing connector form and
-data-loading workflow; running a CLI does not register or load a source by itself.
+The analyst and workflow agents can use the `terminal` skill as a data-acquisition
+route alongside connected sources. They first ground the question in relevant
+workspace inputs, then choose an available route for missing data. Local files,
+installed clients, public endpoints, and existing CLI logins can supply bounded
+datasets directly into scratch without setting up a connector. For example:
+"Analyze my Azure usage with my existing CLI account." The agent discovers the
+relevant source and scope, retrieves actual data, and registers one bounded reusable
+workspace input with `create_data` and `acquisition` metadata before continuing
+with Python analysis and chart/report tools. Parsing and normalization can happen
+in the registration call; its returned input ID/path needs no extra inventory call.
+These are agent-managed source tables, not user uploads or derived chart results.
+Source, scope, optional query/limitations, server-recorded acquisition time, and
+input file hashes persist with the table. Explicit refreshes use `update_data`
+with its current hash, new file inputs, and new acquisition metadata. Discovery alone is not
+acquisition, and acquisition alone does not complete an analysis request.
 
-The initial implementation supports single-user local mode on macOS and Linux.
-Every command opens a **Run once / Reject** dialog showing its exact argument
-array, working directory, purpose, and host-access warning. Approval is stored
-server-side for one invocation, tied to the identity, workspace, and conversation, and
-expires after ten minutes or a backend restart. Chat text cannot grant access.
-There is no automatic approval, persistent full-access grant, or Codex dependency
-in this first version; unmatched commands are effectively always `ask`.
+Connector forms remain appropriate when direct acquisition is unsuitable or the
+user wants reusable connected access. Running a CLI does not register a connector
+or publish a workspace table: acquired data stays in scratch and
+workspace tools perform registration. Discovery-only metadata, response fragments,
+and calculated intermediates stay in scratch; disposable caches use private runtime
+storage outside workspace exports. Relevant non-tabular inputs
+use `create_file`. Requests for uploads, authentication,
+or clarification should address concrete blockers, not replace an available
+authorized acquisition step.
 
-Commands run with OS-enforced filesystem write confinement: macOS uses
+Terminal access supports single-user local mode on macOS and Linux. Both the
+analyst and workflow agents use the same server-owned policy:
+
+- **Off** (`off`): no terminal tool, skill catalog entry, or application-supplied
+  terminal guidance. Forged or stale execution requests are rejected. Sandboxed
+  Python analysis remains available.
+- **Ask every time** (`ask`, the default): terminal tools and operating guidance
+  are preloaded from the first turn. Each exact invocation opens a **Run once /
+  Reject** dialog showing arguments, working directory, purpose, and host-access
+  warning. Approval covers the entire invocation, including a shell script, not
+  each individual line.
+- **Auto approve** (`auto`): the same preloaded tools and guidance, with immediate
+  sandboxed execution, including writes allowed by the filesystem policy.
+  `dangerouslyDisableSandbox` always requires user approval and a reason.
+
+Click **Terminal: Off / Ask / Auto** beside the chat input, choose a mode in the
+**Terminal access** dialog, and click **Save**. This local-user setting is available
+without managed mode or Administration access. Its dedicated endpoint accepts only
+the mode and configuration revision, requires a same-origin local request, and
+preserves all other settings. Closing the dialog discards an unsaved choice.
+
+Alternatively, launch with `DF_TERMINAL_MODE=off|ask|auto`. The environment takes
+precedence and locks the selector; invalid environment values fail closed to Off.
+Persisted configuration uses `overrides.terminal_mode`. Deployment restrictions
+still apply. Chat text, workflow definitions, and tool arguments cannot set it.
+
+Approvals are stored server-side for one invocation, bound to the identity,
+workspace, conversation, mode, and configuration revision. They expire after ten
+minutes or a backend restart. Configuration changes invalidate outstanding
+approvals, even if the mode is later restored. Execution rechecks current policy;
+a change while a command is running stops it at the next runner check. Resumes
+rebuild application capability guidance without erasing actual conversation history.
+
+Commands normally run with OS-enforced filesystem write confinement: macOS uses
 `/usr/bin/sandbox-exec`; Linux requires Bubblewrap (`bwrap`) and enabled user
-namespaces. The server supplies the workspace scratch directory, the only
-writable persistent file area. Children inherit the restriction. Commands receive
-its absolute path in `DF_SCRATCH_DIR`; temporary/cache directories also live there.
+namespaces. Writable areas include workspace scratch, private per-invocation
+runtime storage (mode 0700), and the filesystem policy below. Children inherit
+the restriction.
+Commands receive `DF_SCRATCH_DIR` for outputs and `DF_RUNTIME_DIR` for disposable
+state. TMPDIR/TMP/TEMP, XDG_CACHE_HOME, UV_CACHE_DIR, PIP_CACHE_DIR,
+npm_config_cache, YARN_CACHE_FOLDER, MPLCONFIGDIR, HF_HOME, and NUMBA_CACHE_DIR
+point into runtime storage, removed on completion/cancellation and excluded from
+workspace exports. These caches are disposable, not shared across commands.
 The working directory does not grant write access. Missing or failing confinement
-never falls back to unrestricted execution. CLIs that must update credentials or
-install packages outside scratch require user-managed setup.
+never silently falls back to unrestricted execution.
+
+The built-in persistent `sandbox.filesystem.allowWrite` policy is:
+
+| Paths | Purpose and scope |
+| --- | --- |
+| `~/.azure` | Existing Azure CLI state: command logs, MSAL token/HTTP caches, locks, atomic updates. Entire directory writable. |
+| `~/.config/gcloud` | Existing gcloud state: token databases, SQLite journals, logs, configuration. Entire directory writable. |
+| `~/.aws/cli/cache`, `~/.aws/sso/cache`, `~/.aws/login/cache` | AWS role, SSO, and login token caches. AWS credentials and config files remain read-only. |
+| `~/.kube/cache`, `~/.kube/http-cache` | Kubernetes discovery and HTTP caches. Kubeconfig remains read-only. |
+
+Existing Azure/gcloud config-directory environment overrides replace their default
+paths only when inside the home directory and passing the same path checks.
+Outside-home overrides need a user-configured grant or reviewed bypass. Missing
+AWS/Kubernetes cache children are created under existing state roots; absent Azure,
+gcloud, AWS, or Kubernetes installations are not initialized. Unsafe or unavailable
+paths are skipped, not broadened. No automatic grants cover SSH files, keychains,
+Git config, package installation environments, or the entire home.
+
+Users can replace the built-in list in the installation configuration's
+`overrides` (an empty list disables all persistent grants):
+
+```json
+{
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": ["~/.azure", "~/.aws/sso/cache", "/absolute/custom-cli-state"]
+    }
+  }
+}
+```
+
+Configured entries are literal absolute paths or `~/` paths, at most 64; no globs.
+They must exist to be granted. Paths are re-resolved before every execution;
+symlink redirects, nonregular/hard-linked files, root/home-wide grants, and paths
+covering application configuration are rejected or skipped. Prefer directories
+for lock files and atomic replacement; Linux file bind mounts cannot be renamed.
+Directory grants allow modification/deletion of **all contents**, including
+credentials and executable configuration, not just harmless refreshes. Preexisting
+hard links inside a granted directory can alias other files; path grants are not
+a content-level security boundary. These are explicit compatibility tradeoffs.
+The local terminal access dialog shows resolved paths; settings changes invalidate
+pending commands through the configuration revision. Agents cannot submit path
+grants or change this policy through `run_terminal`.
+
+For a necessary operation outside the policy, the agent submits the exact command
+with `dangerouslyDisableSandbox: true` and a nonempty `sandboxDisablingReason`.
+The dialog shows the reason, full host-write risk, and **Run outside sandbox /
+Reject**. Both Ask and Auto require this explicit approval. The stored command,
+flag, and reason are authoritative; client responses contain only request ID and
+decision. Approval is single-use and never applies to subsequent commands.
+An approved command bypasses filesystem confinement with normal host-user access,
+not root privileges; runtime storage, filtered environment, time limits, and
+local-policy checks remain. Changes made on the host remain afterward.
+
+Retry flow: inspect the error and partial effects, redirect disposable state when
+possible, then submit a reasoned bypass request if required. The runtime never
+automatically retries outside the sandbox. Permission-looking stderr is a hint,
+not proof of sandbox denial or invalid credentials. Rejected requests must not be
+retried via another route. Legacy `write_paths` proposals are refused.
 
 Each command has a fresh process, no interactive stdin, a 60-second timeout, and
 the last 32 KiB of combined output. The process group is terminated on timeout or
 when the execution generator closes; macOS process-group cleanup alone does not
 guarantee termination of deliberately detached descendants. Ordinary server API
 key environment variables are not inherited, but local files and cached CLI
-credentials remain accessible. Command arguments and results appear in the
+credentials remain accessible. Selected CLI profile/config-location variables and
+proxy/CA settings are inherited, but credential values such as API keys are not
+copied from the server environment. Login stores are never copied into scratch
+or runtime storage. Command arguments, bypass reasons, policy snapshots, and results appear in the
 conversation and are sent to the configured model, so do not print credentials
 or other sensitive data. Complete interactive authentication outside the agent.
 This is write confinement, not complete isolation: network access remains enabled,
 and remote mutations or effects delegated to external services are not prevented
-by the filesystem boundary. Exact-command approval is still required.
+by the filesystem boundary. Auto approval does not remove these risks or authorize
+actions outside the user's requested task.
 
 Scratch files are absent from the ordinary workspace listing. In Backend Log,
 the **Scratch files** tab lists visible scratch entries for the active workspace,

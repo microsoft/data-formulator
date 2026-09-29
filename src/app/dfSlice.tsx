@@ -3,7 +3,7 @@
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
 import { shallowEqual } from 'react-redux';
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, PendingClarification, TextTurn, InputTable, TableSemanticsInfo, LoadedTableNode } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, PendingClarification, TextTurn, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable, FileNode, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -73,6 +73,9 @@ export interface ServerConfig {
     APP_TAGLINE?: string;
     MANAGED_MODE?: boolean;
     CAN_CONFIGURE?: boolean;
+    TERMINAL_MODE?: 'off' | 'ask' | 'auto';
+    TERMINAL_AVAILABLE?: boolean;
+    TERMINAL_CONFIG_LOCKED?: boolean;
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
@@ -937,6 +940,16 @@ function freshSessionState(
     };
 }
 
+const interruptProgressSteps = (steps?: ProgressStep[]): ProgressStep[] | undefined => steps?.map(step =>
+    step.status === 'running' ? { ...step, status: 'interrupted' } : step);
+
+const interruptTurnProgress = (turn: TextTurn): TextTurn => ({
+    ...turn,
+    progressSteps: interruptProgressSteps(turn.progressSteps),
+    executions: turn.executions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
+    codeExecutions: turn.codeExecutions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
+});
+
 export const dataFormulatorSlice = createSlice({
     name: 'dataFormulatorSlice',
     initialState: initialState,
@@ -1091,6 +1104,7 @@ export const dataFormulatorSlice = createSlice({
                             derive: {
                                 ...node.derive,
                                 status: 'interrupted' as const,
+                                progressSteps: interruptProgressSteps(node.derive.progressSteps),
                                 trigger: {
                                     ...node.derive.trigger,
                                     interaction: [
@@ -1124,7 +1138,7 @@ export const dataFormulatorSlice = createSlice({
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 analystChatPending: null,
                 generatedReports: saved.generatedReports || [],
-                textTurns: saved.textTurns || [],
+                textTurns: (saved.textTurns || []).map(interruptTurnProgress),
 
                 // Reset transient fields
                 messages: [],
@@ -1833,10 +1847,11 @@ export const dataFormulatorSlice = createSlice({
                 ];
             }
         },
-        updateDraftRunningPlan: (state, action: PayloadAction<{ draftId: string; plan: string }>) => {
+        updateDraftRunningPlan: (state, action: PayloadAction<{ draftId: string; plan: string; progressSteps?: ProgressStep[] }>) => {
             const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
             if (draft?.derive) {
                 draft.derive.runningPlan = action.payload.plan;
+                draft.derive.progressSteps = action.payload.progressSteps;
             }
         },
         updateDraftSources: (state, action: PayloadAction<{ draftId: string; source: string[]; inputSources?: ComputationInputSource[] }>) => {
@@ -2359,6 +2374,7 @@ export const dataFormulatorSlice = createSlice({
                                 ...node.derive,
                                 status: 'interrupted' as const,
                                 runningPlan: undefined,
+                                progressSteps: interruptProgressSteps(node.derive.progressSteps),
                                 trigger: {
                                     ...node.derive.trigger,
                                     interaction: [
@@ -2386,6 +2402,7 @@ export const dataFormulatorSlice = createSlice({
                     incoming[key] = [];
                 }
             }
+            incoming.textTurns = incoming.textTurns.map(interruptTurnProgress);
             // Reset other transient in-progress flags that snuck into the
             // persisted blob (chartSynthesisInProgress is already blacklisted
             // in store.ts).

@@ -1,13 +1,13 @@
 import React from 'react';
 import 'prismjs';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { ThemeProvider, createTheme } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { DataThread } from '../../../../src/views/DataThread';
-import { InteractionEntryCard } from '../../../../src/views/InteractionEntryCard';
+import { InteractionEntryCard, getStepIconComponent, PlanStepsView } from '../../../../src/views/InteractionEntryCard';
 import { LayoutProvider } from '../../../../src/app/LayoutProvider';
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
 import * as workspaceService from '../../../../src/app/workspaceService';
@@ -28,6 +28,36 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it.each([['execute_python_script', 'CodeIcon'], ['run_terminal', 'TerminalIcon']])('uses tool identity for %s regardless of label', (tool, icon) => {
+  render(React.createElement(getStepIconComponent({ id: tool, kind: 'tool', tool, label: 'Creating chart / 运行', status: 'completed' })));
+  expect(screen.getByTestId(icon)).toBeVisible();
+});
+
+it.each(['Running code', 'Running command', '✓ Creating chart', '✗ Failed'])('does not infer legacy metadata from %s', label => {
+  render(React.createElement(getStepIconComponent(label)));
+  expect(screen.getByTestId('AutoAwesomeIcon')).toBeVisible();
+});
+
+it('uses structured kind and status for filtering and activity, leaving legacy text static', () => {
+  render(React.createElement(PlanStepsView, { filterCreatingChart: true, activeLastStep: true, steps: [
+    { id: 'chart', kind: 'chart', label: 'Localized chart step', status: 'completed' },
+    { id: 'command', kind: 'tool', tool: 'run_terminal', label: 'Creating chart via CLI', status: 'failed' },
+    '✓ Creating chart',
+  ] }));
+  expect(screen.queryByText('Localized chart step')).toBeNull();
+  expect(screen.getByText('Creating chart via CLI')).toBeVisible();
+  expect(screen.getByTestId('ErrorOutlineIcon')).toBeVisible();
+  expect(screen.getByText('✓ Creating chart')).toBeVisible();
+  expect(screen.getByTestId('AutoAwesomeIcon')).toBeVisible();
+});
+
+it.each(['completed', 'failed', 'interrupted', 'running'] as const)('animates only explicitly running steps, not %s text', status => {
+  render(React.createElement(PlanStepsView, { activeLastStep: true, steps: [
+    { id: 'python', kind: 'tool', tool: 'execute_python_script', label: 'Running command', status },
+  ] }));
+  expect(screen.getByText(status === 'running' ? 'Running command…' : 'Running command')).toBeVisible();
+});
 
 it('keeps intermediate agent instructions non-clickable even with a plan and callback', () => {
   const onClick = vi.fn();
@@ -82,6 +112,26 @@ it('keeps a shown thread open when a new thread appears and only collapses on re
   expect(screen.queryByText('old response')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Expand thread' }));
   expect(screen.getByText('old response')).toBeTruthy();
+});
+
+it.each(['completed', 'error'] as const)('renders a %s report after its request without an empty assistant bubble', status => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'report-owner', displayId: 'Report', textKind: 'explain',
+    content: '', prompt: 'Write the final report', parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
+  store.dispatch(dfActions.saveGeneratedReport({ id: 'report', title: 'Final findings', content: '# Final findings',
+    parentNodeId: 'report-owner', selectedChartIds: [], createdAt: 2, status }));
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  const { container } = render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+    }),
+  }));
+  const prompt = screen.getByText('Write the final report');
+  const report = screen.getByText('Final findings');
+  expect(prompt.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(container.querySelector('[data-thread-item="textturn-report-owner"]')).toBeNull();
+  fireEvent.click(report);
+  expect(store.getState().focusedId).toEqual({ type: 'report', reportId: 'report' });
 });
 
 it('opens only the newest thread when existing threads are first shown', () => {
@@ -210,15 +260,22 @@ it.each([
   expect(screen.getByRole('button', { name: 'Hide earlier turns' })).toBeEnabled();
   expect(screen.getByText('first response')).toBeTruthy();
   expect(screen.getByText('Use azure command')).toBeTruthy();
-  expect(screen.getByText('second response')).toBeVisible();
+  if (producesTable) {
+    expect(screen.queryByText('second response')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
+  } else {
+    expect(screen.getByText('second response')).toBeVisible();
+  }
   if (producesTable) {
     expect(screen.getByText('latest response')).toBeTruthy();
     expect(screen.getByText('Visualize this result')).toBeTruthy();
     expect(screen.getByText('Inspecting resource usage')).toBeTruthy();
   }
   expect(store.getState().focusedId).toEqual(segmentFocus);
-  fireEvent.click(screen.getByText('second response'));
-  expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'second' });
+  if (!producesTable) {
+    fireEvent.click(screen.getByText('second response'));
+    expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'second' });
+  }
   fireEvent.click(screen.getByRole('button', { name: 'Hide earlier turns' }));
   expect(screen.getByRole('button', { name: 'Show earlier turns' })).toBeEnabled();
   expect(screen.getByText('first response')).toBeTruthy();
@@ -263,7 +320,8 @@ it.each(['pending', 'loaded', 'live-draft', 'interrupted-draft'] as const)(
       }),
     }));
     const isActive = scenario === 'pending' || scenario === 'live-draft';
-    expect(!!screen.queryByText('second response')).toBe(isActive);
+    expect(screen.queryByText('second response')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
     expect(screen.getByText('first response')).toBeTruthy();
     expect(screen.getByText('latest response')).toBeTruthy();
     if (hasDraft) expect(screen.getByText('Creating result')).toBeTruthy();
@@ -271,9 +329,9 @@ it.each(['pending', 'loaded', 'live-draft', 'interrupted-draft'] as const)(
     expect(screen.getByText(`${count} earlier turns`)).toBeTruthy();
     if (scenario !== 'pending') expect(screen.getAllByText('Result').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Show earlier turns' }));
-    for (const id of nodeIds) expect(screen.getByText(`${id} response`)).toBeTruthy();
+    for (const id of nodeIds.filter(id => id !== 'second')) expect(screen.getByText(`${id} response`)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Hide earlier turns' }));
-    expect(!!screen.queryByText('second response')).toBe(isActive);
+    expect(screen.queryByText('second response')).toBeNull();
     expect(store.getState().textTurns.find(turn => turn.id === 'second')?.executions?.[0].status).toBe('awaiting_approval');
   },
 );
@@ -433,7 +491,7 @@ it.each(['derived', 'loaded', 'ongoing'].flatMap(scenario => [5, 6].map(count =>
 );
 
 it.each(['none', 'user', 'pending', 'new-run'] as const)(
-  'lightly groups completed agent command updates without crossing %s boundaries', boundary => {
+  'retains clickable completed execution steps with %s boundaries', boundary => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     ['inspect', 'list'].forEach((id, index) => store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: id,
       textKind: 'explain', content: `${id} resource details`, createdAt: index,
@@ -451,23 +509,224 @@ it.each(['none', 'user', 'pending', 'new-run'] as const)(
         React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
       }),
     }));
-    const group = container.querySelector('[data-agent-work-group]');
-    expect(!!group).toBe(boundary === 'none');
+    expect(container.querySelectorAll('[data-agent-work-group]')).toHaveLength(0);
     expect(screen.queryByText('az inspect')).toBeNull();
-    fireEvent.click(screen.getByText('inspect resource details'));
-    expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'inspect' });
-    if (group) {
-      expect(group.textContent).toContain('inspect resource details');
-      expect(group.textContent).toContain('list resource details');
-      expect(group.textContent).not.toContain('Final findings');
-      expect(group.querySelectorAll('[data-execution-commands]')).toHaveLength(2);
+    expect(!!screen.queryByText('inspect resource details')).toBe(boundary === 'new-run');
+    expect(!!screen.queryByText('list resource details')).toBe(boundary !== 'pending');
+    expect(screen.getByText('Final findings')).toBeVisible();
+    if (boundary === 'user') expect(screen.getByText('Try another resource')).toBeVisible();
+    if (boundary !== 'pending') {
+      const focus = store.getState().focusedId;
+      const onActivity = vi.fn();
+      window.addEventListener('df-view-tool-activity', onActivity, { once: true });
+      fireEvent.click(screen.getByText('list resource details'));
+      expect(onActivity).not.toHaveBeenCalled();
+      const group = screen.getByText('list resource details').closest('[data-tool-activity-row]')! as HTMLElement;
+      fireEvent.click(within(group).getByRole('button', { name: 'list' }));
+      expect((onActivity.mock.calls[0][0] as CustomEvent).detail.nodeId).toBe('list');
+      expect(store.getState().focusedId).toEqual(focus);
     }
-    fireEvent.click(screen.getByText('list resource details'));
-    expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'list' });
-    fireEvent.click(screen.getByText('inspect resource details'));
-    expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'inspect' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
+    expect(store.getState().textTurns).toHaveLength(3);
   },
 );
+
+it('retains one completed execution step while preserving its table and derived output', () => {
+  const initialState = dataFormulatorReducer(undefined, { type: 'init' });
+  const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: {
+    ...initialState,
+    loadedTableNodes: [{ kind: 'loaded-table', id: 'usage-reference', tableId: 'usage-input',
+      parentNodeId: 'acquire-5', createdAt: 7 }],
+  } });
+  for (let index = 0; index < 6; index++) store.dispatch(dfActions.addTextTurn({ kind: 'text',
+    id: `acquire-${index}`, displayId: `Acquire ${index}`, textKind: 'explain', content: `Acquisition call ${index}`,
+    parentNodeId: index ? `acquire-${index - 1}` : CONVERSATION_ROOT_ID, createdAt: index, actionId: 'acquire-run',
+    ...(index === 0 ? { prompt: 'Analyze daily usage' } : {}),
+    executions: [{ id: `terminal-${index}`, argv: ['az', 'query'], cwd: '.', purpose: `Acquire ${index}`,
+      status: index >= 4 ? 'failed' : 'completed' }],
+  }));
+  store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'usage-input', displayId: 'Daily usage input',
+    names: [], metadata: {}, rows: [] } as any));
+  store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'usage-result', displayId: 'Usage trend',
+    names: [], metadata: {}, rows: [], parentNodeId: 'acquire-5',
+    derive: { source: ['usage-input'], code: '', dialog: [], trigger: { tableId: CONVERSATION_ROOT_ID,
+      resultTableId: 'usage-result', instruction: 'Visualize daily usage', interaction: [] } },
+  } as any));
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  const { container } = render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+    }),
+  }));
+  expect(container.querySelectorAll('[data-agent-work-group]')).toHaveLength(0);
+  expect(screen.getByText('Analyze daily usage')).toBeVisible();
+  for (let index = 0; index < 5; index++) expect(screen.queryByText(`Acquisition call ${index}`)).toBeNull();
+  const focus = store.getState().focusedId;
+  const onActivity = vi.fn();
+  window.addEventListener('df-view-tool-activity', onActivity, { once: true });
+  fireEvent.click(screen.getByText('Acquisition call 5'));
+  expect(onActivity).not.toHaveBeenCalled();
+  const group = screen.getByText('Acquisition call 5').closest('[data-tool-activity-row]')! as HTMLElement;
+  fireEvent.click(within(group).getByRole('button', { name: 'Acquire 5' }));
+  expect((onActivity.mock.calls[0][0] as CustomEvent).detail.nodeId).toBe('acquire-5');
+  expect(store.getState().focusedId).toEqual(focus);
+  const output = container.querySelector('[data-thread-item="usage-reference"]')!;
+  expect(output).toBeVisible();
+  expect(screen.getByText('Usage trend')).toBeVisible();
+  expect(screen.queryByRole('img', { name: 'Failed' })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(store.getState().loadedTableNodes[0].parentNodeId).toBe('acquire-5');
+});
+
+it('shows one live activity spinner and opens the execution step directly', async () => {
+  const initialState = dataFormulatorReducer(undefined, { type: 'init' });
+  const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: {
+    ...initialState,
+    draftNodes: [{ kind: 'draft', id: 'live-draft', displayId: 'Draft', parentNodeId: 'command-6', createdAt: 7,
+      derive: { source: [], code: '', dialog: [], status: 'running', runningPlan: 'Old fallback text',
+        progressSteps: [{ id: 'live-command', kind: 'tool', tool: 'run_terminal', executionId: 'execution-6',
+          label: 'Running command fixture', status: 'running' }], trigger: {
+        tableId: CONVERSATION_ROOT_ID, resultTableId: 'live-draft', instruction: '', interaction: [],
+      } },
+    } as any],
+  } });
+  const turns = Array.from({ length: 7 }, (_, index) => ({ kind: 'text' as const, id: `command-${index}`,
+    displayId: `Command ${index}`, textKind: 'explain' as const, content: `Command purpose ${index}`, createdAt: index,
+    parentNodeId: index ? `command-${index - 1}` : CONVERSATION_ROOT_ID, actionId: 'one-run',
+    ...(index === 0 ? { prompt: 'Analyze usage' } : {}),
+    executions: [{ id: `execution-${index}`, argv: ['az', 'query', String(index)], cwd: '.', purpose: `Query ${index}`,
+      status: index === 4 ? 'interrupted' as const : index === 5 ? 'failed' as const : index === 6 ? 'running' as const : 'completed' as const }],
+  }));
+  turns.forEach(turn => store.dispatch(dfActions.addTextTurn(turn)));
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  const { container } = render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+    }),
+  }));
+  expect(container.querySelectorAll('[data-agent-work-group]')).toHaveLength(0);
+  expect(screen.getByText('Analyze usage')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Show earlier turns' })).toBeNull();
+  for (let index = 0; index < 7; index++) expect(screen.queryByText(`Command purpose ${index}`)).toBeNull();
+  const activity = screen.getByText(/Running command fixture/).closest('[data-thread-item]')! as HTMLElement;
+  expect(activity).toBeVisible();
+  expect(screen.queryByText('Old fallback text')).toBeNull();
+  expect(within(activity).queryByTestId('TerminalIcon')).toBeNull();
+  expect(activity.querySelector('[data-activity-gutter] svg')).toBeNull();
+  expect(within(activity).getAllByRole('progressbar')).toHaveLength(1);
+  expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+  expect(screen.queryByRole('img', { name: 'Running' })).toBeNull();
+  expect(screen.queryByRole('img', { name: 'Failed' })).toBeNull();
+  const focus = store.getState().focusedId;
+  const onActivity = vi.fn();
+  window.addEventListener('df-view-tool-activity', onActivity, { once: true });
+  fireEvent.click(screen.getByText(/Running command fixture/));
+  expect(onActivity).not.toHaveBeenCalled();
+  expect(within(screen.getByText(/Running command fixture/).closest('button')!).queryByRole('progressbar')).toBeNull();
+  expect(within(activity).getAllByRole('progressbar')).toHaveLength(1);
+  expect(within(within(activity).getByRole('button', { name: 'Query 6' })).getByRole('progressbar')).toBeVisible();
+  expect(within(within(activity).getByRole('button', { name: 'Query 0' })).getByTestId('CheckCircleOutlineIcon')).toBeVisible();
+  expect(within(within(activity).getByRole('button', { name: 'Query 4' })).getByTestId('PauseCircleOutlineIcon')).toBeVisible();
+  const failedStatus = within(within(activity).getByRole('button', { name: 'Query 5' })).getByTestId('ErrorOutlineIcon');
+  expect(failedStatus).toBeVisible();
+  expect(failedStatus.parentElement).toHaveStyle({ color: theme.palette.text.secondary, width: '14px', flexShrink: '0' });
+  fireEvent.click(within(activity).getByRole('button', { name: 'Query 6' }));
+  expect((onActivity.mock.calls[0][0] as CustomEvent).detail.nodeId).toBe('command-6');
+  expect(store.getState().focusedId).toEqual(focus);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse thread' }));
+  expect(screen.queryByText(/Running command fixture/)).toBeNull();
+  expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Expand thread' }));
+  act(() => store.dispatch(dfActions.addTextTurn({ ...turns[6],
+    executions: [{ ...turns[6].executions[0], status: 'completed' }] })));
+  expect(screen.getByText(/Running command fixture/)).toBeVisible();
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  expect(within(screen.getByRole('button', { name: 'Query 6' })).getByTestId('CheckCircleOutlineIcon')).toBeVisible();
+  act(() => store.dispatch(dfActions.removeDraftNode({ draftId: 'live-draft' })));
+  expect(screen.queryByText(/Running command fixture/)).toBeNull();
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  window.addEventListener('df-view-tool-activity', onActivity, { once: true });
+  fireEvent.click(screen.getByText('Command purpose 6'));
+  const completedGroup = screen.getByText('Command purpose 6').closest('[data-tool-activity-row]')! as HTMLElement;
+  fireEvent.click(within(completedGroup).getByRole('button', { name: 'Query 6' }));
+  expect((onActivity.mock.calls[1][0] as CustomEvent).detail.nodeId).toBe('command-6');
+  expect(store.getState().focusedId).toEqual(focus);
+  expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
+  expect(store.getState().textTurns).toHaveLength(7);
+  expect(store.getState().textTurns[5].executions![0].status).toBe('failed');
+});
+
+it('opens terminal and Python calls from their chart step with aligned tool icons', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'unrelated-call', displayId: 'Unrelated', textKind: 'explain',
+    content: 'Other task', parentNodeId: 'conversation-root:other', actionId: 'other-run', createdAt: 0,
+    executions: [{ id: 'unrelated', argv: ['pwd'], cwd: '.', purpose: 'Other task', status: 'completed' }] }));
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'terminal-call', displayId: 'Terminal', textKind: 'explain',
+    content: 'Fetch input', parentNodeId: CONVERSATION_ROOT_ID, actionId: 'analysis', createdAt: 1,
+    executions: [{ id: 'terminal', argv: ['az', 'query'], cwd: '.', purpose: 'Fetch input', status: 'completed' }] }));
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'python-call', displayId: 'Python', textKind: 'explain',
+    content: 'Inspect input', parentNodeId: 'terminal-call', actionId: 'analysis', createdAt: 2,
+    codeExecutions: [{ id: 'python', tool: 'execute_python_script', code: 'print(42)', purpose: 'Inspect input', status: 'completed' }] }));
+  store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'chart-result', displayId: 'Chart result', names: [], metadata: {}, rows: [],
+    parentNodeId: 'python-call', derive: { source: [], code: 'result_df = source_df.copy()', dialog: [],
+      trigger: { tableId: CONVERSATION_ROOT_ID, resultTableId: 'chart-result', interaction: [
+        { from: 'data-agent', to: 'datarec-agent', role: 'instruction', content: 'Compare storage accounts' },
+      ] } } } as any));
+  const onOpen = vi.fn();
+  window.addEventListener('df-view-tool-activity', onOpen);
+  try {
+    const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+    render(React.createElement(Provider, { store, children: React.createElement(ThemeProvider, { theme,
+      children: React.createElement(LayoutProvider, { children: React.createElement(DataThread) }) }) }));
+    const step = screen.getByText('Compare storage accounts').closest('[data-thread-item]')! as HTMLElement;
+    const activity = screen.getByText('Tool activity').closest('button')!;
+    expect(within(step).queryByTestId('CodeIcon')).toBeNull();
+    const group = activity.closest('[data-secondary-activity]')! as HTMLElement;
+    expect(group.querySelector('[data-activity-gutter] svg')).toBeNull();
+    expect(within(group).queryByTestId('CodeIcon')).toBeNull();
+    expect(activity.compareDocumentPosition(step) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(activity);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(within(group).getByRole('button', { name: 'Inspect input' })).toBeVisible();
+    const call = within(group).getByRole('button', { name: 'Inspect input' });
+    expect(call.parentElement).toHaveStyle({ paddingLeft: '0px' });
+    expect(call).toHaveStyle({ paddingLeft: '0px' });
+    expect(getComputedStyle(call).gap).toBe(getComputedStyle(activity).gap);
+    expect(within(group).getAllByTestId('CodeIcon')[0]).toHaveStyle({ width: '12px', height: '12px' });
+    expect(within(group).getByTestId('TerminalIcon')).toHaveStyle({ width: '12px', height: '12px' });
+    fireEvent.click(within(group).getByRole('button', { name: 'Inspect input' }));
+    const detail = (onOpen.mock.calls[0][0] as CustomEvent).detail;
+    expect(detail.execution.id).toBe('python');
+    expect(detail).not.toHaveProperty('executions');
+    expect(within(group).getByRole('button', { name: 'Inspect input' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(group).getByRole('button', { name: 'Fetch input' }));
+    expect(within(group).getByRole('button', { name: 'Inspect input' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(group).getByRole('button', { name: 'Fetch input' })).toHaveAttribute('aria-pressed', 'true');
+    act(() => { window.dispatchEvent(new Event('df-tool-activity-closed')); });
+    expect(within(group).getByRole('button', { name: 'Fetch input' })).toHaveAttribute('aria-pressed', 'false');
+    const focus = store.getState().focusedId;
+    const onExplanation = vi.fn();
+    window.addEventListener('df-view-explanation', onExplanation);
+    try {
+      const instruction = within(step).getByText('Compare storage accounts');
+      expect(instruction.closest('button, [role="button"]')).toBeNull();
+      expect(instruction).toHaveStyle({ overflowWrap: 'anywhere' });
+      expect(getComputedStyle(instruction).getPropertyValue('-webkit-line-clamp')).toBe('');
+      expect(getComputedStyle(instruction.parentElement!).cursor).toBe('default');
+      fireEvent.click(instruction);
+      expect(onExplanation).not.toHaveBeenCalled();
+      expect(store.getState().focusedId).toEqual(focus);
+    } finally {
+      window.removeEventListener('df-view-explanation', onExplanation);
+    }
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
+  } finally {
+    window.removeEventListener('df-view-tool-activity', onOpen);
+  }
+});
 
 it('keeps a short conversation together in dense layout', () => {
   const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(900);

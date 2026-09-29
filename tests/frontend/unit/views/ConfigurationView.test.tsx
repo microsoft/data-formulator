@@ -28,6 +28,13 @@ const snapshot = { revision: 2, overrides: {}, catalogs: { models: [], workflows
 beforeEach(() => { vi.mocked(apiRequest).mockReset(); vi.mocked(apiRequest).mockResolvedValue({ data: snapshot }); });
 afterEach(cleanup);
 
+it('keeps terminal access out of Administration', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, terminal: { available: true, mode: 'ask', locked: false } } });
+    render(<ConfigurationView />);
+    await screen.findByRole('textbox', { name: 'App name' });
+    expect(screen.queryByRole('radiogroup', { name: 'Terminal' })).toBeNull();
+});
+
 it('saves virtual table thresholds in rows and bytes and resets the draft', async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, limits: {
         external_table_max_rows: { value: 1000000, default: 1000000, locked: false, source: 'Default' },

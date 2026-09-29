@@ -1,4 +1,44 @@
-import { createConversationRootId, isConversationRootId, type DictTable, type TextTurn, type Trigger, type LoadedTableNode, type FileNode, type ComputationInputSource } from '../components/ComponentType';
+import { createConversationRootId, isConversationRootId, type DictTable, type TextTurn, type Trigger, type LoadedTableNode, type FileNode, type ComputationInputSource, type TerminalExecution, type CodeExecution } from '../components/ComponentType';
+
+function getStepExecutionTurns(nodeId: string, tables: DictTable[], turns: TextTurn[]): TextTurn[] {
+    const turn = turns.find(candidate => candidate.id === nodeId);
+    if (turn?.actionId) {
+        return turns.filter(candidate => candidate.actionId === turn.actionId && candidate.createdAt <= turn.createdAt)
+            .sort((left, right) => left.createdAt - right.createdAt);
+    }
+    const executionTurns = turn ? [turn] : [];
+    const seen = new Set([nodeId]);
+    let parentId = turn?.parentNodeId || tables.find(table => table.id === nodeId)?.parentNodeId;
+    let actionId: string | undefined;
+    while (parentId && !seen.has(parentId)) {
+        seen.add(parentId);
+        const parent = turns.find(candidate => candidate.id === parentId);
+        if (!parent || !(parent.executions?.length || parent.codeExecutions?.length)
+            || (actionId && parent.actionId !== actionId)) break;
+        actionId = parent.actionId;
+        executionTurns.unshift(parent);
+        parentId = parent.parentNodeId;
+    }
+    return executionTurns;
+}
+
+export function getStepTerminalExecutions(nodeId: string, tables: DictTable[], turns: TextTurn[]): TerminalExecution[] {
+    return getStepExecutionTurns(nodeId, tables, turns).flatMap(turn =>
+        (turn.executions || []).map(execution => ({ ...execution, createdAt: turn.createdAt })));
+}
+
+export function getStepCodeExecutions(nodeId: string, tables: DictTable[], turns: TextTurn[]): CodeExecution[] {
+    const executions = getStepExecutionTurns(nodeId, tables, turns).flatMap(turn =>
+        (turn.codeExecutions || []).map(execution => ({ ...execution, createdAt: turn.createdAt })));
+    const table = tables.find(candidate => candidate.id === nodeId);
+    if (table?.derive?.code?.trim() && !table.virtual) {
+        const instruction = table.derive.trigger.interaction?.find(entry => entry.role === 'instruction');
+        executions.push({ id: `code-${table.id}`, tool: 'visualize', createdAt: Number.MAX_SAFE_INTEGER,
+            purpose: instruction?.displayContent || instruction?.content || table.displayId,
+            code: table.derive.code, status: 'completed' });
+    }
+    return executions;
+}
 
 export function resolveArtifactParentNodeId(parentNodeId: string | undefined, artifacts: { id: string; parentNodeId?: string }[]): string | undefined {
     const seen = new Set<string>();

@@ -26,7 +26,8 @@ def instance():
 
 
 @pytest.fixture
-def agent(tmp_path, instance):
+def agent(tmp_path, instance, monkeypatch):
+    monkeypatch.setattr("data_formulator.configuration.terminal_mode", lambda: "ask")
     workspace = Workspace("workflow-test", root_dir=tmp_path)
     state = new_run(instance, "test")
     return WorkflowAgent(MagicMock(), workspace, state, lambda value: None, Event(), "")
@@ -286,12 +287,42 @@ def test_step_description_rejects_invalid_values(instance, description):
 
 def test_terminal_proposal_pauses_without_executing_or_recording_evidence(agent, monkeypatch):
     proposal = {"id": "approval", "argv": ["ls"], "cwd": str(agent.run_dir), "purpose": "Inspect inputs"}
-    monkeypatch.setattr(agent.terminal_skill, "handle_action", lambda *args: iter([{"type": "interact", "terminal_request": proposal}]))
+    monkeypatch.setattr(agent.terminal_skill, "handle_action", lambda *args: (event for event in [{"type": "interact", "terminal_request": proposal}]))
     result = agent._execute("run_terminal", {"argv": ["ls"]}, "terminal-call")
     assert "has not executed" in result
     assert agent.state["status"] == "paused"
     assert agent.state["terminal_request"] == {**proposal, "call_id": "terminal-call"}
     assert "terminal-call" not in agent.state["evidence"]
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_terminal_auto_result_records_evidence_and_closes_execution(agent, monkeypatch, cancelled):
+    closed = []
+    def execute(*args):
+        try:
+            yield {"type": "terminal_started", "request": {"argv": ["pwd"]}}
+            if cancelled:
+                agent.cancel.set()
+            yield {"type": "terminal_running"}
+            yield {"type": "terminal_result", "request": {"argv": ["pwd"]}, "result": {"exit_code": 0, "output": "data.csv"}}
+            return "Command finished: data.csv"
+        finally:
+            closed.append(True)
+    monkeypatch.setattr(agent.terminal_skill, "handle_action", execute)
+    if cancelled:
+        with pytest.raises(ValueError, match="cancelled"):
+            agent._execute("run_terminal", {"argv": ["pwd"]}, "auto-command")
+        assert "auto-command" not in agent.state["evidence"]
+    else:
+        revision = agent.state["revision"]
+        result = agent._execute("run_terminal", {"argv": ["pwd"]}, "auto-command")
+        assert "data.csv" in result
+        assert "data.csv" in agent.state["evidence"]["auto-command"]["text"]
+        assert agent.state["outputs"][-1]["tool"] == "run_terminal"
+        assert agent.state["revision"] > revision
+        assert agent.state["status"] != "paused"
+        assert not agent.state.get("terminal_request")
+    assert closed == [True]
 
 
 def test_workflow_uses_analyst_discovery_and_skill_loading(agent, monkeypatch):
@@ -302,7 +333,7 @@ def test_workflow_uses_analyst_discovery_and_skill_loading(agent, monkeypatch):
     assert "Found connected prices" in agent._execute("find_data", {"query": "prices"}, "discovery")
     assert "loaded" in agent._execute("load_skill", {"name": "terminal"}, "skill")
     assert "terminal" in agent._loaded_skills
-    assert "Filesystem writes" in agent._build_system_prompt()
+    assert "sandbox.filesystem.allowWrite" in agent._build_system_prompt()
 
 
 def test_workflow_guidance_has_one_completion_policy(agent):
@@ -557,11 +588,20 @@ def test_sources_are_optional_guidance_not_adapter_configuration(instance):
         assert parse_workflow(yaml.safe_dump(instance))["source"] == source
 
 
-def test_bundled_stock_source_is_descriptive_guidance():
+def test_gapminder_demo_uses_versioned_historical_sample():
     import data_formulator.workflows.agent as workflow_module
-    instance = parse_workflow(Path(workflow_module.__file__).with_name("stock-review.yaml").read_text())
+    from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
+
+    instance = parse_workflow(Path(workflow_module.__file__).with_name("gapminder-review.yaml").read_text())
+    table = SampleDatasetsLoader().list_tables("Gapminder")[0]
     assert isinstance(instance["source"], str)
-    assert all(value in instance["source"] for value in ("Yahoo Finance", "MSFT", "SPY", "90 calendar days"))
+    assert table["metadata"]["_url"] == "https://cdn.jsdelivr.net/npm/vega-datasets@2.9.0/data/gapminder.json"
+    assert table["metadata"]["_url"] in instance["source"]
+    assert {parameter["name"]: parameter["default"] for parameter in instance["parameters"]} == {
+        "start_year": "1955", "end_year": "2005",
+    }
+    assert "same cohort" in instance["steps"][0]["instructions"]
+    assert not Path(workflow_module.__file__).with_name("stock-review.yaml").exists()
 
 
 def test_household_demo_uses_catalog_sample_and_progressive_chart_steps():
@@ -586,6 +626,7 @@ def test_household_demo_uses_catalog_sample_and_progressive_chart_steps():
 @pytest.mark.parametrize("filename,dataset,columns", [
     ("gas-price-review.yaml", "Weekly Gas Price", {"date", "fuel", "grade", "formulation", "price"}),
     ("movie-performance-review.yaml", "Movies", {"Production Budget", "Worldwide Gross", "Major Genre", "IMDB Rating"}),
+    ("gapminder-review.yaml", "Gapminder", {"country", "year", "life_expect", "fertility", "pop"}),
 ])
 def test_enhanced_demo_workflows_are_discoverable_and_use_available_samples(tmp_path, filename, dataset, columns):
     from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
@@ -776,7 +817,7 @@ def test_output_path_safety(agent, monkeypatch):
 
 
 def test_workflow_uses_shared_tools_without_a_live_source_adapter(agent):
-    names = {item["function"]["name"] for item in TOOLS}
+    names = {item["function"]["name"] for item in agent._current_tools()}
     assert "fetch_live_data" not in names
     assert {"execute_python_script", "list_workspace_items", "read_workspace_item", "create_data", "run_terminal"} <= names
     with pytest.raises(ValueError, match="Unknown workflow tool"):
@@ -1159,17 +1200,22 @@ def test_server_demos_are_read_only_and_do_not_shadow_user_workflows(workflow_cl
 
 
 @pytest.mark.parametrize("decision", ["approve", "reject"])
-def test_terminal_resume_executes_only_approved_stored_command(workflow_client, monkeypatch, instance, decision):
+@pytest.mark.parametrize("mode", ["ask", "auto"])
+def test_terminal_resume_executes_only_approved_stored_command(workflow_client, monkeypatch, instance, decision, mode, tmp_path):
     from uuid import uuid4
     from data_formulator.routes import workflows
     from data_formulator.analyst.skills.terminal import skill as terminal
 
     client, workspaces = workflow_client
+    monkeypatch.setattr("data_formulator.configuration.terminal_mode", lambda: mode)
+    state_directory = tmp_path / "client-state"
+    state_directory.mkdir()
     identifier = uuid4().hex
     broker = terminal.TerminalRequests()
     client.application.extensions["terminal_requests"] = broker
     proposal = broker.propose("test-user", identifier, {"argv": ["echo", "approved"],
-        "cwd": str(workspaces["first"].confined_scratch.root), "purpose": "Inspect prices"}, workspace_id="first")
+        "cwd": str(workspaces["first"].confined_scratch.root), "purpose": "Inspect prices",
+        "dangerouslyDisableSandbox": True, "sandboxDisablingReason": "Client state outside policy"}, workspace_id="first", mode=mode)
     state = new_run(instance, identifier)
     state.update(status="paused", terminal_request={**proposal, "call_id": "command"})
     workflows.save_run(workflows.run_path(workspaces["first"], identifier), state)
@@ -1180,6 +1226,9 @@ def test_terminal_resume_executes_only_approved_stored_command(workflow_client, 
 
     def command(spec, *, scratch_dir):
         commands.append(spec["argv"])
+        assert spec["decision"] == "approve"
+        assert spec["dangerouslyDisableSandbox"] is True
+        assert spec["sandboxDisablingReason"] == "Client state outside policy"
         assert scratch_dir == workspaces["first"].confined_scratch.root
         yield {"type": "terminal_result", "result": {"exit_code": 0, "output": "prices acquired"}}
 
@@ -1194,7 +1243,8 @@ def test_terminal_resume_executes_only_approved_stored_command(workflow_client, 
     monkeypatch.setattr(terminal, "run_command", command)
     monkeypatch.setattr(WorkflowAgent, "run_workflow", resume)
     body = {"run_id": identifier, "model": {}, "terminal_response": {
-        "request_id": proposal["id"], "decision": decision, "argv": ["not", "approved"]}}
+        "request_id": proposal["id"], "decision": decision, "argv": ["not", "approved"],
+        "dangerouslyDisableSandbox": False, "sandboxDisablingReason": "tampered"}}
     headers = {"X-Workspace-Id": "first", "Origin": "http://localhost"}
     assert client.post("/api/workflows/run", json=body, headers={**headers, "Origin": "https://other.example"}).status_code == 400
     response = client.post("/api/workflows/run", json=body, headers=headers)

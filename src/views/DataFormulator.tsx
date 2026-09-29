@@ -63,6 +63,7 @@ import { ReportView } from './ReportView';
 import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
+import { WorkflowPanel } from './WorkflowPanel';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
@@ -87,6 +88,7 @@ import DialogActions from '@mui/material/DialogActions';
 
 /** Quick enough not to feel like waiting, slow enough to read as a movement. */
 const CANVAS_TRANSITION_MS = 140;
+const INITIAL_SESSION_COUNT = 12;
 
 export const DataFormulatorFC = ({ }) => {
 
@@ -148,6 +150,8 @@ export const DataFormulatorFC = ({ }) => {
 
     // ── Workspace list (shown on landing page) ────────────────────
     const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspaceSummary[]>([]);
+    const [showAllWorkspaces, setShowAllWorkspaces] = useState(false);
+    const [savedLibraryTab, setSavedLibraryTab] = useState<'sessions' | 'workflows'>('sessions');
     const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
 
     // Inline rename: which card's title is currently being edited, and
@@ -927,16 +931,17 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
             </Box>
 
-            {/* Demos — promoted ahead of "Your Sessions" on the hosted
-                demo, since first-time visitors won't have any sessions
-                yet and demos are the most engaging entry point. */}
-            <Box sx={{mt: 3}}>
-                <Typography sx={{ color: alpha(theme.palette.text.primary, 0.56), fontSize: textVar.sm, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
-                    {t('landing.demos')}
+            <WorkflowPanel presentation="landing" onCreateSession={displayName => {
+                dispatch(dfActions.resetForNewWorkspace({ id: generateWorkspaceId(), displayName }));
+            }} renderLanding={({ examples, saved, toolbar }) => <Box data-home-library sx={{ mt: 3 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 4, alignItems: 'start' }}>
+            <Box component="section" aria-label={t('landing.exampleSessions', { defaultValue: 'Example sessions' })} sx={{ minWidth: 0 }}>
+                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: 400, textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                    {t('landing.exampleSessions', { defaultValue: 'Example sessions' })}
                 </Typography>
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
                     gap: 1.5,
                 }}>
                     {demoSessions.map((session) => (
@@ -948,13 +953,24 @@ export const DataFormulatorFC = ({ }) => {
                     ))}
                 </Box>
             </Box>
+            <Box sx={{ minWidth: 0 }}>
+                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: 400, textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                    {t('landing.exampleWorkflows', { defaultValue: 'Example workflows' })}
+                </Typography>
+                {examples}
+            </Box>
+            </Box>
 
             {/* ── Saved workspaces section ──────────────────────────── */}
-            <Box sx={{mt: 8}}>
-                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography sx={{ color: alpha(theme.palette.text.primary, 0.56), fontSize: textVar.sm, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                        {t('workspace.yourSessions')}
-                    </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 3, mb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+                    <Tabs value={savedLibraryTab} onChange={(_, value) => setSavedLibraryTab(value)} aria-label="Saved items"
+                        sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, px: 1, fontSize: textVar.sm, fontWeight: 400, textTransform: 'none' } }}>
+                        <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
+                        <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />
+                    </Tabs>
+                    <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                    {savedLibraryTab === 'workflows' ? toolbar : <>
+                    <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                     <Select
                         size="small"
                         variant="standard"
@@ -988,13 +1004,21 @@ export const DataFormulatorFC = ({ }) => {
                         <MenuItem value="updated_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
                         <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNameAsc')}</MenuItem>
                     </Select>
+                    <Button variant="outlined" size="small" startIcon={<UploadFileIcon sx={{ fontSize: iconVar.md }} />}
+                        onClick={() => importRef.current?.click()}
+                        sx={{ fontSize: textVar.xs, textTransform: 'none', whiteSpace: 'nowrap' }}>
+                        {t('workspace.importSession', { defaultValue: 'Import session' })}
+                    </Button>
+                        </>}
+                        </Box>
                 </Box>
-                <Box sx={{
+                    <Box role="tabpanel" id="home-sessions-panel" aria-labelledby="home-sessions-tab" hidden={savedLibraryTab !== 'sessions'}>
+                <Box id="saved-session-grid" sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
                     gap: 1.5,
                 }}>
-                    {sortedSavedWorkspaces.map(w => {
+                    {(showAllWorkspaces ? sortedSavedWorkspaces : sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT)).map(w => {
                         const isRenaming = renamingWs === w.id;
                         return (
                         <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id, w.display_name)} sx={{
@@ -1026,7 +1050,7 @@ export const DataFormulatorFC = ({ }) => {
                                         slotProps={{ input: { sx: { fontSize: textVar.lg, fontWeight: 500 } } }}
                                     />
                                 ) : (
-                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary', pr: 8 }}>
+                                    <Typography variant="body2" fontWeight={400} noWrap sx={{ color: 'text.primary', pr: 8 }}>
                                         {w.display_name}
                                     </Typography>
                                 )}
@@ -1060,20 +1084,22 @@ export const DataFormulatorFC = ({ }) => {
                         </Card>
                         );
                     })}
-                    {/* Import workspace card */}
-                    <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
-                        textAlign: 'center', borderStyle: 'dashed',
-                        cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        gap: 1, px: 2, py: 1.5,
-                        '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
-                    }}>
-                        <UploadFileIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-                        <Typography variant="caption" color="text.secondary">{t('workspace.importZip')}</Typography>
-                        <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
-                    </Card>
                 </Box>
+                {sortedSavedWorkspaces.length > INITIAL_SESSION_COUNT && (
+                    <Button size="small" aria-expanded={showAllWorkspaces} aria-controls="saved-session-grid"
+                        onClick={() => setShowAllWorkspaces(previous => !previous)}
+                        endIcon={<ExpandMoreIcon sx={{ transform: showAllWorkspaces ? 'rotate(180deg)' : 'none' }} />}
+                        sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: 400 }}>
+                        {showAllWorkspaces
+                            ? t('workspace.showFewerSessions', { defaultValue: 'Show less' })
+                            : t('workspace.showAllSessions', { defaultValue: 'Show all ({{count}})', count: sortedSavedWorkspaces.length })}
+                    </Button>
+                )}
             </Box>
+            <Box role="tabpanel" id="home-workflows-panel" aria-labelledby="home-workflows-tab" hidden={savedLibraryTab !== 'workflows'}>
+                {saved}
+            </Box>
+            </Box>} />
             {/* ── Delete workspace confirmation ────────────────────── */}
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
                 <DialogTitle>{t('workspace.deleteTitle')}</DialogTitle>

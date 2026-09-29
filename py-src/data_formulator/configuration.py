@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -63,6 +64,19 @@ def user_connectors_disabled() -> bool:
     return user_connectors_locked() or user_resource_policy('disable_user_connectors')
 
 
+def terminal_available() -> bool:
+    from data_formulator.auth.identity import is_local_mode
+
+    return is_local_mode() and sys.platform in {'darwin', 'linux'} and not user_connectors_disabled()
+
+
+def terminal_mode() -> str:
+    if not terminal_available():
+        return 'off'
+    mode = os.environ.get('DF_TERMINAL_MODE', read_configuration()['overrides'].get('terminal_mode', 'ask'))
+    return mode if mode in ('off', 'ask', 'auto') else 'off'
+
+
 def user_models_locked() -> bool:
     args = current_app.config.get('CLI_ARGS', {}) if has_app_context() else {}
     return bool(args.get('disable_custom_models') or args.get('disable_database') or any(
@@ -78,8 +92,28 @@ def resource_enabled(section: str, identifier: str) -> bool:
 
 
 def validate_overrides(overrides: dict) -> None:
-    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline'}:
+    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'sandbox'}:
         raise ValueError('Unknown configuration fields.')
+    if 'sandbox' in overrides:
+        sandbox = overrides['sandbox']
+        if not isinstance(sandbox, dict) or set(sandbox) != {'filesystem'}:
+            raise ValueError('Sandbox settings must contain filesystem.allowWrite.')
+        filesystem = sandbox['filesystem']
+        if not isinstance(filesystem, dict) or set(filesystem) != {'allowWrite'}:
+            raise ValueError('Sandbox filesystem settings must contain allowWrite.')
+        paths = filesystem['allowWrite']
+        if (not isinstance(paths, list) or len(paths) > 64
+                or any(not isinstance(path, str) or not path or len(path) > 2000 or '\0' in path
+                       or not Path(path).expanduser().is_absolute() for path in paths)):
+            raise ValueError('sandbox.filesystem.allowWrite must contain at most 64 absolute paths (or ~/ paths).')
+        home = Path.home().resolve()
+        protected = configuration_path().parent.resolve()
+        for path in paths:
+            resolved = Path(path).expanduser().resolve()
+            if resolved == home or resolved in home.parents or protected.is_relative_to(resolved):
+                raise ValueError('Sandbox write paths cannot cover the home, filesystem root, or application configuration.')
+    if 'terminal_mode' in overrides and overrides['terminal_mode'] not in ('off', 'ask', 'auto'):
+        raise ValueError('Terminal mode must be off, ask, or auto.')
     for name, maximum in (('app_name', 80), ('app_tagline', 300)):
         if name in overrides and (not isinstance(overrides[name], str) or len(overrides[name]) > maximum):
             raise ValueError(f'{name} must be text of at most {maximum} characters.')
@@ -214,9 +248,22 @@ def save_configuration(overrides: dict, revision: int) -> dict:
                         entry['credential_ref'] = reference
         if 'workflows' in overrides:
             workflows = {identifier: dict(options) for identifier, options in overrides['workflows'].items()}
-            contents = {identifier: workflow_content(identifier, options) for identifier, options in workflows.items()}
+            defaults = {}
+            contents = {}
             for identifier, options in workflows.items():
-                if identifier.startswith('demo/') and contents[identifier] == workflow_content(identifier, {}):
+                if identifier.startswith('demo/'):
+                    try:
+                        defaults[identifier] = workflow_content(identifier, {})
+                    except FileNotFoundError:
+                        if identifier not in current['overrides'].get('workflows', {}):
+                            raise
+                        reference = 'builtin:' + identifier.split('/', 1)[1]
+                        if 'content' not in options and options.get('file', reference) == reference:
+                            continue
+                contents[identifier] = workflow_content(identifier, options)
+            for identifier, content in contents.items():
+                options = workflows[identifier]
+                if identifier in defaults and content == defaults[identifier]:
                     options.pop('content', None)
                     options['file'] = 'builtin:' + identifier.split('/', 1)[1]
                 elif 'content' in options:

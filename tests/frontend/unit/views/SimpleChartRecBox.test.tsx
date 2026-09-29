@@ -17,7 +17,14 @@ vi.mock('../../../../src/views/AgentPausePanel', () => ({
     ClarificationPanel: ({ onSubmit }: { onSubmit: (responses: any[]) => void }) => (
         <button onClick={() => onSubmit([{ question_index: 0, answer: 'Revenue', value: 'plan', source: 'option' }])}>Submit clarification</button>
     ),
-    ExplanationPanel: ({ content }: { content: string }) => <div data-testid="explanation-panel">{content}</div>,
+    ExplanationPanel: ({ content, executions, codeExecutions, onClose }: { content: string; executions?: { id: string }[]; codeExecutions?: { id: string }[]; onClose: () => void }) =>
+        <div data-testid="explanation-panel" data-terminal-calls={executions?.map(execution => execution.id).join(',')}
+            data-code-calls={codeExecutions?.map(execution => execution.id).join(',')}>{content}<button aria-label="Close explanation" onClick={onClose} /></div>,
+    ToolActivityPanel: ({ execution, onClose }: { execution: any; onClose: () => void }) =>
+        <div data-testid="tool-activity-panel" data-terminal-calls={'code' in execution ? '' : execution.id}
+            data-code-calls={'code' in execution ? execution.id : ''}>
+            {JSON.stringify(execution)}<button onClick={onClose}>Close tool activity</button>
+        </div>,
     FailedDraftPanel: () => null,
 }));
 
@@ -47,6 +54,7 @@ describe('Analyst landing attachment handoff', () => {
         expect(screen.getAllByRole('menuitem')).toHaveLength(2);
         fireEvent.click(screen.getByRole('menuitem', { name: label }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody()).not.toHaveProperty('max_iterations');
         const prompt = requestBody().user_question;
         expect(prompt).toContain(label === 'Write a report' ? 'write a report' : 'create a workflow');
         expect(prompt).toContain('Suggest a few useful directions');
@@ -564,6 +572,8 @@ describe('Analyst landing attachment handoff', () => {
                         steps: [{ kind: 'connector_query', display_name: name }] }],
                     result_table_ids: [name],
                 } };
+                yield { type: 'tool_start', tool: 'inspect_source_data', tool_call_id: `inspect-${name}`, table_names: [name] } as any;
+                yield { type: 'tool_result', tool: 'inspect_source_data', tool_call_id: `inspect-${name}`, status: 'ok' } as any;
                 yield { type: 'action', action: 'visualize', input_tables: [name] };
                 yield { type: 'result', status: 'success', content: { result: {
                     status: 'ok', content: { rows: [{ value: 12 }],
@@ -590,6 +600,15 @@ describe('Analyst landing attachment handoff', () => {
         expect(state.derivedTables.map(table => [table.id, table.parentNodeId])).toEqual([
             ['daily_chart', 'textTurn-opening'], ['regional_chart', 'daily_chart'],
         ]);
+        state.derivedTables.forEach((table, index) => {
+            const instruction = table.derive!.trigger.interaction!.find(entry => entry.role === 'instruction')!;
+            expect(instruction.progressSteps).toMatchObject([
+                { kind: 'tool', toolCallId: `inspect-${['daily', 'regional'][index]}`, status: 'completed' },
+                { kind: 'chart', status: 'completed' },
+            ]);
+            expect(instruction.progressSteps).toHaveLength(2);
+            expect(typeof instruction.plan).toBe('string');
+        });
         expect(state.textTurns[0].dataOperation).toBeUndefined();
         expect(state.textTurns[0].content).toBe('Previous analysis.');
         expect(state.textTurns[1].parentNodeId).toBe('regional_chart');
@@ -720,6 +739,54 @@ describe('Analyst landing attachment handoff', () => {
         }
     });
 
+    it.each(['success', 'empty-summary', 'error', 'disconnect', 'cancel', 'end'])('keeps report request and output together after %s', async outcome => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'action', action: 'write_report' };
+            yield { type: 'text_delta', channel: 'report', content: '# Findings\n\nVerified observations.' };
+            if (outcome === 'error') yield { type: 'error', message: 'LLM API error' };
+            else if (outcome === 'disconnect') throw new Error('Connection lost');
+            else if (outcome === 'cancel') throw new DOMException('Cancelled', 'AbortError');
+            else if (outcome !== 'end') yield { type: 'completion', status: 'success',
+                content: { summary: outcome === 'success' ? 'Report ready.' : '' } };
+        });
+        const { store } = mountTask({ text: 'Write a report for this analysis', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().generatedReports[0]?.status).toBe(
+            ['success', 'empty-summary'].includes(outcome) ? 'completed' : 'error'));
+        const report = store.getState().generatedReports[0];
+        const owner = store.getState().textTurns.find(turn => turn.id === report.parentNodeId);
+        expect(owner).toMatchObject({
+            prompt: 'Write a report for this analysis',
+            content: outcome === 'success' ? 'Report ready.' : '',
+        });
+        expect(report.content).toBe('# Findings\n\nVerified observations.');
+        expect(store.getState().draftNodes).toHaveLength(0);
+    });
+
+    it.each([false, true])('keeps report ownership on the selected branch with answered=%s', async answered => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'text_delta', channel: 'report', content: '# Branch findings' };
+            yield { type: 'error', message: 'LLM API error' };
+        });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-origin', displayId: 'Origin',
+                textKind: 'explain', content: 'Earlier analysis', parentNodeId: 'conversation-root:original',
+                createdAt: 1, answered, ...(answered ? { answer: 'Continue analysis' } : {}) }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-newer', displayId: 'Later',
+                textKind: 'explain', content: 'Later analysis', parentNodeId: 'textTurn-origin', createdAt: 2 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'textTurn-origin' }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'Report on the earlier analysis', images: [], attachments: [] }));
+        });
+        await waitFor(() => expect(store.getState().generatedReports[0]?.status).toBe('error'));
+        const report = store.getState().generatedReports[0];
+        const owner = store.getState().textTurns.find(turn => turn.id === report.parentNodeId)!;
+        expect(owner.parentNodeId).toBe('textTurn-origin');
+        expect(owner.prompt).toBe(answered ? 'Report on the earlier analysis' : undefined);
+        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-origin')?.answer)
+            .toBe(answered ? 'Continue analysis' : 'Report on the earlier analysis');
+        expect(store.getState().draftNodes).toHaveLength(0);
+    });
+
     it('keeps a form-associated chat turn focused when clicking outside the composer', async () => {
         const { store } = mountTask();
         act(() => {
@@ -777,14 +844,16 @@ describe('Analyst landing attachment handoff', () => {
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: formId });
     });
 
-    it.each(['approve', 'reject'] as const)('resumes a terminal proposal only after explicit %s and records its outcome', async decision => {
+    it.each([['approve', false], ['reject', false], ['approve', true], ['reject', true]] as const)('resumes a terminal proposal only after explicit %s (bypass: %s) and records its outcome', async (decision, unsandboxed) => {
         const proposal = { id: 'terminal-request', argv: ['find', '/data', '-name', '*.csv'],
-            cwd: '/data', purpose: 'Find CSV data', timeout_seconds: 60 };
+            cwd: '/data', purpose: 'Find CSV data', timeout_seconds: 60, dangerouslyDisableSandbox: unsandboxed,
+            sandboxDisablingReason: unsandboxed ? 'Client needs host state' : '' };
         const trajectory = [{ role: 'user', content: 'Find local data' }];
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'interact', terminal_request: proposal, trajectory, completed_step_count: 2 } as any;
         });
         const { store } = mountTask({ text: 'Find local data', images: [], attachments: [] });
+        if (unsandboxed) act(() => { store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TERMINAL_MODE: 'auto' })); });
         await screen.findByRole('dialog');
         expect(streamRequest).toHaveBeenCalledTimes(1);
         const originalConversation = requestBody().conversation_id;
@@ -792,31 +861,254 @@ describe('Analyst landing attachment handoff', () => {
         const intentId = store.getState().textTurns[0].id;
         expect(store.getState().textTurns[0]).toMatchObject({
             content: proposal.purpose,
-            executions: [{ id: proposal.id, status: 'awaiting_approval', argv: proposal.argv }],
+            executions: [{ id: proposal.id, status: 'awaiting_approval', argv: proposal.argv,
+                dangerouslyDisableSandbox: unsandboxed, sandboxDisablingReason: proposal.sandboxDisablingReason }],
         });
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            if (decision === 'approve') yield { type: 'tool_start', tool: 'run_terminal', tool_call_id: proposal.id,
+                purpose: proposal.purpose, args: { purpose: proposal.purpose } } as any;
             yield { type: 'terminal_running' };
+            if (decision === 'approve') {
+                expect(store.getState().draftNodes.at(-1)?.derive.runningPlan).toContain(proposal.purpose);
+                expect(store.getState().draftNodes.at(-1)?.derive.progressSteps).toMatchObject([
+                    { tool: 'run_terminal', toolCallId: proposal.id, executionId: proposal.id, status: 'running' },
+                ]);
+                expect(store.getState().draftNodes.at(-1)?.derive.progressSteps).toHaveLength(1);
+            }
             yield { type: 'terminal_result', request: proposal,
                 result: decision === 'approve' ? { exit_code: 0, output: '/data/sales.csv' } : { rejected: true } } as any;
             yield { type: 'interact', form: { kind: 'connector', title: 'Local data',
                 response: 'Review the discovered folder.', connector: { source_type: 'local_folder' } } } as any;
         });
-        fireEvent.click(screen.getByRole('button', { name: decision === 'approve' ? 'Run once' : 'Reject' }));
+        fireEvent.click(screen.getByRole('button', { name: decision === 'approve' ? unsandboxed ? 'Run outside sandbox' : 'Run once' : 'Reject' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
         expect(requestBody(1)).toMatchObject({
             conversation_id: originalConversation, trajectory, completed_step_count: 2,
             terminal_response: { request_id: proposal.id, decision },
         });
         expect(requestBody(1).terminal_response).not.toHaveProperty('argv');
+        expect(requestBody(1).terminal_response).not.toHaveProperty('dangerouslyDisableSandbox');
+        expect(requestBody(1).terminal_response).not.toHaveProperty('sandboxDisablingReason');
         await waitFor(() => expect(store.getState().textTurns.some(turn => turn.form)).toBe(true));
         expect(store.getState().textTurns).toHaveLength(2);
         expect(store.getState().textTurns[0]).toMatchObject({
             id: intentId, content: proposal.purpose,
             executions: [{ id: proposal.id, status: decision === 'approve' ? 'completed' : 'rejected',
+                dangerouslyDisableSandbox: unsandboxed, sandboxDisablingReason: proposal.sandboxDisablingReason,
                 result: decision === 'approve' ? { exit_code: 0, output: '/data/sales.csv' } : { rejected: true } }],
         });
         expect(store.getState().textTurns[1].parentNodeId).toBe(intentId);
+        if (decision === 'approve') expect(store.getState().textTurns[0].progressSteps).toMatchObject([
+            { tool: 'run_terminal', toolCallId: proposal.id, executionId: proposal.id, status: 'completed' },
+        ]);
         expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it.each(['completed', 'interrupted'] as const)('records Auto terminal commands as %s without an approval dialog', async outcome => {
+        const proposal = { id: 'auto-command', argv: ['find', '/data'], cwd: '/data', purpose: 'Find local data', timeout_seconds: 60 };
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'terminal_started', request: proposal } as any;
+            yield { type: 'terminal_running' } as any;
+            if (outcome === 'interrupted') throw new Error('Connection lost');
+            yield { type: 'terminal_result', request: proposal, result: { exit_code: 0, output: '/data/sales.csv' } } as any;
+        });
+        const { store } = mountTask({ text: 'Find local data', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns[0]?.executions?.[0].status).toBe(outcome));
+        expect(store.getState().textTurns[0]).toMatchObject({ content: proposal.purpose,
+            executions: [{ id: proposal.id, argv: proposal.argv, cwd: proposal.cwd }] });
+        expect(streamRequest).toHaveBeenCalledTimes(1);
+        expect(requestBody().terminal_response).toBeUndefined();
+        expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('keeps one prompt owner while an Auto terminal command continues', async () => {
+        const proposal = { id: 'auto-prompt-owner', argv: ['az', 'account', 'show'], cwd: '/data',
+            purpose: 'Discover accessible Azure account context', timeout_seconds: 60 };
+        let resumeStream!: () => void;
+        const continuation = new Promise<void>(resolve => { resumeStream = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'terminal_started', request: proposal } as any;
+            await continuation;
+            yield { type: 'terminal_result', request: proposal, result: { exit_code: 0, output: 'Account available' } } as any;
+            yield { type: 'completion', content: { summary: 'Account inspected.' } } as any;
+        });
+        const { store } = mountTask({ text: 'Analyze Azure usage', images: [], attachments: [] });
+        try {
+            await waitFor(() => expect(store.getState().textTurns[0]?.executions?.[0].status).toBe('running'));
+            const state = store.getState();
+            const terminalTurn = state.textTurns[0];
+            expect(terminalTurn.prompt).toBe('Analyze Azure usage');
+            expect(state.draftNodes).toHaveLength(1);
+            expect(state.draftNodes[0].derive.trigger.interaction?.filter(entry => entry.role === 'prompt')).toHaveLength(0);
+            expect(state.draftNodes[0].parentNodeId).toBe(terminalTurn.id);
+            expect(state.draftNodes[0].derive.runningPlan).toContain(proposal.purpose);
+            expect(state.draftNodes[0].derive.progressSteps).toMatchObject([
+                { kind: 'tool', tool: 'run_terminal', toolCallId: proposal.id, executionId: proposal.id, status: 'running' },
+            ]);
+            expect(streamRequest).toHaveBeenCalledTimes(1);
+            expect(requestBody().user_question).toBe('Analyze Azure usage');
+        } finally {
+            await act(async () => { resumeStream(); });
+        }
+        await waitFor(() => expect(store.getState().draftNodes).toHaveLength(0));
+        expect(store.getState().textTurns.filter(turn => turn.prompt === 'Analyze Azure usage')).toHaveLength(1);
+    });
+
+    it.each(['completed', 'failed', 'interrupted'] as const)('retains Python code and its %s result on a clickable step', async outcome => {
+        let continueStream!: () => void;
+        const continuation = new Promise<void>(resolve => { continueStream = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', code: 'print(42)', purpose: 'Calculate total' } as any;
+            await continuation;
+            if (outcome === 'interrupted') throw new Error('Connection lost');
+            yield { type: 'tool_result', tool: 'execute_python_script', status: outcome === 'failed' ? 'error' : 'ok',
+                stdout: '42', error: outcome === 'failed' ? 'Calculation failed' : undefined } as any;
+            yield { type: 'completion', content: { summary: 'Calculation finished.' } } as any;
+        });
+        const { store } = mountTask({ text: 'Calculate a total', images: [], attachments: [] });
+        try {
+            await waitFor(() => expect(store.getState().textTurns[0]?.codeExecutions?.[0].status).toBe('running'));
+            expect(store.getState().draftNodes[0].derive.runningPlan).toContain('Calculate total');
+            expect(store.getState().textTurns.filter(turn => turn.prompt)).toHaveLength(1);
+        } finally {
+            await act(async () => { continueStream(); });
+        }
+        await waitFor(() => expect(store.getState().textTurns[0]?.codeExecutions?.[0].status).toBe(outcome));
+        const step = store.getState().textTurns[0];
+        expect(step.progressSteps).toMatchObject([{ kind: 'tool', tool: 'execute_python_script',
+            status: outcome, executionId: step.codeExecutions![0].id }]);
+        expect(step.codeExecutions![0].code).toBe('print(42)');
+        if (outcome !== 'interrupted') expect(step.codeExecutions![0].output).toBe('42');
+        if (outcome === 'failed') expect(step.codeExecutions![0].error).toBe('Calculation failed');
+        const focus = store.getState().focusedId;
+        act(() => { window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: {
+            nodeId: step.id, execution: step.codeExecutions![0],
+        } })); });
+        await waitFor(() => expect(screen.getByTestId('tool-activity-panel')).toHaveAttribute('data-code-calls', step.codeExecutions![0].id));
+        expect(screen.queryByTestId('explanation-panel')).toBeNull();
+        expect(store.getState().focusedId).toEqual(focus);
+        fireEvent.click(screen.getByRole('button', { name: 'Close tool activity' }));
+        expect(screen.queryByTestId('tool-activity-panel')).toBeNull();
+    });
+
+    it.each(['chart', 'answer', 'long_response'] as const)('opens chart-step explanations above the composer without replacing the selected %s', target => {
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addChart({ id: 'original-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
+            store.dispatch(dfActions.addChart({ id: 'other-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
+                content: 'Existing answer', createdAt: 1, sourceChartId: 'original-chart',
+                ...(target === 'long_response' ? { presentation: 'long_response' as const } : {}) }));
+            store.dispatch(dfActions.setFocused(target === 'chart'
+                ? { type: 'chart', chartId: 'original-chart' } : { type: 'text', textId: 'answer' }));
+        });
+        const focus = store.getState().focusedId;
+        const canvas = dfSelectors.selectCanvasTarget(store.getState());
+        const openExplanation = () => act(() => {
+            window.dispatchEvent(new CustomEvent('df-view-explanation', { detail: {
+                content: 'Compare storage accounts', sourceTableId: 'orders', timestamps: [123],
+            } }));
+        });
+        openExplanation();
+        expect(screen.getByTestId('explanation-panel').textContent).toBe('Compare storage accounts');
+        expect(screen.queryByTestId('tool-activity-panel')).toBeNull();
+        expect(store.getState().focusedId).toEqual(focus);
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual(canvas);
+        fireEvent.click(screen.getByRole('button', { name: 'Close explanation' }));
+        expect(screen.queryByText('Compare storage accounts')).toBeNull();
+        expect(store.getState().focusedId).toEqual(focus);
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual(canvas);
+        openExplanation();
+        act(() => store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'other-chart' })));
+        expect(screen.queryByText('Compare storage accounts')).toBeNull();
+    });
+
+    it('keeps only the selected execution in the panel, refreshes it, and dismisses on navigation', async () => {
+        const { store } = mountTask();
+        const calls = [
+            { id: 'first-call', tool: 'execute_python_script', purpose: 'First check', code: 'print(1)', status: 'running' as const },
+            { id: 'second-call', tool: 'execute_python_script', purpose: 'Second check', code: 'print(2)', status: 'completed' as const },
+        ];
+        act(() => store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'activity-owner', displayId: 'Activity', textKind: 'explain',
+            content: 'Response stays separate', parentNodeId: 'conversation-root:test', createdAt: 1, codeExecutions: calls })));
+        const focus = store.getState().focusedId;
+        act(() => { window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: { nodeId: 'activity-owner', execution: calls[0] } })); });
+        expect(screen.getByTestId('tool-activity-panel')).toHaveAttribute('data-code-calls', 'first-call');
+        expect(screen.getByTestId('tool-activity-panel').textContent).not.toContain('second-call');
+        expect(screen.getByTestId('tool-activity-panel').textContent).not.toContain('Response stays separate');
+        expect(store.getState().focusedId).toEqual(focus);
+        act(() => store.dispatch(dfActions.updateTextTurn({ id: 'activity-owner', codeExecutions: [
+            { ...calls[0], status: 'completed', output: 'Fresh result' }, calls[1],
+        ] })));
+        expect(screen.getByTestId('tool-activity-panel').textContent).toContain('Fresh result');
+        act(() => { window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: { nodeId: 'activity-owner', execution: calls[1] } })); });
+        expect(screen.getByTestId('tool-activity-panel')).toHaveAttribute('data-code-calls', 'second-call');
+        expect(screen.getByTestId('tool-activity-panel').textContent).not.toContain('Fresh result');
+        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: 'activity-owner' })));
+        expect(screen.queryByTestId('tool-activity-panel')).toBeNull();
+    });
+
+    it('correlates repeated Python calls by ID through out-of-order results and save/load', async () => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'first', code: 'print(1)', purpose: 'Inspect first' } as any;
+            yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'second', code: 'print(2)', purpose: 'Inspect second' } as any;
+            yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'unknown', status: 'ok', stdout: 'Wrong call' } as any;
+            expect(store.getState().textTurns.map(turn => turn.codeExecutions?.[0].status)).toEqual(['running', 'running']);
+            yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'second', status: 'error', stdout: 'second output', error: 'second failed' } as any;
+            expect(store.getState().textTurns.map(turn => turn.codeExecutions?.[0].status)).toEqual(['running', 'failed']);
+            yield { type: 'context_info', rules_injected: ['Additional context'] } as any;
+            yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'first', status: 'ok', stdout: 'first output' } as any;
+            yield { type: 'completion', content: { summary: 'Finished both calls.' } } as any;
+        });
+        const { store } = mountTask({ text: 'Run both checks', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Finished both calls.'));
+        const turns = store.getState().textTurns;
+        expect(turns[0].codeExecutions![0]).toMatchObject({ code: 'print(1)', output: 'first output', status: 'completed' });
+        expect(turns[1].codeExecutions![0]).toMatchObject({ code: 'print(2)', output: 'second output', status: 'failed' });
+        expect(turns[0].progressSteps![0]).toMatchObject({ toolCallId: 'first', status: 'completed', executionId: turns[0].codeExecutions![0].id });
+        expect(turns[1].progressSteps![0]).toMatchObject({ toolCallId: 'second', status: 'failed', executionId: turns[1].codeExecutions![0].id });
+        expect(turns[0].progressSteps![0].id).not.toBe(turns[1].progressSteps![0].id);
+        expect(turns[2].progressSteps!.filter(step => step.kind === 'tool')).toMatchObject([
+            { toolCallId: 'first', status: 'completed' }, { toolCallId: 'second', status: 'failed' },
+        ]);
+        const restored = dataFormulatorReducer(undefined, dfActions.loadState(JSON.parse(JSON.stringify(store.getState()))));
+        expect(restored.textTurns.map(turn => turn.progressSteps)).toEqual(turns.map(turn => turn.progressSteps));
+    });
+
+    it('does not guess which concurrent ID-less call an uncorrelated result belongs to', async () => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', code: 'print(1)' } as any;
+            yield { type: 'tool_start', tool: 'execute_python_script', code: 'print(2)' } as any;
+            yield { type: 'tool_result', tool: 'execute_python_script', status: 'ok', stdout: 'Ambiguous output' } as any;
+            yield { type: 'completion', content: { summary: 'Stream ended.' } } as any;
+        });
+        const { store } = mountTask({ text: 'Run legacy checks', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Stream ended.'));
+        expect(store.getState().textTurns.slice(0, 2).map(turn => turn.progressSteps![0].status)).toEqual(['interrupted', 'interrupted']);
+        expect(store.getState().textTurns.slice(0, 2).map(turn => turn.codeExecutions![0].output)).toEqual([undefined, undefined]);
+    });
+
+    it('preserves progress across a clarification without mixing it into the resumed stage', async () => {
+        const trajectory = [{ role: 'user', content: 'Choose a metric' }];
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'inspect_source_data', tool_call_id: 'before-pause' } as any;
+            yield { type: 'tool_result', tool: 'inspect_source_data', tool_call_id: 'before-pause', status: 'ok' } as any;
+            yield { type: 'clarify', questions: [{ text: 'Which metric?', options: ['Revenue'] }], trajectory } as any;
+        });
+        const { store } = mountTask({ text: 'Choose a metric', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns[0]?.textKind).toBe('clarify'));
+        expect(store.getState().textTurns[0].progressSteps).toMatchObject([{ toolCallId: 'before-pause', status: 'completed' }]);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'inspect_source_data', tool_call_id: 'after-pause' } as any;
+            yield { type: 'tool_result', tool: 'inspect_source_data', tool_call_id: 'after-pause', status: 'ok' } as any;
+            yield { type: 'completion', content: { summary: 'Revenue inspected.' } } as any;
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Submit clarification' }));
+        await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Revenue inspected.'));
+        expect(requestBody(1).trajectory).toEqual(trajectory);
+        expect(store.getState().textTurns[0].progressSteps).toMatchObject([{ toolCallId: 'before-pause', status: 'completed' }]);
+        expect(store.getState().textTurns[1].progressSteps).toMatchObject([{ toolCallId: 'after-pause', status: 'completed' }]);
+        expect(store.getState().textTurns[1].progressSteps).toHaveLength(1);
     });
 
     it('marks a command interrupted if its stream ends before a result', async () => {

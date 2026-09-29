@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 """
-Single source of truth for per-agent LLM call configuration.
+Single source of truth for per-agent execution and LLM call configuration.
 
 Edit values here to tune latency vs. quality for each agent.
 
@@ -32,9 +32,50 @@ because the client is invoked with ``drop_params=True``.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from math import isfinite
 from typing import Literal
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high"]
+
+
+@dataclass(frozen=True)
+class AnalystExecutionConfig:
+    """Provider retry configuration with legacy execution-count settings.
+
+    Action, tool-round, and outer-iteration settings are retained for caller
+    compatibility but no longer limit execution. Provider retries remain bounded.
+    """
+
+    max_actions: int = 10
+    max_tool_rounds_per_action: int = 12
+    empty_response_retries: int = 2
+    empty_response_backoff_seconds: float = 3.0
+    stream_open_retries: int = 2
+    stream_open_backoff_seconds: float = 1.0
+    outer_iteration_multiplier: int = 3
+    min_outer_iterations: int = 12
+
+    def __post_init__(self) -> None:
+        for name in ("max_actions", "max_tool_rounds_per_action", "outer_iteration_multiplier", "min_outer_iterations"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in ("empty_response_retries", "stream_open_retries"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        for name in ("empty_response_backoff_seconds", "stream_open_backoff_seconds"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be a finite non-negative number")
+
+    @property
+    def max_outer_iterations(self) -> int:
+        return max(self.max_actions * self.outer_iteration_multiplier, self.min_outer_iterations)
+
+
+ANALYST_EXECUTION_DEFAULTS = AnalystExecutionConfig()
 
 # ---------------------------------------------------------------------------
 # Per-agent reasoning effort

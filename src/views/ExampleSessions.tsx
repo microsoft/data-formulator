@@ -154,7 +154,9 @@ export const ExampleSessionCard: React.FC<{
         >
             <Box
                 sx={{
-                    width: 72,
+                    height: 56,
+                    alignSelf: 'center',
+                    ml: 0.75,
                     flexShrink: 0,
                     overflow: 'hidden',
                 }}
@@ -164,16 +166,16 @@ export const ExampleSessionCard: React.FC<{
                     src={session.previewImage}
                     alt={session.title}
                     sx={{
-                        width: '100%',
+                        width: 'auto',
                         height: '100%',
-                        objectFit: 'cover',
+                        objectFit: 'contain',
                         display: 'block',
                     }}
                 />
             </Box>
 
             <Box sx={{ flex: 1, minWidth: 0, p: 1.5 }}>
-                <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                <Typography variant="body2" fontWeight={400} noWrap sx={{ color: 'text.primary' }}>
                     {session.live && <StreamIcon sx={{ fontSize: textVar.xxs, color: 'success.main', mr: 0.5 }} />}
                     {session.title}
                 </Typography>

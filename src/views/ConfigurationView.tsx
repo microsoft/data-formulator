@@ -24,6 +24,7 @@ type ConnectionSettings = { credential_ref: string; endpoint?: string; model?: s
     auth_mode?: string; managed_identity_client_id?: string; type?: string; display_name?: string; params?: Record<string, string> };
 type Overrides = { models?: Record<string, Entry>; connectors?: Record<string, Entry>; workflows?: Record<string, Entry>;
     app_name?: string; app_tagline?: string;
+    terminal_mode?: 'off' | 'ask' | 'auto';
     disable_user_connectors?: boolean;
     disable_user_models?: boolean;
     default_model?: string; limits?: Record<string, number>; allowed_api_bases?: string[];
@@ -31,6 +32,7 @@ type Overrides = { models?: Record<string, Entry>; connectors?: Record<string, E
 type CatalogItem = { id: string; model?: string; endpoint?: string; display_name?: string; description?: string; name?: string; content?: string; source?: string; type?: string;
     params?: Record<string, string>; definition?: Record<string, string> };
 type Snapshot = { version?: number; revision: number; overrides: Overrides; catalogs: Record<'models' | 'connectors' | 'workflows', CatalogItem[]>;
+    terminal?: { available: boolean; mode: 'off' | 'ask' | 'auto'; locked: boolean };
     user_connectors?: { disabled: boolean; locked: boolean };
     user_models?: { disabled: boolean; locked: boolean };
     loader_types?: React.ComponentProps<typeof ConnectorSetupForm>['loaderTypes'];

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import data_formulator.analyst.agent as agent_module
+from data_formulator.agent_config import AnalystExecutionConfig
 from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.skills import build_registry
 
@@ -32,21 +33,38 @@ class _Log:
         pass
 
 
-def _run(streams, *, max_tool_rounds=6):
+def _run(streams, *, max_tool_rounds=12, retries=2, backoff=0, include_progress=False):
     client = _Client(streams)
     agent = AnalystAgent(client=client, workspace=SimpleNamespace(user_home=None),
-                         skill_registry=build_registry(), identity_id=None)
-    agent._loaded_skills = {"core"}
+                         skill_registry=build_registry(), identity_id=None,
+                         execution_config=AnalystExecutionConfig(
+                             max_tool_rounds_per_action=max_tool_rounds,
+                             empty_response_retries=retries, empty_response_backoff_seconds=backoff))
+    agent._loaded_skills = {"meta"}
     agent._run_payload = {}
     messages: list[dict] = []
-    events = list(agent._tool_loop(messages, max_tool_rounds=max_tool_rounds, max_json_retries=1, json_retries=0,
+    events = list(agent._tool_loop(messages,
                                    llm_calls_in_cycle=0, rlog=_Log(), input_tables=[], outer_iteration=0))
-    return client, [event for event in events if event.get("type") == "agent_action"], messages
+    return client, events if include_progress else [event for event in events if event.get("type") == "agent_action"], messages
 
 
-@pytest.fixture(autouse=True)
-def _no_backoff(monkeypatch):
-    monkeypatch.setattr(agent_module, "_EMPTY_RESPONSE_BACKOFF_SECONDS", 0)
+def test_repeated_tool_progress_events_preserve_call_identity(monkeypatch):
+    monkeypatch.setattr(AnalystAgent, "_run_explore_code", lambda *args: {"status": "ok", "stdout": "done"})
+    chunk = _chunk()
+    chunk.choices[0].delta.tool_calls = [
+        SimpleNamespace(index=index, id=call_id, type="function", function=SimpleNamespace(
+            name="execute_python_script", arguments='{"code": "print(1)"}'))
+        for index, call_id in enumerate(["python-first", "python-second"])
+    ]
+    _, events, _ = _run([
+        [chunk, _chunk(finish_reason="tool_calls")],
+        [_chunk("Done."), _chunk(finish_reason="stop")],
+    ], include_progress=True)
+    assert [(event["type"], event["tool_call_id"]) for event in events
+            if event["type"] in {"tool_start", "tool_result"}] == [
+        ("tool_start", "python-first"), ("tool_result", "python-first"),
+        ("tool_start", "python-second"), ("tool_result", "python-second"),
+    ]
 
 
 def test_empty_stream_is_retried_before_final_text():
@@ -64,14 +82,34 @@ def test_repeated_empty_streams_surface_an_llm_error():
     assert messages == []
 
 
-@pytest.mark.parametrize("max_tool_rounds", [1, 2])
-def test_empty_stream_at_round_limit_surfaces_error_without_unused_backoff(monkeypatch, max_tool_rounds):
+@pytest.mark.parametrize("retries", [0, 1])
+def test_empty_stream_at_retry_limit_surfaces_error_without_unused_backoff(monkeypatch, retries):
     delays = []
     monkeypatch.setattr(agent_module.time, "sleep", delays.append)
     empty = [_chunk(finish_reason="stop")]
-    client, actions, messages = _run([empty] * max_tool_rounds, max_tool_rounds=max_tool_rounds)
-    assert client.calls == max_tool_rounds
+    client, actions, messages = _run([empty] * (retries + 1), retries=retries)
+    assert client.calls == retries + 1
     assert actions[-1]["reason"] == "llm_error"
     assert "empty response" in actions[-1]["error_message"]
-    assert len(delays) == max_tool_rounds - 1
+    assert len(delays) == retries
     assert messages == []
+
+
+def test_configured_retry_count_and_backoff(monkeypatch):
+    delays = []
+    monkeypatch.setattr(agent_module.time, "sleep", delays.append)
+    empty = [_chunk(finish_reason="stop")]
+    client, actions, messages = _run([empty, empty], retries=1, backoff=0.5)
+    assert client.calls == 2
+    assert actions[-1]["reason"] == "llm_error"
+    assert delays == [0.5]
+    assert messages == []
+
+
+def test_empty_response_retries_can_be_disabled(monkeypatch):
+    delays = []
+    monkeypatch.setattr(agent_module.time, "sleep", delays.append)
+    client, actions, _ = _run([[_chunk(finish_reason="stop")]], retries=0)
+    assert client.calls == 1
+    assert actions[-1]["reason"] == "llm_error"
+    assert delays == []

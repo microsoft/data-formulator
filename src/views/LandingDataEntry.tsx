@@ -7,6 +7,7 @@ import AddIcon from '@mui/icons-material/Add';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { useTranslation } from 'react-i18next';
 import { AgentChatInput } from './AgentChatInput';
+import { TerminalAccessButton } from '../components/TerminalApprovalDialog';
 import { buildDataLoadingQuickActions, buildDataLoadingSuggestions } from './dataLoadingSuggestions';
 import { ConnectorInstance } from '../components/ComponentType';
 import { apiRequest } from '../app/apiClient';
@@ -68,6 +69,7 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         </Box>
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1 }}>{error}</Alert>}
         <AgentChatInput value={input} onChange={setInput} images={images} onImagesChange={setImages}
+            leadingSlot={<TerminalAccessButton />}
             onSend={() => submit(input, images, attachments)} disabled={disabled} layout="stacked" minRows={4}
             attachments={attachments} onAttachmentsChange={setAttachments}
             onNonImageFile={async file => {

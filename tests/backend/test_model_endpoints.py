@@ -33,6 +33,37 @@ def connection_api(monkeypatch, tmp_path):
     return app.test_client(), identity, stored
 
 
+@pytest.mark.parametrize("api_base", sorted(model_endpoints._COPILOT_BASES))
+def test_copilot_managed_endpoint_works_with_custom_url_allowlist(connection_api, monkeypatch, api_base):
+    from data_formulator.routes.agents import get_client
+
+    _, identity, stored = connection_api
+    monkeypatch.setenv("DF_ALLOWED_API_BASES", "https://api.openai.com/*")
+    stored[(identity[0], model_endpoints._COPILOT_CONNECTION_KEY)] = {
+        "id": "connected", "access_token": "private-oauth", "api_key": "private-copilot",
+        "api_base": api_base, "expires_at": model_endpoints.time.time() + 3600,
+        "model_api_types": {"test-model": "responses"},
+    }
+    client_constructor = Mock()
+    monkeypatch.setattr("data_formulator.routes.agents.Client", client_constructor)
+    config = {"endpoint": "github_copilot", "connection_id": "github_copilot", "model": "test-model"}
+
+    assert get_client(config) is client_constructor.return_value
+    assert client_constructor.call_args.args[2:4] == ("private-copilot", api_base)
+    assert client_constructor.call_args.kwargs["api_type"] == "responses"
+    assert "api_base" not in config
+
+    client_constructor.reset_mock()
+    with pytest.raises(model_endpoints.AppError, match="Invalid model connection configuration"):
+        get_client({**config, "api_base": "https://api.openai.com/v1"})
+    with pytest.raises(model_endpoints.AppError, match="allowlist"):
+        get_client({**config, "api_base": "http://169.254.169.254/latest/meta-data/"})
+    stored[(identity[0], model_endpoints._COPILOT_CONNECTION_KEY)]["api_base"] = "https://api.githubcopilot.com.attacker.invalid"
+    with pytest.raises(model_endpoints.AppError, match="Invalid GitHub Copilot API host"):
+        get_client(config)
+    client_constructor.assert_not_called()
+
+
 def test_kusto_cluster_discovery_uses_explicit_subscription(connection_api, monkeypatch):
     client, _, _ = connection_api
     subscription = "00000000-0000-0000-0000-000000000001"

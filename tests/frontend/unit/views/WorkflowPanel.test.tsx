@@ -3,7 +3,7 @@ import { EditorView } from '@uiw/react-codemirror';
 import 'prismjs';
 import '@testing-library/jest-dom/vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { Provider } from 'react-redux';
+import { Provider, useSelector } from 'react-redux';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ThemeProvider, createTheme } from '@mui/material';
@@ -710,7 +710,7 @@ describe('Workflow session publication', () => {
             expect(streamRequest).not.toHaveBeenCalled();
         }
         fireEvent.click(screen.getByRole('button', { name: 'Run workflow' }));
-        expect(await screen.findByRole('dialog', { name: 'Workflow setup' })).toBeInTheDocument();
+        expect(await screen.findByRole('dialog', { name: /^Run workflow:/ })).toBeInTheDocument();
         expect(screen.getByLabelText('Period')).toHaveValue('Q1');
         expect(streamRequest).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Run workflow' }));
@@ -868,6 +868,42 @@ describe('Workflow session publication', () => {
         expect(JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/save')![1]!.body as string).content_hash).toBeUndefined();
     });
 
+    it.each([false, true])('shows example workflow cards before user workflows and opens setup (composed: %s)', async composed => {
+        vi.mocked(apiRequest).mockResolvedValue({ data: { items: [
+            { path: 'mine.yaml', name: 'My review', origin: 'user', overview: 'My saved analysis' },
+            { path: 'demo/prices.yaml', name: 'Price review', origin: 'demo', overview: 'Compare prices' },
+        ], runs: [] } });
+        render(<Provider store={store}><WorkflowPanel presentation="landing" onCreateSession={vi.fn()}
+            renderLanding={composed ? ({ examples, saved, toolbar }) => <>
+                <section aria-label="Examples">{examples}</section>
+                <section aria-label="Saved library">{toolbar}{saved}</section>
+            </> : undefined} /></Provider>);
+        const demo = await screen.findByRole('button', { name: 'Run Price review' });
+        const examples = screen.getByRole('region', { name: 'Example workflows' });
+        const user = screen.getByRole('region', { name: 'Your workflows' });
+        expect(examples.compareDocumentPosition(user) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(examples).toHaveTextContent('Compare prices');
+        expect(within(user).getByRole('article')).toHaveTextContent('My review');
+        expect(within(examples).getByRole('article').querySelector('[data-workflow-gears="idle"]')).toBeInTheDocument();
+        expect(within(user).getByRole('article').querySelector('[data-workflow-gears="idle"]')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Example workflows' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Customize Price review' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Edit My review' })).toBeNull();
+        expect(within(examples).getByRole('article')).toContainElement(demo);
+        expect(demo).toHaveTextContent('Compare prices');
+        expect(within(demo).getByTestId('PlayArrowIcon')).toBeInTheDocument();
+        expect(within(examples).getAllByRole('button')).toHaveLength(1);
+        expect(within(user).getByRole('button', { name: 'Delete mine.yaml' })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'New workflow' })).toHaveLength(1);
+        if (composed) expect(within(screen.getByRole('region', { name: 'Saved library' })).getByRole('button', { name: 'New workflow' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Delete demo/prices.yaml' })).toBeNull();
+        fireEvent.click(demo);
+        const setup = await screen.findByRole('dialog', { name: 'Run workflow: Price review' });
+        expect(within(setup).getByRole('heading', { name: 'Run workflow: Price review' })).toBeInTheDocument();
+        expect(within(setup).getAllByText('Price review', { exact: true })).toHaveLength(1);
+        expect(streamRequest).not.toHaveBeenCalled();
+    });
+
     it('runs a server demo by its namespaced path in the current session', async () => {
         store.dispatch(dfActions.setDataSourceSidebarOpen(true));
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
@@ -911,7 +947,7 @@ describe('Workflow session publication', () => {
         });
         render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
         fireEvent.click(await screen.findByRole('button', { name: 'Run Setup review' }));
-        expect(screen.getByRole('dialog', { name: 'Workflow setup' })).toBeTruthy();
+        expect(screen.getByRole('dialog', { name: /^Run workflow:/ })).toBeTruthy();
         expect(streamRequest).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(streamRequest).not.toHaveBeenCalled();
@@ -935,7 +971,37 @@ describe('Workflow session publication', () => {
         });
     });
 
-    it.each([true, false])('preserves setup until a new workspace is ready (existing workspace: %s)', async hasWorkspace => {
+    it('starts a landing workflow when creating a session unmounts the library', async () => {
+        store.dispatch(dfActions.setActiveWorkspace(null));
+        store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
+        store.dispatch(dfActions.selectModel('test-model'));
+        vi.mocked(apiRequest).mockResolvedValue({ data: { items: [{ path: 'prices.yaml', name: 'Prices' }], runs: [] } });
+        vi.mocked(streamRequest).mockImplementation(async function* () {
+            yield { type: 'workflow_state', run: { ...run(), status: 'completed', outputs: [] } } as any;
+        });
+        const HomeLibrary = () => {
+            const inSession = useSelector(dfSelectors.selectInSession);
+            return inSession ? <div>Session opened</div> : <WorkflowPanel presentation="landing" onCreateSession={displayName => {
+                store.dispatch(dfActions.resetForNewWorkspace({ id: 'landing-run', displayName }));
+            }} />;
+        };
+        render(<Provider store={store}><HomeLibrary /></Provider>);
+        fireEvent.click(await screen.findByRole('button', { name: 'Run Prices' }));
+        fireEvent.change(screen.getByLabelText('Additional instructions'), { target: { value: 'Keep the setup.' } });
+        fireEvent.click(screen.getByRole('button', { name: 'New session' }));
+        expect(await screen.findByText('Session opened')).toBeInTheDocument();
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(vi.mocked(streamRequest).mock.calls[0][1]!.body as string)).toMatchObject({
+            path: 'prices.yaml', setup: { parameters: {}, instructions: 'Keep the setup.' },
+        });
+    });
+
+    it.each([
+        { hasWorkspace: true, presentation: 'sidebar' as const },
+        { hasWorkspace: false, presentation: 'sidebar' as const },
+        { hasWorkspace: true, presentation: 'landing' as const },
+        { hasWorkspace: false, presentation: 'landing' as const },
+    ])('preserves setup until a new workspace is ready ($presentation, existing workspace: $hasWorkspace)', async ({ hasWorkspace, presentation }) => {
         if (!hasWorkspace) store.dispatch(dfActions.setActiveWorkspace(null));
         store.dispatch(dfActions.setDataSourceSidebarOpen(true));
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
@@ -945,7 +1011,7 @@ describe('Workflow session publication', () => {
             yield { type: 'workflow_state', run: { ...run(), status: 'completed', outputs: [] } } as any;
         });
         const createSession = vi.fn();
-        render(<Provider store={store}><WorkflowPanel onCreateSession={createSession} /></Provider>);
+        render(<Provider store={store}><WorkflowPanel presentation={presentation} onCreateSession={createSession} /></Provider>);
         fireEvent.click(await screen.findByRole('button', { name: 'Run Prices' }));
         expect(screen.queryByRole('button', { name: 'Current session' }) !== null).toBe(hasWorkspace);
         fireEvent.change(screen.getByLabelText('Additional instructions'), { target: { value: 'Compare the latest year.' } });

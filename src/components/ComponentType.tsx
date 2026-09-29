@@ -88,14 +88,26 @@ export interface ClarificationResponse {
 /** Legacy persisted value retained only for rendering historical sessions. */
 export type DelegateTarget = 'data_loading' | 'report_gen';
 
+export interface ProgressStep {
+    id: string;
+    kind: 'thought' | 'tool' | 'chart' | 'warning' | 'info';
+    label: string;
+    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    tool?: string;
+    toolCallId?: string;
+    executionId?: string;
+}
+
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
     role: 'prompt' | 'clarify' | 'instruction' | 'error' | 'explain' | 'delegate';
     plan?: string; // agent's reasoning / thought for this action
+    progressSteps?: ProgressStep[];
     content: string;
     displayContent?: string;
     executions?: TerminalExecution[];
+    codeExecutions?: CodeExecution[];
     /** Names of files / images the user attached with this prompt, surfaced as
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
@@ -186,6 +198,7 @@ export interface DraftNode {
         trigger: Trigger;
         status: DeriveStatus;
         runningPlan?: string; // live agent thought text while running
+        progressSteps?: ProgressStep[];
         code?: string;
         codeSignature?: string;
         outputVariable?: string;
@@ -206,17 +219,41 @@ export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode;
  * Deleting either uses the same generic artifact path. Delegate is not a turn;
  * a hand-off is an agent action handled directly.
  */
+export interface TerminalFilesystemPolicy {
+    allowWrite: string[];
+    configured: boolean;
+    requested: string[];
+    skipped: string[];
+}
+
 export interface TerminalExecution {
     id: string;
+    createdAt?: number;
     argv: string[];
     cwd: string;
     purpose: string;
+    writePaths?: string[];
+    dangerouslyDisableSandbox?: boolean;
+    sandboxDisablingReason?: string;
+    sandboxFilesystem?: TerminalFilesystemPolicy;
     status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
     commandText?: string;
     result?: Record<string, unknown>;
 }
 
+export interface CodeExecution {
+    id: string;
+    createdAt?: number;
+    tool: string;
+    purpose: string;
+    code: string;
+    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    output?: string;
+    error?: string;
+}
+
 export interface TextTurn {
+    progressSteps?: ProgressStep[];
     workflowDefinition?: {
         content: string;
         definition: { name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
@@ -258,7 +295,8 @@ export interface TextTurn {
         planReviewPending?: boolean;
         planHistory?: { revision: number; reason: string; steps: NonNullable<TextTurn['workflow']>['steps'];
             checks: NonNullable<NonNullable<TextTurn['workflow']>['checks']> }[];
-        terminalRequest?: { id: string; argv: string[]; cwd: string; purpose: string; timeout_seconds: number };
+        terminalRequest?: { id: string; argv: string[]; cwd: string; purpose: string; timeout_seconds: number;
+            dangerouslyDisableSandbox?: boolean; sandboxDisablingReason?: string; sandboxFilesystem?: TerminalFilesystemPolicy };
         dataOperation?: DataOperation;
         interactionId?: string;
         questions?: ClarificationQuestion[];
@@ -273,6 +311,7 @@ export interface TextTurn {
         log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string> }[];
     };
     executions?: TerminalExecution[];
+    codeExecutions?: CodeExecution[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */

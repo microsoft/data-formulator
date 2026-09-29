@@ -12,6 +12,40 @@ def configuration_home(tmp_path, monkeypatch):
     monkeypatch.setenv('DATA_FORMULATOR_HOME', str(tmp_path))
     monkeypatch.delenv('DF_MANAGED', raising=False)
     monkeypatch.delenv('DISABLE_DATABASE', raising=False)
+    monkeypatch.delenv('DF_TERMINAL_MODE', raising=False)
+
+
+@pytest.mark.parametrize('mode', ['off', 'ask', 'auto'])
+def test_terminal_policy_persistence_and_deployment_ceiling(monkeypatch, mode):
+    from data_formulator import configuration
+
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
+    monkeypatch.setattr(configuration, 'user_connectors_disabled', lambda: False)
+    assert configuration.terminal_mode() == 'ask'
+    save_configuration({'terminal_mode': mode}, 0)
+    assert configuration.terminal_mode() == mode
+    monkeypatch.setenv('DF_TERMINAL_MODE', 'off')
+    assert configuration.terminal_mode() == 'off'
+    monkeypatch.setenv('DF_TERMINAL_MODE', 'auto')
+    assert configuration.terminal_mode() == 'auto'
+    monkeypatch.setenv('DF_TERMINAL_MODE', 'invalid')
+    assert configuration.terminal_mode() == 'off'
+    monkeypatch.setenv('DF_TERMINAL_MODE', 'auto')
+    monkeypatch.setattr(configuration.sys, 'platform', 'win32')
+    assert configuration.terminal_mode() == 'off'
+    monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: False)
+    assert configuration.terminal_mode() == 'off'
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr(configuration, 'user_connectors_disabled', lambda: True)
+    assert configuration.terminal_mode() == 'off'
+
+
+@pytest.mark.parametrize('mode', [None, True, 1, '', 'allow', {}, []])
+def test_terminal_policy_rejects_invalid_values(mode):
+    with pytest.raises(ValueError, match='Terminal mode'):
+        save_configuration({'terminal_mode': mode}, 0)
 
 
 @pytest.mark.parametrize('principal_id,login_name,allowlist,managed,authenticated,allowed', [
@@ -624,6 +658,32 @@ def test_workflow_builtin_references_and_customized_defaults(tmp_path):
     assert instances.WorkflowStore(tmp_path / 'user').read(identifier) == content
 
 
+@pytest.mark.parametrize('options', [
+    {'enabled': False},
+    {'enabled': False, 'file': 'builtin:retired-example.yaml'},
+    {'content': 'version: 1\nname: Customized\noverview: Review data\ndeliverables: [Report]\nsteps:\n  - id: review\n    instructions: Review data\n'},
+])
+def test_retired_builtin_workflow_does_not_block_configuration_save(tmp_path, config_client, options):
+    identifier = 'demo/retired-example.yaml'
+    document = {'version': 1, 'revision': 4, 'overrides': {'workflows': {identifier: options}}}
+    (tmp_path / 'configuration.json').write_text(json.dumps(document))
+    assert config_client.get('/api/configurations').get_json()['status'] == 'success'
+    response = config_client.put('/api/configurations', headers={'X-DF-Configuration': '1'}, json={
+        'revision': 4, 'overrides': {**document['overrides'], 'app_name': 'Updated app'},
+    })
+    assert response.get_json()['status'] == 'success', response.get_json()
+    saved = read_configuration()
+    assert saved['revision'] == 5
+    assert saved['overrides']['app_name'] == 'Updated app'
+    retained = saved['overrides']['workflows'][identifier]
+    if 'content' in options:
+        from data_formulator.configuration import workflow_content
+        assert workflow_content(identifier, retained) == options['content']
+    else:
+        assert retained == options
+    assert save_configuration(saved['overrides'], 5)['overrides'] == saved['overrides']
+
+
 def test_workflow_legacy_content_migrates_only_on_save(tmp_path):
     from data_formulator.workflows.instances import WorkflowStore
     content = 'version: 1\nname: Legacy\noverview: Review data\ndeliverables: [Report]\nsteps:\n  - id: review\n    instructions: Review data\n'
@@ -708,6 +768,69 @@ def test_configuration_api_save_conflict_and_environment_lock(config_client, mon
     monkeypatch.setenv('MAX_DISPLAY_ROWS', '50')
     body['revision'] = 1
     assert config_client.put('/api/configurations', json=body, headers=headers).get_json()['status'] == 'error'
+    assert read_configuration()['revision'] == 1
+
+
+@pytest.mark.parametrize('mode', ['off', 'ask', 'auto'])
+def test_local_terminal_settings_without_administration(config_client, monkeypatch, mode):
+    from data_formulator.routes import configurations
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'local:owner')
+    monkeypatch.setattr(configurations, 'can_configure', lambda: False)
+    saved = save_configuration({'app_name': 'Keep this', 'terminal_mode': 'off'}, 0)
+    assert config_client.get('/api/configurations').status_code == 403
+    policy = config_client.get('/api/configurations/terminal').get_json()['data']
+    filesystem = policy.pop('sandboxFilesystem')
+    assert filesystem['configured'] is False
+    assert '~/.azure' in filesystem['requested']
+    assert policy == {'mode': 'off', 'available': True, 'locked': False, 'revision': saved['revision']}
+    response = config_client.put('/api/configurations/terminal', json={'mode': mode, 'revision': policy['revision']},
+        headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'})
+    assert response.get_json()['data']['mode'] == mode
+    assert read_configuration()['overrides'] == {'app_name': 'Keep this', 'terminal_mode': mode}
+    assert config_client.put('/api/configurations/terminal', json={'mode': mode, 'revision': policy['revision']},
+        headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'}).status_code == 409
+
+
+@pytest.mark.parametrize('case', ['hosted', 'identity', 'origin', 'no-origin', 'header', 'cross-site', 'remote', 'host', 'locked', 'disabled', 'extra-field'])
+def test_local_terminal_settings_reject_untrusted_changes(config_client, monkeypatch, case):
+    from data_formulator.routes import configurations
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: case != 'hosted')
+    monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin' if case == 'identity' else 'local:owner')
+    if case == 'locked':
+        monkeypatch.setenv('DF_TERMINAL_MODE', 'off')
+    if case == 'disabled':
+        monkeypatch.setenv('DISABLE_DATA_CONNECTORS', 'true')
+    headers = {'Origin': 'https://other.example' if case == 'origin' else 'http://localhost', 'X-DF-Configuration': '1'}
+    if case == 'no-origin':
+        headers.pop('Origin')
+    if case == 'header':
+        headers.pop('X-DF-Configuration')
+    if case == 'cross-site':
+        headers['Sec-Fetch-Site'] = 'cross-site'
+    body = {'revision': 0, 'mode': 'auto'}
+    if case == 'extra-field':
+        body['overrides'] = {'disable_user_connectors': False}
+    response = config_client.put('/api/configurations/terminal', json=body, headers=headers,
+        base_url='http://other.example' if case == 'host' else 'http://localhost',
+        environ_base={'REMOTE_ADDR': '203.0.113.1' if case == 'remote' else '127.0.0.1'})
+    assert response.get_json()['status'] == 'error'
+    assert read_configuration()['revision'] == 0
+
+
+def test_terminal_configuration_api_policy_and_environment_lock(config_client, monkeypatch):
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr('data_formulator.configuration.user_connectors_disabled', lambda: False)
+    initial = config_client.get('/api/configurations').get_json()['data']
+    assert initial['terminal'] == {'available': True, 'mode': 'ask', 'locked': False}
+    body = {'revision': 0, 'overrides': {'terminal_mode': 'auto'}}
+    assert config_client.put('/api/configurations', json=body).status_code == 403
+    saved = config_client.put('/api/configurations', json=body, headers={'X-DF-Configuration': '1'}).get_json()['data']
+    assert saved['terminal']['mode'] == 'auto'
+    monkeypatch.setenv('DF_TERMINAL_MODE', 'off')
+    assert config_client.get('/api/configurations').get_json()['data']['terminal'] == {'available': True, 'mode': 'off', 'locked': True}
+    body = {'revision': 1, 'overrides': {'terminal_mode': 'ask'}}
+    assert config_client.put('/api/configurations', json=body, headers={'X-DF-Configuration': '1'}).get_json()['status'] == 'error'
     assert read_configuration()['revision'] == 1
 
 

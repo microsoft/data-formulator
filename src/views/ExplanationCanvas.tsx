@@ -61,7 +61,7 @@ export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceT
                 <Box sx={{ flex: 1 }} />
             </Box>
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 2.5, fontSize: textVar.md, userSelect: 'text' }}>
-                <TerminalMessageContent content={content} executions={executions} variant="document" />
+                <TerminalMessageContent content={content} variant="document" />
             </Box>
         </Box>
     );

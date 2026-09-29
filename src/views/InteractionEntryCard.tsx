@@ -12,6 +12,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { AgentToyIcon, AgentToyVariant } from './AgentToyIcon';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import CodeIcon from '@mui/icons-material/Code';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -21,7 +22,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import WbIncandescentIcon from '@mui/icons-material/WbIncandescent';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import { InteractionEntry } from '../components/ComponentType';
+import { InteractionEntry, ProgressStep } from '../components/ComponentType';
 import { ShimmerText } from '../components/FunComponents';
 import { AgentIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
@@ -68,33 +69,30 @@ const MarkdownChartImage: React.FC<{ chartId: string; alt?: string }> = ({ chart
             sx={{ color: 'text.secondary' }}>{alt || chartId}</Box>;
 };
 
-/** Pick the icon component for a step line based on known prefixes. */
-export const getStepIconComponent = (line: string) => {
-    if (line.startsWith('✗')) return ErrorOutlineIcon;
-    if (line.startsWith('⚠')) return WarningAmberIcon;
-    if (line.startsWith('📋')) return InfoOutlinedIcon;
-    const stripped = line.startsWith('✓') ? line.slice(2) : line;
-    const lbl = stripped.toLowerCase();
-    if (lbl.startsWith('running code') || lbl.startsWith('运行')) return TerminalIcon;
-    if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return SearchIcon;
-    if (lbl.startsWith('searching') || lbl.startsWith('搜索')) return SearchIcon;
-    if (lbl.startsWith('creating chart') || lbl.startsWith('图表') || lbl.startsWith('生成图表')) return AutoGraphIcon;
+export const getStepIconComponent = (step: ProgressStep | string) => {
+    if (typeof step === 'string') return AutoAwesomeIcon;
+    if (step.status === 'failed') return ErrorOutlineIcon;
+    if (step.kind === 'warning') return WarningAmberIcon;
+    if (step.kind === 'info') return InfoOutlinedIcon;
+    if (step.kind === 'chart' || step.tool === 'visualize') return AutoGraphIcon;
+    if (step.tool === 'run_terminal') return TerminalIcon;
+    if (step.tool === 'execute_python_script' || step.tool === 'explore') return CodeIcon;
+    if (['inspect_source_data', 'inspect_chart', 'search_data_tables', 'search_knowledge'].includes(step.tool || '')) return SearchIcon;
     return AutoAwesomeIcon;
 };
 
 /** A single step line with 2-line clamp + click to expand. */
 const PlanStepItem: React.FC<{
-    step: string;
+    step: ProgressStep | string;
     showShimmer: boolean;
     trailing?: React.ReactNode;
 }> = ({ step, showShimmer, trailing }) => {
     const theme = useTheme();
     const [expanded, setExpanded] = useState(false);
-    const isChecked = step.startsWith('✓');
-    const isFailed = step.startsWith('✗');
-    const isWarning = step.startsWith('⚠');
-    const isInfo = step.startsWith('📋');
-    const rawLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
+    const isFailed = typeof step !== 'string' && step.status === 'failed';
+    const isWarning = typeof step !== 'string' && step.kind === 'warning';
+    const isInfo = typeof step !== 'string' && step.kind === 'info';
+    const rawLine = typeof step === 'string' ? step : step.label;
     // Trailing ellipsis marks the step still in flight; some labels ship their own.
     const displayLine = showShimmer && !/(\.\.\.|…)$/.test(rawLine.trim())
         ? `${rawLine}…`
@@ -142,27 +140,22 @@ const PlanStepItem: React.FC<{
  *  `activeLastStep` adds a shimmer animation to the last incomplete step (for streaming). 
  *  `filterCreatingChart` hides "creating chart..." lines (already shown as instruction text). */
 export const PlanStepsView: React.FC<{
-    steps: string[];
+    steps: (ProgressStep | string)[];
     activeLastStep?: boolean;
     filterCreatingChart?: boolean;
     /** Inline node appended after the text of the last (active) step — used for live timers. */
     trailing?: React.ReactNode;
 }> = ({ steps, activeLastStep = false, filterCreatingChart = false, trailing }) => {
     const filtered = filterCreatingChart
-        ? steps.filter(l => {
-            const stripped = l.startsWith('✓') ? l.slice(2) : l;
-            const lbl = stripped.trim().toLowerCase();
-            return !(lbl.startsWith('creating chart') || lbl.startsWith('图表'));
-        })
+        ? steps.filter(step => typeof step === 'string' || step.kind !== 'chart')
         : steps;
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {filtered.map((step, idx) => {
                 const isLast = idx === filtered.length - 1;
-                const isChecked = step.startsWith('✓');
-                const showShimmer = activeLastStep && isLast && !isChecked;
-                return <PlanStepItem key={idx} step={step} showShimmer={showShimmer} trailing={isLast ? trailing : undefined} />;
+                const showShimmer = activeLastStep && isLast && typeof step !== 'string' && step.status === 'running';
+                return <PlanStepItem key={typeof step === 'string' ? idx : step.id} step={step} showShimmer={showShimmer} trailing={isLast ? trailing : undefined} />;
             })}
         </Box>
     );
@@ -497,19 +490,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color = theme.palette.text.secondary;
         }
 
-        // Plan (thinking) lines: split, then drop the redundant "creating
-        // chart…" step (it just duplicates the instruction text). A plan whose
-        // ONLY content is that filtered step has nothing to show — so `hasPlan`
-        // is false and no thinking section / divider renders above the text.
         const planLinesVisible = (() => {
+            if (entry.progressSteps) return entry.progressSteps.filter(step => step.kind !== 'chart');
             if (!entry.plan || entry.plan === displayText) return [] as string[];
-            const raw = (entry.plan.includes('\x1E') ? entry.plan.split('\x1E') : entry.plan.split('\n'))
+            return (entry.plan.includes('\x1E') ? entry.plan.split('\x1E') : entry.plan.split('\n'))
                 .filter(l => l.trim());
-            return raw.filter(l => {
-                const stripped = l.startsWith('✓') ? l.slice(2) : l;
-                const lbl = stripped.trim().toLowerCase();
-                return !(lbl.startsWith('creating chart') || lbl.startsWith('图表'));
-            });
         })();
         const hasPlan = planLinesVisible.length > 0;
 

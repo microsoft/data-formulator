@@ -20,7 +20,7 @@
 
 import React, { FC, ReactNode, useEffect, useRef, useState } from 'react';
 import {
-    Box, Button, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
+    Box, Button, ButtonBase, CircularProgress, Collapse, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -29,6 +29,10 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
+import CodeIcon from '@mui/icons-material/Code';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
@@ -39,8 +43,8 @@ import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
 import { iconVar, textVar } from '../app/layout';
 import { DataOperationCard } from '../components/DataOperationCard';
 import type { DataOperation } from '../dataOperations/models';
-import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
-import type { TerminalExecution } from '../components/ComponentType';
+import { TerminalExecutionView, TerminalMessageContent } from '../components/TerminalApprovalDialog';
+import type { TerminalExecution, CodeExecution } from '../components/ComponentType';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -722,7 +726,6 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
 interface ExplanationPanelProps {
     /** The agent's plain-text answer (markdown) to display read-only. */
     content: string;
-    executions?: TerminalExecution[];
     /** Close: de-highlight the panel and switch focus to the previous chart. */
     onClose: () => void;
     /** Delete: remove this explanation block from the thread. */
@@ -736,7 +739,58 @@ interface ExplanationPanelProps {
  * but carries no inputs or actions — it's purely "here's what I said",
  * dismissible by the header's delete button or by focusing another item.
  */
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, executions, onClose, onDelete }) => {
+const StepToolCall: FC<{ execution: TerminalExecution | CodeExecution }> = ({ execution }) => {
+    const { t } = useTranslation();
+    const [copyFailed, setCopyFailed] = useState(false);
+    const isCode = 'code' in execution;
+    const purpose = execution.purpose || t(isCode ? 'tool.pythonCode' : 'terminal.command', {
+        defaultValue: isCode ? 'Python code' : 'Command',
+    });
+    const preSx = { m: 0, py: 0.75, fontFamily: 'var(--df-font-mono)', fontSize: textVar.sm, lineHeight: 1.6,
+        whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 240, overflow: 'auto' };
+    return <Box sx={{ minWidth: 0, pb: 1 }}>
+        <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.6, overflowWrap: 'anywhere' }}>{purpose}</Typography>
+        <Typography sx={{ fontSize: textVar.xs, lineHeight: 1.5, color: execution.status === 'failed' ? 'error.main' : 'text.secondary' }}>
+            {t(`terminal.status.${execution.status}`, { defaultValue: execution.status })}
+        </Typography>
+        {isCode ? <>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Tooltip title={t(copyFailed ? 'tool.copyFailed' : 'tool.copyCode', { defaultValue: copyFailed ? 'Copy failed' : 'Copy code' })}>
+                    <IconButton size="small" aria-label={t('tool.copyCode', { defaultValue: 'Copy code' })} onClick={async () => {
+                        try { await navigator.clipboard.writeText(execution.code); setCopyFailed(false); }
+                        catch { setCopyFailed(true); }
+                    }}><ContentCopyIcon sx={{ fontSize: iconVar.sm }} /></IconButton>
+                </Tooltip>
+            </Box>
+            <Box component="pre" sx={preSx}>{execution.code}</Box>
+            {execution.output && <Box component="pre" sx={{ ...preSx, borderTop: '1px solid', borderColor: 'divider' }}>{execution.output}</Box>}
+            {execution.error && <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.6, color: 'error.main',
+                whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{execution.error}</Typography>}
+        </> : <TerminalExecutionView execution={execution} detailsOnly />}
+    </Box>;
+};
+
+export const ToolActivityPanel: FC<{ execution: TerminalExecution | CodeExecution; onClose: () => void }> = ({ execution, onClose }) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const isCode = 'code' in execution;
+
+    return <AgentPauseShell
+        icon={isCode ? <CodeIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />
+            : <TerminalIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />}
+        accentColor={theme.palette.primary.main}
+        title={t(isCode ? 'tool.pythonCode' : 'terminal.command', { defaultValue: isCode ? 'Python code' : 'Command' })}
+        closeTooltip={t('chartRec.pauseClose')}
+        onClose={onClose}
+    >
+        <Box sx={{ maxHeight: 'clamp(120px, 32vh, 360px)', overflowY: 'auto',
+            pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
+            <StepToolCall key={execution.id} execution={execution} />
+        </Box>
+    </AgentPauseShell>;
+};
+
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
@@ -759,7 +813,7 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, execution
                 pb: '8px', pl: '20px', pr: '8px',
                 fontSize: textVar.sm,
             }}>
-                <TerminalMessageContent content={content} executions={executions} />
+                <TerminalMessageContent content={content} />
             </Box>
         </AgentPauseShell>
     );

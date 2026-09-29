@@ -1112,7 +1112,18 @@ class Workspace:
     def save_agent_data(
         self, df: pd.DataFrame, table_name: str, *, input_sources: list[dict],
         expected_content_hash: str | None = None, display_name: str | None = None,
+        acquisition: dict[str, str] | None = None,
     ) -> TableMetadata:
+        if acquisition is not None:
+            if (not isinstance(acquisition, dict)
+                    or set(acquisition) - {"source", "scope", "query", "limitations"}
+                    or any(not isinstance(acquisition.get(key), str) or not acquisition[key].strip()
+                           for key in ("source", "scope"))
+                    or any(not isinstance(value, str) or not value.strip() or len(value) > 8000
+                           for value in acquisition.values())):
+                raise ValueError("acquisition requires non-empty source and scope; optional query and limitations must be text under 8000 characters")
+            if not input_sources or any(source.get("kind") != "file" for source in input_sources):
+                raise ValueError("Acquired data must declare the actual acquired file inputs")
         safe_name = sanitize_table_name(table_name)
         if not table_name or safe_name != table_name:
             raise ValueError("table_name must be a valid workspace table identifier")
@@ -1132,8 +1143,10 @@ class Workspace:
             name=safe_name, source_type="data_loader", filename=filename, file_type="parquet",
             created_at=now, last_synced=now, content_hash=compute_dataframe_hash(df),
             file_size=len(content), row_count=len(df), columns=get_arrow_column_info(arrow_table),
-            original_name=display_name or safe_name, origin="agent", role="derived" if input_sources else "source",
+            original_name=display_name or safe_name, origin="agent",
+            role="source" if acquisition is not None or not input_sources else "derived",
             edit_policy="agent_editable", input_sources=input_sources,
+            import_options={"acquisition": {**acquisition, "acquired_at": now.isoformat()}} if acquisition is not None else None,
         )
 
         def commit(metadata: WorkspaceMetadata) -> None:

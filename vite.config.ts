@@ -44,6 +44,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api/configurations/terminal': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api/workflows': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: false,

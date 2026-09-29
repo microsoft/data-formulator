@@ -28,7 +28,7 @@ import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { extractErrorMessage } from '../app/errorHandler';
-import { Chart, ComputationInputSource, DictTable, Trigger, InteractionEntry, TextTurn, LoadedTableNode, createConversationRootId, isConversationRootId } from "../components/ComponentType";
+import { Chart, ComputationInputSource, DictTable, Trigger, InteractionEntry, TextTurn, LoadedTableNode, createConversationRootId, isConversationRootId, ProgressStep } from "../components/ComponentType";
 import { classifyInputSourceTransition, shouldShowInputSourceTransition } from '../app/agentInteractionPolicy';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
@@ -56,7 +56,7 @@ import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
 import { checkChartAvailability, generateChartSkeleton, getDataTable } from './ChartUtils';
-import { getConversationInputContext, getConversationSourceKey, getThreadLeadUpTurns, getThreadConversationIds, getThreadTriggers, isThreadLeafTable, resolveThreadParentTableId, orderThreadOutputs, resolveArtifactParentNodeId } from './threadProvenance';
+import { getConversationInputContext, getConversationSourceKey, getThreadLeadUpTurns, getThreadConversationIds, getThreadTriggers, isThreadLeafTable, resolveThreadParentTableId, orderThreadOutputs, resolveArtifactParentNodeId, getStepTerminalExecutions, getStepCodeExecutions } from './threadProvenance';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import AddIcon from '@mui/icons-material/Add';
@@ -65,6 +65,7 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import CodeIcon from '@mui/icons-material/Code';
 
 import { alpha } from '@mui/material/styles';
 
@@ -78,13 +79,13 @@ import { SourceTableShelf, SHELF_VISIBLE_LIMIT } from './SourceTableShelf';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { AgentToyIcon } from './AgentToyIcon';
 import ArticleIcon from '@mui/icons-material/Article';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import { TerminalExecutionView } from '../components/TerminalApprovalDialog';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -151,17 +152,79 @@ const LiveStatus: React.FC<{ startTime?: number; resetKey?: string }> = ({ start
  *  ThinkingBanner — rather than right-flushed in a separate column.
  *  The timer resets whenever the active step changes so it shows the time
  *  spent on the **current** action, not the cumulative wait. */
-export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number, active: boolean = true) => {
+const openToolActivity = (nodeId: string, execution: NonNullable<TextTurn['executions']>[number] | NonNullable<TextTurn['codeExecutions']>[number]) => {
+    window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: { nodeId, execution } }));
+};
+
+const ToolActivitySelectionContext = React.createContext<{ nodeId: string; executionId: string } | null>(null);
+
+const ToolActivityRow: React.FC<{ nodeId: string; label: string; executions: NonNullable<TextTurn['executions']>;
+    codeExecutions: NonNullable<TextTurn['codeExecutions']>; active?: boolean;
+    onSelect: (execution: NonNullable<TextTurn['executions']>[number] | NonNullable<TextTurn['codeExecutions']>[number]) => void
+}> = ({ nodeId, label, executions, codeExecutions, active = false, onSelect }) => {
+    const { t } = useTranslation();
+    const selection = React.useContext(ToolActivitySelectionContext);
+    const [expanded, setExpanded] = useState(selection?.nodeId === nodeId);
+    const calls = [...executions, ...codeExecutions].sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
+    return <Box data-tool-activity-row sx={{ width: '100%', minWidth: 0 }}>
+        <ButtonBase onClick={() => setExpanded(previous => !previous)} aria-expanded={expanded}
+        aria-label={t('dataThread.viewStepActivity', { defaultValue: 'View step tool calls' })}
+        title={label} sx={{ width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5,
+            py: 0.5, color: 'text.secondary', textAlign: 'left', '&:hover': { bgcolor: 'action.hover' },
+            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+        <ChevronRightIcon sx={{ width: 12, height: 12, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : undefined }} />
+        {active && !expanded && <CircularProgress size={10} color="inherit" sx={{ flexShrink: 0 }} />}
+        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xs, fontStyle: 'italic',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</Typography>
+        <Typography component="span" sx={{ flexShrink: 0, fontSize: textVar.xxs, color: 'text.disabled', whiteSpace: 'nowrap' }}>
+            {t('dataThread.toolCallCount', { count: calls.length, defaultValue: '{{count}} calls' })}
+        </Typography>
+        </ButtonBase>
+        <Collapse in={expanded} unmountOnExit>
+            <Box sx={{ pl: 0, minWidth: 0 }}>
+                {calls.map(execution => {
+                    const selected = selection?.nodeId === nodeId && selection.executionId === execution.id;
+                    const statusLabel = t(`terminal.status.${execution.status}`, { defaultValue: execution.status });
+                    const StatusIcon = execution.status === 'completed' ? CheckCircleOutlineIcon
+                        : execution.status === 'failed' || execution.status === 'rejected' ? ErrorOutlineIcon
+                        : execution.status === 'interrupted' ? PauseCircleOutlineIcon : HelpOutlineIcon;
+                    return <ButtonBase key={execution.id} aria-label={execution.purpose} aria-pressed={selected}
+                    title={execution.purpose} onClick={() => onSelect(execution)}
+                    sx={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: 0.5,
+                        pl: 0, pr: 0.5, borderRadius: 0.5, bgcolor: selected ? 'action.selected' : 'transparent',
+                        color: selected ? 'text.primary' : 'text.secondary', textAlign: 'left',
+                        '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                    {'code' in execution ? <CodeIcon sx={{ width: 12, height: 12, flexShrink: 0 }} />
+                        : <TerminalIcon sx={{ width: 12, height: 12, flexShrink: 0 }} />}
+                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, fontStyle: 'italic',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{execution.purpose}</Typography>
+                    <Tooltip title={statusLabel}>
+                        <Box component="span" role={execution.status === 'running' ? undefined : 'img'}
+                            aria-label={execution.status === 'running' ? undefined : statusLabel}
+                            sx={{ width: 14, height: 14, flexShrink: 0, display: 'flex', alignItems: 'center',
+                                justifyContent: 'center', color: 'text.secondary' }}>
+                            {execution.status === 'running'
+                                ? <CircularProgress size={10} color="inherit" aria-label={statusLabel} />
+                                : <StatusIcon sx={{ width: 12, height: 12 }} />}
+                        </Box>
+                    </Tooltip>
+                </ButtonBase>;
+                })}
+            </Box>
+        </Collapse>
+    </Box>;
+};
+
+export const ThinkingStepsBanner = (steps: (ProgressStep | string)[], sx?: SxProps, startTime?: number, active: boolean = true) => {
     const lastStep = steps.length > 0 ? steps[steps.length - 1] : '';
-    // While the run is live the latest step stays in progress even after its own
-    // tool returned — the agent is already working on whatever comes next.
-    const activeStep = active && lastStep.startsWith('✓') ? lastStep.slice(2) : lastStep;
     return (
         <Box sx={{ ...sx }}>
             <PlanStepsView
-                steps={activeStep ? [activeStep] : []}
+                steps={lastStep ? [lastStep] : []}
                 activeLastStep={active}
-                trailing={startTime != null ? <LiveStatus startTime={startTime} resetKey={activeStep} /> : undefined}
+                trailing={active && startTime != null && typeof lastStep !== 'string' && lastStep.status === 'running'
+                    ? <LiveStatus startTime={startTime} resetKey={lastStep.id} /> : undefined}
             />
         </Box>
     );
@@ -575,7 +638,9 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
                     display: '-webkit-box', WebkitLineClamp: workUpdate ? 4 : 2, WebkitBoxOrient: 'vertical',
                     overflow: 'hidden', wordBreak: 'break-word',
                 }}>
-                    {indicatorCount > 0 && <Box component="span" data-execution-commands sx={{ display: 'inline', mr: 0.5 }}>
+                    {indicatorCount > 0 && <Box component="span" data-execution-commands sx={{ display: 'inline-flex',
+                        alignItems: 'center', verticalAlign: '-0.125em', mr: 0.5, gap: 0.5,
+                        '& > svg': { width: 12, height: 12, display: 'block' } }}>
                         {children}
                     </Box>}
                     {content}
@@ -891,10 +956,10 @@ let SingleThreadGroupView: FC<{
     };
 
     const runningAgentTableIds = useMemo(() => {
-        const ids = new Map<string, { description: string }>();
+        const ids = new Map<string, { description: string; progressSteps?: ProgressStep[] }>();
         for (const d of draftNodes) {
             if (d.derive?.status === 'running') {
-                ids.set(tableAnchorOfNode(d.parentNodeId), { description: d.derive.runningPlan || '' });
+                ids.set(tableAnchorOfNode(d.parentNodeId), { description: d.derive.runningPlan || '', progressSteps: d.derive.progressSteps });
             }
         }
         return ids;
@@ -973,8 +1038,8 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    type TimelineItem = { outputNodeId?: string; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error' };
-    let timelineItems: (TimelineItem & { workRunId?: string; workUpdates?: React.ReactNode[]; exchangeId?: string; expandedHistory?: boolean })[] = [];
+    type TimelineItem = { outputNodeId?: string; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean };
+    let timelineItems: (TimelineItem & { exchangeId?: string; expandedHistory?: boolean })[] = [];
     const renderedLeadUpTurnIds = new Set(usedTextTurnIds);
 
     // Each running/clarifying draft should produce at most ONE banner per
@@ -1027,9 +1092,9 @@ let SingleThreadGroupView: FC<{
         const derivedTable = tableById.get(tableId);
         const openConversationEntry = derivedTable?.derive?.trigger.interaction && !extraProps?.isClarifying
             ? (entry: InteractionEntry) => {
-                dispatch(dfActions.setFocused({ type: 'explanation', sourceTableId: tableId,
-                    content: entry.displayContent || entry.content, executions: entry.executions,
-                    timestamps: entry.timestamp != null ? [entry.timestamp] : undefined }));
+                window.dispatchEvent(new CustomEvent('df-view-explanation', { detail: { sourceTableId: tableId,
+                    content: entry.displayContent || entry.content,
+                    timestamps: entry.timestamp != null ? [entry.timestamp] : undefined } }));
             } : undefined;
         const deriveSourceNames = derivedTable?.derive?.source
             ? (derivedTable.derive.source as string[]).map(sid => {
@@ -1040,6 +1105,10 @@ let SingleThreadGroupView: FC<{
 
         for (let ei = 0; ei < entries.length; ei++) {
             const entry = entries[ei];
+            const stepExecutions = entry.executions?.length ? entry.executions
+                : entry.role === 'instruction' ? getStepTerminalExecutions(tableId, tables, textTurns) : [];
+            const stepCodeExecutions = entry.codeExecutions?.length ? entry.codeExecutions
+                : entry.role === 'instruction' ? getStepCodeExecutions(tableId, tables, textTurns) : [];
 
             // Enrich instruction entries with source table names
             const enrichedEntry = (entry.role === 'instruction' && !entry.inputTableNames && deriveSourceNames)
@@ -1099,16 +1168,21 @@ let SingleThreadGroupView: FC<{
 
             const isResolved = (entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate')
                 && entries.slice(ei + 1).some(e => e.from === 'user');
+            if (stepExecutions.length || stepCodeExecutions.length) {
+                timelineItems.push({ key: `${keyPrefix}-activity-${tableId}-${ei}`, type: triggerType, highlighted, secondaryActivity: true,
+                    element: <ToolActivityRow nodeId={tableId} label={t('dataThread.toolActivity', { defaultValue: 'Tool activity' })}
+                        executions={stepExecutions} codeExecutions={stepCodeExecutions}
+                        onSelect={execution => openToolActivity(tableId, execution)} /> });
+            }
             timelineItems.push({
                 key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
                 type: triggerType,
                 highlighted,
-                element: entry.executions?.length ? <ThreadResponseCard responseKind="agent"
+                element: entry.role !== 'instruction' && (stepExecutions.length || stepCodeExecutions.length) ? <ThreadResponseCard responseKind="agent"
                     selected={false}
                     highlighted={focusedId?.type !== 'conversation' && highlighted}
-                    content={entry.displayContent || entry.content} onSelect={() => openConversationEntry?.(entry)}>
-                    {entry.executions.map(execution => <TerminalExecutionView key={execution.id} execution={execution} passive />)}
-                </ThreadResponseCard> : <InteractionEntryCard entry={enrichedEntry} highlighted={focusedId?.type !== 'conversation' && highlighted} resolved={isResolved}
+                    content={entry.displayContent || entry.content} onSelect={() => openConversationEntry?.(entry)}
+                /> : <InteractionEntryCard entry={enrichedEntry} highlighted={focusedId?.type !== 'conversation' && highlighted} resolved={isResolved}
                     onClick={entry.role === 'instruction' ? undefined : openConversationEntry} />,
                 interactionEntry: entry,
                 ...extraProps,
@@ -1215,6 +1289,7 @@ let SingleThreadGroupView: FC<{
             isRunning: boolean,
             keyPrefix: string,
             outputParentId?: string,
+            progressSteps?: ProgressStep[],
         ) => {
             // For the live banner, anchor elapsed-time to the most recent
             // user-side entry so resuming after a clarify resets the counter
@@ -1233,7 +1308,7 @@ let SingleThreadGroupView: FC<{
                 // No pause — render all entries then ThinkingStepsBanner
                 pushInteractionEntries(interaction, tableId, triggerType, highlighted, keyPrefix);
                 if (outputParentId) pushLoadedTables(outputParentId, triggerType, false);
-                const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
+                const planLines = progressSteps ?? (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
                 timelineItems.push({
                     key: `agent-thinking-${tableId}`,
                     type: triggerType,
@@ -1255,8 +1330,8 @@ let SingleThreadGroupView: FC<{
             }
 
             // 2. First-round thinking steps (snapshotted in pause entry's plan)
-            if (pauseEntry.plan) {
-                const priorLines = (pauseEntry.plan.includes('\x1E') ? pauseEntry.plan.split('\x1E') : pauseEntry.plan.split('\n')).filter((l: string) => l.trim());
+            if (pauseEntry.progressSteps || pauseEntry.plan) {
+                const priorLines = pauseEntry.progressSteps ?? (pauseEntry.plan!.includes('\x1E') ? pauseEntry.plan!.split('\x1E') : pauseEntry.plan!.split('\n')).filter((l: string) => l.trim());
                 if (priorLines.length > 0) {
                     timelineItems.push({
                         key: `agent-thinking-prior-${tableId}`,
@@ -1274,7 +1349,7 @@ let SingleThreadGroupView: FC<{
 
             // 4. Second-round thinking steps (current runningPlan)
             if (isRunning) {
-                const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
+                const planLines = progressSteps ?? (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
                 timelineItems.push({
                     key: `agent-thinking-${tableId}`,
                     type: triggerType,
@@ -1311,17 +1386,13 @@ let SingleThreadGroupView: FC<{
                         true,
                         'agent-running-entry',
                         runningDraft?.id,
+                        runningDraft?.derive?.progressSteps,
                     );
                 }
             } else if (!hasGeneratingReport) {
                 if (runningDraft) pushLoadedTables(runningDraft.id, triggerType, false);
                 const runningAction = runningAgentTableIds.get(tableId);
-                // `description` is the running plan: steps joined by STEP_SEP
-                // ('\x1E'), which renders invisibly. Split it back into discrete
-                // steps and render through the per-step banner (icons + ✓), the
-                // same way the interaction-present path does — otherwise the
-                // steps collapse into one run-on blob.
-                const planLines = (runningAction?.description || '')
+                const planLines = runningAction?.progressSteps ?? (runningAction?.description || '')
                     .split('\x1E').map(s => s.trim()).filter(Boolean);
                 timelineItems.push({
                     key: `agent-running-${tableId}`,
@@ -1546,10 +1617,6 @@ let SingleThreadGroupView: FC<{
         // Every turn is an agent remark, so its glyph sits ON the spine like any
         // other entry, while the card keeps the exchange readable as one unit.
         const awaitingAnswer = !turn.answered && ((turn.options?.length ?? 0) > 0 || !!turn.form);
-        const workUpdate = turn.textKind === 'explain' && !turn.form && !turn.dataOperation
-            && !awaitingAnswer && !turn.answer && !producedTables && !producedReports && derivedTableIds.length === 0
-            && dependentDrafts.length === 0 && !!turn.executions?.length
-            && turn.executions.every(execution => execution.status === 'completed');
         const iconColor = focusedId?.type !== 'conversation' && rowHL
             ? theme.palette.primary.main : 'rgba(0,0,0,0.15)';
         const gutterIcon = workflow
@@ -1563,7 +1630,12 @@ let SingleThreadGroupView: FC<{
                 { from: 'data-agent', to: 'user', role: turn.textKind, content: '' },
                 iconColor,
             );
-        const card = workflow ? <WorkflowProgress turn={workflowTurn!} selected={isFocused} /> : turn.workflowDefinition ? (
+        const isExecutionTurn = !!(turn.executions?.length || turn.codeExecutions?.length);
+        const stepExecutions = isExecutionTurn ? getStepTerminalExecutions(turn.id, tables, textTurns) : [];
+        const stepCodeExecutions = isExecutionTurn ? getStepCodeExecutions(turn.id, tables, textTurns) : [];
+        const card = isExecutionTurn ? <ToolActivityRow nodeId={turn.id} label={preview} executions={stepExecutions} codeExecutions={stepCodeExecutions}
+            onSelect={execution => openToolActivity(turn.id, execution)} />
+            : workflow ? <WorkflowProgress turn={workflowTurn!} selected={isFocused} /> : turn.workflowDefinition ? (
             <ThreadArtifactCard artifactType="workflow" title={turn.workflowDefinition.definition.name}
                 notes="Workflow definition" selected={isFocused} onClick={openTurn}
                 actions={hasDependents ? undefined : <ArtifactDeleteButton label="Delete workflow definition"
@@ -1576,15 +1648,11 @@ let SingleThreadGroupView: FC<{
                 prompt={showPrompt ? turn.prompt : undefined}
                 content={preview}
                 prominent={awaitingAnswer}
-                workUpdate={workUpdate}
                 onSelect={openTurn}
                 onDelete={hasDependents
                     ? undefined
                     : () => dispatch(dfActions.removeTextTurn(turn.id))}
-            >
-                {turn.executions?.map(execution => <TerminalExecutionView key={execution.id}
-                    execution={execution} passive />)}
-            </ThreadResponseCard>
+            />
         );
         // The reply is its own timeline entry so it anchors to the spine with a
         // user glyph, like the prompt that opened the exchange.
@@ -1597,9 +1665,7 @@ let SingleThreadGroupView: FC<{
         );
         return {
             key: `textturn-${turn.id}`, type: 'artifact' as const, highlighted: rowHL,
-            artifactTone: 'agent' as const, gutterIcon, element,
-            workRunId: workUpdate ? turn.actionId : undefined,
-            workUpdates: workUpdate ? [element] : undefined,
+            artifactTone: 'agent' as const, gutterIcon, element, secondaryActivity: isExecutionTurn,
         };
     };
 
@@ -1607,11 +1673,13 @@ let SingleThreadGroupView: FC<{
     const getTurnConversationParts = (turn: TextTurn, previousTurn: TextTurn | undefined,
         keyNode: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger', hasResult: boolean): ConversationPart[] => {
         const parts: ConversationPart[] = [];
+        const isExecutionTurn = !!(turn.executions?.length || turn.codeExecutions?.length);
         const turnHighlighted = highlighted
             || highlightedTextTurnIds.has(turn.id)
             || focusedNarrativeTurnIds.has(turn.id);
         const loadedTables = loadedTablesByTurn.get(turn.id) || [];
         const summarizesLoadedTables = turn.textKind === 'explain' && !turn.form && !turn.dataOperation && !turn.workflow
+            && !isExecutionTurn
             && loadedTables.length > 0 && loadedTables.every(node => node.createdAt <= turn.createdAt);
         if (turn.prompt) {
             const prompt = turn.prompt;
@@ -1620,23 +1688,20 @@ let SingleThreadGroupView: FC<{
                 keyNode, triggerType, turnHighlighted, `textturn-prompt-${turn.id}`,
             ) });
         }
-        parts.push({ startsTurn: !turn.prompt && !(previousTurn?.answered && previousTurn.answer),
+        const continuesRun = !!turn.actionId && turn.actionId === previousTurn?.actionId;
+        parts.push({ startsTurn: !turn.prompt && !continuesRun && !(previousTurn?.answered && previousTurn.answer),
             keepVisible: keepTurnVisible(turn, hasResult), render: () => {
-                pushFileItems(turn.id, turnHighlighted);
+                if (!isExecutionTurn) pushFileItems(turn.id, turnHighlighted);
                 if (summarizesLoadedTables) pushLoadedTables(turn.id, triggerType, false);
                 const item = buildTextTurnTimelineItem(turn, turnHighlighted, false);
-                const previous = timelineItems[timelineItems.length - 1];
-                if (item.workRunId && previous?.workRunId === item.workRunId && previous.workUpdates
-                    && previous.workUpdates.length < 3) {
-                    previous.workUpdates.push(item.element);
-                    previous.highlighted ||= item.highlighted;
-                    if (item.highlighted) previous.gutterIcon = item.gutterIcon;
-                    previous.element = <Box data-agent-work-group sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                        {previous.workUpdates.map((update, index) => <React.Fragment key={index}>{update}</React.Fragment>)}
-                    </Box>;
-                } else if (!turn.workflow || !textTurns.some(card => card.workflowCardFor === turn.id)) {
+                const completedExecutionStep = isExecutionTurn && !isTurnActive(turn)
+                    && !textTurns.some(candidate => (candidate.executions?.length || candidate.codeExecutions?.length)
+                        && candidate.actionId && candidate.actionId === turn.actionId && candidate.createdAt > turn.createdAt);
+                if ((!isExecutionTurn || completedExecutionStep) && (!turn.workflow || !textTurns.some(card => card.workflowCardFor === turn.id))
+                    && (turn.content || !(reportsByParentNode.get(turn.id) || []).length)) {
                     timelineItems.push(item);
                 }
+                if (isExecutionTurn) pushFileItems(turn.id, turnHighlighted);
                 for (const report of reportsByParentNode.get(turn.id) || []) {
                     timelineItems.push(buildReportTimelineItem(report, turnHighlighted));
                 }
@@ -1664,7 +1729,8 @@ let SingleThreadGroupView: FC<{
     // only the terminal / still-pending conversation on `nodeId`.
     const isTurnActive = (turn: TextTurn, hasResult = false) => (!hasResult && (!!turn.form || !!turn.dataOperation
         || (turn.textKind === 'clarify' && !turn.answered)
-        || turn.executions?.some(execution => execution.status === 'awaiting_approval' || execution.status === 'running')))
+        || turn.executions?.some(execution => execution.status === 'awaiting_approval' || execution.status === 'running')
+        || turn.codeExecutions?.some(execution => execution.status === 'running')))
         || draftNodes.some(draft => draft.parentNodeId === turn.id
             && (draft.derive?.status === 'running' || draft.derive?.status === 'clarifying'));
     const keepTurnVisible = (turn: TextTurn, hasResult = false) => isTurnActive(turn, hasResult)
@@ -2060,6 +2126,23 @@ let SingleThreadGroupView: FC<{
         }
     }
 
+    const collapsedActivityIndicator = historyCollapsed && timelineItems.some(item => item.isRunning)
+        ? <CircularProgress size={12} aria-label={t('terminal.running', { defaultValue: 'Running' })} /> : null;
+    timelineItems = timelineItems.map(item => {
+        if (!item.isRunning) return item;
+        const draft = draftNodes.find(candidate => candidate.derive.status === 'running'
+            && [`agent-running-${tableAnchorOfNode(candidate.parentNodeId)}`,
+                `agent-thinking-${tableAnchorOfNode(candidate.parentNodeId)}`].includes(item.key));
+        if (!draft) return item;
+        const executions = getStepTerminalExecutions(draft.parentNodeId, tables, textTurns);
+        const codeExecutions = getStepCodeExecutions(draft.parentNodeId, tables, textTurns);
+        if (!executions.length && !codeExecutions.length) return item;
+        return { ...item, secondaryActivity: true, element: <ToolActivityRow active nodeId={draft.parentNodeId}
+            label={draft.derive.progressSteps?.at(-1)?.label || t('dataThread.toolActivity', { defaultValue: 'Tool activity' })}
+            executions={executions} codeExecutions={codeExecutions}
+            onSelect={execution => openToolActivity(draft.parentNodeId, execution)} /> };
+    });
+
     // Timeline rendering helper
     const TIMELINE_WIDTH = 14;
     const TIMELINE_GAP = '4px'; // gap between timeline and card content
@@ -2228,6 +2311,16 @@ let SingleThreadGroupView: FC<{
         // No dimming or background — rely on timeline color + card border for highlighting
         const rowHighlightSx = {};
 
+        if (item.secondaryActivity) {
+            return <Box key={`timeline-row-${item.key}`} data-thread-item={item.key} data-secondary-activity
+                sx={{ display: 'flex', minWidth: 0 }}>
+                <Box data-activity-gutter sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                    <Box sx={{ borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0, py: 0.25, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>{item.element}</Box>
+            </Box>;
+        }
+
         // Merge nodes: a confluence glyph in the gutter + inline list of
         // joined source tables. Communicates provenance changes (join, narrow,
         // or substitute) — rendered with stronger weight than ambient chrome
@@ -2261,27 +2354,11 @@ let SingleThreadGroupView: FC<{
             const iconColor = item.highlighted
                 ? (isFromUser ? theme.palette.custom.main : theme.palette.primary.main)
                 : 'rgba(0,0,0,0.15)';
-            // Pick step-specific icon for completed thinking steps
-            const getStepIcon = (label: string, color: string) => {
-                const iconSx = { width: 12, height: 12, color };
-                if (label.startsWith('✗')) return <ErrorOutlineIcon sx={{ ...iconSx, color: theme.palette.error.main }} />;
-                if (label.startsWith('⚠')) return <WarningAmberIcon sx={{ ...iconSx, color: theme.palette.warning.main }} />;
-                if (label.startsWith('📋')) return <InfoOutlinedIcon sx={{ ...iconSx, color: theme.palette.info.main }} />;
-                const stripped = label.startsWith('✓') ? label.slice(2) : label;
-                const lbl = stripped.toLowerCase();
-                if (lbl.startsWith('running code') || lbl.startsWith('运行')) return <TerminalIcon sx={iconSx} />;
-                if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return <SearchIcon sx={iconSx} />;
-                if (lbl.startsWith('searching') || lbl.startsWith('搜索')) return <SearchIcon sx={iconSx} />;
-                if (lbl.startsWith('creating chart') || lbl.startsWith('图表') || lbl.startsWith('生成图表')) return <AutoGraphIcon sx={iconSx} />;
-                return <AutoAwesomeIcon sx={iconSx} />;
-            };
             const gutterIcon = item.isRunning
                 ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
                 : item.isClarifying
                     ? getClarifyIcon(item)
-                    : item.isCompleted && item.stepLabel
-                        ? getStepIcon(item.stepLabel, iconColor)
-                        : item.gutterIcon
+                    : item.gutterIcon
                             ? React.isValidElement(item.gutterIcon)
                                 ? React.cloneElement(item.gutterIcon as React.ReactElement<any>, {
                                     sx: [item.gutterIcon.props.sx || {}, { color: item.highlighted ? theme.palette.primary.main : iconColor }],
@@ -2505,6 +2582,7 @@ let SingleThreadGroupView: FC<{
                                 {t('dataThread.viewChat', { defaultValue: 'view chat' })}
                             </Button>
                         </Tooltip>
+                        {collapsedActivityIndicator}
                     </Box>
                 </Box>
                 );
@@ -2556,6 +2634,7 @@ let SingleThreadGroupView: FC<{
                                     {t('dataThread.viewChat', { defaultValue: 'view chat' })}
                                 </Button>
                             </Tooltip>
+                            {collapsedActivityIndicator}
                         </Box>
                     </Box>
                 );
@@ -3010,6 +3089,20 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
 
 export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: boolean}> = function ({ sx, centered = false, denseColumns = false }) {
     const { t } = useTranslation();
+    const [activitySelection, setActivitySelection] = useState<{ nodeId: string; executionId: string } | null>(null);
+    useEffect(() => {
+        const select = (event: Event) => {
+            const detail = (event as CustomEvent).detail;
+            if (detail?.nodeId && detail.execution?.id) setActivitySelection({ nodeId: detail.nodeId, executionId: detail.execution.id });
+        };
+        const clear = () => setActivitySelection(null);
+        window.addEventListener('df-view-tool-activity', select);
+        window.addEventListener('df-tool-activity-closed', clear);
+        return () => {
+            window.removeEventListener('df-view-tool-activity', select);
+            window.removeEventListener('df-tool-activity-closed', clear);
+        };
+    }, []);
     const dispatch = useDispatch<AppDispatch>();
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
@@ -3048,6 +3141,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     let inputTables = useSelector(dfSelectors.getInputTables);
     const derivedTables = useSelector(dfSelectors.getDerivedTables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    useEffect(() => { setActivitySelection(null); }, [focusedId]);
     let charts = useSelector(dfSelectors.getAllCharts);
 
     let generatedReports = useSelector(dfSelectors.getThreadReports);
@@ -4083,7 +4177,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                     flex: 1,
                     minHeight: 0,
                 }}>
-                {view}
+                <ToolActivitySelectionContext.Provider value={activitySelection}>{view}</ToolActivitySelectionContext.Provider>
                 <ScrollFadeEdge visible={moreThreadContentAbove} edge="top" />
                 <ScrollFadeEdge visible={moreThreadContentBelow} />
             </Box>

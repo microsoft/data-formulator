@@ -173,8 +173,10 @@ outputs and trajectory and marks them paused for review and resumption. Live
 streams check executor status every five seconds with a ten-second request timeout;
 unavailable status is shown as interrupted, not indefinite progress. This does not
 prove that a remote executor stopped, and Retry still obeys its execution lock.
-The initial limits are 80 model rounds and 15 minutes of
-active execution, checked between rounds, plus existing provider/tool timeouts.
+There is no fixed model-round or total execution-time cap. Runs continue until
+verified completion, a blocker or approval requiring input, user pause, or an error.
+Existing provider/tool timeouts remain in force. Without a total budget backstop,
+a stalled run may continue consuming model usage until paused.
 While a workflow runs, the chat input uses a subtly accented border and routes instructions
 exclusively to that workflow, even when a different artifact is selected. Messages
 are queued persistently, visibly acknowledged as queued and then received, and injected

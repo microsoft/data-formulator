@@ -22,6 +22,7 @@ from data_formulator.data_operations.executor import DataOperationExecutionResul
 from data_formulator.data_loader.query_runtime import QueryCancelled
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.datalake.catalog_cache import save_catalog
+from data_formulator.agent_config import ANALYST_EXECUTION_DEFAULTS
 
 
 pytestmark = [pytest.mark.backend]
@@ -171,6 +172,45 @@ def agents_client():
     app.config["CLI_ARGS"] = {}
     app.register_blueprint(agent_bp)
     return app.test_client()
+
+
+@pytest.mark.parametrize("max_iterations", [None, 5])
+def test_analyst_request_resolves_execution_defaults(agents_client, tmp_path: Path, max_iterations) -> None:
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    with (
+        patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
+        patch("data_formulator.routes.agents.get_client"),
+        patch("data_formulator.routes.agents.get_workspace", return_value=workspace),
+        patch("data_formulator.routes.agents.AnalystAgent") as analyst_agent,
+    ):
+        analyst_agent.return_value.run.return_value = iter([{"type": "completion"}])
+        response = agents_client.post("/api/agent/analyst-streaming", json={
+            "model": {}, "input_tables": [], "user_question": "Summarize orders",
+            **({"max_iterations": max_iterations} if max_iterations is not None else {}),
+        }, buffered=True)
+    assert json.loads(response.data.decode("utf-8"))["type"] == "completion"
+    config = analyst_agent.call_args.kwargs["execution_config"]
+    assert config.max_actions == (max_iterations if max_iterations is not None else ANALYST_EXECUTION_DEFAULTS.max_actions)
+    assert config.max_tool_rounds_per_action == ANALYST_EXECUTION_DEFAULTS.max_tool_rounds_per_action
+    assert "max_repair_attempts" not in analyst_agent.call_args.kwargs
+
+
+@pytest.mark.parametrize("max_iterations", [0, -1, True, "10", 1.5, None])
+def test_invalid_action_budget_is_rejected_before_execution(agents_client, max_iterations) -> None:
+    with (
+        patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
+        patch("data_formulator.routes.agents.get_workspace") as get_workspace,
+        patch("data_formulator.routes.agents.AnalystAgent") as analyst_agent,
+    ):
+        response = agents_client.post("/api/agent/analyst-streaming", json={
+            "model": {}, "input_tables": [], "user_question": "Find orders", "max_iterations": max_iterations,
+        }, buffered=True)
+    event = json.loads(response.data.decode("utf-8"))
+    assert event["status"] == "error"
+    assert response.mimetype == "application/json"
+    assert "positive integer" in response.data.decode("utf-8")
+    get_workspace.assert_not_called()
+    analyst_agent.assert_not_called()
 
 
 def test_selected_operation_executes_then_resumes_analysis(

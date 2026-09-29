@@ -1015,6 +1015,15 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     </Box>;
 };
 
+const workflowSetupContentSx = {
+    display: 'flex', flexDirection: 'column', gap: 2.5, pb: 2.5,
+    '& .MuiInputBase-root': { fontSize: textVar.md, lineHeight: 1.5 },
+    '& .MuiInputLabel-root': { fontSize: textVar.md },
+    '& .MuiFormHelperText-root': { fontSize: textVar.xs, lineHeight: 1.6, mt: 0.75 },
+    '& .MuiFormControlLabel-label': { fontSize: textVar.md },
+    '& .MuiTypography-caption': { display: 'block', fontSize: textVar.xs, lineHeight: 1.6, mt: 0.5 },
+};
+
 const WorkflowSetupFields: React.FC<{ parameters: WorkflowParameter[]; values: WorkflowSetup['parameters'];
     onChange: (values: WorkflowSetup['parameters']) => void; disabled: boolean }> = ({ parameters, values, onChange, disabled }) => <>
     {parameters.map(parameter => {
@@ -1193,14 +1202,16 @@ export const WorkflowProposal: React.FC<{ turn: TextTurn; canvas?: boolean }> = 
                 catch (reason) { if (current === generation.current) { setError(reason instanceof Error ? reason.message : 'Unable to run workflow.'); setSetupOpen(false); } }
                 finally { if (current === generation.current) setStarting(false); }
             }}>
-                <DialogTitle id={`workflow-setup-${turn.id}`}>Workflow setup</DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <Typography sx={{ overflowWrap: 'anywhere' }}>{definition.name}</Typography>
+                <DialogTitle id={`workflow-setup-${turn.id}`} sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: 400, overflowWrap: 'anywhere', pb: 2 }}>
+                    <Box component="span" sx={{ color: 'text.primary' }}>Run workflow:</Box>{' '}
+                    <Box component="span" sx={{ color: 'primary.main' }}>{definition.name}</Box>
+                </DialogTitle>
+                <DialogContent sx={workflowSetupContentSx}>
                     <WorkflowSetupFields parameters={definition.parameters || []} values={values} onChange={setValues} disabled={starting} />
                     <TextField label="Additional instructions" size="small" multiline minRows={3} value={instructions} disabled={starting}
                         onChange={event => setInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
                 </DialogContent>
-                <DialogActions><Button disabled={starting} onClick={() => setSetupOpen(false)}>Cancel</Button>
+                <DialogActions sx={{ px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}><Button disabled={starting} onClick={() => setSetupOpen(false)}>Cancel</Button>
                     <Button type="submit" startIcon={<PlayArrowIcon />} disabled={starting || busy || readOnly || !hasModel}>Run workflow</Button></DialogActions>
             </Box>
         </Dialog>
@@ -1209,7 +1220,11 @@ export const WorkflowProposal: React.FC<{ turn: TextTurn; canvas?: boolean }> = 
 
 export const WORKFLOW_AUTHORING_PROMPT = 'Help me create a workflow from our current conversation and data. Suggest a few useful directions for me to choose from before drafting it. Do not save or execute it yet.';
 
-export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; headerActions?: React.ReactNode }> = ({ onCreateSession, headerActions }) => {
+export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; headerActions?: React.ReactNode;
+    presentation?: 'sidebar' | 'landing';
+    renderLanding?: (content: { examples: React.ReactNode; saved: React.ReactNode; toolbar: React.ReactNode }) => React.ReactNode;
+}> = ({ onCreateSession, headerActions, presentation = 'sidebar', renderLanding }) => {
+    const landing = presentation === 'landing';
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
@@ -1297,10 +1312,14 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
 
     const startNewSession = async (item: Instance, setup: WorkflowSetup) => {
         setStarting(true);
-        const current = generation.current;
         try {
             setPendingRun({ path: item.path, content: item.content, setup, previousWorkspaceId: workspaceId });
             onCreateSession(item.name);
+            const nextWorkspaceId = store.getState().activeWorkspace?.id;
+            if (nextWorkspaceId && nextWorkspaceId !== workspaceId) {
+                setPendingRun(null);
+                await execute(item.path, setup, item.content);
+            }
         }
         catch (reason) {
             setPendingRun(null); setStarting(false);
@@ -1315,13 +1334,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         }
     }, [workspaceId, pendingRun]);
 
-    return <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '0 1 auto', overflow: 'hidden' }}>
-        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
-            flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)' }}>
-            <Typography sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1 }}>Workflows</Typography>
-            {headerActions}
-        </Box>
-        <Box sx={sidebarToolbarSx}>
+    const toolbar = <Box sx={{ ...sidebarToolbarSx, ...(landing ? { p: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
             <Button variant="outlined" size="small" startIcon={<AddIcon />} disabled={readOnly} sx={sidebarPrimaryActionSx}
                 onClick={() => {
                     let path = 'workflow.workflow.yaml';
@@ -1331,61 +1344,83 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 }}>
                 New workflow
             </Button>
-            <Box sx={{ flex: 1 }} />
+            {!landing && <Box sx={{ flex: 1 }} />}
             <Tooltip title="Refresh workflows"><span><IconButton aria-label="Refresh workflows" size="small" disabled={loading} onClick={refresh}
                 sx={{ width: 24, height: 24, p: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } }}>
                 {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: iconVar.md }} />}
             </IconButton></span></Tooltip>
-        </Box>
-        <Box sx={{ overflowY: 'auto', minHeight: 0, pb: 1 }}>
-        {!model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>Select a model to run a workflow.</Alert>}
-        {(['user', 'other'] as const).map(groupId => {
-            const group = items.filter(item => ((item.origin || 'user') === 'user') === (groupId === 'user'));
-            if (groupId === 'other' && !group.length) return null;
-            const label = groupId === 'user' ? 'My workflows' : 'Other workflows';
-            const expanded = !collapsedGroups.includes(groupId);
-            return <Box component="section" aria-label={label} key={groupId}>
-            <ButtonBase aria-label={label} aria-expanded={expanded} aria-controls={`workflow-group-${groupId}`}
+        </Box>;
+    const renderGroups = (groupIds: readonly ('demo' | 'user' | 'server' | 'other')[]) => groupIds.map(groupId => {
+            const group = items.filter(item => landing ? (item.origin || 'user') === groupId
+                : ((item.origin || 'user') === 'user') === (groupId === 'user'));
+            if ((groupId === 'other' || groupId === 'server') && !group.length) return null;
+            const label = landing ? groupId === 'demo' ? 'Example workflows' : groupId === 'user' ? 'Your workflows' : 'Shared workflows'
+                : groupId === 'user' ? 'My workflows' : 'Other workflows';
+            const expanded = landing || !collapsedGroups.includes(groupId);
+            return <Box component="section" aria-label={label} key={groupId} sx={landing ? {
+                minWidth: 0, pt: groupId === 'server' || (!renderLanding && groupId === 'user') ? 1.5 : 0,
+            } : {}}>
+            {(!landing || groupId === 'server' || (!renderLanding && groupId === 'user')) && (
+            <Box sx={landing ? { display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, mb: 1 } : {}}>
+            {landing ? <Typography sx={{ flex: 1, fontSize: textVar.sm, color: 'text.secondary', textAlign: 'left' }}>{label}</Typography> : <ButtonBase aria-label={label} aria-expanded={expanded} aria-controls={`workflow-${presentation}-group-${groupId}`}
                 onClick={() => setCollapsedGroups(previous => expanded ? [...previous, groupId] : previous.filter(item => item !== groupId))}
                 sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 1.5, pt: groupId === 'user' ? 1 : 1.5, pb: 0.5, textAlign: 'left',
                     color: 'text.secondary', '&:hover': { color: 'text.primary' },
-                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
-                <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'inherit', flex: 1 }}>{label}</Typography>
+                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+                    ...(landing ? { p: 0, minHeight: 32, minWidth: 0, flex: 1 } : {}) }}>
+                <Typography sx={{ fontSize: landing ? textVar.sm : textVar.xs, fontWeight: landing ? 400 : 600, color: 'inherit', flex: 1 }}>{label}</Typography>
                 <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>{group.length}</Typography>
                 <ExpandMoreIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
-            </ButtonBase>
-            <Box id={`workflow-group-${groupId}`} hidden={!expanded} sx={{ mx: 0.75 }}>
+            </ButtonBase>}
+            {landing && groupId === 'user' && toolbar}
+            </Box>
+            )}
+            {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ mb: 1 }}>Select a model to run a workflow.</Alert>}
+            <Box id={`workflow-${presentation}-group-${groupId}`} hidden={!expanded} sx={{ mx: landing ? 0 : 0.75,
+                ...(landing && expanded ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))', gap: 1 } : {}) }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
             {loading ? 'Loading workflows...' : 'No saved workflows'}
         </Typography>}
         {group.map(item => {
             const origin = item.origin || 'user';
-            return <Box key={item.path} sx={{ px: 0.75, py: 0.5, borderRadius: 0.5, '&:hover, &:focus-within': { bgcolor: 'action.hover' },
+            const runDisabled = busy || starting || readOnly || !!item.error;
+            const openSetup = () => {
+                setSetupValues(Object.fromEntries((item.parameters || []).map(parameter => [parameter.name,
+                    parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
+                setSetupInstructions('');
+                setRunTarget(item);
+            };
+            return <Box key={item.path} component={landing ? 'article' : 'div'} sx={{ px: 0.75, py: 0.5, borderRadius: 0.5, '&:hover, &:focus-within': { bgcolor: 'action.hover' },
+                ...(landing ? { p: 0, display: 'flex', position: 'relative', border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper',
+                    boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)' } : {}),
                 '& .workflow-secondary-action': { opacity: 0 },
                 '&:hover .workflow-secondary-action, &:focus-within .workflow-secondary-action': { opacity: 1 },
                 '@media (hover: none)': { '& .workflow-secondary-action': { opacity: 1 } } }}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', columnGap: 0.5 }}>
-            <ButtonBase aria-label={`Description for ${item.name}`}
-                    aria-expanded={expandedDescriptions.includes(item.path)}
-                    onClick={() => setExpandedDescriptions(previous => previous.includes(item.path)
+            <Box sx={{ display: landing ? 'contents' : 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', columnGap: 0.5 }}>
+            <ButtonBase aria-label={`${landing ? 'Run' : 'Description for'} ${item.name}`}
+                    aria-expanded={landing ? undefined : expandedDescriptions.includes(item.path)}
+                    disabled={landing && runDisabled}
+                    onClick={landing ? openSetup : () => setExpandedDescriptions(previous => previous.includes(item.path)
                         ? previous.filter(path => path !== item.path) : [...previous, item.path])}
                     sx={{ display: 'block', width: '100%', minWidth: 0, textAlign: 'left', py: 0.25,
+                        ...(landing ? { p: 1.25, flex: 1, borderRadius: 'inherit', '&.Mui-disabled': { opacity: 0.6 } } : {}),
                         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: landing && origin === 'user' ? 2.5 : 0 }}>
+                    {landing && <WorkflowGears running={false} size={16} color="text.secondary" showTooltip={false} />}
+                    <Typography sx={{ fontSize: landing ? textVar.md : textVar.sm, fontWeight: landing ? 400 : 500, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</Typography>
+                    {landing && <PlayArrowIcon sx={{ ml: 'auto', flexShrink: 0, fontSize: iconVar.md, color: runDisabled ? 'action.disabled' : 'primary.main' }} />}
+                </Box>
                 <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
                     color: item.error ? 'error.main' : 'text.secondary', overflowWrap: 'anywhere',
                     ...(!expandedDescriptions.includes(item.path) && !item.error ? {
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        ...(landing ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }),
+                        overflow: 'hidden',
                     } : {}) }}>{item.error || item.overview}</Typography>
             </ButtonBase>
+            {!landing && <>
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', '& .MuiIconButton-root': { width: 24, height: 24, p: 0.25 } }}>
-            <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" color="primary" disabled={busy || starting || readOnly || !!item.error}
-                onClick={() => {
-                    setSetupValues(Object.fromEntries((item.parameters || []).map(parameter => [parameter.name,
-                        parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
-                    setSetupInstructions('');
-                    setRunTarget(item);
-                }}><PlayArrowIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
+            <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" color="primary" disabled={runDisabled}
+                onClick={openSetup}><PlayArrowIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
             <Box className="workflow-secondary-action" sx={{ display: 'flex', alignItems: 'center',
                 '& .MuiIconButton-root': { width: 22, height: 22, p: 0.25 }, '& .MuiSvgIcon-root': { fontSize: iconVar.sm } }}>
             <Tooltip title={origin === 'demo' || origin === 'server' ? 'Customize a copy' : 'Edit definition'}><span><IconButton aria-label={`${origin === 'demo' || origin === 'server' ? 'Customize' : 'Edit'} ${item.name}`} size="small" color="primary" disabled={busy} onClick={() => edit(item)}>
@@ -1396,12 +1431,29 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             </Box>
             {expandedDescriptions.includes(item.path) && <Typography sx={{ gridColumn: '1 / -1', mb: 0.25, fontSize: textVar.xs,
                 color: 'text.secondary', overflowWrap: 'anywhere' }}>{item.path}</Typography>}
+            </>}
             </Box>
+            {landing && origin === 'user' && <Box className="workflow-secondary-action" sx={{ position: 'absolute', top: 4, right: 4 }}>
+                <ArtifactDeleteButton label={`Delete ${item.path}`} disabled={busy || deletingInstance}
+                    onClick={() => setDeleteTarget(item)} />
+            </Box>}
         </Box>;
         })}</Box></Box>;
-        })}
-        {runs.length > 0 && <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, px: 1.5, pt: 1.5, pb: 0.5 }}>Recent runs</Typography>}
-        {runs.map(item => <Button key={item.id} disabled={busy} onClick={async () => {
+        });
+    return <Box sx={{ display: landing ? 'contents' : 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, flex: '0 1 auto', overflow: landing ? 'visible' : 'hidden' }}>
+        {landing && renderLanding ? renderLanding({ examples: renderGroups(['demo']), saved: renderGroups(['user', 'server']), toolbar }) : <>
+        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
+            flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)',
+            ...(landing ? { px: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
+            <Typography component={landing ? 'h2' : 'div'} sx={{ fontSize: landing ? textVar.xl : textVar.md, fontWeight: landing ? 400 : 600, flex: 1, textAlign: 'left' }}>{landing ? 'Example workflows' : 'Workflows'}</Typography>
+            {headerActions}
+        </Box>
+        {!landing && toolbar}
+        <Box sx={{ overflowY: landing ? 'visible' : 'auto', minHeight: 0, pb: 1 }}>
+        {!landing && !model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>Select a model to run a workflow.</Alert>}
+        {renderGroups(landing ? ['demo', 'user', 'server'] : ['user', 'other'])}
+        {!landing && runs.length > 0 && <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, px: 1.5, pt: 1.5, pb: 0.5 }}>Recent runs</Typography>}
+        {!landing && runs.map(item => <Button key={item.id} disabled={busy} onClick={async () => {
             try {
                 const { run } = await post<{ run: Run }>('run-state', { run_id: item.id });
                 if (workspaceId) {
@@ -1417,6 +1469,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 title={new Date(item.started_at).toLocaleString()}>{relativeRunTime(item.started_at)}</Box></Typography>
         </Button>)}
         </Box>
+        </>}
 
         <Dialog open={!!runTarget} onClose={() => !starting && setRunTarget(null)} maxWidth="sm" fullWidth aria-labelledby="workflow-setup-title">
             <Box component="form" onSubmit={event => {
@@ -1432,18 +1485,18 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 if (target?.value === 'current' && inSession) void execute(runTarget.path, setup, runTarget.content);
                 else startNewSession(runTarget, setup);
             }}>
-                <DialogTitle id="workflow-setup-title">Workflow setup</DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <DialogTitle id="workflow-setup-title" sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: 400, overflowWrap: 'anywhere', pb: 2 }}>
+                    <Box component="span" sx={{ color: 'text.primary' }}>Run workflow:</Box>{' '}
+                    <Box component="span" sx={{ color: 'primary.main' }}>{runTarget?.name}</Box>
+                </DialogTitle>
+                <DialogContent sx={workflowSetupContentSx}>
                     {!model && <Alert severity="info">Select a model to run a workflow.</Alert>}
-                    <Box>
-                        <Typography sx={{ overflowWrap: 'anywhere', fontWeight: 500 }}>{runTarget?.name}</Typography>
-                        {runTarget?.overview && <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere', mt: 0.5 }}>{runTarget.overview}</Typography>}
-                    </Box>
+                    {runTarget?.overview && <Typography variant="body2" color="text.secondary" sx={{ fontSize: textVar.sm, lineHeight: 1.65, overflowWrap: 'anywhere', mb: 0.5 }}>{runTarget.overview}</Typography>}
                     <WorkflowSetupFields parameters={runTarget?.parameters || []} values={setupValues} onChange={setSetupValues} disabled={starting} />
                     <TextField label="Additional instructions" size="small" multiline minRows={3} fullWidth disabled={starting}
                         value={setupInstructions} onChange={event => setSetupInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
                 </DialogContent>
-                <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5, px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}>
                     <Button disabled={starting} onClick={() => setRunTarget(null)}>Cancel</Button>
                     {inSession && <Button type="submit" value="current" disabled={busy || starting || !model}>Current session</Button>}
                     <Button type="submit" value="new" variant="contained" startIcon={starting ? <CircularProgress size={16} /> : <PlayArrowIcon />}

@@ -1,0 +1,126 @@
+version: 1
+name: Life Expectancy and Family Size
+overview: Compare historical gains in life expectancy and the relationship between fertility and longevity across countries.
+parameters:
+  - name: start_year
+    label: Starting year
+    type: select
+    options: ['1955', '1965', '1975']
+    default: '1955'
+  - name: end_year
+    label: Ending year
+    type: select
+    options: ['1995', '2000', '2005']
+    default: '2005'
+prompt: >-
+  Explore historical changes in life expectancy and fertility using the fixed
+  Gapminder sample. Apply the confirmed start_year and end_year; defaults are
+  1955 and 2005. Anchor the analysis to these observed years, never today's date.
+  Build three native charts progressively, followed by a concise report with
+  independently verified findings. Use visualize directly on the raw input and
+  retain supporting calculations in each chart's derived table. Do not stage
+  chart inputs with separate create_data calls. Preserve the raw input and
+  previous runs' outputs. This demo is bound to the named sample and supplied
+  source context. Proceed with these defaults without asking for confirmation
+  of provenance or units, unless the loaded data contradicts the supplied
+  context. Pause for inaccessible inputs, conflicting duplicate keys, or
+  insufficient coverage rather than substituting or inventing data.
+source: >-
+  Discover the built-in Sample Datasets source and import its full Gapminder
+  table with one grounded proposal and user_review_needed false, or reuse the
+  same verified raw input already in the workspace. The catalog pins this
+  sample to https://cdn.jsdelivr.net/npm/vega-datasets@2.9.0/data/gapminder.json.
+  This is a static historical snapshot, not the current Gapminder database.
+  Expected fields are country, year, life_expect, fertility, pop, and cluster.
+  Verify actual schema and coverage. life_expect is life expectancy in years;
+  fertility is children per woman; pop is population in persons. Do not treat
+  cluster codes as documented regions. Public sample access requires network
+  availability but no credentials, live API, or terminal commands. If loading
+  fails, request this exact sample rather than silently using another version.
+  Record the versioned source URL and the loaded input's content hash when
+  available. Do not claim to have fetched any reference that was not retrieved.
+deliverables:
+  - A native Line Chart of median life expectancy over the selected years for a fixed country cohort.
+  - A native Bar Chart ranking the ten largest matched-country gains in life expectancy, retaining both endpoint values and changes in its derived table.
+  - A native Scatter Plot of fertility against life expectancy in the ending year, with country identities retained in its derived table.
+  - A concise report embedding all three returned chart IDs, with source version, selected years, numerical findings, and coverage limitations.
+steps:
+  - id: prepare
+    description: Verify the historical sample and select a consistent set of countries.
+    instructions: >-
+      Inspect schema, year coverage, nulls, and country-year key uniqueness.
+      Verify both selected endpoint years exist and the starting year precedes
+      the ending year. Identify every observed sample year within this window.
+      For trends and gains, use only countries with finite positive life_expect
+      in every observed sample year in the window; retain this same cohort in
+      both charts. Do not invent annual observations between sample years.
+      For the ending-year scatter, use cohort countries with finite positive
+      fertility in that year. Report exclusion counts and reasons separately.
+      Stop for conflicting duplicate keys or fewer than ten eligible countries.
+      These are descriptive historical comparisons, not evidence of causation
+      or estimates for today's population.
+    checkers:
+      - id: historical_coverage
+        condition: Both endpoints and all observed sample years are recorded, keys are unique, at least ten countries form a fixed cohort, and exclusions are explicit.
+        on_fail: prepare
+    next: trends
+  - id: trends
+    description: Track life expectancy for the same countries over time.
+    instructions: >-
+      Use visualize to publish a Line Chart with observed year on x and median
+      life_expect on y for the fixed cohort. Each country receives equal weight;
+      do not describe this as population-weighted global life expectancy.
+      Retain contributing country counts and year-level medians in the derived
+      table. Independently recompute medians from the raw cohort and verify
+      that the country count is constant at every observed year.
+    checkers:
+      - id: trend_math
+        condition: Every plotted median reconciles with raw cohort values, country counts are constant, and no unobserved year is presented as measured data.
+        on_fail: trends
+    next: gains
+  - id: gains
+    description: Compare the largest improvements between the selected years.
+    instructions: >-
+      Match starting and ending observations one-to-one by country within the
+      fixed cohort. Compute gain_years = ending_life_expect - starting_life_expect
+      without rounding first. Use visualize to publish a descending Bar Chart
+      of the ten largest gains, breaking ties alphabetically by country. Retain
+      endpoint values, endpoint years, and full-precision gains in the derived
+      table. Label differences in years, not percentages. Independently verify
+      the subtraction, ordering, and tie handling against raw observations.
+    checkers:
+      - id: gain_math
+        condition: All ten countries belong to the fixed cohort, gains reconcile with matched raw endpoints, and ranking and tie handling are deterministic.
+        on_fail: gains
+    next: relationship
+  - id: relationship
+    description: Examine fertility and life expectancy in the same historical year.
+    instructions: >-
+      Use visualize to publish a Scatter Plot with fertility on x and life_expect
+      on y for eligible cohort countries in the ending year. Use equal-size
+      marks and retain country names for inspection; do not invent regions from
+      cluster codes. Record the number of countries and independently verify
+      all plotted values and any reported association against raw observations.
+      Describe patterns as association, not a causal effect or a forecast.
+    checkers:
+      - id: relationship_values
+        condition: Every point comes from one eligible country in the selected ending year, units are correct, and reported patterns do not imply causation.
+        on_fail: relationship
+    next: brief
+  - id: brief
+    description: Deliver the comparison with reproducible findings and clear limits.
+    instructions: >-
+      Write a concise report embedding the three actual chart IDs. Include the
+      pinned dataset version, selected years, fixed-cohort size, exclusions,
+      endpoint medians, the largest country gains, and the ending-year pattern.
+      Distinguish medians across this country sample from population-weighted
+      global estimates and historical observations from current conditions.
+      After publishing, run an independent verification script against the raw
+      input and all final derived tables. Reconcile headline values, country
+      counts, ranking, and embedded chart IDs. Preserve valid earlier checks;
+      rerun only invalidated checks. Record final post-publication evidence and
+      complete_workflow only after accounting for all four deliverables.
+    checkers:
+      - id: historical_final_delivery
+        condition: Three native charts and supporting data exist, report claims match final outputs, and independent post-publication verification succeeded.
+        on_fail: brief

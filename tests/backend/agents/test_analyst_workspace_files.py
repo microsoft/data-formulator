@@ -119,6 +119,80 @@ def test_agent_data_create_update_and_protected_sources(tmp_path):
     assert workspace.read_data_as_df("uploaded")["value"].tolist() == [9]
 
 
+@pytest.mark.parametrize("acquisition", [
+    "not an object",
+    {},
+    {"source": "source.csv"},
+    {"source": " ", "scope": "All records"},
+    {"source": "source.csv", "scope": "All records", "query": 42},
+    {"source": "source.csv", "scope": "All records", "acquired_at": "yesterday"},
+    {"source": "source.csv", "scope": "All records", "limitations": "x" * 8001},
+], ids=["not-object", "empty", "missing-scope", "blank-source", "invalid-query", "spoofed-time", "oversized"])
+def test_agent_acquisition_metadata_is_validated_before_registration(tmp_path, acquisition):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.save_scratch_file("source.csv", b"value\n1\n")
+    skill = WorkspaceSkill()
+    context = SkillContext(client=None, workspace=workspace)
+    with pytest.raises(ValueError, match="acquisition requires"):
+        skill.handle_tool("create_data", {
+            "table_name": "acquired", "rows": [{"value": 1}], "acquisition": acquisition,
+            "input_sources": [{"id": "scratch/source.csv", "kind": "file"}],
+        }, context)
+    assert workspace.list_tables() == []
+
+
+@pytest.mark.parametrize("use_data_input", [False, True])
+def test_agent_acquisition_requires_file_inputs(tmp_path, use_data_input):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.write_parquet(pd.DataFrame({"value": [1]}), "existing")
+    skill = WorkspaceSkill()
+    context = SkillContext(client=None, workspace=workspace, payload={"input_tables": [{"name": "existing"}]})
+    with pytest.raises(ValueError, match="actual acquired file inputs"):
+        skill.handle_tool("create_data", {
+            "table_name": "acquired", "rows": [{"value": 1}],
+            "acquisition": {"source": "source.csv", "scope": "All records"},
+            "input_sources": [{"id": "existing", "kind": "data"}] if use_data_input else [],
+        }, context)
+    assert workspace.list_tables() == ["existing"]
+
+
+def test_agent_acquisition_refresh_preserves_metadata_and_checks_hash(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.save_scratch_file("source.csv", b"value\n1\n")
+    skill = WorkspaceSkill()
+    context = SkillContext(client=None, workspace=workspace)
+    arguments = {
+        "table_name": "acquired", "rows": [{"value": 1}],
+        "acquisition": {"source": "source.csv", "scope": "First snapshot"},
+        "input_sources": [{"id": "scratch/source.csv", "kind": "file"}],
+    }
+    created = json.loads(skill.handle_tool("create_data", arguments, context).text)
+    assert context.payload["workspace_inputs"].data[0].source.locator["acquisition"] == created["acquisition"]
+    workspace.save_scratch_file("source_v2.csv", b"value\n2\n")
+    replacement = {**arguments, "rows": [{"value": 2}], "expected_content_hash": created["content_hash"],
+                   "input_sources": [{"id": "scratch/source_v2.csv", "kind": "file"}],
+                   "acquisition": {"source": "source.csv", "scope": "Second snapshot"}}
+    with pytest.raises(ValueError, match="acquisition requires"):
+        skill.handle_tool("update_data", {**replacement, "acquisition": {}}, context)
+    assert workspace.get_table_metadata("acquired").content_hash == created["content_hash"]
+    updated = json.loads(skill.handle_tool("update_data", replacement, context).text)
+    assert updated["role"] == "source"
+    assert updated["acquisition"]["scope"] == "Second snapshot"
+    assert updated["input_sources"][0]["content_hash"] != created["input_sources"][0]["content_hash"]
+    with pytest.raises(ValueError, match="changed"):
+        skill.handle_tool("update_data", replacement, context)
+    restored = Workspace("test-user", root_dir=tmp_path).get_table_metadata("acquired")
+    assert restored.import_options["acquisition"] == updated["acquisition"]
+    assert workspace.read_data_as_df("acquired")["value"].tolist() == [2]
+    changed = json.loads(skill.handle_tool("update_data", {
+        "table_name": "acquired", "expected_content_hash": updated["content_hash"],
+        "rows": [{"value": 4}], "input_sources": [{"id": "scratch/source_v2.csv", "kind": "file"}],
+    }, context).text)
+    assert changed["role"] == "derived"
+    assert "acquisition" not in changed
+    assert workspace.get_table_metadata("acquired").import_options is None
+
+
 def test_agent_data_python_provenance_staleness_and_failed_update(tmp_path):
     workspace = Workspace("test-user", root_dir=tmp_path)
     skill = WorkspaceSkill()

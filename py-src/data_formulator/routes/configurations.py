@@ -6,7 +6,7 @@ import uuid
 from flask import Blueprint, current_app, request
 
 from data_formulator.auth.identity import get_auth_result, get_identity_id, is_local_mode
-from data_formulator.configuration import ConfigurationConflict, LIMITS, connection_definitions, effective_limit, inline_connection_settings, is_managed_mode, public_connection_definition, read_configuration, save_configuration, user_connectors_disabled, user_connectors_locked, user_models_disabled, user_models_locked
+from data_formulator.configuration import ConfigurationConflict, LIMITS, connection_definitions, effective_limit, inline_connection_settings, is_managed_mode, public_connection_definition, read_configuration, save_configuration, terminal_available, terminal_mode, user_connectors_disabled, user_connectors_locked, user_models_disabled, user_models_locked
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
 
@@ -97,6 +97,7 @@ def snapshot() -> dict:
             workflow = parse_workflow(content)
             workflows.append({'id': identifier, 'name': workflow['name'], 'content': content, 'source': 'Saved'})
     return {**document, 'catalogs': {'models': models, 'connectors': connectors, 'workflows': workflows},
+            'terminal': {'available': terminal_available(), 'mode': terminal_mode(), 'locked': 'DF_TERMINAL_MODE' in os.environ},
             'user_connectors': {'disabled': user_connectors_disabled(),
                                 'locked': user_connectors_locked()},
             'user_models': {'disabled': user_models_disabled(), 'locked': user_models_locked()},
@@ -109,6 +110,36 @@ def snapshot() -> dict:
             'limits': {name: {'value': effective_limit(name), 'default': effective_limit(name, configured=False), 'locked': env in os.environ,
                               'source': 'Environment' if env in os.environ else 'Saved' if name in overrides.get('limits', {}) else 'Default'}
                        for name, (env, _, _, _) in LIMITS.items()}}
+
+
+@configuration_bp.route('/terminal', methods=['GET', 'PUT'])
+def terminal_settings():
+    from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy
+
+    try:
+        if request.method == 'PUT':
+            from data_formulator.analyst.skills.terminal.skill import require_local_terminal_request
+
+            require_local_terminal_request(check_policy=False)
+            if (not get_identity_id().startswith('local:') or not request.is_json
+                    or request.headers.get('X-DF-Configuration') != '1'):
+                raise AppError(ErrorCode.ACCESS_DENIED, 'Use the local application to change terminal access.')
+            if 'DF_TERMINAL_MODE' in os.environ:
+                raise ValueError('Terminal mode is controlled by the environment.')
+            body = request.get_json()
+            if not isinstance(body, dict) or set(body) != {'mode', 'revision'} or body['mode'] not in ('off', 'ask', 'auto'):
+                raise ValueError('Provide revision and terminal mode: off, ask, or auto.')
+            if body['mode'] != 'off' and not terminal_available():
+                raise ValueError('Terminal access is unavailable under the current deployment policy.')
+            current = read_configuration()
+            save_configuration({**current['overrides'], 'terminal_mode': body['mode']}, body['revision'])
+        return json_ok({'revision': read_configuration()['revision'], 'mode': terminal_mode(),
+                        'available': terminal_available(), 'locked': 'DF_TERMINAL_MODE' in os.environ,
+                        'sandboxFilesystem': sandbox_filesystem_policy() if is_local_mode() else None})
+    except ConfigurationConflict as exc:
+        return {'status': 'error', 'error': {'code': 'INVALID_REQUEST', 'message': str(exc), 'retry': False}}, 409
+    except (ValueError, OSError) as exc:
+        raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
 
 @configuration_bp.route('', methods=['GET', 'PUT'])
@@ -130,6 +161,9 @@ def configurations():
             current = snapshot()
             if type(body['revision']) is not int or body['revision'] != current['revision']:
                 raise ConfigurationConflict('Configuration changed. Reload before saving.')
+            if (current['terminal']['locked']
+                    and body['overrides'].get('terminal_mode') != current['overrides'].get('terminal_mode')):
+                raise ValueError('Terminal mode is controlled by the environment.')
             from data_formulator.auth.vault import get_credential_vault
             body['overrides'] = inline_connection_settings(body['overrides'])
             proposed = body['overrides'].get('connections', {})

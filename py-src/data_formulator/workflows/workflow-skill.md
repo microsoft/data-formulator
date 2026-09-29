@@ -94,6 +94,16 @@ artifacts; do not repeat a completed import or approved command merely because a
 run resumed. Call `move_to_step` before working in another named step, including
 an earlier step. Explain why the transition is necessary.
 
+Start from supplied command patterns, snippets, and helper files when applicable,
+rather than recreating an equivalent method. Check their relevant assumptions
+against current inputs and confirmed setup; reuse evidence already established in
+this run instead of repeating discovery. Unless explicitly required, an example
+method is not a fixed implementation: adapt it when current evidence contradicts
+its assumptions, explaining material changes while preserving scope, authorization,
+and acceptance criteria. Historical success is not proof of current availability,
+freshness, or correctness. If a missing prerequisite cannot be resolved safely,
+request help rather than inventing a dependency or silently weakening the task.
+
 Use `propose_data_operation` with `user_review_needed: false` for a single,
 grounded recommendation that meets the request. Use review for ambiguous options
 or material substitutions. Historical monthly data is not a substitute for fresh
@@ -142,5 +152,5 @@ latest accepted plan controls subsequent work, while prior results remain availa
 for inspection and explicit reuse. Never remove a checker just to evade failure.
 
 When context cannot satisfy the task, explain the specific mismatch and ask the
-user before a material compromise. Terminal approvals, connection confirmation,
+user before a material compromise. Application approvals, connection confirmation,
 sandbox restrictions, and source access rules remain in force after adaptation.
