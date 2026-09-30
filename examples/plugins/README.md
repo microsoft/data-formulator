@@ -9,6 +9,10 @@ the next restart.
 This folder contains **example plugins**. Treat them as templates: copy
 one, rename it, and adapt the body.
 
+For a locally generated business dataset, see the optional
+[synthetic retail example](synthetic_retail.md): five related tables for
+repeatable join and chart exercises, with configurable seed and sales-row count.
+
 ---
 
 ## Quick start (3 steps)
